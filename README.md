@@ -14,7 +14,7 @@
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-purple.svg?style=flat&logo=kotlin)](https://kotlinlang.org) 
 [![Android](https://img.shields.io/badge/Android-16-green.svg?style=flat&logo=android)](https://developer.android.com) 
-[![Version](https://img.shields.io/badge/Version-4.6.8-orange.svg?style=flat)]()
+[![Version](https://img.shields.io/badge/Version-4.7.8-orange.svg?style=flat)]()
 [![License](https://img.shields.io/badge/License-AGPLv3%20Custom-blue.svg)](LICENSE) 
 [![Status](https://img.shields.io/badge/Status-Active_Development-success.svg)]()
 
