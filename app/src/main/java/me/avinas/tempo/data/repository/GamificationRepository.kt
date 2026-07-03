@@ -54,6 +54,14 @@ class GamificationRepository @Inject constructor(
         val completedChallenges = gamificationDao.getAllCompletedChallenges()
         val challengeBonusXp = completedChallenges.sumOf { it.xpReward.toLong() }
         totalXp += challengeBonusXp
+
+        // Add bonus XP from earned badge stars. Badge stars are derived deterministically
+        // from listening data (recomputed in evaluateAllBadges), and rarity is a static
+        // property of the badge definition — so this contribution stays fully recomputable.
+        val badgeBonusXp = gamificationDao.getAllBadges().sumOf { badge ->
+            GamificationEngine.getBadgeXpContribution(badge.badgeId, badge.stars)
+        }
+        totalXp += badgeBonusXp
         
         // Compute level from XP
         val levelState = GamificationEngine.computeLevelState(totalXp)
@@ -77,7 +85,8 @@ class GamificationRepository @Inject constructor(
         gamificationDao.upsertUserLevel(updatedLevel)
         
         Log.d(TAG, "XP recomputed: $totalXp XP, Level ${levelState.level} " +
-                "(full=$fullPlays, partial=$partialPlays, streak=${streakInfo.currentStreak})")
+                "(full=$fullPlays, partial=$partialPlays, challenges=$challengeBonusXp, " +
+                "badges=$badgeBonusXp, streak=${streakInfo.currentStreak})")
         
         return LevelUpResult(
             previousLevel = previousLevelNum,
@@ -117,7 +126,7 @@ class GamificationRepository @Inject constructor(
     
     /**
      * Evaluate all badge conditions and update the database.
-     * Supports star tiers: each badge has 5 star levels at 1x, 2x, 3x, 5x, 10x the base threshold.
+     * Supports star tiers: each badge has 5 star levels at 1x, 3x, 8x, 20x, 50x the base threshold.
      * Returns list of newly earned badge IDs (first-time unlocks only).
      */
     suspend fun evaluateAllBadges(): List<String> {
@@ -129,8 +138,7 @@ class GamificationRepository @Inject constructor(
         val uniqueGenres = gamificationDao.getUniqueGenreCount()
         val nightPlays = gamificationDao.getPlayCountBetweenHours(0, 5)
         val morningPlays = gamificationDao.getPlayCountBetweenHours(5, 8)
-        val longestSessionMs = gamificationDao.getLongestSessionMs()
-        val longestSessionHours = (longestSessionMs / 3_600_000).toInt()
+        val marathonSessions = gamificationDao.getMarathonSessionCount()
         
         val newlyEarned = mutableListOf<String>()
         
@@ -146,7 +154,7 @@ class GamificationRepository @Inject constructor(
                 def.badgeId.startsWith("genres_") -> uniqueGenres
                 def.badgeId == "night_owl" -> nightPlays
                 def.badgeId == "early_bird" -> morningPlays
-                def.badgeId == "marathon" -> if (longestSessionHours >= 3) longestSessionHours / 3 else 0
+                def.badgeId == "marathon" -> marathonSessions
                 def.category == "LEVEL" -> userLevel.currentLevel
                 else -> 0
             }

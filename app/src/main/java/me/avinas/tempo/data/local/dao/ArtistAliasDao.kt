@@ -51,6 +51,12 @@ interface ArtistAliasDao {
     suspend fun findAlias(normalizedName: String): ArtistAlias?
 
     /**
+     * Find aliases for multiple normalized names in a single query.
+     */
+    @Query("SELECT * FROM artist_aliases WHERE original_name_normalized IN (:normalizedNames)")
+    suspend fun findAliasesByNormalizedNames(normalizedNames: List<String>): List<ArtistAlias>
+
+    /**
      * Get all aliases that point to a specific target artist.
      */
     @Query("SELECT * FROM artist_aliases WHERE target_artist_id = :artistId ORDER BY created_at DESC")

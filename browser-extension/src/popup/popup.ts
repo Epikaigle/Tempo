@@ -9,7 +9,6 @@
 // Fallback: if auto-discovery fails within 30s, show a one-field IP input.
 // ============================================================================
 
-declare const browser: unknown;
 
 import { MessageType } from '../shared/types';
 import type { NowPlaying, Play, Settings, PairingInfo, YoutubeChannelSuggestion } from '../shared/types';
@@ -555,6 +554,34 @@ async function renderQr() {
 
     setQrStatus('idle', 'Scan the QR with Tempo on your phone…');
 
+    const isFirefox = navigator.userAgent.includes('Firefox');
+    if (isFirefox) {
+      const scanBtn = document.getElementById('btn-start-scan');
+      if (scanBtn) scanBtn.style.display = 'none';
+      const notice = document.getElementById('firefox-notice');
+      const manualCard = document.querySelector('#manual-section .manual-card');
+      if (notice && manualCard) {
+        notice.style.display = '';
+        manualCard.insertBefore(notice, manualCard.firstChild);
+      }
+      const chromeExp = document.getElementById('chrome-expectation');
+      if (chromeExp) chromeExp.style.display = 'none';
+      const stepWait = document.getElementById('step-scan-wait');
+      const stepIp = document.getElementById('step-enter-ip');
+      if (stepWait) stepWait.style.display = 'none';
+      if (stepIp) stepIp.style.display = '';
+
+      const wrapper = document.getElementById('manual-section-wrapper');
+      const qrFrame = document.getElementById('qr-frame');
+      if (wrapper && qrFrame && qrFrame.nextElementSibling !== wrapper) {
+        qrFrame.parentElement!.insertBefore(wrapper, qrFrame.nextElementSibling);
+      }
+      const summarySpan = wrapper?.querySelector('.drawer-header span');
+      if (summarySpan) summarySpan.textContent = 'Connect Manually';
+
+      setDiscoveryState('manual');
+    }
+
   } catch (err) {
     console.warn('[Tempo] QR generation failed:', err);
     loading.innerHTML =
@@ -562,6 +589,8 @@ async function renderQr() {
     document.getElementById('qr-retry')?.addEventListener('click', renderQr);
   }
 }
+
+
 
 function startQrCountdown() {
   if (qrCountdownTimer) clearInterval(qrCountdownTimer);
@@ -575,9 +604,10 @@ function startQrCountdown() {
 
     if (remaining <= 0) {
       clearInterval(qrCountdownTimer!); qrCountdownTimer = null;
-      expiryEl.textContent = 'QR expired — ';
-      expiryEl.style.color = 'var(--danger)';
-      // Auto-refresh: generate a new QR and restart discovery
+      if (expiryEl) {
+        expiryEl.textContent = 'QR expired — ';
+        expiryEl.style.color = 'var(--danger)';
+      }
       if (!currentPairing) {
         await chrome.storage.local.remove([QR_TOKEN_KEY, QR_EXPIRY_KEY]);
         currentPairingToken = null;
@@ -586,8 +616,10 @@ function startQrCountdown() {
         await renderQr();
       }
     } else {
-      expiryEl.textContent = `Expires ${m}:${String(s).padStart(2, '0')} — `;
-      expiryEl.style.color = remaining < 60000 ? 'var(--warning)' : 'var(--text-muted)';
+      if (expiryEl) {
+        expiryEl.textContent = `Expires ${m}:${String(s).padStart(2, '0')} — `;
+        expiryEl.style.color = remaining < 60000 ? 'var(--warning)' : 'var(--text-muted)';
+      }
     }
   };
 
@@ -605,12 +637,12 @@ document.getElementById('btn-refresh-qr')?.addEventListener('click', async () =>
   await renderQr();
 });
 
-// "Start Scan" — manually trigger network discovery
+// "I've scanned the QR code" — manually trigger network discovery
 document.getElementById('btn-start-scan')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-start-scan') as HTMLButtonElement;
   if (!btn) return;
   btn.disabled = true;
-  btn.textContent = 'Scanning…';
+  btn.textContent = 'Searching…';
   
   const token = currentPairingToken;
   if (token) {
@@ -648,7 +680,7 @@ async function tryPing(ip: string, token: string): Promise<{ device: string; lat
 
     // Service worker signals missing permission — request from here (popup = valid user gesture context)
     // Note: Firefox doesn't support optional_host_permissions, so skip permission request there
-    const isFirefox = typeof browser !== 'undefined';
+    const isFirefox = navigator.userAgent.includes('Firefox');
     if (result?.needsPermission && result?.origin && !isFirefox) {
       try {
         const granted = await chrome.permissions.request({ origins: [result.origin] });
@@ -875,7 +907,7 @@ async function startAutoDiscovery(token: string) {
 
 async function completePairing(ip: string, port: number, token: string, deviceName: string) {
   const origin = `http://${ip}:${port}/`;
-  const isFirefox = typeof browser !== 'undefined';
+  const isFirefox = navigator.userAgent.includes('Firefox');
   
   if (isFirefox) {
     try {
@@ -935,6 +967,7 @@ document.getElementById('manual-form')?.addEventListener('submit', async (e) => 
     btn.textContent = 'Connect';
   }
 });
+
 
 // "Back to QR" in manual section
 document.getElementById('btn-back-to-qr')?.addEventListener('click', async () => {

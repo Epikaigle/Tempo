@@ -24,10 +24,11 @@ import java.util.concurrent.TimeUnit
 /**
  * Worker that checks daily for Spotlight story unlocks and sends Android notifications.
  * 
- * Checks for three types of story unlocks:
- * 1. Monthly Story - Unlocks on the last day of each month
- * 2. Yearly Story - Unlocks on December 1st
- * 3. All-Time Story - Unlocks after 6 months of listening data
+ * Checks for four types of story unlocks:
+ * 1. Weekly Story - Unlocks on Sunday
+ * 2. Monthly Story - Unlocks on the last day of each month
+ * 3. Yearly Story - Unlocks on December 1st
+ * 4. All-Time Story - Unlocks after 6 months of listening data
  */
 @HiltWorker
 class SpotlightUnlockWorker @AssistedInject constructor(
@@ -41,6 +42,7 @@ class SpotlightUnlockWorker @AssistedInject constructor(
         private const val TAG = "SpotlightUnlockWorker"
         private const val WORK_NAME = "spotlight_unlock_check"
         private const val CHANNEL_ID = "spotlight_unlocks"
+        private const val NOTIFICATION_ID_WEEKLY = 4000
         private const val NOTIFICATION_ID_MONTHLY = 4001
         private const val NOTIFICATION_ID_YEARLY = 4002
         private const val NOTIFICATION_ID_ALL_TIME = 4003
@@ -109,6 +111,26 @@ class SpotlightUnlockWorker @AssistedInject constructor(
         createNotificationChannel()
         
         val preferences = preferencesRepository.preferences().first() ?: return Result.success()
+        
+        // Check Weekly Story
+        // Send if: (1) today is Sunday OR (2) we're early in the week (Mon-Wed) and missed last Sunday
+        val isSunday = today.dayOfWeek == java.time.DayOfWeek.SUNDAY
+        val currentWeekStart = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        val lastWeekStart = currentWeekStart.minusWeeks(1)
+        val lastNotifiedWeekStart = preferences.lastWeeklyReminderShown?.let {
+            try { java.time.LocalDate.parse(it).with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)) }
+            catch (e: Exception) { null }
+        }
+        
+        val shouldNotifyWeekly = isSunday && lastNotifiedWeekStart != currentWeekStart
+        val missedLastWeek = !isSunday && today.dayOfWeek.value <= 3 &&
+            lastNotifiedWeekStart != lastWeekStart && lastNotifiedWeekStart != currentWeekStart
+        
+        if (shouldNotifyWeekly || missedLastWeek) {
+            Log.i(TAG, "✅ Sending notification for WEEKLY story unlock (isSunday=$isSunday, missed=$missedLastWeek)")
+            sendWeeklyStoryNotification()
+            preferencesRepository.updateLastWeeklyReminderShown(todayString)
+        }
         
         // Check Monthly Story
         // Send if: (1) today is last day OR (2) we're in a new month and haven't notified for last month
@@ -180,6 +202,53 @@ class SpotlightUnlockWorker @AssistedInject constructor(
             val daysUntilUnlock = java.time.temporal.ChronoUnit.DAYS.between(now, unlockDate)
             Log.d(TAG, "All-time story still locked. Unlocks in $daysUntilUnlock days on $unlockDate")
         }
+    }
+
+    private fun sendWeeklyStoryNotification() {
+        val today = java.time.LocalDate.now()
+        val isSunday = today.dayOfWeek == java.time.DayOfWeek.SUNDAY
+        val targetWeekStart = if (isSunday) {
+            today.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        } else {
+            today.minusWeeks(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        }
+        val targetWeekEnd = targetWeekStart.plusDays(6)
+        
+        val shortMonth = java.time.format.DateTimeFormatter.ofPattern("MMM", java.util.Locale.ENGLISH)
+        val weekLabel = if (targetWeekStart.month == targetWeekEnd.month) {
+            "${targetWeekStart.format(shortMonth)} ${targetWeekStart.dayOfMonth}-${targetWeekEnd.dayOfMonth}"
+        } else {
+            "${targetWeekStart.format(shortMonth)} ${targetWeekStart.dayOfMonth} - ${targetWeekEnd.format(shortMonth)} ${targetWeekEnd.dayOfMonth}"
+        }
+        
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("navigate_to", "spotlight")
+            putExtra("time_range", "THIS_WEEK")
+        }
+        
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID_WEEKLY,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Your Weekly Wrapped is Ready! 🎵")
+            .setContentText("Your weekly listening story for $weekLabel is now available")
+            .setStyle(NotificationCompat.BigTextStyle()
+                .bigText("Your $weekLabel listening story is ready! Tap to view your stats, top songs, and personality."))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID_WEEKLY, notification)
+        
+        Log.i(TAG, "Sent weekly story notification for $weekLabel")
     }
 
     private fun sendMonthlyStoryNotification() {

@@ -264,11 +264,12 @@ class ArtistDetailsViewModel @Inject constructor(
     fun detectSplitsAndRename(newName: String) {
         val artistId = currentArtistId ?: return
         viewModelScope.launch {
-            _uiState.update { it.copy(isDetectingSplits = true) }
+            _uiState.update { it.copy(isDetectingSplits = true, renameSuccess = null) }
             try {
                 val splits = artistRenameRepository.detectSplitArtists(newName, artistId)
                 if (splits.isEmpty()) {
                     // No splits detected — just rename directly
+                    _uiState.update { it.copy(isDetectingSplits = false) }
                     performRename(artistId, newName, emptyList())
                 } else {
                     // Found split artists — show merge confirmation
@@ -298,16 +299,17 @@ class ArtistDetailsViewModel @Inject constructor(
 
     private fun performRename(artistId: Long, newName: String, mergeIds: List<Long>) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isRenaming = true) }
+            _uiState.update { it.copy(isRenaming = true, renameSuccess = null) }
             try {
-                val success = artistRenameRepository.renameAndMerge(artistId, newName, mergeIds)
-                _uiState.update { it.copy(isRenaming = false, renameSuccess = success) }
+                val resultArtistId = artistRenameRepository.renameAndMerge(artistId, newName, mergeIds)
+                _uiState.update { it.copy(isRenaming = false, renameSuccess = resultArtistId != null) }
 
-                if (success) {
-                    Log.i(TAG, "Successfully renamed artist $artistId to '$newName'")
+                if (resultArtistId != null) {
+                    Log.i(TAG, "Successfully renamed artist $artistId to '$newName' (result ID: $resultArtistId)")
                     // Force reload to show updated name/stats
+                    // Use resultArtistId because a merge may have moved data to a different artist
                     currentArtistId = null // Reset so loadArtistById doesn't skip
-                    loadArtistById(artistId)
+                    loadArtistById(resultArtistId)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Rename failed", e)

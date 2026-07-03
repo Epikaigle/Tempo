@@ -1,6 +1,7 @@
 package me.avinas.tempo.ui.details
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,12 +19,15 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -55,6 +59,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
+import me.avinas.tempo.ui.theme.premiumClickable
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -208,12 +213,13 @@ fun ArtistDetailsContent(
             
             IconButton(
                 onClick = { showShareDialog = true },
+                modifier = Modifier.premiumClickable(onClick = { showShareDialog = true }),
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = Color.White.copy(alpha = 0.1f),
                     contentColor = Color.White
                 )
             ) {
-                Icon(Icons.Default.Share, contentDescription = "Share")
+                Icon(Icons.Default.Share, contentDescription = stringResource(R.string.share_content_description))
             }
             
             // More options menu
@@ -296,25 +302,23 @@ fun ArtistDetailsContent(
                 ArtistStatsGrid(artistDetails = artistDetails)
             }
 
-            // Fan Status Badge
-            if (artistDetails.personalPlayCount > 5) { // Show for almost everyone now
-                item(key = "fan_status_badge") {
+            if (artistDetails.peakListeningHour != null) {
+                item(key = "peak_hour") {
                     Spacer(modifier = Modifier.height(24.dp))
-                    FanStatusBadge(
-                        playCount = artistDetails.personalPlayCount,
-                        percentile = uiState.artistPercentile
+                    PeakHourCard(
+                        peakHour = artistDetails.peakListeningHour,
+                        formattedHour = artistDetails.peakHourFormatted
                     )
                 }
             }
 
-
-            item(key = "discovery_insight") {
+            item(key = "listening_journey") {
                 Spacer(modifier = Modifier.height(24.dp))
-                DiscoveryInsightCard(artistDetails = artistDetails)
+                ListeningJourneySection(artistDetails = artistDetails)
             }
             
             // Top Songs Section
-            item(key = "top_songs_header") {
+            item(key = "top_songs_section") {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = stringResource(R.string.details_top_songs),
@@ -323,15 +327,10 @@ fun ArtistDetailsContent(
                     color = Color.White,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                 )
-            }
-
-            itemsIndexed(
-                items = artistDetails.topSongs.take(5),
-                key = { _, song -> "song_${song.trackId}" },
-                contentType = { _, _ -> "song" }
-            ) { _, song ->
-                TopSongItem(song = song, onClick = { onNavigateToSong(song.trackId) })
-                Spacer(modifier = Modifier.height(12.dp))
+                TopSongsPanel(
+                    songs = artistDetails.topSongs.take(5),
+                    onNavigateToSong = onNavigateToSong
+                )
             }
             
             // Top Albums Section
@@ -364,13 +363,15 @@ fun ArtistDetailsContent(
                 }
             }
             
-            // Mood & Genre Section
+            // Mood & Genre Section - temporarily disabled (MoodInsightsSection not implemented)
+            /*
             if (artistDetails.moodSummary != null) {
                 item(key = "mood_insights") {
                     Spacer(modifier = Modifier.height(32.dp))
                     MoodInsightsSection(moodSummary = artistDetails.moodSummary)
                 }
             }
+            */
             
             item(key = "bottom_spacer") {
                 Spacer(modifier = Modifier.height(32.dp))
@@ -381,7 +382,7 @@ fun ArtistDetailsContent(
             SharePreviewDialog(
                 onDismiss = { showShareDialog = false },
                 contentToShare = {
-                    ArtistShareCard(artistDetails = artistDetails)
+                    ArtistShareCard(artistDetails = artistDetails, percentile = uiState.artistPercentile)
                 }
             )
         }
@@ -458,6 +459,11 @@ fun ArtistHeroSection(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))
                                 )
+                            )
+                            .border(
+                                3.dp,
+                                Color.White,
+                                CircleShape
                             ),
                         contentAlignment = Alignment.Center
                     ) {
@@ -469,9 +475,16 @@ fun ArtistHeroSection(
                         )
                     }
                 } else {
-                    // Image container with circular clip (no refresh button inside)
+                    // Image container with circular clip and white border
                     Box(
-                        modifier = Modifier.size(220.dp).clip(CircleShape)
+                        modifier = Modifier
+                            .size(220.dp)
+                            .clip(CircleShape)
+                            .border(
+                                3.dp,
+                                Color.White,
+                                CircleShape
+                            )
                     ) {
                         CachedAsyncImage(
                             imageUrl = imageUrl,
@@ -533,7 +546,7 @@ fun ArtistHeroSection(
         ) {
             Text(
                 text = artistDetails.artist.name,
-                style = MaterialTheme.typography.displaySmall, // Larger
+                style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 textAlign = TextAlign.Center,
@@ -542,249 +555,330 @@ fun ArtistHeroSection(
             Spacer(modifier = Modifier.width(8.dp))
             IconButton(
                 onClick = onShowRenameDialog,
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(28.dp),
                 colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = Color.White.copy(alpha = 0.1f),
-                    contentColor = Color.White
+                    containerColor = Color.White.copy(alpha = 0.08f),
+                    contentColor = Color.White.copy(alpha = 0.8f)
                 )
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
                     contentDescription = stringResource(R.string.details_rename_artist),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }
 
-        // Artist Country
-        if (!artistDetails.country.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            GlassCard(
-                modifier = Modifier.wrapContentWidth(),
-                backgroundColor = Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(32.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                     Text(
-                         text = "📍 ${artistDetails.country}",
-                         style = MaterialTheme.typography.bodyMedium,
-                         color = Color(0xFFCBD5E1) // Slate 300
-                     )
-                }
-            }
-        }
+        // Combined Country and Genres Metadata Cluster
+        val country = artistDetails.country
+        val genresList = artistDetails.topGenres.ifEmpty { artistDetails.artist.genres }
         
-        // Genres
-        if (artistDetails.artist.genres.isNotEmpty() || artistDetails.topGenres.isNotEmpty()) {
+        if (!country.isNullOrBlank() || genresList.isNotEmpty()) {
             Spacer(modifier = Modifier.height(12.dp))
             Row(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = Color(0xFF94A3B8) // Slate 400
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                val genres = artistDetails.topGenres.ifEmpty { artistDetails.artist.genres }
-                Text(
-                    text = genres.take(3).joinToString(", ") { it.replaceFirstChar { char -> char.uppercase() } },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF94A3B8) // Slate 400
-                )
+                if (!country.isNullOrBlank()) {
+                    Text(
+                        text = "📍 $country",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFE2E8F0) // Slate 200
+                    )
+                    if (genresList.isNotEmpty()) {
+                        Text(
+                            text = "  •  ",
+                            color = Color(0xFF475569), // Slate 600
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                
+                if (genresList.isNotEmpty()) {
+                    Text(
+                        text = genresList.take(3).joinToString(", ") { it.replaceFirstChar { char -> char.uppercase() } },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF94A3B8), // Slate 400
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
-        }
-    }
-}
-
-@Composable
-fun ArtistCountry(country: String) {
-    GlassCard(
-        modifier = Modifier.wrapContentWidth(),
-        backgroundColor = Color.White.copy(alpha = 0.08f),
-        shape = RoundedCornerShape(32.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-             Text(
-                 text = "📍 $country",
-                 style = MaterialTheme.typography.bodyMedium,
-                 color = Color(0xFFCBD5E1) // Slate 300
-             )
         }
     }
 }
 
 @Composable
 fun ArtistStatsGrid(artistDetails: ArtistDetails) {
-    Row(
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(0.dp)
     ) {
-        GlassCard(
-            modifier = Modifier.weight(1f),
-            backgroundColor = Color(0xFF7F1D1D).copy(alpha = 0.2f), // Red
-            variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = stringResource(R.string.details_total_plays),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFFFCA5A5) // Red 300
-                )
-                Text(
-                    text = formatCount(artistDetails.personalPlayCount.toLong()),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
-
-        GlassCard(
-            modifier = Modifier.weight(1f),
-            backgroundColor = Color(0xFF1E3A8A).copy(alpha = 0.2f), // Blue
-            variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = stringResource(R.string.details_listening_time),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF93C5FD) // Blue 300
-                )
-                Text(
-                    text = formatListeningTime(artistDetails.personalTotalTimeMs.toLong()),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun DiscoveryInsightCard(artistDetails: ArtistDetails) {
-    if (artistDetails.firstDiscovery != null) {
-        GlassCard(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = Color(0xFF8B5CF6).copy(alpha = 0.15f) // Violet tint
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
+            // Row 1
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = Color(0xFFC4B5FD), // Violet 300
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                // Stat 1: Total Plays
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            tint = Color(0xFFEF4444), // High-contrast Red
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.details_total_plays).uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF94A3B8), // Slate 400
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = stringResource(R.string.details_discovery_insight),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Color(0xFFC4B5FD),
-                        fontWeight = FontWeight.Bold
+                        text = formatCount(artistDetails.personalPlayCount.toLong()),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFFCA5A5) // Soft Red
                     )
                 }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                val dateStr = formatDate(artistDetails.firstDiscovery.firstListenTimestamp)
-                
-                Text(
-                    text = buildAnnotatedString {
-                        append(stringResource(R.string.details_discovery_part1))
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
-                            append(artistDetails.artist.name)
-                        }
-                        append(stringResource(R.string.details_discovery_part2))
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
-                            append(dateStr)
-                        }
-                        append(stringResource(R.string.details_discovery_part3))
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
-                            append(formatListeningTime(artistDetails.personalTotalTimeMs))
-                        }
-                        append(stringResource(R.string.details_discovery_part4))
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
-                            append("${artistDetails.uniqueTracksPlayed}")
-                        }
-                        append(stringResource(R.string.details_discovery_part5))
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.9f),
-                    lineHeight = 24.sp
+
+                // Vertical Divider
+                Box(
+                    modifier = Modifier
+                        .height(60.dp)
+                        .width(1.dp)
+                        .background(Color.White.copy(alpha = 0.08f))
                 )
+
+                // Stat 2: Listening Time
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AccessTime,
+                            contentDescription = null,
+                            tint = Color(0xFF3B82F6), // High-contrast Blue
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.details_listening_time).uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF94A3B8), // Slate 400
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = formatListeningTime(artistDetails.personalTotalTimeMs.toLong()),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF93C5FD) // Soft Blue
+                    )
+                }
+            }
+
+            // Horizontal Divider
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.White.copy(alpha = 0.08f))
+            )
+
+            // Row 2
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Stat 3: Unique Songs
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+                            contentDescription = null,
+                            tint = Color(0xFF8B5CF6), // High-contrast Purple
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.details_unique_tracks).uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF94A3B8), // Slate 400
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = formatCount(artistDetails.uniqueTracksPlayed.toLong()),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFD8B4FE) // Soft Purple
+                    )
+                }
+
+                // Vertical Divider
+                Box(
+                    modifier = Modifier
+                        .height(60.dp)
+                        .width(1.dp)
+                        .background(Color.White.copy(alpha = 0.08f))
+                )
+
+                // Stat 4: Unique Albums
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Album,
+                            contentDescription = null,
+                            tint = Color(0xFFF59E0B), // High-contrast Amber
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.details_unique_albums).uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF94A3B8), // Slate 400
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = formatCount(artistDetails.uniqueAlbumsPlayed.toLong()),
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFFDBA74) // Soft Amber
+                    )
+                }
             }
         }
     }
 }
 
+
+
 @Composable
-fun TopSongItem(song: TopTrack, onClick: () -> Unit) {
+fun TopSongsPanel(
+    songs: List<TopTrack>,
+    onNavigateToSong: (Long) -> Unit
+) {
+    if (songs.isEmpty()) return
+
     GlassCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        backgroundColor = Color.White.copy(alpha = 0.05f),
-        variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = Color.White.copy(alpha = 0.03f),
+        variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence,
+        contentPadding = PaddingValues(0.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
-            CachedAsyncImage(
-                imageUrl = song.albumArtUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = song.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = song.album ?: stringResource(R.string.details_unknown_album),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF94A3B8),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "${song.playCount}",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = TempoRed
-                )
-                Text(
-                    text = stringResource(R.string.details_plays),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF94A3B8)
-                )
+            songs.forEachIndexed { index, song ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToSong(song.trackId) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${index + 1}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Black,
+                        color = TempoRed,
+                        modifier = Modifier.width(32.dp),
+                        textAlign = TextAlign.Start
+                    )
+
+                    CachedAsyncImage(
+                        imageUrl = song.albumArtUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                    
+                    Spacer(modifier = Modifier.width(16.dp))
+                    
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = song.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = song.album ?: stringResource(R.string.details_unknown_album),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF94A3B8),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "${song.playCount}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = stringResource(R.string.details_plays).uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF64748B),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                if (index < songs.lastIndex) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Color.White.copy(alpha = 0.06f))
+                    )
+                }
             }
         }
     }
@@ -792,55 +886,58 @@ fun TopSongItem(song: TopTrack, onClick: () -> Unit) {
 
 @Composable
 fun TopAlbumCard(album: TopAlbum) {
-    GlassCard(
-        modifier = Modifier.width(160.dp),
-        backgroundColor = Color.White.copy(alpha = 0.05f),
-        variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+    Column(
+        modifier = Modifier
+            .width(140.dp)
+            .padding(bottom = 8.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // Album art
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF334155)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (album.albumArtUrl.isNullOrBlank()) {
-                    Icon(
-                        imageVector = Icons.Rounded.Album,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = Color.White.copy(alpha = 0.5f)
-                    )
-                } else {
-                    CachedAsyncImage(
-                        imageUrl = album.albumArtUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                }
+        // Album art with shadow and rounded corners
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .shadow(elevation = 6.dp, shape = RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF1E293B)), // Dark background for empty space
+            contentAlignment = Alignment.Center
+        ) {
+            if (album.albumArtUrl.isNullOrBlank()) {
+                Icon(
+                    imageVector = Icons.Rounded.Album,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = Color.White.copy(alpha = 0.4f)
+                )
+            } else {
+                CachedAsyncImage(
+                    imageUrl = album.albumArtUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
             }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Album info
-            Text(
-                text = album.album,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = stringResource(R.string.details_plays_count, album.playCount),
-                style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFF94A3B8)
-            )
         }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Album info
+        Text(
+            text = album.album,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = stringResource(R.string.details_plays_count, album.playCount),
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF94A3B8), // Slate 400
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        )
     }
 }
 
@@ -881,7 +978,6 @@ fun FanStatusBadge(playCount: Int, percentile: Double? = null) {
             else -> Quadruple(stringResource(R.string.fan_status_listener), "🎵", Color(0xFF94A3B8), stringResource(R.string.fan_status_listener_desc))
         }
     } else {
-        // Fallback to absolute counts if percentile not available
          when {
             playCount > 1000 -> Quadruple(stringResource(R.string.fan_status_ultimate), "👑", Color(0xFFFFD700), stringResource(R.string.fan_status_ultimate_desc))
             playCount > 500 -> Quadruple(stringResource(R.string.fan_status_super), "🌟", Color(0xFFF59E0B), stringResource(R.string.fan_status_super_desc))
@@ -893,37 +989,279 @@ fun FanStatusBadge(playCount: Int, percentile: Double? = null) {
 
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        backgroundColor = color.copy(alpha = 0.1f)
+        backgroundColor = color.copy(alpha = 0.03f),
+        contentPadding = PaddingValues(0.dp)
     ) {
         Row(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(color.copy(alpha = 0.2f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = emoji, fontSize = 24.sp)
-            }
+                    .width(6.dp)
+                    .height(80.dp)
+                    .background(color)
+            )
             
-            Column {
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(color.copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = emoji, fontSize = 22.sp)
+                }
+                
+                Column {
+                    Text(
+                        text = status.uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White,
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PeakHourCard(peakHour: Int, formattedHour: String) {
+    val isDay = peakHour in 6..17
+    val (emoji, accentColor, description) = if (isDay) {
+        Triple("☀️", Color(0xFFF59E0B), stringResource(R.string.details_most_active) + " during the day")
+    } else {
+        Triple("🌙", Color(0xFF8B5CF6), stringResource(R.string.details_most_active) + " at night")
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .background(accentColor.copy(alpha = 0.15f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = emoji, fontSize = 20.sp)
+        }
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.details_peak_hour).uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF94A3B8), // Slate 400
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
-                    text = status,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    text = formattedHour,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
                     color = Color.White
                 )
                 Text(
+                    text = "•",
+                    color = Color(0xFF475569) // Slate 600
+                )
+                Text(
                     text = description,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = Color(0xFFCBD5E1) // Slate 300
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun ListeningJourneySection(artistDetails: ArtistDetails) {
+    val firstListen = artistDetails.firstListenedDate ?: artistDetails.firstDiscovery?.firstListenTimestamp
+    val lastListen = artistDetails.lastListenedDate
+
+    if (firstListen == null && lastListen == null) return
+
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        backgroundColor = Color.White.copy(alpha = 0.04f)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "YOUR JOURNEY",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF94A3B8), // Slate 400
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Box(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (firstListen != null && lastListen != null) {
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 17.dp, top = 28.dp)
+                            .width(2.dp)
+                            .height(
+                                if (artistDetails.firstDiscovery != null) 100.dp else 50.dp
+                            )
+                            .background(Color.White.copy(alpha = 0.08f))
+                    )
+                }
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(28.dp)
+                ) {
+                    if (firstListen != null) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Color(0xFF10B981).copy(alpha = 0.15f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = "🚀", fontSize = 16.sp)
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.details_first_listen).uppercase(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF64748B), // Slate 500
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = formatDate(firstListen),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                
+                                if (artistDetails.firstDiscovery != null) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    val dateStr = formatDate(artistDetails.firstDiscovery.firstListenTimestamp)
+                                    Text(
+                                        text = buildAnnotatedString {
+                                            append("You discovered ")
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
+                                                append(artistDetails.artist.name)
+                                            }
+                                            append(" and have since listened to ")
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
+                                                append(formatListeningTime(artistDetails.personalTotalTimeMs))
+                                            }
+                                            append(" across ")
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
+                                                append("${artistDetails.uniqueTracksPlayed}")
+                                            }
+                                            append(" different songs.")
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color(0xFF94A3B8), // Slate 400
+                                        lineHeight = 20.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (lastListen != null) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Color(0xFF3B82F6).copy(alpha = 0.15f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = "🎧", fontSize = 16.sp)
+                            }
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.details_last_listen).uppercase(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF64748B), // Slate 500
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = formatDate(lastListen),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TimelineItem(title: String, date: String, icon: String, accentColor: Color) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(accentColor.copy(alpha = 0.15f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = icon, fontSize = 16.sp)
+        }
+        Column {
+            Text(
+                text = title.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF64748B), // Slate 500
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = date,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
         }
     }
 }

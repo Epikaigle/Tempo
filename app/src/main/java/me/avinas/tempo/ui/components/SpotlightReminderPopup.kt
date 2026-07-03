@@ -3,6 +3,7 @@ package me.avinas.tempo.ui.components
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,7 +14,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -27,13 +30,14 @@ import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter
 
 enum class SpotlightReminderType {
+    WEEKLY,
     MONTHLY,
     YEARLY
 }
 
 /**
  * Beautiful popup reminder for Spotlight Story availability.
- * Shows on last day of month (Monthly) or December 1st (Yearly).
+ * Shows on Sunday (Weekly), last day of month (Monthly), or December 1st (Yearly).
  */
 @Composable
 fun SpotlightReminderPopup(
@@ -52,6 +56,7 @@ fun SpotlightReminderPopup(
     }
     
     val targetTimeRange = timeRange ?: when (type) {
+        SpotlightReminderType.WEEKLY -> TimeRange.THIS_WEEK
         SpotlightReminderType.MONTHLY -> TimeRange.THIS_MONTH
         SpotlightReminderType.YEARLY -> TimeRange.THIS_YEAR
     }
@@ -64,6 +69,11 @@ fun SpotlightReminderPopup(
 
     // Determine messaging based on type
     val (title, subtitle, iconGradient) = when (type) {
+        SpotlightReminderType.WEEKLY -> Triple(
+            "Your Weekly Wrapped\nIs Ready! 🎵",
+            "Check out your listening story from $targetPeriodLabel",
+            listOf(Color(0xFF8B5CF6), Color(0xFF14B8A6)) // Purple to Teal
+        )
         SpotlightReminderType.MONTHLY -> Triple(
             "Your Monthly Wrapped\nIs Ready! 🎉",
             "Check out your listening story from $targetPeriodLabel",
@@ -114,11 +124,17 @@ fun SpotlightReminderPopup(
                             .fillMaxWidth(0.85f)
                             .padding(horizontal = 24.dp)
                     ) {
-                        GlassCard(
-                            backgroundColor = Color.White.copy(alpha = 0.08f),
-                            variant = GlassCardVariant.HighProminence,
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.fillMaxWidth()
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .shadow(
+                                    16.dp,
+                                    RoundedCornerShape(28.dp),
+                                    spotColor = Color.Black.copy(alpha = 0.5f)
+                                )
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(Color(0xFF1A1726))
+                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(28.dp))
                         ) {
                             Box {
                                 Column(

@@ -404,7 +404,7 @@ class DesktopSatelliteServer @Inject constructor(
                         """{"ok":false,"error":"payload_too_large"}"""
                     )
                     resp.status = object : Response.IStatus {
-                        override fun getRequestStatus() = "413 Payload Too Large"
+                        override fun getRequestStatus() = 413
                         override fun getDescription() = "Payload Too Large"
                     }
                     return resp
@@ -474,7 +474,7 @@ class DesktopSatelliteServer @Inject constructor(
                         """{"ok":false,"error":"payload_too_large"}"""
                     )
                     resp.status = object : Response.IStatus {
-                        override fun getRequestStatus() = "413 Payload Too Large"
+                        override fun getRequestStatus() = 413
                         override fun getDescription() = "Payload Too Large"
                     }
                     return resp

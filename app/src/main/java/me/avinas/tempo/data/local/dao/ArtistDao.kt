@@ -20,7 +20,7 @@ interface ArtistDao {
     @Query("SELECT * FROM artists")
     fun getAllArtists(): Flow<List<Artist>>
     
-    @Query("SELECT * FROM artists")
+    @Query("SELECT * FROM artists LIMIT 500")
     suspend fun getAllArtistsSync(): List<Artist>
 
     @Query("SELECT COUNT(*) FROM artists")
@@ -58,6 +58,12 @@ interface ArtistDao {
     suspend fun getArtistByNormalizedName(normalizedName: String): Artist?
     
     /**
+     * Find artists by normalized names in a single batch query.
+     */
+    @Query("SELECT * FROM artists WHERE normalized_name IN (:normalizedNames)")
+    suspend fun getArtistsByNormalizedNames(normalizedNames: List<String>): List<Artist>
+    
+    /**
      * Find artist by partial name match (case-insensitive).
      */
     @Query("SELECT * FROM artists WHERE LOWER(name) LIKE '%' || LOWER(:name) || '%' LIMIT 1")
@@ -72,7 +78,7 @@ interface ArtistDao {
     /**
      * Search artists by name pattern (sync).
      */
-    @Query("SELECT * FROM artists WHERE LOWER(name) LIKE '%' || LOWER(:query) || '%' ORDER BY name ASC")
+    @Query("SELECT * FROM artists WHERE LOWER(name) LIKE '%' || LOWER(:query) || '%' ORDER BY name ASC LIMIT 50")
     suspend fun searchSync(query: String): List<Artist>
     
     // =====================

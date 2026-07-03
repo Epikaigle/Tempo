@@ -11,6 +11,11 @@ class RoomPreferencesRepository @Inject constructor(private val dao: UserPrefere
     override fun preferences(): Flow<UserPreferences?> = dao.preferences()
     override suspend fun upsert(prefs: UserPreferences) = dao.upsert(prefs)
     
+    override suspend fun updateLastWeeklyReminderShown(date: String) {
+        val prefs = dao.getSync() ?: UserPreferences()
+        dao.upsert(prefs.copy(lastWeeklyReminderShown = date))
+    }
+    
     override suspend fun updateLastMonthlyReminderShown(date: String) {
         val prefs = dao.getSync() ?: UserPreferences()
         dao.upsert(prefs.copy(lastMonthlyReminderShown = date))

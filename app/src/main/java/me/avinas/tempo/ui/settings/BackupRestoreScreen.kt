@@ -40,13 +40,10 @@ import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.data.drive.*
 import me.avinas.tempo.data.importexport.ImportConflictStrategy
 import me.avinas.tempo.data.importexport.ImportExportResult
-import me.avinas.tempo.data.remote.spotify.SpotifyAuthManager
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.ui.components.SettingsSwitch
-import me.avinas.tempo.ui.onboarding.SpotifyConnectionBottomSheet
-import me.avinas.tempo.ui.spotify.SpotifyViewModel
 import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.utils.FormatUtils.formatBytes
 import java.text.SimpleDateFormat
@@ -61,19 +58,14 @@ import me.avinas.tempo.R
 @Composable
 fun BackupRestoreScreen(
     onNavigateBack: () -> Unit,
-    viewModel: BackupRestoreViewModel = hiltViewModel(),
-    spotifyViewModel: SpotifyViewModel = hiltViewModel()
+    viewModel: BackupRestoreViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val importExportProgress by viewModel.importExportProgress.collectAsState()
     val importExportResult by viewModel.importExportResult.collectAsState()
     val conflictDialogUri by viewModel.showConflictDialog.collectAsState()
     
-    // Spotify state for showing connect prompt after restore
-    val spotifyAuthState by spotifyViewModel.authState.collectAsState()
-    var showSpotifySheet by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val spotifySheetState = rememberModalBottomSheetState()
     
     // Google Drive states
     val googleAccount by viewModel.googleAccount.collectAsState()
@@ -160,7 +152,7 @@ fun BackupRestoreScreen(
         uri?.let { viewModel.exportData(it) }
     }
     
-    // Show result snackbar and Spotify prompt after successful import/restore
+    // Show result snackbar after successful import/restore
     LaunchedEffect(importExportResult) {
         importExportResult?.let { result ->
             when (result) {
@@ -169,12 +161,6 @@ fun BackupRestoreScreen(
                     snackbarHostState.showSnackbar(
                         "Successfully processed ${result.totalRecords} records$imageText"
                     )
-                    
-                    // Show Spotify connect prompt if not already connected
-                    // This helps users get high-quality album art for their restored data
-                    if (spotifyAuthState !is SpotifyAuthManager.AuthState.Connected) {
-                        showSpotifySheet = true
-                    }
                 }
                 is ImportExportResult.Error -> {
                     snackbarHostState.showSnackbar(result.message)
@@ -189,13 +175,6 @@ fun BackupRestoreScreen(
         when (val op = driveOperation) {
             is DriveOperationState.Success -> {
                 snackbarHostState.showSnackbar(op.message)
-                
-                // Show Spotify connect prompt after successful Drive restore if not connected
-                if (op.message.contains("restore", ignoreCase = true) && 
-                    spotifyAuthState !is SpotifyAuthManager.AuthState.Connected) {
-                    showSpotifySheet = true
-                }
-                
                 viewModel.clearDriveOperation()
             }
             is DriveOperationState.Error -> {
@@ -480,36 +459,6 @@ fun BackupRestoreScreen(
             )
         }
         else -> { }
-    }
-    
-    // Spotify connection bottom sheet - shown after successful import/restore
-    if (showSpotifySheet) {
-        val currentScope = scope // Capture scope for lambda access
-        ModalBottomSheet(
-            onDismissRequest = { showSpotifySheet = false },
-            sheetState = spotifySheetState,
-            containerColor = Color(0xFF1C1C1E)
-        ) {
-            SpotifyConnectionBottomSheet(
-                onConnect = {
-                    // User wants to connect Spotify - trigger auth flow
-                    val intent = spotifyViewModel.startLogin()
-                    context.startActivity(intent)
-                    // Hide sheet after initiating login
-                    currentScope.launch { 
-                        spotifySheetState.hide()
-                        showSpotifySheet = false
-                    }
-                },
-                onMaybeLater = {
-                    // User doesn't want to connect - just dismiss
-                    currentScope.launch { 
-                        spotifySheetState.hide()
-                        showSpotifySheet = false
-                    }
-                }
-            )
-        }
     }
 }
 

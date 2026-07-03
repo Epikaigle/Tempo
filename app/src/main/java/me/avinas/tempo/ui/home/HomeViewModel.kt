@@ -21,6 +21,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -52,6 +53,8 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private var loadJob: Job? = null
+
     init {
         loadData()
         observeDataChanges()
@@ -64,7 +67,7 @@ class HomeViewModel @Inject constructor(
                 .map { it.selectedTimeRange }
                 .distinctUntilChanged()
                 .flatMapLatest { timeRange ->
-                    statsRepository.observeListeningOverview(timeRange)
+                    statsRepository.observeListeningOverview(timeRange, withLeeway = false)
                 }
                 .distinctUntilChanged()
                 .collect { overview ->
@@ -123,7 +126,8 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun loadData() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             fetchData()
         }
     }
@@ -135,8 +139,8 @@ class HomeViewModel @Inject constructor(
             // Fetch all required data in PARALLEL using async/await
             // This reduces total loading time from sum of all calls to max of all calls
             coroutineScope {
-                val overviewDeferred = async { statsRepository.getListeningOverview(timeRange) }
-                val periodComparisonDeferred = async { statsRepository.getPeriodComparison(timeRange) }
+                val overviewDeferred = async { statsRepository.getListeningOverview(timeRange, withLeeway = false) }
+                val periodComparisonDeferred = async { statsRepository.getPeriodComparison(timeRange, withLeeway = false) }
                 // Dynamic data limit based on time range for chart visualization
                 val dataLimit = when (timeRange) {
                     TimeRange.TODAY, TimeRange.THIS_WEEK -> 7
@@ -144,21 +148,41 @@ class HomeViewModel @Inject constructor(
                     TimeRange.THIS_YEAR -> 365
                     TimeRange.ALL_TIME -> 365
                 }
-                val rawDailyListeningDeferred = async { statsRepository.getDailyListening(timeRange, dataLimit) }
-                val topTracksDeferred = async { statsRepository.getTopTracks(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1) }
-                val topArtistsDeferred = async { statsRepository.getTopArtists(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1) }
-                val discoveryStatsDeferred = async { statsRepository.getDiscoveryStats(timeRange) }
-                val mostActiveHourDeferred = async { statsRepository.getMostActiveHour(timeRange) }
-                val audioFeaturesDeferred = async { statsRepository.getAudioFeaturesStats(timeRange) }
-                val insightsDeferred = async { statsRepository.getInsights(timeRange) }
+                val rawDailyListeningDeferred = async { statsRepository.getDailyListening(timeRange, dataLimit, withLeeway = false) }
+                val topTracksDeferred = async { statsRepository.getTopTracks(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1, withLeeway = false) }
+                val topArtistsDeferred = async { statsRepository.getTopArtists(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1, withLeeway = false) }
+                val discoveryStatsDeferred = async { statsRepository.getDiscoveryStats(timeRange, withLeeway = false) }
+                val mostActiveHourDeferred = async { statsRepository.getMostActiveHour(timeRange, withLeeway = false) }
+                val audioFeaturesDeferred = async { statsRepository.getAudioFeaturesStats(timeRange, withLeeway = false) }
+                val insightsDeferred = async { statsRepository.getInsights(timeRange, withLeeway = false) }
                 // Use ALL_TIME stats for rate app check - ensures consistent behavior regardless of current filter
                 val allTimeOverviewDeferred = async { statsRepository.getListeningOverview(TimeRange.ALL_TIME) }
                 val profileIdentityDeferred = async { profileIdentityManager.getProfileIdentity() }
+                
+                // Today's Listen Widget data
+                val todayOverviewDeferred = async { statsRepository.getListeningOverview(TimeRange.TODAY) }
+                val todayTopTracksDeferred = async { statsRepository.getTopTracks(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 1) }
+                val todayTopArtistsDeferred = async { statsRepository.getTopArtists(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 1) }
+                val todayHourlyDeferred = async { statsRepository.getHourlyDistribution(TimeRange.TODAY) }
                 
                 // Read isGamificationEnabled setting
                 val isGamificationEnabledDeferred = async {
                     preferencesRepository.preferences().first()?.isGamificationEnabled ?: true
                 }
+                
+                // Spotlight story top track — fetched for the unlocked story period with leeway
+                // so the ring shows the correct album art from the story's time period.
+                val spotlightTimeRange = me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.getDirectStoryTimeRange()
+                val spotlightTopTrackDeferred = if (spotlightTimeRange != null) {
+                    async {
+                        statsRepository.getTopTracks(
+                            spotlightTimeRange,
+                            sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE,
+                            pageSize = 1,
+                            withLeeway = true  // Match story system's period calculation
+                        )
+                    }
+                } else null
                 
                 // Await all results
                 val overview = overviewDeferred.await()
@@ -171,10 +195,17 @@ class HomeViewModel @Inject constructor(
                 val audioFeatures = audioFeaturesDeferred.await()
                 val allTimeOverview = allTimeOverviewDeferred.await()
                 val profileIdentity = profileIdentityDeferred.await()
+                val spotlightTopTrack = spotlightTopTrackDeferred?.await()?.items?.firstOrNull()
                 val userName = profileIdentity.userName
                     .takeIf { it.isNotBlank() }
                     ?: tokenStorage.getUserDisplayName()?.split(" ")?.firstOrNull()
                     ?: "User"
+                
+                // Await Today's Listen data
+                val todayOverview = todayOverviewDeferred.await()
+                val todayTopTracks = todayTopTracksDeferred.await()
+                val todayTopArtists = todayTopArtistsDeferred.await()
+                val todayHourly = todayHourlyDeferred.await()
                 
                 // Fetch Gamification Data
                 val isGamificationEnabled = isGamificationEnabledDeferred.await()
@@ -216,6 +247,7 @@ class HomeViewModel @Inject constructor(
                         dailyListening = dailyListening,
                         topTrack = topTracks.items.firstOrNull(),
                         topArtist = topArtists.items.firstOrNull(),
+                        spotlightTopTrack = spotlightTopTrack,
                         discoveryStats = discoveryStats,
                         mostActiveHour = mostActiveHour,
                         audioFeatures = audioFeatures,
@@ -229,7 +261,12 @@ class HomeViewModel @Inject constructor(
                         // shouldShowRateApp() which now sees the 3-day cooldown has just been
                         // written and returns false, silently dismissing the popup mid-interaction.
                         showRateAppPopup = it.showRateAppPopup || shouldShowRateApp(),
-                        isGamificationEnabled = isGamificationEnabled
+                        isGamificationEnabled = isGamificationEnabled,
+                        // Today's Listen Widget
+                        todayOverview = todayOverview,
+                        todayTopTrack = todayTopTracks.items.firstOrNull(),
+                        todayTopArtist = todayTopArtists.items.firstOrNull(),
+                        todayHourlyDistribution = todayHourly
                     )
                 }
             }
@@ -509,6 +546,7 @@ class HomeViewModel @Inject constructor(
     /**
      * Check if we should show a Spotlight Story reminder.
      * Shows reminder on:
+     * - Sunday (for THIS_WEEK story)
      * - Last day of the month (for THIS_MONTH story)
      * - December 1st (for THIS_YEAR story)
      */
@@ -562,11 +600,35 @@ class HomeViewModel @Inject constructor(
                             reminderType = me.avinas.tempo.ui.components.SpotlightReminderType.YEARLY
                         ) 
                     }
+                    return@launch
                 } else {
                     android.util.Log.d("HomeViewModel", "❌ Skipping yearly reminder: no data for THIS_YEAR")
                 }
             } else if (isDecemberFirst) {
                 android.util.Log.d("HomeViewModel", "December 1st, but already shown: ${preferences.lastYearlyReminderShown}")
+            }
+            
+            // Check for weekly reminder (Sunday)
+            val isSunday = today.dayOfWeek == java.time.DayOfWeek.SUNDAY
+            if (isSunday && preferences.lastWeeklyReminderShown != todayString) {
+                android.util.Log.d("HomeViewModel", "Is Sunday, checking data availability...")
+                // Ensure we have data for this week
+                val overview = statsRepository.getListeningOverview(TimeRange.THIS_WEEK)
+                android.util.Log.d("HomeViewModel", "Weekly data: totalPlayCount=${overview.totalPlayCount}")
+                if (overview.totalPlayCount > 0) {
+                    android.util.Log.i("HomeViewModel", "✅ Showing WEEKLY Spotlight reminder")
+                    _uiState.update { 
+                        it.copy(
+                            showSpotlightReminder = true,
+                            reminderTimeRange = TimeRange.THIS_WEEK,
+                            reminderType = me.avinas.tempo.ui.components.SpotlightReminderType.WEEKLY
+                        ) 
+                    }
+                } else {
+                    android.util.Log.d("HomeViewModel", "❌ Skipping weekly reminder: no data for THIS_WEEK")
+                }
+            } else if (isSunday) {
+                android.util.Log.d("HomeViewModel", "Sunday, but already shown: ${preferences.lastWeeklyReminderShown}")
             }
         }
     }
@@ -581,6 +643,8 @@ class HomeViewModel @Inject constructor(
             
             // Update preferences based on reminder type
             val updatedPrefs = when (_uiState.value.reminderType) {
+                me.avinas.tempo.ui.components.SpotlightReminderType.WEEKLY -> 
+                    preferences.copy(lastWeeklyReminderShown = today)
                 me.avinas.tempo.ui.components.SpotlightReminderType.MONTHLY -> 
                     preferences.copy(lastMonthlyReminderShown = today)
                 me.avinas.tempo.ui.components.SpotlightReminderType.YEARLY -> 
@@ -630,5 +694,14 @@ data class HomeUiState(
     // Spotlight Story Reminder
     val showSpotlightReminder: Boolean = false,
     val reminderTimeRange: TimeRange? = null,
-    val reminderType: me.avinas.tempo.ui.components.SpotlightReminderType? = null
+    val reminderType: me.avinas.tempo.ui.components.SpotlightReminderType? = null,
+    
+    // Spotlight story top track (correct period, with leeway)
+    val spotlightTopTrack: me.avinas.tempo.data.stats.TopTrack? = null,
+    
+    // Today's Listen Widget
+    val todayOverview: me.avinas.tempo.data.stats.ListeningOverview? = null,
+    val todayTopTrack: me.avinas.tempo.data.stats.TopTrack? = null,
+    val todayTopArtist: me.avinas.tempo.data.stats.TopArtist? = null,
+    val todayHourlyDistribution: List<me.avinas.tempo.data.stats.HourlyDistribution> = emptyList()
 )

@@ -20,8 +20,7 @@ val Context.dataStore by preferencesDataStore(name = "settings")
 
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
-    @param:ApplicationContext private val context: Context,
-    private val userPreferencesDao: me.avinas.tempo.data.local.dao.UserPreferencesDao
+    @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(OnboardingUiState())
@@ -41,15 +40,10 @@ class OnboardingViewModel @Inject constructor(
                 it[XIAOMI_GUIDANCE_SHOWN_KEY] ?: false
             }.first()
             
-            // Load other preferences from Room
-            val roomPrefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
-            
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 isOnboardingCompleted = onboardingCompleted,
-                xiaomiGuidanceShown = xiaomiGuidanceShown,
-                extendedAudioAnalysisEnabled = roomPrefs.extendedAudioAnalysis,
-                mergeAlternateVersions = roomPrefs.mergeAlternateVersions
+                xiaomiGuidanceShown = xiaomiGuidanceShown
             )
         }
     }
@@ -70,28 +64,10 @@ class OnboardingViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(xiaomiGuidanceShown = true)
         }
     }
-    
-    fun setExtendedAudioAnalysis(enabled: Boolean) {
-        viewModelScope.launch {
-            val currentPrefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
-            userPreferencesDao.upsert(currentPrefs.copy(extendedAudioAnalysis = enabled))
-            _uiState.value = _uiState.value.copy(extendedAudioAnalysisEnabled = enabled)
-        }
-    }
-    
-    fun setMergeAlternateVersions(enabled: Boolean) {
-        viewModelScope.launch {
-            val currentPrefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
-            userPreferencesDao.upsert(currentPrefs.copy(mergeAlternateVersions = enabled))
-            _uiState.value = _uiState.value.copy(mergeAlternateVersions = enabled)
-        }
-    }
 }
 
 data class OnboardingUiState(
     val isLoading: Boolean = true,
     val isOnboardingCompleted: Boolean = false,
-    val xiaomiGuidanceShown: Boolean = false,
-    val extendedAudioAnalysisEnabled: Boolean = false,
-    val mergeAlternateVersions: Boolean = true
+    val xiaomiGuidanceShown: Boolean = false
 )

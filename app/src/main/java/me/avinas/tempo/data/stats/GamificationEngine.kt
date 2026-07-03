@@ -163,58 +163,126 @@ object GamificationEngine {
     }
 
     // =====================
+    // Badge Rarity
+    // =====================
+
+    /**
+     * Rarity tier for a badge. Rarer badges are worth more XP per star and are
+     * visually distinguished in the UI (glow, accent, label).
+     *
+     * @param xpPerStar  XP awarded per earned star (deterministic, recomputed from stars).
+     * @param sortWeight Higher = shown first within a category (rarer on top).
+     */
+    enum class BadgeRarity(val label: String, val xpPerStar: Int, val sortWeight: Int) {
+        COMMON("Common", 25, 0),
+        RARE("Rare", 75, 1),
+        EPIC("Epic", 200, 2),
+        LEGENDARY("Legendary", 500, 3),
+        MYTHIC("Mythic", 1500, 4)
+    }
+
+    /**
+     * Static rarity assignment per badge. Rarity is a property of the *definition*,
+     * not the earned row, so it lives here (no DB column / migration needed).
+     */
+    val BADGE_RARITY: Map<String, BadgeRarity> = mapOf(
+        // Milestones
+        "first_play"     to BadgeRarity.COMMON,
+        "plays_100"      to BadgeRarity.COMMON,
+        "plays_500"      to BadgeRarity.RARE,
+        "plays_1000"     to BadgeRarity.RARE,
+        "plays_5000"     to BadgeRarity.EPIC,
+        "plays_10000"    to BadgeRarity.LEGENDARY,
+        // Time
+        "time_1h"        to BadgeRarity.COMMON,
+        "time_24h"       to BadgeRarity.COMMON,
+        "time_100h"      to BadgeRarity.RARE,
+        "time_500h"      to BadgeRarity.EPIC,
+        // Streaks
+        "streak_7"       to BadgeRarity.COMMON,
+        "streak_30"      to BadgeRarity.RARE,
+        "streak_100"     to BadgeRarity.EPIC,
+        "streak_365"     to BadgeRarity.MYTHIC,
+        // Discovery
+        "artists_10"     to BadgeRarity.COMMON,
+        "artists_50"     to BadgeRarity.RARE,
+        "artists_100"    to BadgeRarity.RARE,
+        "genres_10"      to BadgeRarity.COMMON,
+        "genres_25"      to BadgeRarity.RARE,
+        // Engagement
+        "night_owl"      to BadgeRarity.RARE,
+        "early_bird"     to BadgeRarity.RARE,
+        "marathon"       to BadgeRarity.EPIC,
+        // Level
+        "level_5"        to BadgeRarity.COMMON,
+        "level_10"       to BadgeRarity.COMMON,
+        "level_25"       to BadgeRarity.RARE,
+        "level_50"       to BadgeRarity.EPIC,
+        "level_75"       to BadgeRarity.EPIC,
+        "level_100"      to BadgeRarity.MYTHIC
+    )
+
+    /** Rarity for a badge id (COMMON if unknown). */
+    fun getRarity(badgeId: String): BadgeRarity = BADGE_RARITY[badgeId] ?: BadgeRarity.COMMON
+
+    /** Total XP a badge contributes given its current star count. */
+    fun getBadgeXpContribution(badgeId: String, stars: Int): Long =
+        getRarity(badgeId).xpPerStar.toLong() * stars.coerceAtLeast(0)
+
+    // =====================
     // Badge Definitions
     // =====================
-    
+
     val ALL_BADGE_DEFINITIONS: List<BadgeDefinition> = listOf(
         // === Milestones ===
-        BadgeDefinition("first_play", "First Note", "Your musical journey begins", "music_note", "MILESTONE", 1),
-        BadgeDefinition("plays_100", "Century", "Play 100 songs", "century", "MILESTONE", 100),
-        BadgeDefinition("plays_500", "Sound Pilgrim", "Journey through 500 tracks", "star_half", "MILESTONE", 500),
-        BadgeDefinition("plays_1000", "Grand Maestro", "Master 1,000 tracks", "star", "MILESTONE", 1_000),
-        BadgeDefinition("plays_5000", "Virtuoso", "Conquer 5,000 tracks", "diamond", "MILESTONE", 5_000),
-        BadgeDefinition("plays_10000", "Legendary", "Transcend 10,000 tracks", "emoji_events", "MILESTONE", 10_000),
-        
+        BadgeDefinition("first_play", "First Note", "Your musical journey begins", "music_note", "MILESTONE", 1, BadgeRarity.COMMON),
+        BadgeDefinition("plays_100", "Century", "Play 100 songs", "century", "MILESTONE", 100, BadgeRarity.COMMON),
+        BadgeDefinition("plays_500", "Sound Pilgrim", "Journey through 500 tracks", "star_half", "MILESTONE", 500, BadgeRarity.RARE),
+        BadgeDefinition("plays_1000", "Grand Maestro", "Master 1,000 tracks", "star", "MILESTONE", 1_000, BadgeRarity.RARE),
+        BadgeDefinition("plays_5000", "Virtuoso", "Conquer 5,000 tracks", "diamond", "MILESTONE", 5_000, BadgeRarity.EPIC),
+        BadgeDefinition("plays_10000", "Legendary", "Transcend 10,000 tracks", "emoji_events", "MILESTONE", 10_000, BadgeRarity.LEGENDARY),
+
         // === Time ===
-        BadgeDefinition("time_1h", "First Hour", "Your first hour of music", "timer", "TIME", 1),
-        BadgeDefinition("time_24h", "Day Tripper", "A full day's worth of music", "schedule", "TIME", 24),
-        BadgeDefinition("time_100h", "Centurion", "100 hours of listening", "hourglass_full", "TIME", 100),
-        BadgeDefinition("time_500h", "Sound Sage", "500 hours of listening", "headphones", "TIME", 500),
-        
+        BadgeDefinition("time_1h", "First Hour", "Your first hour of music", "timer", "TIME", 1, BadgeRarity.COMMON),
+        BadgeDefinition("time_24h", "Day Tripper", "A full day's worth of music", "schedule", "TIME", 24, BadgeRarity.COMMON),
+        BadgeDefinition("time_100h", "Centurion", "100 hours of listening", "hourglass_full", "TIME", 100, BadgeRarity.RARE),
+        BadgeDefinition("time_500h", "Sound Sage", "500 hours of listening", "headphones", "TIME", 500, BadgeRarity.EPIC),
+
         // === Streaks ===
-        BadgeDefinition("streak_7", "Week Warrior", "7-day listening streak", "local_fire_department", "STREAK", 7),
-        BadgeDefinition("streak_30", "Monthly Maven", "30-day listening streak", "whatshot", "STREAK", 30),
-        BadgeDefinition("streak_100", "Ironclad", "100-day listening streak", "military_tech", "STREAK", 100),
-        BadgeDefinition("streak_365", "Year-Round", "365-day listening streak", "auto_awesome", "STREAK", 365),
-        
+        BadgeDefinition("streak_7", "Week Warrior", "7-day listening streak", "local_fire_department", "STREAK", 7, BadgeRarity.COMMON),
+        BadgeDefinition("streak_30", "Monthly Maven", "30-day listening streak", "whatshot", "STREAK", 30, BadgeRarity.RARE),
+        BadgeDefinition("streak_100", "Ironclad", "100-day listening streak", "military_tech", "STREAK", 100, BadgeRarity.EPIC),
+        BadgeDefinition("streak_365", "Year-Round", "365-day listening streak", "auto_awesome", "STREAK", 365, BadgeRarity.MYTHIC),
+
         // === Discovery ===
-        BadgeDefinition("artists_10", "Explorer", "Discover unique artists", "explore", "DISCOVERY", 10),
-        BadgeDefinition("artists_50", "Curator", "Discover 50 unique artists", "collections", "DISCOVERY", 50),
-        BadgeDefinition("artists_100", "Connoisseur", "Discover 100 unique artists", "public", "DISCOVERY", 100),
-        BadgeDefinition("genres_10", "Genre Hopper", "Explore different genres", "category", "DISCOVERY", 10),
-        BadgeDefinition("genres_25", "Eclectic", "Explore 25+ genres", "palette", "DISCOVERY", 25),
-        
+        BadgeDefinition("artists_10", "Explorer", "Discover unique artists", "explore", "DISCOVERY", 10, BadgeRarity.COMMON),
+        BadgeDefinition("artists_50", "Curator", "Discover 50 unique artists", "collections", "DISCOVERY", 50, BadgeRarity.RARE),
+        BadgeDefinition("artists_100", "Connoisseur", "Discover 100 unique artists", "public", "DISCOVERY", 100, BadgeRarity.RARE),
+        BadgeDefinition("genres_10", "Genre Hopper", "Explore different genres", "category", "DISCOVERY", 10, BadgeRarity.COMMON),
+        BadgeDefinition("genres_25", "Eclectic", "Explore 25+ genres", "palette", "DISCOVERY", 25, BadgeRarity.RARE),
+
         // === Engagement ===
-        BadgeDefinition("night_owl", "Night Owl", "Late-night plays (12–5 AM)", "nightlight", "ENGAGEMENT", 100),
-        BadgeDefinition("early_bird", "Early Bird", "Early morning plays (5–8 AM)", "wb_sunny", "ENGAGEMENT", 100),
-        BadgeDefinition("marathon", "Marathon", "3+ hour listening session", "directions_run", "ENGAGEMENT", 1),
-        
+        BadgeDefinition("night_owl", "Night Owl", "Late-night plays (12–5 AM)", "nightlight", "ENGAGEMENT", 100, BadgeRarity.RARE),
+        BadgeDefinition("early_bird", "Early Bird", "Early morning plays (5–8 AM)", "wb_sunny", "ENGAGEMENT", 100, BadgeRarity.RARE),
+        BadgeDefinition("marathon", "Marathon", "Complete marathon listening sessions (3+ hours each)", "directions_run", "ENGAGEMENT", 5, BadgeRarity.EPIC),
+
         // === Level Milestones ===
-        BadgeDefinition("level_5", "Rising Star", "Reach Level 5", "grade", "LEVEL", 5),
-        BadgeDefinition("level_10", "Double Digits", "Reach Level 10", "looks_one", "LEVEL", 10),
-        BadgeDefinition("level_25", "Quarter Century", "Reach Level 25", "military_tech", "LEVEL", 25),
-        BadgeDefinition("level_50", "Halfway There", "Reach Level 50", "workspace_premium", "LEVEL", 50),
-        BadgeDefinition("level_75", "Elite Listener", "Reach Level 75", "shield", "LEVEL", 75),
-        BadgeDefinition("level_100", "The Centennial", "Reach Level 100", "emoji_events", "LEVEL", 100)
+        BadgeDefinition("level_5", "Rising Star", "Reach Level 5", "grade", "LEVEL", 5, BadgeRarity.COMMON),
+        BadgeDefinition("level_10", "Double Digits", "Reach Level 10", "looks_one", "LEVEL", 10, BadgeRarity.COMMON),
+        BadgeDefinition("level_25", "Quarter Century", "Reach Level 25", "military_tech", "LEVEL", 25, BadgeRarity.RARE),
+        BadgeDefinition("level_50", "Halfway There", "Reach Level 50", "workspace_premium", "LEVEL", 50, BadgeRarity.EPIC),
+        BadgeDefinition("level_75", "Elite Listener", "Reach Level 75", "shield", "LEVEL", 75, BadgeRarity.EPIC),
+        BadgeDefinition("level_100", "The Centennial", "Reach Level 100", "emoji_events", "LEVEL", 100, BadgeRarity.MYTHIC)
     )
-    
+
     data class BadgeDefinition(
         val badgeId: String,
         val name: String,
         val description: String,
         val iconName: String,
         val category: String,
-        val threshold: Int
+        val threshold: Int,
+        val rarity: BadgeRarity = BadgeRarity.COMMON
     )
 
     // =====================

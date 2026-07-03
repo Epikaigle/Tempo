@@ -1,6 +1,7 @@
 package me.avinas.tempo.ui.home.components
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -24,9 +25,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -219,38 +223,154 @@ fun HeroCard(
 }
 
 
+private val SpotlightRingColors = listOf(
+    Color(0xFF8B5CF6), // Violet
+    Color(0xFFF59E0B)  // Amber
+)
+
+@Composable
+private fun SpotlightRing(
+    albumArtUrl: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "SpotlightRing")
+
+    // Slow continuous rotation of the gradient ring
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 18000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "RingRotation"
+    )
+
+    // Gentle breathing pulse on the glow
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2200, easing = EaseInOutSine),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "RingPulse"
+    )
+
+    Box(
+        modifier = modifier
+            .size(64.dp)
+            .premiumClickable(onClick = onClick, pressedScale = 0.92f),
+        contentAlignment = Alignment.Center
+    ) {
+        // Outer glow halo — soft pulsing colored bloom
+        Canvas(
+            modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer { alpha = 0.55f * pulse }
+        ) {
+            val glowRadius = size.minDimension * 0.7f
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        SpotlightRingColors[0].copy(alpha = 0.45f),
+                        SpotlightRingColors[1].copy(alpha = 0.2f),
+                        Color.Transparent
+                    ),
+                    center = Offset(center.x, center.y),
+                    radius = glowRadius
+                ),
+                center = Offset(center.x, center.y),
+                radius = glowRadius
+            )
+        }
+
+        // Rotating smooth gradient ring — a single sweeping gradient blends the
+        // story's color arc into a flowing aurora rather than distinct segments
+        Canvas(
+            modifier = Modifier
+                .matchParentSize()
+                .rotate(rotation)
+        ) {
+            val stroke = size.minDimension * 0.07f
+            val diameter = size.minDimension - stroke
+            val topLeft = Offset(
+                (size.width - diameter) / 2f,
+                (size.height - diameter) / 2f
+            )
+
+            // Repeat the first color at the end so the sweep gradient loops seamlessly
+            val ringBrush = Brush.sweepGradient(
+                colors = SpotlightRingColors + SpotlightRingColors.first(),
+                center = Offset(center.x, center.y)
+            )
+            drawArc(
+                brush = ringBrush,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                ),
+                topLeft = topLeft,
+                size = androidx.compose.ui.geometry.Size(diameter, diameter)
+            )
+        }
+
+        // Album art (or fallback icon) clipped to a circle inside the ring
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.08f)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!albumArtUrl.isNullOrBlank()) {
+                CachedAsyncImage(
+                    imageUrl = albumArtUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    targetSizeDp = 88
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = SpotlightRingColors[0],
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun SpotlightStoryCard(
     onClick: () -> Unit,
+    onRingClick: () -> Unit,
+    albumArtUrl: String? = null,
+    storyAvailable: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     GlassCard(
         modifier = modifier
             .fillMaxWidth()
             .premiumClickable(onClick = onClick, pressedScale = 0.96f),
-        backgroundColor = me.avinas.tempo.ui.theme.NeonRed.copy(alpha = 0.12f), // Restored colorful glass x-factor
-        contentPadding = PaddingValues(24.dp)
+        backgroundColor = me.avinas.tempo.ui.theme.NeonRed.copy(alpha = 0.12f),
+        contentPadding = PaddingValues(16.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(me.avinas.tempo.ui.theme.NeonRed.copy(alpha = 0.05f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = me.avinas.tempo.ui.theme.NeonRed,
-                    modifier = Modifier.size(24.dp)
-                )
+            if (storyAvailable) {
+                SpotlightRing(albumArtUrl = albumArtUrl, onClick = onRingClick)
             }
-            
+
             Column(
                 modifier = Modifier.weight(1f)
             ) {
@@ -266,7 +386,7 @@ fun SpotlightStoryCard(
                     color = Color.White.copy(alpha = 0.8f)
                 )
             }
-            
+
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
                 contentDescription = null,

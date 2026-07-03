@@ -14,13 +14,12 @@ import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.local.entities.SpotifyEnrichmentStatus
-import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.remote.spotify.SpotifyApi
 import me.avinas.tempo.data.remote.spotify.SpotifyAuthManager
 import me.avinas.tempo.data.remote.spotify.SpotifyFullArtist
 import me.avinas.tempo.data.remote.spotify.SpotifyTrack
 import me.avinas.tempo.data.repository.ArtistLinkingService
-import me.avinas.tempo.data.repository.TrackRepository
+import me.avinas.tempo.data.repository.TrackResolver
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,7 +71,7 @@ class SpotifyTopItemsService @Inject constructor(
     private val spotifyApi: SpotifyApi,
     private val authManager: SpotifyAuthManager,
     private val artistDao: ArtistDao,
-    private val trackRepository: TrackRepository,
+    private val trackResolver: TrackResolver,
     private val artistLinkingService: ArtistLinkingService,
     private val enrichedMetadataDao: EnrichedMetadataDao,
     private val listeningEventDao: ListeningEventDao
@@ -502,38 +501,27 @@ class SpotifyTopItemsService @Inject constructor(
         spotifyTrack: SpotifyTrack,
         genres: List<String>
     ): Pair<Boolean, Long> {
-        // Check if track already exists
-        val existing = trackRepository.findBySpotifyId(spotifyTrack.id)
-        if (existing != null) {
-            // Track exists - just ensure metadata is up to date
-            updateEnrichedMetadataIfNeeded(existing.id, spotifyTrack, genres)
-            return false to existing.id
-        }
-        
-        // Create new track
         val artistNames = spotifyTrack.artists.joinToString(", ") { it.name }
-        val newTrack = Track(
-            title = spotifyTrack.name,
-            artist = artistNames,
-            album = spotifyTrack.album?.name,
-            duration = spotifyTrack.durationMs.toLong(),
-            albumArtUrl = spotifyTrack.album?.images?.firstOrNull()?.url,
-            spotifyId = spotifyTrack.id,
-            musicbrainzId = null,
-            primaryArtistId = null, // Will be linked by ArtistLinkingService
-            contentType = "MUSIC"
+
+        val resolution = trackResolver.resolve(
+            TrackResolver.Query(
+                title = spotifyTrack.name,
+                artist = artistNames,
+                album = spotifyTrack.album?.name,
+                albumArtUrl = spotifyTrack.album?.images?.firstOrNull()?.url,
+                duration = spotifyTrack.durationMs.toLong(),
+                spotifyId = spotifyTrack.id
+            )
         )
-        
-        val trackId = trackRepository.insert(newTrack)
-        val createdTrack = newTrack.copy(id = trackId)
-        
-        // Link artists
-        artistLinkingService.linkArtistsForTrack(createdTrack)
-        
-        // Create enriched metadata - ALREADY ENRICHED (no need for worker)
-        createEnrichedMetadata(trackId, spotifyTrack, genres)
-        
-        return true to trackId
+
+        if (!resolution.isNewTrack) {
+            updateEnrichedMetadataIfNeeded(resolution.trackId, spotifyTrack, genres)
+        } else {
+            artistLinkingService.linkArtistsForTrack(resolution.track)
+            createEnrichedMetadata(resolution.trackId, spotifyTrack, genres)
+        }
+
+        return resolution.isNewTrack to resolution.trackId
     }
     
     /**

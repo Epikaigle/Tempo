@@ -3,8 +3,10 @@ package me.avinas.tempo.ui.details
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.EnrichedMetadataRepository
+import me.avinas.tempo.data.repository.TrackAliasRepository
 import me.avinas.tempo.data.repository.TrackRepository
 import me.avinas.tempo.data.stats.DailyListening
 import me.avinas.tempo.data.stats.TagBasedMoodAnalyzer
@@ -35,6 +37,7 @@ class SongDetailsViewModel @Inject constructor(
     private val statsRepository: StatsRepository,
     private val enrichedMetadataRepository: EnrichedMetadataRepository,
     private val trackRepository: TrackRepository,
+    private val trackAliasRepository: TrackAliasRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -141,6 +144,135 @@ class SongDetailsViewModel @Inject constructor(
     fun dismissDeleteDialog() {
         _uiState.update { it.copy(showDeleteDialog = false) }
     }
+
+    fun showEditTitleDialog() {
+        _uiState.update {
+            it.copy(
+                showEditTitleDialog = true,
+                editTitleError = null,
+                mergeTargetTrack = null
+            )
+        }
+    }
+
+    fun dismissEditTitleDialog() {
+        _uiState.update {
+            it.copy(
+                showEditTitleDialog = false,
+                isSavingTitle = false,
+                editTitleError = null,
+                mergeTargetTrack = null
+            )
+        }
+    }
+
+    fun clearEditTitleWarnings() {
+        _uiState.update {
+            if (it.editTitleError == null) it
+            else it.copy(editTitleError = null)
+        }
+    }
+
+    /**
+     * Update the track title.
+     *
+     * Smart duplicate detection: before saving, checks whether another track already
+     * shares the new title + artist. If so, surfaces a merge offer instead of just
+     * updating the title — the user clearly wants to consolidate these tracks.
+     */
+    fun updateTrackTitle(newTitle: String) {
+        val trimmed = newTitle.trim()
+        val currentTitle = _uiState.value.trackDetails?.track?.title
+
+        if (trimmed.isEmpty()) {
+            _uiState.update { it.copy(editTitleError = "Title cannot be empty") }
+            return
+        }
+        if (currentTitle != null && trimmed == currentTitle) {
+            _uiState.update { it.copy(editTitleError = "Title is unchanged") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingTitle = true, editTitleError = null, mergeTargetTrack = null) }
+            try {
+                val artist = _uiState.value.trackDetails?.track?.artist.orEmpty()
+
+                // Smart: if the new title+artist matches another track, offer to merge
+                // instead of creating a duplicate entry
+                val existing = trackRepository.findByTitleAndArtist(trimmed, artist)
+                if (existing != null && existing.id != trackId) {
+                    _uiState.update {
+                        it.copy(isSavingTitle = false, mergeTargetTrack = existing)
+                    }
+                    // The edit dialog will be dismissed and a merge confirmation will appear
+                    return@launch
+                }
+
+                // Remember the original title so future plays still match this track
+                if (currentTitle != null) {
+                    trackAliasRepository.createAlias(trackId, currentTitle, artist)
+                }
+
+                trackRepository.updateTitle(trackId, trimmed)
+
+                _uiState.update {
+                    it.copy(
+                        isSavingTitle = false,
+                        showEditTitleDialog = false,
+                        mergeTargetTrack = null,
+                        editTitleError = null
+                    )
+                }
+                loadTrackDetails()
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isSavingTitle = false,
+                        editTitleError = e.message ?: "Failed to update title"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Confirm merging the current track into the duplicate that matched during
+     * title editing. This moves all listening history and deletes the current track.
+     * After merge, the UI navigates back (triggered by trackDetails == null).
+     */
+    fun confirmEditTitleMerge() {
+        val target = _uiState.value.mergeTargetTrack ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingTitle = true) }
+            try {
+                trackAliasRepository.mergeTracks(trackId, target.id)
+                _uiState.update {
+                    it.copy(
+                        isSavingTitle = false,
+                        showEditTitleDialog = false,
+                        mergeTargetTrack = null,
+                        trackDetails = null
+                    )
+                }
+                // Navigation back is handled by LaunchedEffect in UI (detects trackDetails == null)
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isSavingTitle = false,
+                        editTitleError = e.message ?: "Merge failed"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Dismiss the merge offer and return to editing.
+     */
+    fun cancelEditTitleMerge() {
+        _uiState.update { it.copy(mergeTargetTrack = null) }
+    }
 }
 
 @androidx.compose.runtime.Immutable
@@ -156,5 +288,9 @@ data class SongDetailsUiState(
     val recordLabel: String? = null,
     val error: String? = null,
     val showDeleteDialog: Boolean = false,
-    val isDeleting: Boolean = false
+    val isDeleting: Boolean = false,
+    val showEditTitleDialog: Boolean = false,
+    val isSavingTitle: Boolean = false,
+    val editTitleError: String? = null,
+    val mergeTargetTrack: Track? = null
 )

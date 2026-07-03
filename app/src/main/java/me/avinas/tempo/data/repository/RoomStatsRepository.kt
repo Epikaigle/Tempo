@@ -292,17 +292,17 @@ class RoomStatsRepository @Inject constructor(
     // Overview Stats
     // =====================
 
-    override suspend fun getListeningOverview(timeRange: TimeRange): ListeningOverview {
+    override suspend fun getListeningOverview(timeRange: TimeRange, withLeeway: Boolean): ListeningOverview {
         // Get user content filtering preferences for cache key
         val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
-        val key = "overview_${timeRange.name}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}"
+        val key = "overview_${timeRange.name}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
-            computeListeningOverview(timeRange)
+            computeListeningOverview(timeRange, withLeeway)
         }
     }
 
-    override suspend fun getInsights(timeRange: TimeRange): List<InsightCardData> = withContext(Dispatchers.IO) {
-        val (startTime, endTime) = getTimeRangeBounds(timeRange)
+    override suspend fun getInsights(timeRange: TimeRange, withLeeway: Boolean): List<InsightCardData> = withContext(Dispatchers.IO) {
+        val (startTime, endTime) = getTimeRangeBounds(timeRange, withLeeway)
         
         try {
             // Fetch raw JSONs and aggregate in memory
@@ -430,17 +430,17 @@ class RoomStatsRepository @Inject constructor(
         )
     }
 
-    override fun observeListeningOverview(timeRange: TimeRange): Flow<ListeningOverview> =
+    override fun observeListeningOverview(timeRange: TimeRange, withLeeway: Boolean): Flow<ListeningOverview> =
         // Use a bounded query as a change trigger; all() on large datasets (e.g. after Last.fm import)
         // overflows the 2MB CursorWindow and throws IllegalStateException. The actual data is
         // fetched inside computeListeningOverview() via targeted statsDao queries.
         listeningEventDao.recentEvents(1)
-            .map { _ -> computeListeningOverview(timeRange) }
+            .map { _ -> computeListeningOverview(timeRange, withLeeway) }
             .flowOn(Dispatchers.IO)
 
-    private suspend fun computeListeningOverview(timeRange: TimeRange): ListeningOverview {
-        val startTime = timeRange.getStartTimestamp()
-        val endTime = timeRange.getEndTimestamp()
+    private suspend fun computeListeningOverview(timeRange: TimeRange, withLeeway: Boolean = true): ListeningOverview {
+        val startTime = timeRange.getStartTimestamp(withLeeway = withLeeway)
+        val endTime = timeRange.getEndTimestamp(withLeeway = withLeeway)
         
         // Get user content filtering preferences
         val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
@@ -526,13 +526,14 @@ class RoomStatsRepository @Inject constructor(
         timeRange: TimeRange,
         sortBy: SortBy,
         page: Int,
-        pageSize: Int
+        pageSize: Int,
+        withLeeway: Boolean
     ): PaginatedResult<TopTrack> {
         // Get user content filtering preferences for cache key
         val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
-        val key = "top_tracks_${timeRange.name}_${sortBy.name}_${page}_${pageSize}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}"
+        val key = "top_tracks_${timeRange.name}_${sortBy.name}_${page}_${pageSize}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
-            computeTopTracks(timeRange, sortBy, page, pageSize)
+            computeTopTracks(timeRange, sortBy, page, pageSize, withLeeway)
         }
     }
 
@@ -540,10 +541,11 @@ class RoomStatsRepository @Inject constructor(
         timeRange: TimeRange,
         sortBy: SortBy,
         page: Int,
-        pageSize: Int
+        pageSize: Int,
+        withLeeway: Boolean = true
     ): PaginatedResult<TopTrack> {
-        val startTime = timeRange.getStartTimestamp()
-        val endTime = timeRange.getEndTimestamp()
+        val startTime = timeRange.getStartTimestamp(withLeeway = withLeeway)
+        val endTime = timeRange.getEndTimestamp(withLeeway = withLeeway)
         val offset = page * pageSize
         
         // Get user content filtering preferences
@@ -572,13 +574,14 @@ class RoomStatsRepository @Inject constructor(
         timeRange: TimeRange,
         sortBy: SortBy,
         page: Int,
-        pageSize: Int
+        pageSize: Int,
+        withLeeway: Boolean
     ): PaginatedResult<TopArtist> {
         // Get user content filtering preferences for cache key
         val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
-        val key = "top_artists_${timeRange.name}_${sortBy.name}_${page}_${pageSize}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}"
+        val key = "top_artists_${timeRange.name}_${sortBy.name}_${page}_${pageSize}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
-            computeTopArtists(timeRange, sortBy, page, pageSize)
+            computeTopArtists(timeRange, sortBy, page, pageSize, withLeeway)
         }
     }
 
@@ -586,10 +589,11 @@ class RoomStatsRepository @Inject constructor(
         timeRange: TimeRange,
         sortBy: SortBy,
         page: Int,
-        pageSize: Int
+        pageSize: Int,
+        withLeeway: Boolean = true
     ): PaginatedResult<TopArtist> {
-        val startTime = timeRange.getStartTimestamp()
-        val endTime = timeRange.getEndTimestamp()
+        val startTime = timeRange.getStartTimestamp(withLeeway = withLeeway)
+        val endTime = timeRange.getEndTimestamp(withLeeway = withLeeway)
         val offset = page * pageSize
         
         // Get user content filtering preferences
@@ -665,7 +669,7 @@ class RoomStatsRepository @Inject constructor(
         val itemsWithImages = coroutineScope {
             paginatedItems.map { artist ->
                 async {
-                    val imageUrl = getArtistImageUrlWithFallback(artist.artist)
+                    val imageUrl = getArtistImageUrlWithFallback(artist.artist, dbOnly = true)
                     val country = getArtistCountry(artist.artist)
                     // Try to find the artist ID from the database
                     val normalizedName = me.avinas.tempo.data.local.entities.Artist.normalizeName(artist.artist)
@@ -742,7 +746,7 @@ class RoomStatsRepository @Inject constructor(
      * 2. iTunes API search (high quality, no auth required, searches by this artist's name)
      * 3. Spotify API search (searches by this artist's name, saves to DB)
      */
-    private suspend fun getArtistImageUrlWithFallback(artistName: String): String? {
+    private suspend fun getArtistImageUrlWithFallback(artistName: String, dbOnly: Boolean = false): String? {
         // Resolve alias first if it exists
         val normalizedName = me.avinas.tempo.data.local.entities.Artist.normalizeName(artistName)
         val alias = artistAliasDao.findAlias(normalizedName)
@@ -772,6 +776,13 @@ class RoomStatsRepository @Inject constructor(
         
         
         val resolvedArtistName = artistEntity?.name ?: artistName
+
+        // DB-only mode: skip network API calls entirely (used on Spotlight critical path)
+        if (dbOnly) {
+            Log.d(TAG, "DB-only mode: no image in DB for '$resolvedArtistName', skipping API calls")
+            return null
+        }
+
         // Check session cache - if we already searched for this artist in this session, skip API calls
         val cacheKey = resolvedArtistName.lowercase().trim()
         synchronized(artistImageSearchCache) {
@@ -966,12 +977,12 @@ class RoomStatsRepository @Inject constructor(
         }
     }
 
-    override suspend fun getDailyListening(timeRange: TimeRange, limit: Int): List<DailyListening> {
-        val key = "daily_${timeRange.name}_$limit"
+    override suspend fun getDailyListening(timeRange: TimeRange, limit: Int, withLeeway: Boolean): List<DailyListening> {
+        val key = "daily_${timeRange.name}_${limit}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
             statsDao.getDailyListening(
-                timeRange.getStartTimestamp(),
-                timeRange.getEndTimestamp(),
+                timeRange.getStartTimestamp(withLeeway = withLeeway),
+                timeRange.getEndTimestamp(withLeeway = withLeeway),
                 limit
             )
         }
@@ -1069,12 +1080,12 @@ class RoomStatsRepository @Inject constructor(
         )
     }
 
-    override suspend fun getMostActiveHour(timeRange: TimeRange): HourlyDistribution? {
-        val key = "most_active_hour_${timeRange.name}"
+    override suspend fun getMostActiveHour(timeRange: TimeRange, withLeeway: Boolean): HourlyDistribution? {
+        val key = "most_active_hour_${timeRange.name}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
             statsDao.getMostActiveHour(
-                timeRange.getStartTimestamp(),
-                timeRange.getEndTimestamp()
+                timeRange.getStartTimestamp(withLeeway = withLeeway),
+                timeRange.getEndTimestamp(withLeeway = withLeeway)
             )
         }
     }
@@ -1093,16 +1104,16 @@ class RoomStatsRepository @Inject constructor(
     // Discovery Metrics
     // =====================
 
-    override suspend fun getDiscoveryStats(timeRange: TimeRange): DiscoveryStats {
-        val key = "discovery_${timeRange.name}"
+    override suspend fun getDiscoveryStats(timeRange: TimeRange, withLeeway: Boolean): DiscoveryStats {
+        val key = "discovery_${timeRange.name}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
-            computeDiscoveryStats(timeRange)
+            computeDiscoveryStats(timeRange, withLeeway)
         }
     }
 
-    private suspend fun computeDiscoveryStats(timeRange: TimeRange): DiscoveryStats {
-        val startTime = timeRange.getStartTimestamp()
-        val endTime = timeRange.getEndTimestamp()
+    private suspend fun computeDiscoveryStats(timeRange: TimeRange, withLeeway: Boolean = true): DiscoveryStats {
+        val startTime = timeRange.getStartTimestamp(withLeeway = withLeeway)
+        val endTime = timeRange.getEndTimestamp(withLeeway = withLeeway)
 
         val newArtists = statsDao.getNewArtistsCount(startTime, endTime)
         val newTracks = statsDao.getNewTracksCount(startTime, endTime)
@@ -1441,7 +1452,7 @@ class RoomStatsRepository @Inject constructor(
      * Use TagBasedMoodAnalyzer with MusicBrainz tags and getTrackEngagement() 
      * for mood/energy insights based on user behavior patterns.
      */
-    override suspend fun getAudioFeaturesStats(timeRange: TimeRange): AudioFeaturesStats? {
+    override suspend fun getAudioFeaturesStats(timeRange: TimeRange, withLeeway: Boolean): AudioFeaturesStats? {
         // Note: Spotify audio-features API was deprecated in November 2024.
         // This method now returns null. Use getTrackEngagement() and 
         // TagBasedMoodAnalyzer for mood/energy insights based on MusicBrainz tags
@@ -1571,11 +1582,11 @@ class RoomStatsRepository @Inject constructor(
         }
     }
 
-    override suspend fun getPeriodComparison(timeRange: TimeRange): PeriodComparison {
-        val key = "period_comp_${timeRange.name}"
+    override suspend fun getPeriodComparison(timeRange: TimeRange, withLeeway: Boolean): PeriodComparison {
+        val key = "period_comp_${timeRange.name}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
-            val currentStart = timeRange.getStartTimestamp()
-            val currentEnd = timeRange.getEndTimestamp()
+            val currentStart = timeRange.getStartTimestamp(withLeeway = withLeeway)
+            val currentEnd = timeRange.getEndTimestamp(withLeeway = withLeeway)
             val duration = currentEnd - currentStart
             
             val previousEnd = currentStart - 1
@@ -2184,8 +2195,8 @@ class RoomStatsRepository @Inject constructor(
         }
     }
 
-    private fun getTimeRangeBounds(timeRange: TimeRange): Pair<Long, Long> {
-        return Pair(timeRange.getStartTimestamp(), timeRange.getEndTimestamp())
+    private fun getTimeRangeBounds(timeRange: TimeRange, withLeeway: Boolean = true): Pair<Long, Long> {
+        return Pair(timeRange.getStartTimestamp(withLeeway = withLeeway), timeRange.getEndTimestamp(withLeeway = withLeeway))
     }
 
     override suspend fun getArtistRankPercentile(playCount: Int, timeRange: TimeRange): Double {
@@ -2233,40 +2244,102 @@ class RoomStatsRepository @Inject constructor(
         
         val key = "artist_playcounts_batch_${artistNames.hashCode()}"
         return getCached(key) {
-            // Build result map by querying each artist
-            // Note: For optimal performance, a dedicated batch DAO query would be better,
-            // but this still avoids the N+1 problem in the generator loop by pre-fetching
+            // Batch approach: resolve all names to artist IDs with ~3 queries,
+            // then fetch all play counts in 1 query.
+            val normalizedNames = artistNames.associateWith { name ->
+                me.avinas.tempo.data.local.entities.Artist.normalizeName(name)
+            }
+            val uniqueNormalized = normalizedNames.values.distinct()
+            
+            // 1. Batch fetch aliases for all normalized names
+            val aliases = artistAliasDao.findAliasesByNormalizedNames(uniqueNormalized)
+            val aliasMap = aliases.associateBy { it.originalNameNormalized }
+            
+            // 2. For names without aliases, batch fetch artists by normalized name
+            val namesNeedingArtistLookup = uniqueNormalized.filter { it !in aliasMap }
+            val artistsByNormalizedName = if (namesNeedingArtistLookup.isNotEmpty()) {
+                artistDao.getArtistsByNormalizedNames(namesNeedingArtistLookup).associateBy { it.normalizedName }
+            } else {
+                emptyMap()
+            }
+            
+            // 3. For names without alias or normalized match, batch fetch by exact name
+            val unresolvedNames = normalizedNames.filter { (name, norm) ->
+                norm !in aliasMap && norm !in artistsByNormalizedName
+            }.keys
+            val artistsByExactName = if (unresolvedNames.isNotEmpty()) {
+                unresolvedNames.mapNotNull { name ->
+                    artistDao.getArtistByName(name)
+                }.associateBy { it.name }
+            } else {
+                emptyMap()
+            }
+            
+            // 4. Resolve all artist IDs
+            val nameToArtistId = mutableMapOf<String, Long>()
+            artistNames.forEach { name ->
+                val norm = normalizedNames[name]!!
+                val alias = aliasMap[norm]
+                val artist = if (alias != null) {
+                    null // will resolve via batch ID lookup below
+                } else {
+                    artistsByNormalizedName[norm] ?: artistsByExactName[name]
+                }
+                if (alias != null) {
+                    nameToArtistId[name] = alias.targetArtistId
+                } else if (artist != null) {
+                    nameToArtistId[name] = artist.id
+                }
+            }
+            
+            // 5. Batch fetch play counts for all resolved artist IDs
+            val artistIds = nameToArtistId.values.distinct()
+            val playCountMap = if (artistIds.isNotEmpty()) {
+                statsDao.getArtistPlayCountsByIds(artistIds).associate { it.artistId to it.playCount }
+            } else {
+                emptyMap()
+            }
+            
+            // 6. Build result, falling back to partial match for unresolved names
             val result = mutableMapOf<String, Int>()
             artistNames.forEach { name ->
-                // Try ID-based lookup first (faster with proper indices)
-                val normalizedName = me.avinas.tempo.data.local.entities.Artist.normalizeName(name)
-                val alias = artistAliasDao.findAlias(normalizedName)
-                val artist = if (alias != null) {
-                    artistDao.getArtistById(alias.targetArtistId)
+                val artistId = nameToArtistId[name]
+                result[name] = if (artistId != null) {
+                    playCountMap[artistId] ?: 0
                 } else {
-                    artistDao.getArtistByNormalizedName(normalizedName)
-                        ?: artistDao.getArtistByName(name)
+                    // Fallback to partial match for parsed artists not in DB
+                    try { statsDao.getArtistPlayCountByPartialMatch(name) } catch (_: Exception) { 0 }
                 }
-                
-                val playCount = if (artist != null) {
-                    statsDao.getArtistPlayCountById(artist.id)
-                } else {
-                    // Fallback to partial match for parsed artists
-                    statsDao.getArtistPlayCountByPartialMatch(name)
-                }
-                result[name] = playCount
             }
             result
         }
     }
     
     override suspend fun getArtistImageUrlsBatch(artistNames: List<String>): Map<String, String?> {
-        // Implementation for batch fetching (could be optimized further)
-        // For now, simple parallel fetch to reuse existing logic
+        // DB-only fast path: returns cached images instantly without network calls.
+        // Network enrichment is handled separately by enrichMissingArtistImagesInBackground().
         return coroutineScope {
             artistNames.associateWith { name ->
-                async { getArtistImageUrlWithFallback(name) }
+                async { getArtistImageUrlWithFallback(name, dbOnly = true) }
             }.mapValues { it.value.await() }
+        }
+    }
+
+    /**
+     * Background enrichment: fetches missing artist images via network APIs
+     * and persists them to the database for future fast-path lookups.
+     * Fire-and-forget — call after cards are displayed so images are ready on next load.
+     */
+    override suspend fun enrichMissingArtistImagesInBackground(artistNames: List<String>) {
+        val missing = artistNames.distinct().filter { name ->
+            getArtistImageUrlWithFallback(name, dbOnly = true).isNullOrBlank()
+        }
+        if (missing.isEmpty()) return
+        Log.d(TAG, "Background enriching ${missing.size} missing artist images")
+        coroutineScope {
+            missing.map { name ->
+                async { getArtistImageUrlWithFallback(name, dbOnly = false) }
+            }.awaitAll()
         }
     }
 

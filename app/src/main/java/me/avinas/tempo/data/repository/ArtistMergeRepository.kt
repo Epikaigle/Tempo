@@ -172,6 +172,14 @@ class ArtistMergeRepository @Inject constructor(
                 // to avoid unique constraint violations
                 val updatedTarget = mergeArtistMetadata(sourceArtist, targetArtist)
                 if (updatedTarget != targetArtist) {
+                    // If copying musicbrainzId from source to target, clear it from
+                    // source first — the source still exists at this point and the
+                    // UNIQUE index on musicbrainz_id would otherwise reject the update.
+                    if (targetArtist.musicbrainzId.isNullOrBlank() &&
+                        !sourceArtist.musicbrainzId.isNullOrBlank()
+                    ) {
+                        artistDao.update(sourceArtist.copy(musicbrainzId = null))
+                    }
                     artistDao.update(updatedTarget)
                     Log.d(TAG, "Updated target artist metadata")
                 }

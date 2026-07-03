@@ -33,12 +33,25 @@ class TimeRangeTest {
         
         // Expected start: Monday, May 18, 2026 at 00:00:00 (previous week)
         val expectedStart = LocalDateTime.of(2026, 5, 18, 0, 0, 0)
-        assertEquals(toMillis(expectedStart), TimeRange.THIS_WEEK.getStartTimestamp(mockNow, zone))
+        assertEquals(toMillis(expectedStart), TimeRange.THIS_WEEK.getStartTimestamp(mockNow, zone, withLeeway = true))
         
         // Expected end: Sunday, May 24, 2026 at 23:59:59.999 (end of previous week)
         // Which is Monday, May 25, 2026 at 00:00:00 minus 1 millisecond
         val expectedEnd = toMillis(LocalDateTime.of(2026, 5, 25, 0, 0, 0)) - 1
-        assertEquals(expectedEnd, TimeRange.THIS_WEEK.getEndTimestamp(mockNow, zone))
+        assertEquals(expectedEnd, TimeRange.THIS_WEEK.getEndTimestamp(mockNow, zone, withLeeway = true))
+    }
+
+    @Test
+    fun testThisWeekWithoutLeeway() {
+        // Monday, May 25, 2026 at 10:00:00 (dayOfWeek = 1)
+        val mockNow = LocalDateTime.of(2026, 5, 25, 10, 0, 0)
+        
+        // Expected start: Monday, May 25, 2026 at 00:00:00 (current week)
+        val expectedStart = LocalDateTime.of(2026, 5, 25, 0, 0, 0)
+        assertEquals(toMillis(expectedStart), TimeRange.THIS_WEEK.getStartTimestamp(mockNow, zone, withLeeway = false))
+        
+        // Expected end: Monday, May 25, 2026 at 10:00:00 (current time)
+        assertEquals(toMillis(mockNow), TimeRange.THIS_WEEK.getEndTimestamp(mockNow, zone, withLeeway = false))
     }
 
     @Test
@@ -61,12 +74,25 @@ class TimeRangeTest {
         
         // Expected start: May 1, 2026 at 00:00:00 (previous month)
         val expectedStart = LocalDateTime.of(2026, 5, 1, 0, 0, 0)
-        assertEquals(toMillis(expectedStart), TimeRange.THIS_MONTH.getStartTimestamp(mockNow, zone))
+        assertEquals(toMillis(expectedStart), TimeRange.THIS_MONTH.getStartTimestamp(mockNow, zone, withLeeway = true))
         
         // Expected end: May 31, 2026 at 23:59:59.999 (end of previous month)
         // Which is June 1, 2026 at 00:00:00 minus 1 millisecond
         val expectedEnd = toMillis(LocalDateTime.of(2026, 6, 1, 0, 0, 0)) - 1
-        assertEquals(expectedEnd, TimeRange.THIS_MONTH.getEndTimestamp(mockNow, zone))
+        assertEquals(expectedEnd, TimeRange.THIS_MONTH.getEndTimestamp(mockNow, zone, withLeeway = true))
+    }
+
+    @Test
+    fun testThisMonthWithoutLeeway() {
+        // June 2, 2026 at 10:00:00 (dayOfMonth = 2)
+        val mockNow = LocalDateTime.of(2026, 6, 2, 10, 0, 0)
+        
+        // Expected start: June 1, 2026 at 00:00:00 (current month)
+        val expectedStart = LocalDateTime.of(2026, 6, 1, 0, 0, 0)
+        assertEquals(toMillis(expectedStart), TimeRange.THIS_MONTH.getStartTimestamp(mockNow, zone, withLeeway = false))
+        
+        // Expected end: June 2, 2026 at 10:00:00 (current time)
+        assertEquals(toMillis(mockNow), TimeRange.THIS_MONTH.getEndTimestamp(mockNow, zone, withLeeway = false))
     }
 
     @Test

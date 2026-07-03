@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
+
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
@@ -38,17 +39,30 @@ import me.avinas.tempo.ui.navigation.Screen
 fun SpotlightScreen(
     navController: NavController,
     viewModel: SpotlightViewModel = hiltViewModel(),
-    initialTimeRange: TimeRange? = null
+    initialTimeRange: TimeRange? = null,
+    directLaunch: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     
-    var showStory by remember { mutableStateOf(false) }
+    // For direct launches, show the story overlay immediately (loading screen) so the
+    // dashboard never flashes underneath before the story is ready to play.
+    var showStory by remember { mutableStateOf(directLaunch) }
     
     // Apply initial time range if provided (e.g., from reminder)
     LaunchedEffect(initialTimeRange) {
         if (initialTimeRange != null && initialTimeRange != uiState.selectedTimeRange) {
             viewModel.onTimeRangeSelected(initialTimeRange)
+        }
+    }
+
+    // Direct launch fallback: if the story can't be played (locked or no data),
+    // dismiss the overlay to reveal the dashboard instead of being stuck on a spinner.
+    LaunchedEffect(directLaunch, uiState.storyLoading, uiState.isStoryLocked, uiState.storyPages.isEmpty()) {
+        if (!directLaunch) return@LaunchedEffect
+        if (uiState.storyLoading) return@LaunchedEffect
+        if (uiState.isStoryLocked || uiState.storyPages.isEmpty()) {
+            showStory = false
         }
     }
     
@@ -89,6 +103,19 @@ fun SpotlightScreen(
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
+                    Spacer(modifier = Modifier.weight(1f))
+                    if (uiState.isTestMode) {
+                        Text(
+                            text = "TEST",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFBBF24),
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .background(Color(0xFFFBBF24).copy(alpha = 0.15f), CircleShape)
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+
                 }
             }
         ) { paddingValues ->

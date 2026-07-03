@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
@@ -27,6 +28,7 @@ import coil3.size.Precision
 import coil3.size.Scale
 import coil3.size.Size
 import coil3.request.allowHardware
+import coil3.request.transformations
 import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
 
 private const val TAG = "CachedAsyncImage"
@@ -57,6 +59,10 @@ private val URL_TRAILING_SEP_REGEX = Regex("[?&]$")
  * @param onSuccess Callback when image loads successfully (with the result)
  * @param onError Callback when image fails to load
  * @param allowHardware Whether to allow hardware bitmaps (set false for screenshots)
+ * @param blurRadius Optional blur radius applied via a software Coil [coil3.transform.Transformation].
+ *                   Unlike `Modifier.blur` (which uses RenderEffect and is dropped when drawn to a
+ *                   software Canvas during capture), this bakes the blur into the decoded bitmap so
+ *                   it renders identically in both on-screen previews and captured bitmaps.
  */
 @Composable
 fun CachedAsyncImage(
@@ -71,7 +77,8 @@ fun CachedAsyncImage(
     colorFilter: ColorFilter? = null,
     onSuccess: ((AsyncImagePainter.State.Success) -> Unit)? = null,
     onError: ((AsyncImagePainter.State.Error) -> Unit)? = null,
-    allowHardware: Boolean = true
+    allowHardware: Boolean = true,
+    blurRadius: Dp? = null
 ) {
     val context = LocalContext.current
     val imageLoader = context.imageLoader
@@ -107,10 +114,18 @@ fun CachedAsyncImage(
     val targetSizePx = remember(targetSizeDp, density) {
         targetSizeDp?.let { dp -> with(density) { dp.toFloat() * this.density }.toInt() }
     }
-    
+
+    // Blur radius in pixels (if any). Baked into the decoded bitmap via a software
+    // Transformation so it survives software-canvas capture (Modifier.blur's RenderEffect
+    // is dropped when a View is drawn to a software Canvas).
+    val blurRadiusPx = remember(blurRadius, density) {
+        blurRadius?.let { with(density) { it.toPx() } }
+    }
+
     // Build the image request with aggressive caching
-    // Include effectiveAllowHardware in the key so request rebuilds when capture context changes
-    val imageRequest = remember(fixedUrl, cacheKey, targetSizePx, effectiveAllowHardware) {
+    // Include effectiveAllowHardware and blurRadiusPx in the key so request rebuilds
+    // when capture context or blur settings change
+    val imageRequest = remember(fixedUrl, cacheKey, targetSizePx, effectiveAllowHardware, blurRadiusPx) {
         ImageRequest.Builder(context)
             .data(fixedUrl)
             // Use URL-based cache keys, ignoring size
@@ -125,7 +140,10 @@ fun CachedAsyncImage(
                 } else {
                     size(Size(1024, 1024))
                 }
-                precision(Precision.EXACT)
+                precision(Precision.INEXACT)
+                if (blurRadiusPx != null && blurRadiusPx > 0f) {
+                    transformations(BlurTransformation(blurRadiusPx))
+                }
             }
             // Disable hardware bitmaps when inside CaptureWrapper (software rendering)
             .allowHardware(effectiveAllowHardware)

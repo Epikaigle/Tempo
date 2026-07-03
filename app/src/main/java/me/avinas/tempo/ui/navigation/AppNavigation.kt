@@ -45,13 +45,12 @@ sealed class Screen(val route: String) {
     object Stats : Screen("stats")
     object History : Screen("history")
     object Settings : Screen("settings")
-    object Spotlight : Screen("spotlight?timeRange={timeRange}") {
-        fun createRoute(timeRange: String? = null): String {
-            return if (timeRange != null) {
-                "spotlight?timeRange=$timeRange"
-            } else {
-                "spotlight"
-            }
+    object Spotlight : Screen("spotlight?timeRange={timeRange}&directLaunch={directLaunch}") {
+        fun createRoute(timeRange: String? = null, directLaunch: Boolean = false): String {
+            val params = mutableListOf<String>()
+            if (timeRange != null) params.add("timeRange=$timeRange")
+            if (directLaunch) params.add("directLaunch=true")
+            return if (params.isEmpty()) "spotlight" else "spotlight?${params.joinToString("&")}"
         }
     }
     object SongDetails : Screen("song_details/{trackId}") {
@@ -72,6 +71,8 @@ sealed class Screen(val route: String) {
     data object SupportedApps : Screen("supported_apps")
     data object BackgroundProtection : Screen("background_protection")
     data object LastFmImport : Screen("lastfm_import")
+    data object SpotifyJsonImport : Screen("spotify_json_import")
+    data object YouTubeMusicImport : Screen("youtube_music_import")
     data object DesktopLink : Screen("desktop_link")
     object ShareCanvas : Screen("share_canvas/{initialCardId}") {
         fun createRoute(initialCardId: String) = "share_canvas/$initialCardId"
@@ -154,12 +155,8 @@ fun AppNavigation(
                                     navController.safeNavigate(Screen.ArtistDetails.createRouteByName(artistIdentifier))
                                 }
                             },
-                            onNavigateToSpotlight = { timeRange ->
-                                val route = if (timeRange != null) {
-                                    Screen.Spotlight.createRoute(timeRange.name)
-                                } else {
-                                    Screen.Spotlight.createRoute()
-                                }
+                            onNavigateToSpotlight = { timeRange, directLaunch ->
+                                val route = Screen.Spotlight.createRoute(timeRange?.name, directLaunch)
                                 navController.navigate(route)
                             },
                             onNavigateToSupportedApps = { navController.navigate(Screen.SupportedApps.route) },
@@ -212,6 +209,8 @@ fun AppNavigation(
                             onNavigateToSupportedApps = { navController.navigate(Screen.SupportedApps.route) },
                             onNavigateToBackgroundProtection = { navController.navigate(Screen.BackgroundProtection.route) },
                             onNavigateToLastFmImport = { navController.navigate(Screen.LastFmImport.route) },
+                            onNavigateToSpotifyJsonImport = { navController.navigate(Screen.SpotifyJsonImport.route) },
+                            onNavigateToYouTubeMusicImport = { navController.navigate(Screen.YouTubeMusicImport.route) },
                             onNavigateToDesktop = { navController.navigate(Screen.DesktopLink.route) }
                         )
                     }
@@ -240,6 +239,18 @@ fun AppNavigation(
                         )
                     }
 
+                    composable(Screen.SpotifyJsonImport.route) {
+                        me.avinas.tempo.ui.spotify.SpotifyJsonImportScreen(
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable(Screen.YouTubeMusicImport.route) {
+                        me.avinas.tempo.ui.youtube.YouTubeMusicImportScreen(
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
                     composable(Screen.DesktopLink.route) {
                         DesktopLinkScreen(
                             onNavigateBack = { navController.popBackStack() }
@@ -253,11 +264,17 @@ fun AppNavigation(
                                 type = androidx.navigation.NavType.StringType
                                 nullable = true
                                 defaultValue = null
+                            },
+                            androidx.navigation.navArgument("directLaunch") {
+                                type = androidx.navigation.NavType.BoolType
+                                defaultValue = false
                             }
                         )
                     ) { backStackEntry ->
                         val timeRangeString = backStackEntry.arguments?.getString("timeRange")
+                        val directLaunch = backStackEntry.arguments?.getBoolean("directLaunch") ?: false
                         val initialTimeRange = when (timeRangeString) {
+                            "THIS_WEEK" -> me.avinas.tempo.data.stats.TimeRange.THIS_WEEK
                             "THIS_MONTH" -> me.avinas.tempo.data.stats.TimeRange.THIS_MONTH
                             "THIS_YEAR" -> me.avinas.tempo.data.stats.TimeRange.THIS_YEAR
                             else -> null
@@ -265,7 +282,8 @@ fun AppNavigation(
                         
                         me.avinas.tempo.ui.spotlight.SpotlightScreen(
                             navController = navController,
-                            initialTimeRange = initialTimeRange
+                            initialTimeRange = initialTimeRange,
+                            directLaunch = directLaunch
                         )
                     }
 
@@ -274,9 +292,30 @@ fun AppNavigation(
                         arguments = listOf(androidx.navigation.navArgument("trackId") { type = androidx.navigation.NavType.LongType })
                     ) { backStackEntry ->
                         val trackId = backStackEntry.arguments?.getLong("trackId") ?: return@composable
+                        val scope = rememberCoroutineScope()
+                        val navigationViewModel: me.avinas.tempo.ui.navigation.NavigationViewModel = hiltViewModel()
+
                         me.avinas.tempo.ui.details.SongDetailsScreen(
                             trackId = trackId,
-                            onNavigateBack = { navController.popBackStack() }
+                            onNavigateBack = { navController.popBackStack() },
+                            onNavigateToArtist = { artistIdentifier ->
+                                if (artistIdentifier.startsWith("id:")) {
+                                    val artistId = artistIdentifier.removePrefix("id:").toLongOrNull()
+                                    if (artistId != null && artistId > 0) {
+                                        navController.safeNavigate(Screen.ArtistDetails.createRouteById(artistId))
+                                    }
+                                } else {
+                                    navController.safeNavigate(Screen.ArtistDetails.createRouteByName(artistIdentifier))
+                                }
+                            },
+                            onNavigateToAlbum = { albumTitle, artistName ->
+                                scope.launch {
+                                    val albumId = navigationViewModel.getAlbumIdByTitleAndArtist(albumTitle, artistName)
+                                    if (albumId != null) {
+                                        navController.safeNavigate(Screen.AlbumDetails.createRoute(albumId))
+                                    }
+                                }
+                            }
                         )
                     }
 

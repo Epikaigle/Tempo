@@ -28,6 +28,7 @@ import androidx.room.PrimaryKey
     ],
     indices = [
         Index(value = ["spotify_id"], unique = true),
+        Index(value = ["youtube_id"], unique = true),
         Index(value = ["artist"]),
         Index(value = ["album"]),
         Index(value = ["primary_artist_id"]),
@@ -54,6 +55,9 @@ data class Track(
     
     @ColumnInfo(name = "spotify_id") 
     val spotifyId: String?,
+    
+    @ColumnInfo(name = "youtube_id")
+    val youtubeId: String? = null,
     
     @ColumnInfo(name = "musicbrainz_id") 
     val musicbrainzId: String?,

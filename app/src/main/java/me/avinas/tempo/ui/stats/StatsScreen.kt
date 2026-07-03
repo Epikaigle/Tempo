@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Bolt
@@ -67,6 +68,7 @@ fun StatsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val listState = remember(uiState.selectedTab, uiState.selectedTimeRange, uiState.selectedSortBy) { LazyListState() }
     val scope = rememberCoroutineScope()
+    var showShareDialog by remember { mutableStateOf(false) }
 
     // Workaround for LazyColumn crash when item count drops below current scroll index
     val totalItemCount = remember(uiState.isLoading, uiState.items, uiState.isLoadingMore, uiState.selectedTab) {
@@ -272,6 +274,17 @@ fun StatsScreen(
                             Text(stringResource(R.string.stats_screen_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     },
+                    actions = {
+                        if (uiState.items.isNotEmpty()) {
+                            IconButton(onClick = { showShareDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = stringResource(R.string.stats_share),
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                 )
             }
@@ -294,6 +307,16 @@ fun StatsScreen(
             if (uiState.isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = TempoRed)
             }
+        }
+
+        if (showShareDialog) {
+            StatsShareDialog(
+                tab = uiState.selectedTab,
+                timeRange = uiState.selectedTimeRange,
+                items = uiState.items,
+                overview = uiState.analyticsData?.overview,
+                onDismiss = { showShareDialog = false }
+            )
         }
     }
 }

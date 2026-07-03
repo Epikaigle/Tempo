@@ -109,3 +109,7 @@ PRODUCTHUNT_RELAUNCH.md
 /.commandcode
 CHROMEWEBSTORE.md
 ANDROID_APP_VERIFICATION.md
+PERFORMANCE_ISSUES.md
+app/src/test/java/me/avinas/tempo/data/local/Migration49To50Test.kt
+app/src/test/java/me/avinas/tempo/data/stats/TimeRangeTest.kt
+app/src/test/java/me/avinas/tempo/data/stats/TimeRangeTest.kt

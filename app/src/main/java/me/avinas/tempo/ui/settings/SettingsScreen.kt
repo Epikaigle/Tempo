@@ -38,7 +38,6 @@ import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.SettingsOption
 import me.avinas.tempo.ui.components.SettingsSectionHeader
 import me.avinas.tempo.ui.components.SettingsSwitch
-import me.avinas.tempo.ui.spotify.SpotifyViewModel
 import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.utils.OemBackgroundHelper
 import me.avinas.tempo.utils.ReviewUtils
@@ -56,12 +55,12 @@ fun SettingsScreen(
     onNavigateToSupportedApps: (() -> Unit)? = null,
     onNavigateToBackgroundProtection: (() -> Unit)? = null,
     onNavigateToLastFmImport: (() -> Unit)? = null,
+    onNavigateToSpotifyJsonImport: (() -> Unit)? = null,
+    onNavigateToYouTubeMusicImport: (() -> Unit)? = null,
     onNavigateToDesktop: () -> Unit = {},
-    viewModel: SettingsViewModel = hiltViewModel(),
-    spotifyViewModel: SpotifyViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val spotifyAuthState by spotifyViewModel.authState.collectAsState()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val versionName = remember {
@@ -73,7 +72,6 @@ fun SettingsScreen(
     }
     val scope = rememberCoroutineScope()
     var showClearDataDialog by remember { mutableStateOf(false) }
-    var showDisconnectDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     
     // Import/Export states
@@ -459,45 +457,13 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Spotify
+                // Advanced Settings
                 SettingsSectionHeader(stringResource(R.string.settings_advanced_stats))
                 GlassCard(
                     contentPadding = PaddingValues(0.dp),
                     variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
                 ) {
                     Column {
-                        // Use authState flow to ensure UI updates after successful auth
-                        when (spotifyAuthState) {
-                            is me.avinas.tempo.data.remote.spotify.SpotifyAuthManager.AuthState.Connected -> {
-                                SettingsOption(
-                                    title = stringResource(R.string.settings_connected_as, spotifyViewModel.getUserDisplayName() ?: "Spotify User"),
-                                    subtitle = stringResource(R.string.settings_tap_to_disconnect),
-                                    onClick = { showDisconnectDialog = true }
-                                )
-                                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                                // Spotify-API-Only Mode toggle (only shown when connected)
-                                SettingsSwitch(
-                                    title = stringResource(R.string.settings_spotify_api_mode),
-                                    subtitle = if (uiState.spotifyApiOnlyMode) 
-                                        stringResource(R.string.settings_spotify_api_on)
-                                    else 
-                                        stringResource(R.string.settings_spotify_api_off),
-                                    checked = uiState.spotifyApiOnlyMode,
-                                    onCheckedChange = viewModel::toggleSpotifyApiOnlyMode
-                                )
-                            }
-                            else -> {
-                                SettingsOption(
-                                    title = stringResource(R.string.settings_connect_spotify),
-                                    subtitle = stringResource(R.string.settings_connect_spotify_desc),
-                                    onClick = { 
-                                        val intent = spotifyViewModel.startLogin()
-                                        context.startActivity(intent)
-                                    }
-                                )
-                            }
-                        }
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         SettingsSwitch(
                             title = stringResource(R.string.settings_extended_audio),
                             subtitle = stringResource(R.string.settings_extended_audio_desc),
@@ -540,6 +506,22 @@ fun SettingsScreen(
                                 onClick = { onNavigateToLastFmImport?.invoke() }
                             )
                         }
+                        
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        
+                        SettingsOption(
+                            title = "Import Spotify Data Export",
+                            subtitle = "Import listening history from Spotify JSON data export files",
+                            onClick = { onNavigateToSpotifyJsonImport?.invoke() }
+                        )
+
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+                        SettingsOption(
+                            title = "Import YouTube Music Data",
+                            subtitle = "Import listening history from YouTube Takeout (JSON format)",
+                            onClick = { onNavigateToYouTubeMusicImport?.invoke() }
+                        )
                     }
                 }
 
@@ -916,30 +898,6 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearDataDialog = false }) {
-                    Text(stringResource(R.string.settings_cancel))
-                }
-            }
-        )
-    }
-    
-    if (showDisconnectDialog) {
-        AlertDialog(
-            onDismissRequest = { showDisconnectDialog = false },
-            title = { Text(stringResource(R.string.settings_disconnect_spotify_title)) },
-            text = { Text(stringResource(R.string.settings_disconnect_spotify_msg)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        spotifyViewModel.disconnect()
-                        showDisconnectDialog = false
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text(stringResource(R.string.settings_disconnect))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDisconnectDialog = false }) {
                     Text(stringResource(R.string.settings_cancel))
                 }
             }

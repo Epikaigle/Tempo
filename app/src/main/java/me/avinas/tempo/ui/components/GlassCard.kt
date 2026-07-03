@@ -34,6 +34,7 @@ fun GlassCard(
     borderWidth: Dp? = null,
     shadowElevation: Dp = 0.dp,
     shadowSpotColor: Color = Color.Transparent,
+    fillMaxWidth: Boolean = true,
     content: @Composable () -> Unit
 ) {
     // Hero (HighProminence): light-catching top edge gradient for depth
@@ -60,7 +61,7 @@ fun GlassCard(
         if (variant == GlassCardVariant.HighProminence) {
             Brush.verticalGradient(
                 colors = listOf(
-                    androidx.compose.ui.graphics.lerp(backgroundColor, Color.White, 0.07f),
+                    androidx.compose.ui.graphics.lerp(backgroundColor, Color.White, 0.04f),
                     backgroundColor.copy(alpha = (backgroundColor.alpha * 0.85f).coerceAtLeast(0.02f))
                 )
             )
@@ -91,13 +92,14 @@ fun GlassCard(
                 ambientColor = Color.Transparent,
                 spotColor = shadowSpotColor
             )
+            .clip(shape)
             .background(backgroundBrush, shape)
             .border(stroke, shape = shape),
         contentAlignment = contentAlignment
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth() // Maintain horizontal fill
+                .then(if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier)
                 .padding(contentPadding)
         ) {
             content()

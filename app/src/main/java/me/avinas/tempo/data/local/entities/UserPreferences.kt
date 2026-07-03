@@ -34,6 +34,7 @@ data class UserPreferences(
     val hasSeenStatsItemClickTutorial: Boolean = false,
     
     // Spotlight Story Reminders: Track when reminders were last shown (YYYY-MM-DD format)
+    val lastWeeklyReminderShown: String? = null,  // Last date weekly reminder was shown
     val lastMonthlyReminderShown: String? = null, // Last date monthly reminder was shown
     val lastYearlyReminderShown: String? = null,  // Last date yearly reminder was shown
     val lastAllTimeReminderShown: String? = null,  // Last date all-time reminder was shown (6-month milestone)

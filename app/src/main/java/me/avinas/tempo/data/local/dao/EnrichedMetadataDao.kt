@@ -34,23 +34,50 @@ interface EnrichedMetadataDao {
     suspend fun deleteByTrackId(trackId: Long)
     
     /**
-     * Get tracks that need enrichment, prioritized by play count.
-     * Joins with listening_events to get play count for prioritization.
+     * Get tracks that need enrichment, prioritized by play count then recency.
+     * Joins with listening_events to get play count and most recent play for prioritization.
+     * Most-played and most-recently-played tracks are enriched first.
      */
     @Query("""
         SELECT em.* FROM enriched_metadata em
         LEFT JOIN (
-            SELECT track_id, COUNT(*) as play_count 
-            FROM listening_events 
+            SELECT track_id, COUNT(*) as play_count, MAX(timestamp) as last_played
+            FROM listening_events
             GROUP BY track_id
         ) le ON em.track_id = le.track_id
         WHERE em.enrichment_status = :status
-        ORDER BY COALESCE(le.play_count, 0) DESC, em.id ASC
+        ORDER BY COALESCE(le.play_count, 0) DESC, COALESCE(le.last_played, 0) DESC, em.id ASC
         LIMIT :limit
     """)
     suspend fun getTracksNeedingEnrichment(
         status: EnrichmentStatus = EnrichmentStatus.PENDING,
         limit: Int = 10
+    ): List<EnrichedMetadata>
+
+    /**
+     * Get top-played tracks needing enrichment, filtered by minimum play count.
+     * Used for post-import enrichment of large backlogs (e.g. YouTube Music imports
+     * with thousands of tracks) to prioritize frequently-played songs and defer
+     * rarely-played ones to the regular periodic worker.
+     *
+     * Orders by play_count DESC, then most recent play DESC.
+     */
+    @Query("""
+        SELECT em.* FROM enriched_metadata em
+        INNER JOIN (
+            SELECT track_id, COUNT(*) as play_count, MAX(timestamp) as last_played
+            FROM listening_events
+            GROUP BY track_id
+            HAVING COUNT(*) >= :minPlayCount
+        ) le ON em.track_id = le.track_id
+        WHERE em.enrichment_status = :status
+        ORDER BY le.play_count DESC, le.last_played DESC, em.id ASC
+        LIMIT :limit
+    """)
+    suspend fun getTopPlayedTracksNeedingEnrichment(
+        status: EnrichmentStatus = EnrichmentStatus.PENDING,
+        minPlayCount: Int = 2,
+        limit: Int = 50
     ): List<EnrichedMetadata>
     
     /**
@@ -354,6 +381,31 @@ interface EnrichedMetadataDao {
     suspend fun countEnrichedFromLastFmImport(
         status: EnrichmentStatus = EnrichmentStatus.ENRICHED
     ): Int
+
+    /**
+     * Re-queue tracks for enrichment that are FAILED or ENRICHED but missing album art.
+     * Used after YouTube Music import to retry enrichment for existing tracks.
+     * Returns the number of rows updated.
+     */
+    @Query("""
+        UPDATE enriched_metadata
+        SET enrichment_status = 'PENDING', retry_count = 0
+        WHERE track_id IN (:trackIds)
+        AND (enrichment_status = 'FAILED'
+             OR (enrichment_status = 'ENRICHED' AND (album_art_url IS NULL OR album_art_url = '')))
+    """)
+    suspend fun requeueTracksForEnrichment(trackIds: List<Long>): Int
+
+    /**
+     * Find track IDs from the given list that have no enriched_metadata entry.
+     * Used to create PENDING entries for existing tracks that were never queued for enrichment.
+     */
+    @Query("""
+        SELECT t.id FROM tracks t
+        WHERE t.id IN (:trackIds)
+        AND t.id NOT IN (SELECT track_id FROM enriched_metadata)
+    """)
+    suspend fun findTrackIdsWithoutEnrichedMetadata(trackIds: List<Long>): List<Long>
 }
 
 data class EnrichmentStatusCount(

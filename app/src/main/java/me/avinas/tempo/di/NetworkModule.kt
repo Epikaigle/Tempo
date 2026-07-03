@@ -1,15 +1,19 @@
 package me.avinas.tempo.di
 
+import android.content.Context
 import com.squareup.moshi.Moshi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import me.avinas.tempo.BuildConfig
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import okhttp3.Cache
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import java.io.File
 import javax.inject.Singleton
 
 @Module
@@ -21,7 +25,14 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttp(): OkHttpClient {
+    fun provideHttpCache(@ApplicationContext context: Context): Cache {
+        val cacheDir = File(context.cacheDir, "http_cache")
+        return Cache(cacheDir, 20L * 1024 * 1024)
+    }
+
+    @Provides
+    @Singleton
+    fun provideOkHttp(cache: Cache): OkHttpClient {
         val logging = HttpLoggingInterceptor()
         logging.level = if (BuildConfig.DEBUG) {
             HttpLoggingInterceptor.Level.BASIC
@@ -29,6 +40,7 @@ object NetworkModule {
             HttpLoggingInterceptor.Level.NONE
         }
         return OkHttpClient.Builder()
+            .cache(cache)
             .addInterceptor(logging)
             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)

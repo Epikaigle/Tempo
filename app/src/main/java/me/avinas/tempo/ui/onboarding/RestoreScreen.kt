@@ -18,10 +18,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
@@ -37,6 +40,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.hilt.navigation.compose.hiltViewModel
 import me.avinas.tempo.data.drive.DriveBackupInfo
 import me.avinas.tempo.data.drive.DriveRestoreResult
@@ -47,10 +56,13 @@ import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.ui.settings.BackupRestoreViewModel
 import me.avinas.tempo.ui.settings.DriveOperationState
-import me.avinas.tempo.ui.spotify.SpotifyViewModel
-import me.avinas.tempo.ui.spotify.SpotifyImportState
-import me.avinas.tempo.ui.spotify.TopItemsImportState
-import me.avinas.tempo.ui.spotify.HistoryReconstructionState
+import me.avinas.tempo.ui.spotify.SpotifyJsonImportViewModel
+import me.avinas.tempo.ui.spotify.SpotifyJsonImportUiState
+import me.avinas.tempo.data.spotify.SpotifyJsonImportService
+import me.avinas.tempo.ui.youtube.YouTubeMusicImportViewModel
+import me.avinas.tempo.ui.youtube.YouTubeMusicImportUiState
+import me.avinas.tempo.data.youtube.YouTubeMusicImportService
+import androidx.compose.material.icons.filled.VideoLibrary
 import me.avinas.tempo.ui.theme.TempoDarkBackground
 import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.ui.utils.adaptiveSizeByCategory
@@ -64,7 +76,6 @@ import java.util.Date
 import java.util.Locale
 import androidx.compose.ui.res.painterResource
 import me.avinas.tempo.R
-import me.avinas.tempo.data.remote.spotify.SpotifyAuthManager
 import me.avinas.tempo.ui.lastfm.LastFmViewModel
 import me.avinas.tempo.ui.lastfm.LastFmUiState
 import me.avinas.tempo.data.lastfm.LastFmImportService
@@ -74,8 +85,9 @@ fun RestoreScreen(
     onFinish: () -> Unit,
     onBack: () -> Unit,
     viewModel: BackupRestoreViewModel = hiltViewModel(),
-    spotifyViewModel: SpotifyViewModel = hiltViewModel(),
-    lastFmViewModel: LastFmViewModel = hiltViewModel()
+    lastFmViewModel: LastFmViewModel = hiltViewModel(),
+    spotifyJsonImportViewModel: SpotifyJsonImportViewModel = hiltViewModel(),
+    youTubeMusicImportViewModel: YouTubeMusicImportViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -98,39 +110,27 @@ fun RestoreScreen(
     // Handle system back press - block during active operations
     val driveOperation by viewModel.driveOperation.collectAsState()
     val importExportProgress by viewModel.importExportProgress.collectAsState()
-    val spotifyImportState by spotifyViewModel.importState.collectAsState()
-    val topItemsImportState by spotifyViewModel.topItemsImportState.collectAsState()
-    val reconstructionState by spotifyViewModel.reconstructionState.collectAsState()
-    val spotifyAuthState by spotifyViewModel.authState.collectAsState()
-    val isPendingSpotifyAuth by spotifyViewModel.isPendingAuth.collectAsState()
     
     // Last.fm State
     val lastFmUiState by lastFmViewModel.uiState.collectAsState()
     val lastFmImportProgress by lastFmViewModel.importProgress.collectAsState()
     
-    // Check for pending Spotify auth when screen resumes (user returning from browser)
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                spotifyViewModel.checkPendingAuth()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
-    
+    // Spotify JSON Import State
+    val spotifyJsonImportUiState by spotifyJsonImportViewModel.uiState.collectAsState()
+    val spotifyJsonImportState by spotifyJsonImportViewModel.importState.collectAsState()
+
+    // YouTube Music Import State
+    val youTubeMusicImportUiState by youTubeMusicImportViewModel.uiState.collectAsState()
+    val youTubeMusicImportState by youTubeMusicImportViewModel.importState.collectAsState()
+
     val isOperationActive = driveOperation is DriveOperationState.Downloading ||
         driveOperation is DriveOperationState.Restoring ||
         driveOperation is DriveOperationState.Uploading ||
         importExportProgress != null ||
-        spotifyImportState is SpotifyImportState.Importing ||
-        topItemsImportState is TopItemsImportState.Importing ||
-        reconstructionState is HistoryReconstructionState.Reconstructing ||
         lastFmUiState.isImporting ||
-        lastFmUiState.isLoading
+        lastFmUiState.isLoading ||
+        spotifyJsonImportUiState is SpotifyJsonImportUiState.Importing ||
+        youTubeMusicImportUiState is YouTubeMusicImportUiState.Importing
     
     androidx.activity.compose.BackHandler(enabled = !isOperationActive, onBack = onBack)
 
@@ -210,36 +210,6 @@ fun RestoreScreen(
                  viewModel.clearImportExportResult()
              }
              else -> {}
-        }
-    }
-    
-    // Spotify Top Items Import - Auto-finish on success
-    LaunchedEffect(topItemsImportState) {
-        when (val state = topItemsImportState) {
-            is TopItemsImportState.Success -> {
-                safeOnFinish() // Auto-finish on successful Spotify import
-                spotifyViewModel.clearTopItemsImportState()
-            }
-            is TopItemsImportState.Error -> {
-                snackbarHostState.showSnackbar("Spotify import failed: ${state.message}")
-                spotifyViewModel.clearTopItemsImportState()
-            }
-            else -> {}
-        }
-    }
-    
-    // History Reconstruction - Auto-finish on success
-    LaunchedEffect(reconstructionState) {
-        when (val state = reconstructionState) {
-            is HistoryReconstructionState.Success -> {
-                safeOnFinish() // Auto-finish on successful reconstruction
-                spotifyViewModel.clearReconstructionState()
-            }
-            is HistoryReconstructionState.Error -> {
-                snackbarHostState.showSnackbar("History reconstruction failed: ${state.message}")
-                spotifyViewModel.clearReconstructionState()
-            }
-            else -> {}
         }
     }
     
@@ -334,36 +304,6 @@ fun RestoreScreen(
                         textAlign = TextAlign.Start
                     )
 
-                    // Custom Beautiful Spotify Card
-                    SpotifyImportCard(
-                        onImport = {
-                            // If not connected, start login first (callback will trigger import)
-                            // If connected, use enhanced history reconstruction
-                            if (spotifyAuthState is SpotifyAuthManager.AuthState.Connected) {
-                                // Use the new history reconstruction for more accurate data
-                                spotifyViewModel.importWithHistoryReconstruction()
-                            } else {
-                                val loginIntent = spotifyViewModel.startLogin().apply {
-                                    // FLAG_ACTIVITY_NEW_TASK is required when starting an activity
-                                    // from a non-Activity Context (e.g., during onboarding where
-                                    // the composable context may not be an Activity), otherwise
-                                    // Android throws a SecurityException.
-                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                try {
-                                    context.startActivity(loginIntent)
-                                } catch (e: android.content.ActivityNotFoundException) {
-                                    // No browser available
-                                } catch (e: SecurityException) {
-                                    // Fallback: should not happen after adding NEW_TASK flag
-                                    activity?.startActivity(loginIntent)
-                                }
-                            }
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
                     // Last.fm Import Card
                     LastFmImportCard(
                         uiState = lastFmUiState,
@@ -375,6 +315,42 @@ fun RestoreScreen(
                         onClearError = lastFmViewModel::clearError,
                         onFinishImport = {
                             lastFmViewModel.reset()
+                            safeOnFinish()
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Spotify JSON Import Card
+                    SpotifyJsonImportCard(
+                        uiState = spotifyJsonImportUiState,
+                        importState = spotifyJsonImportState,
+                        onImport = { uris ->
+                            spotifyJsonImportViewModel.importFiles(context, uris)
+                        },
+                        onReset = {
+                            spotifyJsonImportViewModel.resetState()
+                        },
+                        onFinish = {
+                            spotifyJsonImportViewModel.resetState()
+                            safeOnFinish()
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // YouTube Music Import Card
+                    YouTubeMusicImportCard(
+                        uiState = youTubeMusicImportUiState,
+                        importState = youTubeMusicImportState,
+                        onImport = { uris ->
+                            youTubeMusicImportViewModel.importFiles(context, uris)
+                        },
+                        onReset = {
+                            youTubeMusicImportViewModel.resetState()
+                        },
+                        onFinish = {
+                            youTubeMusicImportViewModel.resetState()
                             safeOnFinish()
                         }
                     )
@@ -546,6 +522,49 @@ fun RestoreScreen(
                     Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.04f)))
                 }
     
+                // Spotify Import Reminder Banner
+                var showSpotifyReminder by remember { mutableStateOf(true) }
+                if (showSpotifyReminder) {
+                    GlassCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = adaptiveSizeByCategory(24.dp, 20.dp, 16.dp))
+                            .padding(bottom = 12.dp),
+                        variant = GlassCardVariant.LowProminence,
+                        contentPadding = PaddingValues(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = Color(0xFF1DB954),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "You can import Spotify data later from Settings",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { showSpotifyReminder = false },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Dismiss",
+                                    tint = Color.White.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+    
                 // Start Fresh Button (Pinned Footer)
                 Box(
                     modifier = Modifier
@@ -668,216 +687,6 @@ fun RestoreScreen(
         )
     }
     
-    // Spotify Import Progress Dialog
-    if (spotifyImportState is SpotifyImportState.Importing) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text("Importing from Spotify...") },
-            text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Fetching your recent plays",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
-            },
-            confirmButton = { }
-        )
-    }
-    
-    // Spotify Top Items Import Progress Dialog
-    if (topItemsImportState is TopItemsImportState.Importing) {
-        val importingState = topItemsImportState as TopItemsImportState.Importing
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text("Importing from Spotify...") },
-            text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    CircularProgressIndicator(
-                        progress = { importingState.current.toFloat() / importingState.total.coerceAtLeast(1) }
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = importingState.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
-            },
-            confirmButton = { }
-        )
-    }
-    
-    // History Reconstruction Progress Dialog (Enhanced Import)
-    if (reconstructionState is HistoryReconstructionState.Reconstructing) {
-        val state = reconstructionState as HistoryReconstructionState.Reconstructing
-        AlertDialog(
-            onDismissRequest = { },
-            title = { 
-                Text(
-                    text = when (state.phase) {
-                        "Time Machine" -> "🕐 Analyzing Your Liked Songs..."
-                        "Artifact Hunter" -> "📅 Finding Yearly Playlists..."
-                        "Smart Mixer" -> "🎵 Collecting Top Tracks..."
-                        "Generating History" -> "✨ Creating Your History..."
-                        else -> "Importing from Spotify..."
-                    }
-                )
-            },
-            text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    LinearProgressIndicator(
-                        progress = { state.progress.toFloat() / state.total.coerceAtLeast(1) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = state.message,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = when (state.phase) {
-                            "Time Machine" -> "Using exact dates from your liked songs"
-                            "Artifact Hunter" -> "Finding Your Top Songs playlists"
-                            "Smart Mixer" -> "Building from your top tracks"
-                            "Generating History" -> "Creating realistic listening patterns"
-                            else -> "Building your music history"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            },
-            confirmButton = { }
-        )
-    }
-    
-    // Spotify Import Success Dialog
-    if (spotifyImportState is SpotifyImportState.Success) {
-        val successState = spotifyImportState as SpotifyImportState.Success
-        AlertDialog(
-            onDismissRequest = { spotifyViewModel.clearImportState() },
-            title = { Text("Import Complete!") },
-            text = { 
-                Column {
-                    Text(
-                        if (successState.tracksImported > 0)
-                            "Imported ${successState.tracksImported} tracks from Spotify."
-                        else
-                            "No new tracks to import. Your history is already up to date!"
-                    )
-                    if (successState.tracksImported > 0) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Note: Spotify's API only provides your last ~50 plays. " +
-                                "Tempo will automatically track new plays going forward.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { 
-                    spotifyViewModel.clearImportState()
-                    if (successState.tracksImported > 0) {
-                        safeOnFinish() // Auto-finish on successful import with tracks
-                    }
-                }) {
-                    Text(if (successState.tracksImported > 0) "Continue" else "OK")
-                }
-            }
-        )
-    }
-    
-    // Spotify Import Error Dialog
-    if (spotifyImportState is SpotifyImportState.Error) {
-        val errorState = spotifyImportState as SpotifyImportState.Error
-        AlertDialog(
-            onDismissRequest = { spotifyViewModel.clearImportState() },
-            title = { Text("Import Failed") },
-            text = { Text(errorState.message) },
-            confirmButton = {
-                TextButton(onClick = { spotifyViewModel.clearImportState() }) {
-                    Text("OK")
-                }
-            }
-        )
-    }
-    
-    // Spotify Pending Auth Dialog - shown immediately when returning from browser
-    // This provides instant feedback while token exchange happens in background
-    if (isPendingSpotifyAuth && topItemsImportState !is TopItemsImportState.Importing) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text("Connecting to Spotify...") },
-            text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Completing authentication",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
-            },
-            confirmButton = { }
-        )
-    }
-}
-@Composable
-fun SpotifyImportCard(
-    onImport: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val spotifyGreen = Color(0xFF1DB954)
-    
-    Button(
-        onClick = onImport,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = spotifyGreen
-        ),
-        shape = RoundedCornerShape(16.dp),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-    ) {
-        Image(
-            painter = painterResource(id = R.drawable.spotify),
-            contentDescription = "Spotify",
-            modifier = Modifier.size(28.dp)
-        )
-        
-        Spacer(modifier = Modifier.width(12.dp))
-        
-        Text(
-            text = "Import from Spotify",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = Color.White
-        )
-    }
 }
 
 /**
@@ -1452,6 +1261,497 @@ private fun LastFmImportComplete(
             shape = RoundedCornerShape(12.dp)
         ) {
             Text("Continue", fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+fun SpotifyJsonImportCard(
+    uiState: SpotifyJsonImportUiState,
+    importState: SpotifyJsonImportService.ImportState,
+    onImport: (List<Uri>) -> Unit,
+    onReset: () -> Unit,
+    onFinish: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val spotifyGreen = Color(0xFF1DB954)
+    var isExpanded by remember { mutableStateOf(false) }
+    var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        selectedUris = uris
+        if (uris.isNotEmpty()) {
+            isExpanded = true
+        }
+    }
+
+    LaunchedEffect(uiState) {
+        if (uiState is SpotifyJsonImportUiState.Importing || uiState is SpotifyJsonImportUiState.Completed) {
+            isExpanded = true
+        }
+    }
+
+    GlassCard(
+        modifier = modifier.fillMaxWidth(),
+        variant = GlassCardVariant.LowProminence,
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        if (uiState !is SpotifyJsonImportUiState.Importing) {
+                            isExpanded = !isExpanded
+                        }
+                    }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(adaptiveSizeByCategory(48.dp, 44.dp, 40.dp))
+                        .background(spotifyGreen.copy(alpha = 0.2f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.spotify),
+                        contentDescription = null,
+                        modifier = Modifier.size(adaptiveSizeByCategory(28.dp, 26.dp, 24.dp))
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Spotify Data Export",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Import from JSON files",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+
+                if (uiState !is SpotifyJsonImportUiState.Importing) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        tint = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = isExpanded) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    when (uiState) {
+                        is SpotifyJsonImportUiState.Idle -> {
+                            Text(
+                                text = buildAnnotatedString {
+                                    append("Get your data from ")
+                                    withLink(
+                                        LinkAnnotation.Url(
+                                            url = "https://spotify.com/account/privacy",
+                                            styles = TextLinkStyles(style = SpanStyle(color = Color(0xFF1DB954), textDecoration = TextDecoration.Underline))
+                                        )
+                                    ) {
+                                        append("spotify.com/account/privacy")
+                                    }
+                                    append(", then select the JSON files. You can also do this later from Settings.")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Button(
+                                onClick = {
+                                    filePickerLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Select JSON Files")
+                            }
+
+                            if (selectedUris.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "${selectedUris.size} file(s) selected",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = spotifyGreen
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { onImport(selectedUris) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Start Import", fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+
+                        is SpotifyJsonImportUiState.Importing -> {
+                            val (message, progress) = when (importState) {
+                                is SpotifyJsonImportService.ImportState.Parsing -> {
+                                    "Parsing ${importState.fileName}..." to
+                                        (importState.filesProcessed.toFloat() / importState.totalFiles.coerceAtLeast(1))
+                                }
+                                is SpotifyJsonImportService.ImportState.Importing -> {
+                                    "Importing ${importState.current}/${importState.total}" to
+                                        (importState.current.toFloat() / importState.total.coerceAtLeast(1))
+                                }
+                                else -> "Preparing..." to 0f
+                            }
+
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = spotifyGreen,
+                                trackColor = Color.White.copy(alpha = 0.1f)
+                            )
+                        }
+
+                        is SpotifyJsonImportUiState.Completed -> {
+                            val result = uiState.result
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color(0xFF27AE60),
+                                modifier = Modifier.size(40.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "Import Complete!",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Text(
+                                text = "${result.tracksImported} tracks, ${result.eventsCreated} events",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Button(
+                                onClick = onFinish,
+                                colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Continue", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
+                        is SpotifyJsonImportUiState.Error -> {
+                            Icon(
+                                imageVector = Icons.Default.Error,
+                                contentDescription = null,
+                                tint = Color(0xFFE74C3C),
+                                modifier = Modifier.size(40.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = uiState.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = onReset,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Retry")
+                                }
+                                Button(
+                                    onClick = {
+                                        selectedUris = emptyList()
+                                        onReset()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = spotifyGreen),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Select Files")
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun YouTubeMusicImportCard(
+    uiState: YouTubeMusicImportUiState,
+    importState: YouTubeMusicImportService.ImportState,
+    onImport: (List<Uri>) -> Unit,
+    onReset: () -> Unit,
+    onFinish: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val youTubeRed = Color(0xFFFF0000)
+    var isExpanded by remember { mutableStateOf(false) }
+    var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        selectedUris = uris
+        if (uris.isNotEmpty()) {
+            isExpanded = true
+            onImport(uris)
+        }
+    }
+
+    LaunchedEffect(uiState) {
+        if (uiState is YouTubeMusicImportUiState.Importing || uiState is YouTubeMusicImportUiState.Completed) {
+            isExpanded = true
+        }
+    }
+
+    LaunchedEffect(uiState) {
+        if (uiState is YouTubeMusicImportUiState.Completed) {
+            kotlinx.coroutines.delay(2000)
+            onFinish()
+        }
+    }
+
+    GlassCard(
+        modifier = modifier.fillMaxWidth(),
+        variant = GlassCardVariant.LowProminence,
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        if (uiState !is YouTubeMusicImportUiState.Importing) {
+                            isExpanded = !isExpanded
+                        }
+                    }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(adaptiveSizeByCategory(48.dp, 44.dp, 40.dp))
+                        .background(youTubeRed.copy(alpha = 0.2f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.VideoLibrary,
+                        contentDescription = null,
+                        tint = youTubeRed,
+                        modifier = Modifier.size(adaptiveSizeByCategory(28.dp, 26.dp, 24.dp))
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "YouTube Music Takeout",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Import from YouTube Takeout (ZIP or JSON)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+
+                if (uiState !is YouTubeMusicImportUiState.Importing) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        tint = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = isExpanded) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    when (uiState) {
+                        is YouTubeMusicImportUiState.Idle -> {
+                            Text(
+                                text = buildAnnotatedString {
+                                    append("Get your data from ")
+                                    withLink(
+                                        LinkAnnotation.Url(
+                                            url = "https://takeout.google.com",
+                                            styles = TextLinkStyles(style = SpanStyle(color = youTubeRed, textDecoration = TextDecoration.Underline))
+                                        )
+                                    ) {
+                                        append("takeout.google.com")
+                                    }
+                                    append(", deselect all → select only \"YouTube and YouTube Music\" → only \"history\" → JSON format. Download the ZIP and select it here directly. You can also do this later from Settings.")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Button(
+                                onClick = {
+                                    filePickerLauncher.launch(arrayOf("application/zip", "application/x-zip", "application/json", "text/plain", "*/*"))
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = youTubeRed),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Select File")
+                            }
+                        }
+
+                        is YouTubeMusicImportUiState.Importing -> {
+                            val (message, progress) = when (importState) {
+                                is YouTubeMusicImportService.ImportState.Parsing -> {
+                                    "Parsing ${importState.fileName}..." to
+                                        (importState.filesProcessed.toFloat() / importState.totalFiles.coerceAtLeast(1))
+                                }
+                                is YouTubeMusicImportService.ImportState.Importing -> {
+                                    "Importing ${importState.current}/${importState.total}" to
+                                        (importState.current.toFloat() / importState.total.coerceAtLeast(1))
+                                }
+                                else -> "Preparing..." to 0f
+                            }
+
+                            Text(
+                                text = message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = youTubeRed,
+                                trackColor = Color.White.copy(alpha = 0.1f)
+                            )
+                        }
+
+                        is YouTubeMusicImportUiState.Completed -> {
+                            val result = uiState.result
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color(0xFF27AE60),
+                                modifier = Modifier.size(40.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "Import Complete!",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Text(
+                                text = "${result.tracksImported} tracks, ${result.eventsCreated} events",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "Continuing automatically...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.5f)
+                            )
+                        }
+
+                        is YouTubeMusicImportUiState.Error -> {
+                            Icon(
+                                imageVector = Icons.Default.Error,
+                                contentDescription = null,
+                                tint = Color(0xFFE74C3C),
+                                modifier = Modifier.size(40.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = uiState.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = onReset,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Retry")
+                                }
+                                Button(
+                                    onClick = {
+                                        selectedUris = emptyList()
+                                        onReset()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = youTubeRed),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Select Files")
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
         }
     }
 }

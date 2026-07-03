@@ -26,7 +26,7 @@
     <string name="home_tracking_active">✅ Music tracking active</string>
     <string name="home_tracking_hint">Play music in YouTube Music, Spotify, or any other music app. Tempo will automatically track your listening.</string>
     <string name="home_title">Home</string>
-    <string name="home_your_signal">Your Signal</string>
+    <string name="home_your_signal">Insights</string>
     <string name="home_settings">Settings</string>
     
     <!-- Widget descriptions -->
@@ -269,6 +269,12 @@
     <string name="details_merge_with">Merge with…</string>
     <string name="details_block_artist">BLOCK ENTIRE ARTIST</string>
     <string name="details_block_track">BLOCK THIS TRACK</string>
+    <string name="details_unique_tracks">Unique Songs</string>
+    <string name="details_unique_albums">Unique Albums</string>
+    <string name="details_peak_hour">Peak Listening Hour</string>
+    <string name="details_most_active">Most Active</string>
+    <string name="details_first_listen">First Listen</string>
+    <string name="details_last_listen">Last Listen</string>
     
     <!-- Merge dialogs -->
     <string name="merge_confirm">Confirm Merge</string>
@@ -363,6 +369,19 @@
     <string name="share_photo_archive">Photo: Archive</string>
     <string name="share_from_archive">From Archive</string>
     <string name="share_restored">Restored from memory</string>
+
+    <!-- Share Preview Dialog & Share Cards (artist/song detail) -->
+    <string name="share_close">Close</string>
+    <string name="share_failed">Failed to share image</string>
+    <string name="share_content_description">Share</string>
+    <string name="share_brand">TEMPO</string>
+    <string name="share_total_time">TOTAL TIME</string>
+    <string name="share_unique_songs">UNIQUE SONGS</string>
+    <string name="share_top_songs">TOP SONGS</string>
+    <string name="share_top_fan">🔥 TOP 1%</string>
+    <string name="share_country_format">📍 %1$s</string>
+    <string name="share_plays_format">%1$d plays</string>
+    <string name="share_min_format">%1$d min</string>
 
     <!-- Spotlight Reminder -->
     <string name="spotlight_reminder_view">View Story</string>
@@ -606,6 +625,77 @@
     <string name="spotlight_conclusion_top_artists">Top Artists</string>
     <string name="spotlight_conclusion_top_songs">Top Songs</string>
     <string name="spotlight_conclusion_top_genres">Top Genres</string>
+    <string name="spotlight_conclusion_closing">This was your year in music.</string>
+    <string name="spotlight_conclusion_closing_week">This was your week in music.</string>
+    <string name="spotlight_conclusion_closing_month">This was your month in music.</string>
+    <string name="spotlight_conclusion_closing_all_time">This was your journey in music.</string>
+    
+    <!-- Comparative surprise callouts -->
+    <string name="spotlight_compare_top_percent">More than %1$d%% of listeners</string>
+    <string name="spotlight_compare_streak_percent">Longer streak than %1$d%% of users</string>
+    <string name="spotlight_compare_discovery_percent">More diverse than %1$d%% of listeners</string>
+    <string name="spotlight_listening_streak_label">Your Listening Streak</string>
+    <string name="spotlight_day_in_a_row">day in a row</string>
+    <string name="spotlight_days_in_a_row">days in a row</string>
+    <string name="spotlight_best_streak">Best Streak</string>
+    <string name="spotlight_active_days">Active Days</string>
+    <string name="spotlight_listening_clock_label">Your Listening Clock</string>
+    <string name="spotlight_peak">peak</string>
+    <string name="spotlight_clock_12am">12AM</string>
+    <string name="spotlight_clock_6am">6AM</string>
+    <string name="spotlight_clock_12pm">12PM</string>
+    <string name="spotlight_clock_6pm">6PM</string>
+    <string name="spotlight_top_album_label">Your Top Album</string>
+    <string name="spotlight_plays">Plays</string>
+    <string name="spotlight_time_spent">Time Spent</string>
+    <string name="spotlight_tracks">Tracks</string>
+    <string name="spotlight_music_universe">Your Music Universe</string>
+    <string name="spotlight_artists">Artists</string>
+    <string name="spotlight_unique_songs">Unique Songs</string>
+    <string name="spotlight_new_artists_chip">+%1$d new artists %2$s</string>
+    <string name="spotlight_week_vs_weekend">Week vs. Weekend</string>
+    <string name="spotlight_min_per_day">min/day</string>
+    <string name="spotlight_weekdays">Weekdays</string>
+    <string name="spotlight_weekends">Weekends</string>
+    <string name="spotlight_day_mon">Mon</string>
+    <string name="spotlight_day_tue">Tue</string>
+    <string name="spotlight_day_wed">Wed</string>
+    <string name="spotlight_day_thu">Thu</string>
+    <string name="spotlight_day_fri">Fri</string>
+    <string name="spotlight_day_sat">Sat</string>
+    <string name="spotlight_day_sun">Sun</string>
+    <string name="spotlight_longest_binge">Your Longest Binge</string>
+    <string name="spotlight_marathon_session">marathon session</string>
+    <string name="spotlight_tracks_in_a_row">tracks in a row</string>
+    <string name="spotlight_straight">straight</string>
+    <string name="spotlight_when_you_listen">When You Listen</string>
+    <string name="spotlight_listener">listener</string>
+    <string name="spotlight_period_morning">Morning</string>
+    <string name="spotlight_period_afternoon">Afternoon</string>
+    <string name="spotlight_period_evening">Evening</string>
+    <string name="spotlight_period_night">Night</string>
+    <string name="spotlight_sound_profile">Your Sound Profile</string>
+    <string name="spotlight_mood_energy">Energy</string>
+    <string name="spotlight_mood_positivity">Positivity</string>
+    <string name="spotlight_mood_danceability">Danceability</string>
+    <string name="spotlight_mood_acoustic">Acoustic</string>
+    <string name="spotlight_badges_earned">Badges Earned</string>
+    <string name="spotlight_badges_count">%1$d / %2$d badges</string>
+    <string name="spotlight_level_up">LEVEL UP</string>
+    <string name="spotlight_level_label">LEVEL</string>
+    <string name="spotlight_earned_this_period">earned this period</string>
+    <string name="spotlight_lv_format">Lv %1$d</string>
+    <string name="spotlight_xp_format_k">+%.1fK XP</string>
+    <string name="spotlight_xp_format">+%1$d XP</string>
+    <string name="spotlight_new_title">NEW TITLE</string>
+    <string name="spotlight_level">Level</string>
+    <string name="spotlight_artists_discovered">Artists discovered</string>
+    <string name="spotlight_playtime_hours">%1$dh %2$dm total playtime</string>
+    <string name="spotlight_playtime_minutes">%1$dm total playtime</string>
+    <string name="spotlight_time_hours">%1$dh %2$dm</string>
+    <string name="spotlight_time_minutes">%1$dm</string>
+    <string name="spotlight_share_your_story">Share Your Story</string>
+    <string name="spotlight_top_track_setup_label">Your Top Track</string>
 
     <!-- Stats Screen -->
     <string name="stats_screen_title">Stats</string>
@@ -621,6 +711,37 @@
     <string name="stats_rank_1_track">#1 Track</string>
     <string name="stats_rank_1_artist">#1 Artist</string>
     <string name="stats_rank_1_album">#1 Album</string>
+
+    <!-- Stats Share -->
+    <string name="stats_share">Share</string>
+    <string name="stats_share_title">Share Stats</string>
+    <string name="stats_share_close">Close</string>
+    <string name="stats_share_button">Share to Instagram Stories</string>
+    <string name="stats_share_count_label">Items</string>
+    <string name="stats_share_theme_label">Theme</string>
+    <string name="stats_share_layout_label">Layout</string>
+    <string name="stats_share_theme_midnight">Midnight</string>
+    <string name="stats_share_theme_sunset">Sunset</string>
+    <string name="stats_share_theme_aurora">Aurora</string>
+    <string name="stats_share_theme_mono">Mono</string>
+    <string name="stats_share_layout_list">List</string>
+    <string name="stats_share_layout_podium">Podium</string>
+    <string name="stats_share_layout_grid">Grid</string>
+    <string name="stats_share_summary">Summary</string>
+    <string name="stats_share_on">On</string>
+    <string name="stats_share_off">Off</string>
+    <string name="stats_share_rank_1">#1</string>
+    <string name="stats_share_stat_time">TIME</string>
+    <string name="stats_share_stat_plays">PLAYS</string>
+    <string name="stats_share_stat_unique">UNIQUE</string>
+    <string name="stats_share_top_songs">Top Songs</string>
+    <string name="stats_share_top_artists">Top Artists</string>
+    <string name="stats_share_top_albums">Top Albums</string>
+    <string name="stats_share_period_today">Today</string>
+    <string name="stats_share_period_this_week">This Week</string>
+    <string name="stats_share_period_this_month">This Month</string>
+    <string name="stats_share_period_this_year">This Year</string>
+    <string name="stats_share_period_all_time">All Time</string>
 
     <!-- History Screen -->
     <string name="history_filter_title">Filter History</string>
@@ -958,6 +1079,14 @@
     <!-- More Details strings -->
     <string name="details_merge_duplicate">Merge Duplicate</string>
     <string name="details_delete_song">Delete Song</string>
+    <string name="details_edit_title">Edit Title</string>
+    <string name="details_edit_title_dialog_title">Edit Song Title</string>
+    <string name="details_edit_title_label">Song Title</string>
+    <string name="details_edit_title_empty">Title cannot be empty</string>
+    <string name="details_edit_title_unchanged">Title is unchanged</string>
+    <string name="details_edit_title_merge_title">Merge Duplicates?</string>
+    <string name="details_edit_title_merge_message">This song matches \"%1$s\" by %2$s. Would you like to merge the listening history instead?</string>
+    <string name="details_edit_title_merge_button">Merge</string>
     <string name="details_favorite_title">Favorite Track</string>
     <string name="details_favorite_subtitle">You\'ve listened to this a lot!</string>
     <string name="details_stat_times_played">Times Played</string>
@@ -1003,8 +1132,7 @@
     <!-- Constellation / InsightFeed -->
     <string name="constellation_hint">TAP OR DRAG STARS TO ORBIT &amp; DETAIL</string>
     <string name="constellation_active">ACTIVE DYNAMICS // %1$s</string>
-    <string name="vibe_constellation_title">Vibe Constellation</string>
-    <string name="vibe_constellation_desc">Your music signals are mapped as stars in the constellation. Drag them to stretch the connections, or tap a star to reveal details about your listening patterns.</string>
+
     <string name="insight_category_mood">LISTENING DYNAMICS // MOOD</string>
     <string name="insight_category_peak_time">LISTENING DYNAMICS // PEAK TIME</string>
     <string name="insight_category_binge">LISTENING DYNAMICS // BINGE SESSION</string>

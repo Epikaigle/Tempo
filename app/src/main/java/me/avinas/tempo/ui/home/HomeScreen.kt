@@ -5,9 +5,10 @@ import me.avinas.tempo.ui.theme.TempoDarkBackground
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Celebration
@@ -58,7 +59,7 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToTrack: (Long) -> Unit,
     onNavigateToArtist: (String) -> Unit,
-    onNavigateToSpotlight: (TimeRange?) -> Unit,
+    onNavigateToSpotlight: (TimeRange?, Boolean) -> Unit,
     onNavigateToSupportedApps: () -> Unit,
     onNavigateToProfile: () -> Unit = {}
 ) {
@@ -66,7 +67,7 @@ fun HomeScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     var isLaunchingReview by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
+    val lazyListState = rememberLazyListState()
     
     // Gamification state
     val gamificationRepo = viewModel.gamificationRepository
@@ -99,35 +100,29 @@ fun HomeScreen(
                 },
                 modifier = Modifier.fillMaxSize()
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                        .padding(bottom = 200.dp), // Space for Bottom Nav and Floating Filter
-                    verticalArrangement = Arrangement.spacedBy(0.dp) // Reset spacing to handle it manually
+                LazyColumn(
+                    state = lazyListState,
+                    contentPadding = PaddingValues(bottom = 200.dp),
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
                 ) {
-                    // NEW: Vibe Header with integrated Level Ring
-                    VibeHeader(
-                        energy = uiState.audioFeatures?.averageEnergy ?: 0.5f,
-                        valence = uiState.audioFeatures?.averageValence ?: 0.5f,
-                        userName = uiState.userName ?: stringResource(R.string.home_user_default),
-                        profileImagePath = uiState.profileImagePath,
-                        isNewUser = uiState.isNewUser,
-                        userLevel = userLevel?.currentLevel,
-                        levelProgress = userLevel?.levelProgress ?: 0f,
-                        levelTitle = userLevel?.title,
-                        isGamificationEnabled = uiState.isGamificationEnabled,
-                        onLevelClick = onNavigateToProfile
-                    )
+                    item(key = "header") {
+                        VibeHeader(
+                            energy = uiState.audioFeatures?.averageEnergy ?: 0.5f,
+                            valence = uiState.audioFeatures?.averageValence ?: 0.5f,
+                            userName = uiState.userName ?: stringResource(R.string.home_user_default),
+                            profileImagePath = uiState.profileImagePath,
+                            isNewUser = uiState.isNewUser,
+                            userLevel = userLevel?.currentLevel,
+                            levelProgress = userLevel?.levelProgress ?: 0f,
+                            levelTitle = userLevel?.title,
+                            isGamificationEnabled = uiState.isGamificationEnabled,
+                            onLevelClick = onNavigateToProfile
+                        )
+                    }
                     
-                    Column(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .padding(top = 16.dp), // Add padding after header
-                        verticalArrangement = Arrangement.spacedBy(24.dp)
-                    ) {
-                        if (uiState.hasData) {
-                            // Hero Card
+                    if (uiState.hasData) {
+                        item(key = "hero") {
                             val overview = uiState.listeningOverview
                             val comparison = uiState.periodComparison
                             
@@ -150,21 +145,34 @@ fun HomeScreen(
                                 uiState.dailyListening.map { it.totalTimeMs.toFloat() / 1000 / 60 }
                             }
                             
-                            // Use labels from ViewModel (already processed)
                             val dailyLabels = uiState.chartLabels
 
-                            HeroCard(
-                                userName = uiState.userName ?: stringResource(R.string.home_user_default), // Kept for Hero internal logic, visually hidden title
-                                listeningTime = timeString,
-                                periodLabel = uiState.selectedTimeRange.name.replace("_", " ").lowercase(),
-                                timeChangePercent = uiState.periodComparison?.timeChangePercent ?: 0.0,
-                                trendData = trendData,
-                                selectedRange = uiState.selectedTimeRange,
-                                dailyLabels = dailyLabels
-                            )
+                            val periodLabel = when(uiState.selectedTimeRange) {
+                                TimeRange.TODAY -> stringResource(R.string.period_today)
+                                TimeRange.THIS_WEEK -> stringResource(R.string.period_this_week)
+                                TimeRange.THIS_MONTH -> stringResource(R.string.period_this_month)
+                                TimeRange.THIS_YEAR -> stringResource(R.string.period_this_year)
+                                TimeRange.ALL_TIME -> stringResource(R.string.period_all_time)
+                            }
+                            
+                            Column(
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp)
+                                    .padding(top = 16.dp)
+                            ) {
+                                HeroCard(
+                                    userName = uiState.userName ?: stringResource(R.string.home_user_default),
+                                    listeningTime = timeString,
+                                    periodLabel = periodLabel,
+                                    timeChangePercent = uiState.periodComparison?.timeChangePercent ?: 0.0,
+                                    trendData = trendData,
+                                    selectedRange = uiState.selectedTimeRange,
+                                    dailyLabels = dailyLabels
+                                )
+                            }
+                        }
 
-
-                            // Trigger Walkthrough
+                        item(key = "spotlight") {
                             val walkthroughController = me.avinas.tempo.ui.components.LocalWalkthroughController.current
                             LaunchedEffect(uiState.hasData) {
                                 if (uiState.hasData) {
@@ -172,47 +180,67 @@ fun HomeScreen(
                                 }
                             }
 
-                            SpotlightStoryCard(
-                                onClick = {
-                                    walkthroughController.dismiss()
-                                    onNavigateToSpotlight(null)
-                                },
-                                modifier = Modifier.onGloballyPositioned { coordinates ->
-                                    walkthroughController.registerTarget(
-                                        me.avinas.tempo.ui.components.WalkthroughStep.HOME_SPOTLIGHT,
-                                        coordinates
-                                    )
-                                }
-                            )
+                            val directStoryTimeRange = remember {
+                                me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.getDirectStoryTimeRange()
+                            }
 
-                            // NEW: Quick Stats (Side-by-side Top Artist & Track)
-                            QuickStatsRow(
-                                topArtistName = uiState.topArtist?.artist,
-                                topArtistImage = uiState.topArtist?.imageUrl,
-                                topTrackName = uiState.topTrack?.title,
-                                topTrackImage = uiState.topTrack?.albumArtUrl,
-                                onArtistClick = {
-                                    val artist = uiState.topArtist
-                                    if (artist != null) {
-                                        val id = artist.artistId
-                                        if (id != null && id > 0) {
-                                            onNavigateToArtist("id:$id")
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                SpotlightStoryCard(
+                                    onClick = {
+                                        walkthroughController.dismiss()
+                                        if (directStoryTimeRange != null) {
+                                            onNavigateToSpotlight(directStoryTimeRange, false)
                                         } else {
-                                            onNavigateToArtist(artist.artist)
+                                            onNavigateToSpotlight(null, false)
+                                        }
+                                    },
+                                    onRingClick = {
+                                        walkthroughController.dismiss()
+                                        if (directStoryTimeRange != null) {
+                                            onNavigateToSpotlight(directStoryTimeRange, true)
+                                        }
+                                    },
+                                    albumArtUrl = uiState.spotlightTopTrack?.albumArtUrl,
+                                    storyAvailable = directStoryTimeRange != null,
+                                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                                        walkthroughController.registerTarget(
+                                            me.avinas.tempo.ui.components.WalkthroughStep.HOME_SPOTLIGHT,
+                                            coordinates
+                                        )
+                                    }
+                                )
+                            }
+                        }
+
+                        item(key = "quickstats") {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                QuickStatsRow(
+                                    topArtistName = uiState.topArtist?.artist,
+                                    topArtistImage = uiState.topArtist?.imageUrl,
+                                    topTrackName = uiState.topTrack?.title,
+                                    topTrackImage = uiState.topTrack?.albumArtUrl,
+                                    onArtistClick = {
+                                        val artist = uiState.topArtist
+                                        if (artist != null) {
+                                            val id = artist.artistId
+                                            if (id != null && id > 0) {
+                                                onNavigateToArtist("id:$id")
+                                            } else {
+                                                onNavigateToArtist(artist.artist)
+                                            }
+                                        }
+                                    },
+                                    onTrackClick = {
+                                        uiState.topTrack?.trackId?.let { trackId ->
+                                            onNavigateToTrack(trackId)
                                         }
                                     }
-                                },
-                                onTrackClick = {
-                                    uiState.topTrack?.trackId?.let { trackId ->
-                                        onNavigateToTrack(trackId)
-                                    }
-                                }
-                            )
-                            
+                                )
+                            }
+                        }
 
-                        } else if (!uiState.isLoading) {
-                            // Empty State
-                            // Use dynamic height to ensure centering and prevent truncation on varying screen sizes
+                    } else if (!uiState.isLoading) {
+                        item(key = "empty") {
                             me.avinas.tempo.ui.components.EmptyState(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -223,22 +251,55 @@ fun HomeScreen(
                         }
                     }
                     
-                    // NEW: Dynamic Insight Feed (Always visible)
+                    if (uiState.todayOverview?.totalPlayCount?.let { it > 0 } == true) {
+                        item(key = "todays_listen") {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                TodaysListenWidget(
+                                    todayOverview = uiState.todayOverview,
+                                    topTrack = uiState.todayTopTrack,
+                                    topArtist = uiState.todayTopArtist,
+                                    hourlyDistribution = uiState.todayHourlyDistribution,
+                                    onTrackClick = {
+                                        uiState.todayTopTrack?.trackId?.let { trackId ->
+                                            onNavigateToTrack(trackId)
+                                        }
+                                    },
+                                    onArtistClick = {
+                                        val artist = uiState.todayTopArtist
+                                        if (artist != null) {
+                                            val id = artist.artistId
+                                            if (id != null && id > 0) {
+                                                onNavigateToArtist("id:$id")
+                                            } else {
+                                                onNavigateToArtist(artist.artist)
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
                     if (uiState.insights.isNotEmpty()) {
-                        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                             Text(
+                        item(key = "insights_header") {
+                            Text(
                                 text = stringResource(R.string.home_your_signal),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
-                                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                                modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 12.dp)
                             )
-                            
-                            InsightFeed(
-                                insights = uiState.insights,
-                                onNavigateToTrack = onNavigateToTrack,
-                                onNavigateToArtist = onNavigateToArtist
-                            )
+                        }
+                        
+                        item(key = "insights_feed") {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                InsightFeed(
+                                    insights = uiState.insights,
+                                    onNavigateToTrack = onNavigateToTrack,
+                                    onNavigateToArtist = onNavigateToArtist
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
                         }
                     }
                 }
@@ -246,7 +307,9 @@ fun HomeScreen(
 
             val headerAlpha by remember {
                 derivedStateOf {
-                    (scrollState.value.toFloat() / 400f).coerceIn(0f, 1f)
+                    val firstVisibleItem = lazyListState.firstVisibleItemIndex
+                    val firstVisibleItemScrollOffset = lazyListState.firstVisibleItemScrollOffset
+                    if (firstVisibleItem > 0) 1f else (firstVisibleItemScrollOffset.toFloat() / 400f).coerceIn(0f, 1f)
                 }
             }
             val headerAlphaAnimated by animateFloatAsState(
@@ -342,7 +405,7 @@ fun HomeScreen(
                 onDismiss = viewModel::dismissSpotlightReminder,
                 onViewStory = {
                     // Navigate to Spotlight with the specified time range
-                    onNavigateToSpotlight(uiState.reminderTimeRange)
+                    onNavigateToSpotlight(uiState.reminderTimeRange, false)
                     // Dismiss the reminder
                     viewModel.dismissSpotlightReminder()
                 }

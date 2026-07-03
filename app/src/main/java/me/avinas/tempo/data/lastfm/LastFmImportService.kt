@@ -27,6 +27,7 @@ import me.avinas.tempo.data.remote.lastfm.LastFmTopTrack
 import me.avinas.tempo.data.repository.ArtistLinkingService
 import me.avinas.tempo.data.repository.ListeningRepository
 import me.avinas.tempo.data.repository.TrackRepository
+import me.avinas.tempo.data.repository.TrackResolver
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -64,6 +65,7 @@ class LastFmImportService @Inject constructor(
     @param:dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val lastFmApi: LastFmApi,
     private val trackRepository: TrackRepository,
+    private val trackResolver: TrackResolver,
     private val listeningRepository: ListeningRepository,
     private val artistLinkingService: ArtistLinkingService,
     private val enrichedMetadataDao: EnrichedMetadataDao,
@@ -220,22 +222,9 @@ class LastFmImportService @Inject constructor(
     // Key: "title|artist" normalized, Value: Track
     // ConcurrentHashMap: cancelImport() may clear this while import iterates it.
     private val trackCache = java.util.concurrent.ConcurrentHashMap<String, Track>()
-    // Separate cache for confirmed misses (looked up in DB but not found).
-    // ConcurrentHashMap does not allow null values, so we track misses separately.
-    private val trackMissCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
     // Batch pending EnrichedMetadata for bulk insert
     private val pendingMetadata = mutableListOf<EnrichedMetadata>()
-
-    // Batch pending Tracks for bulk insert
-    // Key: cacheKey ("title|artist"), Value: PendingTrack with scrobble data
-    private data class PendingTrack(
-        val track: Track,
-        val cacheKey: String,
-        val scrobble: LastFmScrobble
-    )
-    // ConcurrentHashMap: cancelImport() may clear this while import iterates it.
-    private val pendingTracks = java.util.concurrent.ConcurrentHashMap<String, PendingTrack>()
     
     // ==================== API Error Handling ====================
     
@@ -611,21 +600,16 @@ class LastFmImportService @Inject constructor(
                     val trackTitle = scrobble.name ?: continue
                     
                     // Find or create track
-                    var existingTrack = trackRepository.findByTitleAndArtist(trackTitle, artistName)
-                    
-                    val trackId = existingTrack?.id ?: run {
-                        // Create new track
-                        val newTrack = Track(
+                    val resolution = trackResolver.resolve(
+                        TrackResolver.Query(
                             title = trackTitle,
                             artist = artistName,
                             album = scrobble.album?.name,
-                            duration = null,
                             albumArtUrl = scrobble.getBestImageUrl(),
-                            spotifyId = null,
                             musicbrainzId = scrobble.mbid
                         )
-                        trackRepository.insert(newTrack)
-                    }
+                    )
+                    val trackId = resolution.trackId
                     
                     // Check for replay (same track within 5 minutes)
                     val isReplay = listeningEventDao.wasRecentlyPlayed(
@@ -648,7 +632,7 @@ class LastFmImportService @Inject constructor(
                 if (eventsToInsert.isNotEmpty()) {
                     val insertResult = listeningEventDao.insertAllBatchedWithDedup(eventsToInsert)
                     newScrobbles += insertResult.inserted
-                    Log.d(TAG, "Sync page $page: inserted ${insertResult.inserted}, skipped ${insertResult.skipped}")
+                    Log.d(TAG, "Sync page $page: inserted ${insertResult.inserted}, skipped ${insertResult.skipped}, replaced ${insertResult.replaced}")
                 }
                 
                 // Check if there are more pages
@@ -988,6 +972,9 @@ class LastFmImportService @Inject constructor(
                         // Count actual insertions (not duplicates skipped at batch level)
                         eventsImported += batchResult.inserted
                         duplicatesSkipped += batchResult.skipped
+                        if (batchResult.replaced > 0) {
+                            Log.d(TAG, "Batch: inserted ${batchResult.inserted}, skipped ${batchResult.skipped}, replaced ${batchResult.replaced}")
+                        }
                         activeEventsBatch.clear()
                     }
                 } else {
@@ -1059,14 +1046,9 @@ class LastFmImportService @Inject constructor(
         
         // Flush any remaining pending metadata
         flushPendingMetadata()
-        
-        // Flush any remaining pending tracks (shouldn't be any at this point)
-        flushPendingTracks()
-        
+
         // Clear performance caches
         trackCache.clear()
-        trackMissCache.clear()
-        pendingTracks.clear()
         Log.d(TAG, "Import complete - caches cleared")
         
         // Calculate duration
@@ -1118,51 +1100,26 @@ class LastFmImportService @Inject constructor(
         var track = trackCache[cacheKey]
         var isNewTrack = false
         var isNewArtist = false
-        var needsMetadata = false
-        
-        // Check if we've already looked this up
-        if (!trackCache.containsKey(cacheKey) && !trackMissCache.containsKey(cacheKey)) {
-            // First time seeing this track - check database
-            track = trackRepository.findByTitleAndArtist(trackTitle, artistName)
-            if (track == null) {
-                // Try fuzzy match
-                track = trackRepository.findByTitleAndArtistFuzzy(trackTitle, artistName)
-            }
-            // Cache the result (use miss cache for null to avoid repeated lookups)
-            if (track != null) {
-                trackCache[cacheKey] = track
-            } else {
-                trackMissCache[cacheKey] = true
-            }
-        }
-        
+
         if (track == null) {
-            // Create new track and insert immediately to DB
-            val newTrack = Track(
-                title = trackTitle,
-                artist = artistName,
-                album = scrobble.album?.name,
-                duration = null, // Will be enriched later
-                albumArtUrl = scrobble.getBestImageUrl(),
-                spotifyId = null,
-                musicbrainzId = scrobble.mbid,
-                primaryArtistId = null, // DEFERRED: Artist linking handled by background worker
-                contentType = "MUSIC"
+            val resolution = trackResolver.resolve(
+                TrackResolver.Query(
+                    title = trackTitle,
+                    artist = artistName,
+                    album = scrobble.album?.name,
+                    albumArtUrl = scrobble.getBestImageUrl(),
+                    musicbrainzId = scrobble.mbid
+                )
             )
-
-            val trackId = trackRepository.insert(newTrack)
-            track = newTrack.copy(id = trackId)
+            track = resolution.track
             trackCache[cacheKey] = track
-            queueEnrichedMetadata(track, scrobble)
-            isNewTrack = true
-
-            // DEFERRED: Skip artist linking during import for performance
-            // The existing ArtistLinkingService.processUnlinkedTracks() background worker
-            // will handle this after import completes
-            isNewArtist = true // Assume new artist for stats, will be deduplicated later
+            isNewTrack = resolution.isNewTrack
+            if (isNewTrack) {
+                queueEnrichedMetadata(track, scrobble)
+                isNewArtist = true
+            }
         }
-        
-        // Ensure we have a valid track with ID
+
         val finalTrack = track ?: return ScrobblePrepareResult.Error("Failed to create or find track")
         
         // OPTIMIZATION: Skip per-scrobble duplicate check during import.
@@ -1237,33 +1194,6 @@ class LastFmImportService @Inject constructor(
             Log.w(TAG, "Failed to flush ${pendingMetadata.size} metadata records", e)
         }
         pendingMetadata.clear()
-    }
-    
-    /**
-     * Flush pending tracks to database in batch.
-     * After insert, updates the cache with the inserted tracks (with IDs).
-     */
-    private suspend fun flushPendingTracks() {
-        if (pendingTracks.isEmpty()) return
-        try {
-            val tracksToInsert = pendingTracks.values.map { it.track }
-            val insertedIds = trackRepository.insertAll(tracksToInsert)
-            
-            // Update cache with inserted tracks (now with IDs)
-            pendingTracks.values.forEachIndexed { index, pending ->
-                val insertedId = insertedIds.getOrNull(index) ?: 0L
-                if (insertedId > 0) {
-                    val trackWithId = pending.track.copy(id = insertedId)
-                    trackCache[pending.cacheKey] = trackWithId
-                    // Queue metadata for the track
-                    queueEnrichedMetadata(trackWithId, pending.scrobble)
-                }
-            }
-            Log.d(TAG, "Flushed ${pendingTracks.size} pending tracks")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to flush ${pendingTracks.size} pending tracks", e)
-        }
-        pendingTracks.clear()
     }
     
     /**
@@ -1352,8 +1282,6 @@ class LastFmImportService @Inject constructor(
         lovedTrackKeys.clear()
         // Clear performance caches
         trackCache.clear()
-        trackMissCache.clear()
-        pendingTracks.clear()
         pendingMetadata.clear()
     }
     
@@ -1459,25 +1387,19 @@ class LastFmImportService @Inject constructor(
                 ?: return@withContext Result.failure(Exception("Archive entry not found"))
             
             // Find or create the track
-            var track = trackRepository.findByTitleAndArtist(archive.trackTitle, archive.artistName)
-            var isNewTrack = false
-            
-            if (track == null) {
-                val newTrack = Track(
+            val resolution = trackResolver.resolve(
+                TrackResolver.Query(
                     title = archive.trackTitle,
                     artist = archive.artistName,
                     album = archive.albumName,
-                    duration = null,
                     albumArtUrl = archive.albumArtUrl,
-                    spotifyId = null,
-                    musicbrainzId = archive.musicbrainzId,
-                    primaryArtistId = null,
-                    contentType = "MUSIC"
+                    musicbrainzId = archive.musicbrainzId
                 )
-                val trackId = trackRepository.insert(newTrack)
-                track = newTrack.copy(id = trackId)
-                isNewTrack = true
-                
+            )
+            val track = resolution.track
+            val isNewTrack = resolution.isNewTrack
+
+            if (isNewTrack) {
                 // Link artists
                 try {
                     artistLinkingService.linkArtistsForTrack(track)
@@ -1525,7 +1447,7 @@ class LastFmImportService @Inject constructor(
             statsRepository.invalidateCache()
             
             Log.i(TAG, "Promoted ${archive.trackTitle} - ${archive.artistName}: " +
-                "${insertResult.inserted} events created, ${insertResult.skipped} duplicates skipped")
+                "${insertResult.inserted} events created, ${insertResult.skipped} duplicates skipped, ${insertResult.replaced} replaced")
             
             Result.success(PromotionResult(
                 trackId = track.id,

@@ -383,8 +383,8 @@ class MusicTrackingService : NotificationListenerService() {
         private const val SONG_END_PHASE_MS = 30_000L      // Last 30 seconds
         private const val SHORT_TRACK_THRESHOLD_MS = 90_000L // Tracks under 90 seconds
         
-        // Minimum play duration to record (5 seconds)
-        private const val MIN_PLAY_DURATION_MS = 5_000L
+        // Minimum play duration to record (25 seconds)
+        private const val MIN_PLAY_DURATION_MS = 25_000L
         
         // Skip threshold: plays under 30% completion are considered skips
         private const val SKIP_COMPLETION_THRESHOLD = 30
@@ -749,20 +749,28 @@ class MusicTrackingService : NotificationListenerService() {
         title: String,
         artist: String
     ): Boolean {
-        // Get user preferences - use defaults if prefs is null
-        val prefs = userPreferencesDao.getSync()
-        val filterPodcasts = prefs?.filterPodcasts ?: true  // Default: filter podcasts
-        val filterAudiobooks = prefs?.filterAudiobooks ?: true  // Default: filter audiobooks
+        val now = System.currentTimeMillis()
+        if (now - lastPreferencesFetch > PREFERENCES_CACHE_TTL_MS) {
+            try {
+                val prefs = userPreferencesDao.getSync()
+                cachedFilterPodcasts = prefs?.filterPodcasts ?: true
+                cachedFilterAudiobooks = prefs?.filterAudiobooks ?: true
+                cachedSpotifyApiOnlyMode = prefs?.spotifyApiOnlyMode ?: false
+                cachedMergeAlternateVersions = prefs?.mergeAlternateVersions ?: true
+                lastPreferencesFetch = now
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to refresh preferences in shouldFilterContent, using cached", e)
+            }
+        }
+
+        val filterPodcasts = cachedFilterPodcasts
+        val filterAudiobooks = cachedFilterAudiobooks
         
-        // Layer 0: Spotify-API-Only mode - skip Spotify notifications entirely
-        // When enabled, we fetch plays from Spotify's API instead of notifications
-        if (prefs?.spotifyApiOnlyMode == true && packageName == "com.spotify.music") {
+        if (cachedSpotifyApiOnlyMode && packageName == "com.spotify.music") {
             Log.d(TAG, "Filtering Spotify notification (Spotify-API-Only mode enabled)")
             return true
         }
         
-        // Layer 1: App-level filtering (ONLY for dedicated apps, NOT Spotify!)
-        // Spotify has music + podcasts + audiobooks, so we rely on metadata detection
         if (filterPodcasts && packageName in PODCAST_APPS) {
             Log.d(TAG, "Filtering podcast app: $packageName")
             return true
@@ -772,7 +780,6 @@ class MusicTrackingService : NotificationListenerService() {
             return true
         }
         
-        // Layer 2: Metadata-based detection (works for all apps including Spotify)
         if (metadata != null) {
             if (filterPodcasts && metadata.isPodcast()) {
                 Log.d(TAG, "Filtering podcast content: ${metadata.title} by ${metadata.artist}")
@@ -784,11 +791,8 @@ class MusicTrackingService : NotificationListenerService() {
             }
         }
         
-        // Layer 3: Manual marks (user-defined patterns)
-        // Uses title/artist parameters directly - works even without full metadata
         val manualMark = manualContentMarkDao.findMatchingMark(title, artist)
         if (manualMark != null) {
-            // IMPORTANT: Only filter if the user has filtering enabled for this content type
             val shouldFilter = when (manualMark.contentType) {
                 "PODCAST" -> filterPodcasts
                 "AUDIOBOOK" -> filterAudiobooks
@@ -832,6 +836,10 @@ class MusicTrackingService : NotificationListenerService() {
     
     // Session auto-save job
     private var autoSaveJob: Job? = null
+
+    // Cheap liveness signal for ServiceHealthWorker. This avoids heavier polling
+    // while still letting the app notice when OEM battery management kills the listener.
+    private var heartbeatJob: Job? = null
     
     // Service uptime tracking
     private val serviceStartTime = AtomicLong(0)
@@ -846,6 +854,12 @@ class MusicTrackingService : NotificationListenerService() {
     // This avoids database call on every track match (preferences rarely change)
     @Volatile
     private var cachedMergeAlternateVersions: Boolean = true // Default value
+    @Volatile
+    private var cachedFilterPodcasts: Boolean = true
+    @Volatile
+    private var cachedFilterAudiobooks: Boolean = true
+    @Volatile
+    private var cachedSpotifyApiOnlyMode: Boolean = false
     private var lastPreferencesFetch: Long = 0
     private val PREFERENCES_CACHE_TTL_MS = 60_000L // Refresh every 60 seconds
 
@@ -1229,6 +1243,8 @@ class MusicTrackingService : NotificationListenerService() {
         super.onCreate()
         Log.i(TAG, "MusicTrackingService created")
         serviceStartTime.set(System.currentTimeMillis())
+        TrackingServiceHeartbeat.markServiceCreated(this)
+        startHeartbeat()
         
         // Initialize dependencies via Hilt EntryPoint
         // This is necessary because NotificationListenerService is managed by the system
@@ -1321,6 +1337,17 @@ class MusicTrackingService : NotificationListenerService() {
         }
         // watchBatteryPreference is intentionally called INSIDE the try block above,
         // but is safe because it only launches a coroutine (no throws).
+    }
+
+    private fun startHeartbeat() {
+        if (heartbeatJob?.isActive == true) return
+
+        heartbeatJob = serviceScope.launch {
+            while (isActive) {
+                TrackingServiceHeartbeat.markServiceAlive(applicationContext)
+                delay(TrackingServiceHeartbeat.HEARTBEAT_INTERVAL_MS)
+            }
+        }
     }
     
     /**
@@ -1769,6 +1796,7 @@ class MusicTrackingService : NotificationListenerService() {
             }
             isListenerConnected = true
         }
+        TrackingServiceHeartbeat.markListenerConnected(this)
         
         Log.i(TAG, "NotificationListener connected - scanning active notifications")
         
@@ -1803,6 +1831,7 @@ class MusicTrackingService : NotificationListenerService() {
         synchronized(connectionLock) {
             isListenerConnected = false
         }
+        TrackingServiceHeartbeat.markListenerDisconnected(this)
         
         super.onListenerDisconnected()
         Log.w(TAG, "NotificationListener disconnected - attempting reconnect")
@@ -1814,6 +1843,7 @@ class MusicTrackingService : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
         if (!isMusicNotification(sbn)) return
+        TrackingServiceHeartbeat.markNotificationCallback(this)
         
         Log.d(TAG, "Music notification posted: ${sbn.packageName}")
         processNotificationPosted(sbn)
@@ -1823,6 +1853,7 @@ class MusicTrackingService : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         sbn ?: return
         if (!isMusicNotification(sbn)) return
+        TrackingServiceHeartbeat.markNotificationCallback(this)
         
         Log.d(TAG, "Music notification removed: ${sbn.packageName}")
         processNotificationRemoved(sbn)
@@ -2093,25 +2124,15 @@ class MusicTrackingService : NotificationListenerService() {
         album: String?,
         metadata: LocalMediaMetadata? = null
     ): Track {
-        // Clean the title to remove embedded artist info for better matching
         val cleanTitle = me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(title)
         
-        // Get all tracks for matching
-        val tracks = trackRepository.all().first()
-        
-        // First, try exact match (fast path)
-        val exactMatch = tracks.find { track ->
-            track.title.equals(title, ignoreCase = true) && 
-            track.artist.equals(artist, ignoreCase = true)
-        }
+        val exactMatch = trackRepository.findByTitleAndArtist(title, artist)
         
         if (exactMatch != null) {
             Log.d(TAG, "Found exact match for track ${exactMatch.id}: '$title' by '$artist'")
             return handleExistingTrack(exactMatch, artist, album)
         }
         
-        // Step 0: Check for Smart Alias (Manual Override)
-        // If user manually merged this track before, respect that decision forever.
         val alias = trackAliasRepository.findAlias(title, artist)
         if (alias != null) {
             val targetTrack = trackRepository.getById(alias.targetTrackId).first()
@@ -2119,23 +2140,27 @@ class MusicTrackingService : NotificationListenerService() {
                 Log.i(TAG, "Smart Alias found: '$title' -> mapped to '${targetTrack.title}' (ID: ${targetTrack.id})")
                 return handleExistingTrack(targetTrack, artist, album)
             } else {
-                // Orphaned alias (target deleted), ignore it
                 Log.w(TAG, "Orphaned alias found for '$title', ignoring")
             }
         }
 
-        // Use advanced fuzzy matching with TrackMatcher
-        val candidates = tracks.map { track ->
-            TrackCandidate(
-                id = track.id,
-                title = track.title,
-                artist = track.artist,
-                album = track.album
-            )
+        val fuzzyArtistMatch = trackRepository.findByTitleAndArtistFuzzy(title, artist)
+        if (fuzzyArtistMatch != null) {
+            Log.d(TAG, "Found fuzzy artist match for track ${fuzzyArtistMatch.id}: '$title' by '$artist'")
+            return handleExistingTrack(fuzzyArtistMatch, artist, album)
+        }
+
+        val titleCandidates = trackRepository.findCandidatesByTitle(title)
+        val cleanTitleMatch = titleCandidates.find { track ->
+            track.title.equals(cleanTitle, ignoreCase = true) && 
+            me.avinas.tempo.utils.ArtistParser.hasAnyMatchingArtist(track.artist, artist)
         }
         
-        // Check user preference for matching strictness (cached for performance)
-        // Refresh cache if older than TTL (60 seconds)
+        if (cleanTitleMatch != null) {
+            Log.d(TAG, "Found clean title match for track ${cleanTitleMatch.id}: '$title' by '$artist'")
+            return handleExistingTrack(cleanTitleMatch, artist, album)
+        }
+
         val now = System.currentTimeMillis()
         if (now - lastPreferencesFetch > PREFERENCES_CACHE_TTL_MS) {
             try {
@@ -2147,14 +2172,22 @@ class MusicTrackingService : NotificationListenerService() {
             }
         }
         
-        // Invert the preference: mergeAlternateVersions=true means strictMatching=false
         val strictMatching = !cachedMergeAlternateVersions
+        
+        val candidates = trackRepository.findFuzzyCandidates(title, artist).map { track ->
+            TrackCandidate(
+                id = track.id,
+                title = track.title,
+                artist = track.artist,
+                album = track.album
+            )
+        }
         
         val matchResult = TrackMatcher.findBestMatch(title, artist, candidates, strictMatching)
         
         if (matchResult != null && matchResult.second.overallScore >= TRACK_MATCH_THRESHOLD) {
             val (candidate, result) = matchResult
-            val existingTrack = tracks.find { it.id == candidate.id }
+            val existingTrack = trackRepository.getById(candidate.id).first()
             
             if (existingTrack != null) {
                 Log.d(TAG, "Found fuzzy match for track ${existingTrack.id}: '$title' by '$artist' " +
@@ -2163,18 +2196,6 @@ class MusicTrackingService : NotificationListenerService() {
             }
         }
         
-        // Also try with cleaned title for legacy compatibility
-        val cleanTitleMatch = tracks.find { track ->
-            track.title.equals(cleanTitle, ignoreCase = true) && 
-            me.avinas.tempo.utils.ArtistParser.hasAnyMatchingArtist(track.artist, artist)
-        }
-        
-        if (cleanTitleMatch != null) {
-            Log.d(TAG, "Found clean title match for track ${cleanTitleMatch.id}: '$title' by '$artist'")
-            return handleExistingTrack(cleanTitleMatch, artist, album)
-        }
-        
-        // No existing track found - insert new one
         return insertNewTrack(title, artist, album, metadata)
     }
     
@@ -3353,6 +3374,7 @@ class MusicTrackingService : NotificationListenerService() {
 
     inner class PackageSpecificCallback(private val packageName: String) : MediaController.Callback() {
         override fun onPlaybackStateChanged(state: PlaybackState?) {
+            TrackingServiceHeartbeat.markMediaSessionCallback(applicationContext)
             // fast lookup - we know exactly which controller triggered this
             activeControllers[packageName]?.let { controller ->
                 processMediaControllerState(controller)
@@ -3361,6 +3383,7 @@ class MusicTrackingService : NotificationListenerService() {
         }
 
         override fun onMetadataChanged(metadata: MediaMetadata?) {
+            TrackingServiceHeartbeat.markMediaSessionCallback(applicationContext)
             activeControllers[packageName]?.let { controller ->
                 processMediaControllerState(controller)
                 updateServiceLifecycle()
@@ -3369,6 +3392,7 @@ class MusicTrackingService : NotificationListenerService() {
         
         override fun onSessionDestroyed() {
             super.onSessionDestroyed()
+            TrackingServiceHeartbeat.markMediaSessionCallback(applicationContext)
             Log.d(TAG, "Session destroyed for $packageName")
             // Handle destruction same as removal
             activeControllers.remove(packageName)
@@ -3616,6 +3640,9 @@ class MusicTrackingService : NotificationListenerService() {
         val uptime = System.currentTimeMillis() - serviceStartTime.get()
         Log.i(TAG, "Service uptime: ${uptime / 1000}s, Duration estimator stats: ${durationEstimator.getStats()}")
 
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+        TrackingServiceHeartbeat.markListenerDisconnected(this)
         serviceScope.cancel()
         super.onDestroy()
     }

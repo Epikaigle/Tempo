@@ -130,9 +130,9 @@ class SpotifyImportService @Inject constructor(
         afterCursor: Long? = null,
         onProgress: ((imported: Int, total: Int) -> Unit)? = null
     ): ImportResult {
-        // Check Spotify connection
-        if (!authManager.isConnected()) {
-            Log.w(TAG, "Cannot import: Spotify not connected")
+        // Check if Spotify import is available (disabled due to API restrictions)
+        if (!isAvailable()) {
+            Log.w(TAG, "Cannot import: Spotify API import is disabled")
             return ImportResult.notConnected()
         }
         
@@ -466,5 +466,9 @@ class SpotifyImportService @Inject constructor(
     /**
      * Check if import is available (Spotify connected and has valid token).
      */
-    fun isAvailable(): Boolean = authManager.isConnected()
+    fun isAvailable(): Boolean {
+        // DISABLED: Spotify API requires allowlisted users (max 5) in development mode.
+        // Use SpotifyJsonImportService for JSON data export imports instead.
+        return false
+    }
 }

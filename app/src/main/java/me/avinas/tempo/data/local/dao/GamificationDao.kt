@@ -157,6 +157,22 @@ interface GamificationDao {
     """)
     suspend fun getLongestSessionMs(): Long
 
+    /**
+     * Count distinct listening sessions that lasted 3+ hours (a "marathon").
+     * A session is grouped by session_id; its total play duration must reach
+     * 10,800,000 ms (3 hours). Used by the Marathon badge.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM (
+            SELECT session_id
+            FROM listening_events
+            WHERE session_id IS NOT NULL
+            GROUP BY session_id
+            HAVING SUM(playDuration) >= 10800000
+        )
+    """)
+    suspend fun getMarathonSessionCount(): Int
+
     // =====================
     // Daily Challenges
     // =====================

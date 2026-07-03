@@ -26,15 +26,24 @@ class RoomTrackRepository @Inject constructor(
 
     override fun getById(id: Long): Flow<Track?> = dao.getById(id)
     override suspend fun findBySpotifyId(spotifyId: String): Track? = dao.findBySpotifyId(spotifyId)
-    override suspend fun findByTitleAndArtist(title: String, artist: String): Track? = 
+    override suspend fun findByYoutubeId(youtubeId: String): Track? = dao.findByYoutubeId(youtubeId)
+    override suspend fun findByMusicBrainzId(musicbrainzId: String): Track? = dao.findByMusicBrainzId(musicbrainzId)
+    override suspend fun findByTitleAndArtist(title: String, artist: String): Track? =
         dao.findByTitleAndArtist(title, artist)
     override suspend fun findByTitleAndArtistFuzzy(title: String, artist: String): Track? = 
         dao.findByTitleAndArtistFuzzy(title, artist)
     override suspend fun findCandidatesByTitle(title: String): List<Track> =
         dao.findCandidatesByTitle(title)
+    override suspend fun findCandidatesByArtist(artist: String): List<Track> =
+        dao.findCandidatesByArtist(artist)
+    override suspend fun findFuzzyCandidates(title: String, artist: String): List<Track> =
+        dao.findFuzzyCandidates(title, artist)
     override suspend fun insert(track: Track): Long = dao.insert(track)
     override suspend fun insertAll(tracks: List<Track>): List<Long> = dao.insertAll(tracks)
     override suspend fun update(track: Track) = dao.update(track)
+    override suspend fun updateTitle(trackId: Long, title: String) = dao.updateTitle(trackId, title)
+    override suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int =
+        dao.updateYoutubeIdIfMissing(trackId, youtubeId)
     override fun all(): Flow<List<Track>> = dao.all()
     
     override suspend fun searchTracks(query: String): List<Track> {

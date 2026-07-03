@@ -15,13 +15,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
+import me.avinas.tempo.R
 import me.avinas.tempo.utils.ShareUtils
+
+/** Fixed design resolution for the share card. Both the hidden capture source and the
+ * visible preview are laid out at this size so the captured bitmap is WYSIWYG with the
+ * preview regardless of device density or screen aspect. */
+private val CardDesignWidth = 360.dp
+private val CardDesignHeight = 640.dp
 
 /**
  * Generic Dialog to preview content and share it as an image.
@@ -35,6 +45,7 @@ fun SharePreviewDialog(
     val captureController = rememberCaptureController()
     val coroutineScope = rememberCoroutineScope()
     var isSharing by remember { mutableStateOf(false) }
+    val shareFailedText = stringResource(R.string.share_failed)
 
     LaunchedEffect(Unit) {
         captureController.capturedBitmap.collect { bitmap ->
@@ -42,7 +53,7 @@ fun SharePreviewDialog(
             val success = ShareUtils.shareBitmap(context, bitmap)
             isSharing = false
             if (!success) {
-                Toast.makeText(context, "Failed to share image", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, shareFailedText, Toast.LENGTH_SHORT).show()
             } else {
                 onDismiss() // Close dialog on successful share launch
             }
@@ -61,14 +72,17 @@ fun SharePreviewDialog(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            // 1. Hidden Capture Source (High Quality)
-            // Rendered at full width (9:16) but invisible to user.
-            // Used solely for the CaptureController to generate the high-res bitmap.
+            // 1. Hidden Capture Source (High Quality, WYSIWYG)
+            // Rendered at the SAME fixed design size as the preview so the captured
+            // bitmap's element proportions match exactly what the user sees, regardless
+            // of device density or screen aspect. Invisible (alpha 0f) but laid out for
+            // capture. requiredSize ignores parent constraints, so this stays stable in
+            // portrait, landscape, and tablet modes.
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(9f / 16f)
-                    .alpha(0f) // Invisible but attached for capture
+                    .requiredSize(CardDesignWidth, CardDesignHeight)
+                    .alpha(0f),
+                contentAlignment = Alignment.Center
             ) {
                 CaptureWrapper(
                     controller = captureController,
@@ -103,7 +117,7 @@ fun SharePreviewDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Share Preview",
+                        text = stringResource(R.string.details_share_preview),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -119,24 +133,44 @@ fun SharePreviewDialog(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
+                            contentDescription = stringResource(R.string.share_close),
                             tint = Color.White
                         )
                     }
                 }
 
-                // using generous horizontal padding (64dp) to force the aspect-ratio based height
-                // to be small enough to fit on all screens without pushing the buttons off.
-                Box(
+                // Responsive Preview card using BoxWithConstraints.
+                // We layout the card at its designed 360dp x 640dp resolution, and scale it
+                // using graphicsLayer to fit within the available screen area.
+                BoxWithConstraints(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 0.dp), // Zero padding to maximize size
+                        .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Just render the content directly for preview.
-                    // The aspect ratio is handled inside the card composable itself.
-                    contentToShare()
+                    val scaleX = maxWidth / CardDesignWidth
+                    val scaleY = maxHeight / CardDesignHeight
+                    val scale = minOf(scaleX, scaleY).coerceAtMost(1f)
+                    
+                    val scaledWidth = CardDesignWidth * scale
+                    val scaledHeight = CardDesignHeight * scale
+                    
+                    Box(
+                        modifier = Modifier.size(scaledWidth, scaledHeight),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .requiredSize(CardDesignWidth, CardDesignHeight)
+                                .graphicsLayer(
+                                    scaleX = scale,
+                                    scaleY = scale,
+                                    transformOrigin = TransformOrigin(0.5f, 0.5f)
+                                )
+                        ) {
+                            contentToShare()
+                        }
+                    }
                 }
 
                 // Share Button
@@ -166,7 +200,7 @@ fun SharePreviewDialog(
                         Icon(Icons.Default.Share, contentDescription = null)
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Share to Instagram Stories",
+                            text = stringResource(R.string.spotlight_share_instagram),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )

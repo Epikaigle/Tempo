@@ -32,7 +32,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         DailyChallenge::class, // Gamification: daily challenges
         DesktopPairingSession::class // Desktop Satellite pairing sessions
     ],
-    version = 46, // Migration 46: Add indexes on enriched_metadata(spotify_id, spotify_artist_id, spotify_enrichment_status)
+    version = 50, // Migration 50: Add content_fingerprint to listening_events for import idempotency
     exportSchema = true  // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
@@ -59,7 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val TAG = "AppDatabase"
         
         /** Current Room schema version — keep in sync with the @Database(version = ...) annotation. */
-        const val VERSION = 46
+        const val VERSION = 50
         
         /**
          * Migration from version 6 to 7: Add enhanced tracking columns to listening_events.
@@ -2038,6 +2038,53 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_46_47 = object : Migration(46, 47) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Starting migration from version 46 to 47 - Remove redundant timestamp index")
+                db.execSQL("DROP INDEX IF EXISTS index_listening_events_timestamp")
+                Log.i(TAG, "Migration from version 46 to 47 completed successfully")
+            }
+        }
+
+        val MIGRATION_47_48 = object : Migration(47, 48) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Starting migration from version 47 to 48 - Add lastWeeklyReminderShown to user_preferences")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN lastWeeklyReminderShown TEXT")
+                Log.i(TAG, "Migration from version 47 to 48 completed successfully")
+            }
+        }
+
+        val MIGRATION_48_49 = object : Migration(48, 49) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Starting migration from version 48 to 49 - Add youtube_id column to tracks")
+                db.execSQL("ALTER TABLE tracks ADD COLUMN youtube_id TEXT")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_tracks_youtube_id ON tracks(youtube_id)")
+                Log.i(TAG, "Migration from version 48 to 49 completed successfully")
+            }
+        }
+
+        /**
+         * Migration from version 49 to 50.
+         *
+         * Adds the content_fingerprint column to listening_events. This is the
+         * foundation of the automatic import reconciliation pipeline (Layer 1):
+         * a deterministic SHA-256 of (source|track_id|timestamp|playDuration|
+         * endTimestamp) that makes re-importing the same data a complete no-op,
+         * closing the play-count inflation loophole.
+         *
+         * Existing rows are left NULL — they keep working via the temporal
+         * dedup fallback (Layer 2). New inserts compute the fingerprint
+         * automatically inside the dedup insert path.
+         */
+        val MIGRATION_49_50 = object : Migration(49, 50) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Starting migration from version 49 to 50 - Add content_fingerprint to listening_events")
+                db.execSQL("ALTER TABLE listening_events ADD COLUMN content_fingerprint TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_content_fingerprint ON listening_events(content_fingerprint)")
+                Log.i(TAG, "Migration from version 49 to 50 completed successfully")
+            }
+        }
+
         /**
          * All migrations in order.
          */
@@ -2081,7 +2128,11 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_42_43,   // Backfill Vivi Music & new open-source apps into app_preferences
             MIGRATION_43_44,    // Add pauseTrackingOnLowBattery to user_preferences
             MIGRATION_44_45,     // ECDH key exchange: add phone_public_key, desktop_public_key, token_version
-            MIGRATION_45_46      // Add spotify indexes on enriched_metadata
+            MIGRATION_45_46,     // Add spotify indexes on enriched_metadata
+            MIGRATION_46_47,     // Remove redundant timestamp index
+            MIGRATION_47_48,     // Add lastWeeklyReminderShown to user_preferences
+            MIGRATION_48_49,     // Add youtube_id column to tracks
+            MIGRATION_49_50      // Add content_fingerprint to listening_events (import idempotency)
         )
     }
 }

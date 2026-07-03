@@ -20,7 +20,6 @@ import androidx.room.PrimaryKey
     tableName = "listening_events",
     foreignKeys = [ForeignKey(entity = Track::class, parentColumns = ["id"], childColumns = ["track_id"], onDelete = ForeignKey.CASCADE)],
     indices = [
-        Index(value = ["timestamp"]), 
         Index(value = ["track_id"]),
         Index(value = ["session_id"]),
         Index(value = ["was_skipped"]),  // For skip rate queries
@@ -29,7 +28,8 @@ import androidx.room.PrimaryKey
         Index(value = ["source", "timestamp"]),  // For source + time queries
         Index(name = "index_listening_events_timestamp_track_id", value = ["timestamp", "track_id"]),
         Index(name = "index_listening_events_track_id_timestamp", value = ["track_id", "timestamp"]),
-        Index(name = "index_listening_events_stats", value = ["timestamp", "track_id", "playDuration", "completionPercentage"])
+        Index(name = "index_listening_events_stats", value = ["timestamp", "track_id", "playDuration", "completionPercentage"]),
+        Index(value = ["content_fingerprint"])  // Layer 1 idempotency lookups
     ]
 )
 data class ListeningEvent(
@@ -57,7 +57,12 @@ data class ListeningEvent(
     // Anti-gaming: device music stream volume at the time the session was closed.
     // NULL = legacy record or not yet checked (treated as audible for XP).
     // 0  = silent / muted → excluded from XP calculation.
-    @ColumnInfo(name = "volume_level", defaultValue = "NULL") val volumeLevel: Int? = null
+    @ColumnInfo(name = "volume_level", defaultValue = "NULL") val volumeLevel: Int? = null,
+
+    // Import reconciliation: deterministic SHA-256 of (source|track_id|timestamp|
+    // playDuration|endTimestamp). Guarantees re-importing the same data is a no-op.
+    // NULL for legacy rows written before this column existed (fall back to temporal dedup).
+    @ColumnInfo(name = "content_fingerprint", defaultValue = "NULL") val contentFingerprint: String? = null
 ) {
     /**
      * Check if volume was explicitly 0 (muted). Legacy records (null) are treated as audible.

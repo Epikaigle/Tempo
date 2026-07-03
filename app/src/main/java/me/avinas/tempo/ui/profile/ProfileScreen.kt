@@ -9,8 +9,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,20 +22,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import me.avinas.tempo.data.local.entities.DailyChallenge
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,145 +46,124 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.SecondaryTabRow
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
+import me.avinas.tempo.data.local.entities.DailyChallenge
 import me.avinas.tempo.data.local.entities.Badge
 import me.avinas.tempo.data.local.entities.UserLevel
 import me.avinas.tempo.data.stats.GamificationEngine
 import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.ui.components.DeepOceanBackground
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.rotate
-
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
+
+// =====================================================================
+// Design tokens — one disciplined palette, clear hierarchy, no neon.
+// =====================================================================
+private val ProfileSurface = Color(0xFF131316)          // card surface on OLED black
+private val ProfileSurfaceRaised = Color(0xFF1B1B20)    // slightly raised element
+private val ProfileBorder = Color.White.copy(alpha = 0.08f)
+private val ProfileBorderStrong = Color.White.copy(alpha = 0.14f)
+private val ProfileAccent = Color(0xFF8B5CF6)           // primary violet (fills)
+private val ProfileAccentLight = Color(0xFFA78BFA)      // accent text
+private val TextPrimary = Color.White
+private val TextSecondary = Color.White.copy(alpha = 0.66f)
+private val TextTertiary = Color.White.copy(alpha = 0.45f)
+private val Amber = Color(0xFFF59E0B)
+private val Emerald = Color(0xFF10B981)
+private val Danger = Color(0xFFEF4444)
+
+private fun darkTint(color: Color, factor: Float = 0.22f): Color = Color(
+    red = (color.red * factor + 0.04f).coerceIn(0f, 1f),
+    green = (color.green * factor + 0.04f).coerceIn(0f, 1f),
+    blue = (color.blue * factor + 0.04f).coerceIn(0f, 1f)
+)
+
 // =====================
-// Badge Icon Mapping
+// Badge icon mapping
 // =====================
-private fun getBadgeIcon(iconName: String): ImageVector {
-    return when (iconName) {
-        "music_note" -> Icons.Default.MusicNote
-        "century" -> Icons.Default.Star
-        "star_half" -> Icons.AutoMirrored.Filled.StarHalf
-        "star" -> Icons.Default.Star
-        "diamond" -> Icons.Default.Diamond
-        "emoji_events" -> Icons.Default.EmojiEvents
-        "timer" -> Icons.Default.Timer
-        "schedule" -> Icons.Default.Schedule
-        "hourglass_full" -> Icons.Default.HourglassFull
-        "headphones" -> Icons.Default.Headphones
-        "local_fire_department" -> Icons.Default.LocalFireDepartment
-        "whatshot" -> Icons.Default.Whatshot
-        "military_tech" -> Icons.Default.MilitaryTech
-        "auto_awesome" -> Icons.Default.AutoAwesome
-        "explore" -> Icons.Default.Explore
-        "collections" -> Icons.Default.Collections
-        "public" -> Icons.Default.Public
-        "category" -> Icons.Default.Category
-        "palette" -> Icons.Default.Palette
-        "nightlight" -> Icons.Default.Nightlight
-        "wb_sunny" -> Icons.Default.WbSunny
-        "directions_run" -> Icons.AutoMirrored.Filled.DirectionsRun
-        "grade" -> Icons.Default.Grade
-        "looks_one" -> Icons.Default.LooksOne
-        "workspace_premium" -> Icons.Default.WorkspacePremium
-        "shield" -> Icons.Default.Shield
-        else -> Icons.Default.Star
-    }
+private fun getBadgeIcon(iconName: String): ImageVector = when (iconName) {
+    "music_note" -> Icons.Default.MusicNote
+    "century" -> Icons.Default.Star
+    "star_half" -> Icons.AutoMirrored.Filled.StarHalf
+    "star" -> Icons.Default.Star
+    "diamond" -> Icons.Default.Diamond
+    "emoji_events" -> Icons.Default.EmojiEvents
+    "timer" -> Icons.Default.Timer
+    "schedule" -> Icons.Default.Schedule
+    "hourglass_full" -> Icons.Default.HourglassFull
+    "headphones" -> Icons.Default.Headphones
+    "local_fire_department" -> Icons.Default.LocalFireDepartment
+    "whatshot" -> Icons.Default.Whatshot
+    "military_tech" -> Icons.Default.MilitaryTech
+    "auto_awesome" -> Icons.Default.AutoAwesome
+    "explore" -> Icons.Default.Explore
+    "collections" -> Icons.Default.Collections
+    "public" -> Icons.Default.Public
+    "category" -> Icons.Default.Category
+    "palette" -> Icons.Default.Palette
+    "nightlight" -> Icons.Default.Nightlight
+    "wb_sunny" -> Icons.Default.WbSunny
+    "directions_run" -> Icons.AutoMirrored.Filled.DirectionsRun
+    "grade" -> Icons.Default.Grade
+    "looks_one" -> Icons.Default.LooksOne
+    "workspace_premium" -> Icons.Default.WorkspacePremium
+    "shield" -> Icons.Default.Shield
+    else -> Icons.Default.Star
 }
 
-private fun getCategoryColor(category: String): Color {
-    return when (category) {
-        "MILESTONE" -> Color(0xFFF59E0B) // Amber
-        "TIME" -> Color(0xFF3B82F6)      // Blue
-        "STREAK" -> Color(0xFFEF4444)    // Red
-        "DISCOVERY" -> Color(0xFF10B981) // Emerald
-        "ENGAGEMENT" -> Color(0xFFA855F7)// Purple
-        "LEVEL" -> Color(0xFFEC4899)     // Pink
-        else -> Color.Gray
-    }
+private fun getCategoryColor(category: String): Color = when (category) {
+    "MILESTONE" -> Color(0xFFF59E0B)
+    "TIME" -> Color(0xFF3B82F6)
+    "STREAK" -> Color(0xFFEF4444)
+    "DISCOVERY" -> Color(0xFF10B981)
+    "ENGAGEMENT" -> Color(0xFFA855F7)
+    "LEVEL" -> Color(0xFFEC4899)
+    else -> Color.Gray
 }
 
-private fun getCategoryLabel(category: String): String {
-    return when (category) {
-        "MILESTONE" -> "🎯 Milestones"
-        "TIME" -> "⏱️ Time"
-        "STREAK" -> "🔥 Streaks"
-        "DISCOVERY" -> "🌍 Discovery"
-        "ENGAGEMENT" -> "⚡ Engagement"
-        "LEVEL" -> "🏆 Levels"
-        else -> category
-    }
+private fun getCategoryLabel(category: String): String = when (category) {
+    "MILESTONE" -> "Milestones"
+    "TIME" -> "Time"
+    "STREAK" -> "Streaks"
+    "DISCOVERY" -> "Discovery"
+    "ENGAGEMENT" -> "Engagement"
+    "LEVEL" -> "Levels"
+    else -> category
 }
 
+// =====================================================================
+// Primitives — flat surfaces, solid progress, clean headers
+// =====================================================================
 @Composable
-private fun ProfileSectionPanel(
+private fun ProfileSurfaceCard(
     modifier: Modifier = Modifier,
-    accent: Color = Color(0xFFA855F7),
-    contentPadding: PaddingValues = PaddingValues(24.dp),
+    contentPadding: PaddingValues = PaddingValues(20.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(32.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        accent.copy(alpha = 0.12f),
-                        Color.White.copy(alpha = 0.05f),
-                        Color(0xFF09090F).copy(alpha = 0.92f)
-                    )
-                )
-            )
-            .border(
-                1.dp,
-                Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.22f),
-                        accent.copy(alpha = 0.28f),
-                        Color.White.copy(alpha = 0.06f)
-                    )
-                ),
-                RoundedCornerShape(32.dp)
-            )
+            .clip(RoundedCornerShape(24.dp))
+            .background(ProfileSurface)
+            .border(1.dp, ProfileBorder, RoundedCornerShape(24.dp))
     ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            accent.copy(alpha = 0.14f),
-                            Color.Transparent
-                        ),
-                        center = Offset(120f, 80f),
-                        radius = 520f
-                    )
-                )
-        )
-
         Column(
             modifier = Modifier.padding(contentPadding),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
             content = content
         )
     }
 }
 
 @Composable
-private fun ProfileSectionHeader(
-    eyebrow: String,
+private fun SectionHeader(
     title: String,
     subtitle: String,
+    eyebrow: String? = null,
     trailing: (@Composable () -> Unit)? = null
 ) {
     Row(
@@ -193,30 +171,28 @@ private fun ProfileSectionHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = eyebrow.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFFD8B4FE),
-                fontWeight = FontWeight.Black,
-                letterSpacing = 2.sp
-            )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (eyebrow != null) {
+                Text(
+                    text = eyebrow.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ProfileAccentLight,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.5.sp
+                )
+            }
             Text(
                 text = title,
                 style = MaterialTheme.typography.headlineSmall,
-                color = Color.White,
-                fontWeight = FontWeight.Black
+                color = TextPrimary,
+                fontWeight = FontWeight.Bold
             )
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.65f)
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
             )
         }
-
         trailing?.invoke()
     }
 }
@@ -225,11 +201,10 @@ private fun ProfileSectionHeader(
 private fun ProgressTrack(
     progress: Float,
     modifier: Modifier = Modifier,
-    brush: Brush = Brush.horizontalGradient(
-        listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1))
-    ),
-    trackColor: Color = Color.White.copy(alpha = 0.08f),
-    height: Dp = 10.dp
+    color: Color = ProfileAccent,
+    brush: Brush? = null,
+    trackColor: Color = Color.White.copy(alpha = 0.10f),
+    height: Dp = 8.dp
 ) {
     Box(
         modifier = modifier
@@ -242,82 +217,60 @@ private fun ProgressTrack(
                 .fillMaxWidth(progress.coerceIn(0f, 1f))
                 .height(height)
                 .clip(CircleShape)
-                .background(brush)
+                .let { if (brush != null) it.background(brush) else it.background(color) }
         )
     }
 }
 
 @Composable
-private fun HeroInfoChip(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    accent: Color,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = 0.06f))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .background(accent.copy(alpha = 0.16f), CircleShape)
-                .border(1.dp, accent.copy(alpha = 0.3f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = accent,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Black,
-                color = Color.White
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.55f),
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-private fun TopBarActionButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
+private fun TopBarActionButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
     IconButton(
         onClick = onClick,
         modifier = Modifier
-            .size(50.dp)
-            .background(Color.White.copy(alpha = 0.05f), CircleShape)
-            .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(ProfileSurface)
+            .border(1.dp, ProfileBorder, CircleShape)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = Color.White
-        )
+        Icon(imageVector = icon, contentDescription = contentDescription, tint = TextPrimary, modifier = Modifier.size(20.dp))
     }
 }
 
+@Composable
+private fun XpChip(xp: Int) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(ProfileAccent.copy(alpha = 0.12f))
+            .border(1.dp, ProfileAccent.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = ProfileAccentLight, modifier = Modifier.size(14.dp))
+        Text(text = "+$xp XP", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = ProfileAccentLight)
+    }
+}
 
+@Composable
+private fun StarsChip(total: Int, max: Int) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Amber.copy(alpha = 0.12f))
+            .border(1.dp, Amber.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(imageVector = Icons.Default.Star, contentDescription = null, tint = Amber, modifier = Modifier.size(14.dp))
+        Text(text = "$total / $max", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Amber)
+    }
+}
+
+// =====================================================================
+// Main screen
+// =====================================================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
@@ -330,54 +283,17 @@ fun ProfileScreen(
     val scrollState = rememberScrollState()
     val pagerState = rememberPagerState(pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
-    val completedChallenges = uiState.challenges.count { it.isCompleted }
 
     DeepOceanBackground {
         Box(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .size(280.dp)
-                    .offset(x = (-70).dp, y = 90.dp)
-                    .safeBlur(90.dp)
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                Color(0xFFEC4899).copy(alpha = 0.24f),
-                                Color.Transparent
-                            )
-                        ),
-                        CircleShape
-                    )
-            )
-            Box(
-                modifier = Modifier
-                    .size(260.dp)
-                    .align(Alignment.TopEnd)
-                    .offset(x = 70.dp, y = (-20).dp)
-                    .safeBlur(80.dp)
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                Color(0xFF6366F1).copy(alpha = 0.2f),
-                                Color.Transparent
-                            )
-                        ),
-                        CircleShape
-                    )
-            )
-
             PullToRefreshBox(
                 isRefreshing = uiState.isRefreshing,
-                onRefresh = {
-                    scope.launch {
-                        viewModel.refresh()
-                    }
-                },
+                onRefresh = { scope.launch { viewModel.refresh() } },
                 modifier = Modifier.fillMaxSize()
             ) {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                    val compactLayout = maxWidth < 380.dp
-                    val tabs = if (compactLayout) listOf("Quests", "Badges") else listOf("Daily Challenges", "Badges")
+                    val compact = maxWidth < 380.dp
+                    val tabs = if (compact) listOf("Quests", "Badges") else listOf("Challenges", "Badges")
 
                     Column(
                         modifier = Modifier
@@ -386,7 +302,7 @@ fun ProfileScreen(
                             .padding(bottom = 132.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Spacer(modifier = Modifier.height(104.dp))
+                        Spacer(modifier = Modifier.height(92.dp))
 
                         HeroProfileSection(
                             userLevel = uiState.userLevel,
@@ -395,72 +311,23 @@ fun ProfileScreen(
                             profileImagePath = uiState.profileImagePath
                         )
 
-                        Spacer(modifier = Modifier.height(28.dp))
+                        Spacer(modifier = Modifier.height(20.dp))
 
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = if (compactLayout) 16.dp else 20.dp),
+                                .padding(horizontal = if (compact) 16.dp else 20.dp),
                             verticalArrangement = Arrangement.spacedBy(24.dp)
                         ) {
-                            ModernStatsSection(
+                            StatsSection(
                                 userLevel = uiState.userLevel,
-                                compact = compactLayout,
+                                compact = compact,
                                 streakAtRisk = uiState.streakAtRisk,
                                 timeRemaining = uiState.streakTimeRemaining,
                                 streakDurationMinutes = uiState.streakDurationMinutes
                             )
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .background(Color.White.copy(alpha = 0.04f))
-                                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
-                                    .padding(6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                tabs.forEachIndexed { index, title ->
-                                    val selected = pagerState.currentPage == index
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(18.dp))
-                                            .background(
-                                                if (selected) {
-                                                    Brush.horizontalGradient(
-                                                        listOf(
-                                                            Color(0xFFEC4899).copy(alpha = 0.32f),
-                                                            Color(0xFFA855F7).copy(alpha = 0.42f)
-                                                        )
-                                                    )
-                                                } else {
-                                                    SolidColor(Color.Transparent)
-                                                }
-                                            )
-                                            .border(
-                                                1.dp,
-                                                if (selected) Color.White.copy(alpha = 0.18f) else Color.Transparent,
-                                                RoundedCornerShape(18.dp)
-                                            )
-                                            .clickable {
-                                                coroutineScope.launch {
-                                                    pagerState.animateScrollToPage(index)
-                                                }
-                                            }
-                                            .padding(vertical = 14.dp, horizontal = 8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = title,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Black,
-                                            color = if (selected) Color.White else Color.White.copy(alpha = 0.55f),
-                                            maxLines = 1
-                                        )
-                                    }
-                                }
-                            }
+                            TabSwitcher(tabs = tabs, pagerState = pagerState, coroutineScope = coroutineScope)
 
                             HorizontalPager(
                                 state = pagerState,
@@ -470,36 +337,26 @@ fun ProfileScreen(
                                 verticalAlignment = Alignment.Top
                             ) { page ->
                                 when (page) {
-                                    0 -> {
-                                        if (uiState.challenges.isNotEmpty()) {
-                                            ModernChallengesSection(
-                                                challenges = uiState.challenges,
-                                                totalXpAvailable = uiState.challengeXpTotal,
-                                                onClaimChallenge = viewModel::claimChallenge
-                                            )
-                                        } else {
-                                            ProfileSectionPanel {
-                                                ProfileSectionHeader(
-                                                    eyebrow = "Daily Quests",
-                                                    title = "Nothing queued yet",
-                                                    subtitle = "Pull to refresh or keep listening and new challenges will appear here."
-                                                )
-                                            }
-                                        }
-                                    }
-                                    1 -> {
-                                        BadgeSection(
-                                            allBadges = uiState.allBadges,
-                                            filteredBadges = uiState.filteredBadges,
-                                            earnedCount = uiState.earnedCount,
-                                            totalCount = uiState.totalCount,
-                                            totalStars = uiState.totalStars,
-                                            maxPossibleStars = uiState.maxPossibleStars,
-                                            categories = uiState.categories,
-                                            selectedCategory = uiState.selectedCategory,
-                                            onCategorySelected = viewModel::onCategorySelected
+                                    0 -> if (uiState.challenges.isNotEmpty()) {
+                                        ChallengesSection(
+                                            challenges = uiState.challenges,
+                                            totalXpAvailable = uiState.challengeXpTotal,
+                                            onClaimChallenge = viewModel::claimChallenge
                                         )
+                                    } else {
+                                        EmptyChallengesState()
                                     }
+                                    1 -> BadgeSection(
+                                        allBadges = uiState.allBadges,
+                                        filteredBadges = uiState.filteredBadges,
+                                        earnedCount = uiState.earnedCount,
+                                        totalCount = uiState.totalCount,
+                                        totalStars = uiState.totalStars,
+                                        maxPossibleStars = uiState.maxPossibleStars,
+                                        categories = uiState.categories,
+                                        selectedCategory = uiState.selectedCategory,
+                                        onCategorySelected = viewModel::onCategorySelected
+                                    )
                                 }
                             }
                         }
@@ -515,61 +372,27 @@ fun ProfileScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TopBarActionButton(
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    onClick = onBack
-                )
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color.White.copy(alpha = 0.05f))
-                        .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 18.dp, vertical = 12.dp)
-                ) {
-                    Text(
-                        text = "PROFILE",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 4.sp,
-                        color = Color.White.copy(alpha = 0.95f)
-                    )
-                }
-
-                TopBarActionButton(
-                    icon = Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    onClick = onNavigateToSettings
-                )
+                TopBarActionButton(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
+                TopBarActionButton(icon = Icons.Default.Settings, contentDescription = "Settings", onClick = onNavigateToSettings)
             }
         }
 
         if (uiState.showLevelUpCelebration) {
-            LevelUpCelebration(
-                level = uiState.userLevel.currentLevel,
-                onDismiss = viewModel::dismissLevelUpCelebration
-            )
+            LevelUpCelebration(level = uiState.userLevel.currentLevel, onDismiss = viewModel::dismissLevelUpCelebration)
         }
-        
-        // New Badge Celebration Overlay
+
         if (uiState.unacknowledgedBadges.isNotEmpty() && !uiState.showLevelUpCelebration) {
             NewBadgeCelebrationOverlay(
                 badges = uiState.unacknowledgedBadges,
-                onDismiss = {
-                    viewModel.acknowledgeBadges(uiState.unacknowledgedBadges.map { it.badgeId })
-                }
+                onDismiss = { viewModel.acknowledgeBadges(uiState.unacknowledgedBadges.map { it.badgeId }) }
             )
         }
     }
 }
 
-// =====================
-// Level Ring with animated progress
-// =====================
-// =====================
-// Hero Profile Section
-// =====================
+// =====================================================================
+// Hero — avatar + identity + level progress (one calm surface)
+// =====================================================================
 @Composable
 private fun HeroProfileSection(
     userLevel: UserLevel,
@@ -579,114 +402,85 @@ private fun HeroProfileSection(
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = userLevel.levelProgress,
-        animationSpec = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
         label = "levelProgress"
-    )
-    
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val glowScale by infiniteTransition.animateFloat(
-        initialValue = 0.9f,
-        targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowScale"
     )
     val progressPercent = (animatedProgress * 100).roundToInt()
 
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val availableWidth = maxWidth
-            val avatarContainerSize = (availableWidth * 0.4f).coerceIn(148.dp, 192.dp)
-            val panelPadding = if (availableWidth < 360.dp) 20.dp else 28.dp
-            val spacing = if (availableWidth < 360.dp) 16.dp else 24.dp
-
-            ProfileSectionPanel(
-                accent = Color(0xFFEC4899),
-                contentPadding = PaddingValues(panelPadding)
+        ProfileSurfaceCard(contentPadding = PaddingValues(22.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.06f))
-                            .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape)
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = Color(0xFFD8B4FE),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = "Listening identity",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(spacing),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HeroAvatar(
-                        animatedProgress = animatedProgress,
-                        glowScale = glowScale,
-                        containerSize = avatarContainerSize,
-                        level = userLevel.currentLevel,
-                        userName = userName,
-                        profileImagePath = profileImagePath
-                    )
-
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            text = userName,
-                            style = if (availableWidth < 360.dp) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Black,
-                            color = Color.White,
-                            letterSpacing = 0.5.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = userTitle.uppercase(),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Black,
-                            color = Color(0xFFD8B4FE),
-                            letterSpacing = 2.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-
-                HeroProgressSummary(
-                    level = userLevel.currentLevel,
+                HeroAvatar(
                     progress = animatedProgress,
-                    progressPercent = progressPercent,
-                    totalXp = userLevel.totalXp,
-                    xpRemaining = userLevel.xpRemaining
+                    level = userLevel.currentLevel,
+                    userName = userName,
+                    profileImagePath = profileImagePath
                 )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = userName,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = userTitle.uppercase(),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = ProfileAccentLight,
+                        letterSpacing = 1.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            HorizontalDivider(color = ProfileBorder)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "LEVEL ${userLevel.currentLevel}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = "$progressPercent%",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = ProfileAccentLight,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            ProgressTrack(
+                progress = animatedProgress,
+                modifier = Modifier.fillMaxWidth(),
+                brush = Brush.horizontalGradient(listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1)))
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "${userLevel.totalXp} XP total", style = MaterialTheme.typography.bodySmall, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                Text(text = "${userLevel.xpRemaining} to next level", style = MaterialTheme.typography.bodySmall, color = TextTertiary)
             }
         }
     }
@@ -694,66 +488,29 @@ private fun HeroProfileSection(
 
 @Composable
 private fun HeroAvatar(
-    animatedProgress: Float,
-    glowScale: Float,
-    containerSize: Dp,
+    progress: Float,
     level: Int,
     userName: String,
     profileImagePath: String?
 ) {
-    val glowSize = containerSize * 0.86f
-    val ringSize = containerSize * 0.93f
-    val innerSize = containerSize * 0.7f
-    val iconSize = innerSize * 0.46f
-
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier.size(containerSize)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(glowSize)
-                .scale(glowScale)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFFEC4899).copy(alpha = 0.55f),
-                            Color(0xFFA855F7).copy(alpha = 0.2f),
-                            Color.Transparent
-                        )
-                    ),
-                    shape = CircleShape
-                )
-        )
-
+    val ringSize = 108.dp
+    val innerSize = 86.dp
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(ringSize)) {
         Canvas(modifier = Modifier.size(ringSize)) {
-            val strokeWidth = 10.dp.toPx()
+            val strokeWidth = 7.dp.toPx()
             val radius = (size.minDimension - strokeWidth) / 2
-            val topLeft = Offset(
-                (size.width - radius * 2) / 2,
-                (size.height - radius * 2) / 2
-            )
+            val topLeft = Offset((size.width - radius * 2) / 2, (size.height - radius * 2) / 2)
             val arcSize = Size(radius * 2, radius * 2)
-
             drawArc(
-                color = Color.White.copy(alpha = 0.06f),
-                startAngle = -90f,
-                sweepAngle = 360f,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
+                color = Color.White.copy(alpha = 0.10f),
+                startAngle = -90f, sweepAngle = 360f, useCenter = false,
+                topLeft = topLeft, size = arcSize,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
-
             drawArc(
-                brush = Brush.sweepGradient(
-                    listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1))
-                ),
-                startAngle = -90f,
-                sweepAngle = 360f * animatedProgress,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
+                brush = Brush.sweepGradient(listOf(ProfileAccent, ProfileAccentLight)),
+                startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
+                topLeft = topLeft, size = arcSize,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
         }
@@ -762,16 +519,16 @@ private fun HeroAvatar(
             modifier = Modifier
                 .size(innerSize)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.08f))
-                .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape),
+                .background(ProfileSurfaceRaised)
+                .border(1.dp, ProfileBorderStrong, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             if (profileImagePath.isNullOrBlank()) {
                 Text(
                     text = userName.firstOrNull()?.toString()?.uppercase() ?: "U",
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Black,
-                    color = Color.White.copy(alpha = 0.92f)
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
                 )
             } else {
                 CachedAsyncImage(
@@ -781,428 +538,215 @@ private fun HeroAvatar(
                     contentScale = ContentScale.Crop
                 )
             }
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = (-12).dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(Color(0xFFEC4899), Color(0xFFA855F7))
-                        ),
-                        RoundedCornerShape(12.dp)
-                    )
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = "LVL $level",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Black,
-                    color = Color.White
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HeroProgressSummary(
-    level: Int,
-    progress: Float,
-    progressPercent: Int,
-    totalXp: Long,
-    xpRemaining: Long
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "LEVEL $level",
-                style = MaterialTheme.typography.labelLarge,
-                color = Color.White,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 1.sp
-            )
-            Text(
-                text = "$progressPercent%",
-                style = MaterialTheme.typography.labelLarge,
-                color = Color(0xFFD8B4FE),
-                fontWeight = FontWeight.Black
-            )
         }
 
-        ProgressTrack(
-            progress = progress,
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .align(Alignment.BottomCenter)
+                .offset(y = (-6).dp)
+                .background(ProfileAccent, RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = 3.dp)
         ) {
-            Text(
-                text = "$totalXp XP total",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "$xpRemaining XP to next level",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.62f),
-                fontWeight = FontWeight.Medium
-            )
+            Text(text = "LVL $level", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
         }
-
-        Text(
-            text = "Level progress",
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.5f),
-            letterSpacing = 1.sp
-        )
     }
 }
 
-// =====================
-// Stats Row (streak, XP, badges)
-// =====================
-// =====================
-// Modern Stats Section
-// =====================
+// =====================================================================
+// Stats — one card: streak + inline best/XP. Clean risk banner.
+// =====================================================================
 @Composable
-private fun ModernStatsSection(
+private fun StatsSection(
     userLevel: UserLevel,
     compact: Boolean,
     streakAtRisk: Boolean = false,
     timeRemaining: String = "",
     streakDurationMinutes: Long = Long.MAX_VALUE
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (streakAtRisk) {
-            val riskColor = when {
-                streakDurationMinutes > 360 -> Color(0xFFFCA5A5)
-                streakDurationMinutes > 180 -> Color(0xFFEF4444)
-                streakDurationMinutes > 60 -> Color(0xFFB91C1C)
-                else -> Color(0xFF7F1D1D)
+            StreakRiskBanner(streakDurationMinutes = streakDurationMinutes, timeRemaining = timeRemaining)
+        }
+
+        SectionHeader(
+            eyebrow = "Overview",
+            title = "Listening rhythm",
+            subtitle = if (streakAtRisk) "Your streak needs attention today."
+                       else "You're building a solid habit. Here's the run so far."
+        )
+
+        ProfileSurfaceCard {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(text = "Current streak", style = MaterialTheme.typography.labelMedium, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = "${userLevel.currentStreak}",
+                        style = if (compact) MaterialTheme.typography.displaySmall else MaterialTheme.typography.displayMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = if (userLevel.currentStreak == 1) "day in motion" else "days in motion",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = TextSecondary
+                    )
+                }
+                ListeningStatusChip(streakAtRisk = streakAtRisk, timeRemaining = timeRemaining)
             }
-            val isUrgent = streakDurationMinutes < 60
-            val infiniteTransition = rememberInfiniteTransition(label = "riskPulse")
-            val pulseAlpha by if (isUrgent) {
-                infiniteTransition.animateFloat(
-                    initialValue = 1f, targetValue = 0.6f,
-                    animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "alpha"
+
+            HorizontalDivider(color = ProfileBorder)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                InlineStat(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.EmojiEvents,
+                    value = "${userLevel.longestStreak}",
+                    label = "Best streak",
+                    accent = ProfileAccentLight
                 )
-            } else { remember { mutableStateOf(1f) } }
-
-            Box(
-                modifier = Modifier.alpha(pulseAlpha),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(riskColor.copy(alpha = 0.12f))
-                        .border(1.dp, riskColor.copy(alpha = 0.24f), RoundedCornerShape(24.dp))
-                        .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(riskColor.copy(alpha = 0.18f), CircleShape)
-                            .border(1.dp, riskColor.copy(alpha = 0.35f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.LocalFireDepartment,
-                            contentDescription = "Risk",
-                            tint = riskColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "Streak at Risk",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Black,
-                            color = Color.White
-                        )
-                        Text(
-                            text = "Play something in the next $timeRemaining to keep the run alive.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.75f)
-                        )
-                    }
-                }
+                Box(modifier = Modifier.width(1.dp).height(30.dp).background(ProfileBorder))
+                InlineStat(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.AutoAwesome,
+                    value = "${userLevel.xpRemaining}",
+                    label = "XP to level",
+                    accent = Amber
+                )
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            ProfileSectionHeader(
-                eyebrow = "Momentum",
-                title = "Your listening rhythm",
-                subtitle = if (streakAtRisk) {
-                    "Everything important at a glance, with your streak needing attention."
-                } else {
-                    "You’re building a solid habit. Here’s how the run is shaping up."
-                }
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(30.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                Color(0xFFFB7185).copy(alpha = 0.22f),
-                                Color(0xFF7F1D1D).copy(alpha = 0.08f)
-                            )
-                        )
-                    )
-                    .border(1.dp, Color(0xFFFB7185).copy(alpha = 0.2f), RoundedCornerShape(30.dp))
-                    .padding(24.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    if (compact) {
-                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    text = "Current streak",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = Color.White.copy(alpha = 0.7f),
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${userLevel.currentStreak}",
-                                    style = MaterialTheme.typography.displaySmall,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = if (userLevel.currentStreak == 1) "day in motion" else "days in motion",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = Color.White.copy(alpha = 0.74f)
-                                )
-                            }
-
-                            ListeningStatusChip(
-                                streakAtRisk = streakAtRisk,
-                                timeRemaining = timeRemaining
-                            )
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    text = "Current streak",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = Color.White.copy(alpha = 0.7f),
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${userLevel.currentStreak}",
-                                    style = MaterialTheme.typography.displayMedium,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = if (userLevel.currentStreak == 1) "day in motion" else "days in motion",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = Color.White.copy(alpha = 0.74f)
-                                )
-                            }
-
-                            ListeningStatusChip(
-                                streakAtRisk = streakAtRisk,
-                                timeRemaining = timeRemaining
-                            )
-                        }
-                    }
-                }
-            }
-
-            ProgressTrack(
-                progress = (userLevel.currentStreak.coerceAtMost(userLevel.longestStreak.coerceAtLeast(1))).toFloat() /
-                    userLevel.longestStreak.coerceAtLeast(1).toFloat(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(10.dp),
-                brush = Brush.horizontalGradient(
-                    listOf(Color(0xFFFF8FAB), Color(0xFFFB7185), Color(0xFFEF4444))
-                ),
-                trackColor = Color.Black.copy(alpha = 0.24f)
-            )
-
-            Text(
-                text = "Best streak is ${userLevel.longestStreak} days. You're ${(userLevel.levelProgress * 100).roundToInt()}% of the way to the next level.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.68f)
-            )
-
-            if (compact) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard(
-                        value = "${userLevel.longestStreak}",
-                        label = "Best streak",
-                        supporting = "Your all-time record",
-                        icon = Icons.Default.EmojiEvents,
-                        color = Color(0xFFA855F7)
-                    )
-                    StatCard(
-                        value = "${userLevel.xpRemaining}",
-                        label = "Next level",
-                        supporting = "XP left to level up",
-                        icon = Icons.Default.AutoAwesome,
-                        color = Color(0xFFF59E0B)
-                    )
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        value = "${userLevel.longestStreak}",
-                        label = "Best streak",
-                        supporting = "Your all-time record",
-                        icon = Icons.Default.EmojiEvents,
-                        color = Color(0xFFA855F7)
-                    )
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        value = "${userLevel.xpRemaining}",
-                        label = "Next level",
-                        supporting = "XP left to level up",
-                        icon = Icons.Default.AutoAwesome,
-                        color = Color(0xFFF59E0B)
-                    )
-                }
-            }
-        }
+        Text(
+            text = "Best streak is ${userLevel.longestStreak} days. You're ${(userLevel.levelProgress * 100).roundToInt()}% of the way to the next level.",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextTertiary
+        )
     }
 }
 
 @Composable
-private fun ListeningStatusChip(
-    streakAtRisk: Boolean,
-    timeRemaining: String
-) {
-    Box(
+private fun StreakRiskBanner(streakDurationMinutes: Long, timeRemaining: String) {
+    val riskColor = when {
+        streakDurationMinutes > 360 -> Color(0xFFFCA5A5)
+        streakDurationMinutes > 180 -> Color(0xFFEF4444)
+        streakDurationMinutes > 60 -> Color(0xFFB91C1C)
+        else -> Color(0xFF7F1D1D)
+    }
+    Row(
         modifier = Modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(18.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .background(riskColor.copy(alpha = 0.10f))
+            .border(1.dp, riskColor.copy(alpha = 0.28f), RoundedCornerShape(18.dp))
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.LocalFireDepartment,
-                contentDescription = null,
-                tint = if (streakAtRisk) Color(0xFFFCA5A5) else Color(0xFFFFC4D1),
-                modifier = Modifier.size(18.dp)
-            )
-            Text(
-                text = if (streakAtRisk) "Ends in $timeRemaining" else "Safe today",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
+        Icon(imageVector = Icons.Default.LocalFireDepartment, contentDescription = null, tint = riskColor, modifier = Modifier.size(22.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(text = "Streak at risk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text(text = "Play something in the next $timeRemaining to keep it alive.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
         }
     }
 }
 
 @Composable
-private fun StatCard(
+private fun ListeningStatusChip(streakAtRisk: Boolean, timeRemaining: String) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(ProfileSurfaceRaised)
+            .border(1.dp, ProfileBorderStrong, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.LocalFireDepartment,
+            contentDescription = null,
+            tint = if (streakAtRisk) Color(0xFFFCA5A5) else ProfileAccentLight,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = if (streakAtRisk) "Ends in $timeRemaining" else "Safe today",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary
+        )
+    }
+}
+
+@Composable
+private fun InlineStat(
     modifier: Modifier = Modifier,
+    icon: ImageVector,
     value: String,
     label: String,
-    supporting: String,
-    icon: ImageVector,
-    color: Color
+    accent: Color
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        color.copy(alpha = 0.18f),
-                        Color.White.copy(alpha = 0.04f)
-                    )
-                )
-            )
-            .border(1.dp, color.copy(alpha = 0.18f), RoundedCornerShape(24.dp))
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(color.copy(alpha = 0.16f), CircleShape)
-                    .border(1.dp, color.copy(alpha = 0.32f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
-            }
-
-            Text(
-                text = label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Black,
-                color = Color.White.copy(alpha = 0.52f),
-                letterSpacing = 1.2.sp
-            )
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(imageVector = icon, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(text = value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text(text = label, style = MaterialTheme.typography.labelSmall, color = TextTertiary, fontWeight = FontWeight.Medium)
         }
-
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Black,
-            color = Color.White
-        )
-
-        Text(
-            text = supporting,
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.64f)
-        )
     }
 }
 
-// =====================
-// Daily Challenges Section
-// =====================
+// =====================================================================
+// Tab switcher — segmented control, tinted (no gradient)
+// =====================================================================
 @Composable
-private fun ModernChallengesSection(
+private fun TabSwitcher(
+    tabs: List<String>,
+    pagerState: androidx.compose.foundation.pager.PagerState,
+    coroutineScope: kotlinx.coroutines.CoroutineScope
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(ProfileSurface)
+            .border(1.dp, ProfileBorder, RoundedCornerShape(16.dp))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        tabs.forEachIndexed { index, title ->
+            val selected = pagerState.currentPage == index
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (selected) ProfileAccent.copy(alpha = 0.22f) else Color.Transparent)
+                    .border(1.dp, if (selected) ProfileAccent.copy(alpha = 0.45f) else Color.Transparent, RoundedCornerShape(12.dp))
+                    .clickable { coroutineScope.launch { pagerState.animateScrollToPage(index) } }
+                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (selected) TextPrimary else TextTertiary,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+// =====================================================================
+// Challenges — single-surface cards, one accent per difficulty
+// =====================================================================
+@Composable
+private fun ChallengesSection(
     challenges: List<DailyChallenge>,
     totalXpAvailable: Int,
     onClaimChallenge: (Long) -> Unit
@@ -1214,296 +758,160 @@ private fun ModernChallengesSection(
         val diffMs = midnight - System.currentTimeMillis()
         val h = (diffMs / (1000 * 60 * 60)).toInt()
         val m = ((diffMs % (1000 * 60 * 60)) / (1000 * 60)).toInt()
-        if (h > 0) "Resets in ${h}h ${m}m" else "Resets in ${m}m"
+        if (h > 0) "resets in ${h}h ${m}m" else "resets in ${m}m"
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        ProfileSectionHeader(
-            eyebrow = "Daily Quests",
-            title = "Keep the streak moving",
-            subtitle = "$completedCount of ${challenges.size} complete. $resetLabel",
-            trailing = {
-                Row(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Color(0xFFA855F7).copy(alpha = 0.14f))
-                        .border(1.dp, Color(0xFFA855F7).copy(alpha = 0.34f), CircleShape)
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = Color(0xFFD8B4FE),
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = "$totalXpAvailable XP",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Black,
-                        color = Color(0xFFD8B4FE)
-                    )
-                }
-            }
+        SectionHeader(
+            eyebrow = "Quests",
+            title = "Daily challenges",
+            subtitle = "$completedCount of ${challenges.size} complete · $resetLabel",
+            trailing = { XpChip(xp = totalXpAvailable) }
         )
 
         ProgressTrack(
             progress = if (challenges.isEmpty()) 0f else completedCount.toFloat() / challenges.size,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(10.dp),
-            brush = Brush.horizontalGradient(
-                listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF8B5CF6))
-            )
+            modifier = Modifier.fillMaxWidth(),
+            color = ProfileAccent
         )
 
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             challenges.forEach { challenge ->
-                ModernChallengeCard(
-                    challenge = challenge,
-                    onClaim = { onClaimChallenge(challenge.id) }
-                )
+                ChallengeCard(challenge = challenge, onClaim = { onClaimChallenge(challenge.id) })
             }
         }
     }
 }
 
 @Composable
-private fun ModernChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
-    val isCompleted = challenge.isCompleted
+private fun EmptyChallengesState() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(ProfileSurface)
+            .border(1.dp, ProfileBorder, RoundedCornerShape(24.dp))
+            .padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(imageVector = Icons.Default.Schedule, contentDescription = null, tint = TextTertiary, modifier = Modifier.size(34.dp))
+        Text(text = "Nothing queued yet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextSecondary)
+        Text(
+            text = "Pull to refresh or keep listening — new challenges will appear here.",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextTertiary,
+            textAlign = TextAlign.Center
+        )
+    }
+}
 
+@Composable
+private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
+    val isCompleted = challenge.isCompleted
     val diffColor = when (challenge.difficulty) {
-        "EASY" -> Color(0xFF10B981)
-        "MEDIUM" -> Color(0xFFF59E0B)
-        "HARD" -> Color(0xFFEF4444)
+        "EASY" -> Emerald
+        "MEDIUM" -> Amber
+        "HARD" -> Danger
         else -> Color.Gray
     }
-
+    val accent = if (isCompleted) Emerald else diffColor
     val animatedProgress by animateFloatAsState(
         targetValue = challenge.progressFraction,
-        animationSpec = tween(1500, easing = FastOutSlowInEasing),
+        animationSpec = tween(1200, easing = FastOutSlowInEasing),
         label = "challengeProgress"
     )
 
-    Card(
+    Box(
         modifier = Modifier
-            .fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        border = BorderStroke(
-            1.dp,
-            if (isCompleted) Color(0xFF10B981).copy(alpha = 0.4f) else diffColor.copy(alpha = 0.18f)
-        )
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(ProfileSurface)
+            .border(1.dp, if (isCompleted) Emerald.copy(alpha = 0.30f) else ProfileBorder, RoundedCornerShape(20.dp))
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
+        if (isCompleted) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .background(
                         Brush.verticalGradient(
-                            listOf(
-                                diffColor.copy(alpha = if (isCompleted) 0.18f else 0.12f),
-                                Color.White.copy(alpha = 0.03f),
-                                Color(0xFF08080B).copy(alpha = 0.92f)
-                            )
+                            listOf(Emerald.copy(alpha = 0.16f), Emerald.copy(alpha = 0.04f), Color.Transparent)
                         )
                     )
             )
+        }
 
-            if (isCompleted) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(Color(0xFF10B981).copy(alpha = 0.1f), Color.Transparent)
-                            )
-                        )
+        Column(
+            modifier = Modifier
+                .padding(18.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(accent))
+                    Text(
+                        text = challenge.difficulty,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = accent,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "·  ${challenge.category.replace("_", " ")}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextTertiary
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(text = challenge.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = challenge.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextTertiary,
+                    lineHeight = 20.sp
                 )
             }
-
-            Column(
-                modifier = Modifier.padding(22.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(diffColor.copy(alpha = 0.14f))
-                                    .border(1.dp, diffColor.copy(alpha = 0.28f), CircleShape)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(diffColor)
-                                )
-                                Text(
-                                    text = challenge.difficulty,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Black,
-                                    color = diffColor,
-                                    letterSpacing = 1.sp
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.06f))
-                                    .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Tune,
-                                    contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.65f),
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Text(
-                                    text = challenge.category.replace("_", " "),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White.copy(alpha = 0.72f)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Text(
-                            text = challenge.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Black,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = challenge.description,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.6f),
-                            lineHeight = 20.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    if (isCompleted) {
-                        Column(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color(0xFF10B981).copy(alpha = 0.16f))
-                                .border(1.dp, Color(0xFF10B981).copy(alpha = 0.38f), RoundedCornerShape(20.dp))
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .background(Color(0xFF10B981).copy(alpha = 0.16f), CircleShape)
-                                    .border(1.dp, Color(0xFF10B981).copy(alpha = 0.45f), CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = "Done",
-                                    tint = Color(0xFF10B981),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                            Text(
-                                text = "+${challenge.xpReward} XP",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Black,
-                                color = Color(0xFFA7F3D0)
-                            )
-                        }
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color.White.copy(alpha = 0.05f))
-                                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "+${challenge.xpReward}",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Black,
-                                color = Color(0xFFA855F7)
-                            )
-                            Text(
-                                text = "XP",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Black,
-                                color = Color(0xFFA855F7).copy(alpha = 0.7f),
-                                letterSpacing = 1.sp
-                            )
-                        }
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ProgressTrack(
-                        progress = animatedProgress,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(12.dp),
-                        brush = if (isCompleted) {
-                            SolidColor(Color(0xFF10B981))
-                        } else {
-                            Brush.horizontalGradient(listOf(Color(0xFFEC4899), Color(0xFFA855F7)))
-                        },
-                        trackColor = Color.Black.copy(alpha = 0.28f)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "${challenge.currentProgress}/${challenge.targetValue} progress",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Black,
-                            color = if (isCompleted) Color(0xFF10B981) else Color.White.copy(alpha = 0.68f)
-                        )
-                        Text(
-                            text = if (isCompleted) "Completed" else "In progress",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isCompleted) Color(0xFFA7F3D0) else diffColor
-                        )
-                    }
-                }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(horizontalAlignment = Alignment.End) {
+                Text(text = "+${challenge.xpReward}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = accent)
+                Text(text = "XP", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = accent.copy(alpha = 0.7f), letterSpacing = 1.sp)
             }
+        }
+
+        ProgressTrack(progress = animatedProgress, modifier = Modifier.fillMaxWidth(), color = accent)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${challenge.currentProgress}/${challenge.targetValue} progress",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (isCompleted) Emerald else TextSecondary
+            )
+            Text(
+                text = if (isCompleted) "Completed" else "In progress",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = accent
+            )
+        }
         }
     }
 }
 
-// =====================
-// Badge Section
-// =====================
+// =====================================================================
+// Badges — clean grid. Emblem keeps the medal character; card stays flat.
+// =====================================================================
 @Composable
 private fun BadgeSection(
     allBadges: List<Badge>,
@@ -1519,47 +927,14 @@ private fun BadgeSection(
     val collectionProgress = if (totalCount == 0) 0f else earnedCount.toFloat() / totalCount
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        ProfileSectionHeader(
+        SectionHeader(
             eyebrow = "Achievements",
-            title = "Your collection cabinet",
-            subtitle = "$earnedCount of $totalCount badges collected so far.",
-            trailing = {
-                if (totalStars > 0) {
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFFFBBF24).copy(alpha = 0.15f))
-                            .border(1.dp, Color(0xFFFBBF24).copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            tint = Color(0xFFFBBF24),
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "$totalStars / $maxPossibleStars",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFBBF24)
-                        )
-                    }
-                }
-            }
+            title = "Your collection",
+            subtitle = "$earnedCount of $totalCount badges earned.",
+            trailing = if (totalStars > 0) ({ StarsChip(total = totalStars, max = maxPossibleStars) }) else null
         )
 
-        ProgressTrack(
-            progress = collectionProgress,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(10.dp),
-            brush = Brush.horizontalGradient(
-                listOf(Color(0xFFF59E0B), Color(0xFFFBBF24), Color(0xFFFDE68A))
-            )
-        )
+        ProgressTrack(progress = collectionProgress, modifier = Modifier.fillMaxWidth(), color = Amber)
 
         Row(
             modifier = Modifier
@@ -1572,14 +947,14 @@ private fun BadgeSection(
                 onClick = { onCategorySelected(null) },
                 label = { Text("All") },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Color.White.copy(alpha = 0.18f),
+                    selectedContainerColor = ProfileAccent.copy(alpha = 0.18f),
                     containerColor = Color.Transparent,
-                    labelColor = Color.White.copy(alpha = 0.7f),
-                    selectedLabelColor = Color.White
+                    labelColor = TextSecondary,
+                    selectedLabelColor = TextPrimary
                 ),
                 border = FilterChipDefaults.filterChipBorder(
-                    borderColor = Color.White.copy(alpha = 0.1f),
-                    selectedBorderColor = Color.White.copy(alpha = 0.32f),
+                    borderColor = ProfileBorder,
+                    selectedBorderColor = ProfileAccent.copy(alpha = 0.5f),
                     enabled = true,
                     selected = selectedCategory == null
                 ),
@@ -1594,12 +969,12 @@ private fun BadgeSection(
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = categoryColor.copy(alpha = 0.16f),
                         containerColor = Color.Transparent,
-                        labelColor = Color.White.copy(alpha = 0.7f),
+                        labelColor = TextSecondary,
                         selectedLabelColor = categoryColor
                     ),
                     border = FilterChipDefaults.filterChipBorder(
-                        borderColor = Color.White.copy(alpha = 0.1f),
-                        selectedBorderColor = categoryColor.copy(alpha = 0.45f),
+                        borderColor = ProfileBorder,
+                        selectedBorderColor = categoryColor.copy(alpha = 0.5f),
                         enabled = true,
                         selected = selectedCategory == category
                     ),
@@ -1610,53 +985,25 @@ private fun BadgeSection(
 
         val beginnerIds = GamificationEngine.BEGINNER_BADGES
         val almostThereBadge = remember(allBadges) {
-            allBadges
-                .filter {
-                    !it.isEarned && !it.isMaxed && it.badgeId !in beginnerIds && it.progressFraction >= 0.5f
-                }
+            allBadges.filter { !it.isEarned && !it.isMaxed && it.badgeId !in beginnerIds && it.progressFraction >= 0.5f }
                 .maxByOrNull { it.progressFraction }
         }
         val nextStarBadge = remember(allBadges) {
-            if (almostThereBadge != null) null
-            else {
-                allBadges
-                    .filter {
-                        it.isEarned && !it.isMaxed && it.badgeId !in beginnerIds && it.progressFraction >= 0.5f
-                    }
+            if (almostThereBadge != null) null else {
+                allBadges.filter { it.isEarned && !it.isMaxed && it.badgeId !in beginnerIds && it.progressFraction >= 0.5f }
                     .maxByOrNull { it.progressFraction }
             }
         }
         val spotlightBadge = almostThereBadge ?: nextStarBadge
 
         if (spotlightBadge != null) {
-            val spotlightLabel = if (spotlightBadge.isEarned) "Next Star" else "Almost There"
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        tint = Color(0xFFFDE68A),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = spotlightLabel,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-
-                BadgeCard(
-                    badge = spotlightBadge,
-                    modifier = Modifier.fillMaxWidth(),
-                    isSpotlight = true
-                )
+            val spotlightLabel = if (spotlightBadge.isEarned) "Next star" else "Almost there"
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = Amber, modifier = Modifier.size(16.dp))
+                Text(text = spotlightLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
             }
-
-            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+            BadgeCard(badge = spotlightBadge, modifier = Modifier.fillMaxWidth(), isSpotlight = true)
+            HorizontalDivider(color = ProfileBorder)
         }
 
         if (filteredBadges.isEmpty()) {
@@ -1664,84 +1011,91 @@ private fun BadgeSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(120.dp)
-                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp)),
+                    .background(ProfileSurface, RoundedCornerShape(20.dp))
+                    .border(1.dp, ProfileBorder, RoundedCornerShape(20.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "No badges to show",
-                    color = Color.White.copy(alpha = 0.4f)
-                )
+                Text(text = "No badges to show", color = TextTertiary)
             }
         } else {
-            val chunkedBadges = filteredBadges.chunked(2)
-            chunkedBadges.forEach { rowBadges ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    rowBadges.forEach { badge ->
-                        BadgeCard(
-                            badge = badge,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    repeat(2 - rowBadges.size) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
+            // Trophy-case order: earned first, then by rarity (prestige), then by stars.
+            val sortedBadges = remember(filteredBadges) {
+                filteredBadges.sortedWith(
+                    compareByDescending<Badge> { it.isEarned }
+                        .thenByDescending { GamificationEngine.getRarity(it.badgeId).sortWeight }
+                        .thenByDescending { it.stars }
+                )
+            }
+            sortedBadges.chunked(2).forEach { rowBadges ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    rowBadges.forEach { badge -> BadgeCard(badge = badge, modifier = Modifier.weight(1f)) }
+                    repeat(2 - rowBadges.size) { Spacer(modifier = Modifier.weight(1f)) }
                 }
             }
         }
     }
 }
 
-private fun getUniqueBadgeColor(badgeId: String): Color {
-    return when (badgeId) {
-        // Milestones
-        "first_play" -> Color(0xFF10B981) // Emerald
-        "plays_100" -> Color(0xFF3B82F6) // Blue
-        "plays_500" -> Color(0xFF8B5CF6) // Violet
-        "plays_1000" -> Color(0xFFEC4899) // Pink
-        "plays_5000" -> Color(0xFFF43F5E) // Rose
-        "plays_10000" -> Color(0xFFEAB308) // Yellow/Gold
-        
-        // Time
-        "time_1h" -> Color(0xFF06B6D4) // Cyan
-        "time_24h" -> Color(0xFF0EA5E9) // Sky Blue
-        "time_100h" -> Color(0xFF6366F1) // Indigo
-        "time_500h" -> Color(0xFFD946EF) // Fuchsia
-        
-        // Streaks
-        "streak_7" -> Color(0xFFF97316) // Orange
-        "streak_30" -> Color(0xFFEF4444) // Red
-        "streak_100" -> Color(0xFFDC2626) // Deep Red
-        "streak_365" -> Color(0xFF991B1B) // Crimson
-        
-        // Discovery
-        "artists_10" -> Color(0xFF14B8A6) // Teal
-        "artists_50" -> Color(0xFF22C55E) // Green
-        "artists_100" -> Color(0xFF84CC16) // Lime
-        "genres_10" -> Color(0xFFF59E0B) // Amber
-        "genres_25" -> Color(0xFFD97706) // Dark Amber
-        
-        // Engagement
-        "night_owl" -> Color(0xFF312E81) // Deep Indigo
-        "early_bird" -> Color(0xFFFBBF24) // Bright Yellow
-        "marathon" -> Color(0xFF4F46E5) // Purple-Blue
-        
-        // Level
-        "level_5" -> Color(0xFF6EE7B7) // Light Emerald
-        "level_10" -> Color(0xFF34D399) // Emerald
-        "level_25" -> Color(0xFF10B981) // Emerald
-        "level_50" -> Color(0xFF059669) // Dark Emerald
-        "level_75" -> Color(0xFF047857) // Deep Emerald
-        "level_100" -> Color(0xFF064E3B) // Darkest Emerald
-        
-        else -> Color(0xFFA855F7) // Fallback Purple
-    }
+private fun getUniqueBadgeColor(badgeId: String): Color = when (badgeId) {
+    "first_play" -> Color(0xFF10B981)
+    "plays_100" -> Color(0xFF3B82F6)
+    "plays_500" -> Color(0xFF8B5CF6)
+    "plays_1000" -> Color(0xFFEC4899)
+    "plays_5000" -> Color(0xFFF43F5E)
+    "plays_10000" -> Color(0xFFEAB308)
+    "time_1h" -> Color(0xFF06B6D4)
+    "time_24h" -> Color(0xFF0EA5E9)
+    "time_100h" -> Color(0xFF6366F1)
+    "time_500h" -> Color(0xFFD946EF)
+    "streak_7" -> Color(0xFFF97316)
+    "streak_30" -> Color(0xFFEF4444)
+    "streak_100" -> Color(0xFFDC2626)
+    "streak_365" -> Color(0xFF991B1B)
+    "artists_10" -> Color(0xFF14B8A6)
+    "artists_50" -> Color(0xFF22C55E)
+    "artists_100" -> Color(0xFF84CC16)
+    "genres_10" -> Color(0xFFF59E0B)
+    "genres_25" -> Color(0xFFD97706)
+    "night_owl" -> Color(0xFF312E81)
+    "early_bird" -> Color(0xFFFBBF24)
+    "marathon" -> Color(0xFF4F46E5)
+    "level_5" -> Color(0xFF6EE7B7)
+    "level_10" -> Color(0xFF34D399)
+    "level_25" -> Color(0xFF10B981)
+    "level_50" -> Color(0xFF059669)
+    "level_75" -> Color(0xFF047857)
+    "level_100" -> Color(0xFF064E3B)
+    else -> Color(0xFFA855F7)
 }
 
-// Helper for dynamic geometric shapes
+// =====================
+// Rarity presentation — a second axis on top of the star-tier metallic material.
+// COMMON: clean, no extras. RARE: colored rim. EPIC+: rim + aura glow.
+// =====================
+private fun getRarityColor(rarity: GamificationEngine.BadgeRarity): Color = when (rarity) {
+    GamificationEngine.BadgeRarity.COMMON -> Color(0xFF9CA3AF)
+    GamificationEngine.BadgeRarity.RARE -> Color(0xFF3B82F6)
+    GamificationEngine.BadgeRarity.EPIC -> Color(0xFFA855F7)
+    GamificationEngine.BadgeRarity.LEGENDARY -> Color(0xFFF59E0B)
+    GamificationEngine.BadgeRarity.MYTHIC -> Color(0xFFEC4899)
+}
+
+private fun getRarityRimAlpha(rarity: GamificationEngine.BadgeRarity): Float = when (rarity) {
+    GamificationEngine.BadgeRarity.COMMON -> 0f
+    GamificationEngine.BadgeRarity.RARE -> 0.45f
+    GamificationEngine.BadgeRarity.EPIC -> 0.65f
+    GamificationEngine.BadgeRarity.LEGENDARY -> 0.8f
+    GamificationEngine.BadgeRarity.MYTHIC -> 0.95f
+}
+
+private fun getRarityGlowAlpha(rarity: GamificationEngine.BadgeRarity): Float = when (rarity) {
+    GamificationEngine.BadgeRarity.COMMON -> 0f
+    GamificationEngine.BadgeRarity.RARE -> 0f
+    GamificationEngine.BadgeRarity.EPIC -> 0.20f
+    GamificationEngine.BadgeRarity.LEGENDARY -> 0.30f
+    GamificationEngine.BadgeRarity.MYTHIC -> 0.42f
+}
+
 private fun getBadgeShapePath(size: Size, badgeId: String): androidx.compose.ui.graphics.Path {
     val path = androidx.compose.ui.graphics.Path()
     val cx = size.width / 2f
@@ -1783,76 +1137,51 @@ private fun getBadgeShapePath(size: Size, badgeId: String): androidx.compose.ui.
     }
 
     when (badgeId) {
-        // Milestones
         "first_play" -> drawPolygon(3, -90f)
         "plays_100" -> drawPolygon(4, 45f)
         "plays_500" -> drawPolygon(5, -90f)
         "plays_1000" -> drawPolygon(6, 0f)
         "plays_5000" -> drawPolygon(8, 22.5f)
         "plays_10000" -> drawStar(10, 0.7f, -90f)
-        
-        // Time
         "time_1h" -> drawStar(4, 0.6f, 0f)
         "time_24h" -> drawStar(8, 0.8f, 0f)
         "time_100h" -> drawStar(12, 0.85f, 0f)
         "time_500h" -> drawStar(24, 0.9f, 0f)
-        
-        // Streaks
         "streak_7" -> drawShield(0.7f)
         "streak_30" -> drawShield(0.85f)
         "streak_100" -> drawShield(1.0f)
         "streak_365" -> drawStar(16, 0.6f, -90f)
-        
-        // Discovery
         "artists_10" -> drawStar(4, 0.3f, 45f)
         "artists_50" -> drawStar(8, 0.5f, 22.5f)
         "artists_100" -> drawStar(12, 0.5f, 0f)
         "genres_10" -> drawStar(5, 0.4f, -90f)
         "genres_25" -> drawStar(7, 0.45f, -90f)
-        
-        // Engagement
-        "night_owl" -> { // Crescent moon like
-            path.addOval(androidx.compose.ui.geometry.Rect(cx - radius, cy - radius, cx + radius, cy + radius))
-        }
+        "night_owl" -> { path.addOval(androidx.compose.ui.geometry.Rect(cx - radius, cy - radius, cx + radius, cy + radius)) }
         "early_bird" -> drawStar(8, 0.6f, 0f)
         "marathon" -> drawPolygon(4, 0f)
-        
-        // Level
         "level_5" -> drawPolygon(3, 90f)
-        "level_10" -> { path.moveTo(cx, cy - radius); path.lineTo(cx + radius*0.8f, cy); path.lineTo(cx, cy + radius); path.lineTo(cx - radius*0.8f, cy); path.close() }
+        "level_10" -> { path.moveTo(cx, cy - radius); path.lineTo(cx + radius * 0.8f, cy); path.lineTo(cx, cy + radius); path.lineTo(cx - radius * 0.8f, cy); path.close() }
         "level_25" -> drawPolygon(5, 90f)
         "level_50" -> drawPolygon(6, 30f)
         "level_75" -> drawStar(6, 0.7f, 30f)
         "level_100" -> drawStar(8, 0.7f, 22.5f)
-        
         else -> drawPolygon(6, 0f)
     }
     return path
 }
 
-// Helper to draw the path shape
 @Composable
-private fun BadgeEmblem(
-    badge: Badge,
-    intrinsicColor: Color,
-    modifier: Modifier = Modifier
-) {
+private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier = Modifier) {
     val isEarned = badge.isEarned
-
-    // Metallic tier gradients
+    val rarity = GamificationEngine.getRarity(badge.badgeId)
+    val rarityColor = getRarityColor(rarity)
+    val rimAlpha = if (isEarned) getRarityRimAlpha(rarity) else 0f
+    val glowAlpha = if (isEarned) getRarityGlowAlpha(rarity) else 0f
     val metallicShineColors = when {
-        !isEarned -> listOf(
-            Color(0xFF2A2A2A), Color(0xFF1A1A1A), Color(0xFF111111)
-        )
-        badge.stars <= 2 -> listOf(
-            Color(0xFFE8A870), Color(0xFFCD7F32), Color(0xFFA0522D), Color(0xFF7B3820)
-        ) // Bronze
-        badge.stars <= 4 -> listOf(
-            Color(0xFFFFFFFF), Color(0xFFD0D0D0), Color(0xFF909090), Color(0xFF5A5A5A)
-        ) // Silver
-        else -> listOf(
-            Color(0xFFFFEE80), Color(0xFFFFD700), Color(0xFFE6A000), Color(0xFFC07800)
-        ) // Gold
+        !isEarned -> listOf(Color(0xFF2A2A2A), Color(0xFF1A1A1A), Color(0xFF111111))
+        badge.stars <= 2 -> listOf(Color(0xFFE8A870), Color(0xFFCD7F32), Color(0xFFA0522D), Color(0xFF7B3820))
+        badge.stars <= 4 -> listOf(Color(0xFFFFFFFF), Color(0xFFD0D0D0), Color(0xFF909090), Color(0xFF5A5A5A))
+        else -> listOf(Color(0xFFFFEE80), Color(0xFFFFD700), Color(0xFFE6A000), Color(0xFFC07800))
     }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -1860,16 +1189,18 @@ private fun BadgeEmblem(
             val path = getBadgeShapePath(size, badge.badgeId)
             val center = Offset(size.width / 2f, size.height / 2f)
 
-            if (isEarned) {
-                // Soft outer glow/shadow behind the shape
-                drawPath(
-                    path = path,
-                    color = intrinsicColor.copy(alpha = 0.35f),
-                    style = androidx.compose.ui.graphics.drawscope.Fill
+            // Rarity aura — a soft circular glow behind the medal for EPIC+.
+            if (glowAlpha > 0f) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(rarityColor.copy(alpha = glowAlpha), Color.Transparent),
+                        center = center,
+                        radius = size.minDimension / 2f
+                    )
                 )
             }
 
-            // Outer rim — metallic gradient
+            // Metallic body (full size).
             drawPath(
                 path = path,
                 brush = Brush.linearGradient(
@@ -1880,23 +1211,25 @@ private fun BadgeEmblem(
                 style = androidx.compose.ui.graphics.drawscope.Fill
             )
 
-            // Inner face — scaled down, colored fill
+            // Rarity rim — a colored edge that telegraphs rarity at a glance.
+            if (rimAlpha > 0f) {
+                drawPath(
+                    path = path,
+                    color = rarityColor.copy(alpha = rimAlpha),
+                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
+
             drawContext.transform.translate(center.x, center.y)
             drawContext.transform.scale(0.88f, 0.88f)
             drawContext.transform.translate(-center.x, -center.y)
 
             val innerPath = getBadgeShapePath(size, badge.badgeId)
             if (isEarned) {
-                // Radial gradient: bright hot centre, fades to deep saturated edge
                 drawPath(
                     path = innerPath,
                     brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.55f),
-                            intrinsicColor,
-                            intrinsicColor.copy(alpha = 0.7f),
-                            Color.Black.copy(alpha = 0.5f)
-                        ),
+                        colors = listOf(Color.White.copy(alpha = 0.45f), intrinsicColor, intrinsicColor.copy(alpha = 0.7f), Color.Black.copy(alpha = 0.5f)),
                         center = Offset(center.x * 0.7f, center.y * 0.5f),
                         radius = size.width * 0.9f
                     )
@@ -1913,7 +1246,6 @@ private fun BadgeEmblem(
             }
         }
 
-        // Icon on top
         Icon(
             imageVector = getBadgeIcon(badge.iconName),
             contentDescription = badge.name,
@@ -1924,181 +1256,49 @@ private fun BadgeEmblem(
 }
 
 @Composable
-private fun BadgeCard(
-    badge: Badge,
-    modifier: Modifier = Modifier,
-    isSpotlight: Boolean = false
-) {
+private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: Boolean = false) {
     val intrinsicColor = getUniqueBadgeColor(badge.badgeId)
+    val rarity = GamificationEngine.getRarity(badge.badgeId)
+    val rarityColor = getRarityColor(rarity)
     val isEarned = badge.isEarned
     val targetProgress = if (isEarned) 1f else badge.progressFraction
     val animatedProgress by animateFloatAsState(
         targetValue = targetProgress,
-        animationSpec = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+        animationSpec = tween(1200, easing = FastOutSlowInEasing),
         label = "fill"
     )
+    val containerColor = if (isEarned) darkTint(intrinsicColor) else Color(0xFF161618)
+    val isBeginner = badge.badgeId in GamificationEngine.BEGINNER_BADGES
+    // Border intensity escalates with rarity so prestige reads at a glance.
+    val earnedBorderAlpha = (0.20f + rarity.sortWeight * 0.12f).coerceAtMost(0.70f)
 
-    val shape = RoundedCornerShape(28.dp)
-
-    // ── Background base: rich saturated or matte dark ──────────────────────
-    val bgBase = if (isEarned) {
-        Color(
-            red   = (intrinsicColor.red   * 0.40f + 0.04f).coerceIn(0f, 1f),
-            green = (intrinsicColor.green * 0.40f + 0.04f).coerceIn(0f, 1f),
-            blue  = (intrinsicColor.blue  * 0.40f + 0.04f).coerceIn(0f, 1f),
-            alpha = 1f
-        )
-    } else {
-        Color(0xFF18181B) // near-black for locked
-    }
-
-    // ── Elevation: real Android drop-shadow for tactile depth ─────────────
     Card(
         modifier = modifier.animateContentSize(),
-        shape = shape,
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isEarned) 16.dp else 3.dp,
-            pressedElevation  = if (isEarned) 8.dp  else 1.dp
-        ),
-        colors = CardDefaults.cardColors(containerColor = bgBase),
-        border = if (isSpotlight)
-            BorderStroke(2.dp, intrinsicColor.copy(alpha = 0.8f))
-        else
-            BorderStroke(1.dp, if (isEarned) intrinsicColor.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f))
+        shape = RoundedCornerShape(22.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isEarned) (3 + rarity.sortWeight).dp else 2.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        border = if (isSpotlight) {
+            BorderStroke(2.dp, intrinsicColor.copy(alpha = 0.7f))
+        } else {
+            BorderStroke(1.dp, if (isEarned) intrinsicColor.copy(alpha = earnedBorderAlpha) else ProfileBorder)
+        }
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-
-            // ─── Layer 1: Diagonal ambient colour sweep ────────────────────
-            // Colour wash from top-left adding warmth / hue
-            Canvas(modifier = Modifier.matchParentSize()) {
-                if (isEarned) {
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                intrinsicColor.copy(alpha = 0.35f),
-                                intrinsicColor.copy(alpha = 0.08f),
-                                Color.Transparent
-                            ),
-                            start = Offset(0f, 0f),
-                            end   = Offset(size.width, size.height)
-                        )
-                    )
-                } else {
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = 0.04f),
-                                Color.Transparent
-                            ),
-                            start = Offset(0f, 0f),
-                            end   = Offset(size.width * 0.6f, size.height * 0.5f)
-                        )
-                    )
-                }
-            }
-
-            // ─── Layer 2: Top-left specular highlight (clay roundedness) ───
-            // Simulates light hitting the top-left curved face of the clay block
-            Canvas(modifier = Modifier.matchParentSize()) {
-                val highlightAlpha = if (isEarned) 0.30f else 0.07f
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = highlightAlpha),
-                            Color.White.copy(alpha = (highlightAlpha * 0.4f)),
-                            Color.Transparent
-                        ),
-                        center = Offset(size.width * 0.25f, size.height * 0.18f),
-                        radius = size.width * 0.55f
-                    )
-                )
-            }
-
-            // ─── Layer 3: Bottom-edge depth shadow ──────────────────────────
-            // A gradient darkening at the very bottom to push the surface "up"
-            Canvas(modifier = Modifier.matchParentSize()) {
-                if (isEarned) {
-                    val edgeH = size.height * 0.22f
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.30f)
-                            ),
-                            startY = size.height - edgeH,
-                            endY   = size.height
-                        )
-                    )
-                    // Right edge darkness
-                    val edgeW = size.width * 0.12f
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.18f)
-                            ),
-                            startX = size.width - edgeW,
-                            endX   = size.width
-                        )
-                    )
-                }
-            }
-
-            // ─── Layer 4: Holographic shimmer for maxed badges ─────────────
-            if (isEarned && badge.isMaxed) {
-                val infiniteTransition = rememberInfiniteTransition(label = "holo")
-                val slide by infiniteTransition.animateFloat(
-                    initialValue = -1f,
-                    targetValue  =  2f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(2800, easing = LinearEasing),
-                        repeatMode = RepeatMode.Restart
-                    ),
-                    label = "holo_slide"
-                )
-                Canvas(modifier = Modifier.matchParentSize()) {
-                    val sweepStart = size.width * slide
-                    val sweepWidth = size.width * 0.4f
-                    drawRect(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.White.copy(alpha = 0.10f),
-                                Color.White.copy(alpha = 0.40f),
-                                intrinsicColor.copy(alpha = 0.20f),
-                                Color.White.copy(alpha = 0.10f),
-                                Color.Transparent
-                            ),
-                            start = Offset(sweepStart, 0f),
-                            end   = Offset(sweepStart + sweepWidth, size.height)
-                        ),
-                        blendMode = androidx.compose.ui.graphics.BlendMode.Screen
-                    )
-                }
-            }
-
-            // ─── Content ────────────────────────────────────────────────────
             Column(
                 modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Emblem
-                BadgeEmblem(
-                    badge = badge,
-                    intrinsicColor = intrinsicColor,
-                    modifier = Modifier.size(80.dp)
-                )
+                BadgeEmblem(badge = badge, intrinsicColor = intrinsicColor, modifier = Modifier.size(76.dp))
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Badge name
                 Text(
                     text = badge.name,
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Black,
-                    color = if (isEarned) Color.White else Color.White.copy(alpha = 0.35f),
+                    fontWeight = FontWeight.Bold,
+                    color = if (isEarned) TextPrimary else TextTertiary,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -2106,11 +1306,10 @@ private fun BadgeCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Description
                 Text(
                     text = badge.description,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isEarned) Color.White.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.25f),
+                    color = if (isEarned) TextSecondary else TextTertiary,
                     textAlign = TextAlign.Center,
                     minLines = 2,
                     maxLines = 2,
@@ -2118,32 +1317,19 @@ private fun BadgeCard(
                     lineHeight = 13.sp
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Stars & Progress
-                val isBeginner = badge.badgeId in GamificationEngine.BEGINNER_BADGES
                 if (isEarned) {
                     if (isBeginner) {
-                        // Pill chip for simple unlocked badges
                         Box(
                             modifier = Modifier
-                                .background(
-                                    intrinsicColor.copy(alpha = 0.25f),
-                                    RoundedCornerShape(50)
-                                )
+                                .background(intrinsicColor.copy(alpha = 0.22f), RoundedCornerShape(50))
                                 .border(1.dp, intrinsicColor.copy(alpha = 0.5f), RoundedCornerShape(50))
                                 .padding(horizontal = 12.dp, vertical = 4.dp)
                         ) {
-                            Text(
-                                text = "✓ UNLOCKED",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Black,
-                                color = intrinsicColor,
-                                letterSpacing = 1.sp
-                            )
+                            Text(text = "UNLOCKED", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = intrinsicColor, letterSpacing = 1.sp)
                         }
                     } else {
-                        // Star row
                         Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                             for (i in 1..5) {
                                 val activeColor = if (badge.isMaxed) intrinsicColor else Color(0xFFFBBF24)
@@ -2156,109 +1342,79 @@ private fun BadgeCard(
                                 )
                             }
                         }
-
                         Spacer(modifier = Modifier.height(8.dp))
-
                         if (badge.isMaxed) {
                             Box(
                                 modifier = Modifier
-                                    .background(
-                                        intrinsicColor.copy(alpha = 0.25f),
-                                        RoundedCornerShape(50)
-                                    )
+                                    .background(intrinsicColor.copy(alpha = 0.22f), RoundedCornerShape(50))
                                     .border(1.dp, intrinsicColor.copy(alpha = 0.5f), RoundedCornerShape(50))
                                     .padding(horizontal = 12.dp, vertical = 4.dp)
                             ) {
-                                Text(
-                                    text = "★ MAXED",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Black,
-                                    color = intrinsicColor,
-                                    letterSpacing = 1.sp
-                                )
+                                Text(text = "MAXED", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = intrinsicColor, letterSpacing = 1.sp)
                             }
                         } else {
-                            // Progress to next star
                             Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(5.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.3f))
+                                modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.3f))
                             ) {
                                 Box(
-                                    modifier = Modifier
-                                        .fillMaxHeight()
-                                        .fillMaxWidth(animatedProgress)
-                                        .clip(CircleShape)
-                                        .background(
-                                            Brush.horizontalGradient(
-                                                listOf(
-                                                    intrinsicColor.copy(alpha = 0.7f),
-                                                    intrinsicColor
-                                                )
-                                            )
-                                        )
-                                )
-                                // Highlight on progress bar
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxHeight(0.5f)
-                                        .fillMaxWidth(animatedProgress)
-                                        .clip(CircleShape)
-                                        .background(Color.White.copy(alpha = 0.25f))
+                                    modifier = Modifier.fillMaxHeight().fillMaxWidth(animatedProgress).clip(CircleShape).background(intrinsicColor)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(5.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "${badge.progress} / ${badge.maxProgress}  →  ★${badge.stars + 1}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.55f),
+                                color = TextTertiary,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 9.sp
                             )
                         }
                     }
                 } else {
-                    // Locked — progress bar
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(5.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.4f))
+                        modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f))
                     ) {
                         Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(animatedProgress)
-                                .clip(CircleShape)
-                                .background(intrinsicColor.copy(alpha = 0.55f))
+                            modifier = Modifier.fillMaxHeight().fillMaxWidth(animatedProgress).clip(CircleShape).background(intrinsicColor.copy(alpha = 0.55f))
                         )
                     }
-                    Spacer(modifier = Modifier.height(5.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "${badge.progress} / ${badge.maxProgress}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.35f),
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = TextTertiary,
+                        fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 9.sp
                     )
                 }
+            }
+
+            // Rarity tag — always visible so locked badges advertise the prize they hide.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .background(rarityColor.copy(alpha = if (isEarned) 0.16f else 0.08f), RoundedCornerShape(50))
+                    .border(1.dp, rarityColor.copy(alpha = if (isEarned) 0.45f else 0.18f), RoundedCornerShape(50))
+                    .padding(horizontal = 7.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = rarity.label.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isEarned) rarityColor else rarityColor.copy(alpha = 0.55f),
+                    fontSize = 8.sp,
+                    letterSpacing = 1.sp
+                )
             }
         }
     }
 }
 
 // Safe blur modifier that works across different API levels
-fun Modifier.safeBlur(radius: androidx.compose.ui.unit.Dp): Modifier {
-    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-        this.blur(radius)
-    } else {
-        this // No-op on older versions
-    }
-}
+fun Modifier.safeBlur(radius: androidx.compose.ui.unit.Dp): Modifier =
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) this.blur(radius) else this
 
 // =====================
 // Compact Level Ring for HomeScreen header
@@ -2276,7 +1432,7 @@ fun CompactLevelRing(
         animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
         label = "compactLevelProgress"
     )
-    
+
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
@@ -2286,64 +1442,40 @@ fun CompactLevelRing(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Mini ring
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp)) {
             Canvas(modifier = Modifier.size(28.dp)) {
                 val strokeWidth = 3.dp.toPx()
                 val radius = (size.minDimension - strokeWidth) / 2
-                val topLeft = Offset(
-                    (size.width - radius * 2) / 2,
-                    (size.height - radius * 2) / 2
-                )
+                val topLeft = Offset((size.width - radius * 2) / 2, (size.height - radius * 2) / 2)
                 val arcSize = Size(radius * 2, radius * 2)
-                
                 drawArc(
                     color = Color.White.copy(alpha = 0.15f),
-                    startAngle = -90f, sweepAngle = 360f,
-                    useCenter = false, topLeft = topLeft, size = arcSize,
+                    startAngle = -90f, sweepAngle = 360f, useCenter = false, topLeft = topLeft, size = arcSize,
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
                 drawArc(
-                    brush = Brush.sweepGradient(
-                        listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1))
-                    ),
-                    startAngle = -90f, sweepAngle = 360f * animatedProgress,
-                    useCenter = false, topLeft = topLeft, size = arcSize,
+                brush = Brush.sweepGradient(listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1))),
+                    startAngle = -90f, sweepAngle = 360f * animatedProgress, useCenter = false, topLeft = topLeft, size = arcSize,
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
             }
-            Text(
-                text = "$level",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                fontSize = 10.sp
-            )
+            Text(text = "$level", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 10.sp)
         }
-        
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.8f),
-            maxLines = 1
-        )
+
+        Text(text = title, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f), maxLines = 1)
     }
 }
 
-// =====================
+// =====================================================================
 // New Badge Celebration Overlay
-// =====================
+// =====================================================================
 @Composable
-fun NewBadgeCelebrationOverlay(
-    badges: List<Badge>,
-    onDismiss: () -> Unit
-) {
+fun NewBadgeCelebrationOverlay(badges: List<Badge>, onDismiss: () -> Unit) {
     if (badges.isEmpty()) return
 
     var currentIndex by remember { mutableStateOf(0) }
     val currentBadge = badges[currentIndex]
 
-    // Haptics
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(currentIndex) {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -2356,73 +1488,74 @@ fun NewBadgeCelebrationOverlay(
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.9f))
             .clickable {
-                // If there are more badges, go to next. Else dismiss.
-                if (currentIndex < badges.size - 1) {
-                    currentIndex++
-                } else {
-                    onDismiss()
-                }
+                if (currentIndex < badges.size - 1) currentIndex++ else onDismiss()
             }
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
         val infiniteTransition = rememberInfiniteTransition(label = "badgeAura")
         val scale by infiniteTransition.animateFloat(
-            initialValue = 0.9f,
-            targetValue = 1.1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1500),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "badgeScale"
+            initialValue = 0.9f, targetValue = 1.1f,
+            animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse), label = "badgeScale"
         )
 
-        // Intrinsic badge glow
         val badgeColor = getUniqueBadgeColor(currentBadge.badgeId)
+        val rarity = GamificationEngine.getRarity(currentBadge.badgeId)
+        val rarityColor = getRarityColor(rarity)
+        val worthXp = GamificationEngine.getBadgeXpContribution(currentBadge.badgeId, currentBadge.stars)
         Box(
             modifier = Modifier
                 .size(350.dp)
                 .scale(scale)
                 .background(
                     brush = Brush.radialGradient(
-                        colors = listOf(
-                            badgeColor.copy(alpha = 0.4f),
-                            badgeColor.copy(alpha = 0.1f),
-                            Color.Transparent
-                        )
+                        colors = listOf(rarityColor.copy(alpha = 0.35f), badgeColor.copy(alpha = 0.08f), Color.Transparent)
                     ),
                     shape = CircleShape
                 )
         )
-        
+
         ConfettiEffect()
 
         Column(
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            val titleText = if (currentBadge.isEarned && currentBadge.stars == 1) {
-                "NEW BADGE UNLOCKED!"
-            } else {
-                "BADGE UPGRADED!"
-            }
-
+            val titleText = if (currentBadge.isEarned && currentBadge.stars == 1) "NEW BADGE UNLOCKED!" else "BADGE UPGRADED!"
             Text(
                 text = titleText,
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Black,
                 color = badgeColor,
-                modifier = Modifier.padding(bottom = 32.dp)
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            Text(
+                text = rarity.label.uppercase() + " ACHIEVEMENT",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = rarityColor,
+                letterSpacing = 3.sp,
+                modifier = Modifier.padding(bottom = 24.dp)
             )
 
-            // Show the actual badge card, but scaled up
-            Box(modifier = Modifier.scale(1.3f)) {
-                BadgeCard(badge = currentBadge)
+            // Pop-in animation keyed to each badge so the reveal feels earned, not stamped.
+            val popIn = remember(currentIndex) { Animatable(0f) }
+            LaunchedEffect(currentIndex) {
+                popIn.snapTo(0f)
+                popIn.animateTo(1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow))
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.94f)
+                    .scale(0.82f + 0.18f * popIn.value)
+                    .alpha(popIn.value)
+            ) {
+                BadgeCard(badge = currentBadge, modifier = Modifier.fillMaxWidth())
             }
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            // Star reveal
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (i in 1..5) {
                     val isEarnedStar = i <= currentBadge.stars
@@ -2431,144 +1564,112 @@ fun NewBadgeCelebrationOverlay(
                         contentDescription = null,
                         tint = if (isEarnedStar) {
                             if (currentBadge.isMaxed) badgeColor else Color(0xFFFFD700)
-                        } else {
-                            Color.White.copy(alpha = 0.1f)
-                        },
+                        } else Color.White.copy(alpha = 0.1f),
                         modifier = Modifier.size(32.dp)
                     )
                 }
             }
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            Text(
-                text = "Tap anywhere to continue",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.5f)
-            )
-            
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // The payoff — show the XP this badge is now worth so the unlock feels earned.
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Amber.copy(alpha = 0.14f))
+                    .border(1.dp, Amber.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = Amber, modifier = Modifier.size(16.dp))
+                Text(
+                    text = "WORTH $worthXp XP",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Amber,
+                    letterSpacing = 1.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            Text(text = "Tap anywhere to continue", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.5f))
+
             if (badges.size > 1) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "${currentIndex + 1} of ${badges.size}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.3f)
-                )
+                Text(text = "${currentIndex + 1} of ${badges.size}", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.3f))
             }
         }
     }
 }
 
-// =====================
+// =====================================================================
 // Level Up Celebration Overlay
-// =====================
+// =====================================================================
 @Composable
-fun LevelUpCelebration(
-    level: Int,
-    onDismiss: () -> Unit
-) {
+fun LevelUpCelebration(level: Int, onDismiss: () -> Unit) {
     var isVisible by remember { mutableStateOf(false) }
-    
-    LaunchedEffect(Unit) {
-        isVisible = true
-    }
+    LaunchedEffect(Unit) { isVisible = true }
 
-    // Haptics
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(Unit) {
-        // Initial heavy vibration
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         kotlinx.coroutines.delay(100)
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        
-        // Rhythmic pulses for confetti
         repeat(5) {
             kotlinx.coroutines.delay(150)
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
     }
-    
+
     if (isVisible) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.8f))
-                .clickable { onDismiss() } // Tap anywhere to dismiss
+                .clickable { onDismiss() }
                 .padding(32.dp),
             contentAlignment = Alignment.Center
         ) {
-            // Gradient Aura
             val infiniteTransition = rememberInfiniteTransition(label = "aura")
             val scale by infiniteTransition.animateFloat(
-                initialValue = 0.8f,
-                targetValue = 1.2f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(2000),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "auraScale"
+                initialValue = 0.8f, targetValue = 1.2f,
+                animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse), label = "auraScale"
             )
-            
+
             Box(
                 modifier = Modifier
                     .size(300.dp)
                     .scale(scale)
                     .background(
                         brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFFEC4899).copy(alpha = 0.3f),
-                                Color(0xFFA855F7).copy(alpha = 0.1f),
-                                Color.Transparent
-                            )
+                            colors = listOf(ProfileAccent.copy(alpha = 0.3f), ProfileAccentLight.copy(alpha = 0.1f), Color.Transparent)
                         ),
                         shape = CircleShape
                     )
             )
-            
-            // Confetti (Simplified implementation using Canvas nodes)
+
             ConfettiEffect()
-            
-            // Content
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Text(
                     text = "LEVEL UP!",
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Black,
-                    color = Color(0xFFF59E0B), // Gold
+                    color = Amber,
                     modifier = Modifier.scale(1.1f)
                 )
-                
                 Spacer(modifier = Modifier.height(24.dp))
-                
                 Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "$level",
-                        style = MaterialTheme.typography.displayLarge,
-                        fontSize = 120.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                    Text(text = "$level", style = MaterialTheme.typography.displayLarge, fontSize = 120.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
-                
                 Spacer(modifier = Modifier.height(24.dp))
-                
-                Text(
-                    text = "You reached Level $level",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.White.copy(alpha = 0.9f)
-                )
-                
+                Text(text = "You reached Level $level", style = MaterialTheme.typography.headlineSmall, color = Color.White.copy(alpha = 0.9f))
                 Spacer(modifier = Modifier.height(48.dp))
-                
                 Button(
                     onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
-                    ),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                     modifier = Modifier.fillMaxWidth(0.7f)
                 ) {
                     Text("Awesome!", fontWeight = FontWeight.Bold)
@@ -2583,42 +1684,30 @@ fun ConfettiEffect() {
     val particles = remember {
         List(50) {
             ConfettiParticle(
-                x = (0..1000).random() / 1000f, // Normalized 0..1
-                y = (0..1000).random() / 1000f - 1f, // Start above screen
-                color = listOf(
-                    Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1), 
-                    Color(0xFFF59E0B), Color(0xFF10B981)
-                ).random(),
+                x = (0..1000).random() / 1000f,
+                y = (0..1000).random() / 1000f - 1f,
+                color = listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1), Color(0xFFF59E0B), Color(0xFF10B981)).random(),
                 speed = (5..15).random() / 1000f,
                 radius = (5..15).random().toFloat()
             )
         }
     }
-    
-    // Animation loop
+
     val timer = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         timer.animateTo(
             targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(2000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            )
+            animationSpec = infiniteRepeatable(animation = tween(2000, easing = LinearEasing), repeatMode = RepeatMode.Restart)
         )
     }
-    
+
     Canvas(modifier = Modifier.fillMaxSize()) {
         particles.forEach { particle ->
-            // Simple fall physics
             val animatedY = (particle.y + timer.value * particle.speed * 50) % 1.5f - 0.2f
-            
             drawCircle(
                 color = particle.color,
                 radius = particle.radius,
-                center = Offset(
-                    x = particle.x * size.width,
-                    y = animatedY * size.height
-                ),
+                center = Offset(x = particle.x * size.width, y = animatedY * size.height),
                 alpha = if (animatedY > 1f) 0f else 1f
             )
         }

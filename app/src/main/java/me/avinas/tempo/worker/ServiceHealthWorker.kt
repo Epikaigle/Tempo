@@ -6,12 +6,14 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import me.avinas.tempo.R
 import me.avinas.tempo.service.MusicTrackingService
+import me.avinas.tempo.service.TrackingServiceHeartbeat
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
@@ -76,56 +78,60 @@ class ServiceHealthWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         Log.d(TAG, "Running service health check")
+        val componentName = ComponentName(
+            applicationContext,
+            MusicTrackingService::class.java
+        )
 
         // Check if notification listener permission is granted
-        if (!isNotificationListenerEnabled()) {
+        if (!isNotificationListenerEnabled(componentName)) {
             Log.w(TAG, "Notification listener not enabled, cannot restart service")
             return Result.success() // Don't retry, user action needed
         }
 
-        // Check if service is connected
-        if (!isServiceRunning()) {
-            Log.w(TAG, "Service not running, attempting restart")
-            restartService()
+        val heartbeat = TrackingServiceHeartbeat.snapshot(applicationContext)
+        if (heartbeat.shouldRequestRebind()) {
+            Log.w(TAG, "Tracking listener heartbeat stale: $heartbeat")
+            if (heartbeat.shouldForceRestartAfterRebind()) {
+                Log.w(TAG, "Previous rebind did not refresh heartbeat, forcing component restart")
+                restartService(componentName)
+            } else {
+                requestListenerRebind(componentName)
+            }
         } else {
-            Log.d(TAG, "Service is running normally")
+            Log.d(TAG, "Tracking listener heartbeat healthy: $heartbeat")
         }
 
         return Result.success()
     }
 
-    private fun isNotificationListenerEnabled(): Boolean {
-        val packageName = applicationContext.packageName
-        val flat = Settings.Secure.getString(
-            applicationContext.contentResolver,
-            "enabled_notification_listeners"
-        )
-        return flat?.contains(packageName) == true
-    }
-
-    private fun isServiceRunning(): Boolean {
-        // Check if the notification listener service is in the enabled list
-        // The system manages NotificationListenerService lifecycle
+    private fun isNotificationListenerEnabled(componentName: ComponentName): Boolean {
         val flat = Settings.Secure.getString(
             applicationContext.contentResolver,
             "enabled_notification_listeners"
         )
         
-        val expectedComponent = ComponentName(
-            applicationContext,
-            MusicTrackingService::class.java
-        ).flattenToString()
-        
-        return flat?.contains(expectedComponent) == true
+        val expectedComponent = componentName.flattenToString()
+        val expectedShortComponent = componentName.flattenToShortString()
+
+        return (flat
+            ?.split(':')
+            ?.any { it == expectedComponent || it == expectedShortComponent }
+            == true)
     }
 
-    private suspend fun restartService() {
+    private fun requestListenerRebind(componentName: ComponentName) {
         try {
-            val componentName = ComponentName(
-                applicationContext,
-                MusicTrackingService::class.java
-            )
-            
+            NotificationListenerService.requestRebind(componentName)
+            TrackingServiceHeartbeat.markRebindRequested(applicationContext)
+            Log.i(TAG, "Notification listener rebind requested")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to request listener rebind", e)
+        }
+    }
+
+    private suspend fun restartService(componentName: ComponentName) {
+        try {
             // Toggle component state to force system rebind
             val pm = applicationContext.packageManager
             
@@ -143,6 +149,7 @@ class ServiceHealthWorker @AssistedInject constructor(
                 android.content.pm.PackageManager.DONT_KILL_APP
             )
             
+            TrackingServiceHeartbeat.markRebindRequested(applicationContext)
             Log.i(TAG, "Service restart requested via component toggle")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to restart service", e)

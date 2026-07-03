@@ -82,20 +82,20 @@ class StatsPrecomputeWorker @AssistedInject constructor(
             val timeRanges = listOf(
                 TimeRange.TODAY,
                 TimeRange.THIS_WEEK,
-                TimeRange.THIS_MONTH
+                TimeRange.THIS_MONTH,
+                TimeRange.THIS_YEAR
             )
 
             for (timeRange in timeRanges) {
                 Log.d(TAG, "Precomputing stats for $timeRange")
                 
-                // These calls will populate the cache
                 statsRepository.getListeningOverview(timeRange)
                 statsRepository.getTopArtists(timeRange, page = 0, pageSize = 10)
                 statsRepository.getTopTracks(timeRange, page = 0, pageSize = 10)
                 statsRepository.getHourlyDistribution(timeRange)
                 statsRepository.getDayOfWeekDistribution(timeRange)
+                statsRepository.getDiscoveryStats(timeRange)
                 
-                // Set progress for each completed time range
                 setProgress(workDataOf("timeRange" to timeRange.name))
             }
 

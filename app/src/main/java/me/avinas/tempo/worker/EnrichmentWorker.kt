@@ -151,6 +151,14 @@ class EnrichmentWorker @AssistedInject constructor(
         
         // Larger batch size for post-import accelerated enrichment
         private const val POST_IMPORT_BATCH_SIZE = 50
+
+        // Scaled batch sizes for large post-import backlogs (e.g. YouTube Music imports)
+        private const val POST_IMPORT_BATCH_SIZE_LARGE = 100   // pending > 1000
+        private const val POST_IMPORT_BATCH_SIZE_HUGE = 150    // pending > 5000
+
+        // Minimum play count threshold for two-tier post-import enrichment
+        private const val POST_IMPORT_MIN_PLAY_COUNT = 2
+        private const val POST_IMPORT_LARGE_BACKLOG_THRESHOLD = 1000
         
         // Delay between processing each track (respects rate limit)
         private const val INTER_TRACK_DELAY_MS = 1500L
@@ -562,16 +570,6 @@ class EnrichmentWorker @AssistedInject constructor(
         val isImmediateEnrichment = inputData.getBoolean("is_immediate", false)
         val isPostImportEnrichment = inputData.getBoolean("is_post_import", false)
         
-        // Determine batch size and delay based on mode
-        val batchSize = when {
-            isPostImportEnrichment -> POST_IMPORT_BATCH_SIZE
-            else -> BATCH_SIZE
-        }
-        val interTrackDelay = when {
-            isPostImportEnrichment -> POST_IMPORT_INTER_TRACK_DELAY_MS
-            else -> INTER_TRACK_DELAY_MS
-        }
-        
         // For post-import mode, check if we should continue or stop
         if (isPostImportEnrichment) {
             val pendingCount = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
@@ -586,11 +584,70 @@ class EnrichmentWorker @AssistedInject constructor(
             Log.i(TAG, "Post-import enrichment: $pendingCount tracks remaining")
         }
 
+        // Determine batch size and delay based on mode
+        val batchSize: Int
+        val interTrackDelay: Long
+
+        if (isPostImportEnrichment) {
+            val pendingCount = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
+            // Scale batch size based on backlog size for faster throughput on large imports
+            batchSize = when {
+                pendingCount > 5000 -> POST_IMPORT_BATCH_SIZE_HUGE
+                pendingCount > 1000 -> POST_IMPORT_BATCH_SIZE_LARGE
+                else -> POST_IMPORT_BATCH_SIZE
+            }
+            // Shorter delay for larger backlogs (still respects rate limits across different APIs)
+            interTrackDelay = when {
+                pendingCount > 5000 -> 500L
+                pendingCount > 1000 -> 750L
+                else -> POST_IMPORT_INTER_TRACK_DELAY_MS
+            }
+            Log.i(TAG, "Post-import batch config: batchSize=$batchSize, delay=${interTrackDelay}ms (pending=$pendingCount)")
+        } else {
+            batchSize = BATCH_SIZE
+            interTrackDelay = INTER_TRACK_DELAY_MS
+        }
+
         // 1. Process pending tracks (completely unenriched)
-        val pendingTracks = enrichedMetadataDao.getTracksNeedingEnrichment(
-            status = EnrichmentStatus.PENDING,
-            limit = batchSize
-        )
+        // For large post-import backlogs, use two-tier enrichment:
+        //   Tier 1: Top-played tracks (play_count >= 2) — most important, enriched first
+        //   Tier 2: Remaining pending tracks — filled in if tier 1 doesn't fill the batch
+        //   This ensures YouTube Music imports with thousands of tracks prioritize
+        //   frequently-played songs and defer one-play wonders to the periodic worker.
+        val pendingTracks: List<EnrichedMetadata> = if (isPostImportEnrichment) {
+            val pendingCount = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
+            if (pendingCount > POST_IMPORT_LARGE_BACKLOG_THRESHOLD) {
+                // Two-tier: get top-played first
+                val topPlayed = enrichedMetadataDao.getTopPlayedTracksNeedingEnrichment(
+                    status = EnrichmentStatus.PENDING,
+                    minPlayCount = POST_IMPORT_MIN_PLAY_COUNT,
+                    limit = batchSize
+                )
+                if (topPlayed.size < batchSize) {
+                    // Fill remaining slots with any pending track (ordered by play count)
+                    val remaining = batchSize - topPlayed.size
+                    val fillTracks = enrichedMetadataDao.getTracksNeedingEnrichment(
+                        status = EnrichmentStatus.PENDING,
+                        limit = remaining
+                    )
+                    // Merge, avoiding duplicates
+                    val topPlayedIds = topPlayed.map { it.trackId }.toSet()
+                    topPlayed + fillTracks.filter { it.trackId !in topPlayedIds }
+                } else {
+                    topPlayed
+                }
+            } else {
+                enrichedMetadataDao.getTracksNeedingEnrichment(
+                    status = EnrichmentStatus.PENDING,
+                    limit = batchSize
+                )
+            }
+        } else {
+            enrichedMetadataDao.getTracksNeedingEnrichment(
+                status = EnrichmentStatus.PENDING,
+                limit = batchSize
+            )
+        }
         
         Log.d(TAG, "Found ${pendingTracks.size} pending tracks to enrich (mode: ${
             when {

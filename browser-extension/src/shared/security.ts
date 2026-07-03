@@ -199,7 +199,7 @@ async function deriveEncryptionKey(token: string): Promise<CryptoKey> {
 }
 
 async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([data])
+  const stream = new Blob([data as BlobPart])
     .stream()
     .pipeThrough(new CompressionStream('gzip'));
   const compressed = await new Response(stream).arrayBuffer();
@@ -207,7 +207,7 @@ async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
 }
 
 async function gzipDecompress(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([data])
+  const stream = new Blob([data as BlobPart])
     .stream()
     .pipeThrough(new DecompressionStream('gzip'));
   const decompressed = await new Response(stream).arrayBuffer();
@@ -240,7 +240,7 @@ export async function encryptBody(plaintext: string, token: string): Promise<str
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
-    compressed
+    compressed as BufferSource
   );
 
   const ciphertextBytes = new Uint8Array(ciphertext);

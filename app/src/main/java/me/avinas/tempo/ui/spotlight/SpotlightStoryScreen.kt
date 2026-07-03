@@ -39,12 +39,15 @@ import me.avinas.tempo.ui.components.CaptureWrapper
 import me.avinas.tempo.ui.components.rememberCaptureController
 import me.avinas.tempo.utils.ShareUtils
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.DisposableEffect
+import me.avinas.tempo.R
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -100,103 +103,115 @@ fun SpotlightStoryScreen(
             }
     }
 
-    // Determine colors based on current page
+    // Determine colors based on current page - Narrative Arc Color Story
+    // Act 1 (Setup): Cool blues/purples - curiosity, introspection
+    // Act 2 (Discoveries): Warm ambers/pinks - excitement, passion  
+    // Act 3 (Climax): Bold reds/golds - revelation, celebration
+    // Act 4 (Resolution): Serene teals/whites - reflection, peace
     val currentPage = storyPages.getOrNull(pagerState.currentPage)
     val (primaryColor, secondaryColor, tertiaryColor) = when (currentPage) {
+        // ACT 1: SETUP - Cool, introspective blues/purples
         is SpotlightStoryPage.ListeningMinutes -> Triple(
-            Color(0xFF8B5CF6), // Warm Violet
-            Color(0xFFA855F7), // Purple
-            Color(0xFF6366F1)  // Indigo (subtle cooler tone)
+            Color(0xFF6366F1), // Indigo - curiosity
+            Color(0xFF818CF8), // Light Indigo
+            Color(0xFF4F46E5)  // Deep Indigo
         )
         is SpotlightStoryPage.ListeningStreak -> Triple(
-            Color(0xFFEA580C), // Deep Orange / Fire
-            Color(0xFFFF9900), // Amber
-            Color(0xFFFFD060)  // Golden
+            Color(0xFF7C3AED), // Violet - building momentum
+            Color(0xFF8B5CF6), // Light Violet
+            Color(0xFF6D28D9)  // Deep Violet
         )
         is SpotlightStoryPage.ListeningClock -> Triple(
             Color(0xFF1E1B4B), // Deep Indigo (night)
             Color(0xFF3730A3), // Indigo
-            Color(0xFF7C3AED)  // Violet
+            Color(0xFF4338CA)  // Bright Indigo
         )
+        
+        // ACT 2: DISCOVERIES - Warm, exciting ambers/pinks
         is SpotlightStoryPage.TopArtist -> Triple(
-            Color(0xFFEC4899), // Pink
-            Color(0xFFBE185D), // Dark Pink
-            Color(0xFF831843)  // Burgundy
+            Color(0xFFEC4899), // Pink - passion
+            Color(0xFFF472B6), // Light Pink
+            Color(0xFFBE185D)  // Dark Pink
         )
         is SpotlightStoryPage.TopAlbum -> Triple(
-            Color(0xFF0F172A), // Near black (let album art dominate)
-            Color(0xFF1E293B), // Slate dark
-            Color(0xFF334155)  // Slate medium
+            Color(0xFFD97706), // Amber - warmth
+            Color(0xFFF59E0B), // Light Amber
+            Color(0xFFB45309)  // Dark Amber
         )
         is SpotlightStoryPage.TopSongs -> Triple(
-            Color(0xFFF59E0B), // Amber
-            Color(0xFFD97706), // Dark Amber
-            Color(0xFFB45309)  // Brown/Orange
+            Color(0xFFF59E0B), // Amber - energy
+            Color(0xFFFBBF24), // Light Amber
+            Color(0xFFD97706)  // Dark Amber
         )
         is SpotlightStoryPage.TopTrackSetup -> Triple(
-            Color(0xFFF59E0B), // Amber
-            Color(0xFFD97706), // Dark Amber
-            Color(0xFFB45309)  // Brown/Orange
-        )
-        is SpotlightStoryPage.DiscoveryCount -> Triple(
-            Color(0xFF0E7490), // Cyan dark
-            Color(0xFF0891B2), // Cyan
-            Color(0xFF06B6D4)  // Cyan light
-        )
-        is SpotlightStoryPage.AudioMood -> Triple(
-            Color(0xFF4C1D95), // Deep Violet
-            Color(0xFF6D28D9), // Violet
-            Color(0xFF8B5CF6)  // Light Violet
-        )
-        is SpotlightStoryPage.WeekdayVsWeekend -> Triple(
-            Color(0xFF0C4A6E), // Dark blue
-            Color(0xFF075985), // Blue
-            Color(0xFF0284C7)  // Sky blue
-        )
-        is SpotlightStoryPage.BingeSession -> Triple(
-            Color(0xFF831843), // Deep pink
-            Color(0xFFBE185D), // Pink
-            Color(0xFFEC4899)  // Light pink
-        )
-        is SpotlightStoryPage.TimeOfDayVibes -> Triple(
-            Color(0xFF1C1917), // Near black
-            Color(0xFF292524), // Dark warm
-            Color(0xFF44403C)  // Warm gray
-        )
-        is SpotlightStoryPage.BadgesEarned -> Triple(
-            Color(0xFF78350F), // Deep amber
-            Color(0xFF92400E), // Amber
-            Color(0xFFB45309)  // Gold
-        )
-        is SpotlightStoryPage.LevelUp -> Triple(
-            Color(0xFF451A03), // Deep orange
-            Color(0xFF7C2D12), // Orange-red
-            Color(0xFFC2410C)  // Bright orange
-        )
-        is SpotlightStoryPage.TitleEarned -> Triple(
-            Color(0xFF1E1B4B), // Deep indigo
-            Color(0xFF312E81), // Indigo
-            Color(0xFF4338CA)  // Bright indigo
+            Color(0xFFFB923C), // Orange - anticipation
+            Color(0xFFFDBA74), // Light Orange
+            Color(0xFFEA580C)  // Dark Orange
         )
         is SpotlightStoryPage.TopGenres -> Triple(
-            Color(0xFF10B981), // Emerald
-            Color(0xFF059669), // Dark Emerald
-            Color(0xFF047857)  // Darker Emerald
+            Color(0xFF10B981), // Emerald - exploration
+            Color(0xFF34D399), // Light Emerald
+            Color(0xFF059669)  // Dark Emerald
+        )
+        is SpotlightStoryPage.DiscoveryCount -> Triple(
+            Color(0xFF06B6D4), // Cyan - discovery
+            Color(0xFF22D3EE), // Light Cyan
+            Color(0xFF0891B2)  // Dark Cyan
+        )
+        is SpotlightStoryPage.WeekdayVsWeekend -> Triple(
+            Color(0xFF0284C7), // Sky blue - patterns
+            Color(0xFF38BDF8), // Light Sky
+            Color(0xFF0369A1)  // Dark Sky
+        )
+        is SpotlightStoryPage.BingeSession -> Triple(
+            Color(0xFFE11D48), // Rose - intensity
+            Color(0xFFFB7185), // Light Rose
+            Color(0xFFBE123C)  // Dark Rose
+        )
+        is SpotlightStoryPage.TimeOfDayVibes -> Triple(
+            Color(0xFF8B5CF6), // Violet - moods
+            Color(0xFFA78BFA), // Light Violet
+            Color(0xFF7C3AED)  // Dark Violet
+        )
+        
+        // ACT 3: CLIMAX - Bold, celebratory reds/golds
+        is SpotlightStoryPage.AudioMood -> Triple(
+            Color(0xFFDC2626), // Red - emotional peak
+            Color(0xFFEF4444), // Light Red
+            Color(0xFFB91C1C)  // Dark Red
         )
         is SpotlightStoryPage.Personality -> Triple(
-            Color(0xFF8B5CF6), // Violet
-            Color(0xFF7C3AED), // Dark Violet
-            Color(0xFF6D28D9)  // Darker Violet
+            Color(0xFFEAB308), // Gold - REVELATION
+            Color(0xFFFDE047), // Light Gold
+            Color(0xFFCA8A04)  // Dark Gold
+        )
+        is SpotlightStoryPage.BadgesEarned -> Triple(
+            Color(0xFFD97706), // Amber - achievement
+            Color(0xFFF59E0B), // Light Amber
+            Color(0xFFB45309)  // Dark Amber
+        )
+        
+        // ACT 4: RESOLUTION - Serene, reflective teals/whites
+        is SpotlightStoryPage.LevelUp -> Triple(
+            Color(0xFF14B8A6), // Teal - growth
+            Color(0xFF2DD4BF), // Light Teal
+            Color(0xFF0F766E)  // Dark Teal
+        )
+        is SpotlightStoryPage.TitleEarned -> Triple(
+            Color(0xFF0D9488), // Dark Teal - identity
+            Color(0xFF5EEAD4), // Light Teal
+            Color(0xFF115E59)  // Deep Teal
         )
         is SpotlightStoryPage.Conclusion -> Triple(
-            Color(0xFFF472B6), // Pink
-            Color(0xFF60A5FA), // Blue
-            Color(0xFF34D399)  // Green
+            Color(0xFF64748B), // Slate - reflection
+            Color(0xFF94A3B8), // Light Slate
+            Color(0xFF475569)  // Dark Slate
         )
-        null -> Triple(Color(0xFF8B5CF6), Color(0xFFA855F7), Color(0xFF6366F1))
+        null -> Triple(Color(0xFF6366F1), Color(0xFF818CF8), Color(0xFF4F46E5))
     }
 
     val captureController = rememberCaptureController()
+    val captureRequested = remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         captureController.capturedBitmap.collect { bitmap ->
@@ -204,6 +219,17 @@ fun SpotlightStoryScreen(
             if (!success) {
                 android.widget.Toast.makeText(context, "Failed to share story", android.widget.Toast.LENGTH_SHORT).show()
             }
+            captureRequested.value = false
+        }
+    }
+
+    // When capture is requested, wait for the ShadowStoryRenderer's AndroidView to be
+    // composed + laid out, then trigger the actual bitmap capture.
+    LaunchedEffect(captureRequested.value) {
+        if (captureRequested.value) {
+            withFrameNanos { }
+            withFrameNanos { }
+            captureController.capture()
         }
     }
 
@@ -237,9 +263,10 @@ fun SpotlightStoryScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         
         // 0. Shadow Renderer (For Sharing) - Hidden offscreen
-        // This renders the CURRENT page at exactly 1080x1920 px for consistent sharing
+        // Only composed when a capture is requested — avoids doubling render cost on every frame.
+        // Renders the CURRENT page at exactly 1080x1920 px for consistent sharing.
         val shadowPage = storyPages.getOrNull(pagerState.currentPage)
-        if (shadowPage != null) {
+        if (captureRequested.value && shadowPage != null) {
             ShadowStoryRenderer(
                 page = shadowPage,
                 primaryColor = primaryColor,
@@ -383,8 +410,6 @@ fun SpotlightStoryScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-
-            Spacer(modifier = Modifier.height(24.dp))
             
             // Top Controls Row
             Row(
@@ -435,7 +460,8 @@ fun SpotlightStoryScreen(
                 .padding(bottom = 64.dp) // Moved up slightly to avoid overlapping watermark if visible
         ) {
              Button(
-                onClick = { captureController.capture() },
+                onClick = { if (!captureRequested.value) captureRequested.value = true },
+                enabled = !captureRequested.value,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.White.copy(alpha = 0.2f),
                     contentColor = Color.White
@@ -448,10 +474,33 @@ fun SpotlightStoryScreen(
                 Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    "Share Your Story",
+                    stringResource(R.string.spotlight_share_your_story),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+            }
+        }
+
+        // Loading overlay while preparing share image
+        if (captureRequested.value) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(color = Color.White)
+                    Text(
+                        text = stringResource(R.string.spotlight_preparing),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
             }
         }
     }
@@ -511,7 +560,6 @@ fun ShadowStoryRenderer(
                                     is SpotlightStoryPage.Conclusion -> ConclusionPage(page)
                                 }
                                 
-                                // Watermark
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)

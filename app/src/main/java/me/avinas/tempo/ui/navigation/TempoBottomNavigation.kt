@@ -55,7 +55,7 @@ fun TempoBottomNavigation(
             .padding(horizontal = 24.dp, vertical = 24.dp)
             .height(72.dp)
             .clip(RoundedCornerShape(36.dp))
-            .background(TempoDarkSurface) // Lighter surface for contrast against background
+            .background(TempoDarkSurface)
             .border(
                 width = 1.dp,
                 brush = Brush.linearGradient(
@@ -73,10 +73,9 @@ fun TempoBottomNavigation(
             val width = size.width
             val height = size.height
             
-            // Primary Red blob (top-left)
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFEF4444).copy(alpha = 0.3f), Color.Transparent),
+                    colors = listOf(Color(0xFFEF4444).copy(alpha = 0.15f), Color.Transparent),
                     center = Offset(0f, 0f),
                     radius = width * 0.8f
                 ),
@@ -84,26 +83,14 @@ fun TempoBottomNavigation(
                 radius = width * 0.8f
             )
             
-            // Dark Red blob (bottom-right)
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFB91C1C).copy(alpha = 0.3f), Color.Transparent),
+                    colors = listOf(Color(0xFFB91C1C).copy(alpha = 0.15f), Color.Transparent),
                     center = Offset(width, height),
                     radius = width * 0.9f
                 ),
                 center = Offset(width, height),
                 radius = width * 0.9f
-            )
-            
-            // Accent Purple/Red blob (center-ish)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFA855F7).copy(alpha = 0.15f), Color.Transparent),
-                    center = Offset(width * 0.3f, height * 0.4f),
-                    radius = width * 0.6f
-                ),
-                center = Offset(width * 0.3f, height * 0.4f),
-                radius = width * 0.6f
             )
         }
         */
@@ -112,7 +99,7 @@ fun TempoBottomNavigation(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White.copy(alpha = 0.02f)) // Reduced from 0.05f
+                .background(Color.White.copy(alpha = 0.02f))
         )
 
         Row(

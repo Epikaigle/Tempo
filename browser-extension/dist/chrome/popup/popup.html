@@ -364,17 +364,31 @@
                 <span class="qr-status-elapsed" id="qr-status-elapsed" style="display:none;"></span>
               </div>
 
-              <div class="pairing-expectation">
+              <!-- Firefox notice -->
+              <div id="firefox-notice" class="firefox-notice" style="display:none;">
+                <div class="firefox-notice-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                </div>
+                <div class="firefox-notice-body">
+                  <div class="firefox-notice-title">Firefox requires manual IP entry</div>
+                  <div class="firefox-notice-text">After scanning the QR code, enter your phone's IP address below to connect.</div>
+                </div>
+              </div>
+
+              <div class="pairing-expectation" id="chrome-expectation">
                 <div class="expectation-title">Quick Connect (5-30s)</div>
                 <div class="expectation-copy">Keep this popup open. If it takes longer, you can enter the IP address manually.</div>
               </div>
 
               <button class="btn btn-primary" id="btn-start-scan" style="width:100%; margin:12px 0;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <path d="m21 21-4.35-4.35"></path>
+                  <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
-                Start Network Scan
+                I've scanned the QR code
               </button>
 
               <!-- Instructions Stepper -->
@@ -387,9 +401,13 @@
                   <span class="step-num">2</span>
                   <span>Go to <strong>Settings</strong> &rarr; <strong>Sync with Desktop</strong> &rarr; <strong>Scan QR Code</strong></span>
                 </div>
-                <div class="qr-step">
+                <div class="qr-step" id="step-scan-wait">
                   <span class="step-num">3</span>
                   <span>Scan, then wait here for connection</span>
+                </div>
+                <div class="qr-step" id="step-enter-ip" style="display:none;">
+                  <span class="step-num">3</span>
+                  <span>Enter your phone's IP address below</span>
                 </div>
               </div>
 

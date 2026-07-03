@@ -729,7 +729,7 @@ class InsightCardGenerator @Inject constructor(
     // Story Generation (Optimized with parallel data fetching)
     // =====================
     
-    suspend fun generateStory(timeRange: TimeRange): List<SpotlightStoryPage> = kotlinx.coroutines.coroutineScope {
+    suspend fun generateStory(timeRange: TimeRange, debugShowAll: Boolean = false): List<SpotlightStoryPage> = kotlinx.coroutines.coroutineScope {
         val storyPages = mutableListOf<SpotlightStoryPage>()
         // Collects eligible optional slides; 2–4 are selected per session via seeded random.
         // LevelUp / TitleEarned are inserted directly into storyPages (milestone-triggered permanent).
@@ -749,6 +749,8 @@ class InsightCardGenerator @Inject constructor(
         val hourlyDistDeferred = async { repository.getHourlyDistribution(timeRange) }
         val topAlbumsDeferred = async { repository.getTopAlbums(timeRange, pageSize = 5) }
         val discoveryStatsDeferred = async { repository.getDiscoveryStats(timeRange) }
+        val audioFeaturesDeferred = async { repository.getAudioFeaturesStats(timeRange) }
+        val dayOfWeekDistDeferred = async { repository.getDayOfWeekDistribution(timeRange) }
         
         // Await all data in parallel
         val topTracksResult = topTracksDeferred.await()
@@ -760,6 +762,8 @@ class InsightCardGenerator @Inject constructor(
         val hourlyDist = try { hourlyDistDeferred.await() } catch (e: Exception) { emptyList() }
         val topAlbumsList = try { topAlbumsDeferred.await().items } catch (e: Exception) { emptyList() }
         val discoveryStats = try { discoveryStatsDeferred.await() } catch (e: Exception) { null }
+        val audioFeatures = try { audioFeaturesDeferred.await() } catch (e: Exception) { null }
+        val dayOfWeekDist = try { dayOfWeekDistDeferred.await() } catch (e: Exception) { emptyList() }
         
         val topTracksList = topTracksResult.items
         
@@ -790,6 +794,13 @@ class InsightCardGenerator @Inject constructor(
                 userName = "User",
                 year = java.time.LocalDate.now().year,
                 timeRange = timeRange,
+                comparativeText = when {
+                    totalMinutes > 50000 -> context.getString(R.string.spotlight_compare_top_percent, 99)
+                    totalMinutes > 30000 -> context.getString(R.string.spotlight_compare_top_percent, 95)
+                    totalMinutes > 20000 -> context.getString(R.string.spotlight_compare_top_percent, 90)
+                    totalMinutes > 10000 -> context.getString(R.string.spotlight_compare_top_percent, 75)
+                    else -> null
+                },
                 previewUrl = null
             )
         )
@@ -809,6 +820,12 @@ class InsightCardGenerator @Inject constructor(
                     currentStreakDays = streak.currentStreakDays,
                     longestStreakDays = streak.longestStreakDays,
                     totalActiveDays = streak.totalActiveDays,
+                    comparativeText = when {
+                        streak.currentStreakDays >= 30 -> context.getString(R.string.spotlight_compare_streak_percent, 95)
+                        streak.currentStreakDays >= 14 -> context.getString(R.string.spotlight_compare_streak_percent, 85)
+                        streak.currentStreakDays >= 7 -> context.getString(R.string.spotlight_compare_streak_percent, 70)
+                        else -> null
+                    },
                     previewUrl = null
                 )
             )
@@ -880,8 +897,7 @@ class InsightCardGenerator @Inject constructor(
             )
         }
 
-        // 1d. Weekday vs Weekend (from day-of-week distribution)
-        val dayOfWeekDist = try { repository.getDayOfWeekDistribution(timeRange) } catch (e: Exception) { emptyList() }
+        // 1d. Weekday vs Weekend (from pre-fetched day-of-week distribution)
         if (dayOfWeekDist.isNotEmpty()) {
             val weekdayEntries = dayOfWeekDist.filter { it.dayOfWeek in 1..5 }
             val weekendEntries = dayOfWeekDist.filter { it.dayOfWeek in 6..7 }
@@ -1072,6 +1088,12 @@ class InsightCardGenerator @Inject constructor(
                     uniqueTracks = overview.uniqueTracksCount,
                     newArtistsThisPeriod = discoveryStats?.newArtistsCount ?: 0,
                     timeRangeLabel = timeRangeLabel,
+                    comparativeText = when {
+                        overview.uniqueArtistsCount > 200 -> context.getString(R.string.spotlight_compare_discovery_percent, 95)
+                        overview.uniqueArtistsCount > 100 -> context.getString(R.string.spotlight_compare_discovery_percent, 85)
+                        overview.uniqueArtistsCount > 50 -> context.getString(R.string.spotlight_compare_discovery_percent, 70)
+                        else -> null
+                    },
                     previewUrl = null
                 )
             )
@@ -1110,10 +1132,8 @@ class InsightCardGenerator @Inject constructor(
             )
         }
 
-        // 5. Personality
-        val audioFeatures = repository.getAudioFeaturesStats(timeRange)
-        val discoveryStatsForPersonality = try { repository.getDiscoveryStats(timeRange) } catch (e: Exception) { null }
-        val varietyScore = try { repository.getVarietyScore(timeRange) } catch (e: Exception) { 0.0 }
+        // 5. Personality (reuses pre-fetched audioFeatures and discoveryStats — no redundant queries)
+        val varietyScore = discoveryStats?.varietyScore ?: 0.0
         val topGenreNames = topGenres.map { it.genre }
         
         val personalityType = if (audioFeatures != null) {
@@ -1122,12 +1142,12 @@ class InsightCardGenerator @Inject constructor(
                 valence = audioFeatures.averageValence,
                 danceability = audioFeatures.averageDanceability,
                 topGenres = topGenreNames,
-                newArtistCount = discoveryStatsForPersonality?.newArtistsCount ?: 0,
+                newArtistCount = discoveryStats?.newArtistsCount ?: 0,
                 varietyScore = varietyScore
             )
         } else {
             if (topGenreNames.isNotEmpty()) {
-                 determineMusicalPersonality(0.5f, 0.5f, 0.5f, topGenreNames, discoveryStatsForPersonality?.newArtistsCount ?: 0, varietyScore)
+                 determineMusicalPersonality(0.5f, 0.5f, 0.5f, topGenreNames, discoveryStats?.newArtistsCount ?: 0, varietyScore)
             } else {
                  Triple("The Melophile", "You simply love music in all its forms.", "Good music is good music, period.")
             }
@@ -1182,10 +1202,16 @@ class InsightCardGenerator @Inject constructor(
         val LAST_STORY_LEVEL_KEY = intPreferencesKey("spotlight_last_level")
         val LAST_STORY_TITLE_KEY = stringPreferencesKey("spotlight_last_title")
         try {
-            val userLevel = gamificationRepository.getUserLevel()
-            val allBadges = try { gamificationRepository.getAllBadgesSnapshot() } catch (_: Exception) { emptyList() }
-            val uniqueArtists = try { gamificationRepository.getUniqueArtistCount() } catch (_: Exception) { 0 }
-            val prefs = context.dataStore.data.first()
+            // Parallelize gamification + DataStore reads
+            val userLevelDeferred = async { gamificationRepository.getUserLevel() }
+            val allBadgesDeferred = async { try { gamificationRepository.getAllBadgesSnapshot() } catch (_: Exception) { emptyList() } }
+            val uniqueArtistsDeferred = async { try { gamificationRepository.getUniqueArtistCount() } catch (_: Exception) { 0 } }
+            val prefsDeferred = async { context.dataStore.data.first() }
+            
+            val userLevel = userLevelDeferred.await()
+            val allBadges = allBadgesDeferred.await()
+            val uniqueArtists = uniqueArtistsDeferred.await()
+            val prefs = prefsDeferred.await()
             val lastSeenLevel = prefs[LAST_STORY_LEVEL_KEY] ?: -1
             val lastSeenTitle = prefs[LAST_STORY_TITLE_KEY] ?: ""
             val currentTitle = GamificationEngine.computeTitle(userLevel.currentLevel, uniqueArtists)
@@ -1317,9 +1343,12 @@ class InsightCardGenerator @Inject constructor(
         }
         val seed = timeRange.ordinal * 10_000L + periodKey
         val rng = kotlin.random.Random(seed)
-        // 2–4 optional slides per session (varies by day)
-        val maxOptionalCount = rng.nextInt(3) + 2
-        val selectedOptional = optionalPool.shuffled(rng).take(maxOptionalCount)
+        val selectedOptional = if (debugShowAll) {
+            optionalPool.toList()
+        } else {
+            val maxOptionalCount = rng.nextInt(3) + 2
+            optionalPool.shuffled(rng).take(maxOptionalCount)
+        }
         // Merge selected slides into storyPages at their natural narrative positions
         mergeOptionalIntoStory(storyPages, selectedOptional)
 

@@ -587,6 +587,15 @@
     <string name="spotlight_conclusion_top_artists">Top-Künstler</string>
     <string name="spotlight_conclusion_top_songs">Top-Titel</string>
     <string name="spotlight_conclusion_top_genres">Top-Genres</string>
+    <string name="spotlight_conclusion_closing">Das war dein Musikjahr.</string>
+    <string name="spotlight_conclusion_closing_week">Das war deine Musikwoche.</string>
+    <string name="spotlight_conclusion_closing_month">Das war dein Musikmonat.</string>
+    <string name="spotlight_conclusion_closing_all_time">Das war deine Musikreise.</string>
+    
+    <!-- Comparative surprise callouts -->
+    <string name="spotlight_compare_top_percent">Mehr als %1$d%% der Hörer</string>
+    <string name="spotlight_compare_streak_percent">Längere Serie als %1$d%% der Nutzer</string>
+    <string name="spotlight_compare_discovery_percent">Vielfältiger als %1$d%% der Hörer</string>
 
     <!-- Stats Screen -->
     <string name="stats_screen_title">Stats</string>
@@ -938,6 +947,14 @@
     <!-- More Details strings -->
     <string name="details_merge_duplicate">Duplikat zusammenführen</string>
     <string name="details_delete_song">Titel löschen</string>
+    <string name="details_edit_title">Titel bearbeiten</string>
+    <string name="details_edit_title_dialog_title">Songtitel bearbeiten</string>
+    <string name="details_edit_title_label">Songtitel</string>
+    <string name="details_edit_title_empty">Titel darf nicht leer sein</string>
+    <string name="details_edit_title_unchanged">Titel ist unverändert</string>
+    <string name="details_edit_title_merge_title">Duplikate zusammenführen?</string>
+    <string name="details_edit_title_merge_message">Dieser Song stimmt mit \"%1$s\" von %2$s überein. Möchtest du stattdessen den Hörverlauf zusammenführen?</string>
+    <string name="details_edit_title_merge_button">Zusammenführen</string>
     <string name="details_favorite_title">Lieblingstitel</string>
     <string name="details_favorite_subtitle">Du hast das sehr oft gehört!</string>
     <string name="details_stat_times_played">Mal gespielt</string>

@@ -1753,6 +1753,7 @@ interface StatsDao {
             t.primary_artist_id,
             COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
             t.spotify_id,
+            t.youtube_id,
             t.musicbrainz_id,
             t.content_type,
             COUNT(le.id) as play_count,
@@ -1932,6 +1933,19 @@ interface StatsDao {
         WHERE ta.artist_id = :artistId
     """)
     suspend fun getArtistPlayCountById(artistId: Long): Int
+    
+    /**
+     * Get play counts for multiple artists by ID in a single batch query.
+     */
+    @Query("""
+        SELECT ta.artist_id AS artistId, COUNT(le.id) AS playCount
+        FROM listening_events le
+        INNER JOIN tracks t ON le.track_id = t.id
+        INNER JOIN track_artists ta ON ta.track_id = t.id
+        WHERE ta.artist_id IN (:artistIds)
+        GROUP BY ta.artist_id
+    """)
+    suspend fun getArtistPlayCountsByIds(artistIds: List<Long>): List<ArtistPlayCountResult>
     
     /**
      * Get total listening time for an artist by ID.
@@ -2425,4 +2439,12 @@ data class TrackAudioFeaturesRaw(
 data class ArtistListeningDates(
     val first_listened: Long?,
     val last_listened: Long?
+)
+
+/**
+ * Play count result for a single artist (used by batch query).
+ */
+data class ArtistPlayCountResult(
+    val artistId: Long,
+    val playCount: Int
 )

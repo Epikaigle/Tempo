@@ -127,7 +127,8 @@ fun ConstellationWeb(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(220.dp),
+            .height(240.dp)
+            .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         val angles = remember(categories.size) {
@@ -318,7 +319,7 @@ fun ConstellationWeb(
                     Text(
                         text = type.name.replace("_", " "),
                         style = TextStyle(
-                            fontSize = 8.5.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
                         ),
@@ -410,86 +411,17 @@ fun ConstellationWeb(
         }
 
         Text(
-            text = if (selectedType == null) "TAP OR DRAG STARS TO ORBIT & DETAIL" else "ACTIVE DYNAMICS // ${selectedType.name.replace("_", " ")}",
+            text = if (selectedType == null) stringResource(R.string.constellation_hint) else stringResource(R.string.constellation_active, selectedType.name.replace("_", " ")),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color = Color.White.copy(alpha = 0.35f),
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
-            letterSpacing = 1.sp
+            color = Color.White.copy(alpha = 0.4f),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp),
+            letterSpacing = 1.2.sp
         )
     }
 }
 
-@Composable
-private fun VibeOverviewCard(insights: List<InsightCardData>) {
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        backgroundColor = Color.White.copy(0.04f),
-        variant = GlassCardVariant.LowProminence,
-        contentPadding = PaddingValues(20.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                text = "Vibe Constellation",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            Text(
-                text = "Your music signals are mapped as stars in the constellation. Drag them to stretch the connections, or tap a star to reveal details about your listening patterns.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White.copy(alpha = 0.7f),
-                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.25
-            )
-            
-            Spacer(modifier = Modifier.height(4.dp))
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                insights.take(3).forEach { insight ->
-                    val color = when(insight.type) {
-                        InsightType.MOOD -> Color(0xFF8B5CF6)
-                        InsightType.PEAK_TIME -> Color(0xFFF59E0B)
-                        InsightType.BINGE -> Color(0xFFEC4899)
-                        InsightType.DISCOVERY -> Color(0xFF10B981)
-                        InsightType.ENERGY -> Color(0xFFEF4444)
-                        InsightType.DANCEABILITY -> Color(0xFFA855F7)
-                        InsightType.TEMPO -> Color(0xFF06B6D4)
-                        InsightType.ACOUSTICNESS -> Color(0xFF22C55E)
-                        InsightType.STREAK -> Color(0xFFF97316)
-                        InsightType.GENRE -> Color(0xFFE11D48)
-                        InsightType.ENGAGEMENT -> Color(0xFFDB2777)
-                        else -> Color.Gray
-                    }
-                    
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .background(color, CircleShape)
-                        )
-                        Text(
-                            text = insight.title,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
+
 
 @Composable
 fun InsightFeed(
@@ -516,7 +448,7 @@ fun InsightFeed(
 
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ConstellationWeb(
             insights = nonGamification,
@@ -524,8 +456,6 @@ fun InsightFeed(
             onTypeSelected = { selectedType = it },
             tempoBpm = avgTempo
         )
-
-        Spacer(modifier = Modifier.height(4.dp))
 
         Crossfade(
             targetState = selectedInsight,
@@ -539,8 +469,6 @@ fun InsightFeed(
                     onCloseClick = { selectedType = null },
                     onClick = {}
                 )
-            } else {
-                VibeOverviewCard(insights = nonGamification)
             }
         }
     }
@@ -1360,7 +1288,7 @@ private fun TempoBPMVisualizer(bpm: Float, color: Color) {
                     color = Color.White
                 )
                 Text(
-                    text = "Pulsing in sync with average tempo",
+                    text = stringResource(R.string.tempo_bpm_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White.copy(alpha = 0.5f)
                 )
@@ -1433,7 +1361,7 @@ private fun StreakVisualizer(days: Int) {
                     color = fireColor1
                 )
                 Text(
-                    text = "Keep listening daily to grow the fire!",
+                    text = stringResource(R.string.streak_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White.copy(alpha = 0.5f)
                 )
@@ -1493,7 +1421,8 @@ private fun EngagementVisualizer(value: Float, color: Color) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp),
+            .height(100.dp)
+            .padding(vertical = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         val animValue = remember { Animatable(0f) }
@@ -1504,7 +1433,7 @@ private fun EngagementVisualizer(value: Float, color: Color) {
             )
         }
 
-        Canvas(modifier = Modifier.size(72.dp)) {
+        Canvas(modifier = Modifier.size(88.dp)) {
             val w = size.width
             val h = size.height
             val strokeWidthPx = 6.dp.toPx()
@@ -1526,13 +1455,17 @@ private fun EngagementVisualizer(value: Float, color: Color) {
             )
         }
 
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(12.dp)
+        ) {
             Text(
                 text = "${(absValue * 100).toInt()}%",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = percentageLabel,
                 style = MaterialTheme.typography.labelSmall,
@@ -1612,18 +1545,18 @@ fun InsightCard(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column {
                         val categoryPrefix = when(insight.type) {
-                            InsightType.MOOD -> "LISTENING DYNAMICS // MOOD"
-                            InsightType.PEAK_TIME -> "LISTENING DYNAMICS // PEAK TIME"
-                            InsightType.BINGE -> "LISTENING DYNAMICS // BINGE SESSION"
-                            InsightType.DISCOVERY -> "LISTENING DYNAMICS // DISCOVERY"
-                            InsightType.ENERGY -> "AUDIO ATTRIBUTES // ENERGY"
-                            InsightType.DANCEABILITY -> "AUDIO ATTRIBUTES // DANCEABILITY"
-                            InsightType.TEMPO -> "AUDIO ATTRIBUTES // TEMPO"
-                            InsightType.ACOUSTICNESS -> "AUDIO ATTRIBUTES // ACOUSTICNESS"
-                            InsightType.STREAK -> "LISTENING HABITS // STREAK"
-                            InsightType.GENRE -> "LISTENING HABITS // GENRE"
-                            InsightType.ENGAGEMENT -> "LISTENING HABITS // ENGAGEMENT"
-                            else -> "INSIGHT // DETAIL"
+                            InsightType.MOOD -> stringResource(R.string.insight_category_mood)
+                            InsightType.PEAK_TIME -> stringResource(R.string.insight_category_peak_time)
+                            InsightType.BINGE -> stringResource(R.string.insight_category_binge)
+                            InsightType.DISCOVERY -> stringResource(R.string.insight_category_discovery)
+                            InsightType.ENERGY -> stringResource(R.string.insight_category_energy)
+                            InsightType.DANCEABILITY -> stringResource(R.string.insight_category_danceability)
+                            InsightType.TEMPO -> stringResource(R.string.insight_category_tempo)
+                            InsightType.ACOUSTICNESS -> stringResource(R.string.insight_category_acousticness)
+                            InsightType.STREAK -> stringResource(R.string.insight_category_streak)
+                            InsightType.GENRE -> stringResource(R.string.insight_category_genre)
+                            InsightType.ENGAGEMENT -> stringResource(R.string.insight_category_engagement)
+                            else -> stringResource(R.string.insight_category_default)
                         }
                         Text(
                             text = categoryPrefix,
@@ -1639,7 +1572,9 @@ fun InsightCard(
                             text = insight.title,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -1651,7 +1586,7 @@ fun InsightCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
+                        contentDescription = stringResource(R.string.insight_close),
                         tint = Color.White.copy(alpha = 0.6f),
                         modifier = Modifier.size(16.dp)
                     )

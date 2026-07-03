@@ -13,8 +13,10 @@ import me.avinas.tempo.BuildConfig
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.profile.ProfileIdentityManager
+import com.squareup.moshi.JsonWriter
 import me.avinas.tempo.worker.PostRestoreCacheWorker
 import okio.buffer
+import okio.sink
 import okio.source
 import java.io.*
 import java.util.zip.ZipEntry
@@ -169,12 +171,17 @@ class ImportExportManager @Inject constructor(
                         hotlinkedUrls = hotlinkUrls
                     )
                     
-                    // Serialize and write data.json
+                    // Serialize and write data.json. Stream the JSON straight into the
+                    // zip entry via a JsonWriter over an okio sink so the full document
+                    // is never held in memory at once (prevents OutOfMemoryError on
+                    // large libraries with many listening events / scrobble rows).
                     val adapter = moshi.adapter(TempoExportData::class.java)
-                    val json = adapter.toJson(exportData)
-                    
+
                     zipOut.putNextEntry(ZipEntry(TempoExportData.DATA_FILENAME))
-                    zipOut.write(json.toByteArray(Charsets.UTF_8))
+                    val dataSink = zipOut.sink().buffer()
+                    val jsonWriter = JsonWriter.of(dataSink)
+                    adapter.toJson(jsonWriter, exportData)
+                    dataSink.flush()
                     zipOut.closeEntry()
                     
                     _progress.value = ImportExportProgress("Export complete!", 100, 100)
@@ -344,6 +351,18 @@ class ImportExportManager @Inject constructor(
                 if (existingTrack != null) {
                     if (conflictStrategy == ImportConflictStrategy.REPLACE) {
                         database.trackDao().update(remappedTrack.copy(id = existingTrack.id))
+                    } else {
+                        val backfilled = existingTrack.copy(
+                            spotifyId = existingTrack.spotifyId ?: remappedTrack.spotifyId,
+                            musicbrainzId = existingTrack.musicbrainzId ?: remappedTrack.musicbrainzId,
+                            youtubeId = existingTrack.youtubeId ?: remappedTrack.youtubeId,
+                            album = existingTrack.album ?: remappedTrack.album,
+                            albumArtUrl = existingTrack.albumArtUrl ?: remappedTrack.albumArtUrl,
+                            duration = existingTrack.duration ?: remappedTrack.duration
+                        )
+                        if (backfilled != existingTrack) {
+                            database.trackDao().update(backfilled)
+                        }
                     }
                     trackIdMap[track.id] = existingTrack.id
                 } else {

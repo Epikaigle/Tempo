@@ -84,70 +84,113 @@ class ArtistRenameRepository @Inject constructor(
     /**
      * Rename an artist and optionally merge split fragments.
      *
-     * 1. Renames the artist to [newName]
-     * 2. If [mergeArtistIds] is non-empty, merges each into the renamed artist
-     * 3. Saves [newName] as a user known artist so the parser won't split it again
-     * 4. Updates the ArtistParser's in-memory set
+     * If the target name already exists as another artist (matching by normalized
+     * name), the current artist is merged into that existing artist instead of
+     * being renamed — this avoids UNIQUE constraint violations on
+     * `normalized_name` and consolidates listening data under the correct name.
+     *
+     * 1. Checks if an artist with the target normalized name already exists
+     * 2. If yes: merges the current artist (and any split fragments) into it
+     * 3. If no: renames the artist to [newName] and merges split fragments
+     * 4. Saves [newName] as a user known artist so the parser won't split it again
+     * 5. Updates the ArtistParser's in-memory set
      *
      * @param artistId The artist being renamed
      * @param newName The new full name
      * @param mergeArtistIds IDs of artists to merge into this one (split fragments)
-     * @return true if the operation succeeded
+     * @return The ID of the artist that now holds the name, or null on failure
      */
     suspend fun renameAndMerge(
         artistId: Long,
         newName: String,
         mergeArtistIds: List<Long> = emptyList()
-    ): Boolean {
+    ): Long? {
         val artist = artistDao.getArtistById(artistId)
         if (artist == null) {
             Log.w(TAG, "renameAndMerge: artist ID=$artistId not found")
-            return false
+            return null
         }
 
-        Log.i(TAG, "renameAndMerge: '${artist.name}' → '$newName', merging ${mergeArtistIds.size} artists")
+        val trimmedName = newName.trim()
+        val normalizedName = Artist.normalizeName(trimmedName)
+
+        Log.i(TAG, "renameAndMerge: '${artist.name}' → '$trimmedName', merging ${mergeArtistIds.size} artists")
 
         return try {
-            // 1. Rename the artist
-            val updatedArtist = artist.copy(
-                name = newName.trim(),
-                normalizedName = newName.trim().lowercase()
-            )
-            artistDao.update(updatedArtist)
-            Log.d(TAG, "Renamed artist to '$newName'")
+            // Check if an artist with this normalized name already exists
+            val existingArtist = artistDao.getArtistByNormalizedName(normalizedName)
+            val targetArtistId: Long
 
-            // 2. Merge any split fragment artists into the renamed artist
-            for (mergeId in mergeArtistIds) {
-                val success = artistMergeRepository.mergeArtists(
-                    sourceArtistId = mergeId,
-                    targetArtistId = artistId
+            if (existingArtist != null && existingArtist.id != artistId) {
+                // Target name already exists — merge current artist into existing one
+                Log.i(TAG, "Target name '$trimmedName' already exists as artist ID=${existingArtist.id}, merging instead of renaming")
+                targetArtistId = existingArtist.id
+
+                // Update the existing artist's display name to the user's typed name
+                val updatedExisting = existingArtist.copy(
+                    name = trimmedName,
+                    normalizedName = normalizedName
                 )
-                if (success) {
-                    Log.d(TAG, "Merged artist ID=$mergeId into ID=$artistId")
-                } else {
-                    Log.w(TAG, "Failed to merge artist ID=$mergeId")
+                artistDao.update(updatedExisting)
+
+                // Merge any split fragment artists into the existing artist
+                for (mergeId in mergeArtistIds) {
+                    if (mergeId != existingArtist.id) {
+                        artistMergeRepository.mergeArtists(
+                            sourceArtistId = mergeId,
+                            targetArtistId = existingArtist.id
+                        )
+                    }
+                }
+                // Merge the current artist into the existing one
+                artistMergeRepository.mergeArtists(
+                    sourceArtistId = artistId,
+                    targetArtistId = existingArtist.id
+                )
+            } else {
+                // No conflict — rename the artist
+                targetArtistId = artistId
+
+                val updatedArtist = artist.copy(
+                    name = trimmedName,
+                    normalizedName = normalizedName
+                )
+                artistDao.update(updatedArtist)
+                Log.d(TAG, "Renamed artist to '$trimmedName'")
+
+                // Merge any split fragment artists into the renamed artist
+                for (mergeId in mergeArtistIds) {
+                    val success = artistMergeRepository.mergeArtists(
+                        sourceArtistId = mergeId,
+                        targetArtistId = artistId
+                    )
+                    if (success) {
+                        Log.d(TAG, "Merged artist ID=$mergeId into ID=$artistId")
+                    } else {
+                        Log.w(TAG, "Failed to merge artist ID=$mergeId")
+                    }
                 }
             }
 
-            // 3. Save as user known artist in database
-            val knownArtist = UserKnownArtist.create(newName)
+            // Save as user known artist in database
+            val knownArtist = UserKnownArtist.create(trimmedName)
             userKnownArtistDao.insert(knownArtist)
-            Log.d(TAG, "Saved user known artist: '$newName'")
+            Log.d(TAG, "Saved user known artist: '$trimmedName'")
 
-            // 4. Update the in-memory parser set
-            ArtistParser.addUserKnownBand(newName)
+            // Update the in-memory parser set
+            ArtistParser.addUserKnownBand(trimmedName)
 
-            true
+            targetArtistId
         } catch (e: Exception) {
             Log.e(TAG, "Error in renameAndMerge: ${e.message}", e)
-            false
+            null
         }
     }
 
     /**
      * Simple rename without merge (just rename + save as known artist).
      */
-    suspend fun renameArtist(artistId: Long, newName: String): Boolean {
+    suspend fun renameArtist(artistId: Long, newName: String): Long? {
         return renameAndMerge(artistId, newName, emptyList())
     }
 

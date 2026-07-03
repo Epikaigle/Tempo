@@ -29,6 +29,8 @@ import kotlinx.coroutines.withContext
 import me.avinas.tempo.R
 import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
 import java.io.File
+import androidx.palette.graphics.Palette
+import coil3.BitmapImage
 
 private const val TAG = "AlbumArtImage"
 
@@ -60,7 +62,8 @@ fun AlbumArtImage(
     modifier: Modifier = Modifier.fillMaxSize(),
     contentScale: ContentScale = ContentScale.Crop,
     placeholderEmoji: String = "🎵",
-    onHotlinkSuccess: ((String) -> Unit)? = null
+    onHotlinkSuccess: ((String) -> Unit)? = null,
+    onPaletteExtracted: ((Color) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -132,6 +135,21 @@ fun AlbumArtImage(
                     deleteLocalArtFile(localArtUrl)
                 }
                 onHotlinkSuccess?.invoke(albumArtUrl!!)
+            }
+            
+            // Extract Palette
+            if (onPaletteExtracted != null) {
+                LaunchedEffect(state.result.image) {
+                    val image = state.result.image
+                    val bitmap = (image as? BitmapImage)?.bitmap
+                    bitmap?.let {
+                        Palette.from(it).generate { palette ->
+                            palette?.dominantSwatch?.rgb?.let { color ->
+                                onPaletteExtracted(Color(color))
+                            }
+                        }
+                    }
+                }
             }
         } else if (state is AsyncImagePainter.State.Error) {
              // Image failed to load

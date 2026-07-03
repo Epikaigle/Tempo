@@ -19,8 +19,9 @@ sealed interface SpotlightStoryPage {
         override val conversationalText: String,
         val totalMinutes: Int,
         val userName: String = "User", // Placeholder, ideally fetch from user profile
-        val year: Int = 2025,
+        val year: Int,
         val timeRange: TimeRange = TimeRange.THIS_YEAR,
+        val comparativeText: String? = null, // e.g., "More than 95% of listeners"
         override val previewUrl: String? = null
     ) : SpotlightStoryPage
 
@@ -109,6 +110,7 @@ sealed interface SpotlightStoryPage {
         val currentStreakDays: Int,
         val longestStreakDays: Int,
         val totalActiveDays: Int,
+        val comparativeText: String? = null, // e.g., "Longer streak than 90% of users"
         override val previewUrl: String? = null
     ) : SpotlightStoryPage
 
@@ -144,6 +146,7 @@ sealed interface SpotlightStoryPage {
         val uniqueTracks: Int,
         val newArtistsThisPeriod: Int,
         val timeRangeLabel: String,
+        val comparativeText: String? = null, // e.g., "More diverse than 85% of listeners"
         override val previewUrl: String? = null
     ) : SpotlightStoryPage
 

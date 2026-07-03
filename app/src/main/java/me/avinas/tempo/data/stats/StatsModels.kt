@@ -19,10 +19,15 @@ enum class TimeRange {
     /**
      * Get the start timestamp for this time range.
      * Uses system default timezone for correct local date boundaries.
+     *
+     * @param withLeeway When true (default), applies a 3-day grace period for THIS_WEEK
+     *   and THIS_MONTH so that early-week/early-month queries return the previous
+     *   complete period. Set to false to always use the current period.
      */
     fun getStartTimestamp(
         now: LocalDateTime = LocalDateTime.now(),
-        zone: ZoneId = ZoneId.systemDefault()
+        zone: ZoneId = ZoneId.systemDefault(),
+        withLeeway: Boolean = true
     ): Long {
         val startOfDay = now.toLocalDate().atStartOfDay()
 
@@ -30,14 +35,14 @@ enum class TimeRange {
             TODAY -> startOfDay
             THIS_WEEK -> {
                 val dayOfWeek = now.dayOfWeek.value
-                if (dayOfWeek <= 3) {
+                if (withLeeway && dayOfWeek <= 3) {
                     startOfDay.minusDays(dayOfWeek.toLong() - 1 + 7)
                 } else {
                     startOfDay.minusDays(dayOfWeek.toLong() - 1)
                 }
             }
             THIS_MONTH -> {
-                if (now.dayOfMonth <= 3) {
+                if (withLeeway && now.dayOfMonth <= 3) {
                     now.toLocalDate().minusMonths(1).withDayOfMonth(1).atStartOfDay()
                 } else {
                     now.toLocalDate().withDayOfMonth(1).atStartOfDay()
@@ -50,17 +55,22 @@ enum class TimeRange {
 
     /**
      * Get the end timestamp for this time range.
+     *
+     * @param withLeeway When true (default), applies a 3-day grace period for THIS_WEEK
+     *   and THIS_MONTH so that early-week/early-month queries return the previous
+     *   complete period. Set to false to always use the current period.
      */
     fun getEndTimestamp(
         now: LocalDateTime = LocalDateTime.now(),
-        zone: ZoneId = ZoneId.systemDefault()
+        zone: ZoneId = ZoneId.systemDefault(),
+        withLeeway: Boolean = true
     ): Long {
         val startOfDay = now.toLocalDate().atStartOfDay()
 
         return when (this) {
             THIS_WEEK -> {
                 val dayOfWeek = now.dayOfWeek.value
-                if (dayOfWeek <= 3) {
+                if (withLeeway && dayOfWeek <= 3) {
                     val startOfCurrentWeek = startOfDay.minusDays(dayOfWeek.toLong() - 1)
                     startOfCurrentWeek.atZone(zone).toInstant().toEpochMilli() - 1
                 } else {
@@ -68,7 +78,7 @@ enum class TimeRange {
                 }
             }
             THIS_MONTH -> {
-                if (now.dayOfMonth <= 3) {
+                if (withLeeway && now.dayOfMonth <= 3) {
                     val startOfCurrentMonth = now.toLocalDate().withDayOfMonth(1).atStartOfDay()
                     startOfCurrentMonth.atZone(zone).toInstant().toEpochMilli() - 1
                 } else {
@@ -127,17 +137,17 @@ data class ListeningOverview(
     val averageTracksPerDay: Double get() = if (timeRange == TimeRange.ALL_TIME) 0.0 else totalPlayCount.toDouble() / timeRange.getDaysInRange()
 }
 
-private fun TimeRange.getDaysInRange(): Int {
+private fun TimeRange.getDaysInRange(withLeeway: Boolean = true): Int {
     val now = LocalDate.now()
     return when (this) {
         TimeRange.TODAY -> 1
         TimeRange.THIS_WEEK -> 7
         TimeRange.THIS_MONTH -> {
-            if (now.dayOfMonth <= 3) now.minusMonths(1).lengthOfMonth()
+            if (withLeeway && now.dayOfMonth <= 3) now.minusMonths(1).lengthOfMonth()
             else now.lengthOfMonth()
         }
         TimeRange.THIS_YEAR -> now.lengthOfYear()
-        TimeRange.ALL_TIME -> 365 // Approximate
+        TimeRange.ALL_TIME -> 365
     }
 }
 

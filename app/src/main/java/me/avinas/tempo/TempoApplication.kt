@@ -113,27 +113,21 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     }
 
     private fun scheduleBackgroundWork() {
-        // Schedule service health monitoring
         ServiceHealthWorker.schedule(this)
         
-        // Schedule periodic MusicBrainz enrichment
         EnrichmentWorker.schedulePeriodic(this)
         
-        // Trigger immediate enrichment to backfill any missing album art
         EnrichmentWorker.enqueueImmediate(this)
         
-        // Schedule weekly Spotlight story unlock checks (lightweight, battery-optimized)
-        SpotlightUnlockWorker.scheduleWeekly(this)
-        
-        // Schedule gamification refresh (XP, levels, badges)
         me.avinas.tempo.worker.GamificationWorker.enqueuePeriodicRefresh(this)
         me.avinas.tempo.worker.GamificationWorker.enqueueImmediateRefresh(this)
         
-        // Schedule daily challenges worker (runs at midnight)
-        ChallengeWorker.scheduleDaily(this)
-        
-        // Schedule Spotify polling if API-Only mode is enabled
         scheduleSpotifyPollingIfEnabled()
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            SpotlightUnlockWorker.scheduleWeekly(this)
+            ChallengeWorker.scheduleDaily(this)
+        }, 30_000L)
     }
     
     /**

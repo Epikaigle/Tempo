@@ -27,6 +27,7 @@ import me.avinas.tempo.data.remote.spotify.SpotifySimplifiedPlaylist
 import me.avinas.tempo.data.remote.spotify.SpotifyTrack
 import me.avinas.tempo.data.repository.ArtistLinkingService
 import me.avinas.tempo.data.repository.TrackRepository
+import me.avinas.tempo.data.repository.TrackResolver
 import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -102,6 +103,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
     private val authManager: SpotifyAuthManager,
     private val artistDao: ArtistDao,
     private val trackRepository: TrackRepository,
+    private val trackResolver: TrackResolver,
     private val artistLinkingService: ArtistLinkingService,
     private val enrichedMetadataDao: EnrichedMetadataDao,
     private val listeningEventDao: ListeningEventDao
@@ -231,6 +233,20 @@ class SpotifyHistoryReconstructionService @Inject constructor(
      * Combines all three data sources for maximum accuracy.
      */
     suspend fun reconstructHistory(
+        progressCallback: ProgressCallback? = null
+    ): ReconstructionResult {
+        // DISABLED: Spotify API requires allowlisted users (max 5) in development mode.
+        // Use SpotifyJsonImportService for JSON data export imports instead.
+        Log.w(TAG, "Spotify API-based history reconstruction is disabled. Use JSON data export import instead.")
+        return ReconstructionResult.error("Spotify API import is disabled. Use JSON data export from Spotify settings.")
+    }
+    
+    /**
+     * Original reconstruction logic (DISABLED - kept for reference).
+     * Spotify API restrictions prevent this from working for most users.
+     */
+    @Deprecated("Use SpotifyJsonImportService instead")
+    private suspend fun reconstructHistoryOriginal(
         progressCallback: ProgressCallback? = null
     ): ReconstructionResult {
         _isReconstructing.value = true
@@ -1103,38 +1119,26 @@ class SpotifyHistoryReconstructionService @Inject constructor(
      */
     private suspend fun ensureLocalTrack(discovered: DiscoveredTrack): Pair<Boolean, Long> {
         val spotifyTrack = discovered.spotifyTrack
-        
-        // Check if already exists
-        val existing = trackRepository.findBySpotifyId(spotifyTrack.id)
-        if (existing != null) {
-            // Update metadata if needed
-            updateMetadataIfNeeded(existing.id, spotifyTrack, discovered.genres)
-            return false to existing.id
-        }
-        
-        // Create new track
-        val newTrack = Track(
-            title = spotifyTrack.name,
-            artist = spotifyTrack.allArtistNames,
-            album = spotifyTrack.album?.name,
-            duration = spotifyTrack.durationMs,
-            albumArtUrl = spotifyTrack.album?.images?.firstOrNull()?.url,
-            spotifyId = spotifyTrack.id,
-            musicbrainzId = null,
-            primaryArtistId = null,
-            contentType = "MUSIC"
+
+        val resolution = trackResolver.resolve(
+            TrackResolver.Query(
+                title = spotifyTrack.name,
+                artist = spotifyTrack.allArtistNames,
+                album = spotifyTrack.album?.name,
+                albumArtUrl = spotifyTrack.album?.images?.firstOrNull()?.url,
+                duration = spotifyTrack.durationMs,
+                spotifyId = spotifyTrack.id
+            )
         )
-        
-        val trackId = trackRepository.insert(newTrack)
-        val createdTrack = newTrack.copy(id = trackId)
-        
-        // Link artists
-        artistLinkingService.linkArtistsForTrack(createdTrack)
-        
-        // Create enriched metadata
-        createEnrichedMetadata(trackId, spotifyTrack, discovered.genres)
-        
-        return true to trackId
+
+        if (!resolution.isNewTrack) {
+            updateMetadataIfNeeded(resolution.trackId, spotifyTrack, discovered.genres)
+        } else {
+            artistLinkingService.linkArtistsForTrack(resolution.track)
+            createEnrichedMetadata(resolution.trackId, spotifyTrack, discovered.genres)
+        }
+
+        return resolution.isNewTrack to resolution.trackId
     }
     
     /**

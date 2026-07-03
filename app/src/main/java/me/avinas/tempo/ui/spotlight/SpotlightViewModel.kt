@@ -139,6 +139,21 @@ class SpotlightViewModel @Inject constructor(
                 // Pre-warm image cache in background (non-blocking)
                 prefetchCardImages(cards)
                 
+                // Background-enrich missing artist images so they're cached for next load
+                val artistNamesForEnrichment = cards.mapNotNull { card ->
+                    when (card) {
+                        is SpotlightCardData.NewObsession -> if (card.artistImageUrl.isNullOrBlank()) card.artistName else null
+                        is SpotlightCardData.EarlyAdopter -> if (card.artistImageUrl.isNullOrBlank()) card.artistName else null
+                        is SpotlightCardData.ArtistLoyalty -> if (card.artistImageUrl.isNullOrBlank()) card.artistName else null
+                        else -> null
+                    }
+                }.distinct()
+                if (artistNamesForEnrichment.isNotEmpty()) {
+                    viewModelScope.launch {
+                        statsRepository.enrichMissingArtistImagesInBackground(artistNamesForEnrichment)
+                    }
+                }
+                
                 val syncActive = isSyncActive.first()
                 _uiState.value = _uiState.value.copy(
                     cards = cards,
@@ -198,7 +213,7 @@ class SpotlightViewModel @Inject constructor(
         storyJob?.cancel()
         storyJob = viewModelScope.launch {
             try {
-                val storyPages = cardGenerator.generateStory(timeRange)
+                val storyPages = cardGenerator.generateStory(timeRange, debugShowAll = _uiState.value.isTestMode)
                 if (_uiState.value.selectedTimeRange != timeRange) return@launch
                 _uiState.value = _uiState.value.copy(
                     storyPages = storyPages,
@@ -210,6 +225,12 @@ class SpotlightViewModel @Inject constructor(
         }
     }
 
+    fun toggleTestMode() {
+        val newMode = !_uiState.value.isTestMode
+        _uiState.value = _uiState.value.copy(isTestMode = newMode, storyLoading = true)
+        loadStory(_uiState.value.selectedTimeRange)
+    }
+
     private fun checkIfStoryLocked(timeRange: TimeRange) {
         viewModelScope.launch {
             val now = java.time.LocalDate.now()
@@ -219,17 +240,15 @@ class SpotlightViewModel @Inject constructor(
             
             when (timeRange) {
                 TimeRange.THIS_MONTH -> {
-                    // Lock unless it's the last day of the month or within the first 3 days of the next month
-                    val lastDay = now.lengthOfMonth()
-                    if (now.dayOfMonth > 3 && now.dayOfMonth != lastDay) {
+                    if (!SpotlightPeriodFormatter.isStoryUnlocked(timeRange, now)) {
                         isLocked = true
+                        val lastDay = now.lengthOfMonth()
                         val monthName = now.month.name.lowercase().replaceFirstChar { it.uppercase() }
                         lockMessage = "Your $monthName Wrapped arrives on ${monthName.take(3)} $lastDay"
                     }
                 }
                 TimeRange.THIS_YEAR -> {
-                    // Lock unless it's December 1st or later
-                    if (now.monthValue < 12) {
+                    if (!SpotlightPeriodFormatter.isStoryUnlocked(timeRange, now)) {
                         isLocked = true
                         lockMessage = "Your 2026 Wrapped arrives on Dec 1st"
                     }
@@ -259,8 +278,7 @@ class SpotlightViewModel @Inject constructor(
                     }
                 }
                 TimeRange.THIS_WEEK -> {
-                    // Lock unless it's Sunday or within the first 3 days of the new week
-                    if (now.dayOfWeek != java.time.DayOfWeek.SUNDAY && now.dayOfWeek.value > 3) {
+                    if (!SpotlightPeriodFormatter.isStoryUnlocked(timeRange, now)) {
                         isLocked = true
                         lockMessage = "Your Weekly Wrapped arrives on Sunday"
                     }
@@ -287,5 +305,6 @@ data class SpotlightUiState(
     val storyLoading: Boolean = true,
     val selectedTimeRange: TimeRange = TimeRange.THIS_MONTH,
     val isStoryLocked: Boolean = false,
-    val storyLockMessage: String = ""
+    val storyLockMessage: String = "",
+    val isTestMode: Boolean = false
 )

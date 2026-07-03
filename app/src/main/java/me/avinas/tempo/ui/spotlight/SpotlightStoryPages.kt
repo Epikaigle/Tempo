@@ -3,6 +3,7 @@ package me.avinas.tempo.ui.spotlight
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -12,12 +13,29 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Balance
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Celebration
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.SelfImprovement
+import androidx.compose.material.icons.filled.Spa
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -33,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -59,6 +78,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Balance
 import kotlinx.coroutines.delay
 import me.avinas.tempo.ui.components.CachedAsyncImage
+import me.avinas.tempo.ui.components.LocalInCaptureContext
 import androidx.compose.ui.platform.LocalContext
 import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.components.GlassCard
@@ -85,6 +105,27 @@ import androidx.compose.animation.core.spring
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+
+@Composable
+private fun SolidCard(
+    modifier: Modifier = Modifier,
+    shape: RoundedCornerShape = RoundedCornerShape(20.dp),
+    backgroundColor: Color = Color.White.copy(alpha = 0.08f),
+    borderColor: Color = Color.White.copy(alpha = 0.12f),
+    borderWidth: Dp = 1.dp,
+    contentPadding: PaddingValues = PaddingValues(16.dp),
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .background(backgroundColor, shape)
+            .border(borderWidth, borderColor, shape)
+            .padding(contentPadding),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
+    }
+}
 
 data class SpotlightDimens(
     val scale: Float,
@@ -155,35 +196,43 @@ fun EnterAnimation(
     delay: Int = 0,
     content: @Composable () -> Unit
 ) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        // Small base delay ensures composable is fully laid out before animating in
-        // This eliminates the single-frame "pop" glitch on first render
-        kotlinx.coroutines.delay((delay + 50).toLong())
-        visible = true
-    }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(450)) +
-                slideInVertically(
-                    animationSpec = tween(450, easing = FastOutSlowInEasing),
-                    initialOffsetY = { 40 }
-                )
-    ) {
+    val inCapture = LocalInCaptureContext.current
+    if (inCapture) {
         content()
+    } else {
+        var visible by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            kotlinx.coroutines.delay((delay + 50).toLong())
+            visible = true
+        }
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(animationSpec = tween(450)) +
+                    slideInVertically(
+                        animationSpec = tween(450, easing = FastOutSlowInEasing),
+                        initialOffsetY = { 40 }
+                    )
+        ) {
+            content()
+        }
     }
 }
 
     
 @Composable
 fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
+    val inCapture = LocalInCaptureContext.current
     val animatedMinutes = remember { Animatable(0f) }
     LaunchedEffect(page.totalMinutes) {
-        delay(500)
-        animatedMinutes.animateTo(
-            targetValue = page.totalMinutes.toFloat(),
-            animationSpec = tween(durationMillis = 2000, easing = FastOutSlowInEasing)
-        )
+        if (inCapture) {
+            animatedMinutes.snapTo(page.totalMinutes.toFloat())
+        } else {
+            delay(500)
+            animatedMinutes.animateTo(
+                targetValue = page.totalMinutes.toFloat(),
+                animationSpec = tween(durationMillis = 2000, easing = FastOutSlowInEasing)
+            )
+        }
     }
     
     // Pulsing animation for background
@@ -240,8 +289,7 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
                     end = dimens.horizontalPadding,
                     bottom = dimens.screenBottomPadding
                 ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             EnterAnimation(delay = 0) {
                 val context = LocalContext.current
@@ -255,8 +303,8 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
                     text = titleText,
                     style = MaterialTheme.typography.headlineSmall.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.7f),
-                    letterSpacing = 1.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                    letterSpacing = (1f * dimens.scale).sp,
                     textAlign = TextAlign.Center
                 )
             }
@@ -287,7 +335,7 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
                         ),
                         color = Color.White,
                         textAlign = TextAlign.Center,
-                        lineHeight = dimens.textDisplay
+                        lineHeight = (dimens.textDisplay.value * 1.1f).sp
                     )
 
                     Text(
@@ -295,7 +343,7 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
                         style = MaterialTheme.typography.headlineSmall.copy(fontSize = dimens.textHeadline),
                         fontWeight = FontWeight.Bold,
                         color = Color.White.copy(alpha = 0.9f),
-                        letterSpacing = 2.sp
+                        letterSpacing = (2f * dimens.scale).sp
                     )
 
                     Spacer(modifier = Modifier.height(dimens.spacerSmall))
@@ -305,7 +353,9 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = dimens.textBody),
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                         color = Color.White.copy(alpha = 0.8f),
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -313,8 +363,9 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
             
             Spacer(modifier = Modifier.weight(1f))
             
-            val days = page.totalMinutes / (24 * 60)
-            if (days > 0) {
+            val days = page.totalMinutes.toFloat() / (24 * 60)
+            val daysInt = days.toInt()
+            if (daysInt > 0) {
                 EnterAnimation(delay = 600) {
                     GlassCard(
                         modifier = Modifier.wrapContentSize(),
@@ -323,10 +374,38 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
                         contentPadding = PaddingValues(horizontal = dimens.horizontalPadding, vertical = dimens.spacerSmall)
                     ) {
                         Text(
-                            text = stringResource(R.string.spotlight_days_nonstop, days),
+                            text = stringResource(R.string.spotlight_days_nonstop, daysInt),
                             style = MaterialTheme.typography.titleMedium.copy(fontSize = dimens.textBody),
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
+                        )
+                    }
+                }
+            }
+            
+            // Comparative surprise callout
+            if (page.comparativeText != null) {
+                EnterAnimation(delay = 800) {
+                    Spacer(modifier = Modifier.height(dimens.spacerMedium))
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = Color.White.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(50)
+                            )
+                            .border(1.dp * dimens.scale, Color.White.copy(alpha = 0.3f), RoundedCornerShape(50))
+                            .padding(horizontal = 20.dp * dimens.scale, vertical = 10.dp * dimens.scale)
+                    ) {
+                        Text(
+                            text = page.comparativeText,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontSize = (dimens.textBody.value * 0.9f).sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = Color(0xFFFBBF24),
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -358,7 +437,7 @@ fun TopArtistPage(page: SpotlightStoryPage.TopArtist) {
                      text = stringResource(R.string.spotlight_top_artist_label),
                      style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                      fontWeight = FontWeight.Bold,
-                     color = Color.White.copy(alpha = 0.9f),
+                     color = Color.White.copy(alpha = 0.85f),
                      modifier = Modifier.fillMaxWidth().wrapContentHeight(),
                      textAlign = TextAlign.Center
                  )
@@ -410,7 +489,7 @@ fun TopArtistPage(page: SpotlightStoryPage.TopArtist) {
                              Text(
                                  text = page.topArtistName,
                                  style = MaterialTheme.typography.displaySmall.copy(
-                                     fontSize = dimens.textHeadline * heroImageScale
+                                     fontSize = (dimens.textHeadline.value * heroImageScale).sp
                                  ),
                                  fontWeight = FontWeight.Black,
                                  color = Color.White,
@@ -426,7 +505,9 @@ fun TopArtistPage(page: SpotlightStoryPage.TopArtist) {
                                  style = MaterialTheme.typography.bodyMedium.copy(fontSize = dimens.textBody),
                                  fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                                  color = Color.White.copy(alpha = 0.8f),
-                                 textAlign = TextAlign.Center
+                                 textAlign = TextAlign.Center,
+                                 maxLines = 2,
+                                 overflow = TextOverflow.Ellipsis
                              )
                          }
                      }
@@ -452,38 +533,39 @@ fun TopArtistPage(page: SpotlightStoryPage.TopArtist) {
                                     contentAlignment = Alignment.Center
                                  ) {
                                       EnterAnimation(delay = 400 + (rowIndex * 100) + (colIndex * 50)) {
-                                         GlassCard(
-                                             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f),
-                                             shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
-                                             backgroundColor = Color.White.copy(alpha = 0.15f), // Increased from 0.05f
-                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                         ) {
-                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                 Text(
-                                                     text = "#${artist.rank}",
-                                                     style = MaterialTheme.typography.labelSmall,
-                                                     color = Color.White.copy(alpha = 0.5f),
-                                                     modifier = Modifier.width(20.dp)
-                                                 )
-                                                 CachedAsyncImage(
-                                                     imageUrl = artist.imageUrl,
-                                                     contentDescription = null,
-                                                     modifier = Modifier.size(dimens.imageGrid).clip(CircleShape),
-                                                     contentScale = ContentScale.Crop,
-                                                     allowHardware = false
-                                                 )
-                                                 Spacer(modifier = Modifier.width(8.dp))
-                                                 Text(
-                                                     text = artist.name,
-                                                     style = MaterialTheme.typography.bodySmall,
-                                                     fontWeight = FontWeight.SemiBold,
-                                                     color = Color.White,
-                                                     maxLines = 2,
-                                                     overflow = TextOverflow.Ellipsis
-                                                 )
-                                             }
-                                         }
-                                      }
+                                          SolidCard(
+                                              modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f),
+                                              shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
+                                              backgroundColor = Color.White.copy(alpha = 0.08f),
+                                              borderColor = Color.White.copy(alpha = 0.15f),
+                                              contentPadding = PaddingValues(horizontal = 8.dp * dimens.scale, vertical = 4.dp * dimens.scale)
+                                          ) {
+                                              Row(verticalAlignment = Alignment.CenterVertically) {
+                                                  Text(
+                                                      text = "#${artist.rank}",
+                                                      style = MaterialTheme.typography.labelSmall,
+                                                      color = Color.White.copy(alpha = 0.6f),
+                                                      modifier = Modifier.width((20.dp * dimens.scale))
+                                                  )
+                                                  CachedAsyncImage(
+                                                      imageUrl = artist.imageUrl,
+                                                      contentDescription = null,
+                                                      modifier = Modifier.size(dimens.imageGrid).clip(CircleShape),
+                                                      contentScale = ContentScale.Crop,
+                                                      allowHardware = false
+                                                  )
+                                                  Spacer(modifier = Modifier.width(8.dp * dimens.scale))
+                                                  Text(
+                                                      text = artist.name,
+                                                      style = MaterialTheme.typography.bodySmall,
+                                                      fontWeight = FontWeight.SemiBold,
+                                                      color = Color.White,
+                                                      maxLines = 2,
+                                                      overflow = TextOverflow.Ellipsis
+                                                  )
+                                              }
+                                          }
+                                       }
                                  }
                              }
                              if (rowItems.size == 1) {
@@ -500,73 +582,46 @@ fun TopArtistPage(page: SpotlightStoryPage.TopArtist) {
                 ) {
                     val lastArtist = page.topArtists.drop(1).drop(8).firstOrNull() // Rank 10
                     if (lastArtist != null) {
-                         EnterAnimation(delay = 800) {
-                            GlassCard(
-                                modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f),
-                                shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
-                                backgroundColor = Color.White.copy(alpha = 0.20f), // Increased from 0.05f/0.1f
-                                contentPadding = PaddingValues(12.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "#${lastArtist.rank}",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
-                                        color = Color.White.copy(alpha = 0.5f),
-                                        modifier = Modifier.width(20.dp)
-                                    )
-                                    CachedAsyncImage(
-                                        imageUrl = lastArtist.imageUrl,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(dimens.imageList).clip(CircleShape),
-                                        contentScale = ContentScale.Crop,
-                                        allowHardware = false
-                                    )
-                                    Spacer(modifier = Modifier.width(dimens.gridSpacing))
-                                    Text(
-                                        text = lastArtist.name,
-                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = dimens.textLabel),
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color.White,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                         }
+                          EnterAnimation(delay = 800) {
+                             SolidCard(
+                                 modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f),
+                                 shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
+                                 backgroundColor = Color.White.copy(alpha = 0.1f),
+                                 borderColor = Color.White.copy(alpha = 0.2f),
+                                 contentPadding = PaddingValues(12.dp * dimens.scale)
+                             ) {
+                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                     Text(
+                                         text = "#${lastArtist.rank}",
+                                         style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                         color = Color.White.copy(alpha = 0.6f),
+                                         modifier = Modifier.width((20.dp * dimens.scale))
+                                     )
+                                     CachedAsyncImage(
+                                         imageUrl = lastArtist.imageUrl,
+                                         contentDescription = null,
+                                         modifier = Modifier.size(dimens.imageList).clip(CircleShape),
+                                         contentScale = ContentScale.Crop,
+                                         allowHardware = false
+                                     )
+                                     Spacer(modifier = Modifier.width(dimens.gridSpacing))
+                                     Text(
+                                         text = lastArtist.name,
+                                         style = MaterialTheme.typography.bodySmall.copy(fontSize = dimens.textLabel),
+                                         fontWeight = FontWeight.SemiBold,
+                                         color = Color.White,
+                                         maxLines = 2,
+                                         overflow = TextOverflow.Ellipsis
+                                     )
+                                 }
+                             }
+                          }
                     }
                 }
              }
         }
     }
 }
-@Composable
-fun OtherArtistItem(artist: SpotlightStoryPage.TopArtist.ArtistEntry) {
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        backgroundColor = Color.White.copy(alpha = 0.05f),
-        // Use generic dimensions if available, but this composable doesn't have access to 'dimens'
-        // We'll stick to a safe default or pass it in. For now, 12.dp is safe.
-        contentPadding = PaddingValues(12.dp)
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "${artist.rank}. ${artist.name}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "${artist.hoursListened} hours",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.6f)
-            )
-        }
-    }
-}
-
 @Composable
 fun TopTrackSetupPage(page: SpotlightStoryPage.TopTrackSetup) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -586,6 +641,19 @@ fun TopTrackSetupPage(page: SpotlightStoryPage.TopTrackSetup) {
         ) {
             EnterAnimation(delay = 0) {
                 Text(
+                    text = stringResource(R.string.spotlight_top_track_setup_label),
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(modifier = Modifier.height(dimens.spacerMedium))
+
+            EnterAnimation(delay = 200) {
+                Text(
                     text = page.conversationalText,
                     style = MaterialTheme.typography.headlineMedium.copy(fontSize = dimens.textHeadline),
                     fontWeight = FontWeight.Bold,
@@ -597,7 +665,6 @@ fun TopTrackSetupPage(page: SpotlightStoryPage.TopTrackSetup) {
             Spacer(modifier = Modifier.height(dimens.spacerLarge))
             
             EnterAnimation(delay = 400) {
-                // Subtle hint of what's coming
                 CachedAsyncImage(
                     imageUrl = page.topSongImageUrl,
                     contentDescription = null,
@@ -637,7 +704,7 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                     text = stringResource(R.string.spotlight_top_song_label),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = Color.White.copy(alpha = 0.85f),
                     modifier = Modifier.fillMaxWidth().wrapContentHeight(),
                     textAlign = TextAlign.Center
                 )
@@ -669,7 +736,7 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                             Spacer(modifier = Modifier.height(dimens.spacerSmall))
                             Text(
                                 text = page.topSongTitle,
-                                style = MaterialTheme.typography.headlineMedium.copy(fontSize = dimens.textHeadline * heroImageScale),
+                                style = MaterialTheme.typography.headlineMedium.copy(fontSize = (dimens.textHeadline.value * heroImageScale).sp),
                                 fontWeight = FontWeight.Black,
                                 color = Color.White,
                                 textAlign = TextAlign.Center,
@@ -678,7 +745,7 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                             )
                             Text(
                                 text = page.topSongArtist,
-                                style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle * heroImageScale),
+                                style = MaterialTheme.typography.titleLarge.copy(fontSize = (dimens.textTitle.value * heroImageScale).sp),
                                 color = Color.White.copy(alpha = 0.7f),
                                 textAlign = TextAlign.Center
                             )
@@ -687,14 +754,14 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                                 val totalMinutes = (page.totalTimeMs / 60_000).toInt()
                                 val hours = totalMinutes / 60
                                 val minutes = totalMinutes % 60
-                                val playtimeText = if (hours > 0) "${hours}h ${minutes}m total playtime"
-                                                   else "${minutes}m total playtime"
+                                val playtimeText = if (hours > 0) stringResource(R.string.spotlight_playtime_hours, hours, minutes)
+                                                   else stringResource(R.string.spotlight_playtime_minutes, minutes)
                                 Spacer(modifier = Modifier.height(dimens.spacerSmall))
                                 GlassCard(
                                     modifier = Modifier.wrapContentSize(),
                                     shape = RoundedCornerShape(50),
-                                    backgroundColor = Color(0xFFA855F7).copy(alpha = 0.25f),
-                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 5.dp)
+                                    backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.25f),
+                                    contentPadding = PaddingValues(horizontal = 14.dp * dimens.scale, vertical = 5.dp * dimens.scale)
                                 ) {
                                     Text(
                                         text = playtimeText,
@@ -729,46 +796,47 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                                      contentAlignment = Alignment.Center
                                  ) {
                                      EnterAnimation(delay = 400 + (rowIndex * 100) + (colIndex * 50)) {
-                                        GlassCard(
-                                            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f), // Slight gap
-                                            shape = RoundedCornerShape(dimens.cardCornerRadius * 0.5f),
-                                            backgroundColor = Color.White.copy(alpha = 0.15f), // Increased from 0.05f
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = "#${song.rank}",
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    color = Color.White.copy(alpha = 0.5f),
-                                                    modifier = Modifier.width(20.dp)
-                                                )
-                                                CachedAsyncImage(
-                                                    imageUrl = song.imageUrl,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(dimens.imageGrid).clip(RoundedCornerShape(4.dp)),
-                                                    contentScale = ContentScale.Crop,
-                                                    allowHardware = false
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Column {
-                                                    Text(
-                                                        text = song.title,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color.White,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                    Text(
-                                                        text = song.artist,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = Color.White.copy(alpha = 0.7f),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                            }
-                                        }
+                                         SolidCard(
+                                             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f),
+                                             shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
+                                             backgroundColor = Color.White.copy(alpha = 0.08f),
+                                             borderColor = Color.White.copy(alpha = 0.15f),
+                                             contentPadding = PaddingValues(horizontal = 8.dp * dimens.scale, vertical = 4.dp * dimens.scale)
+                                         ) {
+                                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                                 Text(
+                                                     text = "#${song.rank}",
+                                                     style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                                     color = Color.White.copy(alpha = 0.6f),
+                                                     modifier = Modifier.width((20.dp * dimens.scale))
+                                                 )
+                                                 CachedAsyncImage(
+                                                     imageUrl = song.imageUrl,
+                                                     contentDescription = null,
+                                                     modifier = Modifier.size(dimens.imageGrid).clip(RoundedCornerShape(4.dp)),
+                                                     contentScale = ContentScale.Crop,
+                                                     allowHardware = false
+                                                 )
+                                                 Spacer(modifier = Modifier.width(8.dp * dimens.scale))
+                                                 Column {
+                                                     Text(
+                                                         text = song.title,
+                                                         style = MaterialTheme.typography.bodySmall,
+                                                         fontWeight = FontWeight.Bold,
+                                                         color = Color.White,
+                                                         maxLines = 1,
+                                                         overflow = TextOverflow.Ellipsis
+                                                     )
+                                                     Text(
+                                                         text = song.artist,
+                                                         style = MaterialTheme.typography.labelSmall,
+                                                         color = Color.White.copy(alpha = 0.7f),
+                                                         maxLines = 1,
+                                                         overflow = TextOverflow.Ellipsis
+                                                     )
+                                                 }
+                                             }
+                                         }
                                      }
                                  }
                              }
@@ -788,32 +856,33 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                     val lastItem = page.topSongs.drop(1).drop(8).firstOrNull() // Rank 10
                     if (lastItem != null) {
                         EnterAnimation(delay = 800) {
-                            GlassCard(
+                            SolidCard(
                                 modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f),
-                                shape = RoundedCornerShape(dimens.cardCornerRadius * 0.5f),
-                                backgroundColor = Color.White.copy(alpha = 0.20f), // Increased from 0.1f
-                                contentPadding = PaddingValues(12.dp)
+                                shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
+                                backgroundColor = Color.White.copy(alpha = 0.1f),
+                                borderColor = Color.White.copy(alpha = 0.2f),
+                                contentPadding = PaddingValues(12.dp * dimens.scale)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                      Text(
                                         text = "#${lastItem.rank}",
-                                        style = MaterialTheme.typography.titleMedium,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White.copy(alpha = 0.5f),
-                                        modifier = Modifier.width(32.dp)
+                                        color = Color.White.copy(alpha = 0.6f),
+                                        modifier = Modifier.width(32.dp * dimens.scale)
                                     )
                                     CachedAsyncImage(
                                         imageUrl = lastItem.imageUrl,
                                         contentDescription = null,
-                                        modifier = Modifier.size(dimens.imageList).clip(RoundedCornerShape(8.dp)),
+                                        modifier = Modifier.size(dimens.imageList).clip(RoundedCornerShape(8.dp * dimens.scale)),
                                         contentScale = ContentScale.Crop,
                                         allowHardware = false
                                     )
-                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Spacer(modifier = Modifier.width(12.dp * dimens.scale))
                                     Column {
                                         Text(
                                             text = lastItem.title,
-                                            style = MaterialTheme.typography.bodyLarge,
+                                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = dimens.textBody),
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White,
                                             maxLines = 1,
@@ -821,7 +890,7 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                                         )
                                         Text(
                                             text = lastItem.artist,
-                                            style = MaterialTheme.typography.bodyMedium,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = (dimens.textBody.value * 0.85f).sp),
                                             color = Color.White.copy(alpha = 0.7f),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
@@ -859,7 +928,7 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
                     text = stringResource(R.string.spotlight_top_genres_label),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = Color.White.copy(alpha = 0.85f),
                     modifier = Modifier.padding(bottom = dimens.spacerSmall)
                 )
             }
@@ -898,7 +967,7 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
                                 ),
                                 shape = CircleShape
                             )
-                            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                            .border(1.dp * dimens.scale, Color.White.copy(alpha = 0.3f), CircleShape)
                             .padding(24.dp * dimens.scale),
                         contentAlignment = Alignment.Center
                     ) {
@@ -958,8 +1027,8 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
                             modifier = Modifier
                                 .align(positions[index])
                                 .offset(
-                                    x = if (index % 2 == 0) 20.dp * dimens.scale else (-20).dp * dimens.scale,
-                                    y = (if (index < 2) 20.dp * dimens.scale else (-20).dp * dimens.scale) + otherFloatOffset.dp
+                                    x = if (index % 2 == 0) 20.dp * dimens.scale else -(20.dp * dimens.scale),
+                                    y = (if (index < 2) 20.dp * dimens.scale else -(20.dp * dimens.scale)) + otherFloatOffset.dp
                                 )
                         ) {
                             EnterAnimation(delay = 400 + (index * 150)) {
@@ -976,7 +1045,7 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
                                             ),
                                             shape = CircleShape
                                         )
-                                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                                        .border(1.dp * dimens.scale, Color.White.copy(alpha = 0.2f), CircleShape)
                                         .padding(12.dp * dimens.scale),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -992,7 +1061,7 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
                                         )
                                         Text(
                                             text = "${genre.percentage}%",
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = dimens.textLabel * 0.8),
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = (dimens.textLabel.value * 0.8f).sp),
                                             color = Color.White.copy(alpha = 0.7f)
                                         )
                                     }
@@ -1010,8 +1079,44 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
 fun PersonalityPage(page: SpotlightStoryPage.Personality) {
     val (icon, color) = getPersonalityAssets(page.personalityType)
     
+    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "personality")
+    val rotationAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = tween(20000, easing = LinearEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.05f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = tween(2500, easing = FastOutSlowInEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+    
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
+        
+        // Full-screen color wash
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            color.copy(alpha = 0.4f),
+                            color.copy(alpha = 0.2f),
+                            Color.Transparent
+                        ),
+                        center = Offset(0.5f, 0.3f)
+                    )
+                )
+        )
         
         Column(
             modifier = Modifier
@@ -1022,37 +1127,51 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
                     end = dimens.horizontalPadding,
                     bottom = dimens.screenBottomPadding
                 ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             EnterAnimation(delay = 0) {
                 Text(
                     text = stringResource(R.string.spotlight_listening_personality),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center
                 )
-
-
             }
             
             Spacer(modifier = Modifier.weight(1f))
             
-            EnterAnimation(delay = 200) {
-                Box(contentAlignment = Alignment.Center) {
-                    // Pulsing Glow effect
-                    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse")
-                    val pulseScale by infiniteTransition.animateFloat(
-                        initialValue = 1f,
-                        targetValue = 1.3f,
-                        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                            animation = tween(1500),
-                            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
-                        ),
-                        label = "pulseScale"
-                    )
+            // CINEMATIC ICON - Huge, rotating, dramatic
+            EnterAnimation(delay = 300) {
+                Box(
+                    modifier = Modifier.size((300.dp * dimens.scale).coerceIn(240.dp, 360.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Outer rotating ring
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .rotate(rotationAngle)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    brush = Brush.sweepGradient(
+                                        colors = listOf(
+                                            color.copy(alpha = 0.6f),
+                                            Color.Transparent,
+                                            color.copy(alpha = 0.3f),
+                                            Color.Transparent
+                                        )
+                                    ),
+                                    shape = CircleShape
+                                )
+                        )
+                    }
                     
+                    // Pulsing glow
                     Box(
                         modifier = Modifier
                             .size(200.dp * dimens.scale)
@@ -1060,7 +1179,8 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
                             .background(
                                 brush = Brush.radialGradient(
                                     colors = listOf(
-                                        color.copy(alpha = 0.6f),
+                                        color.copy(alpha = 0.8f),
+                                        color.copy(alpha = 0.3f),
                                         Color.Transparent
                                     )
                                 ),
@@ -1068,20 +1188,21 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
                             )
                     )
                     
+                    // Core icon
                     Box(
                         modifier = Modifier
                             .size(140.dp * dimens.scale)
                             .background(
-                                color = color.copy(alpha = 0.2f),
+                                color = color.copy(alpha = 0.3f),
                                 shape = CircleShape
                             )
-                            .border(2.dp, color.copy(alpha = 0.5f), CircleShape),
+                            .border(3.dp * dimens.scale, color.copy(alpha = 0.8f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
-                            tint = color.copy(alpha = 0.9f),
+                            tint = Color.White,
                             modifier = Modifier.size(80.dp * dimens.scale)
                         )
                     }
@@ -1090,44 +1211,54 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
             
             Spacer(modifier = Modifier.weight(1f))
             
-            EnterAnimation(delay = 400) {
+            // REVEAL - Personality type with dramatic typography
+            EnterAnimation(delay = 600) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = page.personalityType,
-                        style = MaterialTheme.typography.displayMedium.copy(fontSize = dimens.textHeadline),
-                        fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.displayLarge.copy(
+                            fontSize = (dimens.textDisplay.value * 1.2f).coerceAtMost(56f).sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = (2f * dimens.scale).sp
+                        ),
                         color = Color.White,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(dimens.spacerLarge))
+                    
+                    // Description - intimate, left-aligned
+                    Text(
+                        text = page.description,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = dimens.textBody,
+                            lineHeight = (dimens.textBody.value * 1.6f).sp
+                        ),
+                        color = Color.White.copy(alpha = 0.9f),
+                        textAlign = TextAlign.Left,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
                     )
                     
                     Spacer(modifier = Modifier.height(dimens.spacerMedium))
                     
-                    GlassCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = Color.White.copy(alpha = 0.1f),
-                        contentPadding = PaddingValues(16.dp * dimens.scale)
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = page.conversationalText,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = dimens.textBody),
-                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                color = Color.White.copy(alpha = 0.9f),
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(bottom = 8.dp * dimens.scale)
-                            )
-                            
-                            Text(
-                                text = page.description,
-                                style = MaterialTheme.typography.titleMedium.copy(fontSize = dimens.textBody),
-                                color = Color.White.copy(alpha = 0.9f),
-                                textAlign = TextAlign.Center,
-                                lineHeight = dimens.textBody * 1.5
-                            )
-                        }
-                    }
-
+                    // Conversational - whispered, italic
+                    Text(
+                        text = page.conversationalText,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = (dimens.textBody.value * 0.9f).sp,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        ),
+                        color = Color.White.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
@@ -1140,13 +1271,18 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
 
 @Composable
 fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
+    val inCapture = LocalInCaptureContext.current
     val animatedStreak = remember { Animatable(0f) }
     LaunchedEffect(page.currentStreakDays) {
-        delay(400)
-        animatedStreak.animateTo(
-            targetValue = page.currentStreakDays.toFloat(),
-            animationSpec = tween(durationMillis = 1800, easing = FastOutSlowInEasing)
-        )
+        if (inCapture) {
+            animatedStreak.snapTo(page.currentStreakDays.toFloat())
+        } else {
+            delay(400)
+            animatedStreak.animateTo(
+                targetValue = page.currentStreakDays.toFloat(),
+                animationSpec = tween(durationMillis = 1800, easing = FastOutSlowInEasing)
+            )
+        }
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "fire")
@@ -1200,10 +1336,11 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
         ) {
             EnterAnimation(delay = 0) {
                 Text(
-                    text = "Your Listening Streak",
+                    text = stringResource(R.string.spotlight_listening_streak_label),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center
                 )
             }
@@ -1256,11 +1393,11 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
                         textAlign = TextAlign.Center
                     )
                     Text(
-                        text = if (page.currentStreakDays == 1) "day in a row" else "days in a row",
+                        text = if (page.currentStreakDays == 1) stringResource(R.string.spotlight_day_in_a_row) else stringResource(R.string.spotlight_days_in_a_row),
                         style = MaterialTheme.typography.headlineSmall.copy(fontSize = dimens.textHeadline),
                         fontWeight = FontWeight.Bold,
                         color = Color.White.copy(alpha = 0.9f),
-                        letterSpacing = 1.sp
+                        letterSpacing = (1f * dimens.scale).sp
                     )
                     Spacer(modifier = Modifier.height(dimens.spacerSmall))
                     Text(
@@ -1279,12 +1416,13 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
             EnterAnimation(delay = 600) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp * dimens.scale)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp * dimens.scale)
                 ) {
-                    GlassCard(
+                    SolidCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = Color.White.copy(alpha = 0.1f),
+                        backgroundColor = Color.White.copy(alpha = 0.06f),
+                        borderColor = Color(0xFFFFD060).copy(alpha = 0.25f),
                         contentPadding = PaddingValues(dimens.spacerSmall)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -1292,19 +1430,22 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
                                 text = page.longestStreakDays.toString(),
                                 style = MaterialTheme.typography.headlineMedium.copy(fontSize = dimens.textTitle),
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFFD060)
+                                color = Color(0xFFFFD060),
+                                maxLines = 1
                             )
                             Text(
-                                text = "Best Streak",
+                                text = stringResource(R.string.spotlight_best_streak),
                                 style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1
                             )
                         }
                     }
-                    GlassCard(
+                    SolidCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = Color.White.copy(alpha = 0.1f),
+                        backgroundColor = Color.White.copy(alpha = 0.06f),
+                        borderColor = Color.White.copy(alpha = 0.15f),
                         contentPadding = PaddingValues(dimens.spacerSmall)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -1312,14 +1453,42 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
                                 text = page.totalActiveDays.toString(),
                                 style = MaterialTheme.typography.headlineMedium.copy(fontSize = dimens.textTitle),
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = Color.White,
+                                maxLines = 1
                             )
                             Text(
-                                text = "Active Days",
+                                text = stringResource(R.string.spotlight_active_days),
                                 style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1
                             )
                         }
+                    }
+                }
+            }
+            
+            // Comparative surprise callout
+            if (page.comparativeText != null) {
+                EnterAnimation(delay = 800) {
+                    Spacer(modifier = Modifier.height(dimens.spacerMedium))
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = Color(0xFFFF6B00).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(50)
+                            )
+                            .border(1.dp * dimens.scale, Color(0xFFFF9900).copy(alpha = 0.4f), RoundedCornerShape(50))
+                            .padding(horizontal = 20.dp * dimens.scale, vertical = 10.dp * dimens.scale)
+                    ) {
+                        Text(
+                            text = page.comparativeText,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontSize = (dimens.textBody.value * 0.9f).sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = Color(0xFFFFD060),
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
@@ -1329,13 +1498,18 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
 
 @Composable
 fun ListeningClockPage(page: SpotlightStoryPage.ListeningClock) {
+    val inCapture = LocalInCaptureContext.current
     val animatedProgress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        delay(300)
-        animatedProgress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 1600, easing = FastOutSlowInEasing)
-        )
+        if (inCapture) {
+            animatedProgress.snapTo(1f)
+        } else {
+            delay(300)
+            animatedProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 1600, easing = FastOutSlowInEasing)
+            )
+        }
     }
 
     val isNightOwl = page.peakHour >= 20 || page.peakHour < 6
@@ -1359,10 +1533,12 @@ fun ListeningClockPage(page: SpotlightStoryPage.ListeningClock) {
         ) {
             EnterAnimation(delay = 0) {
                 Text(
-                    text = "Your Listening Clock",
+                    text = stringResource(R.string.spotlight_listening_clock_label),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.8f)
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
                 )
             }
 
@@ -1384,9 +1560,7 @@ fun ListeningClockPage(page: SpotlightStoryPage.ListeningClock) {
 
                         // Draw background track ring
                         drawCircle(
-                            color = android.graphics.Color.argb(
-                                (0.1f * 255).toInt(), 255, 255, 255
-                            ).let { Color(it) },
+                            color = Color.White.copy(alpha = 0.1f),
                             radius = (innerRadius + barMaxHeight / 2f),
                             style = Stroke(width = barMaxHeight)
                         )
@@ -1399,7 +1573,7 @@ fun ListeningClockPage(page: SpotlightStoryPage.ListeningClock) {
                             val angleRad = (angleDeg * PI / 180f).toFloat()
 
                             val barHeight = (barMaxHeight * animLevel.coerceAtLeast(0.05f))
-                            val startR = innerRadius + barMaxHeight * 0.0f
+                            val startR = innerRadius
                             val endR = startR + barHeight
 
                             val isPeak = i == page.peakHour
@@ -1431,17 +1605,19 @@ fun ListeningClockPage(page: SpotlightStoryPage.ListeningClock) {
                             imageVector = if (isNightOwl) Icons.Default.Nightlight else Icons.Default.WbSunny,
                             contentDescription = null,
                             tint = accentColor,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(28.dp * dimens.scale)
                         )
                         Text(
                             text = page.peakHourLabel,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.copy(fontSize = dimens.textBody),
                             fontWeight = FontWeight.Black,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "peak",
-                            style = MaterialTheme.typography.labelSmall,
+                            text = stringResource(R.string.spotlight_peak),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
                             color = Color.White.copy(alpha = 0.6f)
                         )
                     }
@@ -1452,14 +1628,15 @@ fun ListeningClockPage(page: SpotlightStoryPage.ListeningClock) {
 
             // Listener type badge
             EnterAnimation(delay = 500) {
-                GlassCard(
-                    modifier = Modifier.wrapContentSize(),
-                    shape = RoundedCornerShape(50),
-                    backgroundColor = accentColor.copy(alpha = 0.2f),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp)
-                ) {
-                    Text(
-                        text = page.listenerType,
+                    SolidCard(
+                        modifier = Modifier.wrapContentSize(),
+                        shape = RoundedCornerShape(50),
+                        backgroundColor = accentColor.copy(alpha = 0.12f),
+                        borderColor = accentColor.copy(alpha = 0.35f),
+                        contentPadding = PaddingValues(horizontal = 24.dp * dimens.scale, vertical = 10.dp * dimens.scale)
+                    ) {
+                        Text(
+                            text = page.listenerType,
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = dimens.textBody),
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -1487,17 +1664,24 @@ fun ListeningClockPage(page: SpotlightStoryPage.ListeningClock) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    listOf("12AM", "6AM", "12PM", "6PM").forEach { label ->
-                        GlassCard(
+                    listOf(
+                        R.string.spotlight_clock_12am,
+                        R.string.spotlight_clock_6am,
+                        R.string.spotlight_clock_12pm,
+                        R.string.spotlight_clock_6pm
+                    ).forEach { labelRes ->
+                        SolidCard(
                             modifier = Modifier.wrapContentSize(),
                             shape = RoundedCornerShape(50),
-                            backgroundColor = Color.White.copy(alpha = 0.08f),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            backgroundColor = Color.White.copy(alpha = 0.05f),
+                            borderColor = Color.White.copy(alpha = 0.12f),
+                            borderWidth = 0.5.dp,
+                            contentPadding = PaddingValues(horizontal = 8.dp * dimens.scale, vertical = 4.dp * dimens.scale)
                         ) {
                             Text(
-                                text = label,
+                                text = stringResource(labelRes),
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
-                                color = Color.White.copy(alpha = 0.6f)
+                                color = Color.White.copy(alpha = 0.65f)
                             )
                         }
                     }
@@ -1519,7 +1703,7 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
-                    .blur(40.dp)
+                    .blur(40.dp * dimens.scale)
                     .scale(1.3f),
                 contentScale = ContentScale.Crop,
                 allowHardware = false
@@ -1548,15 +1732,16 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
                     end = dimens.horizontalPadding,
                     bottom = dimens.screenBottomPadding
                 ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             EnterAnimation(delay = 0) {
                 Text(
-                    text = "Your Top Album",
+                    text = stringResource(R.string.spotlight_top_album_label),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.8f)
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
                 )
             }
 
@@ -1569,7 +1754,7 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
                     // Glow behind art
                     Box(
                         modifier = Modifier
-                            .size(artSize + 50.dp)
+                            .size(artSize + 50.dp * dimens.scale)
                             .background(
                                 brush = Brush.radialGradient(
                                     colors = listOf(
@@ -1577,7 +1762,7 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
                                         Color.Transparent
                                     )
                                 ),
-                                shape = RoundedCornerShape(28.dp)
+                                shape = RoundedCornerShape(28.dp * dimens.scale)
                             )
                     )
                     CachedAsyncImage(
@@ -1586,7 +1771,7 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
                         modifier = Modifier
                             .size(artSize)
                             .clip(RoundedCornerShape(20.dp * dimens.scale))
-                            .border(2.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(20.dp * dimens.scale)),
+                            .border(2.dp * dimens.scale, Color.White.copy(alpha = 0.2f), RoundedCornerShape(20.dp * dimens.scale)),
                         contentScale = ContentScale.Crop,
                         allowHardware = false
                     )
@@ -1612,7 +1797,9 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
                         text = page.artistName,
                         style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                         color = Color.White.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(dimens.spacerSmall))
                     Text(
@@ -1620,7 +1807,9 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = dimens.textBody),
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                         color = Color.White.copy(alpha = 0.8f),
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1629,25 +1818,33 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
 
             // Stats row
             EnterAnimation(delay = 700) {
+                val totalMinutes = (page.totalTimeMs / 60_000).toInt()
+                val hours = totalMinutes / 60
+                val mins = totalMinutes % 60
+                val timeText = if (hours > 0) stringResource(R.string.spotlight_time_hours, hours, mins) else stringResource(R.string.spotlight_time_minutes, mins)
+                val values = listOf(page.playCount.toString(), timeText, page.uniqueTracksPlayed.toString())
+                val maxLen = values.maxOf { it.length }
+                val statFontSize = when {
+                    maxLen >= 8 -> (dimens.textTitle.value * 0.7f).sp
+                    maxLen >= 6 -> (dimens.textTitle.value * 0.8f).sp
+                    else -> dimens.textTitle
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp * dimens.scale)
                 ) {
-                    val totalMinutes = (page.totalTimeMs / 60_000).toInt()
-                    val hours = totalMinutes / 60
-                    val mins = totalMinutes % 60
-                    val timeText = if (hours > 0) "${hours}h ${mins}m" else "${mins}m"
-
                     listOf(
-                        Pair(page.playCount.toString(), "Plays"),
-                        Pair(timeText, "Time Spent"),
-                        Pair(page.uniqueTracksPlayed.toString(), "Tracks")
+                        Pair(values[0], stringResource(R.string.spotlight_plays)),
+                        Pair(values[1], stringResource(R.string.spotlight_time_spent)),
+                        Pair(values[2], stringResource(R.string.spotlight_tracks))
                     ).forEach { (value, label) ->
-                        GlassCard(
+                        SolidCard(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(dimens.cardCornerRadius),
-                            backgroundColor = Color.White.copy(alpha = 0.12f),
-                            contentPadding = PaddingValues(vertical = 10.dp, horizontal = 4.dp)
+                            backgroundColor = Color.White.copy(alpha = 0.06f),
+                            borderColor = Color.White.copy(alpha = 0.15f),
+                            contentPadding = PaddingValues(vertical = 10.dp * dimens.scale, horizontal = 4.dp * dimens.scale)
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -1655,14 +1852,17 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
                             ) {
                                 Text(
                                     text = value,
-                                    style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
+                                    style = MaterialTheme.typography.titleLarge.copy(fontSize = statFontSize),
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = label,
                                     style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
-                                    color = Color.White.copy(alpha = 0.6f)
+                                    color = Color.White.copy(alpha = 0.65f),
+                                    maxLines = 1
                                 )
                             }
                         }
@@ -1675,17 +1875,25 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
 
 @Composable
 fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
-    // Use a single coroutine scope so both counters animate sequentially vs. racing
+    val inCapture = LocalInCaptureContext.current
     val artistsAnim = remember { Animatable(0f) }
     val tracksAnim  = remember { Animatable(0f) }
 
     LaunchedEffect(page.uniqueArtists) {
-        delay(500)
-        artistsAnim.animateTo(page.uniqueArtists.toFloat(), tween(1400, easing = FastOutSlowInEasing))
+        if (inCapture) {
+            artistsAnim.snapTo(page.uniqueArtists.toFloat())
+        } else {
+            delay(500)
+            artistsAnim.animateTo(page.uniqueArtists.toFloat(), tween(1400, easing = FastOutSlowInEasing))
+        }
     }
     LaunchedEffect(page.uniqueTracks) {
-        delay(650)
-        tracksAnim.animateTo(page.uniqueTracks.toFloat(), tween(1600, easing = FastOutSlowInEasing))
+        if (inCapture) {
+            tracksAnim.snapTo(page.uniqueTracks.toFloat())
+        } else {
+            delay(650)
+            tracksAnim.animateTo(page.uniqueTracks.toFloat(), tween(1600, easing = FastOutSlowInEasing))
+        }
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "orb")
@@ -1750,9 +1958,9 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
                         tint = Color(0xFF34D399),
                         modifier = Modifier.size(20.dp * dimens.scale)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(6.dp * dimens.scale))
                     Text(
-                        text = "Your Music Universe",
+                        text = stringResource(R.string.spotlight_music_universe),
                         style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                         fontWeight = FontWeight.Bold,
                         color = Color.White.copy(alpha = 0.85f)
@@ -1762,34 +1970,37 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
 
             // Main counters — two large cards
             EnterAnimation(delay = 300) {
+                val targetArtistsText = String.format(java.util.Locale.US, "%,d", page.uniqueArtists)
+                val targetTracksText = String.format(java.util.Locale.US, "%,d", page.uniqueTracks)
+                val maxLen = maxOf(targetArtistsText.length, targetTracksText.length)
+                val sharedFontSize = when {
+                    maxLen > 5 -> (dimens.textDisplay.value * 0.42f).sp
+                    maxLen > 4 -> (dimens.textDisplay.value * 0.48f).sp
+                    maxLen > 3 -> (dimens.textDisplay.value * 0.55f).sp
+                    else -> (dimens.textDisplay.value * 0.6f).sp
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp * dimens.scale)
                 ) {
                     // Artists
-                    GlassCard(
+                    SolidCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = Color(0xFF8B5CF6).copy(alpha = 0.18f),
-                        contentPadding = PaddingValues(vertical = 20.dp * dimens.scale, horizontal = 8.dp)
+                        backgroundColor = Color(0xFF8B5CF6).copy(alpha = 0.12f),
+                        borderColor = Color(0xFF8B5CF6).copy(alpha = 0.3f),
+                        contentPadding = PaddingValues(vertical = 20.dp * dimens.scale, horizontal = 8.dp * dimens.scale)
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            // Counter number — auto-sized to fit
-                            val targetArtistsText = String.format(java.util.Locale.US, "%,d", page.uniqueArtists)
                             val artistsText = String.format(java.util.Locale.US, "%,d", artistsAnim.value.toInt())
-                            val artistFontSize = when {
-                                targetArtistsText.length > 5 -> dimens.textHeadline
-                                targetArtistsText.length > 4 -> dimens.textDisplay * 0.55f
-                                targetArtistsText.length > 3 -> dimens.textDisplay * 0.65f
-                                else -> dimens.textDisplay * 0.75f
-                            }
                             Text(
                                 text = artistsText,
                                 style = MaterialTheme.typography.displaySmall.copy(
-                                    fontSize = artistFontSize,
+                                    fontSize = sharedFontSize,
                                     fontWeight = FontWeight.Black,
                                     shadow = Shadow(
                                         color = Color(0xFF8B5CF6).copy(alpha = 0.7f),
@@ -1798,12 +2009,13 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
                                     )
                                 ),
                                 color = Color(0xFFC4B5FD),
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.height(6.dp * dimens.scale))
                             Text(
-                                text = "Artists",
-                                style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textBody * 0.85f),
+                                text = stringResource(R.string.spotlight_artists),
+                                style = MaterialTheme.typography.labelLarge.copy(fontSize = (dimens.textBody.value * 0.85f).sp),
                                 color = Color.White.copy(alpha = 0.75f),
                                 fontWeight = FontWeight.Medium
                             )
@@ -1811,28 +2023,22 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
                     }
 
                     // Tracks
-                    GlassCard(
+                    SolidCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = Color(0xFF06B6D4).copy(alpha = 0.18f),
-                        contentPadding = PaddingValues(vertical = 20.dp * dimens.scale, horizontal = 8.dp)
+                        backgroundColor = Color(0xFF06B6D4).copy(alpha = 0.12f),
+                        borderColor = Color(0xFF06B6D4).copy(alpha = 0.3f),
+                        contentPadding = PaddingValues(vertical = 20.dp * dimens.scale, horizontal = 8.dp * dimens.scale)
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            val targetTracksText = String.format(java.util.Locale.US, "%,d", page.uniqueTracks)
                             val tracksText = String.format(java.util.Locale.US, "%,d", tracksAnim.value.toInt())
-                            val trackFontSize = when {
-                                targetTracksText.length > 5 -> dimens.textHeadline
-                                targetTracksText.length > 4 -> dimens.textDisplay * 0.55f
-                                targetTracksText.length > 3 -> dimens.textDisplay * 0.65f
-                                else -> dimens.textDisplay * 0.75f
-                            }
                             Text(
                                 text = tracksText,
                                 style = MaterialTheme.typography.displaySmall.copy(
-                                    fontSize = trackFontSize,
+                                    fontSize = sharedFontSize,
                                     fontWeight = FontWeight.Black,
                                     shadow = Shadow(
                                         color = Color(0xFF06B6D4).copy(alpha = 0.7f),
@@ -1841,12 +2047,13 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
                                     )
                                 ),
                                 color = Color(0xFF67E8F9),
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.height(6.dp * dimens.scale))
                             Text(
-                                text = "Unique Songs",
-                                style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textBody * 0.85f),
+                                text = stringResource(R.string.spotlight_unique_songs),
+                                style = MaterialTheme.typography.labelLarge.copy(fontSize = (dimens.textBody.value * 0.85f).sp),
                                 color = Color.White.copy(alpha = 0.75f),
                                 fontWeight = FontWeight.Medium
                             )
@@ -1874,18 +2081,19 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
                         modifier = Modifier.wrapContentSize(),
                         shape = RoundedCornerShape(50),
                         backgroundColor = Color(0xFF34D399).copy(alpha = 0.15f),
-                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp)
+                        contentPadding = PaddingValues(horizontal = 18.dp * dimens.scale, vertical = 8.dp * dimens.scale)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "✦",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF34D399)
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = null,
+                                tint = Color(0xFF34D399),
+                                modifier = Modifier.size(14.dp * dimens.scale)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(6.dp * dimens.scale))
                             Text(
-                                text = "+${page.newArtistsThisPeriod} new artists ${page.timeRangeLabel}",
-                                style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textBody * 0.85f),
+                                text = stringResource(R.string.spotlight_new_artists_chip, page.newArtistsThisPeriod, page.timeRangeLabel),
+                                style = MaterialTheme.typography.labelLarge.copy(fontSize = (dimens.textBody.value * 0.85f).sp),
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF34D399)
                             )
@@ -1896,29 +2104,65 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
                     Spacer(modifier = Modifier.height(36.dp * dimens.scale))
                 }
             }
+            
+            // Comparative surprise callout
+            if (page.comparativeText != null) {
+                EnterAnimation(delay = 1100) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = Color(0xFF06B6D4).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(50)
+                            )
+                            .border(1.dp * dimens.scale, Color(0xFF22D3EE).copy(alpha = 0.4f), RoundedCornerShape(50))
+                            .padding(horizontal = 20.dp * dimens.scale, vertical = 10.dp * dimens.scale)
+                    ) {
+                        Text(
+                            text = page.comparativeText,
+                            style = MaterialTheme.typography.labelLarge.copy(
+                                fontSize = (dimens.textBody.value * 0.9f).sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = Color(0xFF67E8F9),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
 fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
+    val inCapture = LocalInCaptureContext.current
     val barAnims = remember { List(7) { Animatable(0f) } }
     LaunchedEffect(Unit) {
-        delay(400)
-        barAnims.forEachIndexed { index, anim ->
-            val delayMs = 400L + (index * 80).toLong()
-            anim.snapTo(0f)
-            delay(delayMs - 400L)
-            anim.animateTo(
-                targetValue = (page.dailyIntensity.getOrNull(index) ?: 0) / 100f,
-                animationSpec = tween(700, easing = FastOutSlowInEasing)
-            )
+        if (inCapture) {
+            barAnims.forEachIndexed { index, anim ->
+                anim.snapTo((page.dailyIntensity.getOrNull(index) ?: 0) / 100f)
+            }
+        } else {
+            delay(400)
+            barAnims.forEachIndexed { index, anim ->
+                val delayMs = 400L + (index * 80).toLong()
+                anim.snapTo(0f)
+                delay(delayMs - 400L)
+                anim.animateTo(
+                    targetValue = (page.dailyIntensity.getOrNull(index) ?: 0) / 100f,
+                    animationSpec = tween(700, easing = FastOutSlowInEasing)
+                )
+            }
         }
     }
 
     val isWeekendDominant = page.dominantSide == "weekend"
     val accentColor = if (isWeekendDominant) Color(0xFFF59E0B) else Color(0xFF60A5FA)
-    val dayNames = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    val dayNamesRes = listOf(
+        R.string.spotlight_day_mon, R.string.spotlight_day_tue, R.string.spotlight_day_wed,
+        R.string.spotlight_day_thu, R.string.spotlight_day_fri, R.string.spotlight_day_sat,
+        R.string.spotlight_day_sun
+    )
     val isWeekend = listOf(false, false, false, false, false, true, true)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -1939,10 +2183,12 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
             // Header
             EnterAnimation(delay = 0) {
                 Text(
-                    text = "Week vs. Weekend",
+                    text = stringResource(R.string.spotlight_week_vs_weekend),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.85f)
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
                 )
             }
 
@@ -1953,11 +2199,13 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
                     horizontalArrangement = Arrangement.spacedBy(10.dp * dimens.scale)
                 ) {
                     // Weekday card
-                    GlassCard(
+                    SolidCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = if (!isWeekendDominant) Color(0xFF60A5FA).copy(alpha = 0.22f)
-                                         else Color.White.copy(alpha = 0.07f),
+                        backgroundColor = if (!isWeekendDominant) Color(0xFF60A5FA).copy(alpha = 0.12f)
+                                         else Color.White.copy(alpha = 0.04f),
+                        borderColor = if (!isWeekendDominant) Color(0xFF60A5FA).copy(alpha = 0.35f)
+                                     else Color.White.copy(alpha = 0.12f),
                         contentPadding = PaddingValues(12.dp * dimens.scale)
                     ) {
                         Column(
@@ -1970,38 +2218,39 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
                                     fontSize = dimens.textHeadline,
                                     fontWeight = FontWeight.Black
                                 ),
-                                color = if (!isWeekendDominant) Color(0xFF93C5FD) else Color.White.copy(alpha = 0.5f)
+                                color = if (!isWeekendDominant) Color(0xFF93C5FD) else Color.White.copy(alpha = 0.55f),
+                                maxLines = 1
                             )
                             Text(
-                                text = "min/day",
+                                text = stringResource(R.string.spotlight_min_per_day),
                                 style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
-                                color = Color.White.copy(alpha = 0.55f)
+                                color = Color.White.copy(alpha = 0.6f)
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(4.dp * dimens.scale))
                             Text(
-                                text = "Weekdays",
-                                style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textBody * 0.85f),
+                                text = stringResource(R.string.spotlight_weekdays),
+                                style = MaterialTheme.typography.labelLarge.copy(fontSize = (dimens.textBody.value * 0.85f).sp),
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color.White.copy(alpha = 0.8f)
                             )
-                            if (!isWeekendDominant) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = page.weekdayLabel,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
-                                    color = Color(0xFF93C5FD),
-                                    textAlign = TextAlign.Center
-                                )
-                            }
+                            Spacer(modifier = Modifier.height(4.dp * dimens.scale))
+                            Text(
+                                text = page.weekdayLabel,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                color = if (!isWeekendDominant) Color(0xFF93C5FD) else Color.Transparent,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
 
                     // Weekend card
-                    GlassCard(
+                    SolidCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = if (isWeekendDominant) Color(0xFFF59E0B).copy(alpha = 0.22f)
-                                         else Color.White.copy(alpha = 0.07f),
+                        backgroundColor = if (isWeekendDominant) Color(0xFFF59E0B).copy(alpha = 0.12f)
+                                         else Color.White.copy(alpha = 0.04f),
+                        borderColor = if (isWeekendDominant) Color(0xFFF59E0B).copy(alpha = 0.35f)
+                                     else Color.White.copy(alpha = 0.12f),
                         contentPadding = PaddingValues(12.dp * dimens.scale)
                     ) {
                         Column(
@@ -2014,29 +2263,28 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
                                     fontSize = dimens.textHeadline,
                                     fontWeight = FontWeight.Black
                                 ),
-                                color = if (isWeekendDominant) Color(0xFFFCD34D) else Color.White.copy(alpha = 0.5f)
+                                color = if (isWeekendDominant) Color(0xFFFCD34D) else Color.White.copy(alpha = 0.55f),
+                                maxLines = 1
                             )
                             Text(
-                                text = "min/day",
+                                text = stringResource(R.string.spotlight_min_per_day),
                                 style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
-                                color = Color.White.copy(alpha = 0.55f)
+                                color = Color.White.copy(alpha = 0.6f)
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(4.dp * dimens.scale))
                             Text(
-                                text = "Weekends",
-                                style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textBody * 0.85f),
+                                text = stringResource(R.string.spotlight_weekends),
+                                style = MaterialTheme.typography.labelLarge.copy(fontSize = (dimens.textBody.value * 0.85f).sp),
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color.White.copy(alpha = 0.8f)
                             )
-                            if (isWeekendDominant) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = page.weekendLabel,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
-                                    color = Color(0xFFFCD34D),
-                                    textAlign = TextAlign.Center
-                                )
-                            }
+                            Spacer(modifier = Modifier.height(4.dp * dimens.scale))
+                            Text(
+                                text = page.weekendLabel,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                color = if (isWeekendDominant) Color(0xFFFCD34D) else Color.Transparent,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
                 }
@@ -2050,7 +2298,7 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    dayNames.forEachIndexed { i, day ->
+                    dayNamesRes.forEachIndexed { i, dayRes ->
                         val isWknd = isWeekend[i]
                         val barColor = when {
                             isWknd && isWeekendDominant -> Color(0xFFF59E0B)
@@ -2064,21 +2312,20 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
                             verticalArrangement = Arrangement.Bottom,
                             modifier = Modifier.weight(1f)
                         ) {
-                            // Bar
-                            Box(
+                                Box(
                                 modifier = Modifier
-                                    .fillMaxWidth(0.6f)
+                                    .fillMaxWidth(0.7f)
                                     .height(barMaxHeight * intensity)
-                                    .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                                    .clip(RoundedCornerShape(topStart = 6.dp * dimens.scale, topEnd = 6.dp * dimens.scale))
                                     .background(
                                         brush = Brush.verticalGradient(
                                             colors = listOf(barColor, barColor.copy(alpha = 0.5f))
                                         )
                                     )
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(6.dp * dimens.scale))
                             Text(
-                                text = day,
+                                text = stringResource(dayRes),
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
                                 color = if (isWknd) Color(0xFFFCD34D).copy(alpha = 0.9f)
                                         else Color.White.copy(alpha = 0.6f),
@@ -2105,16 +2352,25 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
 
 @Composable
 fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
+    val inCapture = LocalInCaptureContext.current
     val countAnim = remember { Animatable(0f) }
     val timeAnim  = remember { Animatable(0f) }
 
     LaunchedEffect(page.bingeCount) {
-        delay(600)
-        countAnim.animateTo(page.bingeCount.toFloat(), tween(1200, easing = FastOutSlowInEasing))
+        if (inCapture) {
+            countAnim.snapTo(page.bingeCount.toFloat())
+        } else {
+            delay(600)
+            countAnim.animateTo(page.bingeCount.toFloat(), tween(1200, easing = FastOutSlowInEasing))
+        }
     }
     LaunchedEffect(page.totalBingeMinutes) {
-        delay(800)
-        timeAnim.animateTo(page.totalBingeMinutes.toFloat(), tween(1400, easing = FastOutSlowInEasing))
+        if (inCapture) {
+            timeAnim.snapTo(page.totalBingeMinutes.toFloat())
+        } else {
+            delay(800)
+            timeAnim.animateTo(page.totalBingeMinutes.toFloat(), tween(1400, easing = FastOutSlowInEasing))
+        }
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -2163,10 +2419,12 @@ fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
         ) {
             EnterAnimation(delay = 0) {
                 Text(
-                    text = "Your Longest Binge",
+                    text = stringResource(R.string.spotlight_longest_binge),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.85f)
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
                 )
             }
 
@@ -2190,14 +2448,15 @@ fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(6.dp * dimens.scale))
-                    GlassCard(
+                    SolidCard(
                         modifier = Modifier.wrapContentSize(),
                         shape = RoundedCornerShape(50),
-                        backgroundColor = Color(0xFFEC4899).copy(alpha = 0.2f),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                        backgroundColor = Color(0xFFEC4899).copy(alpha = 0.12f),
+                        borderColor = Color(0xFFEC4899).copy(alpha = 0.3f),
+                        contentPadding = PaddingValues(horizontal = 16.dp * dimens.scale, vertical = 6.dp * dimens.scale)
                     ) {
                         Text(
-                            text = "marathon session",
+                            text = stringResource(R.string.spotlight_marathon_session),
                             style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textLabel),
                             color = Color(0xFFF9A8D4),
                             fontWeight = FontWeight.Medium
@@ -2208,48 +2467,58 @@ fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
 
             // Stats row
             EnterAnimation(delay = 500) {
+                val targetCountText = page.bingeCount.toString()
+                val targetMins = page.totalBingeMinutes
+                val targetH = targetMins / 60
+                val targetM = targetMins % 60
+                val worstTimeText = stringResource(R.string.spotlight_time_hours, targetH, 59)
+                val targetTimeText = stringResource(R.string.spotlight_time_hours, targetH, targetM)
+                val maxLen = maxOf(targetCountText.length, worstTimeText.length, targetTimeText.length)
+                val statFontSize = when {
+                    maxLen >= 8 -> (dimens.textDisplay.value * 0.38f).sp
+                    maxLen >= 6 -> (dimens.textDisplay.value * 0.42f).sp
+                    else -> (dimens.textDisplay.value * 0.5f).sp
+                }
+                
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp * dimens.scale)
                 ) {
-                    GlassCard(
+                    SolidCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = Color(0xFFEC4899).copy(alpha = 0.18f),
+                        backgroundColor = Color(0xFFEC4899).copy(alpha = 0.1f),
+                        borderColor = Color(0xFFEC4899).copy(alpha = 0.3f),
                         contentPadding = PaddingValues(16.dp * dimens.scale)
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            val targetCountText = page.bingeCount.toString()
-                            val countFontSize = when {
-                                targetCountText.length >= 4 -> dimens.textDisplay * 0.45f
-                                targetCountText.length >= 3 -> dimens.textDisplay * 0.55f
-                                else -> dimens.textDisplay * 0.7f
-                            }
                             Text(
                                 text = countAnim.value.toInt().toString(),
                                 style = MaterialTheme.typography.displaySmall.copy(
-                                    fontSize = countFontSize,
+                                    fontSize = statFontSize,
                                     fontWeight = FontWeight.Black
                                 ),
                                 color = Color(0xFFF9A8D4),
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "tracks in a row",
+                                text = stringResource(R.string.spotlight_tracks_in_a_row),
                                 style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = Color.White.copy(alpha = 0.65f),
                                 textAlign = TextAlign.Center
                             )
                         }
                     }
 
-                    GlassCard(
+                    SolidCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = Color(0xFF8B5CF6).copy(alpha = 0.18f),
+                        backgroundColor = Color(0xFF8B5CF6).copy(alpha = 0.1f),
+                        borderColor = Color(0xFF8B5CF6).copy(alpha = 0.3f),
                         contentPadding = PaddingValues(16.dp * dimens.scale)
                     ) {
                         Column(
@@ -2259,30 +2528,22 @@ fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
                             val mins = timeAnim.value.toInt()
                             val h = mins / 60
                             val m = mins % 60
-                            val timeText = if (h > 0) "${h}h ${m}m" else "${m}m"
+                            val timeText = stringResource(R.string.spotlight_time_hours, h, m)
                             
-                            val targetMins = page.totalBingeMinutes
-                            val targetH = targetMins / 60
-                            val targetM = targetMins % 60
-                            val targetTimeText = if (targetH > 0) "${targetH}h ${targetM}m" else "${targetM}m"
-                            val timeFontSize = when {
-                                targetTimeText.length >= 6 -> dimens.textDisplay * 0.45f
-                                targetTimeText.length >= 4 -> dimens.textDisplay * 0.55f
-                                else -> dimens.textDisplay * 0.7f
-                            }
                             Text(
                                 text = timeText,
                                 style = MaterialTheme.typography.displaySmall.copy(
-                                    fontSize = timeFontSize,
+                                    fontSize = statFontSize,
                                     fontWeight = FontWeight.Black
                                 ),
                                 color = Color(0xFFC4B5FD),
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "straight",
+                                text = stringResource(R.string.spotlight_straight),
                                 style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
-                                color = Color.White.copy(alpha = 0.6f)
+                                color = Color.White.copy(alpha = 0.65f)
                             )
                         }
                     }
@@ -2295,7 +2556,9 @@ fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = dimens.textBody),
                     fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                     color = Color.White.copy(alpha = 0.75f),
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -2304,27 +2567,34 @@ fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
 
 @Composable
 fun TimeOfDayVibesPage(page: SpotlightStoryPage.TimeOfDayVibes) {
-    data class Period(val label: String, val emoji: String, val percent: Int, val color: Color, val bg: Color)
+    data class Period(val labelRes: Int, val emoji: String, val percent: Int, val color: Color, val bg: Color)
     val periods = listOf(
-        Period("Morning",   "🌅", page.morningPercent,   Color(0xFFFBBF24), Color(0xFFF59E0B)),
-        Period("Afternoon", "☀️", page.afternoonPercent,  Color(0xFF34D399), Color(0xFF10B981)),
-        Period("Evening",   "🌆", page.eveningPercent,   Color(0xFF60A5FA), Color(0xFF3B82F6)),
-        Period("Night",     "🌙", page.nightPercent,     Color(0xFFA78BFA), Color(0xFF8B5CF6))
+        Period(R.string.spotlight_period_morning,   "🌅", page.morningPercent,   Color(0xFFFBBF24), Color(0xFFF59E0B)),
+        Period(R.string.spotlight_period_afternoon, "☀️", page.afternoonPercent,  Color(0xFF34D399), Color(0xFF10B981)),
+        Period(R.string.spotlight_period_evening,   "🌆", page.eveningPercent,   Color(0xFF60A5FA), Color(0xFF3B82F6)),
+        Period(R.string.spotlight_period_night,     "🌙", page.nightPercent,     Color(0xFFA78BFA), Color(0xFF8B5CF6))
     )
 
     val totalPct = periods.sumOf { it.percent }.coerceAtLeast(1)
 
+    val inCapture = LocalInCaptureContext.current
     // Each bar animates independently
     val anims = remember { periods.map { Animatable(0f) } }
     LaunchedEffect(Unit) {
-        delay(400)
-        anims.forEachIndexed { index, anim ->
-            val delayMs = (index * 120).toLong()
-            delay(if (index == 0) delayMs else 120L)
-            anim.animateTo(
-                targetValue = periods[index].percent / totalPct.toFloat(),
-                animationSpec = tween(900, easing = FastOutSlowInEasing)
-            )
+        if (inCapture) {
+            anims.forEachIndexed { index, anim ->
+                anim.snapTo(periods[index].percent / totalPct.toFloat())
+            }
+        } else {
+            delay(400)
+            anims.forEachIndexed { index, anim ->
+                val delayMs = (index * 120).toLong()
+                delay(if (index == 0) delayMs else 120L)
+                anim.animateTo(
+                    targetValue = periods[index].percent / totalPct.toFloat(),
+                    animationSpec = tween(900, easing = FastOutSlowInEasing)
+                )
+            }
         }
     }
 
@@ -2345,26 +2615,28 @@ fun TimeOfDayVibesPage(page: SpotlightStoryPage.TimeOfDayVibes) {
         ) {
             EnterAnimation(delay = 0) {
                 Text(
-                    text = "When You Listen",
+                    text = stringResource(R.string.spotlight_when_you_listen),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.85f)
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
                 )
             }
 
             // Dominant period big label
             EnterAnimation(delay = 150) {
-                val dominant = periods.firstOrNull { it.label.lowercase() == page.dominantPeriod }
+                val dominant = periods.firstOrNull { stringResource(it.labelRes).lowercase() == page.dominantPeriod }
                     ?: periods.maxByOrNull { it.percent }!!
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = dominant.emoji,
-                        style = MaterialTheme.typography.displayLarge.copy(fontSize = dimens.textDisplay),
+                        style = MaterialTheme.typography.displayLarge.copy(fontSize = (dimens.textDisplay.value * 0.7f).sp),
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(4.dp * dimens.scale))
                     Text(
-                        text = dominant.label,
+                        text = stringResource(dominant.labelRes),
                         style = MaterialTheme.typography.headlineMedium.copy(
                             fontSize = dimens.textHeadline,
                             fontWeight = FontWeight.Black,
@@ -2378,7 +2650,7 @@ fun TimeOfDayVibesPage(page: SpotlightStoryPage.TimeOfDayVibes) {
                         textAlign = TextAlign.Center
                     )
                     Text(
-                        text = "listener",
+                        text = stringResource(R.string.spotlight_listener),
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = dimens.textBody),
                         color = Color.White.copy(alpha = 0.5f)
                     )
@@ -2401,7 +2673,7 @@ fun TimeOfDayVibesPage(page: SpotlightStoryPage.TimeOfDayVibes) {
                             Text(
                                 text = period.emoji,
                                 style = MaterialTheme.typography.titleMedium.copy(
-                                    fontSize = (dimens.textBody * 1.1f)
+                                    fontSize = (dimens.textBody.value * 1.1f).sp
                                 ),
                                 modifier = Modifier.width(32.dp * dimens.scale)
                             )
@@ -2456,6 +2728,7 @@ fun TimeOfDayVibesPage(page: SpotlightStoryPage.TimeOfDayVibes) {
 
 @Composable
 fun AudioMoodPage(page: SpotlightStoryPage.AudioMood) {
+    val inCapture = LocalInCaptureContext.current
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
 
@@ -2473,10 +2746,12 @@ fun AudioMoodPage(page: SpotlightStoryPage.AudioMood) {
         ) {
             EnterAnimation(delay = 0) {
                 Text(
-                    text = "Your Sound Profile",
+                    text = stringResource(R.string.spotlight_sound_profile),
                     style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                     fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.8f)
+                    color = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
                 )
             }
 
@@ -2516,20 +2791,24 @@ fun AudioMoodPage(page: SpotlightStoryPage.AudioMood) {
 
             // Mood bars
             val moodBars = listOf(
-                Triple("Energy", page.energyPercent, Color(0xFFEF4444)),
-                Triple("Positivity", page.valencePercent, Color(0xFFF59E0B)),
-                Triple("Danceability", page.danceabilityPercent, Color(0xFF10B981)),
-                Triple("Acoustic", page.acousticnessPercent, Color(0xFF60A5FA))
+                Triple(R.string.spotlight_mood_energy, page.energyPercent, Color(0xFFEF4444)),
+                Triple(R.string.spotlight_mood_positivity, page.valencePercent, Color(0xFFF59E0B)),
+                Triple(R.string.spotlight_mood_danceability, page.danceabilityPercent, Color(0xFF10B981)),
+                Triple(R.string.spotlight_mood_acoustic, page.acousticnessPercent, Color(0xFF60A5FA))
             )
 
             moodBars.forEachIndexed { index, (label, percent, color) ->
                 val animatedWidth = remember { Animatable(0f) }
                 LaunchedEffect(percent) {
-                    delay((300 + index * 150).toLong())
-                    animatedWidth.animateTo(
-                        targetValue = percent / 100f,
-                        animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing)
-                    )
+                    if (inCapture) {
+                        animatedWidth.snapTo(percent / 100f)
+                    } else {
+                        delay((300 + index * 150).toLong())
+                        animatedWidth.animateTo(
+                            targetValue = percent / 100f,
+                            animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing)
+                        )
+                    }
                 }
 
                 EnterAnimation(delay = 300 + index * 150) {
@@ -2540,7 +2819,7 @@ fun AudioMoodPage(page: SpotlightStoryPage.AudioMood) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = label,
+                                text = stringResource(label),
                                 style = MaterialTheme.typography.titleMedium.copy(fontSize = dimens.textBody),
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color.White.copy(alpha = 0.9f)
@@ -2575,7 +2854,7 @@ fun AudioMoodPage(page: SpotlightStoryPage.AudioMood) {
                                     )
                             )
                         }
-                        Spacer(modifier = Modifier.height(14.dp * dimens.scale))
+                        Spacer(modifier = Modifier.height(dimens.spacerMedium))
                     }
                 }
             }
@@ -2595,219 +2874,222 @@ fun ConclusionPage(page: SpotlightStoryPage.Conclusion) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
         
+        // Warm gradient overlay
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF8B5CF6).copy(alpha = 0.08f),
+                            Color.Transparent,
+                            Color(0xFFEC4899).copy(alpha = 0.06f)
+                        )
+                    )
+                )
+        )
+        
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
-                    top = dimens.screenTopPadding * 0.8f, // Slightly less padding for conclusion to fit everything
+                    top = dimens.screenTopPadding,
                     start = dimens.horizontalPadding,
                     end = dimens.horizontalPadding,
                     bottom = dimens.screenBottomPadding
                 ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Header - Emotional callback
             EnterAnimation(delay = 0) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(
                         text = titleText,
-                        style = MaterialTheme.typography.headlineMedium.copy(fontSize = dimens.textHeadline),
-                        fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontSize = (dimens.textHeadline.value * 1.1f).sp,
+                            fontWeight = FontWeight.Black
+                        ),
                         color = Color.White,
-                        modifier = Modifier.padding(bottom = dimens.spacerSmall),
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    
+                    Spacer(modifier = Modifier.height(dimens.spacerSmall))
+                    
+                    Text(
+                        text = page.conversationalText,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = dimens.textBody,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        ),
+                        color = Color.White.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
             
-            Spacer(modifier = Modifier.height(dimens.spacerMedium))
+            Spacer(modifier = Modifier.height(24.dp * dimens.scale))
             
-            // Summary Grid
-            Row(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(12.dp * dimens.scale)
-            ) {
-                // Total Listening
-                Box(modifier = Modifier.weight(1f)) {
-                    EnterAnimation(delay = 200) {
-                        GlassCard(
-                            modifier = Modifier.fillMaxSize(),
-                            shape = RoundedCornerShape(dimens.cardCornerRadius),
-                            backgroundColor = Color(0xFFEF4444).copy(alpha = 0.2f),
-                            contentPadding = PaddingValues(dimens.spacerSmall)
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Text(stringResource(R.string.spotlight_conclusion_listening_time), style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel), color = Color.White.copy(alpha = 0.8f))
-                                Spacer(modifier = Modifier.height(8.dp * dimens.scale))
-                                Text(
-                                    String.format(java.util.Locale.US, "%,d", page.totalMinutes),
-                                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = dimens.textHeadline),
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text(stringResource(R.string.spotlight_conclusion_min), style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel), color = Color.White.copy(alpha = 0.6f))
-                            }
-                        }
-                    }
-                }
-                
-                // Personality
-                Box(modifier = Modifier.weight(1f)) {
-                    EnterAnimation(delay = 300) {
-                        GlassCard(
-                            modifier = Modifier.fillMaxSize(),
-                            shape = RoundedCornerShape(dimens.cardCornerRadius),
-                            backgroundColor = Color(0xFF8B5CF6).copy(alpha = 0.2f),
-                            contentPadding = PaddingValues(dimens.spacerSmall)
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Icon(Icons.Default.Psychology, null, tint = Color(0xFFC4B5FD), modifier = Modifier.size(28.dp * dimens.scale))
-                                Spacer(modifier = Modifier.height(8.dp * dimens.scale))
-                                Text(
-                                    page.personalityType,
-                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = dimens.textBody),
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    }
+            // Total Listening - Hero stat
+            EnterAnimation(delay = 200) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = String.format(java.util.Locale.US, "%,d", page.totalMinutes),
+                        style = MaterialTheme.typography.displayLarge.copy(
+                            fontSize = (dimens.textDisplay.value * 0.8f).sp,
+                            fontWeight = FontWeight.Black
+                        ),
+                        color = Color.White
+                    )
+                    Text(
+                        text = stringResource(R.string.spotlight_conclusion_min),
+                        style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textLabel),
+                        color = Color.White.copy(alpha = 0.7f),
+                        letterSpacing = (1f * dimens.scale).sp
+                    )
                 }
             }
             
-            Spacer(modifier = Modifier.height(12.dp * dimens.scale))
+            Spacer(modifier = Modifier.height(20.dp * dimens.scale))
             
-            // Top Artists & Songs
-            Row(
-                modifier = Modifier.fillMaxWidth().weight(2f),
-                horizontalArrangement = Arrangement.spacedBy(12.dp * dimens.scale)
-            ) {
-                // Top Artists
-                Box(modifier = Modifier.weight(1f)) {
-                    EnterAnimation(delay = 400) {
-                        GlassCard(
-                            modifier = Modifier.fillMaxSize(),
-                            shape = RoundedCornerShape(dimens.cardCornerRadius),
-                            backgroundColor = Color(0xFFEC4899).copy(alpha = 0.2f),
-                            contentPadding = PaddingValues(dimens.spacerSmall)
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Text(stringResource(R.string.spotlight_conclusion_top_artists), style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel), color = Color.White.copy(alpha = 0.8f))
-                                Spacer(modifier = Modifier.height(12.dp * dimens.scale))
-                                
-                                val artistCount = 5
-                                page.topArtists.take(artistCount).forEachIndexed { index, artist ->
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(vertical = 4.dp * dimens.scale)
-                                    ) {
-                                        CachedAsyncImage(
-                                            imageUrl = artist.imageUrl,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(24.dp * dimens.scale).clip(CircleShape),
-                                            contentScale = ContentScale.Crop,
-                                            allowHardware = false
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp * dimens.scale))
-                                        Text(
-                                            artist.name,
-                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = dimens.textLabel),
-                                            color = Color.White,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // Top Songs
-                Box(modifier = Modifier.weight(1f)) {
-                    EnterAnimation(delay = 500) {
-                        GlassCard(
-                            modifier = Modifier.fillMaxSize(),
-                            shape = RoundedCornerShape(dimens.cardCornerRadius),
-                            backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.2f),
-                            contentPadding = PaddingValues(dimens.spacerSmall)
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Text(stringResource(R.string.spotlight_conclusion_top_songs), style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel), color = Color.White.copy(alpha = 0.8f))
-                                Spacer(modifier = Modifier.height(12.dp * dimens.scale))
-                                
-                                val songCount = 5
-                                page.topSongs.take(songCount).forEachIndexed { index, song ->
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(vertical = 4.dp * dimens.scale)
-                                    ) {
-                                        CachedAsyncImage(
-                                            imageUrl = song.imageUrl,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(24.dp * dimens.scale).clip(RoundedCornerShape(4.dp * dimens.scale)),
-                                            contentScale = ContentScale.Crop,
-                                            allowHardware = false
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp * dimens.scale))
-                                        Text(
-                                            song.title,
-                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = dimens.textLabel),
-                                            color = Color.White,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp * dimens.scale))
-            
-            // Top Genres
-            EnterAnimation(delay = 600) {
-                GlassCard(
+            // Personality - Compact inline
+            EnterAnimation(delay = 400) {
+                SolidCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(dimens.cardCornerRadius),
-                    backgroundColor = Color(0xFF10B981).copy(alpha = 0.2f),
-                    contentPadding = PaddingValues(dimens.spacerSmall)
+                    backgroundColor = Color(0xFF8B5CF6).copy(alpha = 0.1f),
+                    borderColor = Color(0xFF8B5CF6).copy(alpha = 0.25f),
+                    contentPadding = PaddingValues(16.dp * dimens.scale)
                 ) {
-                    Column {
-                        Text(stringResource(R.string.spotlight_conclusion_top_genres), style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel), color = Color.White.copy(alpha = 0.8f))
-                        Spacer(modifier = Modifier.height(8.dp * dimens.scale))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp * dimens.scale)
-                        ) {
-                            page.topGenres.take(3).forEach { genre ->
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(dimens.cardCornerRadius))
-                                        .border(1.dp * dimens.scale, Color.White.copy(alpha = 0.2f), RoundedCornerShape(dimens.cardCornerRadius))
-                                        .padding(horizontal = 12.dp * dimens.scale, vertical = 6.dp * dimens.scale)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = getPersonalityAssets(page.personalityType).first,
+                            contentDescription = null,
+                            tint = getPersonalityAssets(page.personalityType).second,
+                            modifier = Modifier.size(36.dp * dimens.scale)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp * dimens.scale))
+                        Column {
+                            Text(
+                                text = stringResource(R.string.spotlight_listening_personality),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = page.personalityType,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = (dimens.textBody.value * 1.1f).sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = Color.White,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp * dimens.scale))
+            
+            // Top Artists & Songs - Two columns
+            EnterAnimation(delay = 600) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp * dimens.scale)
+                ) {
+                    // Top Artists
+                    SolidCard(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(dimens.cardCornerRadius),
+                        backgroundColor = Color(0xFFEC4899).copy(alpha = 0.08f),
+                        borderColor = Color(0xFFEC4899).copy(alpha = 0.2f),
+                        contentPadding = PaddingValues(12.dp * dimens.scale)
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = stringResource(R.string.spotlight_conclusion_top_artists),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                color = Color(0xFFF9A8D4),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp * dimens.scale))
+                            
+                            page.topArtists.take(5).forEach { artist ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(vertical = 3.dp * dimens.scale)
                                 ) {
+                                    CachedAsyncImage(
+                                        imageUrl = artist.imageUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp * dimens.scale).clip(CircleShape),
+                                        contentScale = ContentScale.Crop,
+                                        allowHardware = false
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp * dimens.scale))
                                     Text(
-                                        genre,
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
-                                        color = Color.White
+                                        text = artist.name,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = (dimens.textLabel.value * 0.9f).sp),
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Top Songs
+                    SolidCard(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(dimens.cardCornerRadius),
+                        backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.08f),
+                        borderColor = Color(0xFFF59E0B).copy(alpha = 0.2f),
+                        contentPadding = PaddingValues(12.dp * dimens.scale)
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = stringResource(R.string.spotlight_conclusion_top_songs),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                color = Color(0xFFFCD34D),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp * dimens.scale))
+                            
+                            page.topSongs.take(5).forEach { song ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(vertical = 3.dp * dimens.scale)
+                                ) {
+                                    CachedAsyncImage(
+                                        imageUrl = song.imageUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp * dimens.scale).clip(RoundedCornerShape(3.dp * dimens.scale)),
+                                        contentScale = ContentScale.Crop,
+                                        allowHardware = false
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp * dimens.scale))
+                                    Text(
+                                        text = song.title,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = (dimens.textLabel.value * 0.9f).sp),
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
                                     )
                                 }
                             }
@@ -2816,7 +3098,41 @@ fun ConclusionPage(page: SpotlightStoryPage.Conclusion) {
                 }
             }
             
-            // Share Button removed (using global one)
+            Spacer(modifier = Modifier.height(20.dp * dimens.scale))
+            
+            // Closing message - Full circle moment
+            EnterAnimation(delay = 800) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.3f)
+                            .height(1.dp)
+                            .background(Color.White.copy(alpha = 0.3f))
+                    )
+                    Spacer(modifier = Modifier.height(16.dp * dimens.scale))
+                    val closingResId = remember(page.timeRange) {
+                        when (page.timeRange) {
+                            me.avinas.tempo.data.stats.TimeRange.THIS_WEEK -> R.string.spotlight_conclusion_closing_week
+                            me.avinas.tempo.data.stats.TimeRange.THIS_MONTH -> R.string.spotlight_conclusion_closing_month
+                            me.avinas.tempo.data.stats.TimeRange.ALL_TIME -> R.string.spotlight_conclusion_closing_all_time
+                            else -> R.string.spotlight_conclusion_closing
+                        }
+                    }
+                    Text(
+                        text = stringResource(closingResId),
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = dimens.textBody,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = Color.White.copy(alpha = 0.9f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+            
 
         }
     }
@@ -2894,18 +3210,18 @@ fun BadgesEarnedPage(page: SpotlightStoryPage.BadgesEarned) {
             // Header
             EnterAnimation(delay = 0) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "🏆",
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontSize = dimens.textHeadline
-                        )
+                    Icon(
+                        imageVector = Icons.Default.EmojiEvents,
+                        contentDescription = null,
+                        tint = Color(0xFFFBBF24),
+                        modifier = Modifier.size(32.dp * dimens.scale)
                     )
                     Spacer(modifier = Modifier.height(4.dp * dimens.scale))
                     Text(
-                        text = "Badges Earned",
+                        text = stringResource(R.string.spotlight_badges_earned),
                         style = MaterialTheme.typography.titleLarge.copy(fontSize = dimens.textTitle),
                         fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = 0.9f)
+                        color = Color.White.copy(alpha = 0.85f)
                     )
                 }
             }
@@ -2923,10 +3239,11 @@ fun BadgesEarnedPage(page: SpotlightStoryPage.BadgesEarned) {
                         ) {
                             row.forEach { badge ->
                                 val accent = categoryColor(badge.category)
-                                GlassCard(
+                                SolidCard(
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(dimens.cardCornerRadius),
-                                    backgroundColor = accent.copy(alpha = 0.12f),
+                                    backgroundColor = accent.copy(alpha = 0.08f),
+                                    borderColor = accent.copy(alpha = 0.25f),
                                     contentPadding = PaddingValues(10.dp * dimens.scale)
                                 ) {
                                     Column(
@@ -2934,19 +3251,29 @@ fun BadgesEarnedPage(page: SpotlightStoryPage.BadgesEarned) {
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         // Stars
-                                        Text(
-                                            text = "★".repeat(badge.stars) + "☆".repeat((5 - badge.stars).coerceAtLeast(0)),
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontSize = dimens.textLabel * 0.85f
-                                            ),
-                                            color = Color(0xFFFBBF24),
-                                            letterSpacing = 1.sp
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(horizontalArrangement = Arrangement.Center) {
+                                            repeat(badge.stars) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Star,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFFFBBF24),
+                                                    modifier = Modifier.size(12.dp * dimens.scale)
+                                                )
+                                            }
+                                            repeat((5 - badge.stars).coerceAtLeast(0)) {
+                                                Icon(
+                                                    imageVector = Icons.Default.StarBorder,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFFFBBF24).copy(alpha = 0.4f),
+                                                    modifier = Modifier.size(12.dp * dimens.scale)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp * dimens.scale))
                                         Text(
                                             text = badge.name,
                                             style = MaterialTheme.typography.labelLarge.copy(
-                                                fontSize = dimens.textBody * 0.88f,
+                                                fontSize = (dimens.textBody.value * 0.88f).sp,
                                                 fontWeight = FontWeight.Bold
                                             ),
                                             color = accent,
@@ -2957,9 +3284,9 @@ fun BadgesEarnedPage(page: SpotlightStoryPage.BadgesEarned) {
                                         Text(
                                             text = badge.description,
                                             style = MaterialTheme.typography.labelSmall.copy(
-                                                fontSize = dimens.textLabel * 0.8f
+                                                fontSize = (dimens.textLabel.value * 0.8f).sp
                                             ),
-                                            color = Color.White.copy(alpha = 0.5f),
+                                            color = Color.White.copy(alpha = 0.6f),
                                             textAlign = TextAlign.Center,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
@@ -2976,15 +3303,16 @@ fun BadgesEarnedPage(page: SpotlightStoryPage.BadgesEarned) {
 
             // Progress pill
             EnterAnimation(delay = 600) {
-                GlassCard(
-                    modifier = Modifier.wrapContentSize(),
-                    shape = RoundedCornerShape(50),
-                    backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.15f),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = "${page.totalEarned} / ${page.totalPossible} badges",
-                        style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textBody * 0.85f),
+                        SolidCard(
+                            modifier = Modifier.wrapContentSize(),
+                            shape = RoundedCornerShape(50),
+                            backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.1f),
+                            borderColor = Color(0xFFF59E0B).copy(alpha = 0.3f),
+                            contentPadding = PaddingValues(horizontal = 20.dp * dimens.scale, vertical = 8.dp * dimens.scale)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.spotlight_badges_count, page.totalEarned, page.totalPossible),
+                        style = MaterialTheme.typography.labelLarge.copy(fontSize = (dimens.textBody.value * 0.85f).sp),
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFFBBF24)
                     )
@@ -3006,22 +3334,35 @@ fun BadgesEarnedPage(page: SpotlightStoryPage.BadgesEarned) {
 
 @Composable
 fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
+    val inCapture = LocalInCaptureContext.current
     // Energy/power-up design — orange theme, horizontal glow streak, counter animation
     val levelAnim = remember { Animatable(0f) }
     val xpAnim   = remember { Animatable(0f) }
     val barAnim  = remember { Animatable(0f) }
 
     LaunchedEffect(page.currentLevel) {
-        delay(300)
-        levelAnim.animateTo(page.currentLevel.toFloat(), tween(1000, easing = FastOutSlowInEasing))
+        if (inCapture) {
+            levelAnim.snapTo(page.currentLevel.toFloat())
+        } else {
+            delay(300)
+            levelAnim.animateTo(page.currentLevel.toFloat(), tween(1000, easing = FastOutSlowInEasing))
+        }
     }
     LaunchedEffect(page.xpEarnedThisPeriod) {
-        delay(500)
-        xpAnim.animateTo(page.xpEarnedThisPeriod.toFloat(), tween(1200, easing = FastOutSlowInEasing))
+        if (inCapture) {
+            xpAnim.snapTo(page.xpEarnedThisPeriod.toFloat())
+        } else {
+            delay(500)
+            xpAnim.animateTo(page.xpEarnedThisPeriod.toFloat(), tween(1200, easing = FastOutSlowInEasing))
+        }
     }
     LaunchedEffect(page.levelProgress) {
-        delay(800)
-        barAnim.animateTo(page.levelProgress.coerceIn(0f, 1f), tween(1000, easing = FastOutSlowInEasing))
+        if (inCapture) {
+            barAnim.snapTo(page.levelProgress.coerceIn(0f, 1f))
+        } else {
+            delay(800)
+            barAnim.animateTo(page.levelProgress.coerceIn(0f, 1f), tween(1000, easing = FastOutSlowInEasing))
+        }
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "lvl")
@@ -3070,17 +3411,22 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
                     modifier = Modifier.wrapContentSize(),
                     shape = RoundedCornerShape(50),
                     backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.2f),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                    contentPadding = PaddingValues(horizontal = 16.dp * dimens.scale, vertical = 6.dp * dimens.scale)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("⚡", style = MaterialTheme.typography.bodyLarge)
-                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.FlashOn,
+                            contentDescription = null,
+                            tint = Color(0xFFFBBF24),
+                            modifier = Modifier.size(18.dp * dimens.scale)
+                        )
+                        Spacer(Modifier.width(6.dp * dimens.scale))
                         Text(
-                            text = "LEVEL UP",
+                            text = stringResource(R.string.spotlight_level_up),
                             style = MaterialTheme.typography.labelLarge.copy(
                                 fontSize = dimens.textLabel,
                                 fontWeight = FontWeight.Black,
-                                letterSpacing = 3.sp
+                                letterSpacing = (3f * dimens.scale).sp
                             ),
                             color = Color(0xFFFBBF24)
                         )
@@ -3092,18 +3438,18 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
             EnterAnimation(delay = 150) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "LEVEL",
+                        text = stringResource(R.string.spotlight_level_label),
                         style = MaterialTheme.typography.labelLarge.copy(
                             fontSize = dimens.textLabel,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 4.sp
+                            letterSpacing = (4f * dimens.scale).sp
                         ),
-                        color = Color.White.copy(alpha = 0.35f)
+                        color = Color.White.copy(alpha = 0.5f)
                     )
                     Text(
                         text = levelAnim.value.toInt().toString(),
                         style = MaterialTheme.typography.displayLarge.copy(
-                            fontSize = dimens.textDisplay * 1.7f,
+                            fontSize = (dimens.textDisplay.value * 1.7f).coerceAtMost(120f).sp,
                             fontWeight = FontWeight.Black,
                             shadow = Shadow(
                                 color = Color(0xFFF59E0B),
@@ -3127,17 +3473,17 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Lv ${page.currentLevel}",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel * 0.85f),
+                            text = stringResource(R.string.spotlight_lv_format, page.currentLevel),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = (dimens.textLabel.value * 0.85f).sp),
                             color = Color(0xFFFBBF24).copy(alpha = 0.7f)
                         )
                         Text(
-                            text = "Lv ${page.currentLevel + 1}",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel * 0.85f),
-                            color = Color.White.copy(alpha = 0.3f)
+                            text = stringResource(R.string.spotlight_lv_format, page.currentLevel + 1),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = (dimens.textLabel.value * 0.85f).sp),
+                            color = Color.White.copy(alpha = 0.45f)
                         )
                     }
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(4.dp * dimens.scale))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -3162,52 +3508,53 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
 
             // XP gained stat row
             EnterAnimation(delay = 700) {
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(dimens.cardCornerRadius),
-                    backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.1f),
-                    contentPadding = PaddingValues(16.dp * dimens.scale)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            val xpDisplayed = xpAnim.value.toLong()
-                            val xpText = if (xpDisplayed >= 1000) "${"%.1f".format(xpDisplayed / 1000f)}K" else xpDisplayed.toString()
-                            Text(
-                                text = "+$xpText XP",
-                                style = MaterialTheme.typography.headlineSmall.copy(
-                                    fontSize = dimens.textTitle,
-                                    fontWeight = FontWeight.Black
-                                ),
-                                color = Color(0xFFFBBF24)
-                            )
-                            Text(
-                                text = "earned this period",
-                                style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
-                                color = Color.White.copy(alpha = 0.4f)
-                            )
+                        SolidCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(dimens.cardCornerRadius),
+                            backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.08f),
+                            borderColor = Color(0xFFF59E0B).copy(alpha = 0.25f),
+                            contentPadding = PaddingValues(16.dp * dimens.scale)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    val xpDisplayed = xpAnim.value.toLong()
+                                    val xpText = if (xpDisplayed >= 1000) stringResource(R.string.spotlight_xp_format_k, xpDisplayed / 1000f) else stringResource(R.string.spotlight_xp_format, xpDisplayed)
+                                    Text(
+                                        text = "+$xpText XP",
+                                        style = MaterialTheme.typography.headlineSmall.copy(
+                                            fontSize = dimens.textTitle,
+                                            fontWeight = FontWeight.Black
+                                        ),
+                                        color = Color(0xFFFBBF24)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.spotlight_earned_this_period),
+                                        style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
+                                        color = Color.White.copy(alpha = 0.55f)
+                                    )
+                                }
+                                Text(
+                                    text = page.currentTitle,
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        fontSize = (dimens.textBody.value * 0.85f).sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = Color(0xFFFBBF24).copy(alpha = 0.8f)
+                                )
+                            }
                         }
-                        Text(
-                            text = page.currentTitle,
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontSize = dimens.textBody * 0.85f,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = Color(0xFFFBBF24).copy(alpha = 0.75f)
-                        )
-                    }
-                }
             }
 
             EnterAnimation(delay = 900) {
                 Text(
                     text = page.conversationalText,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = dimens.textBody * 0.9f),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = (dimens.textBody.value * 0.9f).sp),
                     fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = Color.White.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center
                 )
             }
@@ -3217,6 +3564,7 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
 
 @Composable
 fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
+    val inCapture = LocalInCaptureContext.current
     // Completely distinct design: ceremonial scroll/achievement unveil
     // Centered jewel, old title fades above, new title rises from below
     val oldTitleAlpha = remember { Animatable(0f) }
@@ -3225,20 +3573,27 @@ fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
     val ringAlpha      = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
-        delay(200)
-        // 1. Old title fades in
-        oldTitleAlpha.animateTo(1f, tween(400))
-        delay(500)
-        // 2. Old title fades out
-        oldTitleAlpha.animateTo(0f, tween(350))
-        delay(100)
-        // 3. New title rises up from below
-        newTitleOffset.animateTo(0f, tween(600, easing = FastOutSlowInEasing))
-        newTitleAlpha.animateTo(1f, tween(500))
+        if (inCapture) {
+            oldTitleAlpha.snapTo(0f)
+            newTitleOffset.snapTo(0f)
+            newTitleAlpha.snapTo(1f)
+        } else {
+            delay(200)
+            oldTitleAlpha.animateTo(1f, tween(400))
+            delay(500)
+            oldTitleAlpha.animateTo(0f, tween(350))
+            delay(100)
+            newTitleOffset.animateTo(0f, tween(600, easing = FastOutSlowInEasing))
+            newTitleAlpha.animateTo(1f, tween(500))
+        }
     }
     LaunchedEffect(Unit) {
-        delay(300)
-        ringAlpha.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
+        if (inCapture) {
+            ringAlpha.snapTo(1f)
+        } else {
+            delay(300)
+            ringAlpha.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
+        }
     }
 
     val titleColor = when (page.newTitle) {
@@ -3314,13 +3669,15 @@ fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
         ) {
             EnterAnimation(delay = 0) {
                 Text(
-                    text = "NEW TITLE",
+                    text = stringResource(R.string.spotlight_new_title),
                     style = MaterialTheme.typography.labelLarge.copy(
                         fontSize = dimens.textLabel,
                         fontWeight = FontWeight.Black,
-                        letterSpacing = 4.sp
+                        letterSpacing = (4f * dimens.scale).sp
                     ),
-                    color = titleColor.copy(alpha = 0.7f)
+                    color = titleColor.copy(alpha = 0.7f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
                 )
             }
 
@@ -3336,7 +3693,7 @@ fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
                     Text(
                         text = page.previousTitle,
                         style = MaterialTheme.typography.titleLarge.copy(
-                            fontSize = dimens.textTitle * 0.9f,
+                            fontSize = (dimens.textTitle.value * 0.9f).sp,
                             textDecoration = TextDecoration.LineThrough
                         ),
                         color = Color.White.copy(alpha = oldTitleAlpha.value * 0.4f),
@@ -3347,7 +3704,7 @@ fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
                 Text(
                     text = page.newTitle,
                     style = MaterialTheme.typography.displaySmall.copy(
-                        fontSize = dimens.textHeadline * 1.1f,
+                        fontSize = (dimens.textHeadline.value * 1.1f).sp,
                         fontWeight = FontWeight.Black,
                         shadow = Shadow(
                             color = titleColor.copy(alpha = 0.8f),
@@ -3368,13 +3725,14 @@ fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
                     horizontalArrangement = Arrangement.spacedBy(10.dp * dimens.scale)
                 ) {
                     listOf(
-                        "Lv ${page.currentLevel}" to "Level",
-                        "${page.uniqueArtists}" to "Artists discovered"
+                        stringResource(R.string.spotlight_lv_format, page.currentLevel) to stringResource(R.string.spotlight_level),
+                        "${page.uniqueArtists}" to stringResource(R.string.spotlight_artists_discovered)
                     ).forEach { (value, label) ->
-                        GlassCard(
+                        SolidCard(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(dimens.cardCornerRadius),
-                            backgroundColor = titleColor.copy(alpha = 0.1f),
+                            backgroundColor = titleColor.copy(alpha = 0.08f),
+                            borderColor = titleColor.copy(alpha = 0.25f),
                             contentPadding = PaddingValues(14.dp * dimens.scale)
                         ) {
                             Column(
@@ -3387,13 +3745,16 @@ fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
                                         fontSize = dimens.textTitle,
                                         fontWeight = FontWeight.Black
                                     ),
-                                    color = titleColor
+                                    color = titleColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = label,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel * 0.85f),
-                                    color = Color.White.copy(alpha = 0.45f),
-                                    textAlign = TextAlign.Center
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = (dimens.textLabel.value * 0.85f).sp),
+                                    color = Color.White.copy(alpha = 0.55f),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1
                                 )
                             }
                         }
@@ -3404,7 +3765,7 @@ fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
             EnterAnimation(delay = 1600) {
                 Text(
                     text = page.conversationalText,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = dimens.textBody * 0.9f),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = (dimens.textBody.value * 0.9f).sp),
                     fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                     color = Color.White.copy(alpha = 0.65f),
                     textAlign = TextAlign.Center

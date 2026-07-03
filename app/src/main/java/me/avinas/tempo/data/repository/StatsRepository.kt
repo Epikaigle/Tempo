@@ -75,12 +75,12 @@ interface StatsRepository {
     /**
      * Get listening overview for a time range.
      */
-    suspend fun getListeningOverview(timeRange: TimeRange): ListeningOverview
+    suspend fun getListeningOverview(timeRange: TimeRange, withLeeway: Boolean = true): ListeningOverview
     
     /**
      * Get listening overview as a Flow for real-time updates.
      */
-    fun observeListeningOverview(timeRange: TimeRange): Flow<ListeningOverview>
+    fun observeListeningOverview(timeRange: TimeRange, withLeeway: Boolean = true): Flow<ListeningOverview>
     
     /**
      * Observe metadata updates (e.g., album art from enrichment).
@@ -105,7 +105,8 @@ interface StatsRepository {
         timeRange: TimeRange,
         sortBy: SortBy = SortBy.PLAY_COUNT,
         page: Int = 0,
-        pageSize: Int = 20
+        pageSize: Int = 20,
+        withLeeway: Boolean = true
     ): PaginatedResult<TopTrack>
     
     /**
@@ -115,7 +116,8 @@ interface StatsRepository {
         timeRange: TimeRange,
         sortBy: SortBy = SortBy.PLAY_COUNT,
         page: Int = 0,
-        pageSize: Int = 20
+        pageSize: Int = 20,
+        withLeeway: Boolean = true
     ): PaginatedResult<TopArtist>
     
     /**
@@ -149,7 +151,7 @@ interface StatsRepository {
     /**
      * Get daily listening trends.
      */
-    suspend fun getDailyListening(timeRange: TimeRange, limit: Int = 30): List<DailyListening>
+    suspend fun getDailyListening(timeRange: TimeRange, limit: Int = 30, withLeeway: Boolean = true): List<DailyListening>
     
     /**
      * Get monthly listening trends.
@@ -164,7 +166,7 @@ interface StatsRepository {
     /**
      * Get most active hour.
      */
-    suspend fun getMostActiveHour(timeRange: TimeRange): HourlyDistribution?
+    suspend fun getMostActiveHour(timeRange: TimeRange, withLeeway: Boolean = true): HourlyDistribution?
     
     /**
      * Get most active day.
@@ -178,7 +180,7 @@ interface StatsRepository {
     /**
      * Get discovery stats for a time range.
      */
-    suspend fun getDiscoveryStats(timeRange: TimeRange): DiscoveryStats
+    suspend fun getDiscoveryStats(timeRange: TimeRange, withLeeway: Boolean = true): DiscoveryStats
     
     /**
      * Get artist loyalty metrics.
@@ -245,7 +247,7 @@ interface StatsRepository {
     /**
      * Get audio features stats (requires Spotify connection).
      */
-    suspend fun getAudioFeaturesStats(timeRange: TimeRange): AudioFeaturesStats?
+    suspend fun getAudioFeaturesStats(timeRange: TimeRange, withLeeway: Boolean = true): AudioFeaturesStats?
     
     /**
      * Get mood trends over time.
@@ -269,7 +271,7 @@ interface StatsRepository {
     /**
      * Get period comparison (this week vs last week, etc.).
      */
-    suspend fun getPeriodComparison(timeRange: TimeRange): PeriodComparison
+    suspend fun getPeriodComparison(timeRange: TimeRange, withLeeway: Boolean = true): PeriodComparison
     
     // =====================
     // Cache Management
@@ -285,7 +287,7 @@ interface StatsRepository {
      * @param timeRange The time period to analyze
      * @return List of generated insight cards
      */
-    suspend fun getInsights(timeRange: TimeRange): List<InsightCardData>
+    suspend fun getInsights(timeRange: TimeRange, withLeeway: Boolean = true): List<InsightCardData>
 
     /**
      * Get unique tracks count for the specified time range.
@@ -440,6 +442,13 @@ interface StatsRepository {
      * Used by Spotlight card generators to avoid N+1 query problems.
      */
     suspend fun getArtistImageUrlsBatch(artistNames: List<String>): Map<String, String?>
+
+    /**
+     * Fetch missing artist images via network APIs in the background.
+     * Persists results to DB so future getArtistImageUrlsBatch calls hit the fast path.
+     * Fire-and-forget — call after cards are displayed.
+     */
+    suspend fun enrichMissingArtistImagesInBackground(artistNames: List<String>)
 
     /**
      * Get the timestamp of the earliest data point in the repository.

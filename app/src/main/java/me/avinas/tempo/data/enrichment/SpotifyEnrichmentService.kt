@@ -91,7 +91,10 @@ class SpotifyEnrichmentService @Inject constructor(
      * Returns true only if user has connected their Spotify account.
      */
     fun isAvailable(): Boolean {
-        return authManager.isConnected()
+        // DISABLED: Spotify API requires allowlisted users (max 5) in development mode.
+        // Extended quota requires legally registered organization with 250k+ MAU.
+        // Spotify enrichment is disabled; album art/genres fall back to iTunes, MusicBrainz, Deezer.
+        return false
     }
 
     /**

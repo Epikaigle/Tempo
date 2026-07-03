@@ -222,11 +222,23 @@ class BackupRestoreViewModel @Inject constructor(
     }
     
     /**
-     * Start import process - shows conflict resolution dialog first.
+     * Start import process - shows conflict resolution dialog only if
+     * existing data could conflict. On a fresh install, imports directly.
      */
     fun startImport(uri: Uri) {
-        _showConflictDialog.value = uri
+        viewModelScope.launch {
+            if (hasExistingData()) {
+                _showConflictDialog.value = uri
+            } else {
+                importData(uri, ImportConflictStrategy.REPLACE)
+            }
+        }
     }
+
+    private suspend fun hasExistingData(): Boolean =
+        database.trackDao().getCount() > 0 ||
+            database.artistDao().getCount() > 0 ||
+            database.listeningEventDao().getCount() > 0
     
     /**
      * Proceed with import after user selects conflict strategy.
@@ -446,10 +458,17 @@ class BackupRestoreViewModel @Inject constructor(
     }
     
     /**
-     * Start restore from Drive - shows confirmation dialog first.
+     * Start restore from Drive - shows confirmation dialog only if
+     * existing data could conflict. On a fresh install, restores directly.
      */
     fun startDriveRestore(backup: DriveBackupInfo) {
-        _showDriveRestoreDialog.value = backup
+        viewModelScope.launch {
+            if (hasExistingData()) {
+                _showDriveRestoreDialog.value = backup
+            } else {
+                restoreFromDrive(backup, ImportConflictStrategy.REPLACE)
+            }
+        }
     }
     
     /**

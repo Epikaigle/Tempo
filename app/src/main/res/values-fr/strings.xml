@@ -587,6 +587,15 @@
     <string name="spotlight_conclusion_top_artists">Artistes favoris</string>
     <string name="spotlight_conclusion_top_songs">Meilleurs morceaux</string>
     <string name="spotlight_conclusion_top_genres">Genres favoris</string>
+    <string name="spotlight_conclusion_closing">Voici votre année en musique.</string>
+    <string name="spotlight_conclusion_closing_week">Voici votre semaine en musique.</string>
+    <string name="spotlight_conclusion_closing_month">Voici votre mois en musique.</string>
+    <string name="spotlight_conclusion_closing_all_time">Voici votre voyage en musique.</string>
+    
+    <!-- Comparative surprise callouts -->
+    <string name="spotlight_compare_top_percent">Plus que %1$d%% des auditeurs</string>
+    <string name="spotlight_compare_streak_percent">Série plus longue que %1$d%% des utilisateurs</string>
+    <string name="spotlight_compare_discovery_percent">Plus diversifié que %1$d%% des auditeurs</string>
 
     <!-- Stats Screen -->
     <string name="stats_screen_title">Statistiques</string>
@@ -937,6 +946,14 @@
     <!-- More Details strings -->
     <string name="details_merge_duplicate">Fusionner le doublon</string>
     <string name="details_delete_song">Supprimer le titre</string>
+    <string name="details_edit_title">Modifier le titre</string>
+    <string name="details_edit_title_dialog_title">Modifier le titre du morceau</string>
+    <string name="details_edit_title_label">Titre du morceau</string>
+    <string name="details_edit_title_empty">Le titre ne peut pas être vide</string>
+    <string name="details_edit_title_unchanged">Le titre est inchangé</string>
+    <string name="details_edit_title_merge_title">Fusionner les doublons ?</string>
+    <string name="details_edit_title_merge_message">Ce morceau correspond à \"%1$s\" de %2$s. Souhaitez-vous plutôt fusionner l\'historique d\'écoute ?</string>
+    <string name="details_edit_title_merge_button">Fusionner</string>
     <string name="details_favorite_title">Titre favori</string>
     <string name="details_favorite_subtitle">Vous l\'avez beaucoup écouté !</string>
     <string name="details_stat_times_played">Nombre d\'écoutes</string>

@@ -23,9 +23,9 @@ class RetryInterceptor @Inject constructor() : Interceptor {
 
     companion object {
         private const val TAG = "RetryInterceptor"
-        private const val MAX_RETRIES = 3
+        private const val MAX_RETRIES = 2
         private const val INITIAL_BACKOFF_MS = 1000L
-        private const val MAX_BACKOFF_MS = 30000L
+        private const val MAX_BACKOFF_MS = 10000L
         private const val BACKOFF_MULTIPLIER = 2.0
         
         private val RETRYABLE_STATUS_CODES = setOf(429, 500, 502, 503, 504)

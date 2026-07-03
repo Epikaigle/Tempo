@@ -3,6 +3,7 @@ package me.avinas.tempo.ui.components
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,7 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -82,11 +85,17 @@ fun XiaomiGuidancePopup(
                             .fillMaxWidth(0.85f)
                             .padding(horizontal = 24.dp)
                     ) {
-                        GlassCard(
-                            backgroundColor = Color.White.copy(alpha = 0.08f),
-                            variant = GlassCardVariant.HighProminence,
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.fillMaxWidth()
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .shadow(
+                                    16.dp,
+                                    RoundedCornerShape(28.dp),
+                                    spotColor = Color.Black.copy(alpha = 0.5f)
+                                )
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(Color(0xFF1A1726))
+                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(28.dp))
                         ) {
                             Box {
                                 Column(

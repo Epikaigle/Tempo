@@ -66,6 +66,32 @@ object SpotlightPeriodFormatter {
         else -> context.getString(R.string.spotlight_default_title)
     }
 
+    /**
+     * Checks whether a story for the given [timeRange] is currently unlocked based on
+     * calendar rules. ALL_TIME is excluded — it requires a data-age check that is
+     * only available asynchronously in the ViewModel.
+     *
+     * - THIS_WEEK: unlocked on Sunday or Mon–Wed (grace window for last week's story)
+     * - THIS_MONTH: unlocked on the last day or the first 3 days (grace window)
+     * - THIS_YEAR: unlocked from December onwards
+     * - Other ranges: always unlocked
+     */
+    fun isStoryUnlocked(timeRange: TimeRange, now: LocalDate = LocalDate.now()): Boolean = when (timeRange) {
+        TimeRange.THIS_WEEK -> now.dayOfWeek == DayOfWeek.SUNDAY || now.dayOfWeek.value <= 3
+        TimeRange.THIS_MONTH -> now.dayOfMonth <= 3 || now.dayOfMonth == now.lengthOfMonth()
+        TimeRange.THIS_YEAR -> now.monthValue >= 12
+        else -> true
+    }
+
+    /**
+     * Returns the best time range for a direct story launch, checking weekly first,
+     * then monthly, then yearly. ALL_TIME is intentionally excluded.
+     * Returns `null` when all three are locked.
+     */
+    fun getDirectStoryTimeRange(now: LocalDate = LocalDate.now()): TimeRange? =
+        listOf(TimeRange.THIS_WEEK, TimeRange.THIS_MONTH, TimeRange.THIS_YEAR)
+            .firstOrNull { isStoryUnlocked(it, now) }
+
     private fun formatWeekLabel(start: LocalDate, locale: Locale): String {
         val end = start.plusDays(6)
         val shortMonth = DateTimeFormatter.ofPattern("MMM", locale)

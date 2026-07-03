@@ -307,10 +307,20 @@ class SettingsViewModel @Inject constructor(
     }
     
     /**
-     * Start import process - shows conflict resolution dialog first.
+     * Start import process - shows conflict resolution dialog only if
+     * existing data could conflict. On a fresh install, imports directly.
      */
     fun startImport(uri: Uri) {
-        _showConflictDialog.value = uri
+        viewModelScope.launch {
+            val hasExistingData = database.trackDao().getCount() > 0 ||
+                database.artistDao().getCount() > 0 ||
+                database.listeningEventDao().getCount() > 0
+            if (hasExistingData) {
+                _showConflictDialog.value = uri
+            } else {
+                importData(uri, ImportConflictStrategy.REPLACE)
+            }
+        }
     }
     
     /**
