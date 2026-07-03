@@ -14,7 +14,7 @@
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-purple.svg?style=flat&logo=kotlin)](https://kotlinlang.org) 
 [![Android](https://img.shields.io/badge/Android-16-green.svg?style=flat&logo=android)](https://developer.android.com) 
-[![Version](https://img.shields.io/badge/Version-4.6.8-orange.svg?style=flat)]()
+[![Version](https://img.shields.io/badge/Version-4.7.8-orange.svg?style=flat)]()
 [![License](https://img.shields.io/badge/License-AGPLv3%20Custom-blue.svg)](LICENSE) 
 [![Status](https://img.shields.io/badge/Status-Active_Development-success.svg)]()
 
@@ -29,15 +29,16 @@ Because it is built with a local-first architecture, all your data is stored sec
 ## 📱 Screenshots
 
 <p align="center">
-  <img src="Screenshots/S1.png" width="23%" alt="Home Screen" />
-  <img src="Screenshots/S2.png" width="23%" alt="Stats Screen" />
-  <img src="Screenshots/S3.png" width="23%" alt="History Screen" />
-  <img src="Screenshots/S4.png" width="23%" alt="Spotlight Story" />
+  <img src="https://play-lh.googleusercontent.com/3zlapa0nBvp_Dk13V_Pme5UIH0YCMEq79CVxmjCdGfrZS4yvwUACLNWBIdEGGJXXULeeHdpL4EOhD5b8cc1r8xY=w1052-h592-rw" width="23%" >
+  <img src="https://play-lh.googleusercontent.com/Jjet6lUeoeJeUX3i_p9Ni79_chhz9_v953MIL2gHUQbYH759hgcWc2R8ntBUgoc1aYVO64j0p6SrREPiuzC5fA=w1052-h592-rw" width="23%" />
+  <img src="https://play-lh.googleusercontent.com/XgXBvNYIELTUXfZih8ZjUuIAi424JgWPxw3PgVwaOmrkD8k-ART98fQz3k_-oR_I1zCEUqpwiO4mK1IUPi7Q=w1052-h592-rw" width="23%" alt="Spotlight Screen" />
+  <img src="https://play-lh.googleusercontent.com/pSiGJMJs0g_tUOoPp3PwDhsYK3cgLfx7MY4yf0dQdgcwIzWezMOS0KKNhJl81QWBybnjpPc5So-na78JFZhe2HU=w1052-h592-rw" width="23%" alt="Stats Screen" />
 </p>
 <p align="center">
-  <img src="Screenshots/S5.png" width="23%" alt="Song Details" />
-  <img src="Screenshots/S6.png" width="23%" alt="Artist Details" />
-  <img src="Screenshots/S7.png" width="23%" alt="Widgets Preview" />
+  <img src="https://play-lh.googleusercontent.com/gSgUEoht6IUOj4zOyc3E1dxjlKDK51yiOComMfzrhfl0QSxy55Qr6zFESQFj3st15k4sbwM9lFWjH015M_2-yQ=w1052-h592-rw" width="23%" alt="Artist Details" />
+  <img src="https://play-lh.googleusercontent.com/-iOrEIw60JbDRM9j31XU95KR4KpYPzp62QMLTDuybjSQM1Zo6bGuONalMDNLgGtYUWPWFImwQmxeEFIIIQcmtFg=w1052-h592-rw" width="23%" alt="Widget" />
+  <img src="https://play-lh.googleusercontent.com/bymaDuX5iUlA6Ls52_YpBleJpybTEedmQjR8ch-TE81yXix7NI7yXQd5tgvNAr4zVzc2Sp6bP3RFVrAzSsSRcg=w1052-h592-rw" width="23%" alt="Challenges" />
+  <img src="https://play-lh.googleusercontent.com/tmo65W63qon96XPpjddoysaHw2fwzal-_mE-Uh-MTcHqsTal0pIEfzM0Fx1UXJ9R2MQFenBPNlDf7druHTS_Ow=w1052-h592-rw" width="23%" alt="Widgets Preview" />
 </p>
 
 ---
