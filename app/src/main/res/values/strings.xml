@@ -275,7 +275,18 @@
     <string name="details_most_active">Most Active</string>
     <string name="details_first_listen">First Listen</string>
     <string name="details_last_listen">Last Listen</string>
-    
+
+    <!-- Album editor -->
+    <string name="album_edit_title">Edit Album</string>
+    <string name="album_add_song">Add Song</string>
+    <string name="album_add_song_title">Add song to album</string>
+    <string name="album_add_song_desc">Songs by %1$s not on this album</string>
+    <string name="album_add_song_search">Search songs…</string>
+    <string name="album_no_candidates">No more songs by this artist to add</string>
+    <string name="album_remove_title">Remove from album?</string>
+    <string name="album_remove_msg">\"%1$s\" will no longer be associated with this album.</string>
+    <string name="album_remove_note">Your listening history is kept.</string>
+
     <!-- Merge dialogs -->
     <string name="merge_confirm">Confirm Merge</string>
     <string name="merge_artist_confirm">⚠️ Confirm Merge</string>
@@ -468,6 +479,7 @@
     <string name="common_continue">Continue</string>
     <string name="common_skip">Skip</string>
     <string name="common_connect">Connect</string>
+    <string name="common_remove">Remove</string>
 
     <!-- Settings screen: section headers -->
     <string name="settings_title">Settings</string>
@@ -584,6 +596,28 @@
     <string name="settings_smart_merge_desc">Treat Live/Remix versions as the same song for cleaner history</string>
     <string name="settings_backup_restore">Backup &amp; Restore</string>
     <string name="settings_backup_restore_desc">Export or import your data</string>
+    <string name="enrichment_report_settings_option">Enrichment report</string>
+    <string name="enrichment_report_settings_option_desc">See how much of your library has cover art and details, and enrich everything at once</string>
+    <string name="enrichment_report_title">Enrichment Report</string>
+    <string name="enrichment_report_description">Tempo automatically fetches cover art, genres, and song details from online sources like MusicBrainz and Spotify. Below is how much of your library is currently filled in. Songs you open that are missing cover art are fetched automatically; you can also enrich everything at once.</string>
+    <string name="enrichment_report_total_tracks">Total songs</string>
+    <string name="enrichment_report_enriched">Enriched</string>
+    <string name="enrichment_report_with_art">With cover art</string>
+    <string name="enrichment_report_without_art">Missing cover art</string>
+    <string name="enrichment_report_pending">Waiting to be enriched</string>
+    <string name="enrichment_report_failed">Failed</string>
+    <string name="enrichment_report_skipped">Deferred (low play count)</string>
+    <string name="enrichment_report_not_found">Not found online</string>
+    <string name="enrichment_report_coverage">Metadata coverage</string>
+    <string name="enrichment_report_art_coverage">Cover art coverage</string>
+    <string name="enrichment_report_enrich_all">Enrich all songs</string>
+    <string name="enrichment_report_enrich_all_desc">Fetches missing details for every song in the background, respecting service rate limits. You can leave this screen; it will keep running.</string>
+    <string name="enrichment_report_enrich_all_button">Enrich %1$d songs</string>
+    <string name="enrichment_report_cancel">Cancel</string>
+    <string name="enrichment_report_progress">Enriching… %1$d / %2$d</string>
+    <string name="enrichment_report_starting">Starting enrichment…</string>
+    <string name="enrichment_report_complete">Enrichment sweep complete.</string>
+    <string name="enrichment_report_nothing_to_do">Everything is already enriched. \u2713</string>
     <string name="settings_clear_all">Clear All Data</string>
     <string name="settings_reddit">Reddit Community</string>
     <string name="settings_reddit_sub">r/TempoStats</string>

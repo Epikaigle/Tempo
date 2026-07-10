@@ -144,6 +144,8 @@ class EnrichmentWorker @AssistedInject constructor(
         private const val WORK_NAME_POST_IMPORT = "music_enrichment_post_import"
         private const val NOTIFICATION_CHANNEL_ID = "enrichment_worker"
         private const val NOTIFICATION_ID = 3002
+        private const val WORK_NAME_ENRICH_ALL = "music_enrichment_enrich_all"
+        internal const val TAG_ENRICH_ALL = "enrichment_enrich_all"
         
         // How many tracks to process per run
         private const val BATCH_SIZE = 10
@@ -308,6 +310,42 @@ class EnrichmentWorker @AssistedInject constructor(
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_POST_IMPORT)
             Log.i(TAG, "Post-import enrichment cancelled")
         }
+
+        /**
+         * Start a bulk "Enrich All" sweep. The caller (EnrichmentReportViewModel) requeues
+         * all non-enriched tracks to PENDING first, then passes the resulting backlog size as
+         * [total]. Runs as a foreground OneTime worker (tagged TAG_ENRICH_ALL) that survives
+         * the user leaving the screen; cancellable via [cancelEnrichAll]. Progress is reported
+         * via setProgress("processed", "total") and observed through getWorkInfosByTagFlow.
+         */
+        fun enqueueEnrichAll(context: Context, total: Int) {
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiresBatteryNotLow(true)
+                .build()
+            val inputData = workDataOf(
+                "is_enrich_all" to true,
+                "total_to_process" to total
+            )
+            val workRequest = OneTimeWorkRequestBuilder<EnrichmentWorker>()
+                .setConstraints(constraints)
+                .setInputData(inputData)
+                .setBackoffCriteria(BackoffPolicy.LINEAR, 1, TimeUnit.MINUTES)
+                .addTag(TAG_ENRICH_ALL)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                WORK_NAME_ENRICH_ALL,
+                ExistingWorkPolicy.KEEP,
+                workRequest
+            )
+            Log.i(TAG, "Enrich All enqueued for $total tracks")
+        }
+
+        /** Cancel a running "Enrich All" sweep. */
+        fun cancelEnrichAll(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_ENRICH_ALL)
+            Log.i(TAG, "Enrich All cancelled")
+        }
     }
 
     override suspend fun doWork(): Result {
@@ -316,12 +354,18 @@ class EnrichmentWorker @AssistedInject constructor(
         // Check if specific track ID was provided
         val specificTrackId = inputData.getLong("track_id", -1).takeIf { it > 0 }
         val isPostImport = inputData.getBoolean("is_post_import", false)
+        val isEnrichAll = inputData.getBoolean("is_enrich_all", false)
 
         // Check if a Last.fm import is currently running - pause ALL enrichment to avoid resource contention
         // The import is the priority - enrichment happens AFTER import completes.
         // Exception: post-import enrichment runs after import completes (by design).
         val isImportRunning = LastFmImportWorker.isImportRunning(applicationContext)
-        if (!isPostImport && isImportRunning) {
+        if (isImportRunning && !isPostImport) {
+            if (isEnrichAll) {
+                // User-initiated bulk sweep: retry after backoff so it runs once import finishes
+                Log.i(TAG, "Last.fm import in progress - deferring Enrich All (will retry)")
+                return Result.retry()
+            }
             Log.i(TAG, "Last.fm import in progress - deferring ALL enrichment to avoid resource contention")
             // Return success but don't do work - periodic will retry later
             return Result.success()
@@ -337,7 +381,10 @@ class EnrichmentWorker @AssistedInject constructor(
             // Second, backfill any missing album art URLs to tracks table
             backfillAlbumArtUrls()
             
-            if (specificTrackId != null) {
+            if (isEnrichAll) {
+                // Bulk "Enrich All" sweep with progress reporting
+                enrichAll()
+            } else if (specificTrackId != null) {
                 // Enrich specific track (only for real-time listening, not during import)
                 enrichSpecificTrack(specificTrackId)
             } else {
@@ -581,6 +628,17 @@ class EnrichmentWorker @AssistedInject constructor(
                 return
             }
             
+            // Large-backlog cap: defer one-play wonders (play_count < threshold) to SKIPPED so
+            // post-import stops after the frequently-played tracks are enriched instead of
+            // churning through thousands of rare tracks. Deferred tracks are enriched on-demand
+            // (when opened) or via "Enrich All". Idempotent: already-deferred tracks are SKIPPED.
+            if (pendingCount > POST_IMPORT_LARGE_BACKLOG_THRESHOLD) {
+                val deferred = enrichedMetadataDao.markLowPlayPendingAsSkipped(POST_IMPORT_MIN_PLAY_COUNT)
+                if (deferred > 0) {
+                    Log.i(TAG, "Deferred $deferred low-play tracks for large backlog (now SKIPPED)")
+                }
+            }
+            
             Log.i(TAG, "Post-import enrichment: $pendingCount tracks remaining")
         }
 
@@ -741,7 +799,44 @@ class EnrichmentWorker @AssistedInject constructor(
 
         Log.i(TAG, "Batch complete: enriched=$enrichedCount, failed=$failedCount")
     }
-    
+
+    /**
+     * Bulk "Enrich All" mode: sweep every PENDING track (requeued by the report screen) in
+     * rate-limited batches, reporting progress via setProgress so the Enrichment Report screen
+     * can render a progress bar. Runs as a foreground worker so it survives the user leaving
+     * the screen; cancellable via cancelEnrichAll(). Progress is stateless (total - remaining
+     * PENDING) so it stays correct even if the worker is killed and the user re-taps.
+     * ponytail: single long-running foreground loop; if the OS kills it the user can re-tap,
+     * and the periodic worker continues the backlog eventually.
+     */
+    private suspend fun enrichAll(): Result {
+        val total = inputData.getInt("total_to_process", 0).coerceAtLeast(1)
+        val batchSize = 25
+        var safety = 0
+        while (!isStopped) {
+            val batch = enrichedMetadataDao.getTracksNeedingEnrichment(EnrichmentStatus.PENDING, batchSize)
+            if (batch.isEmpty()) break
+            for (metadata in batch) {
+                if (isStopped) break
+                enrichSpecificTrack(metadata.trackId)
+                kotlinx.coroutines.delay(INTER_TRACK_DELAY_MS)
+            }
+            val remaining = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
+            val processed = (total - remaining).coerceIn(0, total)
+            setProgress(workDataOf("processed" to processed, "total" to total))
+            if (++safety > 50000) break // ponytail: hard cap against runaway loops
+        }
+        statsRepository.invalidateCache()
+        val remaining = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
+        setProgress(workDataOf(
+            "processed" to (total - remaining).coerceIn(0, total),
+            "total" to total,
+            "done" to true
+        ))
+        Log.i(TAG, "Enrich All complete: ${total - remaining}/$total processed")
+        return Result.success()
+    }
+
     /**
      * Required for expedited work on Android 10 (SDK 29).
      * Returns ForegroundInfo with notification when work runs as foreground service.

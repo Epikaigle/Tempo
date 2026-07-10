@@ -55,13 +55,16 @@ class TrackResolver @Inject constructor(
      * Returns the track id plus the (possibly merged) track.
      */
     suspend fun resolve(query: Query, contentType: String = "MUSIC"): Resolution {
-        query.spotifyId?.let { id ->
+        // Blank IDs must be skipped: Last.fm returns mbid="" (not null) for non-MusicBrainz
+        // tracks, and a WHERE musicbrainz_id = '' lookup collides with the first track that
+        // also has an empty mbid — clubbing every empty-mbid scrobble onto one track row.
+        query.spotifyId?.takeIf { it.isNotBlank() }?.let { id ->
             trackRepository.findBySpotifyId(id)?.let { return merge(it, query) }
         }
-        query.musicbrainzId?.let { id ->
+        query.musicbrainzId?.takeIf { it.isNotBlank() }?.let { id ->
             trackRepository.findByMusicBrainzId(id)?.let { return merge(it, query) }
         }
-        query.youtubeId?.let { id ->
+        query.youtubeId?.takeIf { it.isNotBlank() }?.let { id ->
             trackRepository.findByYoutubeId(id)?.let { return merge(it, query) }
         }
         trackRepository.findByTitleAndArtist(query.title, query.artist)?.let { return merge(it, query) }

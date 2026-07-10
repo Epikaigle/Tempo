@@ -385,6 +385,16 @@ interface StatsRepository {
      */
     suspend fun getAlbumIdByTitleAndArtist(albumTitle: String, artistName: String): Long?
 
+    /** Reassign a track's album column to this album's title. Only same-artist tracks are
+     *  affected (album stats match on album title AND exact artist name). */
+    suspend fun addTrackToAlbum(albumId: Long, trackId: Long)
+
+    /** Clear a track's album association. Listening history is preserved. */
+    suspend fun removeTrackFromAlbum(albumId: Long, trackId: Long)
+
+    /** Tracks by the album's artist that are not currently on the album. */
+    suspend fun getCandidateTracksForAlbum(albumId: Long, query: String): List<me.avinas.tempo.data.local.entities.Track>
+
     /**
      * Get artist image URL by name. Returns null if not found.
      */

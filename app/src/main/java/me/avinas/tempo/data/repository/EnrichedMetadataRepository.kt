@@ -66,6 +66,21 @@ interface EnrichedMetadataRepository {
      * Get count of tracks by enrichment status.
      */
     suspend fun getEnrichmentStats(): Map<EnrichmentStatus, Int>
+
+    /** Count tracks in a specific status. */
+    suspend fun countByStatus(status: EnrichmentStatus): Int
+
+    /** Total tracks in the library. */
+    suspend fun countAllTracks(): Int
+
+    /** Tracks that currently have album art. */
+    suspend fun countTracksWithAlbumArt(): Int
+
+    /** Re-queue all non-enriched tracks to PENDING (for "Enrich All"). Returns rows updated. */
+    suspend fun requeueAllForEnrichment(): Int
+
+    /** Defer low-play PENDING tracks to SKIPPED (large-import cap). Returns rows updated. */
+    suspend fun markLowPlayPendingAsSkipped(minPlayCount: Int = 2): Int
     
     /**
      * Get count of tracks with Spotify audio features.

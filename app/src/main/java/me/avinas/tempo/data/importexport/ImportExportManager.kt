@@ -344,8 +344,8 @@ class ImportExportManager @Inject constructor(
                 val newPrimaryArtistId = track.primaryArtistId?.let { artistIdMap[it] }
                 val remappedTrack = remapImagePath(track, pathMapping).copy(primaryArtistId = newPrimaryArtistId)
                 
-                val existingTrack = track.spotifyId?.let { database.trackDao().findBySpotifyId(it) }
-                    ?: track.musicbrainzId?.let { database.trackDao().findByMusicBrainzId(it) }
+                val existingTrack = track.spotifyId?.takeIf { it.isNotBlank() }?.let { database.trackDao().findBySpotifyId(it) }
+                    ?: track.musicbrainzId?.takeIf { it.isNotBlank() }?.let { database.trackDao().findByMusicBrainzId(it) }
                     ?: database.trackDao().findByTitleAndArtist(track.title, track.artist)
                 
                 if (existingTrack != null) {

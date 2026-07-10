@@ -5,16 +5,21 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.palette.graphics.Palette
 import coil3.BitmapImage
@@ -40,6 +46,7 @@ import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.data.stats.AlbumDetails
 import me.avinas.tempo.data.stats.TrackWithStats
+import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.ui.theme.premiumClickable
 import androidx.compose.ui.res.stringResource
@@ -54,7 +61,6 @@ fun AlbumDetailsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val albumDetails = uiState.albumDetails
-
     var dominantColor by remember { mutableStateOf(Color(0xFF8B5CF6)) }
 
     DeepOceanBackground {
@@ -67,145 +73,337 @@ fun AlbumDetailsScreen(
             } else if (albumDetails != null) {
                 AlbumDetailsContent(
                     albumDetails = albumDetails,
+                    isEditMode = uiState.isEditMode,
                     onNavigateBack = onNavigateBack,
                     onNavigateToSong = onNavigateToSong,
+                    onToggleEdit = viewModel::toggleEditMode,
+                    onAddClick = viewModel::openAddDialog,
+                    onRemoveTrack = viewModel::requestRemove,
                     onPaletteExtracted = { color -> dominantColor = color },
                     dominantColor = dominantColor
                 )
             } else {
                 Column(
                     modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                            .padding(top = 16.dp),
-                        horizontalArrangement = Arrangement.Start
-                    ) {
-                        IconButton(
-                            onClick = onNavigateBack,
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.1f),
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    }
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = uiState.error ?: "Album not found",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 32.dp)
+                    IconButton(
+                        onClick = onNavigateBack,
+                        modifier = Modifier.premiumClickable(onClick = onNavigateBack),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = Color.White.copy(alpha = 0.1f),
+                            contentColor = Color.White
                         )
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = uiState.error ?: "Album not found",
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }
     }
+
+    if (uiState.addDialogVisible) {
+        AddTrackToAlbumDialog(
+            query = uiState.addQuery,
+            results = uiState.addResults,
+            isSearching = uiState.isSearching,
+            artistName = albumDetails?.artistName.orEmpty(),
+            onQueryChange = viewModel::onAddQueryChange,
+            onTrackSelected = viewModel::addTrackToAlbum,
+            onDismiss = viewModel::closeAddDialog
+        )
+    }
+
+    uiState.pendingRemove?.let { track ->
+        RemoveFromAlbumDialog(
+            trackTitle = track.track.title,
+            onConfirm = viewModel::confirmRemove,
+            onDismiss = viewModel::cancelRemove
+        )
+    }
 }
 
 @Composable
-fun AlbumDetailsContent(
+private fun AlbumDetailsContent(
     albumDetails: AlbumDetails,
+    isEditMode: Boolean,
     onNavigateBack: () -> Unit,
     onNavigateToSong: (Long) -> Unit,
+    onToggleEdit: () -> Unit,
+    onAddClick: () -> Unit,
+    onRemoveTrack: (TrackWithStats) -> Unit,
     onPaletteExtracted: (Color) -> Unit,
     dominantColor: Color
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Custom Top Bar (matches ArtistDetailsScreen style)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .padding(top = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = onNavigateBack,
-                modifier = Modifier.premiumClickable(onClick = onNavigateBack),
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = Color.White.copy(alpha = 0.1f),
-                    contentColor = Color.White
-                )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
+    ) {
+        // Top bar
+        item(key = "top_bar") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .padding(top = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                IconButton(
+                    onClick = onNavigateBack,
+                    modifier = Modifier.premiumClickable(onClick = onNavigateBack),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = Color.White.copy(alpha = 0.1f),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+
+                Text(
+                    text = stringResource(if (isEditMode) R.string.album_edit_title else R.string.details_album),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center
+                )
+
+                IconButton(
+                    onClick = onToggleEdit,
+                    modifier = Modifier.premiumClickable(onClick = onToggleEdit),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = if (isEditMode) TempoRed else Color.White.copy(alpha = 0.1f),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Icon(
+                        if (isEditMode) Icons.Rounded.Check else Icons.Rounded.Edit,
+                        contentDescription = if (isEditMode) "Done" else "Edit"
+                    )
+                }
             }
-
-            Text(
-                text = stringResource(R.string.details_album),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Center
-            )
-
-            // Spacer to balance the back button weight
-            Spacer(modifier = Modifier.size(48.dp))
         }
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            contentPadding = PaddingValues(bottom = 32.dp)
-        ) {
-            // Hero Section with Album Art
-            item(key = "hero_section") {
-                Spacer(modifier = Modifier.height(8.dp))
-                AlbumHeroSection(
-                    albumDetails = albumDetails,
-                    onPaletteExtracted = onPaletteExtracted,
-                    dominantColor = dominantColor
+        // Hero section
+        item(key = "hero_section") {
+            Spacer(modifier = Modifier.height(8.dp))
+            AlbumHeroSection(
+                albumDetails = albumDetails,
+                dominantColor = dominantColor,
+                onPaletteExtracted = onPaletteExtracted
+            )
+        }
+
+        // Stats grid
+        item(key = "stats_grid") {
+            Spacer(modifier = Modifier.height(28.dp))
+            AlbumStatsGrid(albumDetails = albumDetails)
+        }
+
+        // Tracks header
+        item(key = "tracks_header") {
+            Spacer(modifier = Modifier.height(28.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.details_tracks),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
-            }
-
-            // Stats Grid
-            item(key = "stats_grid") {
-                Spacer(modifier = Modifier.height(28.dp))
-                AlbumStatsGrid(albumDetails = albumDetails)
-            }
-
-            // Tracks Section Header
-            item(key = "tracks_header") {
-                Spacer(modifier = Modifier.height(28.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        text = stringResource(R.string.details_tracks),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
                     Text(
                         text = "${albumDetails.tracks.size} ${if (albumDetails.tracks.size == 1) "song" else "songs"}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.5f),
                         modifier = Modifier.padding(top = 2.dp)
                     )
+                    if (isEditMode) {
+                        AddSongPill(onClick = onAddClick)
+                    }
                 }
-                Spacer(modifier = Modifier.height(14.dp))
             }
+            Spacer(modifier = Modifier.height(14.dp))
+        }
 
-            // Track List (single container with dividers)
-            item(key = "track_list") {
-                AlbumTrackList(
-                    tracks = albumDetails.tracks,
-                    onNavigateToSong = onNavigateToSong
+        // Track list
+        item(key = "track_list") {
+            AlbumTrackList(
+                tracks = albumDetails.tracks,
+                onNavigateToSong = onNavigateToSong,
+                isEditMode = isEditMode,
+                onRemoveTrack = onRemoveTrack
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun AlbumHeroSection(
+    albumDetails: AlbumDetails,
+    dominantColor: Color,
+    onPaletteExtracted: (Color) -> Unit
+) {
+    val context = LocalContext.current
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(272.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(28.dp))
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            dominantColor.copy(alpha = 0.3f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+        Card(
+            modifier = Modifier
+                .size(220.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .shadow(
+                    elevation = 16.dp,
+                    shape = RoundedCornerShape(20.dp)
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.3f),
+                            Color.White.copy(alpha = 0.05f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                ),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            val artworkUrl = albumDetails.album.artworkUrl
+            if (artworkUrl.isNullOrEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0xFF8B5CF6),
+                                    Color(0xFF6D28D9)
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Rounded.MusicNote,
+                        contentDescription = "Album",
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(64.dp)
+                    )
+                }
+            } else {
+                CachedAsyncImage(
+                    imageUrl = artworkUrl,
+                    contentDescription = "Album Art",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    onSuccess = { state ->
+                        val bitmap = (state.result.image as? BitmapImage)?.bitmap
+                        if (bitmap != null) {
+                            val palette = Palette.from(bitmap).generate()
+                            val dominantSwatch = palette.dominantSwatch
+                            if (dominantSwatch != null) {
+                                onPaletteExtracted(Color(dominantSwatch.rgb))
+                            }
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(28.dp))
+
+    Text(
+        text = albumDetails.album.title,
+        style = MaterialTheme.typography.displaySmall,
+        fontWeight = FontWeight.Bold,
+        color = Color.White,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
+        textAlign = TextAlign.Center,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis
+    )
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    Text(
+        text = albumDetails.artistName,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White.copy(alpha = 0.8f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+
+    val year = albumDetails.album.releaseYear
+    val releaseType = albumDetails.album.releaseType
+    if (year != null || releaseType != null) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (year != null) {
+                Text(
+                    text = year.toString(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+            if (year != null && releaseType != null) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "•",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.4f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            if (releaseType != null) {
+                Text(
+                    text = releaseType.replaceFirstChar { it.uppercase() },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.6f)
                 )
             }
         }
@@ -213,218 +411,56 @@ fun AlbumDetailsContent(
 }
 
 @Composable
-fun AlbumHeroSection(
-    albumDetails: AlbumDetails,
-    onPaletteExtracted: (Color) -> Unit,
-    dominantColor: Color
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        // Premium glow + album artwork
-        Box(contentAlignment = Alignment.Center) {
-            // Glow layer (uses extracted dominant color)
-            Box(
-                modifier = Modifier
-                    .size(272.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                dominantColor.copy(alpha = 0.30f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            )
+private fun AlbumStatsGrid(albumDetails: AlbumDetails) {
+    val completionRate = albumDetails.completionRate
+    val totalPlayCount = albumDetails.totalPlayCount
+    val totalTimeMs = albumDetails.totalTimeMs
+    val tracks = albumDetails.tracks
 
-            // Album Artwork
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 16.dp),
-                modifier = Modifier
-                    .size(220.dp)
-                    .border(
-                        2.dp,
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = 0.35f),
-                                Color.White.copy(alpha = 0.08f)
-                            )
-                        ),
-                        RoundedCornerShape(20.dp)
-                    )
-            ) {
-                val artworkUrl = albumDetails.album.artworkUrl
-
-                if (artworkUrl.isNullOrBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(
-                                        Color(0xFF8B5CF6),
-                                        Color(0xFF6D28D9)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(72.dp),
-                            tint = Color.White.copy(alpha = 0.7f)
-                        )
-                    }
-                } else {
-                    CachedAsyncImage(
-                        imageUrl = artworkUrl,
-                        contentDescription = "Album Art",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                        targetSizeDp = 220,
-                        onSuccess = { state ->
-                            val image = state.result.image
-                            val bitmap = (image as? BitmapImage)?.bitmap
-                            bitmap?.let {
-                                Palette.from(it).generate { palette ->
-                                    palette?.dominantSwatch?.rgb?.let { color ->
-                                        onPaletteExtracted(Color(color))
-                                    }
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(28.dp))
-
-        // Album Title
-        Text(
-            text = albumDetails.album.title,
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 24.dp)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Artist Name
-        Text(
-            text = albumDetails.artistName,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White.copy(alpha = 0.8f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        // Metadata cluster: release year + release type
-        val year = albumDetails.album.releaseYear
-        val releaseType = albumDetails.album.releaseType
-        val hasYear = year != null
-        val hasType = !releaseType.isNullOrBlank()
-
-        if (hasYear || hasType) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
-            ) {
-                if (hasYear) {
-                    Text(
-                        text = year.toString(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFE2E8F0)
-                    )
-                    if (hasType) {
-                        Text(
-                            text = "  •  ",
-                            color = Color(0xFF475569),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                if (hasType) {
-                    Text(
-                        text = releaseType!!.replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF94A3B8)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AlbumStatsGrid(albumDetails: AlbumDetails) {
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(0.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Row 1
+        Column {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth()
             ) {
-                // Stat 1: Total Plays
                 AlbumStatCell(
                     icon = Icons.Rounded.MusicNote,
                     iconTint = Color(0xFFEF4444),
-                    label = stringResource(R.string.details_total_plays).uppercase(),
-                    value = formatCount(albumDetails.totalPlayCount.toLong()),
+                    label = stringResource(R.string.details_total_plays),
+                    value = formatCount(totalPlayCount.toLong()),
                     valueColor = Color(0xFFFCA5A5),
                     modifier = Modifier.weight(1f)
                 )
-
                 AlbumStatDivider(orientation = AlbumStatDividerOrientation.Vertical)
-
-                // Stat 2: Listening Time
                 AlbumStatCell(
                     icon = Icons.Rounded.AccessTime,
                     iconTint = Color(0xFF3B82F6),
-                    label = stringResource(R.string.details_listening_time).uppercase(),
-                    value = formatListeningTime(albumDetails.totalTimeMs),
+                    label = stringResource(R.string.details_listening_time),
+                    value = formatListeningTime(totalTimeMs),
                     valueColor = Color(0xFF93C5FD),
                     modifier = Modifier.weight(1f)
                 )
             }
-
             AlbumStatDivider(orientation = AlbumStatDividerOrientation.Horizontal)
-
-            // Row 2
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth()
             ) {
-                // Stat 3: Tracks
                 AlbumStatCell(
                     icon = Icons.Rounded.Album,
                     iconTint = Color(0xFF8B5CF6),
-                    label = stringResource(R.string.details_tracks).uppercase(),
-                    value = albumDetails.tracks.size.toString(),
+                    label = stringResource(R.string.details_tracks),
+                    value = tracks.size.toString(),
                     valueColor = Color(0xFFD8B4FE),
                     modifier = Modifier.weight(1f)
                 )
-
                 AlbumStatDivider(orientation = AlbumStatDividerOrientation.Vertical)
-
-                // Stat 4: Completion Rate
                 AlbumStatCell(
                     icon = Icons.Rounded.CheckCircle,
                     iconTint = Color(0xFFF59E0B),
-                    label = stringResource(R.string.details_completion_rate).uppercase(),
-                    value = "%.0f%%".format(albumDetails.completionRate),
+                    label = stringResource(R.string.details_completion_rate),
+                    value = "%.0f%%".format(completionRate),
                     valueColor = Color(0xFFFDBA74),
                     modifier = Modifier.weight(1f)
                 )
@@ -433,23 +469,31 @@ fun AlbumStatsGrid(albumDetails: AlbumDetails) {
     }
 }
 
-private enum class AlbumStatDividerOrientation { Horizontal, Vertical }
+enum class AlbumStatDividerOrientation {
+    Horizontal,
+    Vertical
+}
 
 @Composable
 private fun AlbumStatDivider(orientation: AlbumStatDividerOrientation) {
     when (orientation) {
-        AlbumStatDividerOrientation.Horizontal -> Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(Color.White.copy(alpha = 0.08f))
-        )
-        AlbumStatDividerOrientation.Vertical -> Box(
-            modifier = Modifier
-                .height(60.dp)
-                .width(1.dp)
-                .background(Color.White.copy(alpha = 0.08f))
-        )
+        AlbumStatDividerOrientation.Horizontal -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.White.copy(alpha = 0.08f))
+            )
+        }
+
+        AlbumStatDividerOrientation.Vertical -> {
+            Box(
+                modifier = Modifier
+                    .height(60.dp)
+                    .width(1.dp)
+                    .background(Color.White.copy(alpha = 0.08f))
+            )
+        }
     }
 }
 
@@ -494,9 +538,37 @@ private fun AlbumStatCell(
 }
 
 @Composable
-fun AlbumTrackList(
+private fun AddSongPill(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(TempoRed)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            Icons.Rounded.Add,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = stringResource(R.string.album_add_song),
+            color = Color.White,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun AlbumTrackList(
     tracks: List<TrackWithStats>,
-    onNavigateToSong: (Long) -> Unit
+    onNavigateToSong: (Long) -> Unit,
+    isEditMode: Boolean = false,
+    onRemoveTrack: ((TrackWithStats) -> Unit)? = null
 ) {
     if (tracks.isEmpty()) return
 
@@ -506,27 +578,29 @@ fun AlbumTrackList(
         variant = GlassCardVariant.LowProminence,
         contentPadding = PaddingValues(0.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column {
             tracks.forEachIndexed { index, track ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onNavigateToSong(track.track.id) }
+                        .then(
+                            if (isEditMode) Modifier
+                            else Modifier.clickable { onNavigateToSong(track.track.id) }
+                        )
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Track number (accent color)
                     Text(
                         text = "${index + 1}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Black,
                         color = TempoRed,
-                        modifier = Modifier.width(32.dp),
-                        textAlign = TextAlign.Start
+                        modifier = Modifier.width(32.dp)
                     )
 
-                    // Track info
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Text(
                             text = track.track.title,
                             style = MaterialTheme.typography.titleMedium,
@@ -545,8 +619,8 @@ fun AlbumTrackList(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF94A3B8)
                             )
-                            val duration = track.track.duration ?: 0L
-                            if (duration > 0) {
+                            val duration = track.track.duration
+                            if (duration != null && duration > 0) {
                                 Text(
                                     text = "•",
                                     style = MaterialTheme.typography.bodySmall,
@@ -561,20 +635,24 @@ fun AlbumTrackList(
                         }
                     }
 
-                    // Play icon
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.08f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = "Play",
-                            tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.size(20.dp)
-                        )
+                    // Trailing affordance only in edit mode: the remove button. In view mode
+                    // the whole row is clickable to open the song, so a play icon would be redundant.
+                    if (isEditMode) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(TempoRed.copy(alpha = 0.15f))
+                                .clickable { onRemoveTrack?.invoke(track) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Remove from album",
+                                tint = TempoRed,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
 
@@ -591,8 +669,179 @@ fun AlbumTrackList(
     }
 }
 
-fun formatDuration(ms: Long): String {
-    val minutes = ms / 1000 / 60
-    val seconds = (ms / 1000) % 60
+@Composable
+private fun AddTrackToAlbumDialog(
+    query: String,
+    results: List<Track>,
+    isSearching: Boolean,
+    artistName: String,
+    onQueryChange: (String) -> Unit,
+    onTrackSelected: (Track) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .heightIn(max = 600.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.album_add_song_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = "Close",
+                            tint = Color.White
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = if (artistName.isNotEmpty())
+                        stringResource(R.string.album_add_song_desc, artistName)
+                    else stringResource(R.string.album_add_song_search),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(
+                            stringResource(R.string.album_add_song_search),
+                            color = Color.White.copy(alpha = 0.4f)
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.5f)
+                        )
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = TempoRed,
+                        focusedBorderColor = TempoRed,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f)
+                    )
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                when {
+                    isSearching -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = TempoRed)
+                        }
+                    }
+
+                    results.isEmpty() -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(R.string.album_no_candidates),
+                                color = Color.White.copy(alpha = 0.5f),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(items = results, key = { it.id }) { track ->
+                                TrackSearchItem(track = track) { onTrackSelected(track) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoveFromAlbumDialog(
+    trackTitle: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.album_remove_title),
+                color = Color.White
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.album_remove_msg, trackTitle),
+                    color = Color.White.copy(alpha = 0.9f)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.album_remove_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.common_remove),
+                    color = TempoRed,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = stringResource(R.string.common_cancel),
+                    color = Color.White
+                )
+            }
+        },
+        containerColor = Color(0xFF1E293B),
+        titleContentColor = Color.White,
+        textContentColor = Color.White
+    )
+}
+
+private fun formatDuration(ms: Long): String {
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }

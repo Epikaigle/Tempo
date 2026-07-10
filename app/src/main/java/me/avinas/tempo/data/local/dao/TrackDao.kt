@@ -45,6 +45,27 @@ interface TrackDao {
 
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId AND (youtube_id IS NULL OR youtube_id = '')")
     suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int
+
+    // ponytail: album membership is denormalized via the `album` string column, matched
+    // against (album title, artist name) in StatsDao. Null = not on any album.
+    @Query("UPDATE tracks SET album = :albumTitle WHERE id = :trackId")
+    suspend fun setTrackAlbum(trackId: Long, albumTitle: String?)
+
+    // ponytail: exact-artist match only (album stats match on exact artist string),
+    // so featured/multi-artist tracks whose `artist` differs won't surface as candidates.
+    @Query("""
+        SELECT * FROM tracks
+        WHERE artist = :artistName
+        AND (album IS NULL OR album != :albumTitle)
+        AND (:query = '' OR LOWER(title) LIKE '%' || LOWER(:query) || '%')
+        ORDER BY title ASC
+        LIMIT 100
+    """)
+    suspend fun getCandidateTracksForAlbum(
+        artistName: String,
+        albumTitle: String,
+        query: String
+    ): List<Track>
     
     @Query("DELETE FROM tracks WHERE id = :id")
     suspend fun deleteById(id: Long): Int

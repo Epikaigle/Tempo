@@ -406,6 +406,46 @@ interface EnrichedMetadataDao {
         AND t.id NOT IN (SELECT track_id FROM enriched_metadata)
     """)
     suspend fun findTrackIdsWithoutEnrichedMetadata(trackIds: List<Long>): List<Long>
+
+    /**
+     * Re-queue every non-enriched track (FAILED, SKIPPED, NOT_FOUND) back to PENDING.
+     * Used by the "Enrich All" action so the bulk worker can sweep the full backlog.
+     * Returns the number of rows updated.
+     */
+    @Query("""
+        UPDATE enriched_metadata
+        SET enrichment_status = 'PENDING', retry_count = 0
+        WHERE enrichment_status IN ('FAILED', 'SKIPPED', 'NOT_FOUND')
+    """)
+    suspend fun requeueAllForEnrichment(): Int
+
+    /**
+     * Defer low-play PENDING tracks (play count < minPlayCount, including never-played)
+     * by marking them SKIPPED. Used after very large imports so post-import enrichment
+     * stops churning through thousands of one-play wonders; those are instead enriched
+     * on-demand (when opened) or via "Enrich All". Returns rows updated.
+     * ponytail: play_count threshold is a practical proxy for "top per filter"; exact
+     * per-filter cap would need a persisted priority set / new status.
+     */
+    @Query("""
+        UPDATE enriched_metadata
+        SET enrichment_status = 'SKIPPED'
+        WHERE enrichment_status = 'PENDING'
+        AND track_id NOT IN (
+            SELECT track_id FROM listening_events
+            GROUP BY track_id
+            HAVING COUNT(*) >= :minPlayCount
+        )
+    """)
+    suspend fun markLowPlayPendingAsSkipped(minPlayCount: Int = 2): Int
+
+    /** Total number of tracks in the library (source of truth: tracks table). */
+    @Query("SELECT COUNT(*) FROM tracks")
+    suspend fun countAllTracks(): Int
+
+    /** Tracks that currently have a non-empty album art URL. */
+    @Query("SELECT COUNT(*) FROM tracks WHERE album_art_url IS NOT NULL AND album_art_url != ''")
+    suspend fun countTracksWithAlbumArt(): Int
 }
 
 data class EnrichmentStatusCount(

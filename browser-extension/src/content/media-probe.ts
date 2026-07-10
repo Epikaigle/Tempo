@@ -93,6 +93,21 @@
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
+  // ponytail: used only when the <audio> lives in a closed shadow root and
+  // MediaSession.playbackState is silent. A visible button labelled "Pause"
+  // means audio is currently playing (toggle-button convention). Covers Spotify
+  // ([data-testid=control-button-playpause]) and most other web players.
+  function isPauseButtonVisible(): boolean {
+    const btns = document.querySelectorAll<HTMLButtonElement | HTMLElement>(
+      'button[aria-label], [role="button"][aria-label]'
+    );
+    for (const b of btns) {
+      const label = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+      if (label === 'pause' && b.getClientRects().length > 0) return true;
+    }
+    return false;
+  }
+
   // ---- Cached media element management ------------------------------------
 
   const observedMediaElements = new WeakSet<HTMLMediaElement>();
@@ -122,8 +137,26 @@
     schedulePollSoon(0);
   }
 
+  // ponytail: Spotify/Apple Music/Amazon Music keep their <audio> in a shadow
+  // root, so document.querySelectorAll misses it. Walk open shadow roots to find
+  // it. Only runs when light DOM has no media (the common sites pay nothing).
+  // Closed roots are unreachable; isPlaying has a button fallback for that case.
+  function collectShadowMedia(root: ParentNode, found: HTMLMediaElement[]): HTMLMediaElement[] {
+    for (const el of Array.from(root.querySelectorAll('*'))) {
+      const sr = (el as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot;
+      if (!sr) continue;
+      for (const m of sr.querySelectorAll<HTMLMediaElement>('audio, video')) found.push(m);
+      collectShadowMedia(sr, found);
+    }
+    return found;
+  }
+
   function refreshMediaElements(): void {
-    cachedMediaElements = Array.from(document.querySelectorAll<HTMLMediaElement>('audio, video'));
+    const light = Array.from(document.querySelectorAll<HTMLMediaElement>('audio, video'));
+    // querySelectorAll returns only connected elements, so if light has any
+    // media at all it's the real player (YouTube/Bandcamp/SoundCloud). Only
+    // Spotify/Apple/Amazon (audio in shadow) hit the walk.
+    cachedMediaElements = light.length > 0 ? light : light.concat(collectShadowMedia(document, []));
     for (const media of cachedMediaElements) {
       if (observedMediaElements.has(media)) continue;
       observedMediaElements.add(media);
@@ -844,17 +877,30 @@
 
     // 3. Find the best media element (use cached list, refresh if dirty)
     if (mediaElementsDirty) refreshMediaElements();
+    // ponytail: shadow-DOM media isn't covered by the light-DOM MutationObserver;
+    // re-refresh when our cached element detaches (Spotify may recreate it).
+    if (cachedMediaElements.length > 0 && !cachedMediaElements.some(el => el.isConnected)) {
+      mediaElementsDirty = true;
+      refreshMediaElements();
+    }
     const mediaElements = cachedMediaElements;
     const bestMedia =
-      mediaElements.find(el => !el.paused && !el.ended) ??
-      mediaElements.find(el => (el.currentTime || 0) > 0 || Number.isFinite(el.duration)) ??
+      mediaElements.find(el => el.isConnected && !el.paused && !el.ended) ??
+      mediaElements.find(el => el.isConnected && ((el.currentTime || 0) > 0 || Number.isFinite(el.duration))) ??
       null;
 
     // 4. Determine playback state
     const sessionState = navigator.mediaSession?.playbackState;
-    const isPlaying =
+    let isPlaying =
       sessionState === 'playing' ||
       (bestMedia ? !bestMedia.paused && !bestMedia.ended : false);
+
+    // ponytail: if the <audio> is in a closed shadow root (unreachable) and
+    // MediaSession.playbackState is unset, infer play from the now-playing
+    // pause button. Web players use "Pause" aria-label when audio is playing.
+    if (!bestMedia && sessionState !== 'playing' && sessionState !== 'paused' && title) {
+      isPlaying = isPauseButtonVisible();
+    }
 
     // 5. Extract playback data from the media element
     const duration = bestMedia?.duration ?? NaN;

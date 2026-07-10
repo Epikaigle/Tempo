@@ -234,9 +234,9 @@ private fun SpotlightRing(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var viewed by remember { mutableStateOf(false) }
     val infiniteTransition = rememberInfiniteTransition(label = "SpotlightRing")
 
-    // Slow continuous rotation of the gradient ring
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -247,7 +247,6 @@ private fun SpotlightRing(
         label = "RingRotation"
     )
 
-    // Gentle breathing pulse on the glow
     val pulse by infiniteTransition.animateFloat(
         initialValue = 0.6f,
         targetValue = 1f,
@@ -261,65 +260,65 @@ private fun SpotlightRing(
     Box(
         modifier = modifier
             .size(64.dp)
-            .premiumClickable(onClick = onClick, pressedScale = 0.92f),
+            .premiumClickable(onClick = {
+                viewed = true
+                onClick()
+            }, pressedScale = 0.92f),
         contentAlignment = Alignment.Center
     ) {
-        // Outer glow halo — soft pulsing colored bloom
-        Canvas(
-            modifier = Modifier
-                .matchParentSize()
-                .graphicsLayer { alpha = 0.55f * pulse }
-        ) {
-            val glowRadius = size.minDimension * 0.7f
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        SpotlightRingColors[0].copy(alpha = 0.45f),
-                        SpotlightRingColors[1].copy(alpha = 0.2f),
-                        Color.Transparent
+        if (!viewed) {
+            Canvas(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = 0.55f * pulse }
+            ) {
+                val glowRadius = size.minDimension * 0.7f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            SpotlightRingColors[0].copy(alpha = 0.45f),
+                            SpotlightRingColors[1].copy(alpha = 0.2f),
+                            Color.Transparent
+                        ),
+                        center = Offset(center.x, center.y),
+                        radius = glowRadius
                     ),
                     center = Offset(center.x, center.y),
                     radius = glowRadius
-                ),
-                center = Offset(center.x, center.y),
-                radius = glowRadius
-            )
+                )
+            }
+
+            Canvas(
+                modifier = Modifier
+                    .matchParentSize()
+                    .rotate(rotation)
+            ) {
+                val stroke = size.minDimension * 0.07f
+                val diameter = size.minDimension - stroke
+                val topLeft = Offset(
+                    (size.width - diameter) / 2f,
+                    (size.height - diameter) / 2f
+                )
+
+                val ringBrush = Brush.sweepGradient(
+                    colors = SpotlightRingColors + SpotlightRingColors.first(),
+                    center = Offset(center.x, center.y)
+                )
+                drawArc(
+                    brush = ringBrush,
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = stroke,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    ),
+                    topLeft = topLeft,
+                    size = androidx.compose.ui.geometry.Size(diameter, diameter)
+                )
+            }
         }
 
-        // Rotating smooth gradient ring — a single sweeping gradient blends the
-        // story's color arc into a flowing aurora rather than distinct segments
-        Canvas(
-            modifier = Modifier
-                .matchParentSize()
-                .rotate(rotation)
-        ) {
-            val stroke = size.minDimension * 0.07f
-            val diameter = size.minDimension - stroke
-            val topLeft = Offset(
-                (size.width - diameter) / 2f,
-                (size.height - diameter) / 2f
-            )
-
-            // Repeat the first color at the end so the sweep gradient loops seamlessly
-            val ringBrush = Brush.sweepGradient(
-                colors = SpotlightRingColors + SpotlightRingColors.first(),
-                center = Offset(center.x, center.y)
-            )
-            drawArc(
-                brush = ringBrush,
-                startAngle = 0f,
-                sweepAngle = 360f,
-                useCenter = false,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = stroke,
-                    cap = androidx.compose.ui.graphics.StrokeCap.Round
-                ),
-                topLeft = topLeft,
-                size = androidx.compose.ui.geometry.Size(diameter, diameter)
-            )
-        }
-
-        // Album art (or fallback icon) clipped to a circle inside the ring
         Box(
             modifier = Modifier
                 .size(44.dp)

@@ -4,6 +4,7 @@ import android.util.Log
 import android.util.LruCache
 import me.avinas.tempo.data.local.dao.*
 import me.avinas.tempo.data.local.entities.Artist
+import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.stats.*
 import me.avinas.tempo.utils.ArtistParser
 import kotlinx.coroutines.Dispatchers
@@ -1981,6 +1982,34 @@ class RoomStatsRepository @Inject constructor(
                 tracks = tracks
             )
         }
+    }
+
+    override suspend fun addTrackToAlbum(albumId: Long, trackId: Long) {
+        val album = albumDao.getAlbumById(albumId) ?: return
+        val artist = artistDao.getArtistById(album.artistId) ?: return
+        val track = trackDao.getTrackById(trackId) ?: return
+        // Only same-artist tracks surface in album stats (matched on exact artist name),
+        // so reassigning a different-artist track would be invisible — skip it.
+        if (track.artist == artist.name) {
+            trackDao.setTrackAlbum(trackId, album.title)
+            invalidateCache()
+            notifyMetadataUpdate()
+        }
+    }
+
+    override suspend fun removeTrackFromAlbum(albumId: Long, trackId: Long) {
+        trackDao.setTrackAlbum(trackId, null)
+        invalidateCache()
+        notifyMetadataUpdate()
+    }
+
+    override suspend fun getCandidateTracksForAlbum(
+        albumId: Long,
+        query: String
+    ): List<Track> {
+        val album = albumDao.getAlbumById(albumId) ?: return emptyList()
+        val artist = artistDao.getArtistById(album.artistId) ?: return emptyList()
+        return trackDao.getCandidateTracksForAlbum(artist.name, album.title, query.trim())
     }
 
     override suspend fun getTrackListeningHistory(trackId: Long, timeRange: TimeRange): List<DailyListening> {

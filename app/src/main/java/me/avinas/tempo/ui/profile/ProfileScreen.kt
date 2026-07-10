@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
@@ -44,8 +47,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -280,9 +281,7 @@ fun ProfileScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
-    val pagerState = rememberPagerState(pageCount = { 2 })
-    val coroutineScope = rememberCoroutineScope()
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     DeepOceanBackground {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -294,71 +293,76 @@ fun ProfileScreen(
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val compact = maxWidth < 380.dp
                     val tabs = if (compact) listOf("Quests", "Badges") else listOf("Challenges", "Badges")
+                    val sidePadding = if (compact) 16.dp else 20.dp
 
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(scrollState)
-                            .padding(bottom = 132.dp),
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 132.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Spacer(modifier = Modifier.height(92.dp))
+                        item(key = "hero") {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Spacer(modifier = Modifier.height(92.dp))
+                                HeroProfileSection(
+                                    userLevel = uiState.userLevel,
+                                    userTitle = uiState.userTitle,
+                                    userName = uiState.userName,
+                                    profileImagePath = uiState.profileImagePath
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                            }
+                        }
 
-                        HeroProfileSection(
-                            userLevel = uiState.userLevel,
-                            userTitle = uiState.userTitle,
-                            userName = uiState.userName,
-                            profileImagePath = uiState.profileImagePath
-                        )
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = if (compact) 16.dp else 20.dp),
-                            verticalArrangement = Arrangement.spacedBy(24.dp)
-                        ) {
-                            StatsSection(
-                                userLevel = uiState.userLevel,
-                                compact = compact,
-                                streakAtRisk = uiState.streakAtRisk,
-                                timeRemaining = uiState.streakTimeRemaining,
-                                streakDurationMinutes = uiState.streakDurationMinutes
-                            )
-
-                            TabSwitcher(tabs = tabs, pagerState = pagerState, coroutineScope = coroutineScope)
-
-                            HorizontalPager(
-                                state = pagerState,
+                        item(key = "stats_tabs") {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .animateContentSize(),
-                                verticalAlignment = Alignment.Top
-                            ) { page ->
-                                when (page) {
-                                    0 -> if (uiState.challenges.isNotEmpty()) {
-                                        ChallengesSection(
-                                            challenges = uiState.challenges,
-                                            totalXpAvailable = uiState.challengeXpTotal,
-                                            onClaimChallenge = viewModel::claimChallenge
-                                        )
-                                    } else {
+                                    .padding(horizontal = sidePadding),
+                                verticalArrangement = Arrangement.spacedBy(24.dp)
+                            ) {
+                                StatsSection(
+                                    userLevel = uiState.userLevel,
+                                    compact = compact,
+                                    streakAtRisk = uiState.streakAtRisk,
+                                    timeRemaining = uiState.streakTimeRemaining,
+                                    streakDurationMinutes = uiState.streakDurationMinutes
+                                )
+                                TabSwitcher(
+                                    tabs = tabs,
+                                    selectedTab = selectedTab,
+                                    onTabSelected = { selectedTab = it }
+                                )
+                            }
+                        }
+
+                        if (selectedTab == 0) {
+                            if (uiState.challenges.isNotEmpty()) {
+                                challengesSection(
+                                    challenges = uiState.challenges,
+                                    totalXpAvailable = uiState.challengeXpTotal,
+                                    onClaimChallenge = viewModel::claimChallenge,
+                                    sidePadding = sidePadding
+                                )
+                            } else {
+                                item(key = "empty_challenges") {
+                                    Column(modifier = Modifier.padding(horizontal = sidePadding)) {
                                         EmptyChallengesState()
                                     }
-                                    1 -> BadgeSection(
-                                        allBadges = uiState.allBadges,
-                                        filteredBadges = uiState.filteredBadges,
-                                        earnedCount = uiState.earnedCount,
-                                        totalCount = uiState.totalCount,
-                                        totalStars = uiState.totalStars,
-                                        maxPossibleStars = uiState.maxPossibleStars,
-                                        categories = uiState.categories,
-                                        selectedCategory = uiState.selectedCategory,
-                                        onCategorySelected = viewModel::onCategorySelected
-                                    )
                                 }
                             }
+                        } else {
+                            badgeSection(
+                                allBadges = uiState.allBadges,
+                                filteredBadges = uiState.filteredBadges,
+                                earnedCount = uiState.earnedCount,
+                                totalCount = uiState.totalCount,
+                                totalStars = uiState.totalStars,
+                                maxPossibleStars = uiState.maxPossibleStars,
+                                categories = uiState.categories,
+                                selectedCategory = uiState.selectedCategory,
+                                onCategorySelected = viewModel::onCategorySelected,
+                                sidePadding = sidePadding
+                            )
                         }
                     }
                 }
@@ -706,8 +710,8 @@ private fun InlineStat(
 @Composable
 private fun TabSwitcher(
     tabs: List<String>,
-    pagerState: androidx.compose.foundation.pager.PagerState,
-    coroutineScope: kotlinx.coroutines.CoroutineScope
+    selectedTab: Int,
+    onTabSelected: (Int) -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -719,14 +723,14 @@ private fun TabSwitcher(
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         tabs.forEachIndexed { index, title ->
-            val selected = pagerState.currentPage == index
+            val selected = selectedTab == index
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (selected) ProfileAccent.copy(alpha = 0.22f) else Color.Transparent)
                     .border(1.dp, if (selected) ProfileAccent.copy(alpha = 0.45f) else Color.Transparent, RoundedCornerShape(12.dp))
-                    .clickable { coroutineScope.launch { pagerState.animateScrollToPage(index) } }
+                    .clickable { onTabSelected(index) }
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -745,40 +749,50 @@ private fun TabSwitcher(
 // =====================================================================
 // Challenges — single-surface cards, one accent per difficulty
 // =====================================================================
-@Composable
-private fun ChallengesSection(
+private fun LazyListScope.challengesSection(
     challenges: List<DailyChallenge>,
     totalXpAvailable: Int,
-    onClaimChallenge: (Long) -> Unit
+    onClaimChallenge: (Long) -> Unit,
+    sidePadding: Dp
 ) {
     val completedCount = challenges.count { it.isCompleted }
-    val resetLabel = remember {
-        val midnight = LocalDate.now().plusDays(1)
-            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val diffMs = midnight - System.currentTimeMillis()
-        val h = (diffMs / (1000 * 60 * 60)).toInt()
-        val m = ((diffMs % (1000 * 60 * 60)) / (1000 * 60)).toInt()
-        if (h > 0) "resets in ${h}h ${m}m" else "resets in ${m}m"
+    item(key = "challenges_header") {
+        val resetLabel = remember {
+            val midnight = LocalDate.now().plusDays(1)
+                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val diffMs = midnight - System.currentTimeMillis()
+            val h = (diffMs / (1000 * 60 * 60)).toInt()
+            val m = ((diffMs % (1000 * 60 * 60)) / (1000 * 60)).toInt()
+            if (h > 0) "resets in ${h}h ${m}m" else "resets in ${m}m"
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = sidePadding)
+        ) {
+            SectionHeader(
+                eyebrow = "Quests",
+                title = "Daily challenges",
+                subtitle = "$completedCount of ${challenges.size} complete · $resetLabel",
+                trailing = { XpChip(xp = totalXpAvailable) }
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            ProgressTrack(
+                progress = if (challenges.isEmpty()) 0f else completedCount.toFloat() / challenges.size,
+                modifier = Modifier.fillMaxWidth(),
+                color = ProfileAccent
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
     }
-
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionHeader(
-            eyebrow = "Quests",
-            title = "Daily challenges",
-            subtitle = "$completedCount of ${challenges.size} complete · $resetLabel",
-            trailing = { XpChip(xp = totalXpAvailable) }
-        )
-
-        ProgressTrack(
-            progress = if (challenges.isEmpty()) 0f else completedCount.toFloat() / challenges.size,
-            modifier = Modifier.fillMaxWidth(),
-            color = ProfileAccent
-        )
-
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            challenges.forEach { challenge ->
-                ChallengeCard(challenge = challenge, onClaim = { onClaimChallenge(challenge.id) })
-            }
+    itemsIndexed(challenges, key = { _, c -> "challenge_${c.id}" }) { _, challenge ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = sidePadding)
+        ) {
+            ChallengeCard(challenge = challenge, onClaim = { onClaimChallenge(challenge.id) })
+            Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }
@@ -912,8 +926,7 @@ private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
 // =====================================================================
 // Badges — clean grid. Emblem keeps the medal character; card stays flat.
 // =====================================================================
-@Composable
-private fun BadgeSection(
+private fun LazyListScope.badgeSection(
     allBadges: List<Badge>,
     filteredBadges: List<Badge>,
     earnedCount: Int,
@@ -922,67 +935,11 @@ private fun BadgeSection(
     maxPossibleStars: Int,
     categories: List<String>,
     selectedCategory: String?,
-    onCategorySelected: (String?) -> Unit
+    onCategorySelected: (String?) -> Unit,
+    sidePadding: Dp
 ) {
     val collectionProgress = if (totalCount == 0) 0f else earnedCount.toFloat() / totalCount
-
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        SectionHeader(
-            eyebrow = "Achievements",
-            title = "Your collection",
-            subtitle = "$earnedCount of $totalCount badges earned.",
-            trailing = if (totalStars > 0) ({ StarsChip(total = totalStars, max = maxPossibleStars) }) else null
-        )
-
-        ProgressTrack(progress = collectionProgress, modifier = Modifier.fillMaxWidth(), color = Amber)
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(
-                selected = selectedCategory == null,
-                onClick = { onCategorySelected(null) },
-                label = { Text("All") },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = ProfileAccent.copy(alpha = 0.18f),
-                    containerColor = Color.Transparent,
-                    labelColor = TextSecondary,
-                    selectedLabelColor = TextPrimary
-                ),
-                border = FilterChipDefaults.filterChipBorder(
-                    borderColor = ProfileBorder,
-                    selectedBorderColor = ProfileAccent.copy(alpha = 0.5f),
-                    enabled = true,
-                    selected = selectedCategory == null
-                ),
-                shape = CircleShape
-            )
-            categories.forEach { category ->
-                val categoryColor = getCategoryColor(category)
-                FilterChip(
-                    selected = selectedCategory == category,
-                    onClick = { onCategorySelected(category) },
-                    label = { Text(getCategoryLabel(category), maxLines = 1) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = categoryColor.copy(alpha = 0.16f),
-                        containerColor = Color.Transparent,
-                        labelColor = TextSecondary,
-                        selectedLabelColor = categoryColor
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        borderColor = ProfileBorder,
-                        selectedBorderColor = categoryColor.copy(alpha = 0.5f),
-                        enabled = true,
-                        selected = selectedCategory == category
-                    ),
-                    shape = CircleShape
-                )
-            }
-        }
-
+    item(key = "badges_header") {
         val beginnerIds = GamificationEngine.BEGINNER_BADGES
         val almostThereBadge = remember(allBadges) {
             allBadges.filter { !it.isEarned && !it.isMaxed && it.badgeId !in beginnerIds && it.progressFraction >= 0.5f }
@@ -996,20 +953,88 @@ private fun BadgeSection(
         }
         val spotlightBadge = almostThereBadge ?: nextStarBadge
 
-        if (spotlightBadge != null) {
-            val spotlightLabel = if (spotlightBadge.isEarned) "Next star" else "Almost there"
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = Amber, modifier = Modifier.size(16.dp))
-                Text(text = spotlightLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = sidePadding)
+        ) {
+            SectionHeader(
+                eyebrow = "Achievements",
+                title = "Your collection",
+                subtitle = "$earnedCount of $totalCount badges earned.",
+                trailing = if (totalStars > 0) ({ StarsChip(total = totalStars, max = maxPossibleStars) }) else null
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            ProgressTrack(progress = collectionProgress, modifier = Modifier.fillMaxWidth(), color = Amber)
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedCategory == null,
+                    onClick = { onCategorySelected(null) },
+                    label = { Text("All") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = ProfileAccent.copy(alpha = 0.18f),
+                        containerColor = Color.Transparent,
+                        labelColor = TextSecondary,
+                        selectedLabelColor = TextPrimary
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        borderColor = ProfileBorder,
+                        selectedBorderColor = ProfileAccent.copy(alpha = 0.5f),
+                        enabled = true,
+                        selected = selectedCategory == null
+                    ),
+                    shape = CircleShape
+                )
+                categories.forEach { category ->
+                    val categoryColor = getCategoryColor(category)
+                    FilterChip(
+                        selected = selectedCategory == category,
+                        onClick = { onCategorySelected(category) },
+                        label = { Text(getCategoryLabel(category), maxLines = 1) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = categoryColor.copy(alpha = 0.16f),
+                            containerColor = Color.Transparent,
+                            labelColor = TextSecondary,
+                            selectedLabelColor = categoryColor
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = ProfileBorder,
+                            selectedBorderColor = categoryColor.copy(alpha = 0.5f),
+                            enabled = true,
+                            selected = selectedCategory == category
+                        ),
+                        shape = CircleShape
+                    )
+                }
             }
-            BadgeCard(badge = spotlightBadge, modifier = Modifier.fillMaxWidth(), isSpotlight = true)
-            HorizontalDivider(color = ProfileBorder)
-        }
 
-        if (filteredBadges.isEmpty()) {
+            if (spotlightBadge != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                val spotlightLabel = if (spotlightBadge.isEarned) "Next star" else "Almost there"
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = Amber, modifier = Modifier.size(16.dp))
+                    Text(text = spotlightLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                BadgeCard(badge = spotlightBadge, modifier = Modifier.fillMaxWidth(), isSpotlight = true)
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = ProfileBorder)
+            }
+        }
+    }
+
+    if (filteredBadges.isEmpty()) {
+        item(key = "badges_empty") {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = sidePadding)
                     .height(120.dp)
                     .background(ProfileSurface, RoundedCornerShape(20.dp))
                     .border(1.dp, ProfileBorder, RoundedCornerShape(20.dp)),
@@ -1017,21 +1042,25 @@ private fun BadgeSection(
             ) {
                 Text(text = "No badges to show", color = TextTertiary)
             }
-        } else {
-            // Trophy-case order: earned first, then by rarity (prestige), then by stars.
-            val sortedBadges = remember(filteredBadges) {
-                filteredBadges.sortedWith(
-                    compareByDescending<Badge> { it.isEarned }
-                        .thenByDescending { GamificationEngine.getRarity(it.badgeId).sortWeight }
-                        .thenByDescending { it.stars }
-                )
+        }
+    } else {
+        // Trophy-case order: earned first, then by rarity (prestige), then by stars.
+        val sortedBadges = filteredBadges.sortedWith(
+            compareByDescending<Badge> { it.isEarned }
+                .thenByDescending { GamificationEngine.getRarity(it.badgeId).sortWeight }
+                .thenByDescending { it.stars }
+        )
+        items(sortedBadges.chunked(2), key = { row -> row.joinToString(",") { it.badgeId } }) { rowBadges ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = sidePadding),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                rowBadges.forEach { badge -> BadgeCard(badge = badge, modifier = Modifier.weight(1f)) }
+                repeat(2 - rowBadges.size) { Spacer(modifier = Modifier.weight(1f)) }
             }
-            sortedBadges.chunked(2).forEach { rowBadges ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    rowBadges.forEach { badge -> BadgeCard(badge = badge, modifier = Modifier.weight(1f)) }
-                    repeat(2 - rowBadges.size) { Spacer(modifier = Modifier.weight(1f)) }
-                }
-            }
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }

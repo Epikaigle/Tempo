@@ -62,6 +62,17 @@ class RoomEnrichedMetadataRepository @Inject constructor(
     override suspend fun getEnrichmentStats(): Map<EnrichmentStatus, Int> {
         return dao.getEnrichmentStats().associate { it.status to it.count }
     }
+
+    override suspend fun countByStatus(status: EnrichmentStatus): Int = dao.countByStatus(status)
+
+    override suspend fun countAllTracks(): Int = dao.countAllTracks()
+
+    override suspend fun countTracksWithAlbumArt(): Int = dao.countTracksWithAlbumArt()
+
+    override suspend fun requeueAllForEnrichment(): Int = dao.requeueAllForEnrichment()
+
+    override suspend fun markLowPlayPendingAsSkipped(minPlayCount: Int): Int =
+        dao.markLowPlayPendingAsSkipped(minPlayCount)
     
     override suspend fun countTracksWithSpotifyFeatures(): Int {
         return dao.countTracksWithSpotifyFeatures()

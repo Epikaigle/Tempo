@@ -87,15 +87,21 @@ interface StatsDao {
     /**
      * Get unique albums count for a time range.
      * Excludes singles - only counts actual albums and EPs.
+     * Also requires an album to have 2+ distinct tracked songs, so a best-of
+     * or compilation that only captured 1 of your scrobbled songs doesn't count.
      */
     @Query("""
-        SELECT COUNT(DISTINCT t.album) 
-        FROM listening_events le
-        INNER JOIN tracks t ON le.track_id = t.id
-        LEFT JOIN enriched_metadata em ON t.id = em.track_id
-        WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
-        AND t.album IS NOT NULL
-        AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
+        SELECT COUNT(*) FROM (
+            SELECT t.album
+            FROM listening_events le
+            INNER JOIN tracks t ON le.track_id = t.id
+            LEFT JOIN enriched_metadata em ON t.id = em.track_id
+            WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
+            AND t.album IS NOT NULL
+            AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
+            GROUP BY t.album
+            HAVING COUNT(DISTINCT t.id) > 1
+        )
     """)
     suspend fun getUniqueAlbumsCount(startTime: Long, endTime: Long): Int
 
@@ -432,6 +438,7 @@ interface StatsDao {
         AND le.timestamp >= :startTime AND le.timestamp <= :endTime
         AND t.album IS NOT NULL AND t.album != ''
         GROUP BY t.album
+        HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC
         LIMIT :limit
     """)
@@ -460,6 +467,7 @@ interface StatsDao {
         AND t.album IS NOT NULL AND t.album != ''
         AND (em.release_type IS NULL OR em.release_type NOT IN ('Single', 'single'))
         GROUP BY t.album, t.artist
+        HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
     """)
@@ -1497,14 +1505,20 @@ interface StatsDao {
     /**
      * Get unique albums played for an artist.
      * Excludes singles - only counts actual albums and EPs.
+     * Also requires an album to have 2+ distinct tracked songs, so a best-of
+     * or compilation that only captured 1 of your scrobbled songs doesn't count.
      */
     @Query("""
-        SELECT COUNT(DISTINCT t.album)
-        FROM listening_events le
-        INNER JOIN tracks t ON le.track_id = t.id
-        LEFT JOIN enriched_metadata em ON t.id = em.track_id
-        WHERE t.artist = :artistName AND t.album IS NOT NULL AND t.album != ''
-        AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
+        SELECT COUNT(*) FROM (
+            SELECT t.album
+            FROM listening_events le
+            INNER JOIN tracks t ON le.track_id = t.id
+            LEFT JOIN enriched_metadata em ON t.id = em.track_id
+            WHERE t.artist = :artistName AND t.album IS NOT NULL AND t.album != ''
+            AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
+            GROUP BY t.album
+            HAVING COUNT(DISTINCT t.id) > 1
+        )
     """)
     suspend fun getArtistUniqueAlbumsPlayed(artistName: String): Int
 
@@ -1722,6 +1736,7 @@ interface StatsDao {
         WHERE t.artist = :artistName AND t.album IS NOT NULL AND t.album != ''
         AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
         GROUP BY t.album
+        HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC
         LIMIT :limit
     """)
@@ -1912,6 +1927,7 @@ interface StatsDao {
               AND t.album IS NOT NULL AND t.album != ''
               AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
         GROUP BY t.album
+        HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC
         LIMIT :limit
     """)
@@ -2074,6 +2090,7 @@ interface StatsDao {
         WHERE ta.artist_id = :artistId AND t.album IS NOT NULL AND t.album != ''
         AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
         GROUP BY t.album
+        HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC
         LIMIT :limit
     """)
@@ -2277,6 +2294,7 @@ interface StatsDao {
         AND (:filterPodcasts = 0 OR t.content_type IS NULL OR t.content_type != 'PODCAST')
         AND (:filterAudiobooks = 0 OR t.content_type IS NULL OR t.content_type != 'AUDIOBOOK')
         GROUP BY t.album, t.artist
+        HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
     """)

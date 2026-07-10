@@ -280,6 +280,14 @@ class SpotifyJsonImportService @Inject constructor(
             return parseEndsongStream(source)
         }
 
+        // ponytail: Spotify extended data export ships as "Streaming_History_Audio_*.json"
+        // / "Streaming_History_Video_*.json" (underscored) with the endsong field schema
+        // (ts, ms_played, master_metadata_*) in a JSON array. Legacy "StreamingHistory*.json"
+        // (no underscores) uses the old endTime/trackName schema handled below.
+        if (fileName.contains("streaming_history", ignoreCase = true)) {
+            return parseEndsongStream(source)
+        }
+
         if (fileName.contains("StreamingHistory", ignoreCase = true)) {
             return parseStreamingHistoryStream(source)
         }
@@ -289,11 +297,18 @@ class SpotifyJsonImportService @Inject constructor(
 
         return when {
             firstChar == '['.code.toLong() -> {
-                try {
-                    parseStreamingHistoryStream(source)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed as StreamingHistory, trying endsong array format", e)
+                // Detect schema by peeking at the first array element's keys so
+                // generically-named files still route to the correct parser.
+                // ponytail: key-presence check (ts/ms_played vs endTime), order-independent.
+                if (isArrayEndsongSchema(source.peek())) {
                     parseEndsongStream(source)
+                } else {
+                    try {
+                        parseStreamingHistoryStream(source)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed as StreamingHistory, trying endsong array format", e)
+                        parseEndsongStream(source)
+                    }
                 }
             }
             firstChar == '{'.code.toLong() -> parseEndsongNdjsonStream(source)
@@ -301,6 +316,23 @@ class SpotifyJsonImportService @Inject constructor(
                 Log.w(TAG, "Unknown format for $fileName, attempting StreamingHistory parse")
                 parseStreamingHistoryStream(source)
             }
+        }
+    }
+
+    private fun isArrayEndsongSchema(peekSource: okio.BufferedSource): Boolean {
+        return try {
+            val reader = JsonReader.of(peekSource)
+            reader.beginArray()
+            if (!reader.hasNext()) return false
+            reader.beginObject()
+            while (reader.hasNext()) {
+                // ponytail: short-circuit once an endsong marker key is seen
+                if (reader.nextName() == "ts") return true
+                reader.skipValue()
+            }
+            false
+        } catch (e: Exception) {
+            false
         }
     }
 

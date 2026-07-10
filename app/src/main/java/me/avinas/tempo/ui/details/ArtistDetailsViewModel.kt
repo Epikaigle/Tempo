@@ -35,6 +35,9 @@ class ArtistDetailsViewModel @Inject constructor(
     private var currentArtistId: Long? = null
     private var currentArtistName: String? = null
 
+    // Guards on-demand image fetch so it fires once per screen entry, not on every reload
+    private var hasTriggeredImageRefresh = false
+
     private val _uiState = MutableStateFlow(ArtistDetailsUiState())
     val uiState: StateFlow<ArtistDetailsUiState> = _uiState.asStateFlow()
 
@@ -90,6 +93,15 @@ class ArtistDetailsViewModel @Inject constructor(
                          me.avinas.tempo.data.stats.TimeRange.ALL_TIME
                      )
                      _uiState.update { it.copy(artistPercentile = percentile) }
+                }
+
+                // On-demand artist image: if missing, fetch it now (once per screen entry).
+                // refreshArtistImage() does the API lookup + reloads, so the observer isn't needed here.
+                if (!hasTriggeredImageRefresh
+                    && details.artist.imageUrl.isNullOrBlank()
+                    && details.personalPlayCount > 0) {
+                    hasTriggeredImageRefresh = true
+                    refreshArtistImage()
                 }
             } catch (e: NoSuchElementException) {
                 Log.w(TAG, "Artist not found with ID: $artistId")

@@ -767,7 +767,8 @@ class YouTubeMusicImportService @Inject constructor(
             )
             val allLinkPattern = Pattern.compile("<a\\s+href=\"[^\"]*\"[^>]*>([^<]*)</a>")
 
-            val chunks = htmlContent.split("<div class=\"outer-cell")
+            // ponytail: lazy sequence avoids OOM — split() materialized every chunk as a copied String at once
+            val chunks = htmlContent.splitToSequence("<div class=\"outer-cell")
 
             for (chunk in chunks) {
                 if (chunk.isBlank()) continue

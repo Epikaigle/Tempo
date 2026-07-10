@@ -58,6 +58,7 @@ fun SettingsScreen(
     onNavigateToSpotifyJsonImport: (() -> Unit)? = null,
     onNavigateToYouTubeMusicImport: (() -> Unit)? = null,
     onNavigateToDesktop: () -> Unit = {},
+    onNavigateToEnrichmentReport: (() -> Unit)? = null,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -613,6 +614,12 @@ fun SettingsScreen(
                         )
                         HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         SettingsOption(
+                            title = stringResource(R.string.enrichment_report_settings_option),
+                            subtitle = stringResource(R.string.enrichment_report_settings_option_desc),
+                            onClick = { onNavigateToEnrichmentReport?.invoke() }
+                        )
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        SettingsOption(
                             title = stringResource(R.string.settings_clear_all),
                             textColor = TempoRed,
                             onClick = { showClearDataDialog = true }
@@ -642,19 +649,7 @@ fun SettingsScreen(
                             }
                         )
                         HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                        SettingsOption(
-                            title = stringResource(R.string.settings_telegram),
-                            subtitle = stringResource(R.string.settings_telegram_name),
-                            onClick = {
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/confusedcoconut"))
-                                    context.startActivity(intent)
-                                } catch (_: ActivityNotFoundException) {
-                                    Toast.makeText(context, "No app found to open this link", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
                         SettingsOption(
                             title = stringResource(R.string.settings_github),
                             subtitle = stringResource(R.string.settings_github_desc),

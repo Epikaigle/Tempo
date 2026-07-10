@@ -13,6 +13,7 @@ import me.avinas.tempo.ui.settings.SettingsScreen
 import me.avinas.tempo.ui.settings.SupportedAppsScreen
 import me.avinas.tempo.ui.settings.BackupRestoreScreen
 import me.avinas.tempo.ui.settings.BackgroundProtectionScreen
+import me.avinas.tempo.ui.settings.EnrichmentReportScreen
 import me.avinas.tempo.ui.lastfm.LastFmImportScreen
 import me.avinas.tempo.ui.desktop.DesktopLinkScreen
 import me.avinas.tempo.ui.spotlight.SpotlightScreen
@@ -74,6 +75,7 @@ sealed class Screen(val route: String) {
     data object SpotifyJsonImport : Screen("spotify_json_import")
     data object YouTubeMusicImport : Screen("youtube_music_import")
     data object DesktopLink : Screen("desktop_link")
+    data object EnrichmentReport : Screen("enrichment_report")
     object ShareCanvas : Screen("share_canvas/{initialCardId}") {
         fun createRoute(initialCardId: String) = "share_canvas/$initialCardId"
         fun createRouteEmpty() = "share_canvas/_empty_"
@@ -211,7 +213,8 @@ fun AppNavigation(
                             onNavigateToLastFmImport = { navController.navigate(Screen.LastFmImport.route) },
                             onNavigateToSpotifyJsonImport = { navController.navigate(Screen.SpotifyJsonImport.route) },
                             onNavigateToYouTubeMusicImport = { navController.navigate(Screen.YouTubeMusicImport.route) },
-                            onNavigateToDesktop = { navController.navigate(Screen.DesktopLink.route) }
+                            onNavigateToDesktop = { navController.navigate(Screen.DesktopLink.route) },
+                            onNavigateToEnrichmentReport = { navController.navigate(Screen.EnrichmentReport.route) }
                         )
                     }
 
@@ -253,6 +256,12 @@ fun AppNavigation(
 
                     composable(Screen.DesktopLink.route) {
                         DesktopLinkScreen(
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable(Screen.EnrichmentReport.route) {
+                        EnrichmentReportScreen(
                             onNavigateBack = { navController.popBackStack() }
                         )
                     }

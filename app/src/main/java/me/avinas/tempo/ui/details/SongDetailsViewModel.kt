@@ -1,8 +1,10 @@
 package me.avinas.tempo.ui.details
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.EnrichedMetadataRepository
@@ -13,7 +15,9 @@ import me.avinas.tempo.data.stats.TagBasedMoodAnalyzer
 import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.data.stats.TrackDetails
 import me.avinas.tempo.data.stats.TrackEngagement
+import me.avinas.tempo.worker.EnrichmentWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +38,7 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class SongDetailsViewModel @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val statsRepository: StatsRepository,
     private val enrichedMetadataRepository: EnrichedMetadataRepository,
     private val trackRepository: TrackRepository,
@@ -46,17 +51,35 @@ class SongDetailsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SongDetailsUiState())
     val uiState: StateFlow<SongDetailsUiState> = _uiState.asStateFlow()
 
+    // Guards on-demand enrichment so it fires once per screen entry, not on every reload
+    private var hasTriggeredOnDemandEnrichment = false
+
     init {
         loadTrackDetails()
+        // Auto-refresh when enrichment completes (EnrichmentWorker notifies per-track) so the
+        // newly fetched album art appears without a manual pull-to-refresh.
+        viewModelScope.launch {
+            statsRepository.observeMetadataUpdates().collect {
+                if (_uiState.value.trackDetails?.track?.albumArtUrl.isNullOrBlank()) {
+                    loadTrackDetails(quiet = true)
+                }
+            }
+        }
     }
 
     /**
      * Load track details from database (cached enriched data).
      * No API calls are made - all data comes from locally cached enrichment.
+     *
+     * On-demand enrichment: if this track has no album art and hasn't been fully enriched,
+     * trigger EnrichmentWorker for just this track so cover art/genres are fetched in the
+     * background. The metadata-update observer above reloads the UI once it lands.
+     *
+     * @param quiet When true, skip the loading spinner (used for refresh-after-enrichment).
      */
-    private fun loadTrackDetails() {
+    private fun loadTrackDetails(quiet: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
+            if (!quiet) _uiState.update { it.copy(isLoading = true) }
             try {
                 val details = statsRepository.getTrackDetails(trackId)
                 val history = statsRepository.getTrackListeningHistory(trackId, TimeRange.ALL_TIME)
@@ -90,6 +113,16 @@ class SongDetailsViewModel @Inject constructor(
                         releaseYear = enrichedMetadata?.releaseYear,
                         recordLabel = enrichedMetadata?.recordLabel
                     ) 
+                }
+
+                // On-demand enrichment: cover art missing and track not fully enriched.
+                // Skips already-ENRICHED tracks (those had their chance; periodic retries gaps).
+                if (!hasTriggeredOnDemandEnrichment
+                    && details.track.albumArtUrl.isNullOrBlank()
+                    && enrichedMetadata?.enrichmentStatus != EnrichmentStatus.ENRICHED) {
+                    hasTriggeredOnDemandEnrichment = true
+                    enrichedMetadataRepository.markForReEnrichment(trackId)
+                    EnrichmentWorker.enqueueImmediate(context, trackId)
                 }
             } catch (e: Exception) {
                 _uiState.update { 
