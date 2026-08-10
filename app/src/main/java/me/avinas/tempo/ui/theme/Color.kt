@@ -2,48 +2,86 @@ package me.avinas.tempo.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+// ──────────────────────────────────────────────────────────────
+// Tempo design tokens — single source of truth for every color.
+// No inline hex outside this file. Surfaces are tinted toward the
+// teal anchor hue (never pure black); neutrals carry a faint teal
+// cast so they sit cohesively on the tinted-dark palette.
+// ──────────────────────────────────────────────────────────────
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+// ── Surface ramp (teal-tinted near-blacks, OLED-friendly) ──
+val TempoBackground      = Color(0xFF03100D)
+val TempoSurface         = Color(0xFF071814)
+val TempoSurfaceElevated = Color(0xFF0C211B)
+val TempoSurfaceDialog   = Color(0xFF0E1E1A)
+val TempoSurfaceSunken   = Color(0xFF061311)
+val TempoSurfaceChip     = Color(0xFF0A1714)
+val TempoSurfacePopup    = Color(0xFF0C1A17)
+val TempoSurfaceCard     = Color(0xFF0B1A16)
+val TempoSurfaceRaised   = Color(0xFF102620)
 
-// Purple Theme Colors (Replacing Red)
-val PrimaryPurple = Color(0xFF8B5CF6) // Violet 500
-val SecondaryPurple = Color(0xFF7C3AED) // Violet 600
-val TertiaryPurple = Color(0xFF5B21B6) // Violet 800
-val AccentPurple = Color(0xFFA78BFA) // Violet 400
+// ── Accent ramp (the teal brand) ──
+val TempoPrimary       = Color(0xFF2FDBB8)
+val TempoPrimaryMuted  = Color(0xFF1FA88C)
+val TempoPrimaryDeep   = Color(0xFF167A66)
+val TempoPrimaryDim    = Color(0xFF1A9A80)
+val TempoAccent        = Color(0xFF5EEAD4)
+val TempoAccentBright  = Color(0xFF6DE8CC)
 
-// Custom App Colors (Radical Pitch Black OLED Design)
-val TempoDarkBackground = Color(0xFF000000) // Perfect Pitch Black OLED
-val TempoDarkSurface = Color(0xFF050505) // Barely visible surface distinction
-val TempoPrimary = Color(0xFF8B5CF6) // Shifted from Red to Violet
-val TempoSecondary = Color(0xFF14B8A6) // Teal 500 for calmness
-val TempoError = Color(0xFFF43F5E) // Rose 500
+// ── Text ramp (teal-tinted neutrals) ──
+val TextPrimary     = Color(0xFFEFF4F2)
+val TextSecondary   = Color(0xFFA8B8B2)
+val TextTertiary    = Color(0xFF6B7B76)
+val TextQuaternary  = Color(0xFF3A4A45)
+val Divider         = Color(0xFF1A2A26)
+val TextOnAccent    = Color(0xFF03100D)
 
-// Premium Mesh Gradient Accents (Beautiful Blend of Dark & Violet)
-val MeshGradient1 = Color(0xFF160D29) // Very subtle dark violet
-val MeshGradient2 = Color(0xFF0B0D1E) // Very subtle dark midnight blue
-val MeshGradient3 = Color(0xFF1B0A21) // Very subtle dark fuchsia
+// ── Semantic: success (tracking active, connected) ──
+val TempoSuccess        = Color(0xFF22C55E)
+val TempoSuccessBright  = Color(0xFF4ADE80)
+val TempoSuccessDeep    = Color(0xFF10B981)
 
-// Legacy Support
-val TempoRed = Color(0xFF8B5CF6) // Mapped to PrimaryPurple equivalent to preserve references
+// ── Semantic: error (failures, destructive) ──
+val TempoError      = Color(0xFFEF4444)
+val TempoErrorAlt   = Color(0xFFF43F5E)
+val TempoErrorSoft  = Color(0xFFFCA5A5)
+val TempoErrorDeep  = Color(0xFFB91C1C)
 
-val GlassWhite = Color(0xFFFFFFFF).copy(alpha = 0.08f) // Refined for visibility
-val SubtlerGlass = Color(0xFFFFFFFF).copy(alpha = 0.05f)
+// ── Semantic: warning (paused, caution) ──
+val TempoWarning        = Color(0xFFF59E0B)
+val TempoWarningBright  = Color(0xFFFBBF24)
+val TempoWarningSoft    = Color(0xFFFDBA74)
+val TempoWarningDeep    = Color(0xFFD97706)
 
-// Glow & Accents
-val NeonRed = Color(0xFFA855F7) // Remapped to Electric Purple for neon pops
-val ElectricBlue = Color(0xFF3B82F6)
-val GoldenAmber = Color(0xFFF59E0B)
+// ── Semantic: info (listening time, secondary data) ──
+val TempoInfo    = Color(0xFF3B82F6)
+val TempoInfoSoft = Color(0xFF93C5FD)
+val TempoCyan    = Color(0xFF06B6D4)
+val TempoSky     = Color(0xFF0EA5E9)
 
-// Extended M3 Colors
-val SurfaceVariantDark = Color(0xFF49454F)
-val OnSurfaceVariantDark = Color(0xFFCAC4D0)
-val OutlineDark = Color(0xFF938F99)
+// ── Stat-type tints (used on icons/labels, NOT on values) ──
+val StatPlays   = TempoError
+val StatTime    = TempoInfo
+val StatTracks  = TempoPrimary
+val StatAlbums  = TempoWarning
 
-val SurfaceVariantLight = Color(0xFFE7E0EC)
-val OnSurfaceVariantLight = Color(0xFF49454F)
-val OutlineLight = Color(0xFF79747E)
+// ── External service brand colors (music links) ──
+val SpotifyGreen = Color(0xFF1DB954)
+val LastFmRed    = Color(0xFFFC3C44)
+
+// ── Medal colors (share-card rank — semantic, not decorative) ──
+val GoldPrimary    = Color(0xFFFFD700)
+val GoldLight      = Color(0xFFFBBF24)
+val GoldDark       = Color(0xFFF59E0B)
+val SilverLight    = Color(0xFFE2E8F0)
+val SilverDark     = Color(0xFF94A3B8)
+val BronzeLight    = Color(0xFFCD7F32)
+val BronzeDark     = Color(0xFFB45309)
+
+// ── Temporary aliases (removed after all callsites migrate to new tokens) ──
+val TempoSecondary = TempoPrimaryMuted
+val GlassWhite = TextPrimary.copy(alpha = 0.08f)
+val SubtlerGlass = TextPrimary.copy(alpha = 0.05f)
+val MeshGradient1 = TempoSurfaceElevated
+val MeshGradient2 = TempoSurface
+val MeshGradient3 = TempoSurfaceElevated

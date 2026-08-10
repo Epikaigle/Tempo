@@ -17,7 +17,7 @@ val localProperties = Properties().apply {
 
 android {
     namespace = "me.avinas.tempo"
-    compileSdk = 36
+    compileSdk = 37
 
     signingConfigs {
         create("release") {
@@ -34,9 +34,9 @@ android {
     defaultConfig {
         applicationId = "me.avinas.tempo"
         minSdk = 26
-        targetSdk = 36
-        versionCode = 478
-        versionName = "4.7.8"
+        targetSdk = 37
+        versionCode = 482
+        versionName = "4.8.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         

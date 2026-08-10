@@ -1,9 +1,9 @@
 package me.avinas.tempo.ui.stats
 
 import me.avinas.tempo.ui.details.formatListeningTime
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-import me.avinas.tempo.ui.theme.TempoRed
-import me.avinas.tempo.ui.theme.innerShadow
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Brush
 
@@ -24,7 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -51,10 +51,12 @@ import me.avinas.tempo.data.stats.TopTrack
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.TimePeriodSelector
-import me.avinas.tempo.ui.theme.TempoRed
-import me.avinas.tempo.ui.theme.TempoSecondary
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryMuted
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
+import me.avinas.tempo.ui.theme.TempoSurfaceCard
+import me.avinas.tempo.ui.theme.TempoSurfaceSunken
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -248,7 +250,7 @@ fun StatsScreen(
                 if (uiState.isLoadingMore) {
                     item(key = "loading_more") {
                         Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = TempoRed)
+                            CircularProgressIndicator(color = TempoPrimary)
                         }
                     }
                 }
@@ -264,7 +266,7 @@ fun StatsScreen(
             val headerAlpha by animateFloatAsState(targetValue = if (isScrolled) 1f else 0f, label = "headerAlpha")
             
             Surface(
-                color = TempoDarkBackground.copy(alpha = headerAlpha),
+                color = TempoBackground.copy(alpha = headerAlpha),
                 shadowElevation = if (isScrolled) 4.dp else 0.dp,
                 modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
             ) {
@@ -305,7 +307,7 @@ fun StatsScreen(
             }
 
             if (uiState.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = TempoRed)
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = TempoPrimary)
             }
         }
 
@@ -371,37 +373,32 @@ fun HeroStatItem(item: Any, onNavigate: () -> Unit) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .clickable(onClick = onNavigate),
-        backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.15f), // Reduced from 0.25f for better blend
-        contentPadding = PaddingValues(16.dp) // Reduced from 24.dp
+        backgroundColor = TempoPrimary.copy(alpha = 0.12f),
+        contentPadding = PaddingValues(16.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Big Image
             Box(contentAlignment = Alignment.Center) {
-                // Glow Layer
-                Box(modifier = Modifier.size(90.dp).clip(CircleShape).background(Color(0xFFF59E0B).copy(alpha = 0.25f))) // Reduced glow size
-                
-                // Image Layer
                 if (imageUrl != null) {
                     CachedAsyncImage(
                         imageUrl = imageUrl,
                         contentDescription = null,
                         modifier = Modifier.size(80.dp).clip(CircleShape),
                         contentScale = ContentScale.Crop,
-                        targetSizeDp = 80 // Downsample for faster decode & less memory
+                        targetSizeDp = 80
                     )
                 } else {
-                     Box(modifier = Modifier.size(80.dp).clip(CircleShape).background(Color.DarkGray), contentAlignment = Alignment.Center) {
+                     Box(modifier = Modifier.size(80.dp).clip(CircleShape).background(TempoSurfaceSunken), contentAlignment = Alignment.Center) {
                          Text(title.firstOrNull()?.toString() ?: "?", style = MaterialTheme.typography.headlineMedium, color = Color.White)
                      }
                 }
             }
-            
+
             Spacer(modifier = Modifier.width(20.dp))
-            
+
             Column(modifier = Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelMedium, color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
+                Text(label, style = MaterialTheme.typography.labelMedium, color = TempoPrimary, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
@@ -451,41 +448,26 @@ fun GlassStatItem(rank: Int, item: Any, onClick: () -> Unit) {
         else -> 0L
     }
 
-    val (tintColor, bgAlpha) = when(rank) {
-        1 -> Color(0xFFF59E0B) to 0.15f // Gold
-        2 -> Color(0xFFE879F9) to 0.12f // Dusty Orchid
-        3 -> Color(0xFFB45309) to 0.12f // Bronze
-        else -> GlassStatItemPalette[(rank - 4) % GlassStatItemPalette.size] to 0.15f // Cycle through palette
-    }
-    
-    // Smart Composition: Rank 1-3 get 3D/HighProminence, Rest get 2D/LowProminence
-    // Since this composable handles rank 2+, we check against 3.
     val variant = if (rank <= 3) me.avinas.tempo.ui.components.GlassCardVariant.HighProminence else me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
 
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .clickable(onClick = onClick)
-            .innerShadow(
-                color = if (rank <= 3) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.2f),
-                cornersRadius = 24.dp,
-                spread = 1.dp,
-                blur = 2.dp
-            ),
-        backgroundColor = tintColor.copy(alpha = bgAlpha), // Increased alpha
-        contentPadding = PaddingValues(12.dp), // Slightly tighter padding
+            .clickable(onClick = onClick),
+        backgroundColor = TempoSurfaceCard,
+        contentPadding = PaddingValues(12.dp),
         variant = variant
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "#$rank",
-                style = MaterialTheme.typography.titleMedium, // Reduced from Large
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (rank <= 3) tintColor else Color.White.copy(alpha = 0.7f),
+                color = if (rank == 2) TempoPrimary else if (rank == 3) TempoPrimaryMuted else TextSecondary,
                 modifier = Modifier.width(36.dp)
             )
-            
+
             Box(
                 modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.08f)),
                 contentAlignment = Alignment.Center
@@ -496,33 +478,25 @@ fun GlassStatItem(rank: Int, item: Any, onClick: () -> Unit) {
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
-                        targetSizeDp = 48 // Downsample for faster decode & less memory
+                        targetSizeDp = 48
                     )
                 } else {
-                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.5f))
+                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.5f))
                 }
             }
-            
+
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f), maxLines = 1)
             }
-            
+
             Text(formatListeningTime(timeMs), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f))
         }
     }
 }
 
-// Top-level palette to avoid allocation on every recomposition
-private val GlassStatItemPalette = listOf(
-    Color(0xFFC026D3), // Fuchsia 600 (Orchid)
-    Color(0xFFDB2777), // Pink 600 (Rose)
-    Color(0xFFF59E0B), // Gold
-    Color(0xFF9333EA), // Purple 600
-    Color(0xFFBE185D), // Pink 700 (Raspberry)
-    Color(0xFFE879F9)  // Orchid
-)
+
 
 @Composable
 fun EmptyStatsState() {
@@ -537,7 +511,7 @@ fun EmptyStatsState() {
     }
 }
 
-private val MutedFuchsia = Color(0xFFCE58E0)
+private val MutedFuchsia = TempoPrimary
 
 @Composable
 fun StatsTabSelector(selectedTab: StatsTab, onTabSelected: (StatsTab) -> Unit) {
@@ -554,7 +528,7 @@ fun StatsTabSelector(selectedTab: StatsTab, onTabSelected: (StatsTab) -> Unit) {
         StatsTab.entries.forEach { tab ->
             val isSelected = tab == selectedTab
             val backgroundColor by animateColorAsState(if (isSelected) MutedFuchsia else Color.Transparent, label = "tabBackgroundColor")
-            val contentColor by animateColorAsState(if (isSelected) Color.White else Color(0xFFE5E7EB), label = "tabContentColor")
+            val contentColor by animateColorAsState(if (isSelected) Color.White else TextSecondary, label = "tabContentColor")
             
             Box(
                 modifier = Modifier
@@ -595,7 +569,7 @@ fun SortBySelector(
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = stringResource(R.string.stats_sort_by), style = MaterialTheme.typography.bodySmall, color = Color(0xFFCAC4D0))
+        Text(text = stringResource(R.string.stats_sort_by), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
         Box {
             TextButton(
                 onClick = { expanded = true },
@@ -609,7 +583,7 @@ fun SortBySelector(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Medium,
-                    color = TempoRed
+                    color = TempoPrimary
                 )
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -621,7 +595,7 @@ fun SortBySelector(
                             SortBy.TOTAL_TIME -> stringResource(R.string.stats_sort_total_time)
                         }, fontWeight = if (sortBy == selectedSortBy) FontWeight.Bold else FontWeight.Normal) },
                         onClick = { expanded = false; onSortBySelected(sortBy) },
-                        leadingIcon = if (sortBy == selectedSortBy) { { Text("✓", color = TempoRed) } } else null
+                        leadingIcon = if (sortBy == selectedSortBy) { { Text("✓", color = TempoPrimary) } } else null
                     )
                 }
             }

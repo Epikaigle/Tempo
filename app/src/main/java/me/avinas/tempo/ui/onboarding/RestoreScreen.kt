@@ -63,8 +63,17 @@ import me.avinas.tempo.ui.youtube.YouTubeMusicImportViewModel
 import me.avinas.tempo.ui.youtube.YouTubeMusicImportUiState
 import me.avinas.tempo.data.youtube.YouTubeMusicImportService
 import androidx.compose.material.icons.filled.VideoLibrary
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.SpotifyGreen
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoSuccess
+import me.avinas.tempo.ui.theme.TempoSurfaceSunken
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.TempoError
 import me.avinas.tempo.ui.utils.adaptiveSizeByCategory
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
 import me.avinas.tempo.utils.FormatUtils.formatBytes
@@ -267,7 +276,7 @@ fun RestoreScreen(
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = Color.White
+                                tint = TextPrimary
                             )
                         }
                         Spacer(modifier = Modifier.weight(1f))
@@ -279,14 +288,14 @@ fun RestoreScreen(
                         text = "Import & Restore",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     
                     Text(
                         text = "Import from other services or restore your backup.",
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center,
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = TextSecondary,
                         modifier = Modifier.padding(top = rememberScreenHeightPercentage(0.01f))
                     )
         
@@ -296,7 +305,7 @@ fun RestoreScreen(
                     Text(
                         text = "Import",
                         style = MaterialTheme.typography.titleMedium,
-                        color = Color.White.copy(alpha = 0.9f),
+                        color = TextPrimary,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -361,7 +370,7 @@ fun RestoreScreen(
                     Text(
                         text = "Restore",
                         style = MaterialTheme.typography.titleMedium,
-                        color = Color.White.copy(alpha = 0.9f),
+                        color = TextPrimary,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -385,13 +394,13 @@ fun RestoreScreen(
                                 Box(
                                 modifier = Modifier
                                     .size(adaptiveSizeByCategory(48.dp, 44.dp, 40.dp))
-                                    .background(Color(0xFF4285F4).copy(alpha = 0.2f), CircleShape),
+                                    .background(TempoInfo.copy(alpha = 0.2f), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         Icons.Default.Cloud,
                                         contentDescription = null,
-                                        tint = Color(0xFF4285F4)
+                                        tint = TempoInfo
                                     )
                                 }
                                 
@@ -401,11 +410,11 @@ fun RestoreScreen(
                                     text = "Google Drive",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = TextPrimary
                                 )
                             }
         
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            HorizontalDivider(color = Divider)
         
                             if (!isSignedIn) {
                                 Box(
@@ -416,7 +425,7 @@ fun RestoreScreen(
                                 ) {
                                     Text(
                                         text = "Connect Google Account",
-                                        color = Color(0xFF4285F4),
+                                        color = TempoInfo,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.align(Alignment.Center)
                                     )
@@ -441,13 +450,13 @@ fun RestoreScreen(
                                                  Column(modifier = Modifier.weight(1f)) {
                                                      Text(
                                                         text = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(backup.createdAt)),
-                                                        color = Color.White,
+                                                        color = TextPrimary,
                                                         style = MaterialTheme.typography.bodyMedium,
                                                         fontSize = adaptiveTextUnitByCategory(16.sp, 15.sp, 14.sp)
                                                      )
                                                      Text(
                                                         text = formatBytes(backup.sizeBytes) + (backup.deviceName?.let { " • $it" } ?: ""),
-                                                        color = Color.White.copy(alpha = 0.6f),
+                                                        color = TextTertiary,
                                                         style = MaterialTheme.typography.bodySmall,
                                                         fontSize = adaptiveTextUnitByCategory(14.sp, 13.sp, 12.sp)
                                                      )
@@ -455,18 +464,18 @@ fun RestoreScreen(
                                                  Icon(
                                                      Icons.Default.CloudDownload,
                                                      contentDescription = "Restore",
-                                                     tint = TempoRed
+                                                     tint = TempoPrimary
                                                  )
                                              }
                                              if (index < driveBackups.lastIndex) {
-                                                 HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                                                 HorizontalDivider(color = TempoSurfaceSunken)
                                              }
                                          }
                                      }
                                  } else {
                                      Text(
                                          text = "No backups found",
-                                         color = Color.White.copy(alpha = 0.5f),
+                                         color = TextTertiary,
                                          modifier = Modifier.padding(16.dp).align(Alignment.CenterHorizontally),
                                          style = MaterialTheme.typography.bodyMedium
                                      )
@@ -491,13 +500,13 @@ fun RestoreScreen(
                             Box(
                                 modifier = Modifier
                                     .size(adaptiveSizeByCategory(48.dp, 44.dp, 40.dp))
-                                    .background(Color.White.copy(alpha = 0.1f), CircleShape),
+                                    .background(Divider, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     Icons.Default.FolderOpen,
                                     contentDescription = null,
-                                    tint = Color.White
+                                    tint = TextPrimary
                                 )
                             }
                             
@@ -508,12 +517,12 @@ fun RestoreScreen(
                                     text = "Restore from File",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = TextPrimary
                                 )
                                 Text(
                                     text = "Select a .zip backup file",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.6f)
+                                    color = TextTertiary
                                 )
                             }
                         }
@@ -540,14 +549,14 @@ fun RestoreScreen(
                             Icon(
                                 imageVector = Icons.Default.Info,
                                 contentDescription = null,
-                                tint = Color(0xFF1DB954),
+                                tint = SpotifyGreen,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = "You can import Spotify data later from Settings",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.8f),
+                                color = TextPrimary,
                                 modifier = Modifier.weight(1f)
                             )
                             IconButton(
@@ -557,7 +566,7 @@ fun RestoreScreen(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Dismiss",
-                                    tint = Color.White.copy(alpha = 0.5f),
+                                    tint = TextTertiary,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -578,7 +587,7 @@ fun RestoreScreen(
                             .fillMaxWidth()
                             .height(scaledSize(54.dp, 0.85f, 1.1f)),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(alpha = 0.1f),
+                            containerColor = Divider,
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(16.dp)
@@ -705,7 +714,7 @@ fun LastFmImportCard(
     onFinishImport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val lastFmPurple = Color(0xFF8B5CF6) // Last.fm red
+    val lastFmPurple = TempoPrimary // Last.fm red
     var username by remember { mutableStateOf("") }
     var isExpanded by remember { mutableStateOf(false) }
     
@@ -767,12 +776,12 @@ fun LastFmImportCard(
                         text = "Last.fm",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     Text(
                         text = "Import years of listening history",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = TextTertiary
                     )
                 }
                 
@@ -784,7 +793,7 @@ fun LastFmImportCard(
                         else 
                             Icons.Default.KeyboardArrowDown,
                         contentDescription = if (isExpanded) "Collapse" else "Expand",
-                        tint = Color.White.copy(alpha = 0.6f)
+                        tint = TextTertiary
                     )
                 }
             }
@@ -792,7 +801,7 @@ fun LastFmImportCard(
             // Expandable content
             AnimatedVisibility(visible = isExpanded) {
                 Column {
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    HorizontalDivider(color = Divider)
                     
                     when {
                         // Import complete
@@ -837,7 +846,7 @@ fun LastFmImportCard(
                                     Text(
                                         text = "Discovering your account...",
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.White.copy(alpha = 0.7f)
+                                        color = TextSecondary
                                     )
                                 }
                             }
@@ -883,13 +892,13 @@ private fun LastFmUsernameInput(
                 { Text(error, color = MaterialTheme.colorScheme.error) }
             } else null,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = Color(0xFF8B5CF6),
-                unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
-                focusedLabelColor = Color(0xFF8B5CF6),
-                unfocusedLabelColor = Color.White.copy(alpha = 0.7f),
-                cursorColor = Color(0xFF8B5CF6)
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary,
+                focusedBorderColor = TempoPrimary,
+                unfocusedBorderColor = TextTertiary,
+                focusedLabelColor = TempoPrimary,
+                unfocusedLabelColor = TextSecondary,
+                cursorColor = TempoPrimary
             ),
             modifier = Modifier.fillMaxWidth()
         )
@@ -900,8 +909,8 @@ private fun LastFmUsernameInput(
             onClick = onSubmit,
             enabled = username.isNotBlank(),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF8B5CF6),
-                disabledContainerColor = Color(0xFF8B5CF6).copy(alpha = 0.5f)
+                containerColor = TempoPrimary,
+                disabledContainerColor = TempoPrimary.copy(alpha = 0.5f)
             ),
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp)
@@ -925,14 +934,14 @@ private fun LastFmTierSelection(
         Text(
             text = "Welcome, ${discovery.username}!",
             style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
+            color = TextPrimary,
             fontWeight = FontWeight.Bold
         )
         
         Text(
             text = "${numberFormat.format(discovery.totalScrobbles)} total scrobbles",
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.7f)
+            color = TextSecondary
         )
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -940,12 +949,12 @@ private fun LastFmTierSelection(
         Text(
             text = "Your complete history is imported.",
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.9f)
+            color = TextPrimary
         )
         Text(
             text = "Choose which tracks power your leaderboards:",
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.6f)
+            color = TextTertiary
         )
         
         Spacer(modifier = Modifier.height(12.dp))
@@ -985,7 +994,7 @@ private fun LastFmTierSelection(
         Text(
             text = "💡 All your tracks are saved. This just affects chart speed.",
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.5f),
+            color = TextTertiary,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
@@ -998,7 +1007,7 @@ private fun LastFmTierSelection(
         ) {
             Text(
                 text = "Use different account",
-                color = Color.White.copy(alpha = 0.6f)
+                color = TextTertiary
             )
         }
     }
@@ -1016,7 +1025,7 @@ private fun LastFmTierOption(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                color = if (isRecommended) Color(0xFF8B5CF6).copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f),
+                color = if (isRecommended) TempoPrimary.copy(alpha = 0.15f) else TempoSurfaceSunken,
                 shape = RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onClick)
@@ -1031,13 +1040,13 @@ private fun LastFmTierOption(
             Text(
                 text = name,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White,
+                color = TextPrimary,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.6f)
+                color = TextTertiary
             )
         }
         
@@ -1045,7 +1054,7 @@ private fun LastFmTierOption(
             Box(
                 modifier = Modifier
                     .background(
-                        color = Color(0xFF8B5CF6).copy(alpha = 0.3f),
+                        color = TempoPrimary.copy(alpha = 0.3f),
                         shape = RoundedCornerShape(4.dp)
                     )
                     .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1053,7 +1062,7 @@ private fun LastFmTierOption(
                 Text(
                     text = "Recommended",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF8B5CF6)
+                    color = TempoPrimary
                 )
             }
         }
@@ -1066,7 +1075,7 @@ private fun LastFmImportProgress(
     onCancel: () -> Unit
 ) {
     val numberFormat = remember { java.text.NumberFormat.getNumberInstance(java.util.Locale.getDefault()) }
-    val lastFmRed = Color(0xFF8B5CF6)
+    val lastFmRed = TempoPrimary
     
     // Extract progress details including tier info
     val progressData = when (progress) {
@@ -1102,14 +1111,14 @@ private fun LastFmImportProgress(
                 progress = { (progressData.percent / 100f).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxSize(),
                 color = lastFmRed,
-                trackColor = Color.White.copy(alpha = 0.15f),
+                trackColor = Divider,
                 strokeWidth = 6.dp
             )
             
             Text(
                 text = "${progressData.percent}%",
                 style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
+                color = TextPrimary,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -1120,7 +1129,7 @@ private fun LastFmImportProgress(
         Text(
             text = progressData.phase,
             style = MaterialTheme.typography.titleSmall,
-            color = Color.White,
+            color = TextPrimary,
             fontWeight = FontWeight.SemiBold
         )
         
@@ -1130,14 +1139,14 @@ private fun LastFmImportProgress(
             Text(
                 text = "${numberFormat.format(progressData.current)} of ${numberFormat.format(progressData.total)} scrobbles",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.7f)
+                color = TextSecondary
             )
         } else {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "This may take a few minutes",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.6f)
+                color = TextTertiary
             )
         }
         
@@ -1149,7 +1158,7 @@ private fun LastFmImportProgress(
             ImportStatItem(
                 label = "Imported",
                 value = numberFormat.format(progressData.eventsCreated),
-                color = Color(0xFF4CAF50)
+                color = TempoSuccess
             )
         } else {
             // Tiered import: show active vs archived breakdown
@@ -1160,12 +1169,12 @@ private fun LastFmImportProgress(
                 ImportStatItem(
                     label = "Active",
                     value = numberFormat.format(progressData.eventsCreated),
-                    color = Color(0xFF4CAF50) // Green for active tracks
+                    color = TempoSuccess // Green for active tracks
                 )
                 ImportStatItem(
                     label = "Archived",
                     value = numberFormat.format(progressData.archived),
-                    color = Color(0xFF9E9E9E) // Gray for archived
+                    color = TextTertiary // Gray for archived
                 )
             }
         }
@@ -1176,7 +1185,7 @@ private fun LastFmImportProgress(
         TextButton(onClick = onCancel) {
             Text(
                 text = "Cancel",
-                color = Color.White.copy(alpha = 0.6f)
+                color = TextTertiary
             )
         }
     }
@@ -1211,7 +1220,7 @@ private fun ImportStatItem(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.5f)
+            color = TextTertiary
         )
     }
 }
@@ -1232,7 +1241,7 @@ private fun LastFmImportComplete(
         Icon(
             imageVector = Icons.Default.Check,
             contentDescription = null,
-            tint = Color(0xFF27AE60),
+            tint = TempoSuccess,
             modifier = Modifier.size(48.dp)
         )
         
@@ -1241,14 +1250,14 @@ private fun LastFmImportComplete(
         Text(
             text = "Import Complete!",
             style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
+            color = TextPrimary,
             fontWeight = FontWeight.Bold
         )
         
         Text(
             text = "${numberFormat.format(result.activeSetCount + result.archivedCount)} scrobbles imported",
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.7f)
+            color = TextSecondary
         )
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -1256,7 +1265,7 @@ private fun LastFmImportComplete(
         Button(
             onClick = onDone,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF8B5CF6)
+                containerColor = TempoPrimary
             ),
             shape = RoundedCornerShape(12.dp)
         ) {
@@ -1274,7 +1283,7 @@ fun SpotifyJsonImportCard(
     onFinish: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val spotifyGreen = Color(0xFF1DB954)
+    val spotifyGreen = SpotifyGreen
     var isExpanded by remember { mutableStateOf(false) }
     var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
@@ -1330,12 +1339,12 @@ fun SpotifyJsonImportCard(
                         text = "Spotify Data Export",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     Text(
                         text = "Import from JSON files",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = TextTertiary
                     )
                 }
 
@@ -1343,7 +1352,7 @@ fun SpotifyJsonImportCard(
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                         contentDescription = if (isExpanded) "Collapse" else "Expand",
-                        tint = Color.White.copy(alpha = 0.6f)
+                        tint = TextTertiary
                     )
                 }
             }
@@ -1358,7 +1367,7 @@ fun SpotifyJsonImportCard(
                                     withLink(
                                         LinkAnnotation.Url(
                                             url = "https://spotify.com/account/privacy",
-                                            styles = TextLinkStyles(style = SpanStyle(color = Color(0xFF1DB954), textDecoration = TextDecoration.Underline))
+                                            styles = TextLinkStyles(style = SpanStyle(color = SpotifyGreen, textDecoration = TextDecoration.Underline))
                                         )
                                     ) {
                                         append("spotify.com/account/privacy")
@@ -1366,7 +1375,7 @@ fun SpotifyJsonImportCard(
                                     append(", then select the JSON files. You can also do this later from Settings.")
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = TextSecondary
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -1419,7 +1428,7 @@ fun SpotifyJsonImportCard(
                             Text(
                                 text = message,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = TextSecondary
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1428,7 +1437,7 @@ fun SpotifyJsonImportCard(
                                 progress = { progress },
                                 modifier = Modifier.fillMaxWidth(),
                                 color = spotifyGreen,
-                                trackColor = Color.White.copy(alpha = 0.1f)
+                                trackColor = Divider
                             )
                         }
 
@@ -1437,7 +1446,7 @@ fun SpotifyJsonImportCard(
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
-                                tint = Color(0xFF27AE60),
+                                tint = TempoSuccess,
                                 modifier = Modifier.size(40.dp)
                             )
 
@@ -1446,14 +1455,14 @@ fun SpotifyJsonImportCard(
                             Text(
                                 text = "Import Complete!",
                                 style = MaterialTheme.typography.titleSmall,
-                                color = Color.White,
+                                color = TextPrimary,
                                 fontWeight = FontWeight.Bold
                             )
 
                             Text(
                                 text = "${result.tracksImported} tracks, ${result.eventsCreated} events",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = TextSecondary
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -1471,7 +1480,7 @@ fun SpotifyJsonImportCard(
                             Icon(
                                 imageVector = Icons.Default.Error,
                                 contentDescription = null,
-                                tint = Color(0xFFE74C3C),
+                                tint = TempoError,
                                 modifier = Modifier.size(40.dp)
                             )
 
@@ -1480,7 +1489,7 @@ fun SpotifyJsonImportCard(
                             Text(
                                 text = uiState.message,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = TextSecondary
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -1525,7 +1534,7 @@ fun YouTubeMusicImportCard(
     onFinish: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val youTubeRed = Color(0xFFFF0000)
+    val youTubeRed = TempoError
     var isExpanded by remember { mutableStateOf(false) }
     var selectedUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
@@ -1590,12 +1599,12 @@ fun YouTubeMusicImportCard(
                         text = "YouTube Music Takeout",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     Text(
                         text = "Import from YouTube Takeout (ZIP or JSON)",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f)
+                        color = TextTertiary
                     )
                 }
 
@@ -1603,7 +1612,7 @@ fun YouTubeMusicImportCard(
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                         contentDescription = if (isExpanded) "Collapse" else "Expand",
-                        tint = Color.White.copy(alpha = 0.6f)
+                        tint = TextTertiary
                     )
                 }
             }
@@ -1626,7 +1635,7 @@ fun YouTubeMusicImportCard(
                                     append(", deselect all → select only \"YouTube and YouTube Music\" → only \"history\" → JSON format. Download the ZIP and select it here directly. You can also do this later from Settings.")
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = TextSecondary
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -1661,7 +1670,7 @@ fun YouTubeMusicImportCard(
                             Text(
                                 text = message,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = TextSecondary
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1670,7 +1679,7 @@ fun YouTubeMusicImportCard(
                                 progress = { progress },
                                 modifier = Modifier.fillMaxWidth(),
                                 color = youTubeRed,
-                                trackColor = Color.White.copy(alpha = 0.1f)
+                                trackColor = Divider
                             )
                         }
 
@@ -1679,7 +1688,7 @@ fun YouTubeMusicImportCard(
                             Icon(
                                 imageVector = Icons.Default.Check,
                                 contentDescription = null,
-                                tint = Color(0xFF27AE60),
+                                tint = TempoSuccess,
                                 modifier = Modifier.size(40.dp)
                             )
 
@@ -1688,14 +1697,14 @@ fun YouTubeMusicImportCard(
                             Text(
                                 text = "Import Complete!",
                                 style = MaterialTheme.typography.titleSmall,
-                                color = Color.White,
+                                color = TextPrimary,
                                 fontWeight = FontWeight.Bold
                             )
 
                             Text(
                                 text = "${result.tracksImported} tracks, ${result.eventsCreated} events",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = TextSecondary
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1703,7 +1712,7 @@ fun YouTubeMusicImportCard(
                             Text(
                                 text = "Continuing automatically...",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.5f)
+                                color = TextTertiary
                             )
                         }
 
@@ -1711,7 +1720,7 @@ fun YouTubeMusicImportCard(
                             Icon(
                                 imageVector = Icons.Default.Error,
                                 contentDescription = null,
-                                tint = Color(0xFFE74C3C),
+                                tint = TempoError,
                                 modifier = Modifier.size(40.dp)
                             )
 
@@ -1720,7 +1729,7 @@ fun YouTubeMusicImportCard(
                             Text(
                                 text = uiState.message,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = TextSecondary
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))

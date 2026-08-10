@@ -3,6 +3,7 @@ package me.avinas.tempo.data.repository
 import android.util.Log
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.dao.ArtistDao
+import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.dao.UserKnownArtistDao
 import me.avinas.tempo.data.local.entities.Artist
 import me.avinas.tempo.data.local.entities.UserKnownArtist
@@ -22,8 +23,10 @@ import javax.inject.Singleton
 @Singleton
 class ArtistRenameRepository @Inject constructor(
     private val artistDao: ArtistDao,
+    private val trackDao: TrackDao,
     private val userKnownArtistDao: UserKnownArtistDao,
     private val artistMergeRepository: ArtistMergeRepository,
+    private val statsRepository: StatsRepository,
     private val database: AppDatabase
 ) {
     companion object {
@@ -158,6 +161,18 @@ class ArtistRenameRepository @Inject constructor(
                 artistDao.update(updatedArtist)
                 Log.d(TAG, "Renamed artist to '$trimmedName'")
 
+                // CRITICAL: keep the denormalized tracks.artist strings in sync.
+                // The artist view reads the Artist entity, but track views and
+                // stats aggregation use tracks.artist — without this the track
+                // view keeps showing the OLD name after a rename.
+                // Always run the exact replace (also fixes casing-only renames).
+                val exactReplaced = trackDao.replaceArtistName(artist.name, trimmedName)
+                var multiReplaced = 0
+                if (!artist.name.equals(trimmedName, ignoreCase = true)) {
+                    multiReplaced = trackDao.replaceArtistNameInMultiArtist(artist.name, trimmedName)
+                }
+                Log.d(TAG, "Updated track artist strings: $exactReplaced exact, $multiReplaced multi-artist")
+
                 // Merge any split fragment artists into the renamed artist
                 for (mergeId in mergeArtistIds) {
                     val success = artistMergeRepository.mergeArtists(
@@ -179,6 +194,10 @@ class ArtistRenameRepository @Inject constructor(
 
             // Update the in-memory parser set
             ArtistParser.addUserKnownBand(trimmedName)
+
+            // Invalidate stats cache so all views pick up the new name
+            // (a pure rename without merges does not invalidate otherwise)
+            statsRepository.invalidateCache()
 
             targetArtistId
         } catch (e: Exception) {

@@ -12,4 +12,8 @@ interface PreferencesRepository {
     suspend fun updateLastMonthlyReminderShown(date: String)
     suspend fun updateLastYearlyReminderShown(date: String)
     suspend fun updateLastAllTimeReminderShown(date: String)
+
+    // Spotlight story ring: persist the period key the user just viewed so the
+    // ring stays gray until a new story period unlocks.
+    suspend fun updateLastViewedSpotlightPeriod(periodKey: String)
 }

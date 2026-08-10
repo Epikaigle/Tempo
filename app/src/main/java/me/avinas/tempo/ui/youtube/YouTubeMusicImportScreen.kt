@@ -60,8 +60,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import me.avinas.tempo.data.youtube.YouTubeMusicImportService
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
+import me.avinas.tempo.ui.theme.TempoError
+import me.avinas.tempo.ui.theme.TempoWarning
 
-private val YouTubeRed = Color(0xFFFF0000)
+private val YouTubeRed = TempoError
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -397,7 +399,7 @@ private fun CompletedContent(
                 Text(
                     text = "${result.errors.size} warnings",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFFFA500)
+                    color = TempoWarning
                 )
             }
 
@@ -450,7 +452,7 @@ private fun ErrorContent(
             Icon(
                 imageVector = Icons.Default.Error,
                 contentDescription = null,
-                tint = Color(0xFFE74C3C),
+                tint = TempoError,
                 modifier = Modifier.size(56.dp)
             )
 

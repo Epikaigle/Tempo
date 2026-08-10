@@ -94,7 +94,7 @@ class HomeViewModel @Inject constructor(
                 }
         }
         
-        // Listen for preference changes (e.g. Gamification toggle)
+        // Listen for preference changes (e.g. Gamification toggle, story-ring viewed state)
         viewModelScope.launch {
             var lastGamificationState: Boolean? = null
             preferencesRepository.preferences().collect { prefs ->
@@ -103,7 +103,18 @@ class HomeViewModel @Inject constructor(
                     loadData() // Reload if toggle changed
                 }
                 lastGamificationState = state
+                _uiState.update { it.copy(lastViewedSpotlightPeriod = prefs?.lastViewedSpotlightPeriod) }
             }
+        }
+    }
+
+    /**
+     * Persist the period key of the spotlight story the user just opened so the
+     * home ring turns gray (viewed) until a new story period unlocks.
+     */
+    fun markSpotlightViewed(periodKey: String) {
+        viewModelScope.launch {
+            preferencesRepository.updateLastViewedSpotlightPeriod(periodKey)
         }
     }
 
@@ -239,6 +250,9 @@ class HomeViewModel @Inject constructor(
                 val isNewUser = earliestTimestamp == null
                 
                 _uiState.update {
+                    val showRate = it.showRateAppPopup || shouldShowRateApp()
+                    val newShareNudge =
+                        if (!showRate && !it.showShareNudge && it.shareNudgeType == null) shouldShowShareNudge() else null
                     it.copy(
                         isLoading = false,
                         listeningOverview = overview,
@@ -260,7 +274,11 @@ class HomeViewModel @Inject constructor(
                         // any subsequent data reload (e.g. time-range change) would call
                         // shouldShowRateApp() which now sees the 3-day cooldown has just been
                         // written and returns false, silently dismissing the popup mid-interaction.
-                        showRateAppPopup = it.showRateAppPopup || shouldShowRateApp(),
+                        showRateAppPopup = showRate,
+                        // Never stack popups: the share nudge only evaluates when the
+                        // rate popup isn't up.
+                        showShareNudge = it.showShareNudge || newShareNudge != null,
+                        shareNudgeType = it.shareNudgeType ?: newShareNudge,
                         isGamificationEnabled = isGamificationEnabled,
                         // Today's Listen Widget
                         todayOverview = todayOverview,
@@ -315,6 +333,65 @@ class HomeViewModel @Inject constructor(
             prefs[longPreferencesKey("rate_app_last_shown")] = System.currentTimeMillis()
         }
         return true
+    }
+
+    /**
+     * Dynamic share-nudge algorithm. Promotes the share feature on app open to
+     * users who have something worth sharing but haven't discovered sharing.
+     * Returns which nudge to show, or null when any gate fails.
+     */
+    private suspend fun shouldShowShareNudge(): me.avinas.tempo.ui.home.components.ShareNudgeType? {
+        // Cheapest gates first, same pattern as shouldShowRateApp().
+        val preferences = context.dataStore.data.first()
+
+        // 1. Dismissed too many times — permanent suppression.
+        val dismissCount = preferences[intPreferencesKey("share_nudge_dismiss_count")] ?: 0
+        if (dismissCount >= 3) return null
+
+        // 2. Cooldown: at most once every 7 days.
+        val lastShown = preferences[longPreferencesKey("share_nudge_last_shown")] ?: 0L
+        if (System.currentTimeMillis() - lastShown <= 7 * 24 * 60 * 60 * 1000L) return null
+
+        // 3. User shared in the last 14 days — they already know the feature.
+        val lastShared = preferences[longPreferencesKey("share_last_success")] ?: 0L
+        if (lastShared > 0L && System.currentTimeMillis() - lastShared <= 14 * 24 * 60 * 60 * 1000L) return null
+
+        // 4. Engagement: enough real plays for a card/story worth sharing.
+        if (listeningEventDao.getRealPlayCount() < 20) return null
+
+        context.dataStore.edit { prefs ->
+            prefs[longPreferencesKey("share_nudge_last_shown")] = System.currentTimeMillis()
+        }
+
+        // Dynamic targeting: align the nudge with the freshest recap period,
+        // otherwise promote the always-available stats card.
+        val today = java.time.LocalDate.now()
+        return when {
+            today.dayOfMonth == today.lengthOfMonth() -> me.avinas.tempo.ui.home.components.ShareNudgeType.MONTHLY
+            today.dayOfWeek == java.time.DayOfWeek.SUNDAY -> me.avinas.tempo.ui.home.components.ShareNudgeType.WEEKLY
+            else -> me.avinas.tempo.ui.home.components.ShareNudgeType.STATS
+        }
+    }
+
+    fun onShareNudgeDismissed() {
+        _uiState.update { it.copy(showShareNudge = false, shareNudgeType = null) }
+        viewModelScope.launch {
+            context.dataStore.edit { prefs ->
+                val current = prefs[intPreferencesKey("share_nudge_dismiss_count")] ?: 0
+                prefs[intPreferencesKey("share_nudge_dismiss_count")] = current + 1
+            }
+        }
+    }
+
+    fun onShareNudgeAction() {
+        _uiState.update { it.copy(showShareNudge = false, shareNudgeType = null) }
+        // CTA tap = engagement: reset the dismiss counter so the nudge can return
+        // after the normal cooldown.
+        viewModelScope.launch {
+            context.dataStore.edit { prefs ->
+                prefs[intPreferencesKey("share_nudge_dismiss_count")] = 0
+            }
+        }
     }
     
     /**
@@ -690,6 +767,10 @@ data class HomeUiState(
     val userName: String? = null,
     val profileImagePath: String? = null,
     val showRateAppPopup: Boolean = false,
+
+    // Share Nudge (dynamic promotion of the share feature)
+    val showShareNudge: Boolean = false,
+    val shareNudgeType: me.avinas.tempo.ui.home.components.ShareNudgeType? = null,
     
     // Spotlight Story Reminder
     val showSpotlightReminder: Boolean = false,
@@ -698,6 +779,10 @@ data class HomeUiState(
     
     // Spotlight story top track (correct period, with leeway)
     val spotlightTopTrack: me.avinas.tempo.data.stats.TopTrack? = null,
+
+    // Spotlight story ring: period key of the last story the user opened.
+    // When this equals the current unlocked period key the ring renders gray.
+    val lastViewedSpotlightPeriod: String? = null,
     
     // Today's Listen Widget
     val todayOverview: me.avinas.tempo.data.stats.ListeningOverview? = null,

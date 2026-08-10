@@ -1,7 +1,5 @@
 package me.avinas.tempo.ui.components
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.border
@@ -24,100 +22,51 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.R
+import me.avinas.tempo.data.stats.AlbumDetails
 import me.avinas.tempo.data.stats.ArtistDetails
+import me.avinas.tempo.data.stats.AudioFeaturesStats
 import me.avinas.tempo.data.stats.TrackDetails
+import kotlin.math.roundToInt
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.GraphicEq
+import me.avinas.tempo.ui.theme.BronzeLight
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.GoldPrimary
+import me.avinas.tempo.ui.theme.SilverLight
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoAccentBright
+import me.avinas.tempo.ui.theme.TempoError
+import me.avinas.tempo.ui.theme.TempoErrorAlt
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoWarning
+import me.avinas.tempo.ui.theme.TempoWarningBright
+import me.avinas.tempo.ui.theme.TempoWarningDeep
+import me.avinas.tempo.ui.theme.TempoWarningSoft
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 
 /**
  * Common background for share cards to ensure brand consistency.
+ * When [theme] is provided, the backdrop is rendered via [ShareBackdrop] so the card
+ * picks up the theme's structural background (not just colors). Otherwise the classic
+ * MIDNIGHT look is used.
  */
 @Composable
 fun ShareCardBackground(
     imageUrl: String? = null,
+    theme: ShareTheme = ShareTheme.MIDNIGHT,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
-    // Deep Ocean themed gradient
-    Box(
-        modifier = modifier
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        TempoDarkBackground, // Slate 900
-                        Color(0xFF1E1B4B), // Indigo 950
-                        Color(0xFF312E81)  // Indigo 900
-                    )
-                )
-            )
-    ) {
-        // Blurred dynamic background image if available
-        if (!imageUrl.isNullOrBlank()) {
-            CachedAsyncImage(
-                imageUrl = imageUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                allowHardware = false,
-                blurRadius = 48.dp
-            )
-            // Overlay gradient to ensure high readability and contrast
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = 0.55f),
-                                Color(0xFF0F0F12).copy(alpha = 0.8f),
-                                Color(0xFF0D0D10).copy(alpha = 0.95f)
-                            )
-                        )
-                    )
-            )
-        }
-
-        // Decorative ambient glow
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 50.dp, y = (-50).dp)
-                .size(300.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFFA855F7).copy(alpha = 0.15f),
-                            Color.Transparent
-                        )
-                    ),
-                    shape = CircleShape
-                )
-        )
-        
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .offset(x = (-50).dp, y = 50.dp)
-                .size(300.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFFEC4899).copy(alpha = 0.15f),
-                            Color.Transparent
-                        )
-                    ),
-                    shape = CircleShape
-                )
-        )
-        
+    ShareBackdrop(theme = theme, imageUrl = imageUrl, modifier = modifier) {
         content()
-        
         // Minimal Branding at Bottom
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 40.dp), // Moved upward (increased from 32dp)
+                .padding(bottom = 40.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -138,10 +87,12 @@ fun ShareCardBackground(
 fun ArtistShareCard(
     artistDetails: ArtistDetails,
     percentile: Double? = null,
+    theme: ShareTheme = ShareTheme.MIDNIGHT,
     modifier: Modifier = Modifier
 ) {
     ShareCardBackground(
         imageUrl = artistDetails.artist.imageUrl,
+        theme = theme,
         modifier = modifier.aspectRatio(9f/16f)
     ) {
         FitToHeight(
@@ -171,7 +122,7 @@ fun ArtistShareCard(
                         allowHardware = false,
                         placeholder = {
                             Box(
-                                modifier = Modifier.fillMaxSize().background(Color.Gray),
+                                modifier = Modifier.fillMaxSize().background(TextTertiary),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White)
@@ -218,19 +169,19 @@ fun ArtistShareCard(
                         if (artistDetails.personalPlayCount > 50) {
                             val (badgeText, badgeEmoji, badgeColor) = if (percentile != null) {
                                 when {
-                                    percentile <= 1.0 -> Triple(stringResource(R.string.fan_status_top_1), "👑", Color(0xFFFFD700))
-                                    percentile <= 5.0 -> Triple(stringResource(R.string.fan_status_top_5), "🌟", Color(0xFFF59E0B))
-                                    percentile <= 10.0 -> Triple(stringResource(R.string.fan_status_top_10), "🔥", Color(0xFFEF4444))
-                                    percentile <= 25.0 -> Triple(stringResource(R.string.fan_status_top_25), "🎧", Color(0xFF3B82F6))
-                                    percentile <= 50.0 -> Triple(stringResource(R.string.fan_status_top_50), "🎵", Color(0xFF8B5CF6))
-                                    else -> Triple(stringResource(R.string.fan_status_listener), "🎵", Color(0xFF94A3B8))
+                                    percentile <= 1.0 -> Triple(stringResource(R.string.fan_status_top_1), "👑", GoldPrimary)
+                                    percentile <= 5.0 -> Triple(stringResource(R.string.fan_status_top_5), "🌟", TempoWarning)
+                                    percentile <= 10.0 -> Triple(stringResource(R.string.fan_status_top_10), "🔥", TempoError)
+                                    percentile <= 25.0 -> Triple(stringResource(R.string.fan_status_top_25), "🎧", TempoInfo)
+                                    percentile <= 50.0 -> Triple(stringResource(R.string.fan_status_top_50), "🎵", TempoPrimary)
+                                    else -> Triple(stringResource(R.string.fan_status_listener), "🎵", TextSecondary)
                                 }
                             } else {
                                 when {
-                                    artistDetails.personalPlayCount > 1000 -> Triple(stringResource(R.string.fan_status_ultimate), "👑", Color(0xFFFFD700))
-                                    artistDetails.personalPlayCount > 500 -> Triple(stringResource(R.string.fan_status_super), "🌟", Color(0xFFF59E0B))
-                                    artistDetails.personalPlayCount > 200 -> Triple(stringResource(R.string.fan_status_big), "🔥", Color(0xFFEF4444))
-                                    else -> Triple(stringResource(R.string.fan_status_regular), "🎧", Color(0xFF3B82F6))
+                                    artistDetails.personalPlayCount > 1000 -> Triple(stringResource(R.string.fan_status_ultimate), "👑", GoldPrimary)
+                                    artistDetails.personalPlayCount > 500 -> Triple(stringResource(R.string.fan_status_super), "🌟", TempoWarning)
+                                    artistDetails.personalPlayCount > 200 -> Triple(stringResource(R.string.fan_status_big), "🔥", TempoError)
+                                    else -> Triple(stringResource(R.string.fan_status_regular), "🎧", TempoInfo)
                                 }
                             }
                             GlassCard(
@@ -346,9 +297,9 @@ fun ArtistShareCard(
                                             .background(
                                                 brush = Brush.linearGradient(
                                                     colors = when (index) {
-                                                        0 -> listOf(Color(0xFFFBBF24), Color(0xFFF59E0B))
-                                                        1 -> listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8))
-                                                        else -> listOf(Color(0xFFCD7F32), Color(0xFFB45309))
+                                                        0 -> listOf(TempoWarningBright, TempoWarning)
+                                                        1 -> listOf(SilverLight, TextSecondary)
+                                                        else -> listOf(BronzeLight, TempoWarningDeep)
                                                     }
                                                 ),
                                                 shape = CircleShape
@@ -395,10 +346,12 @@ fun ArtistShareCard(
 @Composable
 fun SongShareCard(
     trackDetails: TrackDetails,
+    theme: ShareTheme = ShareTheme.MIDNIGHT,
     modifier: Modifier = Modifier
 ) {
     ShareCardBackground(
         imageUrl = trackDetails.track.albumArtUrl,
+        theme = theme,
         modifier = modifier.aspectRatio(9f/16f)
     ) {
         FitToHeight(
@@ -441,7 +394,7 @@ fun SongShareCard(
                             allowHardware = false,
                             placeholder = {
                                 Box(
-                                    modifier = Modifier.fillMaxSize().background(Color.Gray),
+                                    modifier = Modifier.fillMaxSize().background(TextTertiary),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White)
@@ -464,7 +417,7 @@ fun SongShareCard(
                 Text(
                     text = trackDetails.track.artist,
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFFE9D5FF),
+                    color = TempoAccent,
                     fontWeight = FontWeight.Bold,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
@@ -488,7 +441,7 @@ fun SongShareCard(
                                 Icon(
                                     imageVector = Icons.Default.GraphicEq,
                                     contentDescription = null,
-                                    tint = Color(0xFFF472B6),
+                                    tint = TempoErrorAlt,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -522,7 +475,7 @@ fun SongShareCard(
                                 Icon(
                                     imageVector = Icons.Default.MusicNote,
                                     contentDescription = null,
-                                    tint = Color(0xFFC084FC),
+                                    tint = TempoAccentBright,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -544,6 +497,393 @@ fun SongShareCard(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Shareable card for an Album (shown via SharePreviewDialog on the album details screen).
+ */
+@Composable
+fun AlbumShareCard(
+    albumDetails: AlbumDetails,
+    theme: ShareTheme = ShareTheme.MIDNIGHT,
+    modifier: Modifier = Modifier
+) {
+    ShareCardBackground(
+        imageUrl = albumDetails.album.artworkUrl,
+        theme = theme,
+        modifier = modifier.aspectRatio(9f / 16f)
+    ) {
+        FitToHeight {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Album Artwork
+                CachedAsyncImage(
+                    imageUrl = albumDetails.album.artworkUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(200.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(24.dp)),
+                    contentScale = ContentScale.Crop
+                )
+
+                // Album Info
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = albumDetails.album.title,
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        maxLines = 2
+                    )
+                    Text(
+                        text = albumDetails.artistName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TempoAccent
+                    )
+                }
+
+                // Release year
+                albumDetails.album.releaseYear?.let { year ->
+                    GlassCard(
+                        modifier = Modifier.wrapContentSize(),
+                        shape = RoundedCornerShape(50.dp)
+                    ) {
+                        Text(
+                            text = year.toString(),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            letterSpacing = 1.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Stats Grid: time / plays / completion
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = stringResource(R.string.share_total_time),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.6f),
+                                letterSpacing = 1.5.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.share_min_format, albumDetails.totalTimeMinutes),
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .height(40.dp)
+                                .width(1.dp)
+                                .background(Color.White.copy(alpha = 0.15f))
+                        )
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = stringResource(R.string.share_plays_label),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.6f),
+                                letterSpacing = 1.5.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = albumDetails.totalPlayCount.toString(),
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .height(40.dp)
+                                .width(1.dp)
+                                .background(Color.White.copy(alpha = 0.15f))
+                        )
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = stringResource(R.string.share_completion),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.6f),
+                                letterSpacing = 1.5.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${(albumDetails.completionRate * 100).roundToInt()}%",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+
+                // Top tracks from the album
+                val topTracks = albumDetails.tracks.sortedByDescending { it.playCount }.take(3)
+                if (topTracks.isNotEmpty()) {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.share_top_tracks),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.6f),
+                                letterSpacing = 2.sp
+                            )
+
+                            topTracks.forEachIndexed { index, trackWithStats ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .background(
+                                                brush = Brush.linearGradient(
+                                                    colors = when (index) {
+                                                        0 -> listOf(TempoWarningBright, TempoWarningDeep)
+                                                        1 -> listOf(SilverLight, TextSecondary)
+                                                        else -> listOf(TempoWarningSoft, Color(0xFFEA580C))
+                                                    },
+                                                    start = Offset(0f, 0f),
+                                                    end = Offset(100f, 100f)
+                                                ),
+                                                shape = CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "${index + 1}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.Black
+                                        )
+                                    }
+
+                                    Text(
+                                        text = trackWithStats.track.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
+                                    )
+
+                                    Text(
+                                        text = stringResource(R.string.share_plays_format, trackWithStats.playCount),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color.White.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * "My Music DNA" — a personality-style share card derived from audio features.
+ * Shown via SharePreviewDialog from the home screen.
+ */
+@Composable
+fun VibeShareCard(
+    userName: String?,
+    periodLabel: String,
+    audioFeatures: AudioFeaturesStats,
+    backgroundImageUrl: String? = null,
+    theme: ShareTheme = ShareTheme.MIDNIGHT,
+    modifier: Modifier = Modifier
+) {
+    val persona = stringResource(
+        when {
+            audioFeatures.averageValence >= 0.6f && audioFeatures.averageEnergy >= 0.6f ->
+                R.string.share_dna_persona_firestarter
+            audioFeatures.averageValence >= 0.6f && audioFeatures.averageEnergy < 0.4f ->
+                R.string.share_dna_persona_dreamer
+            audioFeatures.averageValence < 0.4f && audioFeatures.averageEnergy >= 0.6f ->
+                R.string.share_dna_persona_storm
+            audioFeatures.averageValence < 0.4f && audioFeatures.averageEnergy < 0.4f ->
+                R.string.share_dna_persona_midnight
+            else -> R.string.share_dna_persona_alchemist
+        }
+    )
+
+    ShareCardBackground(
+        imageUrl = backgroundImageUrl,
+        theme = theme,
+        modifier = modifier.aspectRatio(9f / 16f)
+    ) {
+        FitToHeight {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = stringResource(R.string.share_dna_title),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.6f),
+                        letterSpacing = 3.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = userName ?: stringResource(R.string.share_brand),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = periodLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+
+                // Personality headline
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = persona,
+                            style = MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.share_dna_avg_bpm,
+                                audioFeatures.averageTempo.roundToInt()
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TempoAccent,
+                            letterSpacing = 1.5.sp
+                        )
+                    }
+                }
+
+                // DNA gauges
+                GlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        DnaGauge(
+                            label = stringResource(R.string.share_dna_energy),
+                            value = audioFeatures.averageEnergy,
+                            color = TempoError
+                        )
+                        DnaGauge(
+                            label = stringResource(R.string.share_dna_happiness),
+                            value = audioFeatures.averageValence,
+                            color = TempoWarningBright
+                        )
+                        DnaGauge(
+                            label = stringResource(R.string.share_dna_dance),
+                            value = audioFeatures.averageDanceability,
+                            color = TempoPrimary
+                        )
+                        DnaGauge(
+                            label = stringResource(R.string.share_dna_acoustic),
+                            value = audioFeatures.averageAcousticness,
+                            color = Color(0xFF14B8A6)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DnaGauge(label: String, value: Float, color: Color) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.6f),
+                letterSpacing = 1.5.sp
+            )
+            Text(
+                text = "${(value.coerceIn(0f, 1f) * 100).roundToInt()}%",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White.copy(alpha = 0.1f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(value.coerceIn(0f, 1f))
+                    .clip(RoundedCornerShape(50))
+                    .background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(color.copy(alpha = 0.6f), color)
+                        )
+                    )
+            )
         }
     }
 }

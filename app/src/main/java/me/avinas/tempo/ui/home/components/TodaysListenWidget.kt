@@ -31,12 +31,17 @@ import me.avinas.tempo.data.stats.ListeningOverview
 import me.avinas.tempo.data.stats.TopArtist
 import me.avinas.tempo.data.stats.TopTrack
 import me.avinas.tempo.ui.components.CachedAsyncImage
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoInfoSoft
+import me.avinas.tempo.ui.theme.TempoSuccessDeep
+import me.avinas.tempo.ui.theme.TempoSurface
+import me.avinas.tempo.ui.theme.TempoWarningSoft
 
-private val WarmAmber = Color(0xFFD4956B)
-private val SageGreen = Color(0xFF7DAF9C)
-private val MutedBlue = Color(0xFF8AABD0)
-private val CardSurface = Color(0xFF24211D)
-private val BoxSurface = Color(0xFF000000)
+private val WarmAmber = TempoWarningSoft
+private val SageGreen = TempoSuccessDeep
+private val MutedBlue = TempoInfoSoft
+private val CardSurface = TempoSurface
+private val BoxSurface = TempoBackground
 
 @Composable
 fun TodaysListenWidget(

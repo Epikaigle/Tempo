@@ -43,7 +43,16 @@ import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.components.GlassCard
 
 import me.avinas.tempo.ui.components.TrendLine
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoWarning
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoErrorAlt
+import me.avinas.tempo.ui.theme.TempoSky
+import me.avinas.tempo.ui.theme.TempoPrimaryDim
+import me.avinas.tempo.ui.theme.TempoSuccessBright
+import me.avinas.tempo.ui.theme.TempoWarningBright
+import me.avinas.tempo.ui.theme.TextPrimary
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 import me.avinas.tempo.ui.theme.premiumClickable
@@ -134,7 +143,7 @@ fun HeroCard(
                 // Smart Copy Logic with Pulse
                 val isPositive = timeChangePercent >= 0
                 val percentString = "${if (isPositive) "+" else ""}${timeChangePercent.toInt()}%"
-                val comparisonColor = if (isPositive) Color(0xFF4ADE80) else Color(0xFFFBBF24) // Green vs Amber
+                val comparisonColor = if (isPositive) TempoSuccessBright else TempoWarningBright
                 
                 // Pulse Animation for badge
                 val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "BadgePulse")
@@ -187,8 +196,8 @@ fun HeroCard(
                         dataPoints = trendData,
                         labels = dailyLabels,
                         modifier = Modifier.fillMaxSize(),
-                        lineColor = me.avinas.tempo.ui.theme.TempoSecondary,
-                        fillColor = me.avinas.tempo.ui.theme.TempoSecondary.copy(alpha = 0.2f),
+                        lineColor = me.avinas.tempo.ui.theme.TempoPrimaryMuted,
+                        fillColor = me.avinas.tempo.ui.theme.TempoPrimaryMuted.copy(alpha = 0.2f),
                         strokeWidth = 3.dp,
                         formatValue = { value ->
                             val minutes = value.toLong()
@@ -212,8 +221,8 @@ fun HeroCard(
                     TrendLine(
                         dataPoints = trendData,
                         modifier = Modifier.fillMaxSize(),
-                        lineColor = me.avinas.tempo.ui.theme.TempoSecondary,
-                        fillColor = me.avinas.tempo.ui.theme.TempoSecondary.copy(alpha = 0.2f),
+                        lineColor = me.avinas.tempo.ui.theme.TempoPrimaryMuted,
+                        fillColor = me.avinas.tempo.ui.theme.TempoPrimaryMuted.copy(alpha = 0.2f),
                         strokeWidth = 3.dp // Thicker line
                     )
                 }
@@ -224,17 +233,21 @@ fun HeroCard(
 
 
 private val SpotlightRingColors = listOf(
-    Color(0xFF8B5CF6), // Violet
-    Color(0xFFF59E0B)  // Amber
+    TempoPrimary,
+    TempoWarning
 )
+
+// ponytail: single gray for the "viewed" ring; bump to a gradient if a richer
+// seen-state is ever wanted.
+private val SpotlightViewedRingColor = Color.White.copy(alpha = 0.25f)
 
 @Composable
 private fun SpotlightRing(
     albumArtUrl: String?,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewed: Boolean = false
 ) {
-    var viewed by remember { mutableStateOf(false) }
     val infiniteTransition = rememberInfiniteTransition(label = "SpotlightRing")
 
     val rotation by infiniteTransition.animateFloat(
@@ -260,10 +273,7 @@ private fun SpotlightRing(
     Box(
         modifier = modifier
             .size(64.dp)
-            .premiumClickable(onClick = {
-                viewed = true
-                onClick()
-            }, pressedScale = 0.92f),
+            .premiumClickable(onClick = onClick, pressedScale = 0.92f),
         contentAlignment = Alignment.Center
     ) {
         if (!viewed) {
@@ -317,6 +327,30 @@ private fun SpotlightRing(
                     size = androidx.compose.ui.geometry.Size(diameter, diameter)
                 )
             }
+        } else {
+            // Viewed: static gray ring (Instagram-style "seen" state)
+            Canvas(
+                modifier = Modifier.matchParentSize()
+            ) {
+                val stroke = size.minDimension * 0.07f
+                val diameter = size.minDimension - stroke
+                val topLeft = Offset(
+                    (size.width - diameter) / 2f,
+                    (size.height - diameter) / 2f
+                )
+                drawArc(
+                    color = SpotlightViewedRingColor,
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = stroke,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    ),
+                    topLeft = topLeft,
+                    size = androidx.compose.ui.geometry.Size(diameter, diameter)
+                )
+            }
         }
 
         Box(
@@ -338,7 +372,7 @@ private fun SpotlightRing(
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
-                    tint = SpotlightRingColors[0],
+                    tint = if (viewed) SpotlightViewedRingColor else SpotlightRingColors[0],
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -352,13 +386,14 @@ fun SpotlightStoryCard(
     onRingClick: () -> Unit,
     albumArtUrl: String? = null,
     storyAvailable: Boolean = true,
+    viewed: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     GlassCard(
         modifier = modifier
             .fillMaxWidth()
             .premiumClickable(onClick = onClick, pressedScale = 0.96f),
-        backgroundColor = me.avinas.tempo.ui.theme.NeonRed.copy(alpha = 0.12f),
+        backgroundColor = me.avinas.tempo.ui.theme.TempoAccent.copy(alpha = 0.12f),
         contentPadding = PaddingValues(16.dp)
     ) {
         Row(
@@ -367,7 +402,11 @@ fun SpotlightStoryCard(
             modifier = Modifier.fillMaxWidth()
         ) {
             if (storyAvailable) {
-                SpotlightRing(albumArtUrl = albumArtUrl, onClick = onRingClick)
+                SpotlightRing(
+                    albumArtUrl = albumArtUrl,
+                    onClick = onRingClick,
+                    viewed = viewed
+                )
             }
 
             Column(
@@ -423,7 +462,7 @@ fun WeekInReviewGrid(
             // Top Artist
             GlassCard(
                 modifier = Modifier.weight(1f),
-                backgroundColor = me.avinas.tempo.ui.theme.NeonRed.copy(alpha = 0.12f), // Restored x-factor
+                backgroundColor = me.avinas.tempo.ui.theme.TempoAccent.copy(alpha = 0.12f), // Restored x-factor
                 variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
             ) {
                 Column(
@@ -444,7 +483,7 @@ fun WeekInReviewGrid(
                     Text(
                         text = me.avinas.tempo.utils.TempoCopyEngine.getTopArtistCopy(topArtistName),
                         style = MaterialTheme.typography.bodySmall, // Smaller for longer text
-                        color = me.avinas.tempo.ui.theme.NeonRed,
+                        color = me.avinas.tempo.ui.theme.TempoAccent,
                         maxLines = 1
                     )
                     Text(
@@ -460,7 +499,7 @@ fun WeekInReviewGrid(
             // Top Track
             GlassCard(
                 modifier = Modifier.weight(1f),
-                backgroundColor = me.avinas.tempo.ui.theme.ElectricBlue.copy(alpha = 0.12f), // Restored x-factor
+                backgroundColor = me.avinas.tempo.ui.theme.TempoInfo.copy(alpha = 0.12f), // Restored x-factor
                 variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
             ) {
                 Column(
@@ -481,7 +520,7 @@ fun WeekInReviewGrid(
                     Text(
                         text = me.avinas.tempo.utils.TempoCopyEngine.getTopTrackCopy(topTrackName),
                         style = MaterialTheme.typography.bodySmall,
-                        color = me.avinas.tempo.ui.theme.ElectricBlue,
+                        color = me.avinas.tempo.ui.theme.TempoInfo,
                         maxLines = 1
                     )
                     Text(
@@ -504,7 +543,7 @@ fun WeekInReviewGrid(
             // Total Hours
             GlassCard(
                 modifier = Modifier.weight(1f),
-                backgroundColor = me.avinas.tempo.ui.theme.GoldenAmber.copy(alpha = 0.1f),
+                backgroundColor = me.avinas.tempo.ui.theme.TempoWarning.copy(alpha = 0.1f),
                 variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
             ) {
                 Column(
@@ -515,13 +554,13 @@ fun WeekInReviewGrid(
                         modifier = Modifier
                             .size(56.dp)
                             .clip(CircleShape)
-                            .background(me.avinas.tempo.ui.theme.GoldenAmber.copy(alpha = 0.2f)),
+                            .background(me.avinas.tempo.ui.theme.TempoWarning.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Timer,
                             contentDescription = null,
-                            tint = me.avinas.tempo.ui.theme.GoldenAmber,
+                            tint = me.avinas.tempo.ui.theme.TempoWarning,
                             modifier = Modifier.size(32.dp)
                         )
                     }
@@ -529,7 +568,7 @@ fun WeekInReviewGrid(
                     Text(
                         text = stringResource(R.string.home_listen_time),
                         style = MaterialTheme.typography.labelMedium,
-                        color = me.avinas.tempo.ui.theme.GoldenAmber
+                        color = me.avinas.tempo.ui.theme.TempoWarning
                     )
                     Text(
                         text = totalHours,
@@ -543,7 +582,7 @@ fun WeekInReviewGrid(
             // Discoveries
             GlassCard(
                 modifier = Modifier.weight(1f),
-                backgroundColor = Color(0xFFA855F7).copy(alpha = 0.1f), // Purple
+                backgroundColor = TempoAccent.copy(alpha = 0.1f),
                 variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
             ) {
                 Column(
@@ -554,13 +593,13 @@ fun WeekInReviewGrid(
                         modifier = Modifier
                             .size(56.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFA855F7).copy(alpha = 0.2f)),
+                            .background(TempoAccent.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Explore,
                             contentDescription = null,
-                            tint = Color(0xFFA855F7), // Purple 400
+                            tint = TempoAccent,
                             modifier = Modifier.size(32.dp)
                         )
                     }
@@ -568,13 +607,13 @@ fun WeekInReviewGrid(
                     Text(
                         text = stringResource(R.string.home_new_finds),
                         style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFFA855F7)
+                        color = TempoAccent
                     )
                     Text(
                         text = "$newDiscoveries",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                 }
             }
@@ -610,24 +649,24 @@ fun DiscoverySection(
                 title = stringResource(R.string.home_found_artists, newArtists),
                 subtitle = stringResource(R.string.home_expand_horizon),
                 icon = Icons.Default.Explore,
-                color = Color(0xFF0EA5E9), // Sky 500
-                backgroundColor = Color(0xFF0369A1).copy(alpha = 0.2f)
+                color = TempoSky,
+                backgroundColor = TempoSky.copy(alpha = 0.2f)
             )
-            
+
             DiscoveryCard(
                 title = stringResource(R.string.home_discovered_tracks, newTracks),
                 subtitle = stringResource(R.string.home_fresh_beats),
                 icon = Icons.Default.History,
-                color = Color(0xFFF43F5E), // Rose 500
-                backgroundColor = Color(0xFFBE123C).copy(alpha = 0.2f)
+                color = TempoErrorAlt,
+                backgroundColor = TempoErrorAlt.copy(alpha = 0.2f)
             )
-            
+
             DiscoveryCard(
                 title = stringResource(R.string.home_variety_score, varietyScore),
                 subtitle = stringResource(R.string.home_how_unique),
                 icon = Icons.Default.Fingerprint,
-                color = Color(0xFF8B5CF6), // Violet 500
-                backgroundColor = Color(0xFF6D28D9).copy(alpha = 0.2f)
+                color = TempoPrimary,
+                backgroundColor = TempoPrimaryDim.copy(alpha = 0.2f)
             )
         }
     }

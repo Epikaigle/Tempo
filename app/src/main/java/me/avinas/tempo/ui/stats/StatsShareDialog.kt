@@ -4,7 +4,9 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,8 +39,16 @@ import me.avinas.tempo.data.stats.ListeningOverview
 import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.components.CaptureWrapper
 import me.avinas.tempo.ui.components.GlassCard
+import me.avinas.tempo.ui.components.ShareTheme
 import me.avinas.tempo.ui.components.rememberCaptureController
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoSurfaceCard
+import me.avinas.tempo.ui.theme.TextOnAccent
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import me.avinas.tempo.utils.ShareUtils
 
 private val CardDesignWidth = 360.dp
@@ -104,7 +114,7 @@ fun StatsShareDialog(
             }
 
             // 2. Dark overlay
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f)))
+            Box(modifier = Modifier.fillMaxSize().background(TempoBackground.copy(alpha = 0.9f)))
 
             // 3. Visible UI
             Column(
@@ -122,13 +132,13 @@ fun StatsShareDialog(
                         text = stringResource(R.string.stats_share_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.1f), CircleShape)
+                        modifier = Modifier.background(Divider, CircleShape)
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.stats_share_close), tint = Color.White)
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.stats_share_close), tint = TextPrimary)
                     }
                 }
 
@@ -162,11 +172,11 @@ fun StatsShareDialog(
                 Button(
                     onClick = { if (!isSharing) captureController.capture() },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = TextOnAccent),
                     shape = RoundedCornerShape(28.dp)
                 ) {
                     if (isSharing) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = TextOnAccent, strokeWidth = 2.dp)
                     } else {
                         Icon(Icons.Default.Share, contentDescription = null)
                         Spacer(modifier = Modifier.width(12.dp))
@@ -190,7 +200,7 @@ private fun ConfigPanel(
 ) {
     GlassCard(
         modifier = modifier,
-        backgroundColor = Color.White.copy(alpha = 0.06f),
+        backgroundColor = TempoSurfaceCard,
         shape = RoundedCornerShape(20.dp),
         contentPadding = PaddingValues(14.dp)
     ) {
@@ -237,31 +247,38 @@ private fun ConfigPanel(
                     }
                 }
             }
-            // Row 2: Theme + Summary
-            Row(
+            // Row 2: Theme (full-width, horizontally scrollable to show all themes)
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ConfigLabel(text = stringResource(R.string.stats_share_theme_label))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        StatsShareTheme.entries.forEach { t ->
-                            ThemeSwatch(
-                                theme = t,
-                                selected = config.theme == t,
-                                onClick = { onConfigChange(config.copy(theme = t)) }
-                            )
-                        }
+                ConfigLabel(text = stringResource(R.string.stats_share_theme_label))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ShareTheme.entries.forEach { t ->
+                        ThemeSwatch(
+                            theme = t,
+                            selected = config.theme == t,
+                            onClick = { onConfigChange(config.copy(theme = t)) }
+                        )
                     }
                 }
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ConfigLabel(text = stringResource(R.string.stats_share_summary))
-                    SummaryToggle(
-                        enabled = config.showSummary,
-                        onToggle = { onConfigChange(config.copy(showSummary = it)) }
-                    )
-                }
+            }
+            // Row 3: Summary
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ConfigLabel(text = stringResource(R.string.stats_share_summary))
+                SummaryToggle(
+                    enabled = config.showSummary,
+                    onToggle = { onConfigChange(config.copy(showSummary = it)) }
+                )
             }
         }
     }
@@ -272,7 +289,7 @@ private fun ConfigLabel(text: String) {
     Text(
         text = text.uppercase(),
         style = MaterialTheme.typography.labelSmall,
-        color = Color.White.copy(alpha = 0.55f),
+        color = TextTertiary,
         letterSpacing = 1.2.sp
     )
 }
@@ -283,14 +300,14 @@ private fun LayoutToggle(icon: ImageVector, contentDescription: String, selected
         modifier = Modifier
             .size(36.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) TempoRed else Color.White.copy(alpha = 0.08f))
+            .background(if (selected) TempoPrimary else TempoSurfaceCard)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (selected) Color.White else Color.White.copy(alpha = 0.7f),
+            tint = if (selected) TextPrimary else TextSecondary,
             modifier = Modifier.size(20.dp)
         )
     }
@@ -303,7 +320,7 @@ private fun CountToggle(text: String, selected: Boolean, onClick: () -> Unit) {
             .width(36.dp)
             .height(36.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) TempoRed else Color.White.copy(alpha = 0.08f))
+            .background(if (selected) TempoPrimary else TempoSurfaceCard)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -311,13 +328,13 @@ private fun CountToggle(text: String, selected: Boolean, onClick: () -> Unit) {
             text = text,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
-            color = if (selected) Color.White else Color.White.copy(alpha = 0.7f)
+            color = if (selected) TextPrimary else TextSecondary
         )
     }
 }
 
 @Composable
-private fun ThemeSwatch(theme: StatsShareTheme, selected: Boolean, onClick: () -> Unit) {
+private fun ThemeSwatch(theme: ShareTheme, selected: Boolean, onClick: () -> Unit) {
     val palette = theme.palette
     Box(
         modifier = Modifier
@@ -327,7 +344,7 @@ private fun ThemeSwatch(theme: StatsShareTheme, selected: Boolean, onClick: () -
             .clickable(onClick = onClick)
             .border(
                 width = if (selected) 3.dp else 1.dp,
-                color = if (selected) Color.White else Color.White.copy(alpha = 0.15f),
+                color = if (selected) TextPrimary else Divider,
                 shape = CircleShape
             ),
         contentAlignment = Alignment.Center
@@ -344,7 +361,7 @@ private fun SummaryToggle(enabled: Boolean, onToggle: (Boolean) -> Unit) {
         modifier = Modifier
             .height(36.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(if (enabled) TempoRed else Color.White.copy(alpha = 0.08f))
+            .background(if (enabled) TempoPrimary else TempoSurfaceCard)
             .clickable { onToggle(!enabled) }
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -353,14 +370,14 @@ private fun SummaryToggle(enabled: Boolean, onToggle: (Boolean) -> Unit) {
         Icon(
             imageVector = if (enabled) Icons.Default.Check else Icons.Default.Close,
             contentDescription = null,
-            tint = if (enabled) Color.White else Color.White.copy(alpha = 0.7f),
+            tint = if (enabled) TextPrimary else TextSecondary,
             modifier = Modifier.size(16.dp)
         )
         Text(
             text = stringResource(if (enabled) R.string.stats_share_on else R.string.stats_share_off),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
-            color = if (enabled) Color.White else Color.White.copy(alpha = 0.7f)
+            color = if (enabled) TextPrimary else TextSecondary
         )
     }
 }

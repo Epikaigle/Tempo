@@ -10,8 +10,14 @@ import android.net.Uri
 import android.view.View
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.FileProvider
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import java.io.File
 import java.io.FileOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import me.avinas.tempo.ui.onboarding.dataStore
 
 object ShareUtils {
 
@@ -37,6 +43,7 @@ object ShareUtils {
                 val chooser = Intent.createChooser(intent, "Share Spotlight")
                 chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(chooser)
+                recordShareSuccess(context)
                 return true
             } else {
                 android.util.Log.e("ShareUtils", "Failed to save bitmap to cache.")
@@ -46,6 +53,20 @@ object ShareUtils {
             e.printStackTrace()
         }
         return false
+    }
+
+    // Stamp the last successful share so the home share-nudge can back off
+    // (users who already share don't need to be told the feature exists).
+    // ponytail: fire-and-forget GlobalScope; worst case the timestamp is lost once.
+    private fun recordShareSuccess(context: Context) {
+        @Suppress("OPT_IN_USAGE")
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                context.applicationContext.dataStore.edit { prefs ->
+                    prefs[longPreferencesKey("share_last_success")] = System.currentTimeMillis()
+                }
+            } catch (_: Exception) { }
+        }
     }
 
     private fun saveBitmapToCache(context: Context, bitmap: Bitmap): File? {

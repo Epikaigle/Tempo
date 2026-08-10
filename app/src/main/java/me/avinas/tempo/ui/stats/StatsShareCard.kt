@@ -1,7 +1,5 @@
 package me.avinas.tempo.ui.stats
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -38,7 +36,17 @@ import me.avinas.tempo.data.stats.TopTrack
 import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.ui.components.FitToHeight
 import me.avinas.tempo.ui.components.GlassCard
+import me.avinas.tempo.ui.components.ShareBackdrop
+import me.avinas.tempo.ui.components.ShareTheme
+import me.avinas.tempo.ui.components.ShareThemePalette
 import me.avinas.tempo.ui.details.formatListeningTime
+import me.avinas.tempo.ui.theme.BronzeLight
+import me.avinas.tempo.ui.theme.SilverLight
+import me.avinas.tempo.ui.theme.TempoSurface
+import me.avinas.tempo.ui.theme.TempoSurfaceElevated
+import me.avinas.tempo.ui.theme.TempoWarningDeep
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 
 enum class StatsShareCount(val count: Int) {
     TOP_3(3),
@@ -48,77 +56,9 @@ enum class StatsShareCount(val count: Int) {
 
 enum class StatsShareLayout { LIST, PODIUM, GRID }
 
-data class StatsShareThemePalette(
-    val gradient: List<Color>,
-    val overlay: List<Color>,
-    val accent: Color,
-    val glowTop: Color,
-    val glowBottom: Color,
-    val rank1Tint: Color
-)
-
-enum class StatsShareTheme(val palette: StatsShareThemePalette) {
-    MIDNIGHT(
-        StatsShareThemePalette(
-            gradient = listOf(TempoDarkBackground, Color(0xFF1E1B4B), Color(0xFF312E81)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.55f),
-                Color(0xFF0F0F12).copy(alpha = 0.8f),
-                Color(0xFF0D0D10).copy(alpha = 0.95f)
-            ),
-            accent = Color(0xFFFBBF24),
-            glowTop = Color(0xFFA855F7),
-            glowBottom = Color(0xFFEC4899),
-            rank1Tint = Color(0xFFF59E0B)
-        )
-    ),
-    SUNSET(
-        StatsShareThemePalette(
-            gradient = listOf(Color(0xFF1A0F0F), Color(0xFF7C2D12), Color(0xFFB91C1C)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.55f),
-                Color(0xFF1A0A0A).copy(alpha = 0.8f),
-                Color(0xFF0D0505).copy(alpha = 0.95f)
-            ),
-            accent = Color(0xFFFBBF24),
-            glowTop = Color(0xFFF97316),
-            glowBottom = Color(0xFFEF4444),
-            rank1Tint = Color(0xFFF97316)
-        )
-    ),
-    AURORA(
-        StatsShareThemePalette(
-            gradient = listOf(Color(0xFF0A0F0D), Color(0xFF064E3B), Color(0xFF1E3A8A)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.5f),
-                Color(0xFF0A0F12).copy(alpha = 0.8f),
-                Color(0xFF050D10).copy(alpha = 0.95f)
-            ),
-            accent = Color(0xFF34D399),
-            glowTop = Color(0xFF10B981),
-            glowBottom = Color(0xFF3B82F6),
-            rank1Tint = Color(0xFF34D399)
-        )
-    ),
-    MONO(
-        StatsShareThemePalette(
-            gradient = listOf(Color(0xFF0A0A0A), Color(0xFF1F1F1F), Color(0xFF2A2A2A)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.5f),
-                Color(0xFF111111).copy(alpha = 0.8f),
-                Color(0xFF0A0A0A).copy(alpha = 0.95f)
-            ),
-            accent = Color(0xFFE5E7EB),
-            glowTop = Color(0xFF9CA3AF),
-            glowBottom = Color(0xFFD1D5DB),
-            rank1Tint = Color(0xFFE5E7EB)
-        )
-    )
-}
-
 data class StatsShareConfig(
     val count: StatsShareCount = StatsShareCount.TOP_5,
-    val theme: StatsShareTheme = StatsShareTheme.MIDNIGHT,
+    val theme: ShareTheme = ShareTheme.MIDNIGHT,
     val layout: StatsShareLayout = StatsShareLayout.LIST,
     val showSummary: Boolean = true
 )
@@ -183,7 +123,7 @@ fun StatsShareCard(
     }
     val bgImage = ranked.firstOrNull()?.imageUrl
 
-    StatsShareBackground(imageUrl = bgImage, palette = palette, modifier = modifier.fillMaxSize()) {
+    ShareBackdrop(theme = config.theme, imageUrl = bgImage, modifier = modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -242,63 +182,9 @@ fun StatsShareCard(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun StatsShareBackground(
-    imageUrl: String?,
-    palette: StatsShareThemePalette,
-    modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit
-) {
-    Box(modifier = modifier.background(brush = Brush.verticalGradient(palette.gradient))) {
-        if (!imageUrl.isNullOrBlank()) {
-            CachedAsyncImage(
-                imageUrl = imageUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                allowHardware = false,
-                blurRadius = 48.dp
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(brush = Brush.verticalGradient(palette.overlay))
-            )
-        }
-        // Ambient glows
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 50.dp, y = (-50).dp)
-                .size(300.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(palette.glowTop.copy(alpha = 0.15f), Color.Transparent)
-                    ),
-                    shape = CircleShape
-                )
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .offset(x = (-50).dp, y = 50.dp)
-                .size(300.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(palette.glowBottom.copy(alpha = 0.15f), Color.Transparent)
-                    ),
-                    shape = CircleShape
-                )
-        )
-        content()
-        // Branding footer
+        // Branding footer (kept inside stats card backdrop)
         Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -313,7 +199,7 @@ private fun StatsShareBackground(
 }
 
 @Composable
-private fun SummaryCard(overview: ListeningOverview, palette: StatsShareThemePalette) {
+private fun SummaryCard(overview: ListeningOverview, palette: ShareThemePalette) {
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         backgroundColor = Color.White.copy(alpha = 0.08f),
@@ -354,7 +240,7 @@ private fun SummaryCard(overview: ListeningOverview, palette: StatsShareThemePal
 }
 
 @Composable
-private fun SummaryStat(label: String, value: String, palette: StatsShareThemePalette, modifier: Modifier = Modifier) {
+private fun SummaryStat(label: String, value: String, palette: ShareThemePalette, modifier: Modifier = Modifier) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -388,11 +274,11 @@ private fun SummaryDivider() {
 }
 
 @Composable
-private fun RankBadge(rank: Int, size: Dp, palette: StatsShareThemePalette) {
+private fun RankBadge(rank: Int, size: Dp, palette: ShareThemePalette) {
     val colors = when (rank) {
         1 -> listOf(palette.rank1Tint, palette.rank1Tint)
-        2 -> listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8))
-        3 -> listOf(Color(0xFFCD7F32), Color(0xFFB45309))
+        2 -> listOf(SilverLight, TextSecondary)
+        3 -> listOf(BronzeLight, TempoWarningDeep)
         else -> listOf(palette.accent.copy(alpha = 0.55f), palette.accent.copy(alpha = 0.25f))
     }
     Box(
@@ -433,7 +319,7 @@ private fun ItemThumbnail(
             allowHardware = false,
             placeholder = {
                 Box(
-                    modifier = Modifier.fillMaxSize().background(Color.Gray),
+                    modifier = Modifier.fillMaxSize().background(TextTertiary),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White)
@@ -444,7 +330,7 @@ private fun ItemThumbnail(
 }
 
 @Composable
-private fun ListLayout(items: List<StatsItemInfo>, palette: StatsShareThemePalette, count: StatsShareCount) {
+private fun ListLayout(items: List<StatsItemInfo>, palette: ShareThemePalette, count: StatsShareCount) {
     val showHero = count != StatsShareCount.TOP_10
     val rowHeight = when (count) {
         StatsShareCount.TOP_3 -> 46.dp
@@ -542,7 +428,7 @@ private fun CompactRow(
     rowHeight: Dp,
     thumbSize: Dp,
     showSubtitle: Boolean,
-    palette: StatsShareThemePalette
+    palette: ShareThemePalette
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().height(rowHeight),
@@ -580,7 +466,7 @@ private fun CompactRow(
 }
 
 @Composable
-private fun PodiumLayout(items: List<StatsItemInfo>, palette: StatsShareThemePalette, count: StatsShareCount) {
+private fun PodiumLayout(items: List<StatsItemInfo>, palette: ShareThemePalette, count: StatsShareCount) {
     val topThree = items.take(3)
     val rest = items.drop(3)
     val rowHeight = when (count) {
@@ -616,11 +502,11 @@ private fun PodiumLayout(items: List<StatsItemInfo>, palette: StatsShareThemePal
                 ) {
                     val steps = mutableListOf<PodiumStepData>()
                     if (topThree.size > 1) {
-                        steps.add(PodiumStepData(topThree[1], 2, 50.dp, 48.dp, Color(0xFFE2E8F0)))
+                        steps.add(PodiumStepData(topThree[1], 2, 50.dp, 48.dp, SilverLight))
                     }
                     steps.add(PodiumStepData(topThree[0], 1, 74.dp, 60.dp, palette.rank1Tint, isWinner = true))
                     if (topThree.size > 2) {
-                        steps.add(PodiumStepData(topThree[2], 3, 38.dp, 48.dp, Color(0xFFCD7F32)))
+                        steps.add(PodiumStepData(topThree[2], 3, 38.dp, 48.dp, BronzeLight))
                     }
                     steps.forEach { PodiumStep(it) }
                 }
@@ -716,7 +602,7 @@ private fun PodiumStep(step: PodiumStepData) {
 }
 
 @Composable
-private fun GridLayout(items: List<StatsItemInfo>, palette: StatsShareThemePalette, count: StatsShareCount) {
+private fun GridLayout(items: List<StatsItemInfo>, palette: ShareThemePalette, count: StatsShareCount) {
     val featured = count != StatsShareCount.TOP_10
     val featuredHeight = when (count) {
         StatsShareCount.TOP_3 -> 150.dp
@@ -769,7 +655,7 @@ private fun PosterCell(
     info: StatsItemInfo,
     rank: Int,
     height: Dp,
-    palette: StatsShareThemePalette,
+    palette: ShareThemePalette,
     large: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -778,7 +664,7 @@ private fun PosterCell(
         modifier = modifier
             .height(height)
             .clip(shape)
-            .background(Color(0xFF1A1A1A))
+            .background(TempoSurface)
     ) {
         CachedAsyncImage(
             imageUrl = info.imageUrl,
@@ -788,7 +674,7 @@ private fun PosterCell(
             allowHardware = false,
             placeholder = {
                 Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF2A2A2A)),
+                    modifier = Modifier.fillMaxSize().background(TempoSurfaceElevated),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.5f))

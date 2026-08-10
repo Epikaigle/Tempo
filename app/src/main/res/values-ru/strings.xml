@@ -1,0 +1,1193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tempo</string>
+    
+    <!-- Service notification -->
+    <string name="tracking_notification_title">Tempo отслеживает вашу музыку</string>
+    <string name="tracking_notification_idle">Ожидание воспроизведения музыки…</string>
+    <string name="tracking_notification_active">Сейчас отслеживается: %1$s - %2$s</string>
+    
+    <!-- Permission screen -->
+    <string name="permission_setup_title">Настройка Tempo</string>
+    <string name="permission_setup_subtitle">Для отслеживания музыки в фоновом режиме приложению Tempo требуется несколько разрешений.</string>
+    <string name="permission_notification_title">Доступ к уведомлениям</string>
+    <string name="permission_notification_desc">Tempo считывает музыкальные уведомления, чтобы определять проигрываемые песни. Это работает с YouTube Music, Spotify и другими музыкальными приложениями.\n\nМы читаем только уведомления, связанные с музыкой, и никогда не получаем доступ к вашим личным сообщениям или другим уведомлениям.</string>
+    <string name="permission_notification_button">Предоставить доступ</string>
+    <string name="permission_notification_granted">Предоставлено ✓</string>
+    <string name="permission_battery_title">Оптимизация батареи</string>
+    <string name="permission_battery_desc">Для надежного отслеживания музыки в фоновом режиме Tempo необходимо исключить из оптимизации батареи.\n\nЭто не позволит Android останавливать Tempo, когда вы слушаете музыку. Tempo потребляет минимум энергии.</string>
+    <string name="permission_battery_button">Отключить оптимизацию</string>
+    <string name="permission_battery_disabled">Отключено ✓</string>
+    <string name="permission_continue">Начать отслеживание</string>
+    <string name="permission_pending">Завершите настройку выше</string>
+    <string name="permission_privacy_note">🔒 Все данные остаются на вашем устройстве. Tempo никогда не загружает вашу историю прослушивания.</string>
+    
+    <!-- Home screen -->
+    <string name="home_tracking_active">✅ Отслеживание музыки активно</string>
+    <string name="home_tracking_hint">Запустите воспроизведение в YouTube Music, Spotify или любом другом плеере. Tempo автоматически начнет отслеживание.</string>
+    <string name="home_title">Главная</string>
+    <string name="home_your_signal">Инсайты</string>
+    <string name="home_settings">Settings</string>
+    
+    <!-- Widget descriptions -->
+    <string name="widget_stats_desc">Сегодняшняя статистика прослушивания с первого взгляда</string>
+    <string name="widget_artist_desc">Статистика по вашим лучшим исполнителям</string>
+    <string name="widget_dashboard_desc">Обзор вашей статистики прослушивания музыки</string>
+    <string name="widget_discovery_desc">Открывайте новую музыку на основе ваших вкусов</string>
+    <string name="widget_heatmap_desc">Визуализация ваших привычек прослушивания со временем</string>
+    <string name="widget_milestone_desc">Отслеживайте достижения в прослушивании</string>
+    <string name="widget_mix_desc">Ваш персональный музыкальный микс</string>
+
+    <!-- Home components -->
+    <string name="home_spotlight_title">В центре внимания</string>
+    <string name="home_spotlight_subtitle">Визуализируйте вашу музыку.</string>
+    <string name="home_week_review">Итоги недели</string>
+    <string name="home_listen_time">Время прослушивания</string>
+    <string name="home_new_finds">Новые находки</string>
+    <string name="home_top_artist">Лучший исполнитель</string>
+    <string name="home_on_repeat">На повторе</string>
+    <string name="home_ready_discover">Готовы к открытиям?</string>
+    <string name="home_found_artists">Найдено новых исполнителей: %1$d</string>
+    <string name="home_expand_horizon">Расширяйте свой музыкальный кругозор</string>
+    <string name="home_discovered_tracks">Найдено новых треков: %1$d</string>
+    <string name="home_fresh_beats">Свежие биты для вашего плейлиста</string>
+    <string name="home_variety_score">Разнообразие: %1$d из 10</string>
+    <string name="home_how_unique">Насколько уникален ваш вкус?</string>
+    <string name="home_habits_title">Взгляд на ваши привычки</string>
+    <string name="home_lvl">УР</string>
+
+    <!-- Rate App -->
+    <string name="rate_enjoying">Нравится Tempo?</string>
+    <string name="rate_message">Если вам нравится приложение, пожалуйста, уделите минутку, чтобы оценить его. Это очень помогает нам развиваться!</string>
+    <string name="rate_now">Оценить</string>
+    <string name="rate_not_now">Не сейчас</string>
+    
+    <!-- Gamification / Level -->
+    <string name="level_label">УРОВЕНЬ %1$d</string>
+    <string name="level_xp">%1$d XP</string>
+    <string name="level_next_xp">Следующий: %1$d XP</string>
+    <string name="level_up_title">НОВЫЙ УРОВЕНЬ!</string>
+    <string name="level_up_new_level">Уровень %1$d</string>
+    <string name="level_up_awesome">Отлично!</string>
+    <string name="level_reached">Вы достигли Уровня %1$d</string>
+
+    <!-- Onboarding: Welcome screen -->
+    <string name="welcome_headline_1">Понимайте музыку,</string>
+    <string name="welcome_headline_2">любите статистику</string>
+    <string name="welcome_description">Tempo автоматически отслеживает то, что вы слушаете, и показывает красивую статистику ваших музыкаческих привычек.</string>
+    <string name="welcome_get_started">Начать</string>
+    <string name="welcome_skip">Пропустить</string>
+
+    <!-- Onboarding: How It Works -->
+    <string name="how_it_works_title">Как это работает</string>
+    <string name="how_it_works_subtitle">Без входа. Без аккаунта. Только музыка.</string>
+    <string name="how_it_works_step1_title">Вы включаете музыку</string>
+    <string name="how_it_works_step1_subtitle">В Spotify, YouTube Music или любом другом приложении</string>
+    <string name="how_it_works_step2_title">Появляется уведомление</string>
+    <string name="how_it_works_step2_subtitle">Tempo считывает только информацию о треке</string>
+    <string name="how_it_works_step3_title">Статистика сохраняется локально</string>
+    <string name="how_it_works_step3_subtitle">На вашем телефоне и больше нигде</string>
+    <string name="how_it_works_badge_apps">20+ приложений</string>
+    <string name="how_it_works_badge_local">100% локально</string>
+    <string name="how_it_works_badge_auto">Автоотслеживание</string>
+    <string name="how_it_works_next">Далее</string>
+
+    <!-- Onboarding: Privacy -->
+    <string name="privacy_title">Ваши данные остаются здесь</string>
+    <string name="privacy_subtitle">Конфиденциальность — это не функция. Это фундамент.</string>
+    <string name="privacy_local_title">100% локальное хранение</string>
+    <string name="privacy_local_desc">Все данные остаются на вашем телефоне. Всегда.</string>
+    <string name="privacy_no_cloud_title">Никаких серверов и облаков</string>
+    <string name="privacy_no_cloud_desc">У нас нет бэкенда. Данные никуда не загружаются.</string>
+    <string name="privacy_notif_title">Только музыкальные уведомления</string>
+    <string name="privacy_notif_desc">Мы читаем уведомления Spotify, YouTube Music и т. д. Личные сообщения никогда не считываются.</string>
+    <string name="privacy_open_source_title">Открытый исходный код</string>
+    <string name="privacy_open_source_desc">Проверяйте наш код в любое время на GitHub.</string>
+    <string name="privacy_quote">"Мы не можем видеть ваши данные. И не хотим."</string>
+    <string name="privacy_got_it">Понятно</string>
+
+    <!-- Onboarding: Battery Optimization -->
+    <string name="battery_title">И еще кое-что для точности</string>
+    <string name="battery_description">Разрешите Tempo работать в фоновом режиме для непрерывного отслеживания. Это гарантирует, что мы не пропустим ни одной песни, пока экран выключен.</string>
+    <string name="battery_optimize">Оптимизировать</string>
+    <string name="battery_skip">Пропустить пока</string>
+
+    <!-- Onboarding: Advanced Settings -->
+    <string name="advanced_data_prefs">Настройки данных</string>
+    <string name="advanced_choose_data">Выберите, сколько данных использовать для анализа аудио</string>
+    <string name="advanced_basic_title">Базовый анализ</string>
+    <string name="advanced_basic_desc">Жанр и настроение из локальной базы данных</string>
+    <string name="advanced_basic_detail">Быстро • Без загрузки данных</string>
+    <string name="advanced_extended_title">Расширенный аудиоанализ [ЭКСПЕРИМЕНТАЛЬНО]</string>
+    <string name="advanced_extended_desc">Детальный анализ настроения и энергии по 30-секундному превью</string>
+    <string name="advanced_extended_detail">~500 КБ на трек • Более точно</string>
+    <string name="advanced_merge_title">Умное объединение версий</string>
+    <string name="advanced_merge_desc">Считать концертные и ремикс-версии одной песней для чистой статистики</string>
+    <string name="advanced_merge_detail">Рекомендуется для чистоты статистики</string>
+    <string name="advanced_change_settings">Вы можете изменить это в любое время в Настройках</string>
+    <string name="advanced_continue">Продолжить</string>
+
+    <!-- Permission screen (standalone) -->
+    <string name="perm_one_needed">Требуется одно разрешение</string>
+    <string name="perm_how_tempo_sees">Так Tempo видит, что вы сейчас слушаете</string>
+    <string name="perm_music_only">ТОЛЬКО МУЗЫКА</string>
+    <string name="perm_music_apps">Spotify, YouTube\nи практически любой\nмузыкальный плеер</string>
+    <string name="perm_private_data">ЛИЧНЫЕ ДАННЫЕ</string>
+    <string name="perm_we_ignore">Мы игнорируем чаты,\nСМС, почту и всё\nостальное</string>
+    <string name="perm_enable_access">Разрешить доступ к уведомлениям</string>
+    <string name="perm_do_later">Я сделаю это позже</string>
+    <string name="perm_runs_efficient">Эффективная работа в фоне • Батарея не расходуется</string>
+
+    <!-- Spotify connection bottom sheet -->
+    <string name="spotify_works_any_app">✓ Tempo работает с любым музыкальным приложением!</string>
+    <string name="spotify_get_art">Загрузка обложек в высоком качестве</string>
+    <string name="spotify_connect_metadata">Подключите Spotify для использования надежной базы данных:</string>
+    <string name="spotify_reliable_art">Официальные обложки альбомов</string>
+    <string name="spotify_accurate_genre">Точные данные о жанрах</string>
+    <string name="spotify_mood_energy">Настроение и энергия треков</string>
+    <string name="spotify_optional">Это необязательно. Мы никогда не получаем доступ к вашим плейлистам или личным данным.</string>
+    <string name="spotify_connect">Подключить Spotify</string>
+    <string name="spotify_skip">Пропустить пока</string>
+
+    <!-- Restore / Import screen -->
+    <string name="restore_import_title">Импорт и восстановление</string>
+    <string name="restore_import_subtitle">Импортируйте историю из других сервисов или восстановите резервную копию.</string>
+    <string name="restore_import">Импорт</string>
+    <string name="restore_section">Восстановление</string>
+    <string name="restore_google_drive">Google Диск</string>
+    <string name="restore_connect_google">Войти в Google Аккаунт</string>
+    <string name="restore_no_backups">Резервные копии не найдены</string>
+    <string name="restore_from_file">Восстановить из файла</string>
+    <string name="restore_select_zip">Выберите резервную копию .zip</string>
+    <string name="restore_start_fresh">Начать с чистого листа</string>
+    <string name="restore_back">Назад</string>
+    <string name="restore_restoring">Восстановление…</string>
+    <string name="restore_processing">Обработка…</string>
+    <string name="restore_from_cloud">Восстановление из облака…</string>
+    <string name="restore_options">Параметры восстановления</string>
+    <string name="restore_handle_conflicts">Как обрабатывать конфликты данных?</string>
+    <string name="restore_replace_all">Заменить все данные</string>
+    <string name="restore_skip_dupes">Пропускать дубликаты</string>
+    <string name="restore_cancel">Отмена</string>
+    <string name="restore_this_backup">Восстановить эту копию?</string>
+    <string name="restore_restore">Восстановить</string>
+    <string name="restore_importing_spotify">Импорт из Spotify…</string>
+    <string name="restore_fetching_plays">Получение недавних прослушиваний</string>
+    <string name="restore_import_complete">Импорт завершен!</string>
+    <string name="restore_import_failed">Импорт не удался</string>
+    <string name="restore_ok">ОК</string>
+    <string name="restore_analyzing_liked">🕐 Анализ понравившихся песен…</string>
+    <string name="restore_finding_playlists">📅 Поиск ежегодных плейлистов…</string>
+    <string name="restore_collecting_top">🎵 Сбор лучших треков…</string>
+    <string name="restore_creating_history">✨ Создание вашей истории…</string>
+    <string name="restore_using_dates">Использование дат из понравившихся песен</string>
+    <string name="restore_finding_top">Поиск плейлистов с лучшими песнями</string>
+    <string name="restore_building_top">Создание на основе лучших треков</string>
+    <string name="restore_creating_patterns">Создание реалистичной структуры прослушивания</string>
+    <string name="restore_building_history">Создание вашей музыкальной истории</string>
+    <string name="restore_completing_auth">Завершение авторизации</string>
+    <string name="restore_getting_started">Подготовка вашей статистики</string>
+    <string name="restore_please_wait">Пожалуйста, подождите, пока мы обрабатываем ваши данные</string>
+
+    <!-- Import: Last.fm -->
+    <string name="lastfm_import_title">Импорт из Last.fm</string>
+    <string name="lastfm_import_desc">Импортируйте историю скробблинга, чтобы разблокировать глубокую статистику</string>
+    <string name="lastfm_import_years">Импортируйте историю прослушивания за годы</string>
+    <string name="lastfm_connect">Подключить Last.fm</string>
+    <string name="lastfm_discovering">Поиск вашего аккаунта Last.fm…</string>
+    <string name="lastfm_discovering_short">Поиск аккаунта…</string>
+    <string name="lastfm_welcome">Добро пожаловать, %1$s!</string>
+    <string name="lastfm_total_scrobbles">Всего скробблов: %1$s</string>
+    <string name="lastfm_choose_level">Выберите уровень импорта</string>
+    <string name="lastfm_recommended">Рекомендуется</string>
+    <string name="lastfm_recommended_tier">Рекомендуется: %1$s</string>
+    <string name="lastfm_cancel_import">Отменить импорт</string>
+    <string name="lastfm_progress">%1$s из %2$s скробблов</string>
+    <string name="lastfm_progress_percent">%1$s%%</string>
+    <string name="lastfm_import_complete">Импорт завершен!</string>
+    <string name="lastfm_history_imported">История Last.fm импортирована</string>
+    <string name="lastfm_complete_history">Вся история успешно импортирована.</string>
+    <string name="lastfm_history_connected">Ваша история Last.fm подключена</string>
+    <string name="lastfm_done">Готово</string>
+    <string name="lastfm_this_may_take">Это может занять несколько минут</string>
+    <string name="lastfm_we_analyze">Мы проанализируем вашу историю прослушивания и импортируем недавние скробблы. Все данные остаются на вашем устройстве.</string>
+
+    <!-- Import: Spotify -->
+    <string name="spotify_import_title">Импорт из Spotify</string>
+    <string name="spotify_import_desc">Подключение к Spotify</string>
+    <string name="spotify_connect_for_stats">Подключите Spotify для\nрасширенной статистики</string>
+    <string name="spotify_connect_unlock">Подключитесь, чтобы разблокировать:</string>
+    <string name="spotify_data_stays">Ваши данные остаются на устройстве. Мы получаем аудиопараметры только для тех треков, которые вы уже прослушали.</string>
+    <string name="spotify_note_50">"Примечание: API Spotify предоставляет только последние ~50 прослушиваний. "</string>
+
+    <!-- Empty state -->
+    <string name="empty_tracking_active">Отслеживание музыки активно</string>
+    <string name="empty_quiet_week">Спокойная неделя</string>
+    <string name="empty_quiet_week_msg">Мы готовы к работе, но пока не зафиксировали прослушиваний. Включите плеер, чтобы увидеть недельную активность.</string>
+    <string name="empty_fresh_month">Новый месяц, новый старт</string>
+    <string name="empty_fresh_month_msg">Ваша история в безопасности. Слушайте музыку, чтобы запустить статистику этого месяца.</string>
+    <string name="empty_new_year">Год %1$d начался</string>
+    <string name="empty_new_year_msg">Ваш годовой обзор начинается сейчас. Продолжайте слушать, чтобы создать свою историю.</string>
+    <string name="empty_no_data">Данных пока нет</string>
+    <string name="empty_no_data_msg">Начните слушать музыку, чтобы увидеть свою статистику здесь.</string>
+    <string name="empty_getting_started">Подготовка вашей статистики</string>
+    <string name="empty_stats_flowing">Давайте запустим вашу статистику</string>
+    <string name="empty_no_account">Подключение аккаунта не требуется</string>
+    <string name="empty_open_apps">Откройте Spotify, YouTube Music или другой плеер</string>
+    <string name="empty_play_songs">Включите песни — статистика скоро появится</string>
+    <string name="empty_return_insights">Возвращайтесь сюда, чтобы увидеть инсайты</string>
+    <string name="empty_check_apps">Поддерживаемые плееры</string>
+    <string name="empty_play_to_see">Включите музыку, чтобы увидеть ее здесь.</string>
+
+    <!-- Details screens -->
+    <string name="details_song">Детали песни</string>
+    <string name="details_artist">Детали исполнителя</string>
+    <string name="details_album">Детали альбома</string>
+    <string name="details_plays">Прослушивания</string>
+    <string name="details_total_plays">Всего прослушиваний</string>
+    <string name="details_total_time">Общее время</string>
+    <string name="details_total_listening">Общее прослушивание</string>
+    <string name="details_listening_time">Время прослушивания</string>
+    <string name="details_times_played">Раз сыграно</string>
+    <string name="details_peak_position">Пиковая позиция</string>
+    <string name="details_release_date">Дата релиза</string>
+    <string name="details_top_albums">Лучшие альбомы</string>
+    <string name="details_top_songs">Лучшие песни</string>
+    <string name="details_genre">Жанр</string>
+    <string name="details_listen_on">Слушать на</string>
+    <string name="details_tracks">Треки</string>
+    <string name="details_listening_activity">Активность прослушивания</string>
+    <string name="details_listening_trends">Тренды прослушивания</string>
+    <string name="details_audio_analysis">Анализ аудио</string>
+    <string name="details_average_tempo">Средний темп</string>
+    <string name="details_based_on_tracks">На основе %1$d треков с аудиоанализом</string>
+    <string name="details_estimated_energy">Оценочная энергия</string>
+    <string name="details_tracks_with_audio">Треки с аудиопараметрами</string>
+    <string name="details_pending_enrichment">Ожидает обогащения данных</string>
+    <string name="details_share_preview">Предпросмотр для шеринга</string>
+    <string name="details_merge_artist">Объединить исполнителя</string>
+    <string name="details_merge_with">Объединить с…</string>
+    <string name="details_block_artist">ЗАБЛОКИРОВАТЬ ИСПОЛНИТЕЛЯ</string>
+    <string name="details_block_track">ЗАБЛОКИРОВАТЬ ЭТОТ ТРЕК</string>
+    <string name="details_unique_tracks">Уникальные песни</string>
+    <string name="details_unique_albums">Уникальные альбомы</string>
+    <string name="details_peak_hour">Пиковый час прослушивания</string>
+    <string name="details_most_active">Наиболее активный</string>
+    <string name="details_first_listen">Первое прослушивание</string>
+    <string name="details_last_listen">Последнее прослушивание</string>
+
+    <!-- Album editor -->
+    <string name="album_edit_title">Редактировать альбом</string>
+    <string name="album_add_song">Добавить песню</string>
+    <string name="album_add_song_title">Добавить песню в альбом</string>
+    <string name="album_add_song_desc">Песни %1$s, не вошедшие в этот альбом</string>
+    <string name="album_add_song_search">Поиск песен…</string>
+    <string name="album_no_candidates">Больше нет песен этого исполнителя для добавления</string>
+    <string name="album_remove_title">Удалить из альбома?</string>
+    <string name="album_remove_msg">\"%1$s\" больше не будет ассоциироваться с этим альбомом.</string>
+    <string name="album_remove_note">Ваша история прослушивания будет сохранена.</string>
+
+    <!-- Merge dialogs -->
+    <string name="merge_confirm">Подтвердить объединение</string>
+    <string name="merge_artist_confirm">⚠️ Подтверждение объединения</string>
+    <string name="merge_artist_into">Объединить \"%1$s\" с \"%2$s\"?</string>
+    <string name="merge_track_into">Объединить с \"%1$s\" от %2$s?</string>
+    <string name="merge_cannot_undo">This action cannot be undone. All listening history will be combined.</string>
+    <string name="merge_merging_artists">Объединение исполнителей…</string>
+    <string name="merge_artist_search">Найдите нужного исполнителя для объединения. Вся история прослушивания будет объединена.</string>
+    <string name="merge_track_search">Найдите нужный трек для объединения. Вся история прослушивания будет объединена.</string>
+    <string name="merge_search_artists">Введите для поиска исполнителей</string>
+    <string name="merge_search_tracks">Введите для поиска треков</string>
+    <string name="merge_merging">Объединение: %1$s</string>
+
+    <!-- Engagement -->
+    <string name="engagement_score">Уровень вовлеченности</string>
+    <string name="engagement_your_engagement">Ваша вовлеченность</string>
+
+    <!-- Profile screen -->
+    <string name="profile_badges">Значки</string>
+    <string name="profile_no_badges">Нет значков для отображения</string>
+    <string name="profile_collected">Получено: %1$d / %2$d</string>
+    <string name="profile_maxed">МАКСИМУМ</string>
+    <string name="profile_unlocked">РАЗБЛОКИРОВАНО</string>
+    <string name="profile_level_progress">Прогресс уровня</string>
+    <string name="profile_listening_personality">Ваш музыкальный характер</string>
+    <string name="profile_top_genres">Ваши лучшие жанры</string>
+
+    <!-- History screen -->
+    <string name="history_title">Фильтр истории</string>
+    <string name="history_empty">История пуста</string>
+    <string name="history_search">Поиск песен…</string>
+    <string name="history_sort_by">"Sort by: "</string>
+    <string name="history_recent_activity">Последняя активность</string>
+
+    <!-- Spotlight -->
+    <string name="spotlight_title">В центре внимания</string>
+    <string name="spotlight_share_story">Поделиться историей</string>
+    <string name="spotlight_share_instagram">Поделиться в Instagram Stories</string>
+    <string name="spotlight_loading">Загрузка карточек…</string>
+    <string name="spotlight_no_cards">Нет доступных карточек</string>
+    <string name="spotlight_preparing">Подготовка вашей истории…</string>
+    <string name="spotlight_view_story">Смотреть историю</string>
+    <string name="spotlight_view_story_for">Смотреть историю для %1$s</string>
+    <string name="spotlight_your_music">Ваша музыка %1$s</string>
+
+    <!-- Spotlight story pages -->
+    <string name="spotlight_top_songs">ТОП ПЕСЕН</string>
+    <string name="spotlight_daily_rotation">ЕЖЕДНЕВНАЯ РОТАЦИЯ</string>
+    <string name="spotlight_your_top_artist">Ваш лучший исполнитель</string>
+    <string name="spotlight_your_top_song">Ваша лучшая песня</string>
+    <string name="spotlight_your_all_time">Любимое за все время</string>
+    <string name="spotlight_favorite_msg">Это ваша самая прослушиваемая песня за всё время.</string>
+    <string name="spotlight_top1_fan">ТОП-1% СЛУШАТЕЛЕЙ</string>
+    <string name="spotlight_breaking">★ НОВАЯ ЗАВИСИМОСТЬ ОБНАРУЖЕНА ★</string>
+    <string name="spotlight_deep_cut">РЕДКАЯ НАХОДКА</string>
+    <string name="spotlight_horizon">ГОРИЗОНТ</string>
+    <string name="spotlight_weekly_pulse">Еженедельный пульс</string>
+    <string name="spotlight_listened_for">Вы слушали её</string>
+    <string name="spotlight_back_to_back">подряд</string>
+    <string name="spotlight_days_thats_over">Это более %1$d дней без перерыва!</string>
+    <string name="spotlight_new_discoveries">НОВЫЕ ОТКРЫТИЯ</string>
+    <string name="spotlight_mood_genre">Настроение и жанр</string>
+    <string name="spotlight_circadian">Суточные ритмы</string>
+    <string name="spotlight_streak_risk">Серия под угрозой!</string>
+    <string name="spotlight_days_lost">дней потеряно</string>
+    <string name="spotlight_ends_in">Закончится через %1$s</string>
+
+    <!-- Spotlight Canvas -->
+    <string name="canvas_add_cards">Нажмите +, чтобы добавить карточки или текст</string>
+    <string name="canvas_choose_bg">Выберите фон</string>
+    <string name="canvas_add_card">Добавить карточку</string>
+    <string name="canvas_gradients">ГРАДИЕНТЫ</string>
+    <string name="canvas_solid_colors">ОДНОТОННЫЕ</string>
+    <string name="canvas_intensity">ИНТЕНСИВНОСТЬ</string>
+    <string name="canvas_tempo_label">ТЕМП</string>
+
+    <!-- Share Cards -->
+    <string name="share_your_data">ВАШИ ДАННЫЕ</string>
+    <string name="share_plays_label">ПРОСЛУШИВАНИЯ</string>
+    <string name="share_minutes">МИНУТЫ</string>
+    <string name="share_unique_tracks">УНИКАЛЬНЫЕ ТРЕКИ</string>
+    <string name="share_weekday">БУДНИ</string>
+    <string name="share_weekend">ВЫХОДНЫЕ</string>
+    <string name="share_time">Время</string>
+    <string name="share_page_a1">Страница A1 • Раздел музыки</string>
+    <string name="share_tempo_vanguard">АВАНГАРД TEMPO</string>
+    <string name="share_early_adopter">РАННИЙ ПОЛЬЗОВАТЕЛЬ (ОСНОВАТЕЛЬ)</string>
+    <string name="share_access_pass">ПРОПУСК</string>
+    <string name="share_scan_access">СКАНИРУЙТЕ ДЛЯ ДОСТУПА</string>
+    <string name="share_tempo_stats">Статистика Tempo</string>
+    <string name="share_photo_archive">Фото: Архив</string>
+    <string name="share_from_archive">Из архива</string>
+    <string name="share_restored">Восстановлено из памяти</string>
+
+    <!-- Share Preview Dialog & Share Cards (artist/song detail) -->
+    <string name="share_close">Закрыть</string>
+    <string name="share_failed">Не удалось поделиться изображением</string>
+    <string name="share_content_description">Поделиться</string>
+    <string name="share_brand">TEMPO</string>
+    <string name="share_total_time">ОБЩЕЕ ВРЕМЯ</string>
+    <string name="share_unique_songs">УНИКАЛЬНЫЕ ПЕСНИ</string>
+    <string name="share_top_songs">ТОП ПЕСЕН</string>
+    <string name="share_top_fan">🔥 ТОП 1%</string>
+    <string name="share_country_format">📍 %1$s</string>
+    <string name="share_plays_format">%1$d прослушиваний</string>
+    <string name="share_min_format">%1$d мин</string>
+
+    <!-- Spotlight Reminder -->
+    <string name="spotlight_reminder_view">Смотреть историю</string>
+
+    <!-- Backup/Restore screen -->
+    <string name="backup_title">Резервная копия</string>
+    <string name="backup_google_drive">GOOGLE ДИСК</string>
+    <string name="backup_local">ЛОКАЛЬНАЯ КОПИЯ</string>
+    <string name="backup_connect_google">Войти в Google Аккаунт</string>
+    <string name="backup_to_drive">Создать копию на Диске</string>
+    <string name="backup_auto">Автоматическое резервирование</string>
+    <string name="backup_wifi_only">Только по Wi-Fi</string>
+    <string name="backup_wifi_desc">Резервное копирование только при подключении к Wi-Fi</string>
+    <string name="backup_include_images">Включать локальные обложки</string>
+    <string name="backup_history">История копий (%1$d)</string>
+    <string name="backup_no_backups">Резервные копии не найдены</string>
+    <string name="backup_estimated">Примерный размер: %1$s</string>
+    <string name="backup_export">Экспорт на устройство</string>
+    <string name="backup_import">Импорт с устройства</string>
+    <string name="backup_tips">💡 Советы по резервному копированию</string>
+    <string name="backup_drive_auto">• Копии на Google Диске автоматические и зашифрованные\n</string>
+    <string name="backup_use_different">Использовать другой аккаунт</string>
+    <string name="backup_last_backup">Последняя копия: %1$s</string>
+
+    <!-- Supported Apps screen -->
+    <string name="supported_apps_title">Обнаруженное устройство</string>
+    <string name="supported_apps_desc">Включите приложения для отслеживания музыки. Заблокируйте приложения, чтобы полностью исключить их. Нажмите +, чтобы добавить свое приложение.</string>
+    <string name="supported_apps_installed">Установлено • Начните слушать для отслеживания</string>
+    <string name="supported_apps_no_apps">Приложения не найдены</string>
+    <string name="supported_apps_add">Добавить приложение</string>
+
+    <!-- Background Protection (Xiaomi) -->
+    <string name="bg_protection_title">Настройка параметров</string>
+    <string name="bg_protection_xiaomi_desc">Устройства Xiaomi агрессивно закрывают фоновые приложения. Выполните следующие шаги, чтобы Tempo работал стабильно.</string>
+    <string name="bg_protection_autostart_disabled">Автозапуск отключен. Tempo может перестать работать в фоновом режиме.</string>
+    <string name="bg_protection_enable_autostart">Включить автозапуск</string>
+    <string name="bg_protection_battery_saver">Контроль активности → Нет ограничений</string>
+    <string name="bg_protection_lock_app">Закрепить приложение в меню недавних</string>
+    <string name="bg_protection_lock_boost">Заблокировать в ускорении работы</string>
+    <string name="bg_protection_disable_miui">Отключить оптимизацию MIUI</string>
+
+    <!-- Xiaomi First-Time Guidance Popup -->
+    <string name="xiaomi_guidance_title">Extra Setup Required</string>
+    <string name="xiaomi_guidance_desc">Xiaomi devices aggressively kill background apps. Without extra configuration, Tempo may stop tracking your music.</string>
+    <string name="xiaomi_guidance_configure">Настроить сейчас</string>
+    <string name="xiaomi_guidance_later">Maybe Later</string>
+
+    <!-- Spotify Settings Section -->
+    <string name="spotify_integration">Интеграция со Spotify</string>
+    <string name="spotify_disconnect_title">Отключить Spotify?</string>
+    <string name="spotify_disconnect_msg">Это удалит все данные об аудиопараметрах треков. Ваша история прослушивания сохранится, но расширенная статистика (настроение, энергия) станет недоступна.</string>
+    <string name="spotify_disconnect">Отключить</string>
+    <string name="spotify_connect_for">Подключить Spotify</string>
+    <string name="spotify_unlock_analysis">Разблокируйте подробный анализ параметров вашей музыки</string>
+    <string name="spotify_maybe_later">Позже</string>
+    <string name="spotify_connect_button">Подключить</string>
+
+    <!-- Audio features -->
+    <string name="audio_mood_analysis">Анализ настроения</string>
+    <string name="audio_energy_insights">Оценка энергии</string>
+    <string name="audio_danceability">Танцевальность</string>
+    <string name="audio_acousticness">Акустичность vs Электроника</string>
+    <string name="audio_harmonic">Гармонический резонанс</string>
+    <string name="audio_sonic">Звуковое погружение</string>
+    <string name="audio_from_spotify">Из Spotify и уведомлений</string>
+    <string name="audio_spotify_requires">Для %1$s требуется Spotify</string>
+
+    <!-- Stats screen -->
+    <string name="stats_not_enough">Недостаточно данных. Продолжайте слушать!</string>
+    <string name="stats_forgetten_fav">Забытый фаворит</string>
+
+    <!-- Coach Mark / Walkthrough -->
+    <string name="coach_tip">Совет</string>
+    
+    <!-- Music Links -->
+    <string name="music_links_listen_on">Слушать на</string>
+
+    <!-- Common/Shared -->
+    <string name="common_cancel">Отмена</string>
+    <string name="common_save">Сохранить</string>
+    <string name="common_back">Назад</string>
+    <string name="common_ok">ОК</string>
+    <string name="common_done">Готово</string>
+    <string name="common_continue">Продолжить</string>
+    <string name="common_skip">Пропустить</string>
+    <string name="common_connect">Подключить</string>
+    <string name="common_remove">Удалить</string>
+
+    <!-- Settings screen: section headers -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_profile">Профиль</string>
+    <string name="settings_language">Язык</string>
+    <string name="settings_notifications">Уведомления</string>
+    <string name="settings_music_tracking">Отслеживание музыки</string>
+    <string name="settings_background_protection">Фоновый режим</string>
+    <string name="settings_content_filtering">Фильтрация контента</string>
+    <string name="settings_advanced_stats">Расширенная статистика</string>
+    <string name="settings_import_history">Импорт истории</string>
+    <string name="settings_your_data">Ваши данные</string>
+    <string name="settings_community">Сообщество</string>
+    <string name="settings_about">О приложении</string>
+    <string name="settings_tap_to_edit">Нажмите, чтобы изменить имя</string>
+    <string name="settings_tap_photo_to_change">Нажмите на фото для изменения</string>
+    <string name="settings_update_name">Изменить имя</string>
+    <string name="settings_change_photo">Изменить фото</string>
+    <string name="settings_remove_photo">Удалить фото</string>
+    <string name="settings_profile_photo">Фото профиля</string>
+    <string name="settings_display_name">Имя пользователя</string>
+    <string name="settings_save">Сохранить</string>
+    <string name="settings_cancel">Отмена</string>
+    <string name="settings_back">Назад</string>
+    <string name="settings_language_title">Язык приложения</string>
+    <string name="settings_language_subtitle">Выберите предпочтительный язык</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_french">Français</string>
+    <string name="settings_language_german">Deutsch</string>
+    <string name="settings_language_hungarian">Magyar</string>
+    <string name="settings_language_portuguese">Português</string>
+    <string name="settings_language_russian">Русский</string>
+    <string name="settings_select_language">Выберите язык</string>
+    <string name="settings_daily_summary">Ежедневная сводка</string>
+    <string name="settings_daily_summary_desc">Получайте сводку прослушиваний каждый день в 20:00</string>
+    <string name="settings_weekly_recap">Итоги недели</string>
+    <string name="settings_weekly_recap_desc">Просматривайте ключевую статистику каждое воскресенье вечером</string>
+    <string name="settings_achievements">Достижения</string>
+    <string name="settings_achievements_desc">Получайте уведомления при достижении целей</string>
+    <string name="settings_daily_challenges">Напоминания о вызовах дня</string>
+    <string name="settings_daily_challenges_desc">Узнавайте, когда готовы новые ежедневные цели</string>
+    <string name="settings_manage_permissions">Управление разрешениями</string>
+    <string name="settings_manage_permissions_desc">Tempo считывает уведомления, чтобы знать, что вы слушаете</string>
+    <string name="settings_manage_apps">Управление плеерами</string>
+    <string name="settings_manage_apps_desc">Выберите плееры, которые отслеживает Tempo</string>
+    <string name="settings_configure_required">⚠️ Требуется настройка параметров</string>
+    <string name="settings_xiaomi_settings">Настройки для Xiaomi</string>
+    <string name="settings_prevent_killed">Запретить закрытие Tempo в фоновом режиме</string>
+    <string name="settings_filter_podcasts">Исключить подкасты</string>
+    <string name="settings_filter_podcasts_desc">Не отслеживать подкасты и приложения с ними</string>
+    <string name="settings_filter_audiobooks">Исключить аудиокниги</string>
+    <string name="settings_filter_audiobooks_desc">Не отслеживать аудиокниги и приложения с ними</string>
+    <string name="settings_connected_as">Подключено как %1$s</string>
+    <string name="settings_tap_to_disconnect">Нажмите, чтобы отключить</string>
+    <string name="settings_connect_spotify">Подключить Spotify</string>
+    <string name="settings_connect_spotify_desc">Разблокировать анализ настроения и параметров звука</string>
+    <string name="settings_spotify_api_mode">Режим работы только через API Spotify</string>
+    <string name="settings_spotify_api_on">ВКЛ: Отслеживание через серверы Spotify (периодическая синхронизация)</string>
+    <string name="settings_spotify_api_off">ВЫКЛ: Отслеживание через уведомления телефона (в реальном времени)</string>
+    <string name="settings_extended_audio">Расширенный аудиоанализ (экспериментально)</string>
+    <string name="settings_extended_audio_desc">Скачивание 30-секундных превью для глубокого анализа (расходует мобильный трафик)</string>
+    <string name="settings_lastfm_connected">Last.fm: %1$s</string>
+    <string name="settings_lastfm_sync_daily">Синхронизация ежедневно</string>
+    <string name="settings_lastfm_sync_weekly">Синхронизация еженедельно</string>
+    <string name="settings_lastfm_import_complete">Импорт завершен • Нажмите для управления</string>
+    <string name="settings_import_lastfm">Импорт из Last.fm</string>
+    <string name="settings_import_lastfm_desc">Импортируйте историю скробблинга для детальной статистики</string>
+
+    <!-- Desktop Sync -->
+    <string name="desktop_link_section_header">Синхронизация с ПК</string>
+    <string name="desktop_link_settings_title">Синхронизация с ПК</string>
+    <string name="desktop_link_settings_subtitle">Отслеживайте и синхронизируйте музыку с Mac или ПК по локальной сети Wi-Fi</string>
+    <string name="desktop_link_title">Синхронизация с ПК</string>
+    <string name="desktop_link_description">Подключите настольное приложение Tempo для синхронизации истории прослушивания с Mac или ПК на этот телефон по Wi-Fi. Откройте приложение на компьютере и отсканируйте QR-код.</string>
+    <!-- Receiver status (phone hosts the NanoHTTPD server that desktop pushes plays to) -->
+    <string name="desktop_receiver_running">Готово к синхронизации на порту %1$d</string>
+    <string name="desktop_receiver_stopped">Приемник синхронизации выключен</string>
+    <!-- Scanner UI -->
+    <string name="desktop_scan_qr_title">Сканировать QR-код на ПК или в браузере</string>
+    <string name="desktop_scan_qr_subtitle">Откройте Tempo Desktop (Mac/PC) или расширение Tempo Stats и отсканируйте показанный там QR-код</string>
+    <string name="desktop_scan_button">Сканировать QR-код</string>
+    <string name="desktop_scan_instruction">Направьте камеру на QR-код в Tempo Desktop или в расширении браузера</string>
+    <string name="desktop_cancel_scan">Отмена</string>
+    <!-- Paired state -->
+    <string name="desktop_connected_to">Связанный ПК</string>
+    <string name="desktop_phone_address">Адрес синхронизации телефона</string>
+    <string name="desktop_device_name">Устройство</string>
+    <string name="desktop_disconnect">Отключить</string>
+    <!-- Manual entry -->
+    <string name="desktop_manual_entry">Ввести данные вручную</string>
+    <string name="desktop_ip_hint">IP-адрес компьютера (например, 192.168.1.10)</string>
+    <string name="desktop_port_hint">Порт (по умолчанию: 8765)</string>
+    <string name="desktop_token_hint">Токен подключения (из приложения на ПК)</string>
+    <string name="desktop_connect">Подключить</string>
+    <!-- Shared -->
+    <string name="desktop_auth_token">Токен</string>
+    <string name="desktop_copy_code">Копировать токен</string>
+    <string name="desktop_last_sync">Последняя синхронизация</string>
+    <!-- Desktop Stats -->
+    <string name="desktop_stats_title">Статистика синхронизации с ПК</string>
+    <string name="desktop_stats_total_scrobbles">Всего прослушиваний</string>
+    <string name="desktop_stats_listening_time">Время прослушивания</string>
+    <string name="desktop_stats_7day_scrobbles">За последние 7 дней</string>
+    <string name="desktop_stats_7day_time">Время за 7 дней</string>
+    <string name="desktop_stats_top_listened">Чаще всего слушают на ПК</string>
+    <string name="settings_desktop_battery_critical">Критический уровень заряда батареи (%1$d%%) — синхронизация с ПК приостановлена для экономии энергии. Зарядите телефон.</string>
+    <string name="settings_desktop_battery_low">Низкий заряд батареи (%1$d%%) — рекомендуется зарядить телефон перед синхронизацией.</string>
+    <string name="settings_desktop_battery_healthy">Батарея в норме (%1$d%%) — синхронизация с ПК доступна.</string>
+    <string name="desktop_stats_top_artist">Лучший исполнитель</string>
+    <string name="desktop_stats_top_track">Лучший трек</string>
+    <string name="desktop_stats_sources">Приложения-источники</string>
+    <string name="desktop_download_app">Скачать приложение для ПК</string>
+    <string name="desktop_download_app_desc">Установите Tempo для Mac и ПК</string>
+    <string name="settings_smart_merge">Умное объединение версий</string>
+    <string name="settings_smart_merge_desc">Считать концертные и ремикс-версии одной песней для чистой статистики</string>
+    <string name="settings_backup_restore">Резервная копия</string>
+    <string name="settings_backup_restore_desc">Экспорт или импорт ваших данных</string>
+    <string name="enrichment_report_settings_option">Отчет об обогащении данных</string>
+    <string name="enrichment_report_settings_option_desc">Посмотрите, для какой части библиотеки найдены обложки и детали, и обновите всё разом</string>
+    <string name="enrichment_report_title">Отчет об обогащении данных</string>
+    <string name="enrichment_report_description">Tempo автоматически загружает обложки, жанры и детали песен из таких источников, как MusicBrainz и Spotify. Ниже показан текущий статус вашей библиотеки. Песни без обложек, которые вы открываете, обновляются автоматически; вы также можете обновить всю медиатеку сразу.</string>
+    <string name="enrichment_report_total_tracks">Всего песен</string>
+    <string name="enrichment_report_enriched">Обогащено</string>
+    <string name="enrichment_report_with_art">С обложками</string>
+    <string name="enrichment_report_without_art">Без обложек</string>
+    <string name="enrichment_report_pending">Ожидают обогащения</string>
+    <string name="enrichment_report_failed">Ошибка</string>
+    <string name="enrichment_report_skipped">Отложено (мало прослушиваний)</string>
+    <string name="enrichment_report_not_found">Не найдено в сети</string>
+    <string name="enrichment_report_coverage">Полнота метаданных</string>
+    <string name="enrichment_report_art_coverage">Полнота обложек</string>
+    <string name="enrichment_report_enrich_all">Обогатить все песни</string>
+    <string name="enrichment_report_enrich_all_desc">Фоновая загрузка недостающих деталей для всех песен с учетом ограничений запросов. Вы можете выйти из этого экрана, процесс продолжится.</string>
+    <string name="enrichment_report_enrich_all_button">Обогатить %1$d песен</string>
+    <string name="enrichment_report_cancel">Отмена</string>
+    <string name="enrichment_report_progress">Обогащение… %1$d / %2$d</string>
+    <string name="enrichment_report_starting">Запуск обогащения данных…</string>
+    <string name="enrichment_report_complete">Обогащение успешно завершено.</string>
+    <string name="enrichment_report_nothing_to_do">Все песни уже обогащены. \u2713</string>
+    <string name="settings_clear_all">Удалить все данные</string>
+    <string name="settings_reddit">Сообщество на Reddit</string>
+    <string name="settings_reddit_sub">r/TempoStats</string>
+    <string name="settings_telegram">Telegram-канал</string>
+    <string name="settings_telegram_name">Confused Coconut</string>
+    <string name="settings_github">Проект на GitHub</string>
+    <string name="settings_github_desc">Исходный код и сообщения об ошибках</string>
+    <string name="settings_contribute">Участие в проекте</string>
+    <string name="settings_contribute_desc">Помогите улучшить Tempo</string>
+    <string name="settings_rate_play_store">Оценить в Play Store</string>
+    <string name="settings_privacy_policy">Политика конфиденциальности</string>
+    <string name="settings_version">Версия</string>
+    <string name="settings_processing">Обработка…</string>
+    <string name="settings_import_options">Параметры импорта</string>
+    <string name="settings_import_conflict_msg">Что делать при импорте уже существующих данных?</string>
+    <string name="settings_replace_existing">Заменять существующие</string>
+    <string name="settings_skip_duplicates">Пропускать дубликаты</string>
+    <string name="settings_clear_data_title">Удалить все данные?</string>
+    <string name="settings_clear_data_msg">Это действие нельзя отменить. Вся ваша история прослушивания и настройки будут безвозвратно удалены.</string>
+    <string name="settings_clear_everything">Стереть всё</string>
+    <string name="settings_disconnect_spotify_title">Disconnect Spotify?</string>
+    <string name="settings_disconnect_spotify_msg">Это отключит связь со Spotify. Анализ аудиопараметров и настроения станет недоступен.</string>
+    <string name="settings_disconnect">Отключить</string>
+    <string name="settings_import_success">Успешно обработано записей: %1$d, изображений: %2$d</string>
+
+    <!-- Spotlight story slide labels (Wrapped / Year in Review type) -->
+    <string name="spotlight_this_year_title">Ваш музыкальный %1$d</string>
+    <string name="spotlight_this_month_title">Этот месяц</string>
+    <string name="spotlight_all_time_title">За все время</string>
+    <string name="spotlight_default_title">Ваш фокус</string>
+    <string name="spotlight_listened_minutes">минут</string>
+    <string name="spotlight_days_nonstop">Это более %1$d дней без перерыва!</string>
+    <string name="spotlight_top_artist_label">Лучший исполнитель</string>
+    <string name="spotlight_top_song_label">Лучшая песня</string>
+    <string name="spotlight_top_genres_label">Лучшие жанры</string>
+    <string name="spotlight_listening_personality">Ваш музыкальный характер</string>
+    <string name="spotlight_conclusion_listening_time">Время прослушивания</string>
+    <string name="spotlight_conclusion_min">мин</string>
+    <string name="spotlight_conclusion_top_artists">Лучшие исполнители</string>
+    <string name="spotlight_conclusion_top_songs">Лучшие песни</string>
+    <string name="spotlight_conclusion_top_genres">Лучшие жанры</string>
+    <string name="spotlight_conclusion_closing">Это был ваш музыкальный год.</string>
+    <string name="spotlight_conclusion_closing_week">Это была ваша музыкальная неделя.</string>
+    <string name="spotlight_conclusion_closing_month">Это был ваш музыкальный месяц.</string>
+    <string name="spotlight_conclusion_closing_all_time">Это был ваш музыкальный путь.</string>
+    
+    <!-- Comparative surprise callouts -->
+    <string name="spotlight_compare_top_percent">Больше, чем у %1$d%% слушателей</string>
+    <string name="spotlight_compare_streak_percent">Серия длиннее, чем у %1$d%% пользователей</string>
+    <string name="spotlight_compare_discovery_percent">Разнообразнее, чем у %1$d%% слушателей</string>
+    <string name="spotlight_listening_streak_label">Ваша серия прослушиваний</string>
+    <string name="spotlight_day_in_a_row">день подряд</string>
+    <string name="spotlight_days_in_a_row">дней подряд</string>
+    <string name="spotlight_best_streak">Лучшая серия</string>
+    <string name="spotlight_active_days">Активные дни</string>
+    <string name="spotlight_listening_clock_label">Время активности</string>
+    <string name="spotlight_peak">пик</string>
+    <string name="spotlight_clock_12am">00:00</string>
+    <string name="spotlight_clock_6am">06:00</string>
+    <string name="spotlight_clock_12pm">12:00</string>
+    <string name="spotlight_clock_6pm">18:00</string>
+    <string name="spotlight_top_album_label">Ваш лучший альбом</string>
+    <string name="spotlight_plays">Прослушивания</string>
+    <string name="spotlight_time_spent">Потраченное время</string>
+    <string name="spotlight_tracks">Треки</string>
+    <string name="spotlight_music_universe">Ваша музыкальная вселенная</string>
+    <string name="spotlight_artists">Исполнители</string>
+    <string name="spotlight_unique_songs">Уникальные песни</string>
+    <string name="spotlight_new_artists_chip">+%1$d новых исполнителей %2$s</string>
+    <string name="spotlight_week_vs_weekend">Будни vs Выходные</string>
+    <string name="spotlight_min_per_day">минут/день</string>
+    <string name="spotlight_weekdays">Будни</string>
+    <string name="spotlight_weekends">Выходные</string>
+    <string name="spotlight_day_mon">Пн</string>
+    <string name="spotlight_day_tue">Вт</string>
+    <string name="spotlight_day_wed">Ср</string>
+    <string name="spotlight_day_thu">Чт</string>
+    <string name="spotlight_day_fri">Пт</string>
+    <string name="spotlight_day_sat">Сб</string>
+    <string name="spotlight_day_sun">Вс</string>
+    <string name="spotlight_longest_binge">Самый длинный марафон</string>
+    <string name="spotlight_marathon_session">марафон прослушивания</string>
+    <string name="spotlight_tracks_in_a_row">треков подряд</string>
+    <string name="spotlight_straight">без остановки</string>
+    <string name="spotlight_when_you_listen">Когда вы слушаете</string>
+    <string name="spotlight_listener">слушатель</string>
+    <string name="spotlight_period_morning">Утро</string>
+    <string name="spotlight_period_afternoon">День</string>
+    <string name="spotlight_period_evening">Вечер</string>
+    <string name="spotlight_period_night">Ночь</string>
+    <string name="spotlight_sound_profile">Ваш звуковой профиль</string>
+    <string name="spotlight_mood_energy">Энергия</string>
+    <string name="spotlight_mood_positivity">Позитив</string>
+    <string name="spotlight_mood_danceability">Танцевальность</string>
+    <string name="spotlight_mood_acoustic">Акустика</string>
+    <string name="spotlight_badges_earned">Полученные значки</string>
+    <string name="spotlight_badges_count">Значков: %1$d / %2$d</string>
+    <string name="spotlight_level_up">НОВЫЙ УРОВЕНЬ</string>
+    <string name="spotlight_level_label">УРОВЕНЬ</string>
+    <string name="spotlight_earned_this_period">получено за этот период</string>
+    <string name="spotlight_lv_format">Ур %1$d</string>
+    <string name="spotlight_xp_format_k">+%.1fK XP</string>
+    <string name="spotlight_xp_format">+%1$d XP</string>
+    <string name="spotlight_new_title">НОВОЕ ЗВАНИЕ</string>
+    <string name="spotlight_level">Уровень</string>
+    <string name="spotlight_artists_discovered">Исполнителей найдено</string>
+    <string name="spotlight_playtime_hours">%1$d ч %2$d мин общего времени</string>
+    <string name="spotlight_playtime_minutes">%1$d мин общего времени</string>
+    <string name="spotlight_time_hours">%1$d ч %2$d мин</string>
+    <string name="spotlight_time_minutes">%1$d мин</string>
+    <string name="spotlight_share_your_story">Поделитесь своей историей</string>
+    <string name="spotlight_top_track_setup_label">Ваш лучший трек</string>
+
+    <!-- Stats Screen -->
+    <string name="stats_screen_title">Статистика</string>
+    <string name="stats_no_stats_yet">Статистики пока нет</string>
+    <string name="stats_start_listening">Слушайте музыку, чтобы увидеть свои чарты!</string>
+    <string name="stats_tab_songs">Песни</string>
+    <string name="stats_tab_artists">Исполнители</string>
+    <string name="stats_tab_albums">Альбомы</string>
+    <string name="stats_sort_by">"Сортировка: "</string>
+    <string name="stats_sort_combined">Общий балл</string>
+    <string name="stats_sort_play_count">Количество воспроизведений</string>
+    <string name="stats_sort_total_time">Общее время</string>
+    <string name="stats_rank_1_track">Песня #1</string>
+    <string name="stats_rank_1_artist">Исполнитель #1</string>
+    <string name="stats_rank_1_album">Альбом #1</string>
+
+    <!-- Stats Share -->
+    <string name="stats_share">Поделиться</string>
+    <string name="stats_share_title">Поделиться статистикой</string>
+    <string name="stats_share_close">Закрыть</string>
+    <string name="stats_share_button">Поделиться в Instagram Stories</string>
+    <string name="stats_share_count_label">Элементы</string>
+    <string name="stats_share_theme_label">Тема</string>
+    <string name="stats_share_layout_label">Шаблон</string>
+    <string name="stats_share_theme_midnight">Полночь</string>
+    <string name="stats_share_theme_sunset">Закат</string>
+    <string name="stats_share_theme_aurora">Аврора</string>
+    <string name="stats_share_theme_mono">Монохром</string>
+    <string name="stats_share_layout_list">Список</string>
+    <string name="stats_share_layout_podium">Подиум</string>
+    <string name="stats_share_layout_grid">Сетка</string>
+    <string name="stats_share_summary">Сводка</string>
+    <string name="stats_share_on">Вкл</string>
+    <string name="stats_share_off">Выкл</string>
+    <string name="stats_share_rank_1">#1</string>
+    <string name="stats_share_stat_time">ВРЕМЯ</string>
+    <string name="stats_share_stat_plays">ВОСПР.</string>
+    <string name="stats_share_stat_unique">УНИК.</string>
+    <string name="stats_share_top_songs">Лучшие песни</string>
+    <string name="stats_share_top_artists">Лучшие исполнители</string>
+    <string name="stats_share_top_albums">Лучшие альбомы</string>
+    <string name="stats_share_period_today">Сегодня</string>
+    <string name="stats_share_period_this_week">На этой неделе</string>
+    <string name="stats_share_period_this_month">В этом месяце</string>
+    <string name="stats_share_period_this_year">В этом году</string>
+    <string name="stats_share_period_all_time">За все время</string>
+
+    <!-- History Screen -->
+    <string name="history_filter_title">Фильтр истории</string>
+    <string name="history_time_range">Временной диапазон</string>
+    <string name="history_all_time">За все время</string>
+    <string name="history_7_days_abbr">7 дней</string>
+    <string name="history_30_days_abbr">30 дней</string>
+    <string name="history_last_7_days">За последние 7 дней</string>
+    <string name="history_last_30_days">За последние 30 дней</string>
+    <string name="history_playback">Воспроизведение</string>
+    <string name="history_show_skipped">Показывать пропущенные</string>
+    <string name="history_reset">Сбросить</string>
+    <string name="history_apply_filters">Применить фильтры</string>
+    <string name="history_delete_dialog_title">Удалить из истории?</string>
+    <string name="history_delete_dialog_message">Это безвозвратно удалит \"%s\" из вашей истории прослушивания.</string>
+    <string name="history_delete_button">Удалить</string>
+    <string name="history_empty_title">История пуста</string>
+    <string name="history_empty_message">Включите музыку, чтобы увидеть ее здесь.</string>
+
+    <string name="history_recent_activity_subtitle">Из Spotify и уведомлений</string>
+    <string name="history_lastfm_history">История Last.fm</string>
+    <string name="history_lastfm_subtitle">Импортированная история</string>
+    <string name="history_search_hint">Поиск песен...</string>
+
+    <!-- Song Details Screen -->
+    <string name="song_details_title">Детали песни</string>
+    <string name="song_details_merge">Объединить дубликат…</string>
+    <string name="song_details_delete">Удалить песню</string>
+    <string name="song_details_delete_dialog_title">Удалить песню?</string>
+    <string name="song_details_delete_dialog_message">Вы уверены, что хотите удалить эту песню?</string>
+    <string name="song_details_delete_warning">Это навсегда удалит:</string>
+    <string name="song_details_delete_bullet_1">• Песню из вашей библиотеки</string>
+    <string name="song_details_delete_bullet_2">• Всю историю прослушивания (%d воспроизведений)</string>
+    <string name="song_details_delete_bullet_3">• Все обогащенные метаданные</string>
+    <string name="song_details_delete_bullet_4">• Связи с исполнителями</string>
+    <string name="song_details_delete_undone">Это действие нельзя отменить.</string>
+    <string name="song_details_delete_confirm">УДАЛИТЬ</string>
+    <string name="song_details_all_time_fav">Любимое за все время</string>
+    <string name="song_details_most_played">Это ваша самая прослушиваемая песня за всё время.</string>
+    <string name="song_details_times_played">Раз сыграно</string>
+    <string name="song_details_total_listening">Общее прослушивание</string>
+    <string name="song_details_peak_position">Пиковая позиция</string>
+    <string name="song_details_release_date">Дата релиза</string>
+    <string name="song_details_genre">Жанр</string>
+    <string name="song_details_listening_trends">Тренды прослушивания</string>
+    <string name="song_details_no_data">Нет доступных данных</string>
+    <string name="song_details_mood_genre">Настроение и жанр</string>
+    <string name="song_details_mood">Настроение</string>
+    <string name="song_details_energy">Энергия</string>
+    <string name="song_details_estimated_energy">Оценочная энергия</string>
+
+    <!-- Artist Details Screen -->
+    <string name="artist_details_not_found">Исполнитель не найден</string>
+    <string name="artist_details_retry">Повторить</string>
+    <string name="artist_details_title">Детали исполнителя</string>
+    <string name="artist_details_merge">Объединить с…</string>
+    <string name="artist_details_total_plays">Всего прослушиваний</string>
+    <string name="artist_details_discovery_insight">История открытия</string>
+    <string name="artist_details_discovered_part1">"Вы впервые открыли "</string>
+    <string name="artist_details_discovered_part2">" на "</string>
+    <string name="artist_details_discovered_part3">". С тех пор вы слушали его "</string>
+    <string name="artist_details_discovered_part4">" на протяжении "</string>
+    <string name="artist_details_discovered_part5">" треков."</string>
+    <string name="artist_details_top_songs">Лучшие песни</string>
+    <string name="artist_details_unknown_album">Неизвестный альбом</string>
+    <string name="artist_details_plays">прослушиваний</string>
+    <string name="artist_details_top_albums">Лучшие альбомы</string>
+
+    <!-- Song Details Delete Dialog -->
+    <string name="details_delete_song_title">Удалить песню?</string>
+    <string name="details_delete_song_confirmation">Вы уверены, что хотите удалить эту песню?</string>
+    <string name="details_delete_song_warning">Это навсегда удалит:</string>
+    <string name="details_delete_song_bullet_library">• Песню из вашей библиотеки</string>
+    <string name="details_delete_song_bullet_history">• Всю историю прослушивания (%d воспроизведений)</string>
+    <string name="details_delete_song_bullet_metadata">• Все обогащенные метаданные</string>
+    <string name="details_delete_song_bullet_artist">• Связи с исполнителями</string>
+    <string name="details_delete_song_undone">Это действие нельзя отменить.</string>
+    <string name="details_mood_genre">Настроение и жанр</string>
+    <string name="details_mood_label">Настроение</string>
+    <string name="details_energy_label">Энергия</string>
+    <string name="details_genre_label">Жанр</string>
+
+    <string name="details_your_engagement">Ваша вовлеченность</string>
+    <string name="details_engagement_score">Уровень вовлеченности</string>
+    <string name="details_stat_full_plays">Полные воспроизведения</string>
+    <string name="details_stat_of_plays">из %d</string>
+    <string name="details_stat_avg_completion">Ср. завершенность</string>
+    <string name="details_stat_replays">Повторы</string>
+    <string name="details_stat_back_to_back">подряд</string>
+    <string name="details_completion_rate">Доля завершения</string>
+    <string name="details_skip_rate">Доля пропусков</string>
+    <string name="details_engagement_skipped">⏭️ Пропущено %1$d раз(а) до завершения</string>
+    <string name="details_engagement_paused_freq">⏸️ Часто приостанавливалось (в среднем %1$.1f пауз за раз)</string>
+    <string name="details_engagement_paused_occas">⏸️ Иногда приостанавливалось</string>
+    <string name="details_engagement_paused_rare">⏸️ Редко приостанавливалось</string>
+    <string name="details_engagement_sessions">📅 Прослушано в %1$d различных сессиях</string>
+    <!-- Artist Details -->
+    <string name="details_artist_not_found">Исполнитель не найден</string>
+    <string name="common_retry">Повторить</string>
+    <string name="details_artist_details_title">Детали исполнителя</string>
+
+
+    <string name="details_refresh_artist_image">Обновить изображение</string>
+    <string name="details_rename_artist">Переименовать исполнителя</string>
+
+    <string name="details_discovery_insight">История открытия</string>
+    <string name="details_discovery_part1">"Вы впервые открыли "</string>
+    <string name="details_discovery_part2">" на "</string>
+    <string name="details_discovery_part3">". С тех пор вы слушали его "</string>
+    <string name="details_discovery_part4">" на протяжении "</string>
+    <string name="details_discovery_part5">" треков."</string>
+    <string name="details_unknown_album">Неизвестный альбом</string>
+
+    <!-- Fan Status Percentiles -->
+    <string name="fan_status_top_1">Топ-1% исполнителей</string>
+    <string name="fan_status_top_1_desc">Один из ваших абсолютных фаворитов!</string>
+    <string name="fan_status_top_5">Топ-5% исполнителей</string>
+    <string name="fan_status_top_5_desc">Вы слушаете его чаще других.</string>
+    <string name="fan_status_top_10">Топ-10% исполнителей</string>
+    <string name="fan_status_top_10_desc">Определенно один из ваших лучших выборов.</string>
+    <string name="fan_status_top_25">Топ-25% исполнителей</string>
+    <string name="fan_status_top_25_desc">Важная часть вашего плейлиста.</string>
+    <string name="fan_status_top_50">Топ-50% исполнителей</string>
+    <string name="fan_status_top_50_desc">Вы слушаете его время от времени.</string>
+    <!-- Fan Status Counts -->
+    <string name="fan_status_ultimate">Главный фанат</string>
+    <string name="fan_status_ultimate_desc">Вы на высшей ступени слушателей!</string>
+    <string name="fan_status_super">Суперфанат</string>
+    <string name="fan_status_super_desc">Вы действительно любите этого исполнителя.</string>
+    <string name="fan_status_big">Преданный фанат</string>
+    <string name="fan_status_big_desc">Один из ваших любимых авторов.</string>
+    <string name="fan_status_regular">Регулярный слушатель</string>
+    <string name="fan_status_regular_desc">Вы слушаете его довольно часто.</string>
+    <string name="fan_status_listener">Слушатель</string>
+    <string name="fan_status_listener_desc">Продолжайте слушать, чтобы повысить статус!</string>
+    <string name="home_user_default">Пользователь</string>
+    <!-- Spotlight Poetry -->
+    <string name="poetry_year_unfolds">Год %1$d раскрывается в звуках</string>
+    <string name="poetry_all_time">Звук, который остается</string>
+    <string name="poetry_time_forward">Время движется вперед</string>
+
+    <string name="poetry_nh_1">Январь приходит тихо</string>
+    <string name="poetry_nh_2">Февраль держит дистанцию</string>
+    <string name="poetry_nh_3">Март начинает ослаблять хватку</string>
+    <string name="poetry_nh_4">Апрель открывает год шире</string>
+    <string name="poetry_nh_5">Май переходит к действию</string>
+    <string name="poetry_nh_6">Июнь растягивает дни</string>
+    <string name="poetry_nh_7">Июль держит всё и сразу</string>
+    <string name="poetry_nh_8">Август задерживается чуть дольше</string>
+    <string name="poetry_nh_9">Сентябрь возвращает четкость граням</string>
+    <string name="poetry_nh_10">Октябрь обостряет картину</string>
+    <string name="poetry_nh_11">Ноябрь обращается внутрь</string>
+    <string name="poetry_nh_12">Декабрь подводит черту под годом</string>
+
+    <string name="poetry_sh_1">Январь открывается настежь</string>
+    <string name="poetry_sh_2">Февраль остается ярким</string>
+    <string name="poetry_sh_3">Март начинает замедлять ход</string>
+    <string name="poetry_sh_4">Апрель остужает края</string>
+    <string name="poetry_sh_5">Май притягивает вещи ближе</string>
+    <string name="poetry_sh_6">Июнь становится тише</string>
+    <string name="poetry_sh_7">Июль держится уверенно</string>
+    <string name="poetry_sh_8">Август ждет терпеливо</string>
+    <string name="poetry_sh_9">Сентябрь начинает открываться вновь</string>
+    <string name="poetry_sh_10">Октябрь набирает обороты</string>
+    <string name="poetry_sh_11">Ноябрь расширяется вовне</string>
+    <string name="poetry_sh_12">Декабрь закрывается шумно</string>
+
+    <string name="poetry_tr_1">Январь знаменует начало</string>
+    <string name="poetry_tr_2">Февраль поддерживает движение</string>
+    <string name="poetry_tr_3">Март обретает опору</string>
+    <string name="poetry_tr_4">Апрель движется вперед</string>
+    <string name="poetry_tr_5">Май задает темп</string>
+    <string name="poetry_tr_6">Июнь достигает середины</string>
+    <string name="poetry_tr_7">Июль проходит центр</string>
+    <string name="poetry_tr_8">Август продолжает путь</string>
+    <string name="poetry_tr_9">Сентябрь смотрит вперед</string>
+    <string name="poetry_tr_10">Октябрь приносит ясность</string>
+    <string name="poetry_tr_11">Ноябрь готовится к финалу</string>
+    <string name="poetry_tr_12">Декабрь возвращает год домой</string>
+    <!-- InsightCardGenerator Strings -->
+    <string name="insight_sun_chaser">Ловец солнца</string>
+    <string name="insight_moon_owl">Полуночник</string>
+    <string name="insight_pure_weekend_warrior">Истинный герой выходных</string>
+    <string name="insight_weekday_only">Только по будням</string>
+    <string name="insight_weekend_warrior">Герой выходных</string>
+    <string name="insight_daily_grinder">Ежедневный слушатель</string>
+    <string name="insight_consistent_vibez">Стабильный вайб</string>
+    <string name="insight_last_month">в прошлом месяце</string>
+    <string name="insight_couple_months_ago">пару месяцев назад</string>
+    <string name="insight_few_months_ago">несколько месяцев назад</string>
+    <string name="insight_earlier_year">ранее в этом году</string>
+    <string name="insight_last_year">в прошлом году</string>
+    <string name="insight_while_ago">некоторое время назад</string>
+    <string name="insight_recently">Недавно</string>
+    <string name="insight_the_zone">В зоне комфорта</string>
+    <string name="insight_explorer">Первооткрыватель</string>
+    <string name="insight_time_traveler">Путешественник во времени</string>
+    <string name="insight_orbiter">Сбалансированный</string>
+    
+    <string name="insight_desc_explorer_with_artist">Вы отправились в неизведанное с %1$d%% новой музыки. Вашим главным открытием стал новый звук в стиле %2$s.</string>
+    <string name="insight_desc_explorer_no_artist">Вы отправились в неизведанное с %1$d%% новой музыки. Вашим главным открытием стал новый звук.</string>
+    <string name="insight_desc_time_traveler_with_artist">Вы находили уют в своих любимых песнях %1$d%% времени. Но всё же нашли время для открытия %2$s.</string>
+    <string name="insight_desc_time_traveler_no_artist">Вы находили уют в своих любимых песнях %1$d%% времени. Но всё же нашли время для открытий.</string>
+    <string name="insight_desc_orbiter_with_artist">Идеальный баланс. Вы открывали новые звуки вроде %1$s, сохраняя %2$d%% прослушиваний верными старым любимым трекам.</string>
+    <string name="insight_desc_orbiter_no_artist">Идеальный баланс. Вы открывали новые звуки, сохраняя %1$d%% прослушиваний верными старым любимым трекам.</string>
+
+    <string name="spotlight_story_minutes_1">Музыка для вас — не просто хобби, это ваш кислород.</string>
+    <string name="spotlight_story_minutes_2">Это больше, чем многие слушают за целую жизнь.</string>
+    <string name="spotlight_story_minutes_3">Стабильный ритм, а не просто фоновый шум.</string>
+    <string name="spotlight_story_minutes_4">Вы отлично поддерживали атмосферу.</string>
+    <string name="spotlight_story_minutes_5">Всегда качество важнее количества.</string>
+
+    <string name="spotlight_story_artist_month">Они определяли ваше звучание в этом месяце.</string>
+    <string name="spotlight_story_artist_year">Они определяли ваше звучание в этом году.</string>
+    <string name="spotlight_story_artist_all_time">Они определяли ваше звучание за всё время.</string>
+    
+    <string name="spotlight_story_track_setup">Но одна песня задала тон всему.</string>
+    <string name="spotlight_story_track_obsessed">Вы определенно не могли наслушаться этим треком.</string>
+    <string name="spotlight_story_track_stuck">Трек, который остался с вами.</string>
+    <string name="spotlight_story_genre_base">Этот вайб был вашей домашней гаванью.</string>
+    <string name="spotlight_story_conclusion">До новых встреч.</string>
+
+    <!-- Personalities -->
+    <string name="personality_hip_hop_head_name">Хип-хоп голова</string>
+    <string name="personality_pop_icon_name">Поп-икона</string>
+    <string name="personality_rock_star_name">Рок-звезда</string>
+    <string name="personality_metalhead_name">Металлист</string>
+    <string name="personality_rb_soul_name">R&amp;B / Соул</string>
+    <string name="personality_electronic_voyager_name">Электронный странник</string>
+    <string name="personality_jazz_cat_name">Джазмен</string>
+    <string name="personality_maestro_name">Маэстро</string>
+    <string name="personality_indie_spirit_name">Инди-душа</string>
+    <string name="personality_party_starter_name">Заводила</string>
+    <string name="personality_intense_soul_name">Глубокая натура</string>
+    <string name="personality_peaceful_optimist_name">Мирный оптимист</string>
+    <string name="personality_deep_thinker_name">Мыслитель</string>
+    <string name="personality_dance_floor_regular_name">Завсегдатай танцпола</string>
+    <string name="personality_balanced_enthusiast_name">Гармоничный ценитель</string>
+    <string name="personality_the_explorer_name">Первооткрыватель</string>
+    <string name="personality_the_melophile_name">Меломан</string>
+    <!-- Personality Traits -->
+    <string name="pers_desc_hip_hop">Вы живете ради читок, битов и историй.</string>
+    <string name="pers_tag_hip_hop">Ритм звучит не только в наушниках, он в вашей походке.</string>
+    
+    <string name="pers_desc_pop">Вы держите руку на пульсе популярных и запоминающихся треков.</string>
+    <string name="pers_tag_pop">Если это хит, то вы, вероятно, услышали его первыми.</string>
+    
+    <string name="pers_desc_rock">Вы жаждете чистой энергии и аутентичного звука.</string>
+    <string name="pers_tag_rock">Громкие гитары и живые барабаны — ваш язык любви.</string>
+    
+    <string name="pers_desc_metal">Вы находите покой в хаосе и мощи тяжелой музыки.</string>
+    <string name="pers_tag_metal">Интенсивность — это не недостаток, это требование.</string>
+    
+    <string name="pers_desc_rb">Вы цените мягкий вокал и глубокий эмоциональный ритм.</string>
+    <string name="pers_tag_rb">Вы чувствуете музыку так же сильно, как и слышите её.</string>
+    
+    <string name="pers_desc_electronic">Вы растворяетесь в синтетических ландшафтах и движущих битах.</string>
+    <string name="pers_tag_electronic">Дроп — ваша любимая цель.</string>
+    
+    <string name="pers_desc_jazz">У вас утонченный слух для импровизации и сложности звука.</string>
+    <string name="pers_tag_jazz">Вы слушаете ноты, которые не сыграны.</string>
+    
+    <string name="pers_desc_maestro">Вы цените вечную красоту и сложные композиции.</string>
+    <string name="pers_tag_maestro">Ваш плейлист — это шедевр.</string>
+    
+    <string name="pers_desc_indie">Вы идете своим путем, предпочитая уникальные инди-звуки.</string>
+    <string name="pers_tag_indie">Мейнстрим скучен; вы ищете что-то настоящее.</string>
+    
+    <string name="pers_desc_party">Вы любите энергичную и веселую атмосферу, которая заставляет всех двигаться!</string>
+    <string name="pers_tag_party">Вы приносите энергию каждый божий раз.</string>
+    
+    <string name="pers_desc_intense">Вас тянет к мощной, эмоционально заряженной музыке.</string>
+    <string name="pers_tag_intense">Вы чувствуете каждый удар глубоко внутри.</string>
+    
+    <string name="pers_desc_peaceful">Вы предпочитаете спокойную, позитивную музыку, которая мягко поднимает настроение.</string>
+    <string name="pers_tag_peaceful">Ваш плейлист — это глубокий вдох для души.</string>
+    
+    <string name="pers_desc_deep_thinker">Вы цените интроспективные, атмосферные звуковые пейзажи.</string>
+    <string name="pers_tag_deep_thinker">Вы слушаете, чтобы понять, а не просто услышать.</string>
+    
+    <string name="pers_desc_dance">Ритм — ваш язык, вы обожаете музыку в движении!</string>
+    <string name="pers_tag_dance">Стоять на месте просто невозможно.</string>
+    
+    <string name="pers_desc_balanced">Вы наслаждаетесь здоровым сочетанием бодрой и спокойной музыки.</string>
+    <string name="pers_tag_balanced">Вы держите все вещи в гармонии.</string>
+    
+    <string name="pers_desc_explorer">Вы постоянно охотитесь за свежими звуками и новыми артистами.</string>
+    <string name="pers_tag_explorer">Вы не крутите фоновые песни по кругу. Вы ищете новые.</string>
+    
+    <string name="pers_desc_melophile">Вы просто любите музыку во всех её проявлениях, без ограничений.</string>
+    <string name="pers_tag_melophile">Хорошая музыка — это хорошая музыка, и точка.</string>
+    
+    <string name="pers_desc_default">Вы любите музыку.</string>
+    <string name="pers_tag_default">Музыка — ваша жизнь.</string>
+    <!-- Backup and Restore additional strings -->
+    <string name="backup_restore_export_device">Экспорт на устройство</string>
+    <string name="backup_restore_estimated_size">Estimated size: %s</string>
+    <string name="backup_restore_export_button">Экспортировать резервную копию</string>
+    <string name="backup_restore_import_device">Импорт с устройства</string>
+    <string name="backup_restore_import_file_desc">Выберите файл резервной копии .tempo или .json</string>
+    <string name="backup_restore_import_button">Выбрать файл</string>
+    <!-- Backup and Restore more additional strings -->
+    <string name="backup_restore_last_backup">Последняя резервная копия создана</string>
+    <string name="backup_restore_tracks_label">Треки</string>
+    <string name="backup_restore_artists_label">Исполнители</string>
+    <string name="backup_restore_plays_label">Прослушивания</string>
+    <string name="backup_restore_images_label">Изображения</string>
+    <string name="backup_restore_local_backup_header">Параметры локальной копии</string>
+    <string name="backup_restore_include_local_images">Включать обложки исполнителей</string>
+    <string name="backup_restore_local_images_desc">Включать кэшированные обложки в экспорт</string>
+    <string name="backup_restore_no_local_images">Кэшированных локальных обложек нет</string>
+    <!-- History and Backup more additional strings -->
+    <string name="history_its_a_podcast">Это подкаст</string>
+    <string name="history_its_an_audiobook">Это аудиокнига</string>
+    <string name="history_remove_and_block">Удалить и заблокировать</string>
+    <string name="history_block_entire_artist">Заблокировать исполнителя</string>
+    <string name="history_artist_is_podcast">Исполнитель является подкастом</string>
+    <string name="history_artist_is_audiobook">Исполнитель является аудиокнигой</string>
+    <string name="history_remove_all_from_source">Удалить все из этого источника</string>
+    <string name="backup_restore_data_header">Обзор данных</string>
+    <!-- More History and Details strings -->
+    <string name="details_stat_plays_this_month">В этом месяце</string>
+    <string name="details_stat_plays_this_year">В этом году</string>
+    <string name="details_stat_first_played">Впервые прослушано</string>
+    <string name="details_stat_last_played">Последний раз прослушано</string>
+    <string name="details_stat_popularity">Популярность</string>
+    <string name="details_stat_genre">Жанр</string>
+    <string name="details_no_data_available">Нет доступных данных</string>
+    <string name="history_lastfm_imported">Импортировано из Last.fm</string>
+    <string name="history_archive_plays">Архивные прослушивания</string>
+    <string name="history_from_archive">Из архива</string>
+    <string name="history_archive_showing_tracks">Показ треков из архива</string>
+    <string name="history_archive_plays_item">%d архивных прослушиваний</string>
+    <string name="history_block_track">Заблокировать трек</string>
+    <!-- More Details strings -->
+    <string name="details_merge_duplicate">Объединить дубликат</string>
+    <string name="details_delete_song">Удалить песню</string>
+    <string name="details_edit_title">Изменить название</string>
+    <string name="details_edit_title_dialog_title">Изменить название песни</string>
+    <string name="details_edit_title_label">Название песни</string>
+    <string name="details_edit_title_empty">Название не может быть пустым</string>
+    <string name="details_edit_title_unchanged">Название не изменено</string>
+    <string name="details_edit_title_merge_title">Объединить дубликаты?</string>
+    <string name="details_edit_title_merge_message">Эта песня совпадает с \"%1$s\" от %2$s. Хотите вместо этого объединить их историю прослушивания?</string>
+    <string name="details_edit_title_merge_button">Объединить</string>
+    <string name="details_favorite_title">Любимый трек</string>
+    <string name="details_favorite_subtitle">Вы слушали его очень много!</string>
+    <string name="details_stat_times_played">Раз сыграно</string>
+    <string name="details_stat_total_listening">Общее прослушивание</string>
+    <string name="details_stat_peak_position">Пиковая позиция</string>
+    <string name="details_stat_release_date">Дата релиза</string>
+    <string name="details_plays_count">%d прослушиваний</string>
+    <string name="details_track_not_found">Трек не найден</string>
+    <string name="details_song_details_title">Детали песни</string>
+
+    <!-- Welcome to Tempo / Onboarding Final -->
+    <string name="welcome_ready">Всё готово!</string>
+    <string name="welcome_go">Поехали</string>
+
+    <!-- Errors and notifications -->
+    <string name="error_generic">Что-то пошло не так. Пожалуйста, попробуйте еще раз.</string>
+    <string name="error_network">Нет подключения к сети.</string>
+    <string name="error_save">Не удалось сохранить настройки.</string>
+    <string name="success_save">Настройки успешно сохранены.</string>
+
+    <!-- App shortcuts -->
+    <string name="shortcut_search">Поиск</string>
+    <string name="shortcut_play">Воспроизведение</string>
+
+    <!-- About screen -->
+    <string name="about_app_name">Tempo</string>
+    <string name="about_version">Версия %1$s</string>
+    <string name="about_developer">Автор: Avinash</string>
+    <string name="about_license">Лицензии</string>
+    <string name="about_source_code">Исходный код</string>
+    <string name="about_privacy">Политика конфиденциальности</string>
+    <string name="about_terms">Условия использования</string>
+
+    <!-- Misc UI -->
+    <string name="ui_loading">Загрузка…</string>
+    <string name="ui_error">Ошибка</string>
+    <string name="ui_retry">Повторить</string>
+    <string name="ui_empty">Нечего отобразить.</string>
+    <string name="ui_offline">Вы сейчас не в сети.</string>
+    <string name="ui_search_hint">Поиск…</string>
+    <string name="ui_no_results">Нет результатов.</string>
+
+    <!-- Constellation / InsightFeed -->
+    <string name="constellation_hint">НАЖМИТЕ ИЛИ ТАЩИТЕ ЗВЕЗДЫ ДЛЯ ОРБИТЫ И ДЕТАЛЕЙ</string>
+    <string name="constellation_active">АКТИВНАЯ ДИНАМИКА // %1$s</string>
+
+    <string name="insight_category_mood">ДИНАМИКА ПРОСЛУШИВАНИЯ // НАСТРОЕНИЕ</string>
+    <string name="insight_category_peak_time">ДИНАМИКА ПРОСЛУШИВАНИЯ // ПИКОВОЕ ВРЕМЯ</string>
+    <string name="insight_category_binge">ДИНАМИКА ПРОСЛУШИВАНИЯ // МАРАФОН</string>
+    <string name="insight_category_discovery">ДИНАМИКА ПРОСЛУШИВАНИЯ // ОТКРЫТИЯ</string>
+    <string name="insight_category_energy">ПАРАМЕТРЫ ЗВУКА // ЭНЕРГИЯ</string>
+    <string name="insight_category_danceability">ПАРАМЕТРЫ ЗВУКА // ТАНЦЕВАЛЬНОСТЬ</string>
+    <string name="insight_category_tempo">ПАРАМЕТРЫ ЗВУКА // ТЕМП</string>
+    <string name="insight_category_acousticness">ПАРАМЕТРЫ ЗВУКА // АКУСТИЧНОСТЬ</string>
+    <string name="insight_category_streak">ПРИВЫЧКИ ПРОСЛУШИВАНИЯ // СЕРИЯ</string>
+    <string name="insight_category_genre">ПРИВЫЧКИ ПРОСЛУШИВАНИЯ // ЖАНР</string>
+    <string name="insight_category_engagement">ПРИВЫЧКИ ПРОСЛУШИВАНИЯ // ВОВЛЕЧЕННОСТЬ</string>
+    <string name="insight_category_default">ИНСАЙТ // ДЕТАЛИ</string>
+    <string name="insight_close">Закрыть</string>
+    <string name="streak_hint">Слушайте музыку каждый день, чтобы поддерживать огонь!</string>
+    <string name="tempo_bpm_hint">Пульсация в синхронизации со средним темпом</string>
+    <string name="period_today">сегодня</string>
+    <string name="period_this_week">на этой неделе</string>
+    <string name="period_this_month">в этом месяце</string>
+    <string name="period_this_year">в этом году</string>
+    <string name="period_all_time">за все время</string>
+    <string name="quick_stats_artist_placeholder">Исполнитель</string>
+    <string name="quick_stats_track_placeholder">Трек</string>
+</resources>

@@ -151,6 +151,15 @@ data class SpotifyLibraryShow(
     @Json(name = "showUri") val showUri: String?
 )
 
+// Legacy "StreamingHistory*.json" files (Spotify's basic account-data export)
+// use a space-separated local timestamp. Depending on the export revision the
+// seconds are present ("2024-01-15 14:30:00") or absent ("2024-01-15 14:30").
+// DateTimeFormatter is thread-safe, so these are built once and reused.
+private val LEGACY_TIMESTAMP_FORMATTERS = listOf(
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+)
+
 internal fun parseSpotifyTimestamp(value: String?): Long {
     if (value.isNullOrBlank()) return 0L
 
@@ -164,11 +173,13 @@ internal fun parseSpotifyTimestamp(value: String?): Long {
             .toEpochMilli()
     } catch (_: DateTimeParseException) {}
 
-    try {
-        return LocalDateTime.parse(value, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-            .toInstant(ZoneOffset.UTC)
-            .toEpochMilli()
-    } catch (_: DateTimeParseException) {}
+    for (formatter in LEGACY_TIMESTAMP_FORMATTERS) {
+        try {
+            return LocalDateTime.parse(value, formatter)
+                .toInstant(ZoneOffset.UTC)
+                .toEpochMilli()
+        } catch (_: DateTimeParseException) {}
+    }
 
     return 0L
 }

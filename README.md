@@ -20,13 +20,13 @@
 
 </div>
 
-**Tempo** is an advanced music journal and scrobbler for Android, providing the most detailed, beautiful listening statistics and data visualizations available. It runs in the background, tracks your playback across your favorite media players, and turns your history into rich, interactive charts and shareable spotlight cards.
+**Tempo** is a local-first music journal and scrobbler for Android. It runs in the background, tracks playback across audio players, and generates listening statistics, interactive charts, and shareable spotlight cards.
 
-Because it is built with a local-first architecture, all your data is stored securely on your device—keeping your personal music habits entirely private by design.
+All data is stored locally in an on-device SQLite database without cloud account requirements.
 
 ---
 
-## 📱 Screenshots
+## Screenshots
 
 <p align="center">
   <img src="https://play-lh.googleusercontent.com/3zlapa0nBvp_Dk13V_Pme5UIH0YCMEq79CVxmjCdGfrZS4yvwUACLNWBIdEGGJXXULeeHdpL4EOhD5b8cc1r8xY=w1052-h592-rw" width="23%" >
@@ -43,96 +43,93 @@ Because it is built with a local-first architecture, all your data is stored sec
 
 ---
 
-## ✨ Features
+## Features
 
-### 📊 Advanced Music Statistics & Detail Views
-- **Deep-Dive Analytics**: Access highly detailed stats, heatmaps, and listening timelines for every Song, Artist, and Album in your collection.
-- **Listening Quality Score (LQS)**: A custom metric that measures your actual engagement with songs based on play progress, seek/replay behaviors, and skips.
-- **Vibe Tracking**: Captures valence, energy, and danceability metadata to map the mood of your listening habits.
+### Listening Statistics
+- **Item Analytics**: Displays heatmaps, timelines, and metrics for individual songs, artists, and albums.
+- **Listening Quality Score (LQS)**: Calculates engagement scores based on playback duration, replays, seeks, and skips.
+- **Audio Metadata**: Tracks valence, energy, and danceability values for played tracks.
 
-### 🎨 Spotlight Visualizations
-Generates beautiful, shareable statistic cards using Jetpack Compose Canvas:
-- **Circadian Rhythm**: A 24-hour radial chart mapping your peak activity hours.
-- **Weekly Pulse**: A 3D isometric layout comparing weekday vs. weekend listening habits.
-- **Forgotten Favorite**: Relights songs you haven't played in a long time, showing how many days have passed.
-- **Sonic Immersion**: An optical art-inspired tunnel visualizing deep listening sessions.
-- **Seasonal Poetry**: Dynamic, hemisphere-aware text summarizing your monthly listening mood.
+### Spotlight Visualizations
+Generates shareable image cards rendered using Jetpack Compose Canvas:
+- **Circadian Rhythm**: A 24-hour radial chart mapping peak listening times.
+- **Weekly Pulse**: An isometric layout comparing weekday and weekend playback.
+- **Forgotten Favorite**: Highlights songs unplayed over extended periods with days elapsed.
+- **Sonic Immersion**: A visual tunnel representation of continuous listening sessions.
+- **Seasonal Poetry**: Hemisphere-aware summary text based on monthly statistics.
 
-### 🎧 Universal Background Tracking
-- Automatically tracks playback from Spotify, YouTube Music, Apple Music, Poweramp, and 50+ other Android audio players.
-- Uses Android's `NotificationListenerService` to detect media events.
-- Automatically filters out system alerts, podcasts, and audiobooks to keep your music stats accurate.
+### Background Tracking
+- Captures playback events from Spotify, YouTube Music, Apple Music, Poweramp, and 50+ Android audio players using `NotificationListenerService`.
+- Filters system notifications, podcasts, and audiobooks from music statistics.
 
-### 💻 Browser Sync
-Sync music played on your web browser directly to your phone over your local network:
-- **Browser Extension**: An advanced companion extension that uses direct audio-element timing and tab URLs to track music on web players (YouTube Music, Spotify, SoundCloud, etc.).
-- **Local Pairing**: Easily pair the extension with your phone over WiFi. Payloads are signed with HMAC-SHA256 signatures to ensure security and data integrity.
+### Browser Sync
+Syncs browser playback to the phone over the local network:
+- **Browser Extension**: Companion extension reading HTML audio timestamps and tab URLs on supported web players (YouTube Music, Spotify, SoundCloud).
+- **Local Pairing**: Connects over Wi-Fi using HMAC-SHA256 request signatures.
 
-### 📱 Home Screen Widgets
-- **Glance Widgets**: 7 distinct Android home screen widgets including heatmaps, now-playing, progress milestones, and recommendations.
+### Home Screen Widgets
+- **Glance Widgets**: 7 Android widgets displaying heatmaps, now-playing tracks, progress milestones, and recommendations.
 
-### 🔄 Data Import & Integration
-- **Two-Tier Last.fm Import**: Imports legacy listening history without bloat. Your recent history is stored in the active set for analytics, while older history is compressed in an archive for lookup.
-- **Spotify API Integration**: Connects to the Spotify API to fetch audio characteristics (energy, valence, danceability) for your tracks.
-- **API-Only Mode**: Save battery by disabling the background listener and polling Spotify's API directly.
+### Data Import & Integrations
+- **Last.fm Import**: Imports listening history into active analytics storage while archiving older entries to conserve memory.
+- **Spotify API**: Fetches track audio features (energy, valence, danceability).
+- **API-Only Mode**: Disables background notification listener and polls Spotify directly to reduce battery consumption.
 
-### 🏆 Profiles & Listening Milestones
-- **XP & Levels**: Earn XP based on your listening duration and engagement level.
-- **Listener Titles**: Unlock custom titles based on level and genre diversity (e.g. *Eclectic Wanderer*).
-- **Daily Challenges**: Auto-generated daily tasks like "listen to a new artist" or "listen for 30 minutes without skipping" to earn bonus XP.
-- **Milestone Badges**: Collect badges for listening milestones (e.g., first scrobble, 1000 hours).
+### Milestones & Titles
+- **XP & Levels**: Grants XP based on listening time and track engagement.
+- **Titles**: Unlocks titles based on user level and genre variety.
+- **Daily Tasks**: Generates daily goals (e.g. listening for 30 minutes without skips) for bonus XP.
+- **Badges**: Awards badges for milestone scrobble totals and listening hours.
 
-### 🛡️ Play Integrity & OEM Protection
-- **Anti-Spam Filter**: Discards consecutive loops of the same short track to prevent stat inflation.
-- **Mute Detection**: Pauses tracking and XP accumulation when the device media volume is set to zero.
-- **Keep-Alive Protection**: Includes self-healing background workers and instructions for aggressive OEM battery savers (Xiaomi/HyperOS, etc.).
+### Play Verification & Background Execution
+- **Anti-Spam Filter**: Ignores rapid consecutive loops of short tracks.
+- **Mute Detection**: Pauses scrobbling and XP tracking when media volume is muted.
+- **Background Keep-Alive**: Uses foreground services and provides setup steps for aggressive vendor battery limits (HyperOS, MIUI).
 
-### 🔒 Local-First Architecture
-- **Offline & Private**: Built on a local SQLite database (via Room). No third-party servers needed.
-- **Secure Credentials**: Auth tokens for integrations are kept in Android's `EncryptedSharedPreferences`.
-- **Local Backups**: Encrypted backups to your personal Google Drive with automated conflict resolution.
+### Architecture & Storage
+- **Offline Storage**: Uses Room SQLite for local database persistence without external servers.
+- **Encrypted Credentials**: Stores API tokens in Android `EncryptedSharedPreferences`.
+- **Google Drive Backup**: Saves encrypted database backups directly to user Google Drive storage.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 | :--- | :--- |
-| **Languages** | Kotlin (100% Jetpack Compose) |
+| **Languages** | Kotlin (Jetpack Compose) |
 | **Architecture** | MVVM + Clean Architecture, Hilt |
 | **Database** | Room SQLite, DataStore, EncryptedSharedPreferences |
-| **Networking** | Retrofit + OkHttp |
-| **Background Tasks** | WorkManager, Foreground Services |
-| **UI & Charts** | Jetpack Glance (Widgets), Vico, MPAndroidChart |
+| **Networking** | Retrofit, OkHttp |
+| **Background Services** | WorkManager, Foreground Services |
+| **UI & Charts** | Jetpack Glance, Vico, MPAndroidChart |
 | **Image Loading** | Coil |
-| **Browser Extension** | TypeScript (Chrome / Firefox Manifest V3) |
-| **SDK Targets** | Min SDK 26 (Android 8) / Target SDK 36 (Android 16) |
+| **Browser Extension** | TypeScript (Manifest V3) |
+| **SDK Targets** | Min SDK 26 (Android 8.0) / Target SDK 36 (Android 16) |
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
-Contributions of all kinds are welcome! Before starting work on major features, please open an issue to discuss your ideas.
-- **Bug Fixes**: Submit a PR directly.
-- **Documentation & Translations**: Feel free to improve instructions or add translations.
+Contributions are welcome. Before making major changes, open an issue to discuss proposed modifications.
+- **Bug Fixes**: Submit a pull request directly.
+- **Documentation**: Improvements to guides and comments are encouraged.
 
-Please refer to [CONTRIBUTION.md](CONTRIBUTION.md) for more details.
-
----
-
-## 📄 License & Philosophy
-
-Tempo is licensed under a **custom modified AGPLv3 License**.
-
-- **Allowed**: Study the code, build and run the app for personal use, audit security, and contribute back to the project.
-- **Prohibited**: Selling the app, distributing modified/monetized versions, or rebranding and publishing the app to stores.
-
-*This copyleft license keeps Tempo free, transparent, and collaborative while protecting the project from commercial exploitation and copycats.*
-
-For full details, see the [LICENSE](LICENSE) file.
+See [CONTRIBUTION.md](CONTRIBUTION.md) for details.
 
 ---
 
-## 🙏 Acknowledgments
+## License
 
-Made with ❤️ by [Avinash](https://github.com/avinaxhroy)
+Tempo is released under a **custom modified AGPLv3 License**.
+
+- **Permitted**: Code inspection, personal builds, security audits, and pull requests.
+- **Prohibited**: Commercial sales, monetized redistribution, and publishing modified builds to app marketplaces.
+
+See [LICENSE](LICENSE) for terms.
+
+---
+
+## Author
+
+Maintained by [Avinash](https://github.com/avinaxhroy)

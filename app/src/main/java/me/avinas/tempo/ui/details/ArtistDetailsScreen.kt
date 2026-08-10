@@ -13,14 +13,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MergeType
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.LocationOn
-import androidx.compose.material.icons.rounded.MusicNote
-import androidx.compose.material.icons.rounded.AccessTime
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,35 +35,51 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import me.avinas.tempo.ui.components.CachedAsyncImage
+import me.avinas.tempo.R
 import me.avinas.tempo.data.stats.ArtistDetails
-import me.avinas.tempo.data.stats.TopAlbum
 import me.avinas.tempo.data.stats.TagBasedMoodAnalyzer
+import me.avinas.tempo.data.stats.TopAlbum
 import me.avinas.tempo.data.stats.TopTrack
+import me.avinas.tempo.ui.components.ArtistShareCard
+import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
-
-import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.ui.components.SharePreviewDialog
-import me.avinas.tempo.ui.components.ArtistShareCard
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.MergeType
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
-import me.avinas.tempo.R
+import me.avinas.tempo.ui.components.ShareTheme
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.GoldPrimary
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoError
+import me.avinas.tempo.ui.theme.TempoErrorSoft
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoInfoSoft
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryMuted
+import me.avinas.tempo.ui.theme.TempoSuccessDeep
+import me.avinas.tempo.ui.theme.TempoSurfaceCard
+import me.avinas.tempo.ui.theme.TempoSurfaceChip
+import me.avinas.tempo.ui.theme.TempoSurfaceDialog
+import me.avinas.tempo.ui.theme.TempoWarning
+import me.avinas.tempo.ui.theme.TempoWarningSoft
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextQuaternary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import me.avinas.tempo.ui.theme.premiumClickable
 import java.text.SimpleDateFormat
 import java.util.*
+import me.avinas.tempo.ui.theme.SilverLight
 
 @Composable
 fun ArtistDetailsScreen(
@@ -86,7 +104,7 @@ fun ArtistDetailsScreen(
     DeepOceanBackground {
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = TempoRed)
+                CircularProgressIndicator(color = TempoPrimary)
             }
         } else if (artistDetails != null) {
             ArtistDetailsContent(
@@ -95,7 +113,8 @@ fun ArtistDetailsScreen(
                 onNavigateBack = onNavigateBack,
                 onNavigateToSong = onNavigateToSong,
                 onRefreshImage = { viewModel.refreshArtistImage() },
-                onShowRenameDialog = { viewModel.showRenameDialog() }
+                onShowRenameDialog = { viewModel.showRenameDialog() },
+                onReloadArtist = { viewModel.reloadCurrentArtist() }
             )
             
             // Rename dialog
@@ -157,7 +176,7 @@ fun ArtistDetailsScreen(
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = { viewModel.retry() },
-                            colors = ButtonDefaults.buttonColors(containerColor = TempoRed)
+                            colors = ButtonDefaults.buttonColors(containerColor = TempoPrimary)
                         ) {
                             Text(stringResource(R.string.common_retry), color = Color.White)
                         }
@@ -175,11 +194,13 @@ fun ArtistDetailsContent(
     onNavigateBack: () -> Unit,
     onNavigateToSong: (Long) -> Unit,
     onRefreshImage: () -> Unit,
-    onShowRenameDialog: () -> Unit = {}
+    onShowRenameDialog: () -> Unit = {},
+    onReloadArtist: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showShareDialog by remember { mutableStateOf(false) }
     var showMergeDialog by remember { mutableStateOf(false) }
+    var showSplitDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     
     Column(modifier = Modifier.fillMaxSize()) {
@@ -237,7 +258,7 @@ fun ArtistDetailsContent(
                 DropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false },
-                    modifier = Modifier.background(Color(0xFF1E293B))
+                    modifier = Modifier.background(TempoSurfaceDialog)
                 ) {
                     DropdownMenuItem(
                         text = {
@@ -255,6 +276,24 @@ fun ArtistDetailsContent(
                         onClick = {
                             showMenu = false
                             showMergeDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.CallSplit,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(stringResource(R.string.details_split_artist), color = Color.White)
+                            }
+                        },
+                        onClick = {
+                            showMenu = false
+                            showSplitDialog = true
                         }
                     )
                     DropdownMenuItem(
@@ -381,9 +420,8 @@ fun ArtistDetailsContent(
         if (showShareDialog) {
             SharePreviewDialog(
                 onDismiss = { showShareDialog = false },
-                contentToShare = {
-                    ArtistShareCard(artistDetails = artistDetails, percentile = uiState.artistPercentile)
-                }
+                themes = ShareTheme.entries,
+                contentForTheme = { ArtistShareCard(artistDetails = artistDetails, percentile = uiState.artistPercentile, theme = it) }
             )
         }
         
@@ -396,6 +434,24 @@ fun ArtistDetailsContent(
                 onMergeComplete = {
                     // Navigate back after successful merge
                     onNavigateBack()
+                }
+            )
+        }
+
+        // Artist Split Dialog
+        if (showSplitDialog) {
+            ArtistSplitDialog(
+                sourceArtistId = artistDetails.artist.id,
+                sourceArtistName = artistDetails.artist.name,
+                onDismiss = { showSplitDialog = false },
+                onSplitComplete = { sourceDeleted ->
+                    if (sourceDeleted) {
+                        // The artist no longer exists — leave the details screen
+                        onNavigateBack()
+                    } else {
+                        // Reload to reflect the tracks that were moved out
+                        onReloadArtist()
+                    }
                 }
             )
         }
@@ -420,7 +476,7 @@ fun ArtistHeroSection(
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                Color(0xFF6366F1).copy(alpha = 0.3f), // Indigo
+                                TempoPrimaryMuted.copy(alpha = 0.3f), // Indigo
                                 Color.Transparent
                             )
                         )
@@ -440,7 +496,7 @@ fun ArtistHeroSection(
                         .background(
                             Brush.radialGradient(
                                 colors = listOf(
-                                    Color(0xFF6366F1).copy(alpha = 0.3f),
+                                    TempoPrimaryMuted.copy(alpha = 0.3f),
                                     Color.Transparent
                                 )
                             )
@@ -457,7 +513,7 @@ fun ArtistHeroSection(
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(
-                                    colors = listOf(Color(0xFF6366F1), Color(0xFF8B5CF6))
+                                    colors = listOf(TempoPrimaryMuted, TempoPrimary)
                                 )
                             )
                             .border(
@@ -585,12 +641,12 @@ fun ArtistHeroSection(
                         text = "📍 $country",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFE2E8F0) // Slate 200
+                        color = SilverLight // Slate 200
                     )
                     if (genresList.isNotEmpty()) {
                         Text(
                             text = "  •  ",
-                            color = Color(0xFF475569), // Slate 600
+                            color = TextQuaternary, // Slate 600
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -600,7 +656,7 @@ fun ArtistHeroSection(
                     Text(
                         text = genresList.take(3).joinToString(", ") { it.replaceFirstChar { char -> char.uppercase() } },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF94A3B8), // Slate 400
+                        color = TextSecondary, // Slate 400
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -635,15 +691,15 @@ fun ArtistStatsGrid(artistDetails: ArtistDetails) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.MusicNote,
+                            imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
-                            tint = Color(0xFFEF4444), // High-contrast Red
+                            tint = TempoError, // High-contrast Red
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = stringResource(R.string.details_total_plays).uppercase(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF94A3B8), // Slate 400
+                            color = TextSecondary, // Slate 400
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
@@ -653,7 +709,7 @@ fun ArtistStatsGrid(artistDetails: ArtistDetails) {
                         text = formatCount(artistDetails.personalPlayCount.toLong()),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Black,
-                        color = Color(0xFFFCA5A5) // Soft Red
+                        color = TempoErrorSoft // Soft Red
                     )
                 }
 
@@ -676,15 +732,15 @@ fun ArtistStatsGrid(artistDetails: ArtistDetails) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.AccessTime,
+                            imageVector = Icons.Default.AccessTime,
                             contentDescription = null,
-                            tint = Color(0xFF3B82F6), // High-contrast Blue
+                            tint = TempoInfo, // High-contrast Blue
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = stringResource(R.string.details_listening_time).uppercase(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF94A3B8), // Slate 400
+                            color = TextSecondary, // Slate 400
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
@@ -694,7 +750,7 @@ fun ArtistStatsGrid(artistDetails: ArtistDetails) {
                         text = formatListeningTime(artistDetails.personalTotalTimeMs.toLong()),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Black,
-                        color = Color(0xFF93C5FD) // Soft Blue
+                        color = TempoInfoSoft // Soft Blue
                     )
                 }
             }
@@ -725,13 +781,13 @@ fun ArtistStatsGrid(artistDetails: ArtistDetails) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                             contentDescription = null,
-                            tint = Color(0xFF8B5CF6), // High-contrast Purple
+                            tint = TempoPrimary, // High-contrast Purple
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = stringResource(R.string.details_unique_tracks).uppercase(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF94A3B8), // Slate 400
+                            color = TextSecondary, // Slate 400
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
@@ -741,7 +797,7 @@ fun ArtistStatsGrid(artistDetails: ArtistDetails) {
                         text = formatCount(artistDetails.uniqueTracksPlayed.toLong()),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Black,
-                        color = Color(0xFFD8B4FE) // Soft Purple
+                        color = TempoAccent // Soft Purple
                     )
                 }
 
@@ -764,15 +820,15 @@ fun ArtistStatsGrid(artistDetails: ArtistDetails) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Album,
+                            imageVector = Icons.Default.Album,
                             contentDescription = null,
-                            tint = Color(0xFFF59E0B), // High-contrast Amber
+                            tint = TempoWarning, // High-contrast Amber
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = stringResource(R.string.details_unique_albums).uppercase(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF94A3B8), // Slate 400
+                            color = TextSecondary, // Slate 400
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
@@ -782,7 +838,7 @@ fun ArtistStatsGrid(artistDetails: ArtistDetails) {
                         text = formatCount(artistDetails.uniqueAlbumsPlayed.toLong()),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Black,
-                        color = Color(0xFFFDBA74) // Soft Amber
+                        color = TempoWarningSoft // Soft Amber
                     )
                 }
             }
@@ -820,7 +876,7 @@ fun TopSongsPanel(
                         text = "${index + 1}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Black,
-                        color = TempoRed,
+                        color = TempoPrimary,
                         modifier = Modifier.width(32.dp),
                         textAlign = TextAlign.Start
                     )
@@ -849,7 +905,7 @@ fun TopSongsPanel(
                         Text(
                             text = song.album ?: stringResource(R.string.details_unknown_album),
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF94A3B8),
+                            color = TextSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -865,7 +921,7 @@ fun TopSongsPanel(
                         Text(
                             text = stringResource(R.string.details_plays).uppercase(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF64748B),
+                            color = TextTertiary,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -898,12 +954,12 @@ fun TopAlbumCard(album: TopAlbum) {
                 .aspectRatio(1f)
                 .shadow(elevation = 6.dp, shape = RoundedCornerShape(8.dp))
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF1E293B)), // Dark background for empty space
+                .background(TempoSurfaceDialog), // Dark background for empty space
             contentAlignment = Alignment.Center
         ) {
             if (album.albumArtUrl.isNullOrBlank()) {
                 Icon(
-                    imageVector = Icons.Rounded.Album,
+                    imageVector = Icons.Default.Album,
                     contentDescription = null,
                     modifier = Modifier.size(48.dp),
                     tint = Color.White.copy(alpha = 0.4f)
@@ -934,7 +990,7 @@ fun TopAlbumCard(album: TopAlbum) {
         Text(
             text = stringResource(R.string.details_plays_count, album.playCount),
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF94A3B8), // Slate 400
+            color = TextSecondary, // Slate 400
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 2.dp)
         )
@@ -970,20 +1026,20 @@ fun formatListeningTime(millis: Long): String {
 fun FanStatusBadge(playCount: Int, percentile: Double? = null) {
     val (status, emoji, color, description) = if (percentile != null) {
         when {
-            percentile <= 1.0 -> Quadruple(stringResource(R.string.fan_status_top_1), "👑", Color(0xFFFFD700), stringResource(R.string.fan_status_top_1_desc))
-            percentile <= 5.0 -> Quadruple(stringResource(R.string.fan_status_top_5), "🌟", Color(0xFFF59E0B), stringResource(R.string.fan_status_top_5_desc))
-            percentile <= 10.0 -> Quadruple(stringResource(R.string.fan_status_top_10), "🔥", Color(0xFFEF4444), stringResource(R.string.fan_status_top_10_desc))
-            percentile <= 25.0 -> Quadruple(stringResource(R.string.fan_status_top_25), "🎧", Color(0xFF3B82F6), stringResource(R.string.fan_status_top_25_desc))
-            percentile <= 50.0 -> Quadruple(stringResource(R.string.fan_status_top_50), "🎵", Color(0xFF8B5CF6), stringResource(R.string.fan_status_top_50_desc))
-            else -> Quadruple(stringResource(R.string.fan_status_listener), "🎵", Color(0xFF94A3B8), stringResource(R.string.fan_status_listener_desc))
+            percentile <= 1.0 -> Quadruple(stringResource(R.string.fan_status_top_1), "👑", GoldPrimary, stringResource(R.string.fan_status_top_1_desc))
+            percentile <= 5.0 -> Quadruple(stringResource(R.string.fan_status_top_5), "🌟", TempoWarning, stringResource(R.string.fan_status_top_5_desc))
+            percentile <= 10.0 -> Quadruple(stringResource(R.string.fan_status_top_10), "🔥", TempoError, stringResource(R.string.fan_status_top_10_desc))
+            percentile <= 25.0 -> Quadruple(stringResource(R.string.fan_status_top_25), "🎧", TempoInfo, stringResource(R.string.fan_status_top_25_desc))
+            percentile <= 50.0 -> Quadruple(stringResource(R.string.fan_status_top_50), "🎵", TempoPrimary, stringResource(R.string.fan_status_top_50_desc))
+            else -> Quadruple(stringResource(R.string.fan_status_listener), "🎵", TextSecondary, stringResource(R.string.fan_status_listener_desc))
         }
     } else {
          when {
-            playCount > 1000 -> Quadruple(stringResource(R.string.fan_status_ultimate), "👑", Color(0xFFFFD700), stringResource(R.string.fan_status_ultimate_desc))
-            playCount > 500 -> Quadruple(stringResource(R.string.fan_status_super), "🌟", Color(0xFFF59E0B), stringResource(R.string.fan_status_super_desc))
-            playCount > 200 -> Quadruple(stringResource(R.string.fan_status_big), "🔥", Color(0xFFEF4444), stringResource(R.string.fan_status_big_desc))
-            playCount > 50 -> Quadruple(stringResource(R.string.fan_status_regular), "🎧", Color(0xFF3B82F6), stringResource(R.string.fan_status_regular_desc))
-            else -> Quadruple(stringResource(R.string.fan_status_listener), "🎵", Color(0xFF94A3B8), stringResource(R.string.fan_status_listener_desc))
+            playCount > 1000 -> Quadruple(stringResource(R.string.fan_status_ultimate), "👑", GoldPrimary, stringResource(R.string.fan_status_ultimate_desc))
+            playCount > 500 -> Quadruple(stringResource(R.string.fan_status_super), "🌟", TempoWarning, stringResource(R.string.fan_status_super_desc))
+            playCount > 200 -> Quadruple(stringResource(R.string.fan_status_big), "🔥", TempoError, stringResource(R.string.fan_status_big_desc))
+            playCount > 50 -> Quadruple(stringResource(R.string.fan_status_regular), "🎧", TempoInfo, stringResource(R.string.fan_status_regular_desc))
+            else -> Quadruple(stringResource(R.string.fan_status_listener), "🎵", TextSecondary, stringResource(R.string.fan_status_listener_desc))
         }
     }
 
@@ -1031,7 +1087,7 @@ fun FanStatusBadge(playCount: Int, percentile: Double? = null) {
                     Text(
                         text = description,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF94A3B8)
+                        color = TextSecondary
                     )
                 }
             }
@@ -1043,9 +1099,9 @@ fun FanStatusBadge(playCount: Int, percentile: Double? = null) {
 fun PeakHourCard(peakHour: Int, formattedHour: String) {
     val isDay = peakHour in 6..17
     val (emoji, accentColor, description) = if (isDay) {
-        Triple("☀️", Color(0xFFF59E0B), stringResource(R.string.details_most_active) + " during the day")
+        Triple("☀️", TempoWarning, stringResource(R.string.details_most_active) + " during the day")
     } else {
-        Triple("🌙", Color(0xFF8B5CF6), stringResource(R.string.details_most_active) + " at night")
+        Triple("🌙", TempoPrimary, stringResource(R.string.details_most_active) + " at night")
     }
 
     Row(
@@ -1068,7 +1124,7 @@ fun PeakHourCard(peakHour: Int, formattedHour: String) {
             Text(
                 text = stringResource(R.string.details_peak_hour).uppercase(),
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF94A3B8), // Slate 400
+                color = TextSecondary, // Slate 400
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
@@ -1085,12 +1141,12 @@ fun PeakHourCard(peakHour: Int, formattedHour: String) {
                 )
                 Text(
                     text = "•",
-                    color = Color(0xFF475569) // Slate 600
+                    color = TextQuaternary // Slate 600
                 )
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFFCBD5E1) // Slate 300
+                    color = TextSecondary // Slate 300
                 )
             }
         }
@@ -1114,7 +1170,7 @@ fun ListeningJourneySection(artistDetails: ArtistDetails) {
             Text(
                 text = "YOUR JOURNEY",
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF94A3B8), // Slate 400
+                color = TextSecondary, // Slate 400
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
@@ -1146,7 +1202,7 @@ fun ListeningJourneySection(artistDetails: ArtistDetails) {
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)
-                                    .background(Color(0xFF10B981).copy(alpha = 0.15f), CircleShape),
+                                    .background(TempoSuccessDeep.copy(alpha = 0.15f), CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(text = "🚀", fontSize = 16.sp)
@@ -1155,7 +1211,7 @@ fun ListeningJourneySection(artistDetails: ArtistDetails) {
                                 Text(
                                     text = stringResource(R.string.details_first_listen).uppercase(),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF64748B), // Slate 500
+                                    color = TextTertiary, // Slate 500
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.sp
                                 )
@@ -1187,7 +1243,7 @@ fun ListeningJourneySection(artistDetails: ArtistDetails) {
                                             append(" different songs.")
                                         },
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = Color(0xFF94A3B8), // Slate 400
+                                        color = TextSecondary, // Slate 400
                                         lineHeight = 20.sp
                                     )
                                 }
@@ -1203,7 +1259,7 @@ fun ListeningJourneySection(artistDetails: ArtistDetails) {
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)
-                                    .background(Color(0xFF3B82F6).copy(alpha = 0.15f), CircleShape),
+                                    .background(TempoInfo.copy(alpha = 0.15f), CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(text = "🎧", fontSize = 16.sp)
@@ -1212,7 +1268,7 @@ fun ListeningJourneySection(artistDetails: ArtistDetails) {
                                 Text(
                                     text = stringResource(R.string.details_last_listen).uppercase(),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF64748B), // Slate 500
+                                    color = TextTertiary, // Slate 500
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.sp
                                 )
@@ -1251,7 +1307,7 @@ fun TimelineItem(title: String, date: String, icon: String, accentColor: Color) 
             Text(
                 text = title.uppercase(),
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF64748B), // Slate 500
+                color = TextTertiary, // Slate 500
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )

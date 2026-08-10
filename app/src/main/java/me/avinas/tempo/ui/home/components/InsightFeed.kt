@@ -46,6 +46,9 @@ import me.avinas.tempo.data.stats.DiscoveryTrend
 import me.avinas.tempo.data.stats.HourlyDistribution
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryDeep
+import me.avinas.tempo.ui.theme.TempoAccent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Celebration
@@ -65,6 +68,16 @@ import me.avinas.tempo.R
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.layout.ContentScale
 import me.avinas.tempo.ui.components.CachedAsyncImage
+import me.avinas.tempo.ui.theme.GoldPrimary
+import me.avinas.tempo.ui.theme.SilverLight
+import me.avinas.tempo.ui.theme.TempoCyan
+import me.avinas.tempo.ui.theme.TempoError
+import me.avinas.tempo.ui.theme.TempoErrorAlt
+import me.avinas.tempo.ui.theme.TempoSuccess
+import me.avinas.tempo.ui.theme.TempoSuccessDeep
+import me.avinas.tempo.ui.theme.TempoWarning
+import me.avinas.tempo.ui.theme.TempoWarningBright
+import me.avinas.tempo.ui.theme.TextTertiary
 
 
 @Composable
@@ -166,7 +179,7 @@ fun ConstellationWeb(
                 // Draw central throb Vibe Core
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF7C5CFF).copy(alpha = 0.35f), Color.Transparent),
+                        colors = listOf(TempoPrimary.copy(alpha = 0.35f), Color.Transparent),
                         center = Offset(cxPx, cyPx),
                         radius = 32.dp.toPx() * pulseAnim
                     ),
@@ -179,7 +192,7 @@ fun ConstellationWeb(
                     center = Offset(cxPx, cyPx)
                 )
                 drawCircle(
-                    color = Color(0xFF7C5CFF),
+                    color = TempoPrimary,
                     radius = 5.dp.toPx(),
                     center = Offset(cxPx, cyPx)
                 )
@@ -203,7 +216,7 @@ fun ConstellationWeb(
                     val p2 = resolvedPositions[(i + 1) % resolvedPositions.size]
                     
                     drawLine(
-                        color = Color(0xFF7C5CFF).copy(alpha = 0.18f),
+                        color = TempoPrimary.copy(alpha = 0.18f),
                         start = p1,
                         end = p2,
                         strokeWidth = 1.5.dp.toPx()
@@ -213,18 +226,18 @@ fun ConstellationWeb(
                     val isSelectedNode = selectedType == categories[i]
                     val connectorColor = if (isSelectedNode) {
                         val nodeColor = when(categories[i]) {
-                            InsightType.MOOD -> Color(0xFF8B5CF6)
-                            InsightType.PEAK_TIME -> Color(0xFFF59E0B)
-                            InsightType.BINGE -> Color(0xFFEC4899)
-                            InsightType.DISCOVERY -> Color(0xFF10B981)
-                            InsightType.ENERGY -> Color(0xFFEF4444)
-                            InsightType.DANCEABILITY -> Color(0xFFA855F7)
-                            InsightType.TEMPO -> Color(0xFF06B6D4)
-                            InsightType.ACOUSTICNESS -> Color(0xFF22C55E)
-                            InsightType.STREAK -> Color(0xFFF97316)
-                            InsightType.GENRE -> Color(0xFFE11D48)
-                            InsightType.ENGAGEMENT -> Color(0xFFDB2777)
-                            else -> Color.Gray
+                            InsightType.MOOD -> TempoPrimary
+                            InsightType.PEAK_TIME -> TempoWarning
+                            InsightType.BINGE -> TempoPrimary
+                            InsightType.DISCOVERY -> TempoSuccessDeep
+                            InsightType.ENERGY -> TempoError
+                            InsightType.DANCEABILITY -> TempoAccent
+                            InsightType.TEMPO -> TempoCyan
+                            InsightType.ACOUSTICNESS -> TempoSuccess
+                            InsightType.STREAK -> TempoWarning
+                            InsightType.GENRE -> TempoErrorAlt
+                            InsightType.ENGAGEMENT -> TempoErrorAlt
+                            else -> TextTertiary
                         }
                         nodeColor.copy(alpha = 0.4f)
                     } else {
@@ -251,18 +264,18 @@ fun ConstellationWeb(
                         val packetPos = Offset(packetX, packetY)
 
                         val nodeColor = when(type) {
-                            InsightType.MOOD -> Color(0xFF8B5CF6)
-                            InsightType.PEAK_TIME -> Color(0xFFF59E0B)
-                            InsightType.BINGE -> Color(0xFFEC4899)
-                            InsightType.DISCOVERY -> Color(0xFF10B981)
-                            InsightType.ENERGY -> Color(0xFFEF4444)
-                            InsightType.DANCEABILITY -> Color(0xFFA855F7)
-                            InsightType.TEMPO -> Color(0xFF06B6D4)
-                            InsightType.ACOUSTICNESS -> Color(0xFF22C55E)
-                            InsightType.STREAK -> Color(0xFFF97316)
-                            InsightType.GENRE -> Color(0xFFE11D48)
-                            InsightType.ENGAGEMENT -> Color(0xFFDB2777)
-                            else -> Color.Gray
+                            InsightType.MOOD -> TempoPrimary
+                            InsightType.PEAK_TIME -> TempoWarning
+                            InsightType.BINGE -> TempoPrimary
+                            InsightType.DISCOVERY -> TempoSuccessDeep
+                            InsightType.ENERGY -> TempoError
+                            InsightType.DANCEABILITY -> TempoAccent
+                            InsightType.TEMPO -> TempoCyan
+                            InsightType.ACOUSTICNESS -> TempoSuccess
+                            InsightType.STREAK -> TempoWarning
+                            InsightType.GENRE -> TempoErrorAlt
+                            InsightType.ENGAGEMENT -> TempoErrorAlt
+                            else -> TextTertiary
                         }
 
                         drawCircle(
@@ -293,18 +306,18 @@ fun ConstellationWeb(
                 val isSelected = selectedType == type
 
                 val nodeColor = when(type) {
-                    InsightType.MOOD -> Color(0xFF8B5CF6)
-                    InsightType.PEAK_TIME -> Color(0xFFF59E0B)
-                    InsightType.BINGE -> Color(0xFFEC4899)
-                    InsightType.DISCOVERY -> Color(0xFF10B981)
-                    InsightType.ENERGY -> Color(0xFFEF4444)
-                    InsightType.DANCEABILITY -> Color(0xFFA855F7)
-                    InsightType.TEMPO -> Color(0xFF06B6D4)
-                    InsightType.ACOUSTICNESS -> Color(0xFF22C55E)
-                    InsightType.STREAK -> Color(0xFFF97316)
-                    InsightType.GENRE -> Color(0xFFE11D48)
-                    InsightType.ENGAGEMENT -> Color(0xFFDB2777)
-                    else -> Color.Gray
+                    InsightType.MOOD -> TempoPrimary
+                    InsightType.PEAK_TIME -> TempoWarning
+                    InsightType.BINGE -> TempoPrimary
+                    InsightType.DISCOVERY -> TempoSuccessDeep
+                    InsightType.ENERGY -> TempoError
+                    InsightType.DANCEABILITY -> TempoAccent
+                    InsightType.TEMPO -> TempoCyan
+                    InsightType.ACOUSTICNESS -> TempoSuccess
+                    InsightType.STREAK -> TempoWarning
+                    InsightType.GENRE -> TempoErrorAlt
+                    InsightType.ENGAGEMENT -> TempoErrorAlt
+                    else -> TextTertiary
                 }
 
                 Column(
@@ -489,48 +502,17 @@ fun VibeHeader(
     modifier: Modifier = Modifier
 ) {
     val energyColor = androidx.compose.ui.graphics.lerp(
-        Color(0xFF1E103C), // Low Energy: Very Dark Violet
-        Color(0xFF5B21B6), // High Energy: Rich Purple
+        TempoPrimaryDeep,
+        TempoPrimary,
         energy
     )
-    
+
     val valenceColor = androidx.compose.ui.graphics.lerp(
-        Color(0xFF0F172A), // Low Valence: Very Dark Indigo
-        Color(0xFF4C1D95), // High Valence: Deep Violet
+        TempoPrimaryDeep,
+        TempoAccent,
         valence
     )
-    
-    // Breathing Animation
-    val infiniteTransition = rememberInfiniteTransition(label = "nebula_breathing")
-    val breatheAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f, // Increased intensity
-        targetValue = 0.7f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
-    )
-    
-    val scaleAnim by infiniteTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(6000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "scale"
-    )
 
-    val wavePhase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2f * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(8500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "wave_phase"
-    )
     
     BoxWithConstraints(
         modifier = modifier
@@ -578,59 +560,6 @@ fun VibeHeader(
             MaterialTheme.typography.labelMedium
         }
 
-        // Dynamic Nebula Gradient (Enhanced)
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-            
-            // 1. Base Warm Glow
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(energyColor.copy(alpha = breatheAlpha * 0.8f), Color.Transparent),
-                    center = Offset(width * 0.2f, height * 0.4f),
-                    radius = width * 0.9f * scaleAnim
-                ),
-                center = Offset(width * 0.2f, height * 0.4f),
-                radius = width * 0.9f * scaleAnim
-            )
-            
-            // 2. Secondary Vibe Glow
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(valenceColor.copy(alpha = breatheAlpha * 0.6f), Color.Transparent),
-                    center = Offset(width * 0.8f, height * 0.6f),
-                    radius = width * 0.8f * scaleAnim
-                ),
-                center = Offset(width * 0.8f, height * 0.6f),
-                radius = width * 0.8f * scaleAnim
-            )
-
-            // 3. Flowing Vibe Wave at the bottom (Creative Ambient Visualizer Wave)
-            val wavePath = Path()
-            val waveHeight = height * 0.15f
-            val baseHeight = height * 0.85f
-            
-            wavePath.moveTo(0f, height)
-            for (x in 0..width.toInt() step 15) {
-                val relativeX = x.toFloat() / width
-                val y = baseHeight + kotlin.math.sin(relativeX * 2f * Math.PI.toFloat() + wavePhase) * waveHeight * kotlin.math.sin(wavePhase * 0.5f)
-                wavePath.lineTo(x.toFloat(), y)
-            }
-            wavePath.lineTo(width, height)
-            wavePath.close()
-            
-            drawPath(
-                path = wavePath,
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        valenceColor.copy(alpha = 0.25f),
-                        Color.Transparent
-                    ),
-                    startY = baseHeight - waveHeight,
-                    endY = height
-                )
-            )
-        }
         
         Column(
             modifier = Modifier
@@ -654,7 +583,7 @@ fun VibeHeader(
                         spotColor = Color(0x2B000000),
                         ambientColor = Color(0x1A000000)
                     )
-                    .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(100.dp)),
+                    .border(width = 1.dp, color = SilverLight, shape = RoundedCornerShape(100.dp)),
                 color = Color.White,
                 shape = RoundedCornerShape(100.dp)
             ) {
@@ -689,11 +618,9 @@ fun VibeHeader(
                                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                                 )
                                 
-                                // Progress arc (vibrant sweep gradient)
+                                // Progress arc
                                 drawArc(
-                                    brush = Brush.sweepGradient(
-                                        listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1), Color(0xFFEC4899))
-                                    ),
+                                    color = TempoPrimary,
                                     startAngle = -90f,
                                     sweepAngle = 360f * levelProgress,
                                     useCenter = false,
@@ -711,7 +638,7 @@ fun VibeHeader(
                                 .size(innerAvatarSize)
                                 .clip(CircleShape)
                                 .background(Color(0xFFF1F5F9))
-                                .border(1.dp, Color(0xFFE2E8F0), CircleShape),
+                                .border(1.dp, SilverLight, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             if (profileImagePath.isNullOrBlank()) {
@@ -765,7 +692,7 @@ fun VibeHeader(
                             if (isGamificationEnabled) {
                                 Surface(
                                     shape = RoundedCornerShape(999.dp),
-                                    color = Color(0xFF8B5CF6).copy(alpha = 0.08f), // Soft violet tint for premium branding
+                                    color = TempoPrimary.copy(alpha = 0.08f),
                                     tonalElevation = 0.dp,
                                     shadowElevation = 0.dp
                                 ) {
@@ -781,28 +708,25 @@ fun VibeHeader(
                                             MaterialTheme.typography.labelMedium
                                         },
                                         fontWeight = FontWeight.Black,
-                                        color = Color(0xFF8B5CF6), // Primary Purple
+                                        color = TempoPrimary,
                                         maxLines = 1
                                     )
                                 }
                             }
                         }
                         if (isGamificationEnabled && !levelTitle.isNullOrBlank()) {
-                            ResponsiveText(
+                            Text(
                                 text = levelTitle.uppercase(),
                                 style = titleStyle.copy(
                                     letterSpacing = if (compactLayout) 0.6.sp else 0.9.sp,
                                     lineHeight = titleStyle.fontSize * 1.15f
                                 ),
-                                color = Color(0xFFEC4899),
                                 fontWeight = FontWeight.Bold,
+                                color = TempoPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
-                    }
-                }
-            }
         }
     }
 }
@@ -1316,9 +1240,9 @@ private fun StreakVisualizer(days: Int) {
             label = "flameScale"
         )
 
-        val fireColor1 = Color(0xFFF97316)
-        val fireColor2 = Color(0xFFEF4444)
-        val fireColor3 = Color(0xFFFBBF24)
+        val fireColor1 = TempoWarning
+        val fireColor2 = TempoError
+        val fireColor3 = TempoWarningBright
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -1485,19 +1409,19 @@ fun InsightCard(
 ) {
     // Determine color based on type
     val (icon, color) = when(insight.type) {
-        InsightType.MOOD -> Icons.Filled.Face to Color(0xFF8B5CF6)
-        InsightType.PEAK_TIME -> Icons.Filled.DateRange to Color(0xFFF59E0B)
-        InsightType.BINGE -> Icons.Filled.Bolt to Color(0xFFEC4899)
-        InsightType.DISCOVERY -> Icons.Filled.Celebration to Color(0xFF10B981)
-        InsightType.ENERGY -> Icons.Filled.Bolt to Color(0xFFEF4444)
-        InsightType.DANCEABILITY -> Icons.Filled.Celebration to Color(0xFFA855F7)
-        InsightType.TEMPO -> Icons.Filled.Speed to Color(0xFF06B6D4)
-        InsightType.ACOUSTICNESS -> Icons.Filled.Piano to Color(0xFF22C55E)
-        InsightType.STREAK -> Icons.Filled.LocalFireDepartment to Color(0xFFF97316)
-        InsightType.GENRE -> Icons.AutoMirrored.Filled.QueueMusic to Color(0xFFE11D48)
-        InsightType.ENGAGEMENT -> Icons.Filled.Favorite to Color(0xFFDB2777)
-        InsightType.RATE_APP -> Icons.Filled.Star to Color(0xFFFFD700)
-        else -> Icons.Filled.Settings to Color.Gray
+        InsightType.MOOD -> Icons.Filled.Face to TempoPrimary
+        InsightType.PEAK_TIME -> Icons.Filled.DateRange to TempoWarning
+        InsightType.BINGE -> Icons.Filled.Bolt to TempoPrimary
+        InsightType.DISCOVERY -> Icons.Filled.Celebration to TempoSuccessDeep
+        InsightType.ENERGY -> Icons.Filled.Bolt to TempoError
+        InsightType.DANCEABILITY -> Icons.Filled.Celebration to TempoAccent
+        InsightType.TEMPO -> Icons.Filled.Speed to TempoCyan
+        InsightType.ACOUSTICNESS -> Icons.Filled.Piano to TempoSuccess
+        InsightType.STREAK -> Icons.Filled.LocalFireDepartment to TempoWarning
+        InsightType.GENRE -> Icons.AutoMirrored.Filled.QueueMusic to TempoErrorAlt
+        InsightType.ENGAGEMENT -> Icons.Filled.Favorite to TempoErrorAlt
+        InsightType.RATE_APP -> Icons.Filled.Star to GoldPrimary
+        else -> Icons.Filled.Settings to TextTertiary
     }
 
     // Gamification progress removed as per user request (moved to Vibe Header)

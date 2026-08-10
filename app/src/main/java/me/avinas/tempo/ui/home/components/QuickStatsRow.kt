@@ -16,13 +16,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.ui.theme.premiumClickable
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoSurfaceSunken
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextTertiary
 
 @Composable
 fun QuickStatsRow(
@@ -56,20 +60,20 @@ fun QuickStatsRow(
                 modifier = Modifier
                     .size(64.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.05f)),
+                    .background(TempoSurfaceSunken),
                 contentScale = ContentScale.Crop,
                 placeholder = {
                     Box(
                         modifier = Modifier
                             .size(64.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.05f)),
+                            .background(TempoSurfaceSunken),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Person,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.3f),
+                            tint = TextTertiary,
                             modifier = Modifier.size(32.dp)
                         )
                     }
@@ -79,14 +83,14 @@ fun QuickStatsRow(
             Text(
                 text = stringResource(R.string.home_top_artist),
                 style = MaterialTheme.typography.labelSmall,
-                color = me.avinas.tempo.ui.theme.NeonRed.copy(alpha = 0.8f),
+                color = me.avinas.tempo.ui.theme.TempoAccent.copy(alpha = 0.8f),
                 maxLines = 1
             )
             Text(
                 text = topArtistName ?: "-",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -110,20 +114,20 @@ fun QuickStatsRow(
                 modifier = Modifier
                     .size(64.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.05f)),
+                    .background(TempoSurfaceSunken),
                 contentScale = ContentScale.Crop,
                 placeholder = {
                     Box(
                         modifier = Modifier
                             .size(64.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White.copy(alpha = 0.05f)),
+                            .background(TempoSurfaceSunken),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.3f),
+                            tint = TextTertiary,
                             modifier = Modifier.size(32.dp)
                         )
                     }
@@ -133,14 +137,14 @@ fun QuickStatsRow(
             Text(
                 text = stringResource(R.string.home_on_repeat),
                 style = MaterialTheme.typography.labelSmall,
-                color = me.avinas.tempo.ui.theme.ElectricBlue.copy(alpha = 0.8f),
+                color = me.avinas.tempo.ui.theme.TempoInfo.copy(alpha = 0.8f),
                 maxLines = 1
             )
             Text(
                 text = topTrackName ?: "-",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

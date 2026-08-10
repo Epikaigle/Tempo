@@ -28,6 +28,15 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryMuted
+import me.avinas.tempo.ui.theme.TempoSurfaceCard
+import me.avinas.tempo.ui.theme.TempoSurfacePopup
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
 
 enum class SpotlightReminderType {
     WEEKLY,
@@ -36,7 +45,7 @@ enum class SpotlightReminderType {
 }
 
 /**
- * Beautiful popup reminder for Spotlight Story availability.
+ * Popup reminder for Spotlight Story availability.
  * Shows on Sunday (Weekly), last day of month (Monthly), or December 1st (Yearly).
  */
 @Composable
@@ -70,19 +79,19 @@ fun SpotlightReminderPopup(
     // Determine messaging based on type
     val (title, subtitle, iconGradient) = when (type) {
         SpotlightReminderType.WEEKLY -> Triple(
-            "Your Weekly Wrapped\nIs Ready! 🎵",
+            "Your Weekly Wrapped\nIs Ready!",
             "Check out your listening story from $targetPeriodLabel",
-            listOf(Color(0xFF8B5CF6), Color(0xFF14B8A6)) // Purple to Teal
+            listOf(TempoPrimary, TempoPrimaryMuted)
         )
         SpotlightReminderType.MONTHLY -> Triple(
-            "Your Monthly Wrapped\nIs Ready! 🎉",
+            "Your Monthly Wrapped\nIs Ready!",
             "Check out your listening story from $targetPeriodLabel",
-            listOf(Color(0xFFA855F7), Color(0xFFEC4899)) // Purple to Pink
+            listOf(TempoAccent, TempoPrimary)
         )
         SpotlightReminderType.YEARLY -> Triple(
-            "Your Yearly Wrapped\nIs Here! 🌟",
+            "Your Yearly Wrapped\nIs Here!",
             "Dive into your $targetPeriodLabel listening journey",
-            listOf(Color(0xFF8B5CF6), Color(0xFF3B82F6)) // Purple to Blue
+            listOf(TempoPrimary, TempoInfo)
         )
     }
     
@@ -133,8 +142,8 @@ fun SpotlightReminderPopup(
                                     spotColor = Color.Black.copy(alpha = 0.5f)
                                 )
                                 .clip(RoundedCornerShape(28.dp))
-                                .background(Color(0xFF1A1726))
-                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(28.dp))
+                                .background(TempoSurfacePopup)
+                                .border(1.dp, Divider, RoundedCornerShape(28.dp))
                         ) {
                             Box {
                                 Column(
@@ -161,14 +170,14 @@ fun SpotlightReminderPopup(
                                             modifier = Modifier
                                                 .size(32.dp)
                                                 .background(
-                                                    Color.White.copy(alpha = 0.1f),
+                                                    TempoSurfaceCard,
                                                     CircleShape
                                                 )
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Close,
                                                 contentDescription = "Close",
-                                                tint = Color.White.copy(alpha = 0.8f),
+                                                tint = TextPrimary,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -212,7 +221,7 @@ fun SpotlightReminderPopup(
                                     Text(
                                         text = title,
                                         style = MaterialTheme.typography.headlineSmall,
-                                        color = Color.White,
+                                        color = TextPrimary,
                                         fontWeight = FontWeight.Bold,
                                         textAlign = TextAlign.Center,
                                         lineHeight = MaterialTheme.typography.headlineSmall.fontSize * 1.2
@@ -222,7 +231,7 @@ fun SpotlightReminderPopup(
                                     Text(
                                         text = subtitle,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.White.copy(alpha = 0.7f),
+                                        color = TextSecondary,
                                         textAlign = TextAlign.Center
                                     )
                                     

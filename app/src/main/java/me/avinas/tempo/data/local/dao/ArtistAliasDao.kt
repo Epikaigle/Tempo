@@ -37,6 +37,13 @@ interface ArtistAliasDao {
     @Query("UPDATE artist_aliases SET target_artist_id = :newTargetId WHERE id = :aliasId")
     suspend fun updateTargetArtist(aliasId: Long, newTargetId: Long)
 
+    /**
+     * Recompute the normalized lookup key for an alias.
+     * Used by one-time data repair after the normalization rules change.
+     */
+    @Query("UPDATE artist_aliases SET original_name_normalized = :normalized WHERE id = :aliasId")
+    suspend fun updateNormalizedName(aliasId: Long, normalized: String)
+
     // =====================
     // Query Operations
     // =====================

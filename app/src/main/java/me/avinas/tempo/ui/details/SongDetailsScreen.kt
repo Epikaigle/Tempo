@@ -56,22 +56,36 @@ import kotlinx.coroutines.withContext
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
 import me.avinas.tempo.ui.theme.premiumClickable
 import me.avinas.tempo.ui.components.SharePreviewDialog
+import me.avinas.tempo.ui.components.ShareTheme
 import me.avinas.tempo.ui.components.SongShareCard
-import me.avinas.tempo.ui.theme.TempoDarkSurface
-import me.avinas.tempo.ui.theme.TempoPrimary
-import androidx.compose.ui.graphics.nativeCanvas
-import me.avinas.tempo.ui.theme.SecondaryPurple
-import me.avinas.tempo.ui.theme.AccentPurple
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import me.avinas.tempo.ui.theme.SubtlerGlass
-import me.avinas.tempo.ui.theme.GlassWhite
-import me.avinas.tempo.ui.theme.ElectricBlue
-import me.avinas.tempo.ui.theme.GoldenAmber
+import me.avinas.tempo.ui.theme.TempoSurface
+import me.avinas.tempo.ui.theme.TempoPrimaryMuted
+import me.avinas.tempo.ui.theme.TempoAccentBright
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoWarning
 import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.SubtlerGlass as SubtlerGlassColor
+import me.avinas.tempo.ui.theme.TempoErrorSoft
+import me.avinas.tempo.ui.theme.TempoSuccessDeep
+import me.avinas.tempo.ui.theme.TempoCyan
+import me.avinas.tempo.ui.theme.TempoSurfaceChip
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.Divider
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import me.avinas.tempo.ui.components.AlbumArtImage
+import me.avinas.tempo.ui.theme.TempoSurfaceElevated
+import me.avinas.tempo.ui.theme.TempoSurfaceDialog
+import me.avinas.tempo.ui.theme.TempoSurfaceCard
+import me.avinas.tempo.ui.theme.TempoWarningBright
+import me.avinas.tempo.ui.theme.TempoSuccess
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TextQuaternary
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -85,6 +99,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import me.avinas.tempo.ui.theme.TempoInfoSoft
 
 @Composable
 fun SongDetailsScreen(
@@ -103,7 +118,7 @@ fun SongDetailsScreen(
     DeepOceanBackground {
         if (uiState.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = TempoRed)
+                CircularProgressIndicator(color = TempoPrimary)
             }
         } else if (trackDetails != null) {
             SongDetailsContent(
@@ -165,7 +180,7 @@ fun SongDetailsContent(
     var showShareDialog by remember { mutableStateOf(false) }
     var showMergeDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    var dominantColor by remember { mutableStateOf(Color(0xFFC026D3)) }
+    var dominantColor by remember { mutableStateOf(TempoPrimary) }
     
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -183,7 +198,7 @@ fun SongDetailsContent(
                 modifier = Modifier.premiumClickable(onClick = onNavigateBack),
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = Color.Transparent,
-                    contentColor = Color.White
+                    contentColor = TextPrimary
                 )
             ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -193,7 +208,7 @@ fun SongDetailsContent(
                 text = stringResource(R.string.details_song_details_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextPrimary,
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center
             )
@@ -204,7 +219,7 @@ fun SongDetailsContent(
                     modifier = Modifier.premiumClickable(onClick = { showShareDialog = true }),
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = Color.Transparent,
-                        contentColor = Color.White
+                        contentColor = TextPrimary
                     )
                 ) {
                     Icon(Icons.Default.Share, contentDescription = stringResource(R.string.share_content_description))
@@ -218,7 +233,7 @@ fun SongDetailsContent(
                         modifier = Modifier.premiumClickable(onClick = { showMenu = true }),
                         colors = IconButtonDefaults.iconButtonColors(
                             containerColor = Color.Transparent,
-                            contentColor = Color.White
+                            contentColor = TextPrimary
                         )
                     ) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Options")
@@ -227,15 +242,15 @@ fun SongDetailsContent(
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false },
-                        modifier = Modifier.background(Color(0xFF1E293B)) // Dark slate background
+                        modifier = Modifier.background(TempoSurfaceDialog)
                     ) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.details_merge_duplicate), color = Color.White) },
+                            text = { Text(stringResource(R.string.details_merge_duplicate), color = TextPrimary) },
                             leadingIcon = {
                                 Icon(
                                     Icons.AutoMirrored.Filled.CallMerge,
                                     contentDescription = null,
-                                    tint = Color.White
+                                    tint = TextPrimary
                                 )
                             },
                             onClick = {
@@ -244,12 +259,12 @@ fun SongDetailsContent(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.details_delete_song), color = Color.Red) },
+                            text = { Text(stringResource(R.string.details_delete_song), color = TempoError) },
                             leadingIcon = {
                                 Icon(
                                     Icons.Default.Delete,
                                     contentDescription = null,
-                                    tint = Color.Red
+                                    tint = TempoError
                                 )
                             },
                             onClick = {
@@ -283,7 +298,7 @@ fun SongDetailsContent(
 
             
             item(key = "listener_identity") {
-                if (engagement != null) {
+                if (engagement != null && engagement.deservesTag) {
                     Spacer(modifier = Modifier.height(24.dp))
                     ListenerIdentityCard(
                         engagement = engagement,
@@ -339,9 +354,8 @@ fun SongDetailsContent(
     if (showShareDialog) {
         SharePreviewDialog(
             onDismiss = { showShareDialog = false },
-            contentToShare = {
-                SongShareCard(trackDetails = trackDetails)
-            }
+            themes = ShareTheme.entries,
+            contentForTheme = { SongShareCard(trackDetails = trackDetails, theme = it) }
         )
     }
 
@@ -488,22 +502,22 @@ private fun EditTitleDialog(
                             )
                             isUnchanged -> Text(
                                 stringResource(R.string.details_edit_title_unchanged),
-                                color = Color(0xFF94A3B8)
+                                color = TextSecondary
                             )
                             else -> Text(
                                 "${titleText.length} / 200",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF94A3B8)
+                                color = TextSecondary
                             )
                         }
                     },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                        unfocusedBorderColor = Divider,
                         focusedLabelColor = MaterialTheme.colorScheme.primary,
-                        unfocusedLabelColor = Color.White.copy(alpha = 0.6f),
+                        unfocusedLabelColor = TextTertiary,
                         cursorColor = MaterialTheme.colorScheme.primary
                     )
                 )
@@ -588,7 +602,6 @@ fun SongHeroSection(
     onEditTitle: () -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        // Premium Showcase Container (Vinyl + Album Cover)
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier.padding(vertical = 24.dp)
@@ -598,14 +611,7 @@ fun SongHeroSection(
                 modifier = Modifier
                     .size(240.dp)
                     .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                dominantColor.copy(alpha = 0.25f),
-                                Color.Transparent
-                            )
-                        )
-                    )
+                    .background(dominantColor.copy(alpha = 0.15f))
             )
 
             // Vinyl Record peeking out from the right
@@ -616,38 +622,38 @@ fun SongHeroSection(
             ) {
                 val center = Offset(size.width / 2f, size.height / 2f)
                 val radius = size.minDimension / 2f
-                
-                // Draw vinyl body (black/dark grey)
+
+                // Draw vinyl body
                 drawCircle(
-                    color = Color(0xFF0F0F11),
+                    color = TempoSurfaceChip,
                     radius = radius
                 )
-                
+
                 // Draw concentric groove lines
                 val grooveCount = 6
                 for (i in 1..grooveCount) {
                     val r = radius * (0.35f + (i.toFloat() / grooveCount) * 0.55f)
                     drawCircle(
-                        color = Color.White.copy(alpha = 0.08f),
+                        color = Divider,
                         radius = r,
                         style = Stroke(width = 1.dp.toPx())
                     )
                 }
-                
+
                 // Draw center label (using dominantColor)
                 drawCircle(
                     color = dominantColor,
                     radius = radius * 0.3f
                 )
-                
+
                 // Draw center hole
                 drawCircle(
-                    color = Color(0xFF000000),
+                    color = TempoBackground,
                     radius = radius * 0.08f
                 )
             }
 
-            // Floating Album Art Container with offset shadow and premium border
+            // Floating Album Art Container
             Box(
                 modifier = Modifier
                     .size(200.dp)
@@ -656,13 +662,10 @@ fun SongHeroSection(
                     .clip(RoundedCornerShape(20.dp))
                     .border(
                         2.dp,
-                        Brush.linearGradient(
-                            listOf(Color.White.copy(alpha = 0.4f), dominantColor.copy(alpha = 0.4f))
-                        ),
+                        Divider,
                         RoundedCornerShape(20.dp)
-                    )
-            ) {
-                me.avinas.tempo.ui.components.AlbumArtImage(
+                    ) {
+                AlbumArtImage(
                     albumArtUrl = trackDetails.track.albumArtUrl,
                     localArtUrl = trackDetails.localBackupArtUrl,
                     contentDescription = "Album Art for ${trackDetails.track.title}",
@@ -670,7 +673,6 @@ fun SongHeroSection(
                     onPaletteExtracted = onPaletteExtracted
                 )
             }
-        }
         
         Spacer(modifier = Modifier.height(20.dp))
         
@@ -684,7 +686,7 @@ fun SongHeroSection(
                 text = trackDetails.track.title,
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Black,
-                color = Color.White,
+                color = TextPrimary,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -698,7 +700,7 @@ fun SongHeroSection(
             Icon(
                 imageVector = Icons.Default.Edit,
                 contentDescription = stringResource(R.string.details_edit_title),
-                tint = Color.White.copy(alpha = 0.7f),
+                tint = TextSecondary,
                 modifier = Modifier
                     .size(22.dp)
                     .align(Alignment.CenterEnd)
@@ -708,7 +710,6 @@ fun SongHeroSection(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Metadata cluster: High-contrast Obsidian Pills
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
@@ -722,7 +723,6 @@ fun SongHeroSection(
                 trackDetails.track.artist
             }
             
-            // Artist Pill (Obsidian + Subtle Border)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -730,21 +730,21 @@ fun SongHeroSection(
                     .premiumClickable(onClick = { 
                         onNavigateToArtist(artistIdentifier)
                     })
-                    .background(Color(0xFF0F0F12))
-                    .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                    .background(TempoSurfaceChip)
+                    .border(1.dp, Divider, RoundedCornerShape(12.dp))
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Icon(
                     imageVector = Icons.Rounded.MusicNote,
                     contentDescription = null,
-                    tint = Color(0xFFA78BFA), // Softer lavender tint
+                    tint = TempoAccentBright,
                     modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = trackDetails.track.artist,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
+                    color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -754,7 +754,6 @@ fun SongHeroSection(
             if (!trackDetails.track.album.isNullOrBlank()) {
                 Spacer(modifier = Modifier.width(10.dp))
                 
-                // Album Pill (Obsidian + Subtle Border)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -762,21 +761,21 @@ fun SongHeroSection(
                         .premiumClickable(onClick = { 
                             onNavigateToAlbum(trackDetails.track.album, trackDetails.track.artist)
                         })
-                        .background(Color(0xFF0F0F12))
-                        .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                        .background(TempoSurfaceChip)
+                        .border(1.dp, Divider, RoundedCornerShape(12.dp))
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.Album,
                         contentDescription = null,
-                        tint = Color(0xFFFBBF24), // Softer amber/gold
+                        tint = TempoWarningBright,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = trackDetails.track.album,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White,
+                        color = TextPrimary,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -790,39 +789,28 @@ fun SongHeroSection(
 @Composable
 fun ListenerIdentityCard(engagement: TrackEngagement, isFavorite: Boolean) {
     val score = engagement.engagementScore
-    val (status, emoji, color, description) = when {
-        score >= 90 -> Quadruple("Ultimate Obsession", "💎", Color(0xFF8B5CF6), "This song has completely dominated your listening sessions recently!")
-        score >= 80 -> Quadruple("Personal Favorite", "❤️", Color(0xFFEF4444), "One of your most-played and highest-engagement tracks.")
-        score >= 70 -> Quadruple("Heavy Rotation", "🔥", Color(0xFFF59E0B), "You return to this track frequently. It's a staple in your rotation.")
-        score >= 55 -> Quadruple("Regular Jam", "⭐", Color(0xFF10B981), "You consistently listen to this track and rarely skip it.")
-        score >= 40 -> Quadruple("Casual Favorite", "👍", Color(0xFF3B82F6), "A track you enjoy having in your queue from time to time.")
-        score >= 25 -> Quadruple("Occasional Play", "🎵", Color(0xFF06B6D4), "You listen to this track casually when it comes up.")
-        score >= 10 -> Quadruple("Ambient Stream", "🎧", Color(0xFF64748B), "This track mostly plays in the background of your sessions.")
-        else -> Quadruple("Quick Skip", "⏭️", Color(0xFF94A3B8), "You tend to skip this track quickly when it starts playing.")
-    }
-
-    val borderBrush = remember(score, color) {
-        when {
-            score >= 90 -> Brush.linearGradient(listOf(Color(0xFF8B5CF6).copy(alpha = 0.4f), Color(0xFF3B82F6).copy(alpha = 0.4f)))
-            score >= 80 -> Brush.linearGradient(listOf(Color(0xFFEF4444).copy(alpha = 0.4f), Color(0xFFF43F5E).copy(alpha = 0.4f)))
-            score >= 70 -> Brush.linearGradient(listOf(Color(0xFFF59E0B).copy(alpha = 0.4f), Color(0xFFD97706).copy(alpha = 0.4f)))
-            score >= 55 -> Brush.linearGradient(listOf(Color(0xFF10B981).copy(alpha = 0.4f), Color(0xFF059669).copy(alpha = 0.4f)))
-            else -> Brush.linearGradient(listOf(color.copy(alpha = 0.3f), color.copy(alpha = 0.15f)))
-        }
+    val (status, color, description) = when {
+        score >= 90 -> Triple("Ultimate Obsession", TempoPrimary, "This song has completely dominated your listening sessions recently!")
+        score >= 80 -> Triple("Personal Favorite", TempoError, "One of your most-played and highest-engagement tracks.")
+        score >= 70 -> Triple("Heavy Rotation", TempoWarning, "You return to this track frequently. It's a staple in your rotation.")
+        score >= 55 -> Triple("Regular Jam", TempoSuccessDeep, "You consistently listen to this track and rarely skip it.")
+        score >= 40 -> Triple("Casual Favorite", TempoInfo, "A track you enjoy having in your queue from time to time.")
+        score >= 25 -> Triple("Occasional Play", TempoCyan, "You listen to this track casually when it comes up.")
+        score >= 10 -> Triple("Ambient Stream", TextTertiary, "This track mostly plays in the background of your sessions.")
+        else -> Triple("Quick Skip", TextSecondary, "You tend to skip this track quickly when it starts playing.")
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF0F0F12), RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.dp, borderBrush), RoundedCornerShape(20.dp))
+            .background(TempoSurfaceChip, RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.dp, color.copy(alpha = 0.4f)), RoundedCornerShape(20.dp))
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left side ticket stub head (colored glow indicator + emoji)
             Box(
                 modifier = Modifier
                     .width(64.dp)
@@ -831,15 +819,16 @@ fun ListenerIdentityCard(engagement: TrackEngagement, isFavorite: Boolean) {
                     .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = emoji, fontSize = 26.sp)
+                Box(
+                    modifier = Modifier.size(10.dp).clip(CircleShape).background(color)
+                )
             }
-            
-            // Vertical dotted separator line
+
             Canvas(modifier = Modifier.width(2.dp).fillMaxHeight()) {
                 val strokeWidth = 2.dp.toPx()
                 val dashPathEffect = android.graphics.DashPathEffect(floatArrayOf(10f, 10f), 0f)
                 val paint = android.graphics.Paint().apply {
-                    this.color = Color.White.copy(alpha = 0.2f).toArgb()
+                    this.color = Divider.toArgb()
                     this.style = android.graphics.Paint.Style.STROKE
                     this.strokeWidth = strokeWidth
                     this.pathEffect = dashPathEffect
@@ -848,8 +837,7 @@ fun ListenerIdentityCard(engagement: TrackEngagement, isFavorite: Boolean) {
                     0f, 0f, 0f, size.height, paint
                 )
             }
-            
-            // Right side ticket details
+
             Row(
                 modifier = Modifier
                     .padding(16.dp)
@@ -866,21 +854,21 @@ fun ListenerIdentityCard(engagement: TrackEngagement, isFavorite: Boolean) {
                             text = status.uppercase(),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color.White,
+                            color = TextPrimary,
                             letterSpacing = 1.sp
                         )
                         if (isFavorite) {
                             Box(
                                 modifier = Modifier
-                                    .background(Color(0xFFEF4444).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                                    .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                                    .background(TempoError.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                    .border(1.dp, TempoError.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
                                 Text(
                                     text = "FAVORITE",
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFCA5A5)
+                                    color = TempoErrorSoft
                                 )
                             }
                         }
@@ -889,7 +877,14 @@ fun ListenerIdentityCard(engagement: TrackEngagement, isFavorite: Boolean) {
                     Text(
                         text = description,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFFCBD5E1)
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = engagement.engagementReason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = color,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -914,7 +909,7 @@ fun SongListeningJourneySection(trackDetails: TrackDetails, engagement: TrackEng
         Text(
             text = "YOUR JOURNEY WITH THIS SONG",
             style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFF94A3B8),
+            color = TextSecondary,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.5.sp,
             modifier = Modifier.padding(bottom = 16.dp)
@@ -934,7 +929,7 @@ fun SongListeningJourneySection(trackDetails: TrackDetails, engagement: TrackEng
                     val strokeWidth = 2.dp.toPx()
                     val dashPathEffect = android.graphics.DashPathEffect(floatArrayOf(10f, 10f), 0f)
                     val paint = android.graphics.Paint().apply {
-                        this.color = Color.White.copy(alpha = 0.2f).toArgb()
+                        this.color = Divider.toArgb()
                         this.style = android.graphics.Paint.Style.STROKE
                         this.strokeWidth = strokeWidth
                         this.pathEffect = dashPathEffect
@@ -953,22 +948,21 @@ fun SongListeningJourneySection(trackDetails: TrackDetails, engagement: TrackEng
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Node Indicator (Emerald Glow)
+                        // Node Indicator
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
-                                .background(Color(0xFF10B981).copy(alpha = 0.2f), CircleShape)
-                                .border(1.5.dp, Color(0xFF10B981), CircleShape),
+                                .background(TempoSuccessDeep.copy(alpha = 0.2f), CircleShape)
+                                .border(1.5.dp, TempoSuccessDeep, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = "🚀", fontSize = 16.sp)
                         }
                         
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = stringResource(R.string.details_first_listen).uppercase(),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF64748B),
+                                color = TextTertiary,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp
                             )
@@ -977,45 +971,44 @@ fun SongListeningJourneySection(trackDetails: TrackDetails, engagement: TrackEng
                                 text = formatSongDate(firstListen),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = TextPrimary
                             )
                             
                             if (engagement != null) {
                                 Spacer(modifier = Modifier.height(8.dp))
-                                // Styled Narrative Card (high contrast dark graphite)
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(Color(0xFF0F0F12), RoundedCornerShape(16.dp))
-                                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                                        .background(TempoSurfaceChip, RoundedCornerShape(16.dp))
+                                        .border(1.dp, Divider, RoundedCornerShape(16.dp))
                                         .padding(14.dp)
                                 ) {
                                     Text(
                                         text = buildAnnotatedString {
                                             append("You discovered this song ")
-                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TextPrimary)) {
                                                 append("${engagement.daysSinceFirstPlay} days ago")
                                             }
                                             append(". Since then, you've played it ")
-                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TextPrimary)) {
                                                 append("${trackDetails.playCount} times")
                                             }
                                             append(" across ")
-                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TextPrimary)) {
                                                 append("${engagement.uniqueSessionsCount} sessions")
                                             }
                                             append(". You listen with a ")
-                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFFA78BFA))) {
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TempoAccentBright)) {
                                                 append(engagement.listeningBehavior.lowercase())
                                             }
                                             append(" pattern, making it a ")
-                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFFFCA5A5))) {
+                                            withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TempoErrorSoft)) {
                                                 append(engagement.engagementLevel.lowercase())
                                             }
                                             append(" for you.")
                                         },
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = Color(0xFFCBD5E1),
+                                        color = TextSecondary,
                                         lineHeight = 20.sp
                                     )
                                 }
@@ -1029,22 +1022,21 @@ fun SongListeningJourneySection(trackDetails: TrackDetails, engagement: TrackEng
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Node Indicator (Blue Glow)
+                        // Node Indicator
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
-                                .background(Color(0xFF3B82F6).copy(alpha = 0.2f), CircleShape)
-                                .border(1.5.dp, Color(0xFF3B82F6), CircleShape),
+                                .background(TempoInfo.copy(alpha = 0.2f), CircleShape)
+                                .border(1.5.dp, TempoInfo, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = "🎧", fontSize = 16.sp)
                         }
                         
                         Column {
                             Text(
                                 text = stringResource(R.string.details_last_listen).uppercase(),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF64748B),
+                                color = TextTertiary,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp
                             )
@@ -1053,7 +1045,7 @@ fun SongListeningJourneySection(trackDetails: TrackDetails, engagement: TrackEng
                                 text = formatSongDate(lastListen),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = TextPrimary
                             )
                         }
                     }
@@ -1061,6 +1053,7 @@ fun SongListeningJourneySection(trackDetails: TrackDetails, engagement: TrackEng
             }
         }
     }
+}
 }
 
 private fun formatSongDate(timestamp: Long): String {
@@ -1073,8 +1066,8 @@ fun AchievementBadge() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF0F0F12), RoundedCornerShape(20.dp))
-            .border(BorderStroke(1.dp, Brush.linearGradient(listOf(Color(0xFFEF4444).copy(alpha = 0.4f), Color(0xFFF43F5E).copy(alpha = 0.4f)))), RoundedCornerShape(20.dp))
+            .background(TempoSurfaceChip, RoundedCornerShape(20.dp))
+            .border(BorderStroke(1.dp, TempoError.copy(alpha = 0.4f)), RoundedCornerShape(20.dp))
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
@@ -1084,11 +1077,10 @@ fun AchievementBadge() {
                 modifier = Modifier
                     .width(64.dp)
                     .fillMaxHeight()
-                    .background(Color(0xFFEF4444).copy(alpha = 0.15f))
+                    .background(TempoError.copy(alpha = 0.15f))
                     .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "🏆", fontSize = 26.sp)
             }
             
             // Vertical dotted separator line
@@ -1096,7 +1088,7 @@ fun AchievementBadge() {
                 val strokeWidth = 2.dp.toPx()
                 val dashPathEffect = android.graphics.DashPathEffect(floatArrayOf(10f, 10f), 0f)
                 val paint = android.graphics.Paint().apply {
-                    this.color = Color.White.copy(alpha = 0.2f).toArgb()
+                    this.color = Divider.toArgb()
                     this.style = android.graphics.Paint.Style.STROKE
                     this.strokeWidth = strokeWidth
                     this.pathEffect = dashPathEffect
@@ -1115,14 +1107,14 @@ fun AchievementBadge() {
                     text = stringResource(R.string.details_favorite_title).uppercase(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
+                    color = TextPrimary,
                     letterSpacing = 1.sp
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = stringResource(R.string.details_favorite_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFFCBD5E1)
+                    color = TextSecondary
                 )
             }
         }
@@ -1146,9 +1138,9 @@ fun StatsGrid(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF0F0F12), RoundedCornerShape(24.dp))
+                .background(TempoSurfaceChip, RoundedCornerShape(24.dp))
                 .border(
-                    BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), 
+                    BorderStroke(1.dp, Divider), 
                     RoundedCornerShape(24.dp)
                 )
                 .padding(16.dp)
@@ -1161,13 +1153,13 @@ fun StatsGrid(
                     Icon(
                         imageVector = Icons.Rounded.MusicNote,
                         contentDescription = null,
-                        tint = Color(0xFFA78BFA), // Lavender tint
+                        tint = TempoAccentBright,
                         modifier = Modifier.size(16.dp)
                     )
                     Text(
                         text = stringResource(R.string.details_stat_times_played).uppercase(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF94A3B8),
+                        color = TextSecondary,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
@@ -1177,7 +1169,7 @@ fun StatsGrid(
                     text = trackDetails.playCount.toString(),
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Black,
-                    color = Color.White // High contrast but clean white instead of soft red
+                    color = TextPrimary
                 )
             }
         }
@@ -1191,15 +1183,15 @@ fun StatsGrid(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .background(Color(0xFF0F0F12), RoundedCornerShape(20.dp))
-                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), RoundedCornerShape(20.dp))
+                    .background(TempoSurfaceChip, RoundedCornerShape(20.dp))
+                    .border(BorderStroke(1.dp, Divider), RoundedCornerShape(20.dp))
                     .padding(16.dp)
             ) {
                 Column {
                     Text(
                         text = stringResource(R.string.details_stat_total_listening).uppercase(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF94A3B8),
+                        color = TextSecondary,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
@@ -1208,7 +1200,7 @@ fun StatsGrid(
                         text = "${trackDetails.totalTimeMinutes}m",
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Black,
-                        color = Color(0xFF93C5FD) // Soft Blue
+                        color = TempoInfoSoft
                     )
                 }
             }
@@ -1217,15 +1209,15 @@ fun StatsGrid(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .background(Color(0xFF0F0F12), RoundedCornerShape(20.dp))
-                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), RoundedCornerShape(20.dp))
+                    .background(TempoSurfaceChip, RoundedCornerShape(20.dp))
+                    .border(BorderStroke(1.dp, Divider), RoundedCornerShape(20.dp))
                     .padding(16.dp)
             ) {
                 Column {
                     Text(
                         text = stringResource(R.string.details_stat_peak_position).uppercase(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF94A3B8),
+                        color = TextSecondary,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
@@ -1234,7 +1226,7 @@ fun StatsGrid(
                         text = "#${trackDetails.peakRank ?: "-"}",
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Black,
-                        color = Color(0xFFD8B4FE) // Soft Purple
+                        color = TempoAccent
                     )
                 }
             }
@@ -1249,15 +1241,15 @@ fun StatsGrid(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .background(Color(0xFF0F0F12), RoundedCornerShape(20.dp))
-                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), RoundedCornerShape(20.dp))
+                    .background(TempoSurfaceChip, RoundedCornerShape(20.dp))
+                    .border(BorderStroke(1.dp, Divider), RoundedCornerShape(20.dp))
                     .padding(16.dp)
             ) {
                 Column {
                     Text(
                         text = stringResource(R.string.details_stat_release_date).uppercase(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF94A3B8),
+                        color = TextSecondary,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
@@ -1266,7 +1258,7 @@ fun StatsGrid(
                         text = formatReleaseDate(releaseDate) ?: releaseYear?.toString() ?: "-",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFCBD5E1) // Clean grey instead of soft green
+                        color = TextSecondary
                     )
                 }
             }
@@ -1275,15 +1267,15 @@ fun StatsGrid(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .background(Color(0xFF0F0F12), RoundedCornerShape(20.dp))
-                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), RoundedCornerShape(20.dp))
+                    .background(TempoSurfaceChip, RoundedCornerShape(20.dp))
+                    .border(BorderStroke(1.dp, Divider), RoundedCornerShape(20.dp))
                     .padding(16.dp)
             ) {
                 Column {
                     Text(
                         text = stringResource(R.string.details_stat_genre).uppercase(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF94A3B8),
+                        color = TextSecondary,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
@@ -1292,7 +1284,7 @@ fun StatsGrid(
                         text = genre ?: "-",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFCBD5E1) // Clean grey instead of soft orange
+                        color = TextSecondary
                     )
                 }
             }
@@ -1308,8 +1300,8 @@ fun ListeningTrendsChart(history: List<DailyListening>) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 12.dp)
-            .background(Color(0xFF0F0F12), RoundedCornerShape(24.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+            .background(TempoSurfaceChip, RoundedCornerShape(24.dp))
+            .border(1.dp, Divider, RoundedCornerShape(24.dp))
             .padding(16.dp)
     ) {
         Column(
@@ -1318,7 +1310,7 @@ fun ListeningTrendsChart(history: List<DailyListening>) {
             Text(
                 text = stringResource(R.string.details_listening_trends).uppercase(),
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF94A3B8),
+                color = TextSecondary,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
@@ -1329,7 +1321,7 @@ fun ListeningTrendsChart(history: List<DailyListening>) {
                     modifier = Modifier.fillMaxWidth().height(150.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(stringResource(R.string.details_no_data_available), color = Color.White.copy(alpha = 0.4f))
+                    Text(stringResource(R.string.details_no_data_available), color = TextQuaternary)
                 }
             } else {
                 val chartData = remember(history) {
@@ -1350,7 +1342,7 @@ fun ListeningTrendsChart(history: List<DailyListening>) {
                         for (i in 0..gridRows) {
                             val y = i * (size.height / gridRows)
                             drawLine(
-                                color = Color.White.copy(alpha = 0.04f),
+                                color = Divider,
                                 start = Offset(0f, y),
                                 end = Offset(size.width, y),
                                 strokeWidth = 1.dp.toPx()
@@ -1359,7 +1351,7 @@ fun ListeningTrendsChart(history: List<DailyListening>) {
                         for (i in 0..gridCols) {
                             val x = i * (size.width / gridCols)
                             drawLine(
-                                color = Color.White.copy(alpha = 0.04f),
+                                color = Divider,
                                 start = Offset(x, 0f),
                                 end = Offset(x, size.height),
                                 strokeWidth = 1.dp.toPx()
@@ -1413,15 +1405,15 @@ fun ListeningTrendsChart(history: List<DailyListening>) {
                             path = fillPath,
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    Color(0xFF8B5CF6).copy(alpha = 0.35f), // Glowing purple gradient fill
-                                    Color(0xFF8B5CF6).copy(alpha = 0.0f)
+                                    TempoPrimary.copy(alpha = 0.35f),
+                                    TempoPrimary.copy(alpha = 0.0f)
                                 )
                             )
                         )
                         
                         drawPath(
                             path = path,
-                            color = Color(0xFF8B5CF6),
+                            color = TempoPrimary,
                             style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                         )
                     }
@@ -1437,8 +1429,8 @@ fun MoodInsightsSection(moodSummary: TagBasedMoodAnalyzer.MoodSummary) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 12.dp)
-            .background(Color(0xFF0F0F12), RoundedCornerShape(24.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+            .background(TempoSurfaceChip, RoundedCornerShape(24.dp))
+            .border(1.dp, Divider, RoundedCornerShape(24.dp))
             .padding(16.dp)
     ) {
         Column(
@@ -1447,7 +1439,7 @@ fun MoodInsightsSection(moodSummary: TagBasedMoodAnalyzer.MoodSummary) {
             Text(
                 text = stringResource(R.string.details_mood_genre).uppercase(),
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF94A3B8),
+                color = TextSecondary,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
@@ -1463,8 +1455,8 @@ fun MoodInsightsSection(moodSummary: TagBasedMoodAnalyzer.MoodSummary) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(Color(0xFF16161B), RoundedCornerShape(16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                        .background(TempoSurfaceChip, RoundedCornerShape(16.dp))
+                        .border(1.dp, Divider, RoundedCornerShape(16.dp))
                         .padding(vertical = 12.dp, horizontal = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1479,8 +1471,8 @@ fun MoodInsightsSection(moodSummary: TagBasedMoodAnalyzer.MoodSummary) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(Color(0xFF16161B), RoundedCornerShape(16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                        .background(TempoSurfaceChip, RoundedCornerShape(16.dp))
+                        .border(1.dp, Divider, RoundedCornerShape(16.dp))
                         .padding(vertical = 12.dp, horizontal = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1496,8 +1488,8 @@ fun MoodInsightsSection(moodSummary: TagBasedMoodAnalyzer.MoodSummary) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .background(Color(0xFF16161B), RoundedCornerShape(16.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                            .background(TempoSurfaceChip, RoundedCornerShape(16.dp))
+                            .border(1.dp, Divider, RoundedCornerShape(16.dp))
                             .padding(vertical = 12.dp, horizontal = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1520,12 +1512,12 @@ fun MoodInsightsSection(moodSummary: TagBasedMoodAnalyzer.MoodSummary) {
                     Text(
                         text = stringResource(R.string.details_estimated_energy),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.8f)
+                        color = TextSecondary
                     )
                     Text(
                         text = "${moodSummary.energyPercent}%",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White,
+                        color = TextPrimary,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1543,9 +1535,9 @@ fun MoodInsightsSection(moodSummary: TagBasedMoodAnalyzer.MoodSummary) {
                         val isActive = i < activeBars
                         val color = if (isActive) {
                             val fraction = i.toFloat() / totalBars
-                            androidx.compose.ui.graphics.lerp(Color(0xFF8B5CF6).copy(alpha = 0.8f), Color(0xFFC084FC).copy(alpha = 0.8f), fraction)
+                            androidx.compose.ui.graphics.lerp(TempoPrimary.copy(alpha = 0.8f), TempoAccentBright.copy(alpha = 0.8f), fraction)
                         } else {
-                            Color(0xFF222226)
+                            TempoSurfaceElevated
                         }
                         
                         Box(
@@ -1580,8 +1572,8 @@ fun EngagementSection(engagement: TrackEngagement) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 12.dp)
-            .background(Color(0xFF0F0F12), RoundedCornerShape(24.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+            .background(TempoSurfaceChip, RoundedCornerShape(24.dp))
+            .border(1.dp, Divider, RoundedCornerShape(24.dp))
             .padding(16.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -1594,7 +1586,7 @@ fun EngagementSection(engagement: TrackEngagement) {
                     text = stringResource(R.string.details_your_engagement).uppercase(),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF94A3B8),
+                    color = TextSecondary,
                     letterSpacing = 1.sp
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1618,8 +1610,8 @@ fun EngagementSection(engagement: TrackEngagement) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF16161B), RoundedCornerShape(16.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                    .background(TempoSurfaceChip, RoundedCornerShape(16.dp))
+                    .border(1.dp, Divider, RoundedCornerShape(16.dp))
                     .padding(14.dp)
             ) {
                 Row(
@@ -1629,12 +1621,12 @@ fun EngagementSection(engagement: TrackEngagement) {
                     Text(
                         text = stringResource(R.string.details_engagement_score),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.8f)
+                        color = TextSecondary
                     )
                     Text(
                         text = "${engagement.engagementScore}/100",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White,
+                        color = TextPrimary,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1645,7 +1637,7 @@ fun EngagementSection(engagement: TrackEngagement) {
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp))
-                        .background(Color.White.copy(alpha = 0.08f))
+                        .background(TempoSurfaceCard)
                 ) {
                     Box(
                         modifier = Modifier
@@ -1654,7 +1646,7 @@ fun EngagementSection(engagement: TrackEngagement) {
                             .background(
                                 Brush.horizontalGradient(
                                     colors = listOf(
-                                        Color(0xFF3B82F6), // Electric Blue
+                                        TempoInfo,
                                         engagementColor
                                     )
                                 )
@@ -1690,8 +1682,8 @@ fun EngagementSection(engagement: TrackEngagement) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .background(Color(0xFF16161B), RoundedCornerShape(16.dp))
-                            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                            .background(TempoSurfaceChip, RoundedCornerShape(16.dp))
+                            .border(1.dp, Divider, RoundedCornerShape(16.dp))
                             .padding(12.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1711,8 +1703,8 @@ fun EngagementSection(engagement: TrackEngagement) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(Color(0xFF16161B), RoundedCornerShape(16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                        .background(TempoSurfaceChip, RoundedCornerShape(16.dp))
+                        .border(1.dp, Divider, RoundedCornerShape(16.dp))
                         .padding(14.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1720,7 +1712,7 @@ fun EngagementSection(engagement: TrackEngagement) {
                         Text(
                             text = stringResource(R.string.details_completion_rate).uppercase(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF94A3B8),
+                            color = TextSecondary,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
                         )
@@ -1729,15 +1721,15 @@ fun EngagementSection(engagement: TrackEngagement) {
                             CircularProgressIndicator(
                                 progress = { engagement.averageCompletionPercent / 100f },
                                 modifier = Modifier.size(64.dp), // slightly smaller
-                                color = Color(0xFF10B981).copy(alpha = 0.8f), // softer emerald
-                                trackColor = Color.White.copy(alpha = 0.08f),
+                                color = TempoSuccessDeep.copy(alpha = 0.8f),
+                                trackColor = Divider,
                                 strokeWidth = 4.dp // thinner
                             )
                             Text(
                                 text = "${engagement.averageCompletionPercent.toInt()}%",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = TextPrimary
                             )
                         }
                     }
@@ -1747,8 +1739,8 @@ fun EngagementSection(engagement: TrackEngagement) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(Color(0xFF16161B), RoundedCornerShape(16.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(16.dp))
+                        .background(TempoSurfaceChip, RoundedCornerShape(16.dp))
+                        .border(1.dp, Divider, RoundedCornerShape(16.dp))
                         .padding(14.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1756,7 +1748,7 @@ fun EngagementSection(engagement: TrackEngagement) {
                         Text(
                             text = stringResource(R.string.details_skip_rate).uppercase(),
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF94A3B8),
+                            color = TextSecondary,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
                         )
@@ -1766,15 +1758,15 @@ fun EngagementSection(engagement: TrackEngagement) {
                             CircularProgressIndicator(
                                 progress = { skipRate.coerceIn(0f, 1f) },
                                 modifier = Modifier.size(64.dp), // slightly smaller
-                                color = if (skipRate > 0.5f) Color(0xFFEF4444).copy(alpha = 0.8f) else Color(0xFFF59E0B).copy(alpha = 0.8f), // softer red/amber
-                                trackColor = Color.White.copy(alpha = 0.08f),
+                                color = if (skipRate > 0.5f) TempoError.copy(alpha = 0.8f) else TempoWarning.copy(alpha = 0.8f),
+                                trackColor = Divider,
                                 strokeWidth = 4.dp // thinner
                             )
                             Text(
                                 text = "${(skipRate * 100).toInt()}%",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = TextPrimary
                             )
                         }
                     }
@@ -1806,7 +1798,7 @@ fun EngagementSection(engagement: TrackEngagement) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF16161B), RoundedCornerShape(12.dp))
+                        .background(TempoSurfaceChip, RoundedCornerShape(12.dp))
                         .padding(12.dp)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1814,7 +1806,7 @@ fun EngagementSection(engagement: TrackEngagement) {
                             Text(
                                 text = log,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.6f)
+                                color = TextTertiary
                             )
                         }
                     }
@@ -1829,7 +1821,7 @@ fun TagChip(tag: String) {
     Box(
         modifier = Modifier
             .background(
-                Color(0xFF6366F1), // Solid Indigo 500
+                TempoPrimaryMuted,
                 RoundedCornerShape(20.dp)
             )
             .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -1857,17 +1849,17 @@ fun BehaviorStat(
             text = value,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.8f)
+            color = TextSecondary
         )
         Text(
             text = subtext,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.5f),
+            color = TextTertiary,
             fontSize = 10.sp
         )
     }
@@ -1875,11 +1867,11 @@ fun BehaviorStat(
 
 private fun getEngagementColor(score: Int): Color {
     return when {
-        score >= 80 -> Color(0xFFEF4444) // Red - favorite
-        score >= 60 -> Color(0xFFF59E0B) // Amber - loved
-        score >= 40 -> Color(0xFF22C55E) // Green - enjoyed
-        score >= 20 -> Color(0xFF3B82F6) // Blue - casual
-        else -> Color(0xFF6B7280)        // Gray - background
+        score >= 80 -> TempoError // Red - favorite
+        score >= 60 -> TempoWarning // Amber - loved
+        score >= 40 -> TempoSuccess // Green - enjoyed
+        score >= 20 -> TempoInfo // Blue - casual
+        else -> TextTertiary        // Gray - background
     }
 }
 
@@ -1898,12 +1890,12 @@ fun MoodIndicator(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
         Text(
             text = sublabel,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.6f)
+            color = TextTertiary
         )
     }
 }
@@ -1922,12 +1914,12 @@ fun AudioFeatureBar(
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.8f)
+                color = TextSecondary
             )
             Text(
                 text = "${(value * 100).toInt()}%",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White,
+                color = TextPrimary,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -1939,7 +1931,7 @@ fun AudioFeatureBar(
                 .height(6.dp)
                 .clip(RoundedCornerShape(3.dp)),
             color = color,
-            trackColor = Color.White.copy(alpha = 0.1f),
+            trackColor = Divider,
         )
     }
 }

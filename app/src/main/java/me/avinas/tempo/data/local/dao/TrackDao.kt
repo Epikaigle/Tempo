@@ -255,11 +255,11 @@ interface TrackDao {
      * - Avoids replacing "Art" inside "Artie Shaw"
      */
     @Query("""
-        UPDATE tracks SET artist = 
-            CASE 
-                WHEN LOWER(artist) LIKE LOWER(:oldArtistName) || ', %' THEN 
+        UPDATE tracks SET artist =
+            CASE
+                WHEN LOWER(artist) LIKE LOWER(:oldArtistName) || ', %' THEN
                     :newArtistName || SUBSTR(artist, LENGTH(:oldArtistName) + 1)
-                WHEN LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) THEN 
+                WHEN LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) THEN
                     SUBSTR(artist, 1, LENGTH(artist) - LENGTH(:oldArtistName)) || :newArtistName
                 WHEN LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) || ', %' THEN
                     REPLACE(
@@ -269,11 +269,18 @@ interface TrackDao {
                 ELSE artist
             END
         WHERE (
-            LOWER(artist) LIKE LOWER(:oldArtistName) || ', %' 
-            OR LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) 
+            LOWER(artist) LIKE LOWER(:oldArtistName) || ', %'
+            OR LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName)
             OR LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) || ', %'
         )
     """)
     suspend fun replaceArtistNameInMultiArtist(oldArtistName: String, newArtistName: String): Int
+
+    /**
+     * Update the raw artist string of a single track.
+     * Used by artist split to rewrite one track's credit without touching others.
+     */
+    @Query("UPDATE tracks SET artist = :newArtistName WHERE id = :trackId")
+    suspend fun updateArtistString(trackId: Long, newArtistName: String)
 }
 

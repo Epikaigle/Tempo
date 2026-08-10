@@ -1,20 +1,15 @@
 package me.avinas.tempo.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
-
 import androidx.compose.ui.unit.dp
 
 enum class GlassCardVariant {
@@ -25,8 +20,8 @@ enum class GlassCardVariant {
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(24.dp), // Increased for softer premium feel
-    backgroundColor: Color = Color.White.copy(alpha = 0.05f),
+    shape: RoundedCornerShape = RoundedCornerShape(20.dp),
+    backgroundColor: Color = SurfaceCardDefault,
     contentPadding: PaddingValues = PaddingValues(16.dp),
     variant: GlassCardVariant = GlassCardVariant.HighProminence,
     contentAlignment: androidx.compose.ui.Alignment = androidx.compose.ui.Alignment.CenterStart,
@@ -37,64 +32,20 @@ fun GlassCard(
     fillMaxWidth: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    // Hero (HighProminence): light-catching top edge gradient for depth
-    // Normal (LowProminence): single flat stroke, no gradient
-    val borderBrush = remember(variant) {
-        if (variant == GlassCardVariant.HighProminence) {
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = 0.35f),
-                    Color.White.copy(alpha = 0.05f)
-                )
-            )
-        } else {
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color.White.copy(alpha = 0.10f),
-                    Color.White.copy(alpha = 0.10f)
-                )
-            )
-        }
+    val surface = remember(backgroundColor) {
+        backgroundColor
     }
-
-    val backgroundBrush = remember(variant, backgroundColor) {
-        if (variant == GlassCardVariant.HighProminence) {
-            Brush.verticalGradient(
-                colors = listOf(
-                    androidx.compose.ui.graphics.lerp(backgroundColor, Color.White, 0.04f),
-                    backgroundColor.copy(alpha = (backgroundColor.alpha * 0.85f).coerceAtLeast(0.02f))
-                )
-            )
-        } else {
-            Brush.verticalGradient(
-                colors = listOf(
-                    backgroundColor,
-                    backgroundColor
-                )
-            )
-        }
-    }
-
-    val stroke = remember(variant, borderColor, borderWidth, borderBrush) {
+    val border = remember(variant, borderColor, borderWidth) {
         val width = borderWidth ?: (if (variant == GlassCardVariant.HighProminence) 1.dp else 0.5.dp)
-        if (borderColor != null) {
-            BorderStroke(width, borderColor)
-        } else {
-            BorderStroke(width, borderBrush)
-        }
+        val color = borderColor ?: if (variant == GlassCardVariant.HighProminence) BorderHairline else BorderSubtle
+        BorderStroke(width, color)
     }
 
     Box(
         modifier = modifier
-            .shadow(
-                elevation = shadowElevation,
-                shape = shape,
-                ambientColor = Color.Transparent,
-                spotColor = shadowSpotColor
-            )
             .clip(shape)
-            .background(backgroundBrush, shape)
-            .border(stroke, shape = shape),
+            .background(surface, shape)
+            .border(border, shape = shape),
         contentAlignment = contentAlignment
     ) {
         Box(
@@ -106,3 +57,7 @@ fun GlassCard(
         }
     }
 }
+
+private val SurfaceCardDefault = Color(0x0DFFFFFF)
+private val BorderHairline = Color(0x1AFFFFFF)
+private val BorderSubtle = Color(0x0DFFFFFF)

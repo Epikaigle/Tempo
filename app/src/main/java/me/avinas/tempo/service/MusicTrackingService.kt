@@ -1272,7 +1272,14 @@ class MusicTrackingService : NotificationListenerService() {
             addAction(Intent.ACTION_BATTERY_OKAY)
             addAction(Intent.ACTION_BATTERY_CHANGED)
         }
-        registerReceiver(receiver, filter)
+        // RECEIVER_NOT_EXPORTED is required on Android 14+ (API 34+) for dynamic receivers
+        // that aren't exported; without it registerReceiver throws SecurityException, which
+        // crashes onCreate before startForeground can run → BadForegroundServiceNotificationException.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(receiver, filter)
+        }
         batteryStateReceiver = receiver
         // Signal receiver that the startup-sticky delivery has passed
         receiver.markReady()
@@ -1755,6 +1762,14 @@ class MusicTrackingService : NotificationListenerService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "onStartCommand: action=${intent?.action}")
+
+        // Always (re-)assert the foreground state here. If the system restarts the service
+        // to deliver an intent (e.g. ACTION_BATTERY_RECOVERED via startForegroundService) and
+        // onCreate's startForeground didn't land within the ANR/low-memory restart window,
+        // the system throws BadForegroundServiceNotificationException. Asserting here makes
+        // the foreground promotion idempotent and deadline-safe on Android 14+ (targetSdk 36).
+        startForegroundServiceWithNotification()
+
         when (intent?.action) {
             ACTION_BATTERY_RECOVERED -> {
                 Log.i(TAG, "Battery recovered — rescanning active notifications and media sessions")
@@ -2592,9 +2607,11 @@ class MusicTrackingService : NotificationListenerService() {
             }
             
             // Save bitmap to file
+            val toSave = downsampleBitmap(bitmap, 512)
             FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                toSave.compress(Bitmap.CompressFormat.JPEG, 85, out)
             }
+            if (toSave !== bitmap) toSave.recycle()
             
             Log.i(TAG, "Saved album art to: ${file.absolutePath}")
             return "file://${file.absolutePath}"
@@ -2605,6 +2622,14 @@ class MusicTrackingService : NotificationListenerService() {
         }
     }
     
+    private fun downsampleBitmap(bitmap: Bitmap, maxDimension: Int): Bitmap {
+        val w = bitmap.width.toFloat()
+        val h = bitmap.height.toFloat()
+        if (w <= maxDimension && h <= maxDimension) return bitmap
+        val ratio = (maxDimension / maxOf(w, h)).coerceAtMost(1f)
+        return Bitmap.createScaledBitmap(bitmap, (w * ratio).toInt(), (h * ratio).toInt(), true)
+    }
+
     /**
      * Generate MD5 hash for filename.
      */
@@ -3446,16 +3471,30 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     private fun startForegroundServiceWithNotification() {
+        // Ensure the channel exists before building/presenting the notification. If the
+        // service is restarted by the system (rather than via onCreate), the channel may
+        // not yet be registered, and posting a notification with an unknown channel id is
+        // exactly what raises BadForegroundServiceNotificationException.
+        createNotificationChannel()
         val notification = buildTrackingNotification(null, null)
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID, 
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            // A transient failure (e.g. foreground-start window lapsed, or the system
+            // forbids the type) must not crash the service. Stop cleanly instead.
+            Log.e(TAG, "Failed to enter foreground state", e)
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (_: Exception) { }
         }
     }
 

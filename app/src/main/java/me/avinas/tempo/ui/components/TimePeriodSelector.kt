@@ -22,8 +22,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.avinas.tempo.data.stats.TimeRange
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
 import me.avinas.tempo.ui.theme.premiumClickable
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
 
 @Composable
 fun TimePeriodSelector(
@@ -36,8 +40,8 @@ fun TimePeriodSelector(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp)
-            .background(Color.Black, RoundedCornerShape(24.dp)) // Dark Pill for better visibility
-            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp)) // Subtle border
+            .background(TempoBackground, RoundedCornerShape(24.dp)) // Dark Pill for better visibility
+            .border(1.dp, Divider, RoundedCornerShape(24.dp)) // Subtle border
             .padding(2.dp)
     ) {
         Row(
@@ -50,7 +54,7 @@ fun TimePeriodSelector(
                     if (isSelected) me.avinas.tempo.ui.theme.TempoPrimary else Color.Transparent, label = "bgColor"
                 )
                 val contentColor by animateColorAsState(
-                    if (isSelected) Color.White else Color.White.copy(alpha = 0.7f), label = "textColor"
+                    if (isSelected) TextPrimary else TextSecondary, label = "textColor"
                 )
 
                 val displayText = when (range) {

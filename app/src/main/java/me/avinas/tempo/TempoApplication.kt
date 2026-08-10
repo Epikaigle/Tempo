@@ -9,6 +9,7 @@ import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import me.avinas.tempo.data.local.dao.UserKnownArtistDao
 import me.avinas.tempo.data.local.dao.UserPreferencesDao
+import me.avinas.tempo.data.repository.ArtistRepairService
 import me.avinas.tempo.utils.ArtistParser
 import me.avinas.tempo.worker.EnrichmentWorker
 import me.avinas.tempo.worker.ServiceHealthWorker
@@ -46,7 +47,10 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     
     @Inject
     lateinit var userKnownArtistDao: UserKnownArtistDao
-    
+
+    @Inject
+    lateinit var artistRepairService: ArtistRepairService
+
     // Background executor for non-critical initialization
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     
@@ -82,6 +86,10 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     /**
      * Load user-defined known artist names from the database into ArtistParser.
      * This runs on a background coroutine and doesn't block startup.
+     *
+     * Also triggers the one-time artist data repair (e.g. Japanese artist
+     * collapse from the old ASCII-only normalization). The repair runs AFTER
+     * the parser is populated so re-linking respects user-known band names.
      */
     private fun loadUserKnownArtists() {
         applicationScope.launch {
@@ -90,6 +98,13 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
                 ArtistParser.loadUserKnownBands(names)
             } catch (e: Exception) {
                 android.util.Log.w("TempoApplication", "Failed to load user known artists", e)
+            }
+
+            // One-time data repair; no-ops once applied (versioned flag)
+            try {
+                artistRepairService.runRepairIfNeeded()
+            } catch (e: Exception) {
+                android.util.Log.w("TempoApplication", "Artist repair invocation failed", e)
             }
         }
     }

@@ -25,6 +25,14 @@ import androidx.compose.ui.unit.sp
 import kotlin.random.Random
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryMuted
+import me.avinas.tempo.ui.theme.TempoSuccessDeep
+import me.avinas.tempo.ui.theme.TempoSurfaceDialog
+import me.avinas.tempo.ui.theme.TempoSurfaceSunken
+import me.avinas.tempo.ui.theme.TempoWarning
 
 /**
  * Full-screen overlay shown when the user levels up.
@@ -57,8 +65,8 @@ fun LevelUpOverlay(
                 speed = 0.3f + Random.nextFloat() * 0.7f,
                 size = 4f + Random.nextFloat() * 8f,
                 color = listOf(
-                    Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1),
-                    Color(0xFFF59E0B), Color(0xFF10B981), Color(0xFF3B82F6)
+                    TempoPrimary, TempoAccent, TempoPrimaryMuted,
+                    TempoWarning, TempoSuccessDeep, TempoInfo
                 ).random(),
                 rotation = Random.nextFloat() * 360f
             )
@@ -106,8 +114,8 @@ fun LevelUpOverlay(
                 .background(
                     brush = Brush.verticalGradient(
                         listOf(
-                            Color(0xFF1E1B4B).copy(alpha = 0.95f),
-                            Color(0xFF0F172A).copy(alpha = 0.95f)
+                            TempoSurfaceDialog.copy(alpha = 0.95f),
+                            TempoSurfaceSunken.copy(alpha = 0.95f)
                         )
                     ),
                     shape = RoundedCornerShape(24.dp)
@@ -118,7 +126,7 @@ fun LevelUpOverlay(
             Icon(
                 imageVector = Icons.Default.EmojiEvents,
                 contentDescription = null,
-                tint = Color(0xFFF59E0B),
+                tint = TempoWarning,
                 modifier = Modifier.size(64.dp)
             )
             
@@ -128,7 +136,7 @@ fun LevelUpOverlay(
                 text = stringResource(R.string.level_up_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Black,
-                color = Color(0xFFF59E0B),
+                color = TempoWarning,
                 letterSpacing = 4.sp,
                 modifier = Modifier.alpha(textAlpha.value)
             )
@@ -148,8 +156,7 @@ fun LevelUpOverlay(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFFA855F7),
-                textAlign = TextAlign.Center,
+                color = TempoAccent,
                 modifier = Modifier.alpha(textAlpha.value)
             )
             

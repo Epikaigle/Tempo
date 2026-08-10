@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.avinas.tempo.ui.spotlight.SpotlightCardData
+import me.avinas.tempo.ui.theme.TempoSurfaceSunken
 
 /**
  * Bottom sheet for selecting cards to add to the canvas.
@@ -35,7 +36,7 @@ fun CardPickerSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(0xFF0F172A).copy(alpha = 0.95f),
+        containerColor = TempoSurfaceSunken.copy(alpha = 0.95f),
         contentColor = Color.White,
         dragHandle = {
             Box(

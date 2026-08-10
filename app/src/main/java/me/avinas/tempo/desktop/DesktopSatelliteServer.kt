@@ -112,14 +112,19 @@ class DesktopSatelliteServer @Inject constructor(
             val isCritical = pct <= getBatteryThreshold()
             cachedBatteryCritical = isCritical
             batteryCacheTime = System.currentTimeMillis()
-            if (isCritical && !wasCritical && isRunning) {
-                Log.i(TAG, "Battery critical (broadcast) — stopping server")
-                mdnsManager.unregister()
-                stop()
-            } else if (!isCritical && wasCritical && !isRunning && kotlinx.coroutines.runBlocking { pairingManager.getActiveSession() } != null) {
-                Log.i(TAG, "Battery recovered (broadcast) — restarting server")
-                start(DesktopPairingManager.SERVER_PORT)
-                mdnsManager.register(DesktopPairingManager.SERVER_PORT)
+            // Dispatch the (un)registration of the server off the broadcast main thread.
+            // runBlocking here previously blocked the receiver's PendingResult past its
+            // finish deadline, which surfaced as "Broadcast already finished" crashes.
+            scope.launch {
+                if (isCritical && !wasCritical && isRunning) {
+                    Log.i(TAG, "Battery critical (broadcast) — stopping server")
+                    mdnsManager.unregister()
+                    stop()
+                } else if (!isCritical && wasCritical && !isRunning && pairingManager.getActiveSession() != null) {
+                    Log.i(TAG, "Battery recovered (broadcast) — restarting server")
+                    start(DesktopPairingManager.SERVER_PORT)
+                    mdnsManager.register(DesktopPairingManager.SERVER_PORT)
+                }
             }
         }
     }
@@ -152,7 +157,18 @@ class DesktopSatelliteServer @Inject constructor(
             server.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             httpd = server
             try {
-                context.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                // RECEIVER_NOT_EXPORTED is required on Android 14+ (API 34+) for dynamic
+                // receivers that aren't exported; omitting it throws SecurityException
+                // during registration and leaves the foreground service path broken.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.registerReceiver(
+                        batteryReceiver,
+                        IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+                        Context.RECEIVER_NOT_EXPORTED
+                    )
+                } else {
+                    context.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                }
             } catch (_: Exception) { /* already registered */ }
             Log.i(TAG, "Desktop satellite server started on port $port")
         } catch (e: Exception) {

@@ -9,7 +9,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryDeep
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextQuaternary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -17,7 +23,7 @@ fun SettingsSectionHeader(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleSmall,
-        color = Color(0xFFA855F7), // Neon Purple/Electric Purple
+        color = TempoAccent,
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
     )
@@ -28,7 +34,7 @@ fun SettingsOption(
     title: String,
     subtitle: String? = null,
     onClick: (() -> Unit)? = null,
-    textColor: Color = Color.White,
+    textColor: Color = TextPrimary,
     showArrow: Boolean = true
 ) {
     Row(
@@ -49,7 +55,7 @@ fun SettingsOption(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.7f)
+                    color = TextSecondary
                 )
             }
         }
@@ -57,7 +63,7 @@ fun SettingsOption(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.5f)
+                tint = TextTertiary
             )
         }
     }
@@ -80,14 +86,14 @@ fun SettingsSwitch(
             Text(
                 text = title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color.White
+                color = TextPrimary
             )
             if (subtitle != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.7f)
+                    color = TextSecondary
                 )
             }
         }
@@ -95,10 +101,10 @@ fun SettingsSwitch(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color(0xFF8B5CF6), // Primary Purple
-                checkedTrackColor = Color(0xFF5B21B6), // Tertiary Purple
-                uncheckedThumbColor = Color.Gray,
-                uncheckedTrackColor = Color(0xFF334155) // Slate 700
+                checkedThumbColor = TempoPrimary,
+                checkedTrackColor = TempoPrimaryDeep,
+                uncheckedThumbColor = TextTertiary,
+                uncheckedTrackColor = TextQuaternary
             )
         )
     }

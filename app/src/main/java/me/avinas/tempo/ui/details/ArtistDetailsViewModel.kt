@@ -329,6 +329,16 @@ class ArtistDetailsViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Force a full reload of the currently displayed artist.
+     * Used after destructive operations like artist split.
+     */
+    fun reloadCurrentArtist() {
+        val id = currentArtistId ?: return
+        currentArtistId = null // Bypass the already-loaded guard in loadArtistById
+        loadArtistById(id)
+    }
 }
 
 @androidx.compose.runtime.Immutable

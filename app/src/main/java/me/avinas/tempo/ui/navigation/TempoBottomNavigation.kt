@@ -1,7 +1,11 @@
 package me.avinas.tempo.ui.navigation
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-import me.avinas.tempo.ui.theme.TempoDarkSurface
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoSurface
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextTertiary
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
@@ -12,7 +16,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,8 +35,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,53 +56,13 @@ fun TempoBottomNavigation(
             .padding(horizontal = 24.dp, vertical = 24.dp)
             .height(72.dp)
             .clip(RoundedCornerShape(36.dp))
-            .background(TempoDarkSurface)
+            .background(TempoSurface)
             .border(
                 width = 1.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.15f), // Increased from 0.05f for visibility
-                        Color.White.copy(alpha = 0.05f)  // Increased from 0.02f
-                    )
-                ),
+                color = Divider,
                 shape = RoundedCornerShape(36.dp)
             )
     ) {
-        // Red Deep Ocean Blobs
-        /*
-        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-            
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFEF4444).copy(alpha = 0.15f), Color.Transparent),
-                    center = Offset(0f, 0f),
-                    radius = width * 0.8f
-                ),
-                center = Offset(0f, 0f),
-                radius = width * 0.8f
-            )
-            
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFB91C1C).copy(alpha = 0.15f), Color.Transparent),
-                    center = Offset(width, height),
-                    radius = width * 0.9f
-                ),
-                center = Offset(width, height),
-                radius = width * 0.9f
-            )
-        }
-        */
-
-        // Glassmorphism overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.White.copy(alpha = 0.02f))
-        )
-
         Row(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -144,8 +105,8 @@ private fun TempoNavItem(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     
-    val selectedColor = Color.White
-    val unselectedColor = Color.White.copy(alpha = 0.6f)
+    val selectedColor = TextPrimary
+    val unselectedColor = TextTertiary
     
     val iconColor by animateColorAsState(
         targetValue = if (selected) selectedColor else unselectedColor,
@@ -166,7 +127,7 @@ private fun TempoNavItem(
             .clip(CircleShape)
             .clickable(
                 interactionSource = interactionSource,
-                indication = null, // Custom ripple or no ripple
+                indication = null,
                 onClick = onClick
             )
             .padding(12.dp)
@@ -174,39 +135,19 @@ private fun TempoNavItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Box(
-            contentAlignment = Alignment.Center
-        ) {
-            // Glow effect for selected item
-            if (selected) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    selectedColor.copy(alpha = 0.3f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                )
-            }
-            
-            Icon(
-                imageVector = if (selected) icon else unselectedIcon,
-                contentDescription = label,
-                tint = iconColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
+        Icon(
+            imageVector = if (selected) icon else unselectedIcon,
+            contentDescription = label,
+            tint = iconColor,
+            modifier = Modifier.size(26.dp)
+        )
         
         if (selected) {
             Box(
                 modifier = Modifier
                     .padding(top = 4.dp)
                     .size(4.dp)
-                    .background(selectedColor, CircleShape)
+                    .background(TempoPrimary, CircleShape)
             )
         }
     }

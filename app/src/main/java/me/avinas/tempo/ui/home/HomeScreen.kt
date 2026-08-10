@@ -1,6 +1,18 @@
 package me.avinas.tempo.ui.home
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryDim
+import me.avinas.tempo.ui.theme.TempoWarning
+import me.avinas.tempo.ui.theme.TempoWarningDeep
+import me.avinas.tempo.ui.theme.TempoError
+import me.avinas.tempo.ui.theme.TempoErrorDeep
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoSuccess
+import me.avinas.tempo.ui.theme.TempoSuccessDeep
+import me.avinas.tempo.ui.theme.TempoCyan
+import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.TempoSurfaceSunken
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -16,6 +28,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Piano
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -35,7 +48,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import me.avinas.tempo.ui.components.DeepOceanBackground
+import me.avinas.tempo.ui.components.SharePreviewDialog
+import me.avinas.tempo.ui.components.ShareTheme
 import me.avinas.tempo.ui.components.TimePeriodSelector
+import me.avinas.tempo.ui.components.VibeShareCard
 import me.avinas.tempo.ui.home.components.*
 import me.avinas.tempo.data.stats.InsightCardData
 import me.avinas.tempo.data.stats.InsightType
@@ -49,6 +65,7 @@ import me.avinas.tempo.ui.components.LevelUpOverlay
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 import me.avinas.tempo.utils.ReviewUtils
+import me.avinas.tempo.ui.theme.TempoPrimaryMuted
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,8 +93,10 @@ fun HomeScreen(
     // Level-up detection
     var lastKnownLevel by remember { mutableStateOf(-1) }
     var showLevelUp by remember { mutableStateOf(false) }
-    var levelUpLevel by remember { mutableStateOf(0) }
+    var levelUpLevel by remember { mutableStateOf(1) }
     var levelUpTitle by remember { mutableStateOf("") }
+    var showVibeShare by remember { mutableStateOf(false) }
+    val audioFeatures = uiState.audioFeatures
     
     LaunchedEffect(userLevel?.currentLevel) {
         val currentLevel = userLevel?.currentLevel ?: 0
@@ -184,6 +203,16 @@ fun HomeScreen(
                                 me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.getDirectStoryTimeRange()
                             }
 
+                            // Stable key for the currently-unlocked story period. When it matches the
+                            // persisted lastViewedSpotlightPeriod the ring renders gray (Instagram-style).
+                            val currentPeriodKey = remember(directStoryTimeRange) {
+                                directStoryTimeRange?.let {
+                                    "${it.name}:${me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.effectivePeriodStart(it)}"
+                                }
+                            }
+                            val spotlightViewed = currentPeriodKey != null &&
+                                    currentPeriodKey == uiState.lastViewedSpotlightPeriod
+
                             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                                 SpotlightStoryCard(
                                     onClick = {
@@ -196,12 +225,16 @@ fun HomeScreen(
                                     },
                                     onRingClick = {
                                         walkthroughController.dismiss()
+                                        // Mark this story period as viewed so the ring turns gray
+                                        // and stays gray until a new period unlocks.
+                                        currentPeriodKey?.let { viewModel.markSpotlightViewed(it) }
                                         if (directStoryTimeRange != null) {
                                             onNavigateToSpotlight(directStoryTimeRange, true)
                                         }
                                     },
                                     albumArtUrl = uiState.spotlightTopTrack?.albumArtUrl,
                                     storyAvailable = directStoryTimeRange != null,
+                                    viewed = spotlightViewed,
                                     modifier = Modifier.onGloballyPositioned { coordinates ->
                                         walkthroughController.registerTarget(
                                             me.avinas.tempo.ui.components.WalkthroughStep.HOME_SPOTLIGHT,
@@ -316,7 +349,7 @@ fun HomeScreen(
                 targetValue = headerAlpha,
                 label = "headerAlpha"
             )
-            val backgroundColor = TempoDarkBackground.copy(alpha = headerAlphaAnimated)
+            val backgroundColor = TempoBackground.copy(alpha = headerAlphaAnimated)
 
             // Custom Top Bar (Non-blocking when transparent)
             Box(
@@ -340,18 +373,39 @@ fun HomeScreen(
                     )
                 }
                 
-                // Settings Button
-                IconButton(
-                    onClick = onNavigateToSettings,
+                Row(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .padding(end = 8.dp),
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = if (headerAlphaAnimated > 0.5f) Color.Transparent else Color.White.copy(alpha = 0.1f),
-                        contentColor = Color.White
-                    )
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.home_settings))
+                    // "My Music DNA" share — only when audio features are available
+                    if (audioFeatures != null && audioFeatures.tracksWithFeatures > 0) {
+                        IconButton(
+                            onClick = { showVibeShare = true },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = if (headerAlphaAnimated > 0.5f) Color.Transparent else Color.White.copy(alpha = 0.1f),
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Share,
+                                contentDescription = stringResource(R.string.share_content_description)
+                            )
+                        }
+                    }
+
+                    // Settings Button
+                    IconButton(
+                        onClick = onNavigateToSettings,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = if (headerAlphaAnimated > 0.5f) Color.Transparent else Color.White.copy(alpha = 0.1f),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.home_settings))
+                    }
                 }
             }
             
@@ -411,7 +465,49 @@ fun HomeScreen(
                 }
             )
         }
-        
+
+        // Share Nudge Bottom Sheet — only when no other popup is up (never stack)
+        val shareNudgeType = uiState.shareNudgeType
+        if (uiState.showShareNudge && shareNudgeType != null &&
+            !uiState.showRateAppPopup && !uiState.showSpotlightReminder
+        ) {
+            ShareNudgeBottomSheet(
+                type = shareNudgeType,
+                onDismiss = viewModel::onShareNudgeDismissed,
+                onAction = {
+                    viewModel.onShareNudgeAction()
+                    when (shareNudgeType) {
+                        ShareNudgeType.STATS -> onNavigateToStats()
+                        ShareNudgeType.WEEKLY -> onNavigateToSpotlight(TimeRange.THIS_WEEK, true)
+                        ShareNudgeType.MONTHLY -> onNavigateToSpotlight(TimeRange.THIS_MONTH, true)
+                    }
+                }
+            )
+        }
+
+        // "My Music DNA" share dialog
+        if (showVibeShare && audioFeatures != null) {
+            SharePreviewDialog(
+                onDismiss = { showVibeShare = false },
+                themes = ShareTheme.entries,
+                contentForTheme = {
+                    VibeShareCard(
+                        userName = uiState.userName,
+                        periodLabel = when (uiState.selectedTimeRange) {
+                            TimeRange.TODAY -> "TODAY"
+                            TimeRange.THIS_WEEK -> "THIS WEEK"
+                            TimeRange.THIS_MONTH -> "THIS MONTH"
+                            TimeRange.THIS_YEAR -> "THIS YEAR"
+                            TimeRange.ALL_TIME -> "ALL TIME"
+                        },
+                        audioFeatures = audioFeatures,
+                        backgroundImageUrl = uiState.topArtist?.imageUrl ?: uiState.topTrack?.albumArtUrl,
+                        theme = it
+                    )
+                }
+            )
+        }
+
         // Level Up Celebration Overlay
         if (uiState.isGamificationEnabled && showLevelUp) {
             LevelUpOverlay(
@@ -426,15 +522,15 @@ fun HomeScreen(
 @Composable
 private fun mapInsightToHabit(insight: InsightCardData): HabitInsightData {
     val (icon, color, gradient) = when(insight.type) {
-        InsightType.MOOD -> Triple(Icons.Default.Face, Color(0xFF8B5CF6), listOf(Color(0xFF8B5CF6).copy(alpha=0.4f), Color(0xFF6D28D9).copy(alpha=0.1f)))
-        InsightType.PEAK_TIME -> Triple(Icons.Default.DateRange, Color(0xFFF59E0B), listOf(Color(0xFFF59E0B).copy(alpha=0.4f), Color(0xFFD97706).copy(alpha=0.1f)))
-        InsightType.BINGE -> Triple(Icons.Filled.Bolt, Color(0xFFEC4899), listOf(Color(0xFFEC4899).copy(alpha=0.4f), Color(0xFFBE185D).copy(alpha=0.1f)))
-        InsightType.DISCOVERY -> Triple(Icons.Default.Celebration, Color(0xFF10B981), listOf(Color(0xFF10B981).copy(alpha=0.4f), Color(0xFF059669).copy(alpha=0.1f)))
-        InsightType.ENERGY -> Triple(Icons.Default.Bolt, Color(0xFFEF4444), listOf(Color(0xFFEF4444).copy(alpha=0.4f), Color(0xFF991B1B).copy(alpha=0.1f)))
-        InsightType.DANCEABILITY -> Triple(Icons.Default.Celebration, Color(0xFFA855F7), listOf(Color(0xFFA855F7).copy(alpha=0.4f), Color(0xFF6B21A8).copy(alpha=0.1f)))
-        InsightType.TEMPO -> Triple(Icons.Default.Speed, Color(0xFF06B6D4), listOf(Color(0xFF06B6D4).copy(alpha=0.4f), Color(0xFF155E75).copy(alpha=0.1f)))
-        InsightType.ACOUSTICNESS -> Triple(Icons.Default.Piano, Color(0xFF22C55E), listOf(Color(0xFF22C55E).copy(alpha=0.4f), Color(0xFF166534).copy(alpha=0.1f)))
-        else -> Triple(Icons.Default.DateRange, Color.Gray, listOf(Color.Gray.copy(alpha=0.2f), Color.DarkGray.copy(alpha=0.1f)))
+        InsightType.MOOD -> Triple(Icons.Default.Face, TempoPrimary, listOf(TempoPrimary.copy(alpha=0.4f), TempoPrimaryDim.copy(alpha=0.1f)))
+        InsightType.PEAK_TIME -> Triple(Icons.Default.DateRange, TempoWarning, listOf(TempoWarning.copy(alpha=0.4f), TempoWarningDeep.copy(alpha=0.1f)))
+        InsightType.BINGE -> Triple(Icons.Filled.Bolt, TempoPrimary, listOf(TempoPrimary.copy(alpha=0.4f), TempoPrimaryDim.copy(alpha=0.1f)))
+        InsightType.DISCOVERY -> Triple(Icons.Default.Celebration, TempoSuccessDeep, listOf(TempoSuccessDeep.copy(alpha=0.4f), TempoSuccess.copy(alpha=0.1f)))
+        InsightType.ENERGY -> Triple(Icons.Default.Bolt, TempoError, listOf(TempoError.copy(alpha=0.4f), TempoErrorDeep.copy(alpha=0.1f)))
+        InsightType.DANCEABILITY -> Triple(Icons.Default.Celebration, TempoAccent, listOf(TempoAccent.copy(alpha=0.4f), TempoPrimaryMuted.copy(alpha=0.1f)))
+        InsightType.TEMPO -> Triple(Icons.Default.Speed, TempoCyan, listOf(TempoCyan.copy(alpha=0.4f), TempoCyan.copy(alpha=0.1f)))
+        InsightType.ACOUSTICNESS -> Triple(Icons.Default.Piano, TempoSuccess, listOf(TempoSuccess.copy(alpha=0.4f), TempoSuccess.copy(alpha=0.1f)))
+        else -> Triple(Icons.Default.DateRange, TextTertiary, listOf(TextTertiary.copy(alpha=0.2f), TempoSurfaceSunken.copy(alpha=0.1f)))
     }
     
     return HabitInsightData(

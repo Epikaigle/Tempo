@@ -15,6 +15,7 @@ val AppFontFamily = FontFamily(
     Font(R.font.plus_jakarta_sans_semibold, FontWeight.SemiBold),
     Font(R.font.plus_jakarta_sans_bold,    FontWeight.Bold)
 )
+val NumericFontFamily = FontFamily.Monospace
 
 val Typography = Typography(
     displayLarge = TextStyle(

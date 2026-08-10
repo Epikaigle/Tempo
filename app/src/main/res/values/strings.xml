@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tempo</string>
+
+    <!-- Google OAuth Web client ID.
+         Required by the Authorization API / Credential Manager so Google Play
+         services issues access tokens carrying the requested scopes
+         (https://www.googleapis.com/auth/drive.file). Keep in sync with
+         GOOGLE_WEB_CLIENT_ID in local.properties. -->
+    <string name="default_web_client_id" translatable="false">376452323026-ptcimeh1id8fh5mqjslu8e1vp2nej25u.apps.googleusercontent.com</string>
     
     <!-- Service notification -->
     <string name="tracking_notification_title">Tempo is tracking your music</string>
@@ -61,6 +68,30 @@
     <string name="rate_message">If you like using the app, please take a moment to rate it. It really helps us grow!</string>
     <string name="rate_now">Rate Now</string>
     <string name="rate_not_now">Not Now</string>
+
+    <!-- Share Nudge -->
+    <string name="share_nudge_weekly_title">Your weekly recap is ready</string>
+    <string name="share_nudge_monthly_title">Your monthly recap is ready</string>
+    <string name="share_nudge_stats_title">Did you know you can share your stats?</string>
+    <string name="share_nudge_story_message">Turn your listening into a beautiful story and share it with friends.</string>
+    <string name="share_nudge_stats_message">Create a shareable card of your top tracks and artists — perfect for your story or feed.</string>
+    <string name="share_nudge_cta_story">View Story</string>
+    <string name="share_nudge_cta_stats">Open Stats</string>
+
+    <!-- Share Cards -->
+    <string name="share_completion">COMPLETION</string>
+    <string name="share_top_tracks">TOP TRACKS</string>
+    <string name="share_dna_title">MY MUSIC DNA</string>
+    <string name="share_dna_energy">ENERGY</string>
+    <string name="share_dna_dance">DANCEABILITY</string>
+    <string name="share_dna_happiness">HAPPINESS</string>
+    <string name="share_dna_acoustic">ACOUSTIC</string>
+    <string name="share_dna_persona_firestarter">Euphoric Firestarter</string>
+    <string name="share_dna_persona_dreamer">Sunlit Dreamer</string>
+    <string name="share_dna_persona_storm">Storm Rider</string>
+    <string name="share_dna_persona_midnight">Midnight Romantic</string>
+    <string name="share_dna_persona_alchemist">Mood Alchemist</string>
+    <string name="share_dna_avg_bpm">%1$d BPM AVG</string>
     
     <!-- Gamification / Level -->
     <string name="level_label">LEVEL %1$d</string>
@@ -267,6 +298,7 @@
     <string name="details_share_preview">Share Preview</string>
     <string name="details_merge_artist">Merge Artist</string>
     <string name="details_merge_with">Merge with…</string>
+    <string name="details_split_artist">Split artist…</string>
     <string name="details_block_artist">BLOCK ENTIRE ARTIST</string>
     <string name="details_block_track">BLOCK THIS TRACK</string>
     <string name="details_unique_tracks">Unique Songs</string>
@@ -299,6 +331,29 @@
     <string name="merge_search_artists">Type to search for artists</string>
     <string name="merge_search_tracks">Type to search for tracks</string>
     <string name="merge_merging">Merging: %1$s</string>
+    <string name="details_merge_search_target">Search for target artist…</string>
+    <string name="details_no_artists_found">No artists found</string>
+    <string name="details_merge_button">Merge</string>
+    <string name="details_rename_info">If this artist was incorrectly split, enter the full name and we\'ll merge the data.</string>
+    <string name="details_rename_artist_name_label">Artist Name</string>
+    <string name="details_rename_button">Rename</string>
+    <string name="details_split_artists_detected">Split Artists Detected!</string>
+    <string name="details_split_artists_detected_desc">It looks like these artists were incorrectly split from \"%1$s\":</string>
+    <string name="details_merge_listening_data">Merge their listening data into \"%1$s\"?</string>
+    <string name="details_just_rename">Just Rename</string>
+    <string name="details_merge_and_rename">Merge &amp; Rename</string>
+    <string name="details_rename_failed">Rename failed. Please try again.</string>
+    <string name="details_split_artist_title">Split Artist</string>
+    <string name="details_split_grouped_under">Separate tracks grouped under: %1$s</string>
+    <string name="details_no_tracks_found_artist">No tracks found for this artist.</string>
+    <string name="details_split_group_info">Tracks are grouped by the artist name stored on each track. Selected tracks move to the artist named below each group.</string>
+    <string name="details_splitting_artist">Splitting artist…</string>
+    <string name="details_split_button">Split (%1$d)</string>
+    <string name="details_move_to_artist">Move to artist</string>
+    <string name="details_merge_track_search_placeholder">Search for the correct version…</string>
+    <string name="details_no_tracks_found">No tracks found</string>
+    <string name="details_album_not_found">Album not found</string>
+    <string name="details_your_journey">Your Journey</string>
 
     <!-- Engagement -->
     <string name="engagement_score">Engagement Score</string>
@@ -511,6 +566,7 @@
     <string name="settings_language_german">Deutsch</string>
     <string name="settings_language_hungarian">Magyar</string>
     <string name="settings_language_portuguese">Português</string>
+    <string name="settings_language_russian">Russian</string>
     <string name="settings_select_language">Select Language</string>
     <string name="settings_daily_summary">Daily Summary</string>
     <string name="settings_daily_summary_desc">Get a summary of your listening each day at 8 PM</string>
@@ -1189,4 +1245,45 @@
     <string name="period_all_time">all time</string>
     <string name="quick_stats_artist_placeholder">Artist</string>
     <string name="quick_stats_track_placeholder">Track</string>
+    <!-- Artist merge/rename/split dialogs -->
+    <string name="details_merge_artist_title">Merge Artist</string>
+    <string name="details_merge_artist_merging">Merging: %1$s</string>
+    <string name="details_merge_artist_search_hint">Search for the correct artist to merge into. All listening history will be combined.</string>
+    <string name="details_merge_confirm">Confirm Merge</string>
+    <string name="details_merge_confirm_question">Merge \"%1$s\" into \"%2$s\"?</string>
+    <string name="details_merge_cannot_undo">This action cannot be undone. All listening history will be combined.</string>
+    <string name="details_merge_in_progress">Merging artists…</string>
+    <string name="details_rename_artist_title">Rename Artist</string>
+    <string name="details_rename_artist_hint">If this artist was incorrectly split, enter the full name and we\'ll merge the data.</string>
+    <string name="details_rename_split_detected">Split Artists Detected!</string>
+    <string name="details_rename_split_description">It looks like these artists were incorrectly split from \"%1$s\":</string>
+    <string name="details_rename_merge_question">Merge their listening data into \"%1$s\"?</string>
+    <string name="details_rename_just_rename">Just Rename</string>
+    <string name="details_rename_merge_and_rename">Merge &amp; Rename</string>
+    <string name="details_rename_back">Back</string>
+    <string name="details_split_artist_subtitle">Separate tracks grouped under: %1$s</string>
+    <string name="details_split_no_tracks">No tracks found to split.</string>
+    <string name="details_split_instructions">Selected tracks move to the artist named below each group.</string>
+    <string name="details_split_in_progress">Splitting artist…</string>
+    <string name="details_split_current">current</string>
+    <string name="details_split_tracks_count">%1$d tracks • %2$d selected</string>
+    <!-- Song engagement tiers -->
+    <string name="engagement_ultimate_obsession">Ultimate Obsession</string>
+    <string name="engagement_personal_favorite">Personal Favorite</string>
+    <string name="engagement_heavy_rotation">Heavy Rotation</string>
+    <string name="engagement_regular_jam">Regular Jam</string>
+    <string name="engagement_casual_favorite">Casual Favorite</string>
+    <string name="engagement_occasional_play">Occasional Play</string>
+    <string name="engagement_ambient_stream">Ambient Stream</string>
+    <string name="engagement_quick_skip">Quick Skip</string>
+    <string name="engagement_ultimate_obsession_desc">This song has completely dominated your listening sessions recently!</string>
+    <string name="engagement_personal_favorite_desc">One of your most-played and highest-engagement tracks.</string>
+    <string name="engagement_heavy_rotation_desc">You return to this track frequently. It\'s a staple in your rotation.</string>
+    <string name="engagement_regular_jam_desc">You consistently listen to this track and rarely skip it.</string>
+    <string name="engagement_casual_favorite_desc">A track you enjoy having in your queue from time to time.</string>
+    <string name="engagement_occasional_play_desc">You listen to this track casually when it comes up.</string>
+    <string name="engagement_ambient_stream_desc">This track mostly plays in the background of your sessions.</string>
+    <string name="engagement_quick_skip_desc">You tend to skip this track quickly when it starts playing.</string>
+    <string name="song_favorite_badge">FAVORITE</string>
+    <!-- Common dialog buttons -->
 </resources>

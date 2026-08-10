@@ -76,7 +76,10 @@ class SpotifyJsonImportService @Inject constructor(
         val lowQualitySkipped: Int,
         val filesProcessed: Int,
         val totalEntries: Int,
-        val errors: List<String>
+        val errors: List<String>,
+        // Entries dropped because their timestamp could not be parsed. Tracked
+        // separately so they are never misreported as "duplicates".
+        val invalidSkipped: Int = 0
     ) {
         val isSuccess: Boolean get() = errors.isEmpty() || (eventsCreated > 0 && errors.size < eventsCreated)
     }
@@ -106,6 +109,7 @@ class SpotifyJsonImportService @Inject constructor(
         var duplicatesSkipped = 0
         var podcastsSkipped = 0
         var lowQualitySkipped = 0
+        var invalidSkipped = 0
         var musicProcessedSoFar = 0
 
         // Track cache persists across files so a track resolved in an earlier file
@@ -163,6 +167,11 @@ class SpotifyJsonImportService @Inject constructor(
                 eventsCreated += counts.eventsCreated
                 duplicatesSkipped += counts.duplicatesSkipped
                 lowQualitySkipped += counts.lowQualitySkipped
+                invalidSkipped += counts.invalidSkipped
+
+                if (counts.invalidSkipped > 0) {
+                    errors.add("${counts.invalidSkipped} entries in $fileName skipped: unreadable timestamp format")
+                }
 
                 filesProcessed++
                 Log.i(TAG, "Processed ${parseResult.entries.size} entries from $fileName")
@@ -184,11 +193,12 @@ class SpotifyJsonImportService @Inject constructor(
             lowQualitySkipped = lowQualitySkipped,
             filesProcessed = filesProcessed,
             totalEntries = totalEntries,
-            errors = errors
+            errors = errors,
+            invalidSkipped = invalidSkipped
         )
 
         _importState.value = ImportState.Completed(result)
-        Log.i(TAG, "Import complete: $tracksImported tracks, $eventsCreated events, $duplicatesSkipped duplicates, $podcastsSkipped podcasts, $lowQualitySkipped low-quality skipped")
+        Log.i(TAG, "Import complete: $tracksImported tracks, $eventsCreated events, $duplicatesSkipped duplicates, $podcastsSkipped podcasts, $lowQualitySkipped low-quality skipped, $invalidSkipped invalid-timestamp skipped")
         result
     }
 
@@ -196,7 +206,8 @@ class SpotifyJsonImportService @Inject constructor(
         val tracksImported: Int,
         val eventsCreated: Int,
         val duplicatesSkipped: Int,
-        val lowQualitySkipped: Int
+        val lowQualitySkipped: Int,
+        val invalidSkipped: Int
     )
 
     private suspend fun processAndFlushEntries(
@@ -212,6 +223,7 @@ class SpotifyJsonImportService @Inject constructor(
         var eventsCreated = 0
         var duplicatesSkipped = 0
         var lowQualitySkipped = 0
+        var invalidSkipped = 0
 
         musicEntries.forEachIndexed { index, entry ->
             if (index % CANCELLATION_CHECK_INTERVAL == 0) {
@@ -228,6 +240,7 @@ class SpotifyJsonImportService @Inject constructor(
                     ProcessResult.ExistingTrack -> eventsCreated++
                     ProcessResult.Duplicate -> duplicatesSkipped++
                     ProcessResult.LowQuality -> lowQualitySkipped++
+                    ProcessResult.Invalid -> invalidSkipped++
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to import: ${entry.trackName}", e)
@@ -268,7 +281,7 @@ class SpotifyJsonImportService @Inject constructor(
             createEnrichedMetadata(trackId, entry)
         }
 
-        return EntryProcessCounts(tracksImported, eventsCreated, duplicatesSkipped, lowQualitySkipped)
+        return EntryProcessCounts(tracksImported, eventsCreated, duplicatesSkipped, lowQualitySkipped, invalidSkipped)
     }
 
     private data class ParseResult(val entries: List<ParsedEntry>, val malformedCount: Int)
@@ -548,6 +561,10 @@ class SpotifyJsonImportService @Inject constructor(
         object ExistingTrack : ProcessResult()
         object Duplicate : ProcessResult()
         object LowQuality : ProcessResult()
+
+        // Timestamp could not be parsed — the entry can never become a valid
+        // event. Reported separately instead of being disguised as a duplicate.
+        object Invalid : ProcessResult()
     }
 
     private suspend fun processEntry(
@@ -556,7 +573,10 @@ class SpotifyJsonImportService @Inject constructor(
         pendingEvents: MutableList<ListeningEvent>,
         pendingEnrichedMetadata: MutableList<Pair<Long, ParsedEntry>>
     ): ProcessResult {
-        if (entry.endTimeMillis == 0L) return ProcessResult.Duplicate
+        // A timestamp of 0 means parsing failed (unknown export format), not
+        // that the event already exists. Count it as invalid so the user sees a
+        // real warning instead of thousands of phantom "duplicates".
+        if (entry.endTimeMillis == 0L) return ProcessResult.Invalid
 
         if (entry.msPlayed < MIN_MS_PLAYED_FOR_EVENT) return ProcessResult.LowQuality
 

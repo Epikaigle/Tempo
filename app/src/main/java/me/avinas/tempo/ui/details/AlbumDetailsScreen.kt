@@ -11,16 +11,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.rounded.AccessTime
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Album
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,17 +41,35 @@ import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.palette.graphics.Palette
 import coil3.BitmapImage
+import me.avinas.tempo.R
+import me.avinas.tempo.data.local.entities.Track
+import me.avinas.tempo.data.stats.AlbumDetails
+import me.avinas.tempo.data.stats.TrackWithStats
+import me.avinas.tempo.ui.components.AlbumShareCard
 import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.data.stats.AlbumDetails
-import me.avinas.tempo.data.stats.TrackWithStats
-import me.avinas.tempo.data.local.entities.Track
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.components.SharePreviewDialog
+import me.avinas.tempo.ui.components.ShareTheme
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoError
+import me.avinas.tempo.ui.theme.TempoErrorSoft
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoInfoSoft
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryDim
+import me.avinas.tempo.ui.theme.TempoSurfaceCard
+import me.avinas.tempo.ui.theme.TempoSurfaceChip
+import me.avinas.tempo.ui.theme.TempoSurfaceDialog
+import me.avinas.tempo.ui.theme.TempoWarning
+import me.avinas.tempo.ui.theme.TempoWarningSoft
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextQuaternary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import me.avinas.tempo.ui.theme.premiumClickable
-import androidx.compose.ui.res.stringResource
-import me.avinas.tempo.R
 
 @Composable
 fun AlbumDetailsScreen(
@@ -61,14 +80,15 @@ fun AlbumDetailsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val albumDetails = uiState.albumDetails
-    var dominantColor by remember { mutableStateOf(Color(0xFF8B5CF6)) }
+    var dominantColor by remember { mutableStateOf(TempoPrimary) }
+    var showShareDialog by remember { mutableStateOf(false) }
 
     DeepOceanBackground {
         Box(modifier = Modifier.fillMaxSize()) {
             if (uiState.isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
-                    color = TempoRed
+                    color = TempoPrimary
                 )
             } else if (albumDetails != null) {
                 AlbumDetailsContent(
@@ -80,7 +100,8 @@ fun AlbumDetailsScreen(
                     onAddClick = viewModel::openAddDialog,
                     onRemoveTrack = viewModel::requestRemove,
                     onPaletteExtracted = { color -> dominantColor = color },
-                    dominantColor = dominantColor
+                    dominantColor = dominantColor,
+                    onShareClick = { showShareDialog = true }
                 )
             } else {
                 Column(
@@ -92,16 +113,16 @@ fun AlbumDetailsScreen(
                         onClick = onNavigateBack,
                         modifier = Modifier.premiumClickable(onClick = onNavigateBack),
                         colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = Color.White.copy(alpha = 0.1f),
-                            contentColor = Color.White
+                            containerColor = TempoSurfaceChip,
+                            contentColor = TextPrimary
                         )
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = uiState.error ?: "Album not found",
-                        color = Color.White.copy(alpha = 0.7f),
+                        text = uiState.error ?: stringResource(R.string.details_album_not_found),
+                        color = TextSecondary,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -128,6 +149,16 @@ fun AlbumDetailsScreen(
             onDismiss = viewModel::cancelRemove
         )
     }
+
+    albumDetails?.let { details ->
+        if (showShareDialog) {
+            SharePreviewDialog(
+                onDismiss = { showShareDialog = false },
+                themes = ShareTheme.entries,
+                contentForTheme = { AlbumShareCard(albumDetails = details, theme = it) }
+            )
+        }
+    }
 }
 
 @Composable
@@ -140,7 +171,8 @@ private fun AlbumDetailsContent(
     onAddClick: () -> Unit,
     onRemoveTrack: (TrackWithStats) -> Unit,
     onPaletteExtracted: (Color) -> Unit,
-    dominantColor: Color
+    dominantColor: Color,
+    onShareClick: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -160,32 +192,50 @@ private fun AlbumDetailsContent(
                     onClick = onNavigateBack,
                     modifier = Modifier.premiumClickable(onClick = onNavigateBack),
                     colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = Color.White.copy(alpha = 0.1f),
-                        contentColor = Color.White
+                        containerColor = TempoSurfaceChip,
+                        contentColor = TextPrimary
                     )
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                 }
 
                 Text(
                     text = stringResource(if (isEditMode) R.string.album_edit_title else R.string.details_album),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = TextPrimary,
                     modifier = Modifier.weight(1f),
                     textAlign = TextAlign.Center
                 )
+
+                // Only real albums (more than one song) are worth sharing —
+                // a 1-track "album" is a single; share it from the song screen.
+                if (albumDetails.tracks.size > 1) {
+                    IconButton(
+                        onClick = onShareClick,
+                        modifier = Modifier.premiumClickable(onClick = onShareClick),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = TempoSurfaceChip,
+                            contentColor = TextPrimary
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = stringResource(R.string.share_content_description)
+                        )
+                    }
+                }
 
                 IconButton(
                     onClick = onToggleEdit,
                     modifier = Modifier.premiumClickable(onClick = onToggleEdit),
                     colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = if (isEditMode) TempoRed else Color.White.copy(alpha = 0.1f),
+                        containerColor = if (isEditMode) TempoPrimary else TempoSurfaceChip,
                         contentColor = Color.White
                     )
                 ) {
                     Icon(
-                        if (isEditMode) Icons.Rounded.Check else Icons.Rounded.Edit,
+                        if (isEditMode) Icons.Default.Check else Icons.Default.Edit,
                         contentDescription = if (isEditMode) "Done" else "Edit"
                     )
                 }
@@ -220,7 +270,7 @@ private fun AlbumDetailsContent(
                     text = stringResource(R.string.details_tracks),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = TextPrimary
                 )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -229,7 +279,7 @@ private fun AlbumDetailsContent(
                     Text(
                         text = "${albumDetails.tracks.size} ${if (albumDetails.tracks.size == 1) "song" else "songs"}",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = TextTertiary,
                         modifier = Modifier.padding(top = 2.dp)
                     )
                     if (isEditMode) {
@@ -266,19 +316,6 @@ private fun AlbumHeroSection(
             .height(272.dp),
         contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(28.dp))
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            dominantColor.copy(alpha = 0.3f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
         Card(
             modifier = Modifier
                 .size(220.dp)
@@ -289,12 +326,7 @@ private fun AlbumHeroSection(
                 )
                 .border(
                     width = 1.dp,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.3f),
-                            Color.White.copy(alpha = 0.05f)
-                        )
-                    ),
+                    color = Divider,
                     shape = RoundedCornerShape(20.dp)
                 ),
             shape = RoundedCornerShape(20.dp)
@@ -307,17 +339,17 @@ private fun AlbumHeroSection(
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
-                                    Color(0xFF8B5CF6),
-                                    Color(0xFF6D28D9)
+                                    TempoPrimary,
+                                    TempoPrimaryDim
                                 )
                             )
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Rounded.MusicNote,
+                        Icons.Default.MusicNote,
                         contentDescription = "Album",
-                        tint = Color.White.copy(alpha = 0.7f),
+                        tint = TextSecondary,
                         modifier = Modifier.size(64.dp)
                     )
                 }
@@ -348,7 +380,7 @@ private fun AlbumHeroSection(
         text = albumDetails.album.title,
         style = MaterialTheme.typography.displaySmall,
         fontWeight = FontWeight.Bold,
-        color = Color.White,
+        color = TextPrimary,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp),
@@ -363,7 +395,7 @@ private fun AlbumHeroSection(
         text = albumDetails.artistName,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
-        color = Color.White.copy(alpha = 0.8f),
+        color = TextSecondary,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp),
@@ -387,7 +419,7 @@ private fun AlbumHeroSection(
                 Text(
                     text = year.toString(),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.6f)
+                    color = TextTertiary
                 )
             }
             if (year != null && releaseType != null) {
@@ -395,7 +427,7 @@ private fun AlbumHeroSection(
                 Text(
                     text = "•",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.4f)
+                    color = TextQuaternary
                 )
                 Spacer(modifier = Modifier.width(8.dp))
             }
@@ -403,7 +435,7 @@ private fun AlbumHeroSection(
                 Text(
                     text = releaseType.replaceFirstChar { it.uppercase() },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.6f)
+                    color = TextTertiary
                 )
             }
         }
@@ -426,20 +458,20 @@ private fun AlbumStatsGrid(albumDetails: AlbumDetails) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 AlbumStatCell(
-                    icon = Icons.Rounded.MusicNote,
-                    iconTint = Color(0xFFEF4444),
+                    icon = Icons.Default.MusicNote,
+                    iconTint = TempoError,
                     label = stringResource(R.string.details_total_plays),
                     value = formatCount(totalPlayCount.toLong()),
-                    valueColor = Color(0xFFFCA5A5),
+                    valueColor = TempoErrorSoft,
                     modifier = Modifier.weight(1f)
                 )
                 AlbumStatDivider(orientation = AlbumStatDividerOrientation.Vertical)
                 AlbumStatCell(
-                    icon = Icons.Rounded.AccessTime,
-                    iconTint = Color(0xFF3B82F6),
+                    icon = Icons.Default.AccessTime,
+                    iconTint = TempoInfo,
                     label = stringResource(R.string.details_listening_time),
                     value = formatListeningTime(totalTimeMs),
-                    valueColor = Color(0xFF93C5FD),
+                    valueColor = TempoInfoSoft,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -448,20 +480,20 @@ private fun AlbumStatsGrid(albumDetails: AlbumDetails) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 AlbumStatCell(
-                    icon = Icons.Rounded.Album,
-                    iconTint = Color(0xFF8B5CF6),
+                    icon = Icons.Default.Album,
+                    iconTint = TempoPrimary,
                     label = stringResource(R.string.details_tracks),
                     value = tracks.size.toString(),
-                    valueColor = Color(0xFFD8B4FE),
+                    valueColor = TempoAccent,
                     modifier = Modifier.weight(1f)
                 )
                 AlbumStatDivider(orientation = AlbumStatDividerOrientation.Vertical)
                 AlbumStatCell(
-                    icon = Icons.Rounded.CheckCircle,
-                    iconTint = Color(0xFFF59E0B),
+                    icon = Icons.Default.CheckCircle,
+                    iconTint = TempoWarning,
                     label = stringResource(R.string.details_completion_rate),
                     value = "%.0f%%".format(completionRate),
-                    valueColor = Color(0xFFFDBA74),
+                    valueColor = TempoWarningSoft,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -482,7 +514,7 @@ private fun AlbumStatDivider(orientation: AlbumStatDividerOrientation) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(1.dp)
-                    .background(Color.White.copy(alpha = 0.08f))
+                    .background(Divider)
             )
         }
 
@@ -491,7 +523,7 @@ private fun AlbumStatDivider(orientation: AlbumStatDividerOrientation) {
                 modifier = Modifier
                     .height(60.dp)
                     .width(1.dp)
-                    .background(Color.White.copy(alpha = 0.08f))
+                    .background(Divider)
             )
         }
     }
@@ -522,7 +554,7 @@ private fun AlbumStatCell(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF94A3B8),
+                color = TextSecondary,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
             )
@@ -542,14 +574,14 @@ private fun AddSongPill(onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(TempoRed)
+            .background(TempoPrimary)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Icon(
-            Icons.Rounded.Add,
+            Icons.Default.Add,
             contentDescription = null,
             tint = Color.White,
             modifier = Modifier.size(16.dp)
@@ -574,7 +606,7 @@ private fun AlbumTrackList(
 
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        backgroundColor = Color.White.copy(alpha = 0.03f),
+        backgroundColor = TempoSurfaceCard,
         variant = GlassCardVariant.LowProminence,
         contentPadding = PaddingValues(0.dp)
     ) {
@@ -594,7 +626,7 @@ private fun AlbumTrackList(
                         text = "${index + 1}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Black,
-                        color = TempoRed,
+                        color = TempoPrimary,
                         modifier = Modifier.width(32.dp)
                     )
 
@@ -605,7 +637,7 @@ private fun AlbumTrackList(
                             text = track.track.title,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = TextPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -617,19 +649,19 @@ private fun AlbumTrackList(
                             Text(
                                 text = "${track.playCount} ${if (track.playCount == 1) "play" else "plays"}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF94A3B8)
+                                color = TextSecondary
                             )
                             val duration = track.track.duration
                             if (duration != null && duration > 0) {
                                 Text(
                                     text = "•",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF475569)
+                                    color = TextQuaternary
                                 )
                                 Text(
                                     text = formatDuration(duration),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF94A3B8)
+                                    color = TextSecondary
                                 )
                             }
                         }
@@ -642,14 +674,14 @@ private fun AlbumTrackList(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(TempoRed.copy(alpha = 0.15f))
+                                .background(TempoPrimary.copy(alpha = 0.15f))
                                 .clickable { onRemoveTrack?.invoke(track) },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.Close,
+                                imageVector = Icons.Default.Close,
                                 contentDescription = "Remove from album",
-                                tint = TempoRed,
+                                tint = TempoPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -661,7 +693,7 @@ private fun AlbumTrackList(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(1.dp)
-                            .background(Color.White.copy(alpha = 0.06f))
+                            .background(Divider)
                     )
                 }
             }
@@ -686,7 +718,7 @@ private fun AddTrackToAlbumDialog(
                 .padding(16.dp)
                 .heightIn(max = 600.dp),
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+            colors = CardDefaults.cardColors(containerColor = TempoSurfaceDialog)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(
@@ -698,13 +730,13 @@ private fun AddTrackToAlbumDialog(
                         text = stringResource(R.string.album_add_song_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     IconButton(onClick = onDismiss) {
                         Icon(
-                            Icons.Rounded.Close,
+                            Icons.Default.Close,
                             contentDescription = "Close",
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                     }
                 }
@@ -714,7 +746,7 @@ private fun AddTrackToAlbumDialog(
                         stringResource(R.string.album_add_song_desc, artistName)
                     else stringResource(R.string.album_add_song_search),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = TextTertiary
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
@@ -724,24 +756,24 @@ private fun AddTrackToAlbumDialog(
                     placeholder = {
                         Text(
                             stringResource(R.string.album_add_song_search),
-                            color = Color.White.copy(alpha = 0.4f)
+                            color = TextQuaternary
                         )
                     },
                     leadingIcon = {
                         Icon(
                             Icons.Filled.Search,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.5f)
+                            tint = TextTertiary
                         )
                     },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        cursorColor = TempoRed,
-                        focusedBorderColor = TempoRed,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f)
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = TempoPrimary,
+                        focusedBorderColor = TempoPrimary,
+                        unfocusedBorderColor = Divider
                     )
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -753,7 +785,7 @@ private fun AddTrackToAlbumDialog(
                                 .height(120.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(color = TempoRed)
+                            CircularProgressIndicator(color = TempoPrimary)
                         }
                     }
 
@@ -766,7 +798,7 @@ private fun AddTrackToAlbumDialog(
                         ) {
                             Text(
                                 text = stringResource(R.string.album_no_candidates),
-                                color = Color.White.copy(alpha = 0.5f),
+                                color = TextTertiary,
                                 textAlign = TextAlign.Center
                             )
                         }
@@ -799,20 +831,20 @@ private fun RemoveFromAlbumDialog(
         title = {
             Text(
                 text = stringResource(R.string.album_remove_title),
-                color = Color.White
+                color = TextPrimary
             )
         },
         text = {
             Column {
                 Text(
                     text = stringResource(R.string.album_remove_msg, trackTitle),
-                    color = Color.White.copy(alpha = 0.9f)
+                    color = TextPrimary
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = stringResource(R.string.album_remove_note),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = TextTertiary
                 )
             }
         },
@@ -820,7 +852,7 @@ private fun RemoveFromAlbumDialog(
             TextButton(onClick = onConfirm) {
                 Text(
                     text = stringResource(R.string.common_remove),
-                    color = TempoRed,
+                    color = TempoPrimary,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -829,13 +861,13 @@ private fun RemoveFromAlbumDialog(
             TextButton(onClick = onDismiss) {
                 Text(
                     text = stringResource(R.string.common_cancel),
-                    color = Color.White
+                    color = TextPrimary
                 )
             }
         },
-        containerColor = Color(0xFF1E293B),
-        titleContentColor = Color.White,
-        textContentColor = Color.White
+        containerColor = TempoSurfaceDialog,
+        titleContentColor = TextPrimary,
+        textContentColor = TextPrimary
     )
 }
 

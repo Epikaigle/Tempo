@@ -14,6 +14,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import me.avinas.tempo.ui.theme.SpotifyGreen
+import me.avinas.tempo.ui.theme.TextTertiary
 
 /**
  * Spotify settings section for managing Spotify connection.
@@ -29,7 +31,7 @@ fun SpotifySettingsSection(
     onDisconnectClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val spotifyGreen = Color(0xFF1DB954)
+    val spotifyGreen = SpotifyGreen
     
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -81,7 +83,7 @@ fun SpotifySettingsSection(
                     modifier = Modifier
                         .size(12.dp)
                         .clip(CircleShape)
-                        .background(if (isConnected) spotifyGreen else Color.Gray)
+                        .background(if (isConnected) spotifyGreen else TextTertiary)
                 )
             }
             
@@ -295,7 +297,7 @@ fun SpotifyConnectedSnackbar(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val spotifyGreen = Color(0xFF1DB954)
+    val spotifyGreen = SpotifyGreen
     
     Snackbar(
         modifier = modifier.padding(16.dp),

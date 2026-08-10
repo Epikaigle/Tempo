@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -29,7 +28,13 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.avinas.tempo.R
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoSurfaceCard
+import me.avinas.tempo.ui.theme.TempoSurfacePopup
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.Divider
 
 @Composable
 fun XiaomiGuidancePopup(
@@ -94,8 +99,8 @@ fun XiaomiGuidancePopup(
                                     spotColor = Color.Black.copy(alpha = 0.5f)
                                 )
                                 .clip(RoundedCornerShape(28.dp))
-                                .background(Color(0xFF1A1726))
-                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(28.dp))
+                                .background(TempoSurfacePopup)
+                                .border(1.dp, Divider, RoundedCornerShape(28.dp))
                         ) {
                             Box {
                                 Column(
@@ -121,27 +126,25 @@ fun XiaomiGuidancePopup(
                                             modifier = Modifier
                                                 .size(32.dp)
                                                 .background(
-                                                    Color.White.copy(alpha = 0.1f),
+                                                    TempoSurfaceCard,
                                                     CircleShape
                                                 )
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Close,
                                                 contentDescription = "Close",
-                                                tint = Color.White.copy(alpha = 0.8f),
+                                                tint = TextPrimary,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
 
-                                    // Warning icon with gradient
+                                    // Warning icon
                                     Box(
                                         modifier = Modifier
                                             .size(72.dp)
                                             .background(
-                                                brush = Brush.linearGradient(
-                                                    colors = listOf(TempoRed, Color(0xFFFF6B35))
-                                                ),
+                                                TempoPrimary,
                                                 shape = CircleShape
                                             ),
                                         contentAlignment = Alignment.Center
@@ -171,7 +174,7 @@ fun XiaomiGuidancePopup(
                                     Text(
                                         text = stringResource(R.string.xiaomi_guidance_title),
                                         style = MaterialTheme.typography.headlineSmall,
-                                        color = Color.White,
+                                        color = TextPrimary,
                                         fontWeight = FontWeight.Bold,
                                         textAlign = TextAlign.Center,
                                         lineHeight = MaterialTheme.typography.headlineSmall.fontSize * 1.2
@@ -181,7 +184,7 @@ fun XiaomiGuidancePopup(
                                     Text(
                                         text = stringResource(R.string.xiaomi_guidance_desc),
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.White.copy(alpha = 0.7f),
+                                        color = TextSecondary,
                                         textAlign = TextAlign.Center
                                     )
 
@@ -236,7 +239,7 @@ fun XiaomiGuidancePopup(
                                         Text(
                                             text = stringResource(R.string.xiaomi_guidance_later),
                                             style = MaterialTheme.typography.bodyLarge,
-                                            color = Color.White.copy(alpha = 0.6f)
+                                            color = TextTertiary
                                         )
                                     }
                                 }

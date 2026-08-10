@@ -801,7 +801,7 @@ function scheduleBadgeUpdate(): void {
       const count = await storage.getQueueCount();
       if (count > 0) {
         chrome.action.setBadgeText({ text: String(count) });
-        chrome.action.setBadgeBackgroundColor({ color: '#7c5cff' });
+        chrome.action.setBadgeBackgroundColor({ color: '#2FDBB8' });
       } else {
         chrome.action.setBadgeText({ text: '' });
       }

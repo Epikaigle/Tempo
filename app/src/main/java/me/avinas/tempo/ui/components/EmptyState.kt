@@ -30,7 +30,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.data.stats.TimeRange
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoSuccess
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 
@@ -111,7 +116,7 @@ private fun TimeRangeEmptyState(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp), // Standard outer margins
-        backgroundColor = TempoRed.copy(alpha = 0.1f),
+        backgroundColor = TempoPrimary.copy(alpha = 0.1f),
         contentPadding = PaddingValues(32.dp)
     ) {
         Column(
@@ -120,22 +125,24 @@ private fun TimeRangeEmptyState(
         ) {
             // "System Status" Badge - Reassures the user the app is working
             Surface(
-                color = Color(0xFF22C55E).copy(alpha = 0.15f), 
+                color = TempoSuccess.copy(alpha = 0.15f),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(100),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.3f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, TempoSuccess.copy(alpha = 0.3f)),
                 modifier = Modifier.padding(bottom = 24.dp)
             ) {
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Pulsing Dot effect (Radar Animation)
-                    PulsingRadar(modifier = Modifier.size(24.dp), color = Color(0xFF22C55E))
+                    Box(
+                        modifier = Modifier.size(8.dp).clip(CircleShape).background(TempoSuccess),
+                        contentAlignment = Alignment.Center
+                    ) {}
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = stringResource(R.string.empty_tracking_active),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF22C55E),
+                        color = TempoSuccess,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.5.sp
                     )
@@ -146,7 +153,7 @@ private fun TimeRangeEmptyState(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.8f),
+                tint = TextPrimary,
                 modifier = Modifier.size(48.dp)
             )
             
@@ -157,7 +164,7 @@ private fun TimeRangeEmptyState(
                 text = title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextPrimary,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -170,7 +177,7 @@ private fun TimeRangeEmptyState(
                     text = contextLabel,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.5f), 
+                    color = TextTertiary, 
                     textAlign = TextAlign.Center
                 )
             }
@@ -183,7 +190,7 @@ private fun TimeRangeEmptyState(
                 style = MaterialTheme.typography.bodyMedium,
                 lineHeight = 24.sp,
                 fontWeight = FontWeight.Normal,
-                color = Color.White.copy(alpha = 0.7f),
+                color = TextSecondary,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -194,7 +201,7 @@ private fun TimeRangeEmptyState(
             Button(
                 onClick = onCheckSupportedApps,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed, 
+                    containerColor = TempoPrimary, 
                     contentColor = Color.White
                 ),
                 shape = MaterialTheme.shapes.large,
@@ -210,14 +217,13 @@ private fun TimeRangeEmptyState(
 private fun SetupGuideEmptyState(
     onCheckSupportedApps: () -> Unit
 ) {
-    // Logic: Provide clear instruction in a premium container.
-    // Differentiator: This card is "Louder" (HighProminence) and focused on ACTION.
+
     
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp),
-        backgroundColor = TempoRed.copy(alpha = 0.12f),
+        backgroundColor = TempoPrimary.copy(alpha = 0.12f),
         variant = GlassCardVariant.HighProminence, // Stand out more
         contentPadding = PaddingValues(32.dp)
     ) {
@@ -230,7 +236,7 @@ private fun SetupGuideEmptyState(
                 text = stringResource(R.string.empty_getting_started),
                 style = MaterialTheme.typography.headlineSmall, // Bigger than titleLarge
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextPrimary,
                 textAlign = TextAlign.Center
             )
             
@@ -239,7 +245,7 @@ private fun SetupGuideEmptyState(
             Text(
                 text = stringResource(R.string.empty_stats_flowing),
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color.White.copy(alpha = 0.7f),
+                color = TextSecondary,
                 textAlign = TextAlign.Center
             )
 
@@ -247,14 +253,14 @@ private fun SetupGuideEmptyState(
 
             // Trust Signal
             Surface(
-                color = Color(0xFF22C55E).copy(alpha = 0.1f), 
+                color = TempoSuccess.copy(alpha = 0.1f),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.2f))
+                border = androidx.compose.foundation.BorderStroke(1.dp, TempoSuccess.copy(alpha = 0.2f))
             ) {
                  Text(
                     text = stringResource(R.string.empty_no_account),
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF22C55E),
+                    color = TempoSuccess,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
@@ -286,7 +292,7 @@ private fun SetupGuideEmptyState(
             Button(
                 onClick = onCheckSupportedApps,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed,
+                    containerColor = TempoPrimary,
                     contentColor = Color.White
                 ),
                 shape = MaterialTheme.shapes.extraLarge,
@@ -316,13 +322,13 @@ private fun StepItem(
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .background(Color.White.copy(alpha = 0.1f), androidx.compose.foundation.shape.CircleShape),
+                .background(Divider, androidx.compose.foundation.shape.CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon, 
                 contentDescription = null, 
-                tint = TempoRed, 
+                tint = TempoPrimary, 
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -332,56 +338,13 @@ private fun StepItem(
         Text(
             text = text, 
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.9f),
+            color = TextPrimary,
             fontWeight = FontWeight.Medium,
             lineHeight = 20.sp
         )
     }
 }
 
-@Composable
-private fun PulsingRadar(
-    modifier: Modifier = Modifier,
-    color: Color = Color(0xFF22C55E)
-) {
-    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "Radar")
-    
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 0.8f,
-        targetValue = 1.9f, // Expand outward
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = androidx.compose.animation.core.tween(2000, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
-        ),
-        label = "RadarScale"
-    )
-
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 0.0f, // Fade out
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = androidx.compose.animation.core.tween(2000, easing = androidx.compose.animation.core.FastOutLinearInEasing),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
-        ),
-        label = "RadarAlpha"
-    )
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        // Ripple
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .scale(scale)
-                .background(color.copy(alpha = alpha), androidx.compose.foundation.shape.CircleShape)
-        )
-        // Core Dot (Static)
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .background(color, androidx.compose.foundation.shape.CircleShape)
-        )
-    }
-}
 
 @Preview(showBackground = true, backgroundColor = 0xFF121212)
 @Composable

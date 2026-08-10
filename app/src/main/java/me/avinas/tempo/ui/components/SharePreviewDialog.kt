@@ -1,9 +1,19 @@
 package me.avinas.tempo.ui.components
 
+import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextOnAccent
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.Divider
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -14,13 +24,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
@@ -35,16 +47,20 @@ private val CardDesignHeight = 640.dp
 
 /**
  * Generic Dialog to preview content and share it as an image.
+ * When [themes] is non-null, a theme picker is shown and [contentForTheme] is invoked
+ * with the currently selected theme — letting the card re-render its backdrop per theme.
  */
 @Composable
 fun SharePreviewDialog(
     onDismiss: () -> Unit,
-    contentToShare: @Composable () -> Unit
+    themes: List<ShareTheme>? = null,
+    contentForTheme: @Composable (ShareTheme) -> Unit
 ) {
     val context = LocalContext.current
     val captureController = rememberCaptureController()
     val coroutineScope = rememberCoroutineScope()
     var isSharing by remember { mutableStateOf(false) }
+    var selectedTheme by remember { mutableStateOf(themes?.firstOrNull() ?: ShareTheme.MIDNIGHT) }
     val shareFailedText = stringResource(R.string.share_failed)
 
     LaunchedEffect(Unit) {
@@ -88,7 +104,7 @@ fun SharePreviewDialog(
                     controller = captureController,
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    contentToShare()
+                    contentForTheme(selectedTheme)
                 }
             }
 
@@ -96,7 +112,7 @@ fun SharePreviewDialog(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.9f))
+                    .background(TempoBackground.copy(alpha = 0.9f))
             )
 
             // 3. Visible UI (Preview + Controls)
@@ -120,21 +136,21 @@ fun SharePreviewDialog(
                         text = stringResource(R.string.details_share_preview),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = TextPrimary
                     )
 
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier
                             .background(
-                                Color.White.copy(alpha = 0.1f),
+                                Divider,
                                 androidx.compose.foundation.shape.CircleShape
                             )
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = stringResource(R.string.share_close),
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                     }
                 }
@@ -168,9 +184,19 @@ fun SharePreviewDialog(
                                     transformOrigin = TransformOrigin(0.5f, 0.5f)
                                 )
                         ) {
-                            contentToShare()
+                            contentForTheme(selectedTheme)
                         }
                     }
+                }
+
+                // Theme picker (only when themes provided)
+                if (themes != null) {
+                    ShareThemePicker(
+                        themes = themes,
+                        selected = selectedTheme,
+                        onSelect = { selectedTheme = it },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                    )
                 }
 
                 // Share Button
@@ -186,14 +212,14 @@ fun SharePreviewDialog(
                         .height(56.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.White,
-                        contentColor = Color.Black
+                        contentColor = TextOnAccent
                     ),
                     shape = RoundedCornerShape(28.dp)
                 ) {
                     if (isSharing) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            color = Color.Black,
+                            color = TextOnAccent,
                             strokeWidth = 2.dp
                         )
                     } else {
@@ -204,6 +230,55 @@ fun SharePreviewDialog(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShareThemePicker(
+    themes: List<ShareTheme>,
+    selected: ShareTheme,
+    onSelect: (ShareTheme) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.stats_share_theme_label).uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            color = TextTertiary,
+            letterSpacing = 1.2.sp
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            themes.forEach { t ->
+                val p = t.palette
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(p.gradient))
+                        .clickable { onSelect(t) }
+                        .border(
+                            width = if (selected == t) 3.dp else 1.dp,
+                            color = if (selected == t) Color.White else Divider,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (selected == t) {
+                        Box(modifier = Modifier.size(6.dp).background(Color.White, CircleShape))
                     }
                 }
             }

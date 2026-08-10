@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import java.text.Normalizer
 
 /**
  * Represents an artist in the database.
@@ -62,18 +63,36 @@ data class Artist(
 ) {
     companion object {
         // Pre-compiled regex patterns to avoid repeated native memory allocation
-        private val SPECIAL_CHARS_PATTERN = Regex("[^a-z0-9\\s]")
+        // Unicode-aware: keeps letters (\p{L}) and numbers (\p{N}) from ANY script
+        // (Latin, Japanese, Korean, Cyrillic, Arabic, ...) and only strips
+        // punctuation/symbols. The old [^a-z0-9\s] pattern erased every non-ASCII
+        // character, collapsing all CJK artist names into the same "" key.
+        private val SPECIAL_CHARS_PATTERN = Regex("[^\\p{L}\\p{N}\\s]")
         private val WHITESPACE_PATTERN = Regex("\\s+")
-        
+
         /**
          * Normalize an artist name for comparison and deduplication.
+         *
+         * Steps:
+         * 1. NFKC normalization (folds full-width Latin "ＡＢＣ" -> "ABC",
+         *    half-width katakana "ｶ" -> "カ", and other compatibility chars)
+         * 2. Lowercase
+         * 3. Strip punctuation/symbols but keep letters/numbers of any script
+         * 4. Collapse whitespace
+         *
+         * If everything is stripped (e.g. symbol/emoji-only names), falls back to
+         * the NFKC-lowercased original so two different names never share the
+         * same empty dedup key.
          */
         fun normalizeName(name: String): String {
-            return name
+            val nfkc = Normalizer.normalize(name, Normalizer.Form.NFKC)
+            val normalized = nfkc
                 .lowercase()
                 .trim()
-                .replace(SPECIAL_CHARS_PATTERN, "") // Remove special chars
+                .replace(SPECIAL_CHARS_PATTERN, "") // Remove special chars (any-script aware)
                 .replace(WHITESPACE_PATTERN, " ") // Normalize whitespace
+                .trim()
+            return normalized.ifBlank { nfkc.lowercase().trim() }
         }
     }
 }

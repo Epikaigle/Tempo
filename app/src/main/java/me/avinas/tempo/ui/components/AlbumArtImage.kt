@@ -1,5 +1,8 @@
 package me.avinas.tempo.ui.components
 
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TempoWarningDeep
+import me.avinas.tempo.ui.theme.TempoWarning
 import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -204,8 +207,8 @@ fun AlbumArtPlaceholder(
             .background(
                 Brush.linearGradient(
                     colors = listOf(
-                        Color(0xFFF59E0B).copy(alpha = 0.2f),
-                        Color(0xFFD97706).copy(alpha = 0.1f)
+                        TempoWarning.copy(alpha = 0.2f),
+                        TempoWarningDeep.copy(alpha = 0.1f)
                     )
                 )
             ),
@@ -214,7 +217,7 @@ fun AlbumArtPlaceholder(
         Text(
             text = emoji,
             fontSize = 48.sp,
-            color = Color.White.copy(alpha = 0.8f)
+            color = TextPrimary
         )
     }
 }

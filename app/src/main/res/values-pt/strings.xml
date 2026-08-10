@@ -474,6 +474,7 @@
     <string name="settings_language_german">Deutsch</string>
     <string name="settings_language_hungarian">Magyar</string>
     <string name="settings_language_portuguese">Português</string>
+    <string name="settings_language_russian">Russo</string>
     <string name="settings_select_language">Selecione o idioma</string>
     <string name="settings_daily_summary">Resumo Diário</string>
     <string name="settings_daily_summary_desc">Obtenha um resumo do que você ouve todos os dias às 20h</string>

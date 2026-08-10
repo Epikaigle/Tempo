@@ -1,6 +1,6 @@
 package me.avinas.tempo.ui.permissions
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
+import me.avinas.tempo.ui.theme.TempoBackground
 
 import android.content.ComponentName
 import android.content.Context
@@ -33,7 +33,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import me.avinas.tempo.service.MusicTrackingService
 import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoError
+import me.avinas.tempo.ui.theme.TempoSuccess
+import me.avinas.tempo.ui.theme.TempoWarning
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 
@@ -90,7 +96,7 @@ fun PermissionScreen(
             // Hero Illustration
             GlassCard(
                 modifier = Modifier.size(120.dp),
-                backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.1f), // Amber tint for notifications
+                backgroundColor = TempoWarning.copy(alpha = 0.1f), // Amber tint for notifications
                 contentPadding = PaddingValues(0.dp)
             ) {
                 Box(
@@ -103,7 +109,7 @@ fun PermissionScreen(
                             .size(80.dp)
                             .background(
                                 brush = Brush.radialGradient(
-                                    colors = listOf(Color(0xFFF59E0B).copy(alpha = 0.4f), Color.Transparent)
+                                    colors = listOf(TempoWarning.copy(alpha = 0.4f), Color.Transparent)
                                 ),
                                 shape = CircleShape
                             )
@@ -113,7 +119,7 @@ fun PermissionScreen(
                         imageVector = Icons.Default.Notifications,
                         contentDescription = null,
                         modifier = Modifier.size(56.dp),
-                        tint = Color.White
+                        tint = TextPrimary
                     )
                 }
             }
@@ -125,7 +131,7 @@ fun PermissionScreen(
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
-                color = Color.White
+                color = TextPrimary
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -134,7 +140,7 @@ fun PermissionScreen(
                 text = stringResource(R.string.perm_how_tempo_sees),
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
-                color = Color.White.copy(alpha = 0.7f)
+                color = TextSecondary
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -147,7 +153,7 @@ fun PermissionScreen(
                 // What we DO read
                 GlassCard(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                    backgroundColor = Color(0xFF22C55E).copy(alpha = 0.1f),
+                    backgroundColor = TempoSuccess.copy(alpha = 0.1f),
                     contentPadding = PaddingValues(16.dp)
                 ) {
                     Column(
@@ -156,10 +162,10 @@ fun PermissionScreen(
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
-                                .background(Color(0xFF22C55E).copy(alpha = 0.2f), CircleShape),
+                                .background(TempoSuccess.copy(alpha = 0.2f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("✓", color = Color(0xFF22C55E), fontWeight = FontWeight.Bold)
+                            Text("✓", color = TempoSuccess, fontWeight = FontWeight.Bold)
                         }
                         
                         Spacer(modifier = Modifier.height(12.dp))
@@ -168,7 +174,7 @@ fun PermissionScreen(
                             text = stringResource(R.string.perm_music_only),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF22C55E),
+                            color = TempoSuccess,
                             letterSpacing = 1.sp
                         )
                         
@@ -177,7 +183,7 @@ fun PermissionScreen(
                         Text(
                             text = stringResource(R.string.perm_music_apps),
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.9f),
+                            color = TextPrimary,
                             textAlign = TextAlign.Center,
                             lineHeight = 20.sp
                         )
@@ -187,7 +193,7 @@ fun PermissionScreen(
                 // What we DON'T read
                 GlassCard(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                    backgroundColor = Color(0xFFEF4444).copy(alpha = 0.08f),
+                    backgroundColor = TempoError.copy(alpha = 0.08f),
                     contentPadding = PaddingValues(16.dp)
                 ) {
                     Column(
@@ -196,10 +202,10 @@ fun PermissionScreen(
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
-                                .background(Color(0xFFEF4444).copy(alpha = 0.2f), CircleShape),
+                                .background(TempoError.copy(alpha = 0.2f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("✗", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                            Text("✗", color = TempoError, fontWeight = FontWeight.Bold)
                         }
                         
                         Spacer(modifier = Modifier.height(12.dp))
@@ -208,7 +214,7 @@ fun PermissionScreen(
                             text = stringResource(R.string.perm_private_data),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFEF4444),
+                            color = TempoError,
                             letterSpacing = 1.sp
                         )
                         
@@ -217,7 +223,7 @@ fun PermissionScreen(
                         Text(
                             text = stringResource(R.string.perm_we_ignore),
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = TextTertiary,
                             textAlign = TextAlign.Center,
                             lineHeight = 20.sp
                         )
@@ -235,7 +241,7 @@ fun PermissionScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed,
+                    containerColor = TempoPrimary,
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(16.dp),
@@ -256,7 +262,7 @@ fun PermissionScreen(
             TextButton(onClick = onSkip) {
                 Text(
                     text = stringResource(R.string.perm_do_later),
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = TextTertiary,
                     style = MaterialTheme.typography.labelLarge
                 )
             }
@@ -278,7 +284,7 @@ fun PermissionScreen(
                     text = stringResource(R.string.perm_runs_efficient),
                     textAlign = TextAlign.Center,
                     fontSize = 12.sp,
-                    color = Color.Gray
+                    color = TextTertiary
                 )
             }
             

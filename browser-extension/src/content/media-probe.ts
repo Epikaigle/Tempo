@@ -282,7 +282,7 @@
           backdrop-filter: blur(12px);
         }
         .tempo-kicker {
-          color: #a78bfa;
+          color: #2FDBB8;
           font-size: 11px;
           font-weight: 700;
           letter-spacing: 0.04em;
@@ -333,7 +333,7 @@
         }
         .tempo-allow {
           color: white;
-          background: linear-gradient(135deg, #7c5cff, #651dad);
+          background: linear-gradient(135deg, #2FDBB8, #1FA88C);
         }
       </style>
       <div class="tempo-card" role="dialog" aria-live="polite">

@@ -16,6 +16,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import androidx.core.graphics.ColorUtils
+import me.avinas.tempo.ui.theme.Divider
 
 /**
  * Generates pixel-perfect bitmap renders for each Tempo widget,
@@ -46,7 +47,7 @@ object BitmapGenerator {
         intArrayOf(Color.parseColor("#2DD4BF"), Color.parseColor("#0EA5E9")),  // Teal→Blue
         intArrayOf(Color.parseColor("#818CF8"), Color.parseColor("#6366F1")),  // Indigo
         intArrayOf(Color.parseColor("#3B82F6"), Color.parseColor("#1E3A8A")),  // Blue
-        intArrayOf(Color.parseColor("#A855F7"), Color.parseColor("#7C3AED")),  // Purple
+        intArrayOf(Color.parseColor("#A855F7"), Color.parseColor("#1FA88C")),  // Purple
     )
 
     // =========================================================================
@@ -601,7 +602,7 @@ object BitmapGenerator {
         val glowPaint = Paint().apply {
             shader = RadialGradient(
                 width * 0.9f, height * 0.1f, width * 0.5f,
-                ColorUtils.setAlphaComponent(Color.parseColor("#7C3AED"), 80),
+                ColorUtils.setAlphaComponent(Color.parseColor("#1FA88C"), 80),
                 Color.TRANSPARENT, Shader.TileMode.CLAMP
             )
         }
@@ -806,7 +807,7 @@ object BitmapGenerator {
         val glow1 = Paint().apply {
             shader = RadialGradient(
                 width * 0.9f, height * 0.1f, width * 0.5f,
-                ColorUtils.setAlphaComponent(Color.parseColor("#7C3AED"), 60),
+                ColorUtils.setAlphaComponent(Color.parseColor("#1FA88C"), 60),
                 Color.TRANSPARENT, Shader.TileMode.CLAMP
             )
         }
@@ -916,7 +917,7 @@ object BitmapGenerator {
             val swirlPaint = Paint().apply {
                 shader = RadialGradient(
                     artCx, artCy, artSize / 2,
-                    Color.parseColor("#F59E0B"), Color.parseColor("#7C3AED"),
+                    Color.parseColor("#F59E0B"), Color.parseColor("#1FA88C"),
                     Shader.TileMode.CLAMP
                 )
                 isAntiAlias = true
@@ -971,7 +972,7 @@ object BitmapGenerator {
             }
         } else {
              Paint().apply {
-                color = ColorUtils.setAlphaComponent(Color.parseColor("#7C3AED"), 40) // More subtle purple
+                color = ColorUtils.setAlphaComponent(Color.parseColor("#1FA88C"), 40) // More subtle purple
                 isAntiAlias = true
             }
         }

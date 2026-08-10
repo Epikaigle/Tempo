@@ -139,14 +139,14 @@ fun DashboardCosmicClockCard(
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
-        backgroundColor = TempoDarkSurface.copy(alpha = 0.9f),
+        backgroundColor = TempoSurface.copy(alpha = 0.9f),
         contentPadding = PaddingValues(24.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             DashboardHeader(
                 icon = Icons.Outlined.Schedule,
                 title = "Circadian Rhythm",
-                iconColor = GoldenAmber,
+                iconColor = TempoWarning,
                 showShareButton = showShareButton,
                 onShareClick = onShareClick
             )
@@ -166,11 +166,11 @@ fun DashboardCosmicClockCard(
                     
                     // 1. The Sky Cycle (Background Ring)
                     val skyGradient = Brush.sweepGradient(
-                        0.0f to Color(0xFF0F172A), // Midnight (Top/00:00) - Slate 900
-                        0.25f to Color(0xFFFB923C), // Sunrise (06:00) - Orange 400
-                        0.5f to Color(0xFFFEF08A), // Noon (12:00) - Yellow 200
-                        0.75f to Color(0xFFC084FC), // Sunset (18:00) - Purple 400
-                        1.0f to Color(0xFF0F172A), // Midnight
+                        0.0f to TempoSurfaceSunken, // Midnight (Top/00:00) - Slate 900
+                        0.25f to TempoWarning, // Sunrise (06:00) - Orange 400
+                        0.5f to TempoWarningBright, // Noon (12:00) - Yellow 200
+                        0.75f to TempoAccentBright, // Sunset (18:00) - Purple 400
+                        1.0f to TempoSurfaceSunken, // Midnight
                         center = center
                     )
                     
@@ -184,7 +184,7 @@ fun DashboardCosmicClockCard(
                     // Fill subtle darkness in the center
                     drawCircle(
                         brush = Brush.radialGradient(
-                           colors = listOf(Color(0xFF1E293B), Color(0xFF020617)),
+                           colors = listOf(TempoSurfaceDialog, TempoSurfaceSunken),
                            center = center,
                            radius = radius
                         ),
@@ -203,7 +203,7 @@ fun DashboardCosmicClockCard(
                         val endR = radius * 0.98f
                         
                         drawLine(
-                            color = if (isMajor) GoldenAmber else Color.White.copy(alpha = 0.2f),
+                            color = if (isMajor) TempoWarning else Color.White.copy(alpha = 0.2f),
                             start = Offset(center.x + startR * cos(angleRad), center.y + startR * sin(angleRad)),
                             end = Offset(center.x + endR * cos(angleRad), center.y + endR * sin(angleRad)),
                             strokeWidth = if (isMajor) 2.dp.toPx() else 1.dp.toPx()
@@ -247,7 +247,7 @@ fun DashboardCosmicClockCard(
                          val markerEndR = radius * 0.70f 
                          
                          drawLine(
-                            color = GoldenAmber.copy(alpha = if (isMajor) 0.6f else 0.3f),
+                            color = TempoWarning.copy(alpha = if (isMajor) 0.6f else 0.3f),
                             start = Offset(center.x + markerStartR * cos(angleRad), center.y + markerStartR * sin(angleRad)),
                             end = Offset(center.x + markerEndR * cos(angleRad), center.y + markerEndR * sin(angleRad)),
                             strokeWidth = 1.dp.toPx()
@@ -288,7 +288,7 @@ fun DashboardCosmicClockCard(
                         drawPath(
                             path = path,
                             brush = Brush.radialGradient(
-                                colors = listOf(GoldenAmber.copy(alpha = 0.5f), Color.Transparent),
+                                colors = listOf(TempoWarning.copy(alpha = 0.5f), Color.Transparent),
                                 center = center,
                                 radius = radius * 0.8f
                             )
@@ -296,7 +296,7 @@ fun DashboardCosmicClockCard(
                         // Stroke Line
                         drawPath(
                             path = path,
-                            color = GoldenAmber,
+                            color = TempoWarning,
                             style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
                         )
                     }
@@ -320,7 +320,7 @@ fun DashboardCosmicClockCard(
                     drawPath(
                         path = gnomonPath,
                         brush = Brush.verticalGradient(
-                            colors = listOf(Color(0xFF475569), Color(0xFF1E293B))
+                            colors = listOf(TextQuaternary, TempoSurfaceDialog)
                         )
                     )
                     drawPath(
@@ -340,7 +340,7 @@ fun DashboardCosmicClockCard(
                      
                      drawLine(
                          brush = Brush.linearGradient(
-                             colors = listOf(GoldenAmber.copy(alpha=0f), GoldenAmber),
+                             colors = listOf(TempoWarning.copy(alpha=0f), TempoWarning),
                              start = center,
                              end = Offset(endX, endY)
                          ),
@@ -352,7 +352,7 @@ fun DashboardCosmicClockCard(
                      
                      // Tip
                      drawCircle(
-                         color = GoldenAmber,
+                         color = TempoWarning,
                          radius = 3.dp.toPx(),
                          center = Offset(endX, endY)
                      )
@@ -366,7 +366,7 @@ fun DashboardCosmicClockCard(
                     Text(
                         text = data.sunListenerType.uppercase(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFFBAE6FD), 
+                        color = TempoInfoSoft, 
                         letterSpacing = 2.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -378,7 +378,7 @@ fun DashboardCosmicClockCard(
                     Text(
                         text = "$hour12 $amPm", 
                         style = MaterialTheme.typography.displaySmall.copy(
-                            shadow = Shadow(color = GoldenAmber, blurRadius = 24f)
+                            shadow = Shadow(color = TempoWarning, blurRadius = 24f)
                         ),
                         color = Color.White,
                         fontWeight = FontWeight.Black
@@ -396,21 +396,21 @@ fun DashboardCosmicClockCard(
             ) {
                  // Day
                  Row(verticalAlignment = Alignment.CenterVertically) {
-                     Box(modifier = Modifier.size(8.dp).background(GoldenAmber, CircleShape))
+                     Box(modifier = Modifier.size(8.dp).background(TempoWarning, CircleShape))
                      Spacer(modifier = Modifier.width(8.dp))
                      Column {
                          Text("DAY (${data.dayPercentage}%)", style = MaterialTheme.typography.labelSmall, color = Color.White)
-                         Text("Solar Power", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
+                         Text("Solar Power", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                      }
                  }
                  
                  // Night
                  Row(verticalAlignment = Alignment.CenterVertically) {
-                     Box(modifier = Modifier.size(8.dp).background(Color(0xFFC084FC), CircleShape))
+                     Box(modifier = Modifier.size(8.dp).background(TempoAccentBright, CircleShape))
                      Spacer(modifier = Modifier.width(8.dp))
                      Column(horizontalAlignment = Alignment.End) {
                          Text("NIGHT (${data.nightPercentage}%)", style = MaterialTheme.typography.labelSmall, color = Color.White)
-                         Text("Lunar Calm", style = MaterialTheme.typography.bodySmall, color = Color(0xFF94A3B8))
+                         Text("Lunar Calm", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                      }
                  }
             }
@@ -431,14 +431,14 @@ fun DashboardWeekendWarriorCard(
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
-        backgroundColor = TempoDarkBackground.copy(alpha = 0.95f), // Premium Dark
+        backgroundColor = TempoBackground.copy(alpha = 0.95f), // Premium Dark
         contentPadding = PaddingValues(24.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             DashboardHeader(
                 icon = Icons.Outlined.Architecture,
                 title = "The Weekly Pulse",
-                iconColor = TempoSecondary, // Teal
+                iconColor = TempoPrimaryMuted, // Teal
                 showShareButton = showShareButton,
                 onShareClick = onShareClick
             )
@@ -456,7 +456,7 @@ fun DashboardWeekendWarriorCard(
                     val gridSize = 20.dp.toPx()
                     for (x in 0 until size.width.toInt() step gridSize.toInt()) {
                         drawLine(
-                            color = TempoSecondary, // Teal Grid
+                            color = TempoPrimaryMuted, // Teal Grid
                             start = Offset(x.toFloat(), 0f),
                             end = Offset(x.toFloat(), size.height),
                             strokeWidth = 1f
@@ -464,7 +464,7 @@ fun DashboardWeekendWarriorCard(
                     }
                     for (y in 0 until size.height.toInt() step gridSize.toInt()) {
                         drawLine(
-                            color = TempoSecondary, // Teal Grid
+                            color = TempoPrimaryMuted, // Teal Grid
                             start = Offset(0f, y.toFloat()),
                             end = Offset(size.width, y.toFloat()),
                             strokeWidth = 1f
@@ -531,9 +531,9 @@ fun DashboardWeekendWarriorCard(
                         w = barWidth,
                         h = weekdayH.coerceAtLeast(10f),
                         d = depth,
-                        frontColor = Color(0xFF334155), // Slate 700
-                        topColor = Color(0xFF475569), // Slate 600
-                        sideColor = Color(0xFF1E293B) // Slate 800
+                        frontColor = TextQuaternary, // Slate 700
+                        topColor = TextQuaternary, // Slate 600
+                        sideColor = TempoSurfaceDialog // Slate 800
                     )
 
                     // 2. Weekend Structure (Right, Vibrant/Rose)
@@ -544,8 +544,8 @@ fun DashboardWeekendWarriorCard(
                         h = weekendH.coerceAtLeast(10f),
                         d = depth,
                         frontColor = TempoError, // Rose 500
-                        topColor = Color(0xFFFB7185), // Rose 400
-                        sideColor = Color(0xFFBE123C) // Rose 700
+                        topColor = TempoErrorAlt, // Rose 400
+                        sideColor = TempoErrorDeep // Rose 700
                     )
                 }
                 
@@ -565,7 +565,7 @@ fun DashboardWeekendWarriorCard(
                         Text(
                             text = "WEEKDAY",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF94A3B8),
+                            color = TextSecondary,
                             letterSpacing = 2.sp
                         )
                     }
@@ -580,7 +580,7 @@ fun DashboardWeekendWarriorCard(
                         Text(
                             text = "WEEKEND",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFDA4AF), // Rose 300
+                            color = TempoErrorSoft, // Rose 300
                             letterSpacing = 2.sp
                         )
                     }
@@ -600,14 +600,14 @@ fun DashboardForgottenFavoriteCard(
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
-        backgroundColor = TempoDarkSurface.copy(alpha = 0.8f), // Dark Stone
+        backgroundColor = TempoSurface.copy(alpha = 0.8f), // Dark Stone
         contentPadding = PaddingValues(24.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             DashboardHeader(
                 icon = Icons.Outlined.History,
                 title = "Forgotten Favorite",
-                iconColor = Color(0xFFD6D3D1),
+                iconColor = TextSecondary,
                 showShareButton = showShareButton,
                 onShareClick = onShareClick
             )
@@ -653,7 +653,7 @@ fun DashboardForgottenFavoriteCard(
                        // Glow (Luminescence)
                        drawPath(
                            path = path,
-                           color = GoldenAmber.copy(alpha = 0.4f),
+                           color = TempoWarning.copy(alpha = 0.4f),
                            style = androidx.compose.ui.graphics.drawscope.Stroke(
                                width = 6.dp.toPx(),
                                cap = StrokeCap.Round,
@@ -665,7 +665,7 @@ fun DashboardForgottenFavoriteCard(
                        drawPath(
                            path = path,
                            brush = Brush.linearGradient(
-                               colors = listOf(GoldenAmber, Color(0xFFB45309), GoldenAmber) // Shimmer
+                               colors = listOf(TempoWarning, TempoWarningDeep, TempoWarning) // Shimmer
                            ),
                            style = androidx.compose.ui.graphics.drawscope.Stroke(
                                width = 2.dp.toPx(),
@@ -681,7 +681,7 @@ fun DashboardForgottenFavoriteCard(
                        }
                        drawPath(
                            path = path2,
-                           color = GoldenAmber.copy(alpha = 0.8f),
+                           color = TempoWarning.copy(alpha = 0.8f),
                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx())
                        )
                    }
@@ -696,7 +696,7 @@ fun DashboardForgottenFavoriteCard(
                             text = "${data.daysSinceLastPlay}",
                             style = MaterialTheme.typography.displayMedium.copy(
                                 brush = Brush.verticalGradient(
-                                    colors = listOf(GoldenAmber, Color(0xFF92400E))
+                                    colors = listOf(TempoWarning, TempoWarningDeep)
                                 )
                             ),
                             fontWeight = FontWeight.Black
@@ -704,7 +704,7 @@ fun DashboardForgottenFavoriteCard(
                         Text(
                             text = "days lost",
                             style = MaterialTheme.typography.labelMedium,
-                            color = GoldenAmber.copy(alpha = 0.8f),
+                            color = TempoWarning.copy(alpha = 0.8f),
                             modifier = Modifier.padding(bottom = 8.dp, start = 4.dp),
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
@@ -722,7 +722,7 @@ fun DashboardForgottenFavoriteCard(
                     Text(
                         text = "Restored from memory",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFA8A29E)
+                        color = TextSecondary
                     )
                 }
             }
@@ -740,14 +740,14 @@ fun DashboardDeepDiveCard(
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
-        backgroundColor = TempoDarkBackground, // Deep Void
+        backgroundColor = TempoBackground, // Deep Void
         contentPadding = PaddingValues(24.dp)
     ) {
         Column {
             DashboardHeader(
                 icon = Icons.Outlined.PlayArrow,
                 title = "Sonic Immersion", 
-                iconColor = ElectricBlue,
+                iconColor = TempoInfo,
                 showShareButton = showShareButton,
                 onShareClick = onShareClick
             )
@@ -817,7 +817,7 @@ fun DashboardDeepDiveCard(
                          
                          drawPath(
                              path = path,
-                             color = if (i % 2 == 0) GlassWhite else ElectricBlue.copy(alpha=0.2f),
+                             color = if (i % 2 == 0) TextPrimary.copy(alpha = 0.08f) else TempoInfo.copy(alpha=0.2f),
                              style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()) // Thin precise lines
                          )
                      }
@@ -844,7 +844,7 @@ fun DashboardDeepDiveCard(
                         .size(120.dp)
                         .background(
                             brush = Brush.radialGradient(
-                                colors = listOf(Color(0xFF38BDF8).copy(alpha=0.3f), Color.Transparent)
+                                colors = listOf(TempoSky.copy(alpha=0.3f), Color.Transparent)
                             )
                         )
                 ) {
@@ -861,7 +861,7 @@ fun DashboardDeepDiveCard(
                          Text(
                             text = "MINUTES",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF38BDF8),
+                            color = TempoSky,
                             letterSpacing = 2.sp
                         )
                     }
@@ -872,7 +872,7 @@ fun DashboardDeepDiveCard(
              Text(
                 text = "${data.timeOfDay} • ${data.date}",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFFBAE6FD),
+                color = TempoInfoSoft,
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 8.dp)
             )
         }
@@ -887,9 +887,9 @@ fun DashboardNewObsessionCard(
     onShareClick: () -> Unit = {}
 ) {
     // Newsprint color palette
-    val paperColor = Color(0xFFF5F0E6) // Aged paper
-    val inkColor = Color(0xFF1A1A1A) // Deep ink black
-    val accentRed = Color(0xFFB91C1C) // Classic newspaper red
+    val paperColor = SilverLight // Aged paper
+    val inkColor = TempoSurface // Deep ink black
+    val accentRed = TempoErrorDeep // Classic newspaper red
     
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -1135,7 +1135,7 @@ fun DashboardListeningPeakCard(
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(32.dp),
-        backgroundColor = TempoDarkBackground, // Deep Void
+        backgroundColor = TempoBackground, // Deep Void
         contentPadding = PaddingValues(24.dp)
     ) {
         Box(modifier = Modifier.fillMaxWidth().height(240.dp)) {
@@ -1192,11 +1192,11 @@ fun DashboardListeningPeakCard(
                         path = path,
                         brush = Brush.horizontalGradient(
                             colors = listOf(
-                                Color(0xFF0F172A).copy(alpha = 0f), // Transparent edges
-                                Color(0xFF38BDF8), // Sky Blue
-                                Color(0xFF818CF8), // Indigo
-                                Color(0xFFC084FC), // Purple
-                                Color(0xFF0F172A).copy(alpha = 0f)
+                                TempoSurfaceSunken.copy(alpha = 0f), // Transparent edges
+                                TempoSky, // Sky Blue
+                                TempoAccent, // Indigo
+                                TempoAccentBright, // Purple
+                                TempoSurfaceSunken.copy(alpha = 0f)
                             )
                         ),
                         style = androidx.compose.ui.graphics.drawscope.Stroke(
@@ -1214,7 +1214,7 @@ fun DashboardListeningPeakCard(
                 DashboardHeader(
                     icon = Icons.Outlined.GraphicEq,
                     title = "Harmonic Resonance",
-                    iconColor = Color(0xFF38BDF8),
+                    iconColor = TempoSky,
                     showShareButton = showShareButton,
                     onShareClick = onShareClick
                 )
@@ -1245,7 +1245,7 @@ fun DashboardListeningPeakCard(
                         Text(
                             text = "INTENSITY",
                             style = MaterialTheme.typography.labelSmall,
-                            color = GlassWhite.copy(alpha=0.5f),
+                            color = TextPrimary.copy(alpha = 0.5f),
                             letterSpacing = 3.sp,
                             fontSize = 10.sp
                         )
@@ -1256,7 +1256,7 @@ fun DashboardListeningPeakCard(
                         Text(
                             text = "${data.totalMinutes} MIN",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF38BDF8),
+                            color = TempoSky,
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -1287,18 +1287,18 @@ fun DashboardEarlyAdopterCard(
         
         AlertDialog(
             onDismissRequest = { showQrDialog = false },
-            containerColor = Color(0xFF020617),
-            textContentColor = Color(0xFFE2E8F0),
-            titleContentColor = Color(0xFFE2E8F0),
+            containerColor = TempoSurfaceSunken,
+            textContentColor = SilverLight,
+            titleContentColor = SilverLight,
             shape = RoundedCornerShape(24.dp),
-            modifier = Modifier.border(1.dp, Color(0xFF38BDF8).copy(alpha=0.3f), RoundedCornerShape(24.dp)),
+            modifier = Modifier.border(1.dp, TempoSky.copy(alpha=0.3f), RoundedCornerShape(24.dp)),
             title = {
                 Text(
                     "ACCESS VERIFICATION", 
                     style = MaterialTheme.typography.titleMedium,
                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF38BDF8)
+                    color = TempoSky
                 )
             },
             text = {
@@ -1307,7 +1307,7 @@ fun DashboardEarlyAdopterCard(
                          modifier = Modifier
                              .size(240.dp)
                              .clip(RoundedCornerShape(12.dp))
-                             .border(1.dp, Color(0xFF38BDF8).copy(alpha=0.5f), RoundedCornerShape(12.dp))
+                             .border(1.dp, TempoSky.copy(alpha=0.5f), RoundedCornerShape(12.dp))
                              .background(Color.Black), // Contrast for QR
                          contentAlignment = Alignment.Center
                     ) {
@@ -1316,7 +1316,7 @@ fun DashboardEarlyAdopterCard(
                             val lineH = 2.dp.toPx()
                             val gap = 2.dp.toPx()
                             for(i in 0 until (size.height / (lineH+gap)).toInt()) {
-                                drawRect(Color(0xFF38BDF8), topLeft = Offset(0f, i*(lineH+gap)), size = Size(size.width, lineH))
+                                drawRect(TempoSky, topLeft = Offset(0f, i*(lineH+gap)), size = Size(size.width, lineH))
                             }
                          }
                          
@@ -1330,11 +1330,11 @@ fun DashboardEarlyAdopterCard(
                         // Corner brackets
                         Box(modifier = Modifier.fillMaxSize().padding(8.dp)) {
                              // Top Left
-                             Box(modifier = Modifier.align(Alignment.TopStart).size(20.dp, 2.dp).background(Color(0xFF38BDF8)))
-                             Box(modifier = Modifier.align(Alignment.TopStart).size(2.dp, 20.dp).background(Color(0xFF38BDF8)))
+                             Box(modifier = Modifier.align(Alignment.TopStart).size(20.dp, 2.dp).background(TempoSky))
+                             Box(modifier = Modifier.align(Alignment.TopStart).size(2.dp, 20.dp).background(TempoSky))
                              // Bottom Right
-                             Box(modifier = Modifier.align(Alignment.BottomEnd).size(20.dp, 2.dp).background(Color(0xFF38BDF8)))
-                             Box(modifier = Modifier.align(Alignment.BottomEnd).size(2.dp, 20.dp).background(Color(0xFF38BDF8)))
+                             Box(modifier = Modifier.align(Alignment.BottomEnd).size(20.dp, 2.dp).background(TempoSky))
+                             Box(modifier = Modifier.align(Alignment.BottomEnd).size(2.dp, 20.dp).background(TempoSky))
                         }
                     }
                     
@@ -1343,7 +1343,7 @@ fun DashboardEarlyAdopterCard(
                     Text(
                         text = "SCAN FOR ACCESS",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF94A3B8),
+                        color = TextSecondary,
                         letterSpacing = 2.sp,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     )
@@ -1351,7 +1351,7 @@ fun DashboardEarlyAdopterCard(
             },
             confirmButton = {
                 TextButton(onClick = { showQrDialog = false }) {
-                    Text("CLOSE", color = Color(0xFF38BDF8))
+                    Text("CLOSE", color = TempoSky)
                 }
             }
         )
@@ -1360,7 +1360,7 @@ fun DashboardEarlyAdopterCard(
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp), // Smooth curve like a modern ID
-        backgroundColor = Color(0xFF020617), // Deep Space Blue/Black
+        backgroundColor = TempoSurfaceSunken, // Deep Space Blue/Black
         contentPadding = PaddingValues(0.dp)
     ) {
         Box(
@@ -1375,8 +1375,8 @@ fun DashboardEarlyAdopterCard(
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFF6366F1).copy(alpha = 0.3f), // Indigo
-                            Color(0xFF8B5CF6).copy(alpha = 0.1f), // Violet
+                            TempoPrimaryMuted.copy(alpha = 0.3f), // Indigo
+                            TempoPrimary.copy(alpha = 0.1f), // Violet
                             Color.Transparent
                         ),
                         center = center,
@@ -1401,7 +1401,7 @@ fun DashboardEarlyAdopterCard(
                 }
                 
                 // Tech Grid / Overlay Data
-                val gridColor = Color(0xFF94A3B8).copy(alpha = 0.1f)
+                val gridColor = TextSecondary.copy(alpha = 0.1f)
                 val lineH = size.height * 0.75f
                 drawLine(gridColor, Offset(0f, lineH), Offset(size.width, lineH), strokeWidth = 1.dp.toPx())
                 drawLine(gridColor, Offset(size.width * 0.35f, 0f), Offset(size.width * 0.35f, size.height), strokeWidth = 1.dp.toPx())
@@ -1420,8 +1420,8 @@ fun DashboardEarlyAdopterCard(
                             .fillMaxWidth()
                             .aspectRatio(0.8f) // 4:5 Photo ratio
                             .clip(RoundedCornerShape(4.dp))
-                            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(4.dp)) // Silver Border
-                            .background(Color(0xFF1E293B))
+                            .border(1.dp, TextSecondary, RoundedCornerShape(4.dp)) // Silver Border
+                            .background(TempoSurfaceDialog)
                     ) {
                          if (data.artistImageUrl != null) {
                              CachedAsyncImage(
@@ -1437,7 +1437,7 @@ fun DashboardEarlyAdopterCard(
                              brush = Brush.linearGradient(
                                  colors = listOf(
                                      Color.Transparent,
-                                     Color(0xFF38BDF8).copy(alpha=0.2f),
+                                     TempoSky.copy(alpha=0.2f),
                                      Color.Transparent
                                  ),
                                  start = Offset(0f, 0f),
@@ -1457,7 +1457,7 @@ fun DashboardEarlyAdopterCard(
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
                         repeat(10) {
-                             Box(modifier = Modifier.width(Random.nextInt(2, 6).dp).fillMaxHeight().background(Color(0xFF475569)))
+                             Box(modifier = Modifier.width(Random.nextInt(2, 6).dp).fillMaxHeight().background(TextQuaternary))
                         }
                     }
                 }
@@ -1472,14 +1472,14 @@ fun DashboardEarlyAdopterCard(
                     Text(
                         text = "TEMPO VANGUARD",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF94A3B8), // Slate 400
+                        color = TextSecondary, // Slate 400
                         letterSpacing = 2.sp,
                         fontSize = 10.sp
                     )
                     Text(
                         text = "ACCESS PASS",
                         style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFFF8FAFC), // Slate 50
+                        color = TextPrimary, // Slate 50
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
@@ -1487,11 +1487,11 @@ fun DashboardEarlyAdopterCard(
                     Spacer(modifier = Modifier.height(24.dp))
                     
                     // Field: SUBJECT
-                    Text("SUBJECT", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B), fontSize = 8.sp)
+                    Text("SUBJECT", style = MaterialTheme.typography.labelSmall, color = TextTertiary, fontSize = 8.sp)
                     Text(
                         text = data.artistName.uppercase(),
                         style = MaterialTheme.typography.titleMedium,
-                        color = Color(0xFFE2E8F0),
+                        color = SilverLight,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         maxLines = 1
@@ -1500,7 +1500,7 @@ fun DashboardEarlyAdopterCard(
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     // Field: CLASS
-                    Text("CLASS", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B), fontSize = 8.sp)
+                    Text("CLASS", style = MaterialTheme.typography.labelSmall, color = TextTertiary, fontSize = 8.sp)
                     Text(
                         text = "EARLY ADOPTER (FOUNDER)", 
                         style = MaterialTheme.typography.bodySmall, 
@@ -1511,11 +1511,11 @@ fun DashboardEarlyAdopterCard(
                     Spacer(modifier = Modifier.height(12.dp))
                     
                     // Field: DISCOVERY / ISSUED
-                    Text("FIRST CONTACT", style = MaterialTheme.typography.labelSmall, color = Color(0xFF64748B), fontSize = 8.sp)
+                    Text("FIRST CONTACT", style = MaterialTheme.typography.labelSmall, color = TextTertiary, fontSize = 8.sp)
                     Text(
                         text = data.discoveryDate, 
                         style = MaterialTheme.typography.bodySmall, 
-                        color = Color(0xFFE2E8F0),
+                        color = SilverLight,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     )
                 }
@@ -1578,7 +1578,7 @@ fun DashboardArtistLoyaltyCard(
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp), 
-        backgroundColor = Color(0xFF1E1E1E), 
+        backgroundColor = TempoSurface, 
         contentPadding = PaddingValues(0.dp)
     ) {
         Box(
@@ -1597,7 +1597,7 @@ fun DashboardArtistLoyaltyCard(
                  val random = Random(123)
                  for(i in 0..50) {
                      drawCircle(
-                         color = Color(0xFFFCD34D).copy(alpha = 0.1f),
+                         color = TempoWarningBright.copy(alpha = 0.1f),
                          radius = random.nextFloat() * 2.dp.toPx(),
                          center = Offset(random.nextFloat()*size.width, random.nextFloat()*size.height)
                      )
@@ -1619,7 +1619,7 @@ fun DashboardArtistLoyaltyCard(
                      repeat(stackCount) { index ->
                          val isTop = index == stackCount - 1
                          val width = 180.dp + (index * 2).dp // Slight variation
-                         val color = if (isTop) Color(0xFF1DB954) else Color.White.copy(alpha = 0.1f + (index * 0.05f))
+                         val color = if (isTop) SpotifyGreen else Color.White.copy(alpha = 0.1f + (index * 0.05f))
                          
                          Box(
                              modifier = Modifier
@@ -1652,7 +1652,7 @@ fun DashboardArtistLoyaltyCard(
                 DashboardHeader(
                     title = "THE DEEP CUT",
                     icon = Icons.Filled.Album,
-                    iconColor = Color(0xFFF59E0B), // Amber 500
+                    iconColor = TempoWarning, // Amber 500
                     showShareButton = showShareButton,
                     onShareClick = onShareClick
                 )
@@ -1663,12 +1663,12 @@ fun DashboardArtistLoyaltyCard(
                     text = "${data.uniqueTrackCount}",
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFF59E0B)
+                    color = TempoWarning
                 )
                 Text(
                     text = "UNIQUE TRACKS",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFFCD34D).copy(alpha=0.7f),
+                    color = TempoWarningBright.copy(alpha=0.7f),
                     letterSpacing = 1.sp
                 )
                 
@@ -1713,9 +1713,9 @@ fun DashboardDiscoveryCard(
                  
                  // Dynamic color based on type
                  val coreColor = when(data.discoveryType) {
-                     "The Explorer" -> Color(0xFF8B5CF6) // Violet (New)
-                     "The Time Traveler" -> Color(0xFFF59E0B) // Amber (Old/Gold)
-                     else -> Color(0xFF06B6D4) // Cyan (Balanced)
+                     "The Explorer" -> TempoPrimary // Violet (New)
+                     "The Time Traveler" -> TempoWarning // Amber (Old/Gold)
+                     else -> TempoCyan // Cyan (Balanced)
                  }
 
                  // A. Accretion Disk (Swirling gradients)
@@ -1816,9 +1816,9 @@ fun DashboardDiscoveryCard(
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = when(data.discoveryType) {
-                                 "The Explorer" -> Color(0xFFA78BFA)
+                                 "The Explorer" -> TempoAccentBright
                                  "The Time Traveler" -> Color(0xFFFBD38D)
-                                 else -> Color(0xFF67E8F9)
+                                 else -> TempoCyan
                             }
                         )
                         Spacer(modifier = Modifier.height(4.dp))

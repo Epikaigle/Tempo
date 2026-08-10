@@ -1,6 +1,6 @@
 package me.avinas.tempo.ui.onboarding
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
+import me.avinas.tempo.ui.theme.TempoBackground
 
 import android.content.Context
 import android.content.Intent
@@ -28,7 +28,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoSuccess
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import me.avinas.tempo.ui.utils.adaptiveSizeByCategory
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
 import me.avinas.tempo.ui.utils.isSmallScreen
@@ -94,7 +98,7 @@ fun BatteryOptimizationScreen(
             
             GlassCard(
                 modifier = Modifier.size(heroSize),
-                backgroundColor = Color(0xFF22C55E).copy(alpha = 0.1f), // Green tint for battery
+                backgroundColor = TempoSuccess.copy(alpha = 0.1f), // Green tint for battery
                 contentPadding = PaddingValues(0.dp)
             ) {
                 Box(
@@ -107,7 +111,7 @@ fun BatteryOptimizationScreen(
                             .size(innerGlowSize)
                             .background(
                                 brush = Brush.radialGradient(
-                                    colors = listOf(Color(0xFF22C55E).copy(alpha = 0.4f), Color.Transparent)
+                                    colors = listOf(TempoSuccess.copy(alpha = 0.4f), Color.Transparent)
                                 ),
                                 shape = CircleShape
                             )
@@ -117,7 +121,7 @@ fun BatteryOptimizationScreen(
                         imageVector = Icons.Default.BatteryFull,
                         contentDescription = null,
                         modifier = Modifier.size(iconSize),
-                        tint = Color.White
+                        tint = TextPrimary
                     )
                 }
             }
@@ -130,7 +134,7 @@ fun BatteryOptimizationScreen(
                 style = if (isSmallScreen()) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = adaptiveTextUnitByCategory(24.sp, 22.sp, 20.sp),
                 lineHeight = adaptiveTextUnitByCategory(32.sp, 28.sp, 26.sp)
             )
@@ -141,7 +145,7 @@ fun BatteryOptimizationScreen(
                 text = stringResource(R.string.battery_description),
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
-                color = Color.White.copy(alpha = 0.7f),
+                color = TextSecondary,
                 lineHeight = adaptiveTextUnitByCategory(24.sp, 22.sp, 20.sp),
                 fontSize = adaptiveTextUnitByCategory(16.sp, 15.sp, 14.sp)
             )
@@ -157,7 +161,7 @@ fun BatteryOptimizationScreen(
                     .fillMaxWidth()
                     .height(scaledSize(54.dp, 0.85f, 1.1f)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed,
+                    containerColor = TempoPrimary,
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(16.dp),
@@ -178,7 +182,7 @@ fun BatteryOptimizationScreen(
             TextButton(onClick = onSkip) {
                 Text(
                     text = stringResource(R.string.battery_skip),
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = TextTertiary,
                     style = MaterialTheme.typography.labelLarge
                 )
             }

@@ -28,8 +28,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.SpotifyGreen
+import me.avinas.tempo.ui.theme.TempoWarning
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextQuaternary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import me.avinas.tempo.ui.utils.adaptiveSize
 import me.avinas.tempo.ui.utils.adaptiveTextUnit
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
@@ -101,7 +107,7 @@ fun HowItWorksScreen(
                 style = if (isSmall) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
-                color = Color.White,
+                color = TextPrimary,
                 fontSize = adaptiveTextUnitByCategory(30.sp, 26.sp, 22.sp)
             )
 
@@ -111,7 +117,7 @@ fun HowItWorksScreen(
                 text = stringResource(R.string.how_it_works_subtitle),
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
-                color = Color.White.copy(alpha = 0.7f),
+                color = TextSecondary,
                 fontSize = adaptiveTextUnitByCategory(17.sp, 15.sp, 13.sp)
             )
 
@@ -127,7 +133,7 @@ fun HowItWorksScreen(
                 FlowStep(
                     modifier = Modifier.alpha(step1Alpha),
                     icon = Icons.Default.MusicNote,
-                    iconColor = Color(0xFF1DB954), // Spotify green
+                    iconColor = SpotifyGreen, // Spotify green
                     title = stringResource(R.string.how_it_works_step1_title),
                     subtitle = stringResource(R.string.how_it_works_step1_subtitle)
                 )
@@ -139,7 +145,7 @@ fun HowItWorksScreen(
                 FlowStep(
                     modifier = Modifier.alpha(step2Alpha),
                     icon = Icons.Default.Notifications,
-                    iconColor = Color(0xFFF59E0B), // Amber
+                    iconColor = TempoWarning, // Amber
                     title = stringResource(R.string.how_it_works_step2_title),
                     subtitle = stringResource(R.string.how_it_works_step2_subtitle)
                 )
@@ -151,7 +157,7 @@ fun HowItWorksScreen(
                 FlowStep(
                     modifier = Modifier.alpha(step3Alpha),
                     icon = Icons.Default.BarChart,
-                    iconColor = TempoRed,
+                    iconColor = TempoPrimary,
                     title = stringResource(R.string.how_it_works_step3_title),
                     subtitle = stringResource(R.string.how_it_works_step3_subtitle)
                 )
@@ -179,7 +185,7 @@ fun HowItWorksScreen(
                     .fillMaxWidth()
                     .height(scaledSize(54.dp, 0.85f, 1.1f)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed,
+                    containerColor = TempoPrimary,
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(16.dp),
@@ -208,7 +214,7 @@ fun HowItWorksScreen(
         ) {
             Text(
                 text = stringResource(R.string.welcome_skip),
-                color = Color.White.copy(alpha = 0.6f),
+                color = TextTertiary,
                 style = MaterialTheme.typography.labelLarge
             )
         }
@@ -267,14 +273,14 @@ private fun FlowStep(
                     text = title,
                     style = if (isSmallScreen()) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = TextPrimary,
                     fontSize = adaptiveTextUnitByCategory(20.sp, 18.sp, 16.sp)
                 )
                 Spacer(modifier = Modifier.height(adaptiveSizeByCategory(4.dp, 2.dp, 0.dp)))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = TextSecondary,
                     fontSize = adaptiveTextUnitByCategory(15.sp, 13.sp, 12.sp),
                     maxLines = 1
                 )
@@ -302,7 +308,7 @@ private fun FlowConnector(
             
             // Draw animated dashed line
             drawLine(
-                color = Color.White.copy(alpha = 0.4f),
+                color = TextQuaternary,
                 start = Offset(size.width / 2, 0f),
                 end = Offset(size.width / 2, size.height),
                 strokeWidth = 2.dp.toPx(),
@@ -316,7 +322,7 @@ private fun FlowConnector(
         // Arrow head
         Text(
             text = "↓",
-            color = Color.White.copy(alpha = 0.5f),
+            color = TextTertiary,
             fontSize = adaptiveTextUnitByCategory(16.sp, 14.sp, 12.sp),
             modifier = Modifier.scale(1f + (progress * 0.1f))
         )
@@ -340,7 +346,7 @@ private fun InfoBadge(
             text = text,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
-            color = Color.White.copy(alpha = 0.8f),
+            color = TextPrimary,
             fontSize = adaptiveTextUnitByCategory(13.sp, 11.sp, 10.sp)
         )
     }

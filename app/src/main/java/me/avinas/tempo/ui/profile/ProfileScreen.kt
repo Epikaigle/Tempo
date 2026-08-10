@@ -1,5 +1,40 @@
 package me.avinas.tempo.ui.profile
 
+import me.avinas.tempo.ui.theme.BronzeDark
+import me.avinas.tempo.ui.theme.BronzeLight
+import me.avinas.tempo.ui.theme.Divider
+import me.avinas.tempo.ui.theme.GoldDark
+import me.avinas.tempo.ui.theme.GoldLight
+import me.avinas.tempo.ui.theme.GoldPrimary
+import me.avinas.tempo.ui.theme.SilverDark
+import me.avinas.tempo.ui.theme.SilverLight
+import me.avinas.tempo.ui.theme.TempoAccent
+import me.avinas.tempo.ui.theme.TempoAccentBright
+import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoCyan
+import me.avinas.tempo.ui.theme.TempoError
+import me.avinas.tempo.ui.theme.TempoErrorAlt
+import me.avinas.tempo.ui.theme.TempoErrorDeep
+import me.avinas.tempo.ui.theme.TempoErrorSoft
+import me.avinas.tempo.ui.theme.TempoInfo
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryDeep
+import me.avinas.tempo.ui.theme.TempoPrimaryMuted
+import me.avinas.tempo.ui.theme.TempoSky
+import me.avinas.tempo.ui.theme.TempoSuccess
+import me.avinas.tempo.ui.theme.TempoSuccessBright
+import me.avinas.tempo.ui.theme.TempoSuccessDeep
+import me.avinas.tempo.ui.theme.TempoSurface
+import me.avinas.tempo.ui.theme.TempoSurfaceElevated
+import me.avinas.tempo.ui.theme.TempoSurfaceSunken
+import me.avinas.tempo.ui.theme.TempoWarning
+import me.avinas.tempo.ui.theme.TempoWarningBright
+import me.avinas.tempo.ui.theme.TempoWarningDeep
+import me.avinas.tempo.ui.theme.TextOnAccent
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextQuaternary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -61,21 +96,6 @@ import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-// =====================================================================
-// Design tokens — one disciplined palette, clear hierarchy, no neon.
-// =====================================================================
-private val ProfileSurface = Color(0xFF131316)          // card surface on OLED black
-private val ProfileSurfaceRaised = Color(0xFF1B1B20)    // slightly raised element
-private val ProfileBorder = Color.White.copy(alpha = 0.08f)
-private val ProfileBorderStrong = Color.White.copy(alpha = 0.14f)
-private val ProfileAccent = Color(0xFF8B5CF6)           // primary violet (fills)
-private val ProfileAccentLight = Color(0xFFA78BFA)      // accent text
-private val TextPrimary = Color.White
-private val TextSecondary = Color.White.copy(alpha = 0.66f)
-private val TextTertiary = Color.White.copy(alpha = 0.45f)
-private val Amber = Color(0xFFF59E0B)
-private val Emerald = Color(0xFF10B981)
-private val Danger = Color(0xFFEF4444)
 
 private fun darkTint(color: Color, factor: Float = 0.22f): Color = Color(
     red = (color.red * factor + 0.04f).coerceIn(0f, 1f),
@@ -117,13 +137,13 @@ private fun getBadgeIcon(iconName: String): ImageVector = when (iconName) {
 }
 
 private fun getCategoryColor(category: String): Color = when (category) {
-    "MILESTONE" -> Color(0xFFF59E0B)
-    "TIME" -> Color(0xFF3B82F6)
-    "STREAK" -> Color(0xFFEF4444)
-    "DISCOVERY" -> Color(0xFF10B981)
-    "ENGAGEMENT" -> Color(0xFFA855F7)
-    "LEVEL" -> Color(0xFFEC4899)
-    else -> Color.Gray
+    "MILESTONE" -> TempoWarning
+    "TIME" -> TempoInfo
+    "STREAK" -> TempoError
+    "DISCOVERY" -> TempoSuccessDeep
+    "ENGAGEMENT" -> TempoAccent
+    "LEVEL" -> TempoPrimary
+    else -> TextTertiary
 }
 
 private fun getCategoryLabel(category: String): String = when (category) {
@@ -149,8 +169,8 @@ private fun ProfileSurfaceCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
-            .background(ProfileSurface)
-            .border(1.dp, ProfileBorder, RoundedCornerShape(24.dp))
+            .background(TempoSurface)
+            .border(1.dp, Divider, RoundedCornerShape(24.dp))
     ) {
         Column(
             modifier = Modifier.padding(contentPadding),
@@ -177,7 +197,7 @@ private fun SectionHeader(
                 Text(
                     text = eyebrow.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = ProfileAccentLight,
+                    color = TempoAccentBright,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 1.5.sp
                 )
@@ -202,9 +222,9 @@ private fun SectionHeader(
 private fun ProgressTrack(
     progress: Float,
     modifier: Modifier = Modifier,
-    color: Color = ProfileAccent,
+    color: Color = TempoPrimary,
     brush: Brush? = null,
-    trackColor: Color = Color.White.copy(alpha = 0.10f),
+    trackColor: Color = Divider,
     height: Dp = 8.dp
 ) {
     Box(
@@ -230,8 +250,8 @@ private fun TopBarActionButton(icon: ImageVector, contentDescription: String, on
         modifier = Modifier
             .size(44.dp)
             .clip(CircleShape)
-            .background(ProfileSurface)
-            .border(1.dp, ProfileBorder, CircleShape)
+            .background(TempoSurface)
+            .border(1.dp, Divider, CircleShape)
     ) {
         Icon(imageVector = icon, contentDescription = contentDescription, tint = TextPrimary, modifier = Modifier.size(20.dp))
     }
@@ -242,14 +262,14 @@ private fun XpChip(xp: Int) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(ProfileAccent.copy(alpha = 0.12f))
-            .border(1.dp, ProfileAccent.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
+            .background(TempoPrimary.copy(alpha = 0.12f))
+            .border(1.dp, TempoPrimary.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = ProfileAccentLight, modifier = Modifier.size(14.dp))
-        Text(text = "+$xp XP", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = ProfileAccentLight)
+        Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = TempoAccentBright, modifier = Modifier.size(14.dp))
+        Text(text = "+$xp XP", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = TempoAccentBright)
     }
 }
 
@@ -258,14 +278,14 @@ private fun StarsChip(total: Int, max: Int) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Amber.copy(alpha = 0.12f))
-            .border(1.dp, Amber.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
+            .background(TempoWarning.copy(alpha = 0.12f))
+            .border(1.dp, TempoWarning.copy(alpha = 0.30f), RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Icon(imageVector = Icons.Default.Star, contentDescription = null, tint = Amber, modifier = Modifier.size(14.dp))
-        Text(text = "$total / $max", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Amber)
+        Icon(imageVector = Icons.Default.Star, contentDescription = null, tint = TempoWarning, modifier = Modifier.size(14.dp))
+        Text(text = "$total / $max", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = TempoWarning)
     }
 }
 
@@ -442,7 +462,7 @@ private fun HeroProfileSection(
                         text = userTitle.uppercase(),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
-                        color = ProfileAccentLight,
+                        color = TempoAccentBright,
                         letterSpacing = 1.5.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -450,7 +470,7 @@ private fun HeroProfileSection(
                 }
             }
 
-            HorizontalDivider(color = ProfileBorder)
+            HorizontalDivider(color = Divider)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -467,7 +487,7 @@ private fun HeroProfileSection(
                 Text(
                     text = "$progressPercent%",
                     style = MaterialTheme.typography.labelLarge,
-                    color = ProfileAccentLight,
+                    color = TempoAccentBright,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -475,7 +495,7 @@ private fun HeroProfileSection(
             ProgressTrack(
                 progress = animatedProgress,
                 modifier = Modifier.fillMaxWidth(),
-                brush = Brush.horizontalGradient(listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1)))
+                brush = Brush.horizontalGradient(listOf(TempoPrimary, TempoAccent, TempoPrimaryMuted))
             )
 
             Row(
@@ -506,13 +526,13 @@ private fun HeroAvatar(
             val topLeft = Offset((size.width - radius * 2) / 2, (size.height - radius * 2) / 2)
             val arcSize = Size(radius * 2, radius * 2)
             drawArc(
-                color = Color.White.copy(alpha = 0.10f),
+                color = Divider,
                 startAngle = -90f, sweepAngle = 360f, useCenter = false,
                 topLeft = topLeft, size = arcSize,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
             drawArc(
-                brush = Brush.sweepGradient(listOf(ProfileAccent, ProfileAccentLight)),
+                brush = Brush.sweepGradient(listOf(TempoPrimary, TempoAccentBright)),
                 startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
                 topLeft = topLeft, size = arcSize,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
@@ -523,8 +543,8 @@ private fun HeroAvatar(
             modifier = Modifier
                 .size(innerSize)
                 .clip(CircleShape)
-                .background(ProfileSurfaceRaised)
-                .border(1.dp, ProfileBorderStrong, CircleShape),
+                .background(TempoSurfaceElevated)
+                .border(1.dp, Divider, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             if (profileImagePath.isNullOrBlank()) {
@@ -548,7 +568,7 @@ private fun HeroAvatar(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .offset(y = (-6).dp)
-                .background(ProfileAccent, RoundedCornerShape(8.dp))
+                .background(TempoPrimary, RoundedCornerShape(8.dp))
                 .padding(horizontal = 10.dp, vertical = 3.dp)
         ) {
             Text(text = "LVL $level", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
@@ -602,7 +622,7 @@ private fun StatsSection(
                 ListeningStatusChip(streakAtRisk = streakAtRisk, timeRemaining = timeRemaining)
             }
 
-            HorizontalDivider(color = ProfileBorder)
+            HorizontalDivider(color = Divider)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -614,15 +634,15 @@ private fun StatsSection(
                     icon = Icons.Default.EmojiEvents,
                     value = "${userLevel.longestStreak}",
                     label = "Best streak",
-                    accent = ProfileAccentLight
+                    accent = TempoAccentBright
                 )
-                Box(modifier = Modifier.width(1.dp).height(30.dp).background(ProfileBorder))
+                Box(modifier = Modifier.width(1.dp).height(30.dp).background(Divider))
                 InlineStat(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.AutoAwesome,
                     value = "${userLevel.xpRemaining}",
                     label = "XP to level",
-                    accent = Amber
+                    accent = TempoWarning
                 )
             }
         }
@@ -638,10 +658,10 @@ private fun StatsSection(
 @Composable
 private fun StreakRiskBanner(streakDurationMinutes: Long, timeRemaining: String) {
     val riskColor = when {
-        streakDurationMinutes > 360 -> Color(0xFFFCA5A5)
-        streakDurationMinutes > 180 -> Color(0xFFEF4444)
-        streakDurationMinutes > 60 -> Color(0xFFB91C1C)
-        else -> Color(0xFF7F1D1D)
+        streakDurationMinutes > 360 -> TempoErrorSoft
+        streakDurationMinutes > 180 -> TempoError
+        streakDurationMinutes > 60 -> TempoErrorDeep
+        else -> TempoErrorDeep
     }
     Row(
         modifier = Modifier
@@ -666,8 +686,8 @@ private fun ListeningStatusChip(streakAtRisk: Boolean, timeRemaining: String) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(ProfileSurfaceRaised)
-            .border(1.dp, ProfileBorderStrong, RoundedCornerShape(12.dp))
+            .background(TempoSurfaceElevated)
+            .border(1.dp, Divider, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -675,7 +695,7 @@ private fun ListeningStatusChip(streakAtRisk: Boolean, timeRemaining: String) {
         Icon(
             imageVector = Icons.Default.LocalFireDepartment,
             contentDescription = null,
-            tint = if (streakAtRisk) Color(0xFFFCA5A5) else ProfileAccentLight,
+            tint = if (streakAtRisk) TempoErrorSoft else TempoAccentBright,
             modifier = Modifier.size(16.dp)
         )
         Text(
@@ -717,8 +737,8 @@ private fun TabSwitcher(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(ProfileSurface)
-            .border(1.dp, ProfileBorder, RoundedCornerShape(16.dp))
+            .background(TempoSurface)
+            .border(1.dp, Divider, RoundedCornerShape(16.dp))
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -728,8 +748,8 @@ private fun TabSwitcher(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (selected) ProfileAccent.copy(alpha = 0.22f) else Color.Transparent)
-                    .border(1.dp, if (selected) ProfileAccent.copy(alpha = 0.45f) else Color.Transparent, RoundedCornerShape(12.dp))
+                    .background(if (selected) TempoPrimary.copy(alpha = 0.22f) else Color.Transparent)
+                    .border(1.dp, if (selected) TempoPrimary.copy(alpha = 0.45f) else Color.Transparent, RoundedCornerShape(12.dp))
                     .clickable { onTabSelected(index) }
                     .padding(vertical = 12.dp, horizontal = 8.dp),
                 contentAlignment = Alignment.Center
@@ -780,7 +800,7 @@ private fun LazyListScope.challengesSection(
             ProgressTrack(
                 progress = if (challenges.isEmpty()) 0f else completedCount.toFloat() / challenges.size,
                 modifier = Modifier.fillMaxWidth(),
-                color = ProfileAccent
+                color = TempoPrimary
             )
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -803,8 +823,8 @@ private fun EmptyChallengesState() {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
-            .background(ProfileSurface)
-            .border(1.dp, ProfileBorder, RoundedCornerShape(24.dp))
+            .background(TempoSurface)
+            .border(1.dp, Divider, RoundedCornerShape(24.dp))
             .padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -824,12 +844,12 @@ private fun EmptyChallengesState() {
 private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
     val isCompleted = challenge.isCompleted
     val diffColor = when (challenge.difficulty) {
-        "EASY" -> Emerald
-        "MEDIUM" -> Amber
-        "HARD" -> Danger
-        else -> Color.Gray
+        "EASY" -> TempoSuccessDeep
+        "MEDIUM" -> TempoWarning
+        "HARD" -> TempoError
+        else -> TextTertiary
     }
-    val accent = if (isCompleted) Emerald else diffColor
+    val accent = if (isCompleted) TempoSuccessDeep else diffColor
     val animatedProgress by animateFloatAsState(
         targetValue = challenge.progressFraction,
         animationSpec = tween(1200, easing = FastOutSlowInEasing),
@@ -840,8 +860,8 @@ private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(ProfileSurface)
-            .border(1.dp, if (isCompleted) Emerald.copy(alpha = 0.30f) else ProfileBorder, RoundedCornerShape(20.dp))
+            .background(TempoSurface)
+            .border(1.dp, if (isCompleted) TempoSuccessDeep.copy(alpha = 0.30f) else Divider, RoundedCornerShape(20.dp))
     ) {
         if (isCompleted) {
             Box(
@@ -849,7 +869,7 @@ private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
                     .matchParentSize()
                     .background(
                         Brush.verticalGradient(
-                            listOf(Emerald.copy(alpha = 0.16f), Emerald.copy(alpha = 0.04f), Color.Transparent)
+                            listOf(TempoSuccessDeep.copy(alpha = 0.16f), TempoSuccessDeep.copy(alpha = 0.04f), Color.Transparent)
                         )
                     )
             )
@@ -910,7 +930,7 @@ private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
                 text = "${challenge.currentProgress}/${challenge.targetValue} progress",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (isCompleted) Emerald else TextSecondary
+                color = if (isCompleted) TempoSuccessDeep else TextSecondary
             )
             Text(
                 text = if (isCompleted) "Completed" else "In progress",
@@ -965,7 +985,7 @@ private fun LazyListScope.badgeSection(
                 trailing = if (totalStars > 0) ({ StarsChip(total = totalStars, max = maxPossibleStars) }) else null
             )
             Spacer(modifier = Modifier.height(16.dp))
-            ProgressTrack(progress = collectionProgress, modifier = Modifier.fillMaxWidth(), color = Amber)
+            ProgressTrack(progress = collectionProgress, modifier = Modifier.fillMaxWidth(), color = TempoWarning)
             Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier
@@ -978,14 +998,14 @@ private fun LazyListScope.badgeSection(
                     onClick = { onCategorySelected(null) },
                     label = { Text("All") },
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = ProfileAccent.copy(alpha = 0.18f),
+                        selectedContainerColor = TempoPrimary.copy(alpha = 0.18f),
                         containerColor = Color.Transparent,
                         labelColor = TextSecondary,
                         selectedLabelColor = TextPrimary
                     ),
                     border = FilterChipDefaults.filterChipBorder(
-                        borderColor = ProfileBorder,
-                        selectedBorderColor = ProfileAccent.copy(alpha = 0.5f),
+                        borderColor = Divider,
+                        selectedBorderColor = TempoPrimary.copy(alpha = 0.5f),
                         enabled = true,
                         selected = selectedCategory == null
                     ),
@@ -1004,7 +1024,7 @@ private fun LazyListScope.badgeSection(
                             selectedLabelColor = categoryColor
                         ),
                         border = FilterChipDefaults.filterChipBorder(
-                            borderColor = ProfileBorder,
+                            borderColor = Divider,
                             selectedBorderColor = categoryColor.copy(alpha = 0.5f),
                             enabled = true,
                             selected = selectedCategory == category
@@ -1018,13 +1038,13 @@ private fun LazyListScope.badgeSection(
                 Spacer(modifier = Modifier.height(16.dp))
                 val spotlightLabel = if (spotlightBadge.isEarned) "Next star" else "Almost there"
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = Amber, modifier = Modifier.size(16.dp))
+                    Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = TempoWarning, modifier = Modifier.size(16.dp))
                     Text(text = spotlightLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 BadgeCard(badge = spotlightBadge, modifier = Modifier.fillMaxWidth(), isSpotlight = true)
                 Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = ProfileBorder)
+                HorizontalDivider(color = Divider)
             }
         }
     }
@@ -1036,8 +1056,8 @@ private fun LazyListScope.badgeSection(
                     .fillMaxWidth()
                     .padding(horizontal = sidePadding)
                     .height(120.dp)
-                    .background(ProfileSurface, RoundedCornerShape(20.dp))
-                    .border(1.dp, ProfileBorder, RoundedCornerShape(20.dp)),
+                    .background(TempoSurface, RoundedCornerShape(20.dp))
+                    .border(1.dp, Divider, RoundedCornerShape(20.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(text = "No badges to show", color = TextTertiary)
@@ -1066,35 +1086,35 @@ private fun LazyListScope.badgeSection(
 }
 
 private fun getUniqueBadgeColor(badgeId: String): Color = when (badgeId) {
-    "first_play" -> Color(0xFF10B981)
-    "plays_100" -> Color(0xFF3B82F6)
-    "plays_500" -> Color(0xFF8B5CF6)
-    "plays_1000" -> Color(0xFFEC4899)
-    "plays_5000" -> Color(0xFFF43F5E)
-    "plays_10000" -> Color(0xFFEAB308)
-    "time_1h" -> Color(0xFF06B6D4)
-    "time_24h" -> Color(0xFF0EA5E9)
-    "time_100h" -> Color(0xFF6366F1)
-    "time_500h" -> Color(0xFFD946EF)
-    "streak_7" -> Color(0xFFF97316)
-    "streak_30" -> Color(0xFFEF4444)
-    "streak_100" -> Color(0xFFDC2626)
-    "streak_365" -> Color(0xFF991B1B)
-    "artists_10" -> Color(0xFF14B8A6)
-    "artists_50" -> Color(0xFF22C55E)
-    "artists_100" -> Color(0xFF84CC16)
-    "genres_10" -> Color(0xFFF59E0B)
-    "genres_25" -> Color(0xFFD97706)
-    "night_owl" -> Color(0xFF312E81)
-    "early_bird" -> Color(0xFFFBBF24)
-    "marathon" -> Color(0xFF4F46E5)
-    "level_5" -> Color(0xFF6EE7B7)
-    "level_10" -> Color(0xFF34D399)
-    "level_25" -> Color(0xFF10B981)
-    "level_50" -> Color(0xFF059669)
-    "level_75" -> Color(0xFF047857)
-    "level_100" -> Color(0xFF064E3B)
-    else -> Color(0xFFA855F7)
+    "first_play" -> TempoSuccessDeep
+    "plays_100" -> TempoInfo
+    "plays_500" -> TempoPrimary
+    "plays_1000" -> TempoPrimary
+    "plays_5000" -> TempoErrorAlt
+    "plays_10000" -> TempoWarning
+    "time_1h" -> TempoCyan
+    "time_24h" -> TempoSky
+    "time_100h" -> TempoPrimaryMuted
+    "time_500h" -> TempoAccent
+    "streak_7" -> TempoWarning
+    "streak_30" -> TempoError
+    "streak_100" -> TempoError
+    "streak_365" -> TempoErrorDeep
+    "artists_10" -> TempoPrimaryMuted
+    "artists_50" -> TempoSuccess
+    "artists_100" -> TempoSuccess
+    "genres_10" -> TempoWarning
+    "genres_25" -> TempoWarningDeep
+    "night_owl" -> TempoPrimaryDeep
+    "early_bird" -> TempoWarningBright
+    "marathon" -> TempoPrimary
+    "level_5" -> TempoSuccessBright
+    "level_10" -> TempoSuccessBright
+    "level_25" -> TempoSuccessDeep
+    "level_50" -> TempoSuccessDeep
+    "level_75" -> TempoSuccessDeep
+    "level_100" -> TempoSuccessDeep
+    else -> TempoAccent
 }
 
 // =====================
@@ -1102,11 +1122,11 @@ private fun getUniqueBadgeColor(badgeId: String): Color = when (badgeId) {
 // COMMON: clean, no extras. RARE: colored rim. EPIC+: rim + aura glow.
 // =====================
 private fun getRarityColor(rarity: GamificationEngine.BadgeRarity): Color = when (rarity) {
-    GamificationEngine.BadgeRarity.COMMON -> Color(0xFF9CA3AF)
-    GamificationEngine.BadgeRarity.RARE -> Color(0xFF3B82F6)
-    GamificationEngine.BadgeRarity.EPIC -> Color(0xFFA855F7)
-    GamificationEngine.BadgeRarity.LEGENDARY -> Color(0xFFF59E0B)
-    GamificationEngine.BadgeRarity.MYTHIC -> Color(0xFFEC4899)
+    GamificationEngine.BadgeRarity.COMMON -> TextTertiary
+    GamificationEngine.BadgeRarity.RARE -> TempoInfo
+    GamificationEngine.BadgeRarity.EPIC -> TempoAccent
+    GamificationEngine.BadgeRarity.LEGENDARY -> TempoWarning
+    GamificationEngine.BadgeRarity.MYTHIC -> TempoPrimary
 }
 
 private fun getRarityRimAlpha(rarity: GamificationEngine.BadgeRarity): Float = when (rarity) {
@@ -1207,10 +1227,10 @@ private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier 
     val rimAlpha = if (isEarned) getRarityRimAlpha(rarity) else 0f
     val glowAlpha = if (isEarned) getRarityGlowAlpha(rarity) else 0f
     val metallicShineColors = when {
-        !isEarned -> listOf(Color(0xFF2A2A2A), Color(0xFF1A1A1A), Color(0xFF111111))
-        badge.stars <= 2 -> listOf(Color(0xFFE8A870), Color(0xFFCD7F32), Color(0xFFA0522D), Color(0xFF7B3820))
-        badge.stars <= 4 -> listOf(Color(0xFFFFFFFF), Color(0xFFD0D0D0), Color(0xFF909090), Color(0xFF5A5A5A))
-        else -> listOf(Color(0xFFFFEE80), Color(0xFFFFD700), Color(0xFFE6A000), Color(0xFFC07800))
+        !isEarned -> listOf(TempoSurfaceElevated, TempoSurface, TempoSurface)
+        badge.stars <= 2 -> listOf(BronzeLight, BronzeLight, BronzeDark, BronzeDark)
+        badge.stars <= 4 -> listOf(TextPrimary, SilverLight, SilverDark, TextQuaternary)
+        else -> listOf(GoldLight, GoldPrimary, GoldDark, GoldDark)
     }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -1258,7 +1278,7 @@ private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier 
                 drawPath(
                     path = innerPath,
                     brush = Brush.radialGradient(
-                        colors = listOf(Color.White.copy(alpha = 0.45f), intrinsicColor, intrinsicColor.copy(alpha = 0.7f), Color.Black.copy(alpha = 0.5f)),
+                        colors = listOf(TextTertiary, intrinsicColor, intrinsicColor.copy(alpha = 0.7f), TempoBackground.copy(alpha = 0.5f)),
                         center = Offset(center.x * 0.7f, center.y * 0.5f),
                         radius = size.width * 0.9f
                     )
@@ -1267,7 +1287,7 @@ private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier 
                 drawPath(
                     path = innerPath,
                     brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF2C2C2E), Color(0xFF1C1C1E)),
+                        colors = listOf(TempoSurfaceElevated, TempoSurface),
                         center = center,
                         radius = size.width * 0.7f
                     )
@@ -1278,7 +1298,7 @@ private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier 
         Icon(
             imageVector = getBadgeIcon(badge.iconName),
             contentDescription = badge.name,
-            tint = if (isEarned) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.2f),
+            tint = if (isEarned) TextPrimary else Divider,
             modifier = Modifier.size(24.dp)
         )
     }
@@ -1296,7 +1316,7 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: 
         animationSpec = tween(1200, easing = FastOutSlowInEasing),
         label = "fill"
     )
-    val containerColor = if (isEarned) darkTint(intrinsicColor) else Color(0xFF161618)
+    val containerColor = if (isEarned) darkTint(intrinsicColor) else TempoSurfaceSunken
     val isBeginner = badge.badgeId in GamificationEngine.BEGINNER_BADGES
     // Border intensity escalates with rarity so prestige reads at a glance.
     val earnedBorderAlpha = (0.20f + rarity.sortWeight * 0.12f).coerceAtMost(0.70f)
@@ -1309,7 +1329,7 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: 
         border = if (isSpotlight) {
             BorderStroke(2.dp, intrinsicColor.copy(alpha = 0.7f))
         } else {
-            BorderStroke(1.dp, if (isEarned) intrinsicColor.copy(alpha = earnedBorderAlpha) else ProfileBorder)
+            BorderStroke(1.dp, if (isEarned) intrinsicColor.copy(alpha = earnedBorderAlpha) else Divider)
         }
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
@@ -1361,8 +1381,8 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: 
                     } else {
                         Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                             for (i in 1..5) {
-                                val activeColor = if (badge.isMaxed) intrinsicColor else Color(0xFFFBBF24)
-                                val starColor = if (i <= badge.stars) activeColor else Color.White.copy(alpha = 0.12f)
+                                val activeColor = if (badge.isMaxed) intrinsicColor else TempoWarningBright
+                                val starColor = if (i <= badge.stars) activeColor else TextQuaternary
                                 Icon(
                                     imageVector = if (i <= badge.stars) Icons.Default.Star else Icons.Default.StarOutline,
                                     contentDescription = null,
@@ -1383,7 +1403,7 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: 
                             }
                         } else {
                             Box(
-                                modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.3f))
+                                modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape).background(TempoBackground.copy(alpha = 0.3f))
                             ) {
                                 Box(
                                     modifier = Modifier.fillMaxHeight().fillMaxWidth(animatedProgress).clip(CircleShape).background(intrinsicColor)
@@ -1401,7 +1421,7 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: 
                     }
                 } else {
                     Box(
-                        modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.35f))
+                        modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape).background(TempoBackground.copy(alpha = 0.35f))
                     ) {
                         Box(
                             modifier = Modifier.fillMaxHeight().fillMaxWidth(animatedProgress).clip(CircleShape).background(intrinsicColor.copy(alpha = 0.55f))
@@ -1465,7 +1485,7 @@ fun CompactLevelRing(
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha = 0.1f))
+            .background(Divider)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1478,20 +1498,20 @@ fun CompactLevelRing(
                 val topLeft = Offset((size.width - radius * 2) / 2, (size.height - radius * 2) / 2)
                 val arcSize = Size(radius * 2, radius * 2)
                 drawArc(
-                    color = Color.White.copy(alpha = 0.15f),
+                    color = Divider,
                     startAngle = -90f, sweepAngle = 360f, useCenter = false, topLeft = topLeft, size = arcSize,
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
                 drawArc(
-                brush = Brush.sweepGradient(listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1))),
+                brush = Brush.sweepGradient(listOf(TempoPrimary, TempoAccent, TempoPrimaryMuted)),
                     startAngle = -90f, sweepAngle = 360f * animatedProgress, useCenter = false, topLeft = topLeft, size = arcSize,
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
             }
-            Text(text = "$level", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 10.sp)
+            Text(text = "$level", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 10.sp)
         }
 
-        Text(text = title, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f), maxLines = 1)
+        Text(text = title, style = MaterialTheme.typography.labelSmall, color = TextPrimary, maxLines = 1)
     }
 }
 
@@ -1515,7 +1535,7 @@ fun NewBadgeCelebrationOverlay(badges: List<Badge>, onDismiss: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.9f))
+            .background(TempoBackground.copy(alpha = 0.9f))
             .clickable {
                 if (currentIndex < badges.size - 1) currentIndex++ else onDismiss()
             }
@@ -1592,8 +1612,8 @@ fun NewBadgeCelebrationOverlay(badges: List<Badge>, onDismiss: () -> Unit) {
                         imageVector = Icons.Default.Star,
                         contentDescription = null,
                         tint = if (isEarnedStar) {
-                            if (currentBadge.isMaxed) badgeColor else Color(0xFFFFD700)
-                        } else Color.White.copy(alpha = 0.1f),
+                            if (currentBadge.isMaxed) badgeColor else GoldPrimary
+                        } else Divider,
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -1605,29 +1625,29 @@ fun NewBadgeCelebrationOverlay(badges: List<Badge>, onDismiss: () -> Unit) {
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Amber.copy(alpha = 0.14f))
-                    .border(1.dp, Amber.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                    .background(TempoWarning.copy(alpha = 0.14f))
+                    .border(1.dp, TempoWarning.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = Amber, modifier = Modifier.size(16.dp))
+                Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = TempoWarning, modifier = Modifier.size(16.dp))
                 Text(
                     text = "WORTH $worthXp XP",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Amber,
+                    color = TempoWarning,
                     letterSpacing = 1.sp
                 )
             }
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            Text(text = "Tap anywhere to continue", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.5f))
+            Text(text = "Tap anywhere to continue", style = MaterialTheme.typography.bodyMedium, color = TextTertiary)
 
             if (badges.size > 1) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(text = "${currentIndex + 1} of ${badges.size}", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.3f))
+                Text(text = "${currentIndex + 1} of ${badges.size}", style = MaterialTheme.typography.labelMedium, color = TextTertiary)
             }
         }
     }
@@ -1656,7 +1676,7 @@ fun LevelUpCelebration(level: Int, onDismiss: () -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.8f))
+                .background(TempoBackground.copy(alpha = 0.8f))
                 .clickable { onDismiss() }
                 .padding(32.dp),
             contentAlignment = Alignment.Center
@@ -1673,7 +1693,7 @@ fun LevelUpCelebration(level: Int, onDismiss: () -> Unit) {
                     .scale(scale)
                     .background(
                         brush = Brush.radialGradient(
-                            colors = listOf(ProfileAccent.copy(alpha = 0.3f), ProfileAccentLight.copy(alpha = 0.1f), Color.Transparent)
+                            colors = listOf(TempoPrimary.copy(alpha = 0.3f), TempoAccentBright.copy(alpha = 0.1f), Color.Transparent)
                         ),
                         shape = CircleShape
                     )
@@ -1686,19 +1706,19 @@ fun LevelUpCelebration(level: Int, onDismiss: () -> Unit) {
                     text = "LEVEL UP!",
                     style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Black,
-                    color = Amber,
+                    color = TempoWarning,
                     modifier = Modifier.scale(1.1f)
                 )
                 Spacer(modifier = Modifier.height(24.dp))
                 Box(contentAlignment = Alignment.Center) {
-                    Text(text = "$level", style = MaterialTheme.typography.displayLarge, fontSize = 120.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(text = "$level", style = MaterialTheme.typography.displayLarge, fontSize = 120.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
                 }
                 Spacer(modifier = Modifier.height(24.dp))
-                Text(text = "You reached Level $level", style = MaterialTheme.typography.headlineSmall, color = Color.White.copy(alpha = 0.9f))
+                Text(text = "You reached Level $level", style = MaterialTheme.typography.headlineSmall, color = TextPrimary)
                 Spacer(modifier = Modifier.height(48.dp))
                 Button(
                     onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = TextOnAccent),
                     modifier = Modifier.fillMaxWidth(0.7f)
                 ) {
                     Text("Awesome!", fontWeight = FontWeight.Bold)
@@ -1715,7 +1735,7 @@ fun ConfettiEffect() {
             ConfettiParticle(
                 x = (0..1000).random() / 1000f,
                 y = (0..1000).random() / 1000f - 1f,
-                color = listOf(Color(0xFFEC4899), Color(0xFFA855F7), Color(0xFF6366F1), Color(0xFFF59E0B), Color(0xFF10B981)).random(),
+                color = listOf(TempoPrimary, TempoAccent, TempoPrimaryMuted, TempoWarning, TempoSuccessDeep).random(),
                 speed = (5..15).random() / 1000f,
                 radius = (5..15).random().toFloat()
             )

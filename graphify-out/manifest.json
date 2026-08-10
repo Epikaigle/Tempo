@@ -1,0 +1,1602 @@
+{
+  "/Users/avinash/Documents/Git/Tempo/gradlew": {
+    "mtime": 1782551128.8429604,
+    "hash": "780b1d3e23a3b82154795f73df943a14"
+  },
+  "/Users/avinash/Documents/Git/Tempo/build.gradle.kts": {
+    "mtime": 1782551128.8372436,
+    "hash": "dd2868c11b319b248597d7d16b316352"
+  },
+  "/Users/avinash/Documents/Git/Tempo/settings.gradle.kts": {
+    "mtime": 1782551128.8515494,
+    "hash": "41eb76713aae019f9b9ca5cb0b403d56"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/build.gradle.kts": {
+    "mtime": 1785607416.6306996,
+    "hash": "07098cba0c40d8c6a625854ab8b95cdb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/test/java/me/avinas/tempo/ui/profile/ProfileViewModelTest.kt": {
+    "mtime": 1785501520.4636052,
+    "hash": "870e022ee48dfb060b215dae084333af"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/test/java/me/avinas/tempo/utils/ArtistNormalizationTest.kt": {
+    "mtime": 1785502054.128745,
+    "hash": "57338140ebc3f8770ebaf70a51d35d5f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/test/java/me/avinas/tempo/data/spotify/SpotifyJsonModelsTest.kt": {
+    "mtime": 1785502054.1283848,
+    "hash": "f2230eff63e8a946337c3a8662e6787f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/test/java/me/avinas/tempo/data/importexport/ImportExportManagerTest.kt": {
+    "mtime": 1785501520.4666824,
+    "hash": "55f5ccba236943b3479b5de413adc8f6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/test/java/me/avinas/tempo/data/local/AppDatabaseMigrationCoverageTest.kt": {
+    "mtime": 1785501520.467461,
+    "hash": "44805d8eb8fd15a4eb24b6b2468b0890"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/test/java/me/avinas/tempo/data/local/Migration49To50Test.kt": {
+    "mtime": 1785501520.469104,
+    "hash": "70f33e590b91afada9de0e6ecfe54c2c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/test/java/me/avinas/tempo/data/stats/ChallengeEngineTest.kt": {
+    "mtime": 1785501520.4701996,
+    "hash": "73662fc9431efabbf5445eea08ef4a5e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/test/java/me/avinas/tempo/data/stats/TimeRangeTest.kt": {
+    "mtime": 1785501520.4714932,
+    "hash": "cadd858c55d680e72a31c5d3fa58e2d9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/MainActivity.kt": {
+    "mtime": 1785501520.7087622,
+    "hash": "669e6034330793ddb7a5cc99c1e90b33"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/TempoApplication.kt": {
+    "mtime": 1785502054.0673628,
+    "hash": "a9af57dea37578246c60c8987ac67c35"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreScreen.kt": {
+    "mtime": 1785501520.4754932,
+    "hash": "33a1328f7d7cec8fc52c0a1e7cc6b2bb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/settings/SupportedAppsScreen.kt": {
+    "mtime": 1785501520.4790375,
+    "hash": "f75bc22e2cb35e6b010e2948c9d9e434"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/settings/BackgroundProtectionScreen.kt": {
+    "mtime": 1785501520.4808884,
+    "hash": "dfc3bf520898c40d8090e971fd9d11be"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/settings/SettingsScreen.kt": {
+    "mtime": 1785502054.083206,
+    "hash": "9dc3ae0114af71b90c37c6cbf11109df"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreViewModel.kt": {
+    "mtime": 1785501520.4869637,
+    "hash": "6e3987c85b18273ea07cc71a68e03e11"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/settings/SettingsViewModel.kt": {
+    "mtime": 1785501520.4886358,
+    "hash": "c72ca8a1377ad7334536b895d1ed2a25"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/settings/EnrichmentReportViewModel.kt": {
+    "mtime": 1785501520.490255,
+    "hash": "738dc86274e99e9623d1d3cb136479ad"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/settings/AppPreferenceViewModel.kt": {
+    "mtime": 1785501520.4914725,
+    "hash": "ac00f2147999e233673520eae3f849bc"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/settings/EnrichmentReportScreen.kt": {
+    "mtime": 1785501520.4929593,
+    "hash": "28a66ee9c7b6ab09c2ff5cb838b90e82"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/HomeViewModel.kt": {
+    "mtime": 1785502054.0797439,
+    "hash": "00af72cf9e07924e770123cb20b42543"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/HomeScreen.kt": {
+    "mtime": 1785503907.6540327,
+    "hash": "b24d16324905fa5b4fb704b31c1f9241"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/components/InsightVisuals.kt": {
+    "mtime": 1785502054.0808446,
+    "hash": "f26312d011f81e712975230219f4f437"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/components/TodaysListenWidget.kt": {
+    "mtime": 1785501520.5050564,
+    "hash": "0fb09d1fc06a3ae6a19319fdf7b5e3d6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/components/InsightFeed.kt": {
+    "mtime": 1785502945.255665,
+    "hash": "4c8632823332f4700f4152ba0823ae3d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/components/QuickStatsRow.kt": {
+    "mtime": 1785501520.5130293,
+    "hash": "eaea1b41dbbe09937f8c37057be4f693"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/components/RateAppBottomSheet.kt": {
+    "mtime": 1785501520.5139394,
+    "hash": "0581c55629688ecfd0f20be66ed326d1"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/components/HomeComponents.kt": {
+    "mtime": 1785502054.0800602,
+    "hash": "2cbb97dfc17e714b06fad59ba3339b11"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/components/InteractiveTrendLine.kt": {
+    "mtime": 1785501520.5194366,
+    "hash": "f03f2f8f89814ea36bce164eb224cc14"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/home/components/ShareNudgeBottomSheet.kt": {
+    "mtime": 1785502054.1274135,
+    "hash": "50d7eb7b5513b316bf56624de8de595d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/InsightCardGenerator.kt": {
+    "mtime": 1785501520.5307598,
+    "hash": "cb5a870792d9fe3291130860f18582e7"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightViewModel.kt": {
+    "mtime": 1785501520.5329618,
+    "hash": "f92d79ad7fd46a67a52d97620a3e8b9b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightScreen.kt": {
+    "mtime": 1785502054.0846646,
+    "hash": "d9ba35b080ac9b80539fcf617f369937"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightCards.kt": {
+    "mtime": 1785502054.0843868,
+    "hash": "8120f583378d9ddff041a26a67c599fb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightStoryPagesCore.kt": {
+    "mtime": 1785604224.0071106,
+    "hash": "c6e18c97d39b7a53dc2abe7ec51e9e76"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightStoryComponents.kt": {
+    "mtime": 1785605475.002809,
+    "hash": "148a9557538925d5b0d786f6fe0fc2a7"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightStoryPagesCharts.kt": {
+    "mtime": 1785604650.450961,
+    "hash": "01fa5866512736c5ff6403ed34a0518b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightStoryPagesInsights.kt": {
+    "mtime": 1785605017.679165,
+    "hash": "3900fe305c372a451b1acd4046e7e86a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightPoetry.kt": {
+    "mtime": 1785501520.558861,
+    "hash": "3d5e87ca8897b1aabcf242fa46b627f2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightStoryPagesGamification.kt": {
+    "mtime": 1785605866.0309405,
+    "hash": "83710f3dc948a41e5b064df7b1a0a8dc"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightStoryData.kt": {
+    "mtime": 1785501520.5741,
+    "hash": "2c4813ecb1d54ef86631255edca9bcbf"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightPeriodFormatter.kt": {
+    "mtime": 1785501520.5750604,
+    "hash": "2d7a631c5cb7ec4a626d0b78453a7e91"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightCardData.kt": {
+    "mtime": 1785501520.5758762,
+    "hash": "6c480e463e5ac7d9ab58546c6db17918"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightStoryPagesConclusion.kt": {
+    "mtime": 1785605648.0580208,
+    "hash": "eae5120ae1a684dc62f5230ad71224d0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightStoryBackground.kt": {
+    "mtime": 1785501520.5768716,
+    "hash": "d5beb226e2dd2fb0fb0dcea64af23c0b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightStoryScreen.kt": {
+    "mtime": 1785502054.0858505,
+    "hash": "b8cc2840624f36fde39806c9d96f7f91"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/SpotlightAudioController.kt": {
+    "mtime": 1785501520.5804374,
+    "hash": "d57e7a542eba8ac62e015a73646d5dec"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/canvas/CardPickerSheet.kt": {
+    "mtime": 1785501520.5597777,
+    "hash": "a87b90b92ee0c7417c07681be1589920"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/canvas/CanvasCardItem.kt": {
+    "mtime": 1785502054.0868022,
+    "hash": "3fc3b4e59efb13afe3718046b1c411af"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/canvas/BackgroundPickerSheet.kt": {
+    "mtime": 1785502054.0861363,
+    "hash": "f24cb2142193743a994784be6445a9cd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/canvas/InlineTextEditor.kt": {
+    "mtime": 1785501520.5646706,
+    "hash": "51446f64f8502d93b60694e9af8a0097"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/canvas/ShareCanvasViewModel.kt": {
+    "mtime": 1785501520.565533,
+    "hash": "540530dda56f3a7a40fa6c80adc717ec"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/canvas/CanvasCard.kt": {
+    "mtime": 1785502054.0864725,
+    "hash": "ee101e227886fb3afc043e0e436fd1c2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/canvas/ShareCanvasScreen.kt": {
+    "mtime": 1785502054.0871005,
+    "hash": "4e0554b08703644f95e0174e739d618c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotlight/canvas/CanvasText.kt": {
+    "mtime": 1785501520.5729373,
+    "hash": "47fa7951d3824f32339f4b0aba9dfea4"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/lastfm/LastFmViewModel.kt": {
+    "mtime": 1785501520.581653,
+    "hash": "663c4ba65a72f0fb1550892560324bc5"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/lastfm/LastFmImportScreen.kt": {
+    "mtime": 1785501520.5858955,
+    "hash": "744caa10848c01cb5303a929f91b6e04"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotify/AudioFeaturesComponents.kt": {
+    "mtime": 1785501520.5881526,
+    "hash": "6a6359e8ad57f4f4985601616448bd5a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotify/SpotifyLoginScreen.kt": {
+    "mtime": 1785501520.5898964,
+    "hash": "061ad80d64b178b4a3cd53115ab53958"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotify/SpotifyJsonImportScreen.kt": {
+    "mtime": 1785502054.0838213,
+    "hash": "803d97f2cb1b352ea6cee90776120391"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotify/SpotifyCallbackActivity.kt": {
+    "mtime": 1785501520.5926604,
+    "hash": "b39155f7b8cdc20e9a73fbcd24796064"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotify/SpotifyViewModel.kt": {
+    "mtime": 1785501520.5943646,
+    "hash": "db872e70427bdfe34b51335700742030"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotify/SpotifyJsonImportViewModel.kt": {
+    "mtime": 1785501520.5949833,
+    "hash": "b6027b289933757431582197613318a8"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/spotify/SpotifySettingsSection.kt": {
+    "mtime": 1785501520.5961854,
+    "hash": "4e7c29432bd245b907e5cca4f17c88ef"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/navigation/AppNavigation.kt": {
+    "mtime": 1785501520.598092,
+    "hash": "c051b99449ec6c2436fbb548c1f661e0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/navigation/NavigationViewModel.kt": {
+    "mtime": 1785501520.5984898,
+    "hash": "b6cf7557a168ab84eb9b410c1f91ec7a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/navigation/TempoBottomNavigation.kt": {
+    "mtime": 1785501520.5994952,
+    "hash": "5772642251bc97a28c909f8b0562ee93"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/ArtistMergeSearchDialog.kt": {
+    "mtime": 1785501520.6010396,
+    "hash": "fcfdf92485d8d93335d04743ba9f8613"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/ArtistRenameDialog.kt": {
+    "mtime": 1785501520.6024632,
+    "hash": "80a6d4a4c3e7f75fe96919618fd8507b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/ArtistDetailsScreen.kt": {
+    "mtime": 1785502054.0781913,
+    "hash": "1a80b694207d4a653edda666466c967f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/SongDetailsViewModel.kt": {
+    "mtime": 1785501520.6087286,
+    "hash": "eec881eab5ebe6b5cdd4a45ae3b944d3"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/MergeTrackViewModel.kt": {
+    "mtime": 1785501520.60968,
+    "hash": "1d1e00d2140885bdbc9bc0fa88a384ae"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/ArtistSplitDialog.kt": {
+    "mtime": 1785502054.1264582,
+    "hash": "070fb16e09157d4e442f598aaf3270bd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/AlbumDetailsScreen.kt": {
+    "mtime": 1785503785.2120886,
+    "hash": "3f539c43d824130cde7112ec7321da56"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/SplitArtistViewModel.kt": {
+    "mtime": 1785502054.1267738,
+    "hash": "2875331fdb92e3825c1031e394fbc05f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/MergeArtistViewModel.kt": {
+    "mtime": 1785501520.6139195,
+    "hash": "5c83b78272c486ea4ae388f7b5c5a9ec"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/SongDetailsScreen.kt": {
+    "mtime": 1785502054.0790133,
+    "hash": "748c58425ece62b630fcf648106fc269"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/ArtistDetailsViewModel.kt": {
+    "mtime": 1785502054.0785768,
+    "hash": "6c11d9c11b5120a9490b2e3715ed7a5c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/AlbumDetailsViewModel.kt": {
+    "mtime": 1785501520.6230934,
+    "hash": "b875e9071745fad0c7f9370f1f057e63"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/details/MergeSearchDialog.kt": {
+    "mtime": 1785501520.624594,
+    "hash": "eb98b1c5ac62e423b57be5ec0589e043"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/desktop/DesktopQrScanner.kt": {
+    "mtime": 1785501520.6253893,
+    "hash": "0bac180f04d8fdd54566a5a6cc235fb6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/desktop/DesktopLinkScreen.kt": {
+    "mtime": 1785502054.0760357,
+    "hash": "99b4ae7db7019eddd4bc9153cf394753"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/desktop/DesktopLinkViewModel.kt": {
+    "mtime": 1785501520.6307268,
+    "hash": "df17a4d659eb6041b239547fbd0955ba"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/utils/ScreenUtils.kt": {
+    "mtime": 1785501520.6317482,
+    "hash": "cf40950ee76e6131d77ad5103b156901"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/youtube/YouTubeMusicImportScreen.kt": {
+    "mtime": 1785501520.6337218,
+    "hash": "950c364e88fc4ef82df74562d309cf58"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/youtube/YouTubeMusicImportViewModel.kt": {
+    "mtime": 1785501520.6346483,
+    "hash": "f46b9beafa66faac86ef8de91aeea4f7"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/permissions/PermissionScreen.kt": {
+    "mtime": 1785501520.6360064,
+    "hash": "a228e4a2a3b22bedd80b61be3df291e8"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/TimePeriodSelector.kt": {
+    "mtime": 1785501520.636629,
+    "hash": "387d8c794c241b8665715f153d43f8ec"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/SharePreviewDialog.kt": {
+    "mtime": 1785503785.1141102,
+    "hash": "ac313bfa0ea525776fded260f004f006"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/WalkthroughOverlay.kt": {
+    "mtime": 1785501520.6391535,
+    "hash": "f155018184c060c18098993e5fe34a9d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/CachedAsyncImage.kt": {
+    "mtime": 1785501520.641736,
+    "hash": "2be3f4871064378632c386f95af44be5"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/GlassCard.kt": {
+    "mtime": 1785501520.646098,
+    "hash": "d6b37f49e09bd994feb9ae4d95d55cc4"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/BlurTransformation.kt": {
+    "mtime": 1785501520.647208,
+    "hash": "8721814983e3ddcdc3954c26666f0266"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/CaptureWrapper.kt": {
+    "mtime": 1785501520.6483808,
+    "hash": "24b9dc7f9e9582ffee796122a0573595"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/XiaomiGuidancePopup.kt": {
+    "mtime": 1785501520.6497655,
+    "hash": "b900db9dddb591edb94a31c713643e89"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/LevelUpOverlay.kt": {
+    "mtime": 1785502054.0741827,
+    "hash": "453ff7e345bfe70c37c3688100ec29c7"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/EmptyState.kt": {
+    "mtime": 1785501520.6523302,
+    "hash": "f07e00afe316aef01850d4276de2fa37"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/SettingsComponents.kt": {
+    "mtime": 1785502054.074458,
+    "hash": "e3584d0bda86b5f57b8b8b3c69502941"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/FitToHeight.kt": {
+    "mtime": 1785501520.65377,
+    "hash": "d671bfaf28100860b5db5ddef6c6256e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/CoachMark.kt": {
+    "mtime": 1785501520.6544912,
+    "hash": "04609144b09d632b26c18082633b26e2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/MusicLinksRow.kt": {
+    "mtime": 1785501520.6552298,
+    "hash": "57448a4de55f21320066f667fa3b9ebd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/AlbumArtImage.kt": {
+    "mtime": 1785501520.6562243,
+    "hash": "f36409b7d1d3c63c793de8d2d0c9dda1"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/SpotlightReminderPopup.kt": {
+    "mtime": 1785502054.0754783,
+    "hash": "af12086a0f14f3e6d49ea63925b9253e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/DeepOceanBackground.kt": {
+    "mtime": 1785501520.658718,
+    "hash": "371f954b5a6cd11e6438e4ad9c73d0f4"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/ShareTheme.kt": {
+    "mtime": 1785510512.1537905,
+    "hash": "1c34b7b78e771749c0d062053a982d27"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/ShareCards.kt": {
+    "mtime": 1785503853.0547547,
+    "hash": "a316fec45b0f2311473d31bd8a91f253"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/components/CommonComponents.kt": {
+    "mtime": 1785501520.6665301,
+    "hash": "12197e3709652aec20aba68ebba4b85f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/profile/ProfileViewModel.kt": {
+    "mtime": 1785501520.6677413,
+    "hash": "0b6bea5b09bb5e8c83cbdb0dec4e7859"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/profile/ProfileScreen.kt": {
+    "mtime": 1785502054.0825887,
+    "hash": "81b37a4329f6baf879fd7848ff07f7d4"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/theme/Modifiers.kt": {
+    "mtime": 1785501520.6746578,
+    "hash": "47dbab36f158b59b09155de4949b4d3c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/theme/Color.kt": {
+    "mtime": 1785502054.0882,
+    "hash": "6f4c246b07bbf5db56f5bb6b4181e1d0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/theme/Theme.kt": {
+    "mtime": 1785501520.675917,
+    "hash": "85858443b561cd881db4089c5a4d4bfd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/theme/Type.kt": {
+    "mtime": 1785501520.6765518,
+    "hash": "9c7c6ed6ad5fe50a202a7ae131ec1827"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/history/HistoryScreen.kt": {
+    "mtime": 1785501520.6814322,
+    "hash": "c7f337a3b16cdecafa2d6f7031ba7782"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/history/HistoryViewModel.kt": {
+    "mtime": 1785501520.685178,
+    "hash": "e56b05c9c70ac1f09e535c2653fd21a6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/stats/StatsScreen.kt": {
+    "mtime": 1785502927.362944,
+    "hash": "990d0690012d9b0ad467996fadf94ad6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/stats/AnalyticsSection.kt": {
+    "mtime": 1785502054.0873652,
+    "hash": "97f2c17964550b897ea891515d3e1f9d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/stats/StatsShareCard.kt": {
+    "mtime": 1785502054.0876467,
+    "hash": "c945a0eb8c6c1fdd987f0a7fdbcfa60c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/stats/StatsViewModel.kt": {
+    "mtime": 1785501520.6940691,
+    "hash": "8b35f78dd2948dfe743a5fbc98e62453"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/stats/StatsShareDialog.kt": {
+    "mtime": 1785503785.0391712,
+    "hash": "c4b759bc50beb10c3f3bcc7847947061"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/onboarding/HowItWorksScreen.kt": {
+    "mtime": 1785501520.6968784,
+    "hash": "aa9446a776ebf9f03d06bbc52e95ae65"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/onboarding/AnimatedOpacity.kt": {
+    "mtime": 1785501520.6974304,
+    "hash": "0bca3ab6b2d9a09faf58206451db38f3"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/onboarding/PrivacyExplainerScreen.kt": {
+    "mtime": 1785502054.0812106,
+    "hash": "de1649b86933fbb1e48b42349b970f65"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/onboarding/SpotifyConnectionBottomSheet.kt": {
+    "mtime": 1785501520.6996682,
+    "hash": "666339dc785fba314ed8ee7804bc873e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/onboarding/WelcomeScreen.kt": {
+    "mtime": 1785501520.7006512,
+    "hash": "62b1632b4e980b684ab3a7357258d750"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/onboarding/BatteryOptimizationScreen.kt": {
+    "mtime": 1785501520.7016234,
+    "hash": "4e650d554693e188a542c33122e28314"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/onboarding/OnboardingViewModel.kt": {
+    "mtime": 1785501520.702143,
+    "hash": "72db70959ec1a23979a5363d65a3d076"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/ui/onboarding/RestoreScreen.kt": {
+    "mtime": 1785502054.0818756,
+    "hash": "82f8bdf6f7366bc2436ad1a99e21c76c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/iTunesModule.kt": {
+    "mtime": 1785501520.7094998,
+    "hash": "4b244f6a493c9199f5694dd81ecc6c64"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/MusicBrainzModule.kt": {
+    "mtime": 1785501520.7102613,
+    "hash": "b0e47510d422863fc76d982dd06653d9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/NetworkModule.kt": {
+    "mtime": 1785501520.711124,
+    "hash": "761faf8d38d01d0e596b3f7721d259f3"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/DriveModule.kt": {
+    "mtime": 1785501520.7116756,
+    "hash": "445e47f340645427c3cbb3fedc685182"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/HiltWorkModule.kt": {
+    "mtime": 1785501520.7123387,
+    "hash": "b2ae59f0583939329582d31511ab1741"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/CoilModule.kt": {
+    "mtime": 1785501520.7132585,
+    "hash": "adaa96476002a7134eb93bb374775bb9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/RepositoryModule.kt": {
+    "mtime": 1785501520.7137141,
+    "hash": "173edfbc0c073b0128c7fa4663088968"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/LastFmModule.kt": {
+    "mtime": 1785501520.71422,
+    "hash": "f29b4742e814fda8eac18145a18320fa"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/ReccoBeatsModule.kt": {
+    "mtime": 1785501520.7148087,
+    "hash": "506bcef8e01b08fa281226efd388ee6e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/SpotifyModule.kt": {
+    "mtime": 1785501520.7157242,
+    "hash": "af70c73b545f2a4e0f96756092bb873e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/DeezerModule.kt": {
+    "mtime": 1785501520.7162218,
+    "hash": "8d46f1e4d9a530cd50739e71a4b51993"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/di/DatabaseModule.kt": {
+    "mtime": 1785501520.7173107,
+    "hash": "7aeeb1e5211afb59834dfa610e701978"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/TempoDiscoveryWidget.kt": {
+    "mtime": 1785501520.718096,
+    "hash": "37f3a62cfefcbd9e32a3976d07eab4f0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/TempoWidgetReceiver.kt": {
+    "mtime": 1785501520.724238,
+    "hash": "e9c8d71cf4ff4ab233bb80898a920c95"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/TempoMixWidget.kt": {
+    "mtime": 1785501520.7252142,
+    "hash": "43269c96cc32ec9dd54c5b428cf70d33"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/TempoHeatmapWidget.kt": {
+    "mtime": 1785501520.7263103,
+    "hash": "ae66f5c3b216d85784c2f34e1c7014c3"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/TempoDashboardWidget.kt": {
+    "mtime": 1785501520.7273822,
+    "hash": "0689daa8038d78eb69d71e40a5dfcb81"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/TempoMilestoneWidget.kt": {
+    "mtime": 1785501520.7300014,
+    "hash": "3a354281f123c7e8363f6d9da366872a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/WidgetWorker.kt": {
+    "mtime": 1785501520.7315648,
+    "hash": "1aa4610186461be2f9325416a8b0f4f9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/TempoAppWidget.kt": {
+    "mtime": 1785501520.733032,
+    "hash": "de667edd7e6a54992fe706a31790727c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/TempoArtistWidget.kt": {
+    "mtime": 1785501520.7338512,
+    "hash": "1533c2dca23c65985bfa3357cbaf64d1"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/utils/BitmapGenerator.kt": {
+    "mtime": 1785502054.0896852,
+    "hash": "cc2fa7e09018a3590a590fe41ee887dd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/utils/WidgetUtils.kt": {
+    "mtime": 1785501520.7237096,
+    "hash": "aa48dc185d2901fe710202ab66f940be"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/widget/theme/TempoWidgetTheme.kt": {
+    "mtime": 1785501520.7287695,
+    "hash": "3b2d4a7335a480aad968d1caa895f6f2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/desktop/EcdhKeyExchange.kt": {
+    "mtime": 1785501520.7356293,
+    "hash": "58fa6162188eb7489dfc929f82578029"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/desktop/DesktopSatelliteServer.kt": {
+    "mtime": 1785502054.0729487,
+    "hash": "2a09af8ff5fd1e74f246abef18bbe984"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/desktop/DesktopPairingCallbackClient.kt": {
+    "mtime": 1785501520.7397072,
+    "hash": "a8861c541fd8699a2522808b14e356fb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/desktop/DesktopPairingManager.kt": {
+    "mtime": 1785501520.740752,
+    "hash": "0efbee47e33bf54b024a98bfdc4e2dcf"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/desktop/DesktopScrobbleIngestionService.kt": {
+    "mtime": 1785501520.7422786,
+    "hash": "0c22c0ed9dbe11999d2339ebe88a56b6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/desktop/DesktopMdnsManager.kt": {
+    "mtime": 1785501520.7430227,
+    "hash": "d9cc1166998195927a109b1f56e0c254"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/desktop/IngestionResult.kt": {
+    "mtime": 1785501520.743389,
+    "hash": "ee39d9a3aed6451383a8df8e4eccb564"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/ShareUtils.kt": {
+    "mtime": 1785502054.0889113,
+    "hash": "bbc5608bb38056914ff017418ceb272c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/ArtistParserTest.kt": {
+    "mtime": 1785501520.744897,
+    "hash": "74befe895e771ebf636cd0f1229bab54"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/PermissionUtils.kt": {
+    "mtime": 1785501520.7455714,
+    "hash": "eef9cb62a75932442cb074bedd60a01a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/ReviewUtils.kt": {
+    "mtime": 1785501520.7461584,
+    "hash": "85913d0b464ad9420a86fc2b3805a64d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/OemBackgroundHelper.kt": {
+    "mtime": 1785501520.747629,
+    "hash": "c129a8d1da67163fb6a5d00e6fd5c891"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/TrackMatcher.kt": {
+    "mtime": 1785501520.749667,
+    "hash": "deb8e4892881396214e58ad4fee70c07"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/ArtistParser.kt": {
+    "mtime": 1785502054.0886374,
+    "hash": "6a080ef038e7a7750168938dc22fe726"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/RetryHandler.kt": {
+    "mtime": 1785501520.753834,
+    "hash": "b9d417453aeec48088cb8e1b3e1f80fd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/BatteryUtils.kt": {
+    "mtime": 1785501520.754615,
+    "hash": "57dfdb938ebbced7bd313345153095f0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/TempoCopyEngine.kt": {
+    "mtime": 1785501520.7558851,
+    "hash": "b01b3365e51756dbd2f673628f048de4"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/utils/FormatUtils.kt": {
+    "mtime": 1785501520.7564154,
+    "hash": "8bc87572e58c697013ba57262de8f658"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/receiver/BatteryStateReceiver.kt": {
+    "mtime": 1785501520.7572129,
+    "hash": "ebf7b400643106ac02d6a25e0ba540aa"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/receiver/BootReceiver.kt": {
+    "mtime": 1785501520.7579794,
+    "hash": "d024190eee6a2f2c35f283e474d065ad"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/service/SessionPersistence.kt": {
+    "mtime": 1785501520.760187,
+    "hash": "c14e4161c09803bd2f866dcee189c030"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/service/LocalMediaMetadata.kt": {
+    "mtime": 1785501520.7621136,
+    "hash": "a2900714a4490821ca2c4f127c186f04"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/service/MusicTrackingManager.kt": {
+    "mtime": 1785501520.763895,
+    "hash": "36e0920c8fe8bdfec981caa4c083f445"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/service/SmartDurationEstimator.kt": {
+    "mtime": 1785501520.7655675,
+    "hash": "58db34ed99c31c299685bb88d210ea71"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/service/TrackingHealthMonitor.kt": {
+    "mtime": 1785501520.7671785,
+    "hash": "4ce6f18169eb69650bdd4642a4125b25"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt": {
+    "mtime": 1785502054.0738082,
+    "hash": "45acb72aa3558b27e5b075c171e28c2e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/service/TrackingServiceHeartbeat.kt": {
+    "mtime": 1785501520.7836738,
+    "hash": "ee948f2fce1680c8042ad51837c17da5"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/SpotlightUnlockWorker.kt": {
+    "mtime": 1785501520.7858202,
+    "hash": "a8af2c816c4fea6a00d16d1a99800a41"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/PostRestoreCacheWorker.kt": {
+    "mtime": 1785501520.7871692,
+    "hash": "c62d4f5b054eb6ba5cd2f8a660685bbf"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/ServiceHealthWorker.kt": {
+    "mtime": 1785501520.7883477,
+    "hash": "c37a10b23724c6badd99fd2ed7002722"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/SpotifyPollingWorker.kt": {
+    "mtime": 1785501520.7894638,
+    "hash": "e78e294b165e0c406f78bb4758e01395"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/NotificationWorker.kt": {
+    "mtime": 1785501520.790988,
+    "hash": "b32601611db5d3780a6239e85d213da0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/StatsWorker.kt": {
+    "mtime": 1785501520.7926018,
+    "hash": "2b633a869e333c08ca9d3d78102512ea"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/YouTubeMusicImportWorker.kt": {
+    "mtime": 1785501520.793888,
+    "hash": "7dbfc58622e79f48b7ba791c4507f5ec"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/SpotifyJsonImportWorker.kt": {
+    "mtime": 1785501520.795638,
+    "hash": "d10a0b12e9b1bd9ad3c37baba3bd6d67"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/EnrichmentWorker.kt": {
+    "mtime": 1785501520.7991762,
+    "hash": "ea7ca12a8ca7977520d10bd2b465e34e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/ChallengeWorker.kt": {
+    "mtime": 1785501520.8009038,
+    "hash": "97b091075ffbfbd20ce583cbf0537519"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/GamificationWorker.kt": {
+    "mtime": 1785501520.8018026,
+    "hash": "2cdd7137b8d52971653149ce8f8b4280"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/LastFmImportWorker.kt": {
+    "mtime": 1785501520.8037775,
+    "hash": "b8c4daa95152c496930d648eb60c5b33"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/DriveBackupWorker.kt": {
+    "mtime": 1785501520.8050861,
+    "hash": "1cf62e68dd0db983a9b7b9619a95fe1d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/worker/SpotifyEnrichmentWorker.kt": {
+    "mtime": 1785501520.8064291,
+    "hash": "2c4d73b13c2697357d0729747b351130"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/DefaultMusicApps.kt": {
+    "mtime": 1785501520.8577964,
+    "hash": "16a25d3ff405e32c745888bc9f0157d6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/AlbumRepository.kt": {
+    "mtime": 1785501520.807869,
+    "hash": "98918a0998a3ebde1e8471067654a829"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/RoomPreferencesRepository.kt": {
+    "mtime": 1785502054.0714116,
+    "hash": "d37cd62947d31566ffbaa1a36675823a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/ArtistLinkingService.kt": {
+    "mtime": 1785501520.8108947,
+    "hash": "b924ea52f45ebf5e3ec23384e53d3e2b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/ArtistMergeRepository.kt": {
+    "mtime": 1785501520.8127146,
+    "hash": "6b0e9e080f86fd1351be61a90fa5f0e7"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/EnrichedMetadataRepository.kt": {
+    "mtime": 1785501520.8137279,
+    "hash": "acc17614ac7f81ecfdbffd86b849b37b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/SpotifyRepository.kt": {
+    "mtime": 1785501520.8148546,
+    "hash": "95e980228eb1ba717693decd2eb88d26"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/ArtistSplitRepository.kt": {
+    "mtime": 1785502054.1255262,
+    "hash": "2814ee4d35f97a622e0abf006c132b64"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/ArtistRenameRepository.kt": {
+    "mtime": 1785502054.0708659,
+    "hash": "716f86cd0129010a14d955c10066ae14"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/AppPreferenceRepository.kt": {
+    "mtime": 1785501520.819451,
+    "hash": "d0ddb02d7c4828e0e9a5470e5932c7ac"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/RoomAlbumRepository.kt": {
+    "mtime": 1785501520.8205369,
+    "hash": "2932f140c4308b83ced2591f26cc9586"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/ArtistRepository.kt": {
+    "mtime": 1785501520.8211114,
+    "hash": "94cb58eebf75847031ca2ee6fbe2f06d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/RefreshCoordinator.kt": {
+    "mtime": 1785501520.821717,
+    "hash": "185a15f5b9fce80f767b6a7a7c71ffe7"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/ChallengeRepository.kt": {
+    "mtime": 1785501520.8229418,
+    "hash": "12d33ca94db1e69892d8b8b4fe3bfc4c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/TrackResolver.kt": {
+    "mtime": 1785501520.8240883,
+    "hash": "f626290fa5b789381b6e3883bc4298bf"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/RoomListeningRepository.kt": {
+    "mtime": 1785501520.8254788,
+    "hash": "11e8f186411aca777b716b29b70be727"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/RoomStatsRepository.kt": {
+    "mtime": 1785501520.8357937,
+    "hash": "176e6605407ed03b91ed4ca7f319a0bb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/TrackAliasRepository.kt": {
+    "mtime": 1785501520.8373985,
+    "hash": "a9019b7d7292fdd64f380aaa924295b9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/ArtistRepairService.kt": {
+    "mtime": 1785502054.1252182,
+    "hash": "b61ab605eba141fe3b48807453bdb38d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/TrackRepository.kt": {
+    "mtime": 1785501520.8398755,
+    "hash": "dfb734fafdea9d9ad60261210f83720b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/PreferencesRepository.kt": {
+    "mtime": 1785502054.07114,
+    "hash": "c725356545f23c49321b4b8633bbd745"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/RoomTrackRepository.kt": {
+    "mtime": 1785501520.8415537,
+    "hash": "894fed9cd389437392650b5e4ee25535"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/RoomArtistRepository.kt": {
+    "mtime": 1785501520.842297,
+    "hash": "62626eb0f702509e5e4bf94613130d3d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/RoomEnrichedMetadataRepository.kt": {
+    "mtime": 1785501520.8432248,
+    "hash": "3c7fdd49ec8349a4ce8cd124ec3fd23e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/GamificationRepository.kt": {
+    "mtime": 1785501520.844826,
+    "hash": "e3ed19ef573cd2582851e2165e6a77cc"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/ListeningRepository.kt": {
+    "mtime": 1785501520.8455825,
+    "hash": "e2270c6e05ebe60b9aa609ce17a9d7ed"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/repository/StatsRepository.kt": {
+    "mtime": 1785501520.8482924,
+    "hash": "b9481d9c3943a5f5ed456f47c91beac0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/lastfm/LastFmImportService.kt": {
+    "mtime": 1785501520.856104,
+    "hash": "6cdcdcde7338f71832d2015ba287f72c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/spotify/SmartListeningEventGenerator.kt": {
+    "mtime": 1785501520.86101,
+    "hash": "268015451b94dda677636dcbba137e9f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/spotify/SpotifyTopItemsService.kt": {
+    "mtime": 1785501520.8643072,
+    "hash": "e6889ba72fca24bde61a682d4f21b5b1"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/spotify/SpotifyConfig.kt": {
+    "mtime": 1785501520.8655188,
+    "hash": "c5c0d32636c780e00c9a0181c8b37291"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/spotify/SpotifyHistoryReconstructionService.kt": {
+    "mtime": 1785501520.8716319,
+    "hash": "730082c51cb35136bf387e99eda83446"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/spotify/SpotifyImportService.kt": {
+    "mtime": 1785501520.8742087,
+    "hash": "2c7ad8273ce3efd259f4eb8908363205"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/spotify/SpotifyJsonImportService.kt": {
+    "mtime": 1785502054.0717952,
+    "hash": "3f64660e6f020422ff0f6678c1aa2e3f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/spotify/SpotifyJsonModels.kt": {
+    "mtime": 1785502054.0720832,
+    "hash": "d7137dd68b923d89ac637e71d00d59bc"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/importexport/ImportExportManager.kt": {
+    "mtime": 1785501520.885143,
+    "hash": "a995cb624aa24a4e392aac6fcc4acbab"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/importexport/TempoExportData.kt": {
+    "mtime": 1785501520.886338,
+    "hash": "1cf5474a8da758bd309faf4f8da6b41b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/importexport/MoshiAdapters.kt": {
+    "mtime": 1785501520.8875563,
+    "hash": "11918a4b3ee39dbbc408a4ad079e7363"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/models/DeleteResult.kt": {
+    "mtime": 1785501520.888542,
+    "hash": "e15e14cffc07e8a9addc54f814930177"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/youtube/YouTubeMusicModels.kt": {
+    "mtime": 1785501520.8893661,
+    "hash": "433e43c22ff77dd5409b376be7e1944e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/youtube/YouTubeMusicImportService.kt": {
+    "mtime": 1785501520.894177,
+    "hash": "9a771b9bbfb15db9443ef2ba3c3538d0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/DatabaseOptimization.kt": {
+    "mtime": 1785501520.9338703,
+    "hash": "160108caeaf8ad3ebf347f4c9d08b3ae"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/Converters.kt": {
+    "mtime": 1785501520.9346359,
+    "hash": "b532a81ed67f771eb31058e1208439dc"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/AppDatabase.kt": {
+    "mtime": 1785502145.2663078,
+    "hash": "798f36f0381d47b1ff06da11c412de37"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/SourceAuthority.kt": {
+    "mtime": 1785501520.9482381,
+    "hash": "37a320710600f507381bae88c47d1437"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/EventFingerprint.kt": {
+    "mtime": 1785501520.9492395,
+    "hash": "b5fb5a077c707dc3b9322c734473dd7f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/ScrobbleArchiveDao.kt": {
+    "mtime": 1785501520.896634,
+    "hash": "4cb8e7410c2db81097a4adfc17060f5c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/UserPreferencesDao.kt": {
+    "mtime": 1785501520.8975708,
+    "hash": "fa9ab7ae8c8c9a5f78aa6ceca4df2e73"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/TrackDao.kt": {
+    "mtime": 1785502054.069691,
+    "hash": "6eee290cddaf073f6581192663cd614a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/TrackAliasDao.kt": {
+    "mtime": 1785501520.900053,
+    "hash": "29ee0d9665b1e94546be7958b6ff7152"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/AppPreferenceDao.kt": {
+    "mtime": 1785501520.9015832,
+    "hash": "3e33d0c8f1ffc6bf310c05671f17e71b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/LastFmImportMetadataDao.kt": {
+    "mtime": 1785501520.9034183,
+    "hash": "65e621bcd2541a628ed44138d6ea61da"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/AlbumDao.kt": {
+    "mtime": 1785501520.904399,
+    "hash": "5a823c7cf8103ee9dc516825d7d0ddcd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/ListeningEventDao.kt": {
+    "mtime": 1785501520.908522,
+    "hash": "f38fec674a5eb2ec802eec329e48d51b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/ArtistDao.kt": {
+    "mtime": 1785502054.0694044,
+    "hash": "7493865b6a07cc568c25f33c6f7064c3"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/ManualContentMarkDao.kt": {
+    "mtime": 1785501520.9116392,
+    "hash": "960dc9bf2b50e6f5c1e80a71cd952788"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/ArtistAliasDao.kt": {
+    "mtime": 1785502054.0691137,
+    "hash": "a8c7bde338405bb85a8145c6401d8721"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/DesktopPairingDao.kt": {
+    "mtime": 1785501520.913808,
+    "hash": "757d6d1e4436d40d95a4431d062377eb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/TrackArtistDao.kt": {
+    "mtime": 1785501520.9152486,
+    "hash": "0e6d6c76ba728ebfec5f6731e5db7a58"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/GamificationDao.kt": {
+    "mtime": 1785501520.917262,
+    "hash": "2d9359f23934880a5378450ec4cbf407"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/EnrichedMetadataDao.kt": {
+    "mtime": 1785501520.9201217,
+    "hash": "38c02d21a9f34fdae1a4136f0f5da298"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/StatsDao.kt": {
+    "mtime": 1785501520.930688,
+    "hash": "7d997fdce5fd0425aa32cd4f5d1e7dcd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/dao/UserKnownArtistDao.kt": {
+    "mtime": 1785501520.9315329,
+    "hash": "5aa2d3673fac021e1c37abb130b860b3"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/DesktopPairingSession.kt": {
+    "mtime": 1785501520.9585981,
+    "hash": "ea67ecb97b4e2aa04d49e0163374082d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/Album.kt": {
+    "mtime": 1785501520.9595473,
+    "hash": "8f087f06a77fc90c2bd8eaa8e72905ac"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/ListeningEvent.kt": {
+    "mtime": 1785501520.9611268,
+    "hash": "21c04318e543f6ac2bf4c29b1001c078"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/Artist.kt": {
+    "mtime": 1785502054.0700238,
+    "hash": "a512b1710f37ab6c017e25d499f9dd2c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/ManualContentMark.kt": {
+    "mtime": 1785501520.9633226,
+    "hash": "8d3375d8c8c4358aaf500757925e7adb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/UserKnownArtist.kt": {
+    "mtime": 1785501520.9639444,
+    "hash": "156faace5313a288f951e549dc69da1f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/TrackArtist.kt": {
+    "mtime": 1785501520.964617,
+    "hash": "d8b70c302870211cad0e8e38cc58142a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/ScrobbleArchive.kt": {
+    "mtime": 1785501520.9657695,
+    "hash": "85200932ab567964510edc0f085c9126"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/EnrichedMetadata.kt": {
+    "mtime": 1785501520.9683003,
+    "hash": "1c9b92e7a98c5b19349e279cd10916cf"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/ArtistAlias.kt": {
+    "mtime": 1785501520.969,
+    "hash": "4599f72d358b85b9c16c33341b8fe39e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/GamificationEntities.kt": {
+    "mtime": 1785501520.9701817,
+    "hash": "cd312f508658f99292a70b6a9d19cf04"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/TrackAlias.kt": {
+    "mtime": 1785501520.97105,
+    "hash": "30fd887c7cca63bcf64bfa33e73ed14e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/UserPreferences.kt": {
+    "mtime": 1785502054.0704045,
+    "hash": "4e32b7bfca9d7c2167cf3819765f266c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/Track.kt": {
+    "mtime": 1785501520.972859,
+    "hash": "de5863337ea99e4dd6c82b57b4e81b25"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/AppPreference.kt": {
+    "mtime": 1785501520.9735396,
+    "hash": "ad2c9fa1de71c62a5b3bd8708cd0b8f3"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/local/entities/LastFmImportMetadata.kt": {
+    "mtime": 1785501520.9749033,
+    "hash": "a97748a089299eb0e33e28d6ac7af34d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/profile/ProfileIdentityManager.kt": {
+    "mtime": 1785501520.9760728,
+    "hash": "846dbaf249466049e00644620d6631d5"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/enrichment/EnrichmentStrategy.kt": {
+    "mtime": 1785501520.9787402,
+    "hash": "1d3bae0ffe8e5fe9fa172e4ddec98adc"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/enrichment/ReccoBeatsEnrichmentService.kt": {
+    "mtime": 1785502054.0677705,
+    "hash": "d2c236302f65b22b287ffbbb8ce67b11"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/enrichment/LastFmEnrichmentService.kt": {
+    "mtime": 1785501520.9843662,
+    "hash": "f1ab9ff308b751ed2dbb0c276bf01dff"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/enrichment/ITunesEnrichmentService.kt": {
+    "mtime": 1785501520.988637,
+    "hash": "7686e1ac1ba23dc4882521027c34bbb5"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/enrichment/DeezerEnrichmentService.kt": {
+    "mtime": 1785501520.9899023,
+    "hash": "4c5e5e4f39e9845cd0562c677775342b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/enrichment/MusicBrainzEnrichmentService.kt": {
+    "mtime": 1785501520.9952536,
+    "hash": "c411e9bea3eeb3297903c705732a7cf6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/enrichment/SpotifyEnrichmentService.kt": {
+    "mtime": 1785502054.06826,
+    "hash": "c114ee5c3bb9bc54477cee5ea14b4c06"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/drive/BackupSettingsManager.kt": {
+    "mtime": 1785501521.0021653,
+    "hash": "26117b5c301da3a9a1b813340959e332"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/drive/GoogleAuthManager.kt": {
+    "mtime": 1785601888.129733,
+    "hash": "277b84c4073bcca5cb2aa2deb95f4201"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/drive/DriveModels.kt": {
+    "mtime": 1785501521.0049791,
+    "hash": "4d031dc7feaff4af3b7de1943995f7f1"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/drive/GoogleDriveService.kt": {
+    "mtime": 1785601985.1654794,
+    "hash": "30195887097c9a23a3ba5b142ad5f5ef"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/stats/InsightModels.kt": {
+    "mtime": 1785501521.0090995,
+    "hash": "0d16c767388d868bdc02a4dd8a34860d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/stats/EngagementModels.kt": {
+    "mtime": 1785502054.0725136,
+    "hash": "7ada2d322fa9b3006eb237a33199a8b9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/stats/StatsModels.kt": {
+    "mtime": 1785501521.0136735,
+    "hash": "cc1203eedba1842458a7246e2fb97d5b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/stats/TagBasedMoodAnalyzer.kt": {
+    "mtime": 1785501521.0153253,
+    "hash": "d3bf30b49b91e7ea9a7dafc67e77bfaa"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/stats/GamificationEngine.kt": {
+    "mtime": 1785501521.017396,
+    "hash": "b1912b137153f658e1d8e69fb4f20f7b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/stats/ChallengeEngine.kt": {
+    "mtime": 1785501521.0190382,
+    "hash": "f8b2e7ae05bf45e8ac525941e175cf52"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/interceptors/RetryInterceptor.kt": {
+    "mtime": 1785501521.0200045,
+    "hash": "8099abeb94e1a2edda365e0543570678"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/interceptors/RateLimitInterceptor.kt": {
+    "mtime": 1785501521.0206108,
+    "hash": "d27fec48e6cec8ee545eb67bc64e9c8d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/interceptors/UserAgentInterceptor.kt": {
+    "mtime": 1785501521.0212126,
+    "hash": "1465ae3bbc7b1658a2db44b9c6652e5e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/lastfm/LastFmModels.kt": {
+    "mtime": 1785501521.0232468,
+    "hash": "0253ca7a9213ea40df2a6acbff19e25c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/lastfm/LastFmApi.kt": {
+    "mtime": 1785501521.0243387,
+    "hash": "6d5990af553d2affaafdc371e06051f9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/spotify/SpotifyModels.kt": {
+    "mtime": 1785501521.0287025,
+    "hash": "3ef7aecc6d2866449ada8f571bd3e4dd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/spotify/SpotifyApi.kt": {
+    "mtime": 1785501521.030353,
+    "hash": "6946b99f518bdc5f385b213d8ea77e4f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/spotify/SpotifyAuthManager.kt": {
+    "mtime": 1785501521.0320172,
+    "hash": "e171e083bc4f64a116d42098ab5b5311"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/deezer/DeezerModels.kt": {
+    "mtime": 1785501521.0326045,
+    "hash": "1b49cebfeb5eae90f59e3c8c33e9068a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/deezer/DeezerApi.kt": {
+    "mtime": 1785501521.0331104,
+    "hash": "6169ba5288ec4d39c66ce702645e4170"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/musicbrainz/MusicBrainzApi.kt": {
+    "mtime": 1785501521.0341089,
+    "hash": "a2f84d686aaa77b26c0c28d65724885e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/musicbrainz/MusicBrainzModels.kt": {
+    "mtime": 1785501521.0354595,
+    "hash": "421235afe872ab4b2289b3f0deffd5c9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/itunes/iTunesApi.kt": {
+    "mtime": 1785501521.0362177,
+    "hash": "1c2df0ea31e39cb9093d07f65428778d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/itunes/iTunesModels.kt": {
+    "mtime": 1785501521.0371487,
+    "hash": "c0a46762c798af7a6b7b2570b297c829"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/reccobeats/ReccoBeatsApi.kt": {
+    "mtime": 1785501521.0384007,
+    "hash": "7b8c4637ee7a703ab7b7b833d067b296"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/data/remote/reccobeats/ReccoBeatsModels.kt": {
+    "mtime": 1785501521.0401154,
+    "hash": "b070a128e286c2888b5918fc156323f6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/java/me/avinas/tempo/domain/insights/InsightGenerator.kt": {
+    "mtime": 1785501521.0416198,
+    "hash": "893c87b899f543cfb196b81e42626e65"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/build.mjs": {
+    "mtime": 1782551128.4770923,
+    "hash": "22af2af3b53a31e5bab54b22708bd43b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/background/websocket.ts": {
+    "mtime": 1782551128.8105924,
+    "hash": "b1c03e4aac997558e76d266e6abcefd5"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/background/tracker.ts": {
+    "mtime": 1782551128.8030336,
+    "hash": "d61835db0d5b91ed2dcfcb9afece25f0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/background/site-detect.ts": {
+    "mtime": 1782551128.8007433,
+    "hash": "fff4abf9adb6c1438489a716d4204ab2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/background/storage.ts": {
+    "mtime": 1782551128.8014603,
+    "hash": "f2eaf2b670be938e391de48c371ecec8"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/background/service-worker.ts": {
+    "mtime": 1785502054.09651,
+    "hash": "ae93e5d8cfa277210455917222bb8a7e"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/background/normalize.ts": {
+    "mtime": 1782551128.7976923,
+    "hash": "adfcb8383dffd35307a42477d9a21ee5"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/background/sync.ts": {
+    "mtime": 1782551128.8023534,
+    "hash": "11274392328e241e92adc50bfaf6e9f5"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/popup/qr.ts": {
+    "mtime": 1782551128.8291624,
+    "hash": "6bb6ed96bc4936d8c4ac9aee99fd3f7c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/popup/popup.ts": {
+    "mtime": 1782551128.8284988,
+    "hash": "25877f7260ce17c4fa021eb103c1ef04"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/content/media-probe.ts": {
+    "mtime": 1785502054.0969331,
+    "hash": "c914071c8bdf74e08f8503c20cf7b1fb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/content/yt-main-world-helper.ts": {
+    "mtime": 1782551128.814395,
+    "hash": "49cc83da0c8c24637d957ebda238b4f9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/shared/types.ts": {
+    "mtime": 1782551128.831968,
+    "hash": "4ab401f9e3b0e01cfe306a22aa72319c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/shared/security.ts": {
+    "mtime": 1782551128.8300056,
+    "hash": "348583f878b61dd509758cec85508932"
+  },
+  "/Users/avinash/Documents/Git/Tempo/CONTRIBUTION.md": {
+    "mtime": 1782551128.1164794,
+    "hash": "7da1344b144998f7d54b27419bbc71f1"
+  },
+  "/Users/avinash/Documents/Git/Tempo/Changelog.md": {
+    "mtime": 1782551128.117835,
+    "hash": "f5c957685711f4b44c090647c997a7d2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/PRIVACY.md": {
+    "mtime": 1785502054.065939,
+    "hash": "8859305fe05fed91939c644f73b1c25d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/README.md": {
+    "mtime": 1783078631.634622,
+    "hash": "48b8b86987f53b32cccf37995e1119b9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/PERFORMANCE_ISSUES.md": {
+    "mtime": 1783419453.387972,
+    "hash": "483a60a8de084fefec2e711862e962b4"
+  },
+  "/Users/avinash/Documents/Git/Tempo/SpotlightStoryMockup/ListeningMinutes.html": {
+    "mtime": 1767161741.0682707,
+    "hash": "65fb0eaf7fe46eac643b6449eb419d32"
+  },
+  "/Users/avinash/Documents/Git/Tempo/SpotlightStoryMockup/Conclusion.html": {
+    "mtime": 1767161741.0687647,
+    "hash": "9a7728ed988d7a4269d39eb8a4b9a501"
+  },
+  "/Users/avinash/Documents/Git/Tempo/SpotlightStoryMockup/Personality.html": {
+    "mtime": 1767161741.0695586,
+    "hash": "7d5ca1a3eb39cd3c684d456f846375c0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/SpotlightStoryMockup/TopArtist.html": {
+    "mtime": 1767161741.070184,
+    "hash": "759b6cac0d78fbf11c5415a8676b9bdb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/SpotlightStoryMockup/Genre.html": {
+    "mtime": 1767161741.0707204,
+    "hash": "cf98bea7292e42a59e1792d9d2e97b0b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/SpotlightStoryMockup/TopSong.html": {
+    "mtime": 1767161741.071322,
+    "hash": "85824b456203c166a87c6edf09cc9ba9"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/PRIVACY.md": {
+    "mtime": 1785502054.0941048,
+    "hash": "d0ece146d021bcb25e23b8e3ddf7ec9f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/README.md": {
+    "mtime": 1782551128.4748654,
+    "hash": "4c61c8e599fea70320b26a3fa0b4adce"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/src/popup/popup.html": {
+    "mtime": 1782551128.8262038,
+    "hash": "8ec5433a010f8147aee023c7a5a62c63"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget1.html": {
+    "mtime": 1770855208.0,
+    "hash": "d48501c127b10a4d5c8eb66b0c21be70"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/1 (1).txt": {
+    "mtime": 1770885089.1982744,
+    "hash": "ba0c78be96eaaaa69633380dafa95496"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget6.html": {
+    "mtime": 1770855208.0,
+    "hash": "183399c98b80c831d545b959ad5ee3d1"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget4.html": {
+    "mtime": 1770855208.0,
+    "hash": "6cb72327a37d5d6d0c714878cba355ca"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget5.html": {
+    "mtime": 1770855208.0,
+    "hash": "a638e8e68220f544553610da539e27fc"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/1.txt": {
+    "mtime": 1770884964.1202435,
+    "hash": "391e933e0e6116e91e620fecd47ab45c"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/1 (2).txt": {
+    "mtime": 1770885216.7694163,
+    "hash": "a233d611da70a13251c5935c2c96e069"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget2.html": {
+    "mtime": 1770855208.0,
+    "hash": "53785b2f7e7c315d9429f97094442a15"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget3.html": {
+    "mtime": 1770855208.0,
+    "hash": "739bbd39ac769f91a417f609821f6e23"
+  },
+  "/Users/avinash/Documents/Git/Tempo/MOCKUP/stats.html": {
+    "mtime": 1767161741.0652304,
+    "hash": "293a72b8fdd5c4968009b951f5874fba"
+  },
+  "/Users/avinash/Documents/Git/Tempo/MOCKUP/spotlight.html": {
+    "mtime": 1767161741.0655937,
+    "hash": "2b369d400d5f306fb58058b54c483373"
+  },
+  "/Users/avinash/Documents/Git/Tempo/MOCKUP/artist_details.html": {
+    "mtime": 1767161741.0660002,
+    "hash": "46e901106e72087c36fbdb30f6ed98fb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/MOCKUP/home.html": {
+    "mtime": 1767161741.0663671,
+    "hash": "62ea626fffa9dddb4b46375da0f9df04"
+  },
+  "/Users/avinash/Documents/Git/Tempo/MOCKUP/history.html": {
+    "mtime": 1767161741.0668693,
+    "hash": "c183bf53c99360bba70c5090e99e0ad0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/MOCKUP/song-details.html": {
+    "mtime": 1767161741.0674183,
+    "hash": "f628fbeed472c3c6e15a2c93ab99bfb1"
+  },
+  "/Users/avinash/Documents/Git/Tempo/ic_launcher-web.png": {
+    "mtime": 1782551128.851223,
+    "hash": "f334914302a299a229f968e67a24744f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/TempoICON.png": {
+    "mtime": 1782551128.1271005,
+    "hash": "354e5f96799ecf7f7a6eff520ddd64bd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/Screenshots/S6.png": {
+    "mtime": 1766940124.1887143,
+    "hash": "cc891d33f558cd439c8af6c0c708241f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/Screenshots/S7.png": {
+    "mtime": 1766940149.4611914,
+    "hash": "9b9d87de186b60b323d97d900d8b7cfd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/Screenshots/S5.png": {
+    "mtime": 1766940084.683458,
+    "hash": "06e4bb83fbb5dc4c4ee5795b62407df0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/Screenshots/S4.png": {
+    "mtime": 1766940070.6647062,
+    "hash": "d7cbc3c3638caec8a8fbd6aeb81c948b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/Screenshots/S1.png": {
+    "mtime": 1766939998.1175544,
+    "hash": "d33fb0d3cf52b834196e09e4fee2e3cd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/Screenshots/S3.png": {
+    "mtime": 1766940040.3312654,
+    "hash": "09b5999d0eeefdca483888d90f95e6ea"
+  },
+  "/Users/avinash/Documents/Git/Tempo/Screenshots/S2.png": {
+    "mtime": 1766940017.5557406,
+    "hash": "8bd13c848c6b47fb7c9122a28266ce4a"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/playstore-icon.png": {
+    "mtime": 1782551128.4364672,
+    "hash": "3fbee5a620de9e79f58f1dedbcee80cd"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/ic_launcher-web.png": {
+    "mtime": 1782551128.421574,
+    "hash": "987e66a1b0d9baab7e14960af0db4a63"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png": {
+    "mtime": 1782551128.429192,
+    "hash": "435cbd393ef52275f9345daf4dd44b68"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-mdpi/ic_launcher.png": {
+    "mtime": 1782551128.4286768,
+    "hash": "2f9d88a7b3e7254df43b913169c82eb6"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-mdpi/ic_launcher_round.png": {
+    "mtime": 1782551128.4301462,
+    "hash": "55e2551f4564796c65c123362d35e782"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png": {
+    "mtime": 1782551128.4248953,
+    "hash": "c1af3201121645972c65380a9bb77356"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-hdpi/ic_launcher.png": {
+    "mtime": 1782551128.4242606,
+    "hash": "f4ed65e5c39bc556055979477e46c65d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-hdpi/ic_launcher_round.png": {
+    "mtime": 1782551128.4256396,
+    "hash": "2446f55aae0eeeae4401f066b70d5520"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-ldpi/ic_launcher.png": {
+    "mtime": 1782551128.4264078,
+    "hash": "5fa9811cb2cff3063639db0b35b2174d"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-ldpi/ic_launcher_round.png": {
+    "mtime": 1782551128.4276075,
+    "hash": "fca5a25a680f526d79f173ecf1449b75"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/drawable/spotify.png": {
+    "mtime": 1785502054.0901277,
+    "hash": "9d2eb9711c4f0626f256d706b1ff0cd4"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/drawable/ic_notification.png": {
+    "mtime": 1782551128.3882692,
+    "hash": "b3f477a832c0448e9f2c4152bc637b8b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/drawable/widget_preview_discovery.png": {
+    "mtime": 1782551128.4025826,
+    "hash": "b75f299c50e1384e9b917f1306f2f1a2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/drawable/widget_preview_mix.png": {
+    "mtime": 1782551128.4113326,
+    "hash": "aeb8359ae85949142b8b9fc9cdb167ff"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/drawable/widget_preview_artist.png": {
+    "mtime": 1782551128.3975816,
+    "hash": "ff4fa1c643e9dd5db659d93794b8e22f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/drawable/widget_preview_dashboard.png": {
+    "mtime": 1782551128.401503,
+    "hash": "6ed0e3b2bfe7306b0b2ea926339cfaf2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/drawable/widget_preview_milestone.png": {
+    "mtime": 1782551128.4089987,
+    "hash": "73fc4b9979cee6c1cefb8f00866b7b06"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/drawable/widget_preview_heatmap.png": {
+    "mtime": 1782551128.403818,
+    "hash": "b7e5c25d905af77ff596bfdb381bc483"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png": {
+    "mtime": 1782551128.4346876,
+    "hash": "c663490ecea5156a49d535e666d2fe83"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png": {
+    "mtime": 1782551128.4337766,
+    "hash": "b9e3ab4cfac0fa5ab49740a0ffd44f7b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png": {
+    "mtime": 1782551128.4352794,
+    "hash": "0a8623674f69447fec96189161976d49"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png": {
+    "mtime": 1782551128.4322317,
+    "hash": "b3f477a832c0448e9f2c4152bc637b8b"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-xxhdpi/ic_launcher.png": {
+    "mtime": 1782551128.4318268,
+    "hash": "cfc967a3f2b4ee77a50ce2cf06aca3f3"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png": {
+    "mtime": 1782551128.4328036,
+    "hash": "8dfebc859f8f6657723956f00546e2bb"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png": {
+    "mtime": 1782551128.4312198,
+    "hash": "ce14eeb3cff22be33ad628be84985bb8"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-xhdpi/ic_launcher.png": {
+    "mtime": 1782551128.4305274,
+    "hash": "760e825f2a22485069960f0d055556ad"
+  },
+  "/Users/avinash/Documents/Git/Tempo/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png": {
+    "mtime": 1782551128.431567,
+    "hash": "2ebab10ee942fbc1f4b8c731f9bf1255"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/TempoICON.png": {
+    "mtime": 1782551128.4764724,
+    "hash": "b17a96d8bc2654de0aa99afaf5a4ac65"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/icons/icon16.png": {
+    "mtime": 1782551128.4941614,
+    "hash": "9d0462bcdc15182fefc7544b37d5dbe2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/icons/icon48.png": {
+    "mtime": 1782551128.4947803,
+    "hash": "00c1db88a9af79a452a95b7aae662704"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/icons/icon128.png": {
+    "mtime": 1782551128.493756,
+    "hash": "b17a96d8bc2654de0aa99afaf5a4ac65"
+  },
+  "/Users/avinash/Documents/Git/Tempo/browser-extension/icons/icon32.png": {
+    "mtime": 1782551128.494409,
+    "hash": "b8e8ae78b1cc074b1dcddd4bfeecc3a0"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget3.png": {
+    "mtime": 1770882646.4501565,
+    "hash": "b7e5c25d905af77ff596bfdb381bc483"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget2.png": {
+    "mtime": 1770882558.6945624,
+    "hash": "aeb8359ae85949142b8b9fc9cdb167ff"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget1.png": {
+    "mtime": 1770882434.053441,
+    "hash": "ff4fa1c643e9dd5db659d93794b8e22f"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget5.png": {
+    "mtime": 1770882767.4446893,
+    "hash": "73fc4b9979cee6c1cefb8f00866b7b06"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget4.png": {
+    "mtime": 1770882900.4636722,
+    "hash": "b75f299c50e1384e9b917f1306f2f1a2"
+  },
+  "/Users/avinash/Documents/Git/Tempo/WidgetMockup/widget6.png": {
+    "mtime": 1770882814.8511062,
+    "hash": "6ed0e3b2bfe7306b0b2ea926339cfaf2"
+  }
+}
