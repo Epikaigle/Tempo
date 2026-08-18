@@ -92,6 +92,21 @@ object SpotlightPeriodFormatter {
         listOf(TimeRange.THIS_WEEK, TimeRange.THIS_MONTH, TimeRange.THIS_YEAR)
             .firstOrNull { isStoryUnlocked(it, now) }
 
+    /**
+     * Produces a stable key identifying the story period for [timeRange] at [now].
+     * Used to track whether the user has already viewed the current story period.
+     * Format: "W<ISO date>" for week, "M<YYYY-MM>" for month, "Y<YYYY>" for year.
+     */
+    fun storyPeriodKey(timeRange: TimeRange, now: LocalDate = LocalDate.now()): String {
+        val start = effectivePeriodStart(timeRange, now)
+        return when (timeRange) {
+            TimeRange.THIS_WEEK -> "W${start}"
+            TimeRange.THIS_MONTH -> "M${start.year}-${start.monthValue.toString().padStart(2, '0')}"
+            TimeRange.THIS_YEAR -> "Y${start.year}"
+            else -> "O${start}"
+        }
+    }
+
     private fun formatWeekLabel(start: LocalDate, locale: Locale): String {
         val end = start.plusDays(6)
         val shortMonth = DateTimeFormatter.ofPattern("MMM", locale)

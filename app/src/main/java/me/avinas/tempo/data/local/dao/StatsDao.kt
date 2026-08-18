@@ -1,6 +1,7 @@
 package me.avinas.tempo.data.local.dao
 
 import androidx.room.Dao
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Query
 import me.avinas.tempo.data.stats.*
@@ -2350,12 +2351,265 @@ interface StatsDao {
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean
     ): CombinedBasicStats
+
+    // =====================
+    // Ranking Search Queries
+    // Live-filter the full ranking by a text query and report each match's
+    // GLOBAL rank. The stats CTE is materialized once; the correlated count
+    // runs only for matching rows (matches × n, not n²). No window functions:
+    // minSdk 26 devices (API 26-28) ship SQLite older than 3.25.
+    // =====================
+
+    /**
+     * Search the track ranking by play count, returning matches with their global rank.
+     * Rows are ordered by rank ascending; the caller assigns rank = position + 1.
+     */
+    @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
+    @Query("""
+        WITH stats AS (
+            SELECT 
+                t.id as track_id,
+                t.title,
+                t.artist,
+                t.album,
+                COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+                COUNT(le.id) as play_count,
+                SUM(le.playDuration) as total_time_ms,
+                MIN(le.timestamp) as first_played,
+                MAX(le.timestamp) as last_played,
+                em.preview_url as preview_url
+            FROM listening_events le
+            INNER JOIN tracks t ON le.track_id = t.id
+            LEFT JOIN enriched_metadata em ON t.id = em.track_id
+            WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
+                AND (:filterPodcasts = 0 OR t.content_type IS NULL OR t.content_type != 'PODCAST')
+                AND (:filterAudiobooks = 0 OR t.content_type IS NULL OR t.content_type != 'AUDIOBOOK')
+            GROUP BY t.id
+        ),
+        ranked AS (
+            SELECT 
+                stats.*,
+                (SELECT COUNT(*) FROM stats s2
+                 WHERE s2.play_count > stats.play_count
+                    OR (s2.play_count = stats.play_count AND s2.total_time_ms > stats.total_time_ms)
+                    OR (s2.play_count = stats.play_count AND s2.total_time_ms = stats.total_time_ms AND s2.track_id < stats.track_id)
+                ) + 1 as global_rank
+            FROM stats
+            WHERE stats.title LIKE '%' || :query || '%'
+               OR stats.artist LIKE '%' || :query || '%'
+               OR (stats.album IS NOT NULL AND stats.album LIKE '%' || :query || '%')
+        )
+        SELECT ranked.*, NULL as combined_score
+        FROM ranked
+        ORDER BY ranked.global_rank
+        LIMIT :limit
+    """)
+    suspend fun searchTopTracksByPlayCount(
+        startTime: Long,
+        endTime: Long,
+        filterPodcasts: Boolean,
+        filterAudiobooks: Boolean,
+        query: String,
+        limit: Int
+    ): List<RankedTopTrack>
+
+    /**
+     * Search the track ranking by total listening time, returning matches with their global rank.
+     */
+    @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
+    @Query("""
+        WITH stats AS (
+            SELECT 
+                t.id as track_id,
+                t.title,
+                t.artist,
+                t.album,
+                COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+                COUNT(le.id) as play_count,
+                SUM(le.playDuration) as total_time_ms,
+                MIN(le.timestamp) as first_played,
+                MAX(le.timestamp) as last_played,
+                em.preview_url as preview_url
+            FROM listening_events le
+            INNER JOIN tracks t ON le.track_id = t.id
+            LEFT JOIN enriched_metadata em ON t.id = em.track_id
+            WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
+                AND (:filterPodcasts = 0 OR t.content_type IS NULL OR t.content_type != 'PODCAST')
+                AND (:filterAudiobooks = 0 OR t.content_type IS NULL OR t.content_type != 'AUDIOBOOK')
+            GROUP BY t.id
+        ),
+        ranked AS (
+            SELECT 
+                stats.*,
+                (SELECT COUNT(*) FROM stats s2
+                 WHERE s2.total_time_ms > stats.total_time_ms
+                    OR (s2.total_time_ms = stats.total_time_ms AND s2.play_count > stats.play_count)
+                    OR (s2.total_time_ms = stats.total_time_ms AND s2.play_count = stats.play_count AND s2.track_id < stats.track_id)
+                ) + 1 as global_rank
+            FROM stats
+            WHERE stats.title LIKE '%' || :query || '%'
+               OR stats.artist LIKE '%' || :query || '%'
+               OR (stats.album IS NOT NULL AND stats.album LIKE '%' || :query || '%')
+        )
+        SELECT ranked.*, NULL as combined_score
+        FROM ranked
+        ORDER BY ranked.global_rank
+        LIMIT :limit
+    """)
+    suspend fun searchTopTracksByTime(
+        startTime: Long,
+        endTime: Long,
+        filterPodcasts: Boolean,
+        filterAudiobooks: Boolean,
+        query: String,
+        limit: Int
+    ): List<RankedTopTrack>
+
+    /**
+     * Search the track ranking by combined score, returning matches with their global rank.
+     * The combined score is normalized over the FULL ranking (same as the list view),
+     * so a match's score/rank agrees with what the unfiltered chart shows.
+     */
+    @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
+    @Query("""
+        WITH stats AS (
+            SELECT 
+                t.id as track_id,
+                t.title,
+                t.artist,
+                t.album,
+                COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+                COUNT(le.id) as play_count,
+                SUM(le.playDuration) as total_time_ms,
+                MIN(le.timestamp) as first_played,
+                MAX(le.timestamp) as last_played,
+                em.preview_url as preview_url
+            FROM listening_events le
+            INNER JOIN tracks t ON le.track_id = t.id
+            LEFT JOIN enriched_metadata em ON t.id = em.track_id
+            WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
+                AND (:filterPodcasts = 0 OR t.content_type IS NULL OR t.content_type != 'PODCAST')
+                AND (:filterAudiobooks = 0 OR t.content_type IS NULL OR t.content_type != 'AUDIOBOOK')
+            GROUP BY t.id
+        ),
+        max_values AS (
+            SELECT 
+                MAX(play_count) as max_plays,
+                MAX(total_time_ms) as max_time
+            FROM stats
+        ),
+        scored AS (
+            SELECT 
+                stats.*,
+                CASE 
+                    WHEN max_values.max_plays > 0 AND max_values.max_time > 0 THEN
+                        (0.5 * CAST(stats.play_count AS REAL) / max_values.max_plays) + 
+                        (0.5 * CAST(stats.total_time_ms AS REAL) / max_values.max_time)
+                    ELSE 0.0
+                END as combined_score
+            FROM stats
+            CROSS JOIN max_values
+        ),
+        ranked AS (
+            SELECT 
+                scored.*,
+                (SELECT COUNT(*) FROM scored s2
+                 WHERE s2.combined_score > scored.combined_score
+                    OR (s2.combined_score = scored.combined_score AND s2.play_count > scored.play_count)
+                    OR (s2.combined_score = scored.combined_score AND s2.play_count = scored.play_count AND s2.total_time_ms > scored.total_time_ms)
+                    OR (s2.combined_score = scored.combined_score AND s2.play_count = scored.play_count AND s2.total_time_ms = scored.total_time_ms AND s2.track_id < scored.track_id)
+                ) + 1 as global_rank
+            FROM scored
+            WHERE scored.title LIKE '%' || :query || '%'
+               OR scored.artist LIKE '%' || :query || '%'
+               OR (scored.album IS NOT NULL AND scored.album LIKE '%' || :query || '%')
+        )
+        SELECT * FROM ranked
+        ORDER BY ranked.global_rank
+        LIMIT :limit
+    """)
+    suspend fun searchTopTracksByCombinedScore(
+        startTime: Long,
+        endTime: Long,
+        filterPodcasts: Boolean,
+        filterAudiobooks: Boolean,
+        query: String,
+        limit: Int
+    ): List<RankedTopTrack>
+
+    /**
+     * Search the album ranking by play count, returning matches with their global rank.
+     * Applies the same album eligibility rules as getTopAlbumsFiltered.
+     */
+    @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
+    @Query("""
+        WITH stats AS (
+            SELECT 
+                t.album,
+                t.artist,
+                COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+                COUNT(le.id) as play_count,
+                SUM(le.playDuration) as total_time_ms,
+                COUNT(DISTINCT t.id) as unique_tracks
+            FROM listening_events le
+            INNER JOIN tracks t ON le.track_id = t.id
+            LEFT JOIN enriched_metadata em ON t.id = em.track_id
+            WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
+            AND t.album IS NOT NULL AND t.album != ''
+            AND (em.release_type IS NULL OR em.release_type NOT IN ('Single', 'single'))
+            AND (:filterPodcasts = 0 OR t.content_type IS NULL OR t.content_type != 'PODCAST')
+            AND (:filterAudiobooks = 0 OR t.content_type IS NULL OR t.content_type != 'AUDIOBOOK')
+            GROUP BY t.album, t.artist
+            HAVING COUNT(DISTINCT t.id) > 1
+        ),
+        ranked AS (
+            SELECT 
+                stats.*,
+                (SELECT COUNT(*) FROM stats s2
+                 WHERE s2.play_count > stats.play_count
+                    OR (s2.play_count = stats.play_count AND s2.total_time_ms > stats.total_time_ms)
+                    OR (s2.play_count = stats.play_count AND s2.total_time_ms = stats.total_time_ms AND s2.album < stats.album)
+                ) + 1 as global_rank
+            FROM stats
+            WHERE stats.album LIKE '%' || :query || '%'
+               OR stats.artist LIKE '%' || :query || '%'
+        )
+        SELECT * FROM ranked
+        ORDER BY ranked.global_rank
+        LIMIT :limit
+    """)
+    suspend fun searchTopAlbums(
+        startTime: Long,
+        endTime: Long,
+        filterPodcasts: Boolean,
+        filterAudiobooks: Boolean,
+        query: String,
+        limit: Int
+    ): List<RankedTopAlbum>
 }
 
 data class TrackWithStatsRaw(
     @Embedded val track: me.avinas.tempo.data.local.entities.Track,
     val play_count: Int,
     val total_time_ms: Long
+)
+
+/**
+ * Search result row: a top-track entry plus its GLOBAL rank in the full ranking.
+ * TopTrack.rank is @Ignore (not a DB column), so the SQL-computed rank needs its
+ * own mapped column.
+ */
+data class RankedTopTrack(
+    @Embedded val item: TopTrack,
+    @ColumnInfo(name = "global_rank") val globalRank: Int
+)
+
+/**
+ * Search result row: a top-album entry plus its GLOBAL rank in the full ranking.
+ */
+data class RankedTopAlbum(
+    @Embedded val item: TopAlbum,
+    @ColumnInfo(name = "global_rank") val globalRank: Int
 )
 
 /**

@@ -39,16 +39,21 @@ class EnrichmentReportViewModel @Inject constructor(
         val failed: Int = 0,
         val skipped: Int = 0,
         val notFound: Int = 0,
+        val notQueued: Int = 0,
         val withAlbumArt: Int = 0,
     ) {
         val withoutAlbumArt: Int get() = (totalTracks - withAlbumArt).coerceAtLeast(0)
         val coveragePercent: Int get() = if (totalTracks > 0) (enriched * 100 / totalTracks) else 0
         val artCoveragePercent: Int get() = if (totalTracks > 0) (withAlbumArt * 100 / totalTracks) else 0
-        val unenriched: Int get() = pending + failed + skipped + notFound
+        // Everything that is not ENRICHED, including tracks that never got a
+        // metadata row at all (notQueued) — the button label and the sweep both
+        // cover the full library.
+        val unenriched: Int get() = pending + failed + skipped + notFound + notQueued
     }
 
     data class BulkProgress(
         val isRunning: Boolean = false,
+        val isWaiting: Boolean = false,
         val processed: Int = 0,
         val total: Int = 0,
         val isDone: Boolean = false,
@@ -63,6 +68,9 @@ class EnrichmentReportViewModel @Inject constructor(
         WorkManager.getInstance(context)
             .getWorkInfosByTagFlow(EnrichmentWorker.TAG_ENRICH_ALL)
             .map { infos ->
+                // Prefer the live job; only fall back to a finished one when nothing
+                // is active. Picking infos.firstOrNull() unconditionally could surface
+                // a stale finished run while a new sweep is still queued.
                 val running = infos.firstOrNull { it.state == WorkInfo.State.RUNNING }
                 val enqueued = infos.firstOrNull { it.state == WorkInfo.State.ENQUEUED }
                 val info = running ?: enqueued ?: infos.firstOrNull()
@@ -71,8 +79,13 @@ class EnrichmentReportViewModel @Inject constructor(
                 } else {
                     val p = info.progress
                     val done = p.getBoolean("done", false) || info.state == WorkInfo.State.SUCCEEDED
+                    val active = (info.state == WorkInfo.State.RUNNING || info.state == WorkInfo.State.ENQUEUED) && !done
                     BulkProgress(
-                        isRunning = (info.state == WorkInfo.State.RUNNING || info.state == WorkInfo.State.ENQUEUED) && !done,
+                        isRunning = active,
+                        // Enqueued with no progress yet = waiting on constraints
+                        // (network / battery). Surface it so the user does not see a
+                        // frozen "Starting enrichment…" forever.
+                        isWaiting = active && info.state == WorkInfo.State.ENQUEUED && p.getInt("total", 0) == 0,
                         processed = p.getInt("processed", 0),
                         total = p.getInt("total", 0),
                         isDone = done,
@@ -96,6 +109,7 @@ class EnrichmentReportViewModel @Inject constructor(
                 failed = statusCounts[EnrichmentStatus.FAILED] ?: 0,
                 skipped = statusCounts[EnrichmentStatus.SKIPPED] ?: 0,
                 notFound = statusCounts[EnrichmentStatus.NOT_FOUND] ?: 0,
+                notQueued = enrichedMetadataRepository.countTracksWithoutEnrichedMetadata(),
                 withAlbumArt = enrichedMetadataRepository.countTracksWithAlbumArt(),
             )
         }
@@ -104,6 +118,10 @@ class EnrichmentReportViewModel @Inject constructor(
     /** Requeue every non-enriched track to PENDING and start the bulk foreground sweep. */
     fun startEnrichAll() {
         viewModelScope.launch {
+            // First queue tracks that never got a metadata row (invisible to the
+            // status counts until now), then requeue every non-enriched track back
+            // to PENDING so the sweep covers the whole library.
+            enrichedMetadataRepository.ensurePendingForAllTracks()
             enrichedMetadataRepository.requeueAllForEnrichment()
             val pending = enrichedMetadataRepository.getEnrichmentStats()[EnrichmentStatus.PENDING] ?: 0
             if (pending > 0) {

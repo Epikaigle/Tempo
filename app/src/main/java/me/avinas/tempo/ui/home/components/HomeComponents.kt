@@ -15,6 +15,8 @@ import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,7 +45,7 @@ import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.components.GlassCard
 
 import me.avinas.tempo.ui.components.TrendLine
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.*
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 import me.avinas.tempo.ui.theme.premiumClickable
@@ -61,16 +63,26 @@ fun HeroCard(
 ) {
     var scrubbingTime by remember { mutableStateOf<String?>(null) }
     var scrubbingLabel by remember { mutableStateOf<String?>(null) }
-    
+
     // Reset scrubbing state when time range changes
     LaunchedEffect(selectedRange) {
         scrubbingTime = null
         scrubbingLabel = null
     }
 
+    val greeting = remember(userName) {
+        me.avinas.tempo.utils.TempoCopyEngine.getHeroGreeting(userName)
+    }
+    val greetingStyle = when {
+        greeting.length <= 20 -> MaterialTheme.typography.headlineSmall
+        greeting.length <= 30 -> MaterialTheme.typography.titleLarge
+        else -> MaterialTheme.typography.titleMedium
+    }
+
     GlassCard(
         modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(24.dp) // Increased padding
+        shape = RoundedCornerShape(20.dp),
+        contentPadding = PaddingValues(16.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxWidth()
@@ -79,104 +91,93 @@ fun HeroCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Header with Selector
+                // Greeting
+                Text(
+                    text = greeting,
+                    style = greetingStyle,
+                    color = TextPrimary.copy(alpha = 0.92f),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Hero Time Display + period context
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                   val greetingText = me.avinas.tempo.utils.TempoCopyEngine.getHeroGreeting(userName)
-                   
-                   // Dynamic font size based on length
-                   val greetingStyle = when {
-                       greetingText.length <= 20 -> MaterialTheme.typography.headlineSmall
-                       greetingText.length <= 30 -> MaterialTheme.typography.titleLarge
-                       else -> MaterialTheme.typography.titleMedium
-                   }
-                   
-                   Text(
-                        text = greetingText,
-                        style = greetingStyle,
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f).padding(end = 8.dp),
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
-                    
-
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Hero Time Display
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
                         text = scrubbingTime ?: listeningTime,
                         style = MaterialTheme.typography.displayMedium,
-                        color = Color.White,
+                        color = TextPrimary,
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
-                    
+
                     if (scrubbingLabel != null) {
                         Text(
                             text = "• $scrubbingLabel",
                             style = MaterialTheme.typography.titleLarge,
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = TextSecondary,
                             modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    } else if (periodLabel.isNotBlank()) {
+                        Text(
+                            text = periodLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = TextTertiary,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(bottom = 8.dp)
                         )
                     }
                 }
-                
-                // Smart Copy Logic with Pulse
+
                 val isPositive = timeChangePercent >= 0
                 val percentString = "${if (isPositive) "+" else ""}${timeChangePercent.toInt()}%"
-                val comparisonColor = if (isPositive) Color(0xFF4ADE80) else Color(0xFFFBBF24) // Green vs Amber
-                
-                // Pulse Animation for badge
-                val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "BadgePulse")
-                val pulseAlpha by infiniteTransition.animateFloat(
-                    initialValue = 0.1f,
-                    targetValue = 0.25f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(1500, easing = LinearEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "PulseAlpha"
-                )
+                val comparisonColor = if (isPositive) TempoSuccessBright else TempoWarningBright
+                val arrowIcon = if (isPositive) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Badge
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(comparisonColor.copy(alpha = pulseAlpha))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(comparisonColor.copy(alpha = 0.14f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = percentString,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = comparisonColor,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Icon(
+                                imageVector = arrowIcon,
+                                contentDescription = null,
+                                tint = comparisonColor,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = percentString,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = comparisonColor,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.3.sp
+                            )
+                        }
                     }
-                    
+
                     Spacer(modifier = Modifier.width(8.dp))
-                    
+
                     Text(
                         text = me.avinas.tempo.utils.TempoCopyEngine.getHeroSubtitle(timeChangePercent, selectedRange),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.7f)
+                        color = TextSecondary
                     )
                 }
             }
+
             
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // Chart area
+            Spacer(modifier = Modifier.height(20.dp))
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -223,107 +224,66 @@ fun HeroCard(
 }
 
 
-private val SpotlightRingColors = listOf(
-    Color(0xFF8B5CF6), // Violet
-    Color(0xFFF59E0B)  // Amber
-)
+private val SpotlightAccent = me.avinas.tempo.ui.theme.TempoPrimary
 
 @Composable
 private fun SpotlightRing(
     albumArtUrl: String?,
+    viewed: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var viewed by remember { mutableStateOf(false) }
-    val infiniteTransition = rememberInfiniteTransition(label = "SpotlightRing")
-
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 18000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "RingRotation"
-    )
-
-    val pulse by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2200, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "RingPulse"
-    )
-
     Box(
         modifier = modifier
-            .size(64.dp)
-            .premiumClickable(onClick = {
-                viewed = true
-                onClick()
-            }, pressedScale = 0.92f),
+            .size(62.dp)
+            .premiumClickable(onClick = onClick, pressedScale = 0.97f),
         contentAlignment = Alignment.Center
     ) {
-        if (!viewed) {
-            Canvas(
-                modifier = Modifier
-                    .matchParentSize()
-                    .graphicsLayer { alpha = 0.55f * pulse }
-            ) {
-                val glowRadius = size.minDimension * 0.7f
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            SpotlightRingColors[0].copy(alpha = 0.45f),
-                            SpotlightRingColors[1].copy(alpha = 0.2f),
-                            Color.Transparent
-                        ),
-                        center = Offset(center.x, center.y),
-                        radius = glowRadius
-                    ),
-                    center = Offset(center.x, center.y),
-                    radius = glowRadius
-                )
-            }
-
-            Canvas(
-                modifier = Modifier
-                    .matchParentSize()
-                    .rotate(rotation)
-            ) {
-                val stroke = size.minDimension * 0.07f
-                val diameter = size.minDimension - stroke
-                val topLeft = Offset(
-                    (size.width - diameter) / 2f,
-                    (size.height - diameter) / 2f
-                )
-
-                val ringBrush = Brush.sweepGradient(
-                    colors = SpotlightRingColors + SpotlightRingColors.first(),
-                    center = Offset(center.x, center.y)
-                )
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val outerStroke = 1.5.dp.toPx()
+            val inset = outerStroke / 2
+            val d = size.minDimension - outerStroke
+            val tl = Offset(inset, inset)
+            val sz = androidx.compose.ui.geometry.Size(d, d)
+            if (!viewed) {
                 drawArc(
-                    brush = ringBrush,
+                    color = Color.White.copy(alpha = 0.10f),
                     startAngle = 0f,
                     sweepAngle = 360f,
                     useCenter = false,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = outerStroke),
+                    topLeft = tl,
+                    size = sz
+                )
+                drawArc(
+                    color = SpotlightAccent,
+                    startAngle = -90f,
+                    sweepAngle = 298f,
+                    useCenter = false,
                     style = androidx.compose.ui.graphics.drawscope.Stroke(
-                        width = stroke,
+                        width = outerStroke,
                         cap = androidx.compose.ui.graphics.StrokeCap.Round
                     ),
-                    topLeft = topLeft,
-                    size = androidx.compose.ui.geometry.Size(diameter, diameter)
+                    topLeft = tl,
+                    size = sz
+                )
+            } else {
+                drawArc(
+                    color = Color.White.copy(alpha = 0.09f),
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()),
+                    topLeft = tl,
+                    size = sz
                 )
             }
         }
-
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(48.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.08f)),
+                .background(Color.White.copy(alpha = 0.06f)),
             contentAlignment = Alignment.Center
         ) {
             if (!albumArtUrl.isNullOrBlank()) {
@@ -338,8 +298,32 @@ private fun SpotlightRing(
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
-                    tint = SpotlightRingColors[0],
+                    tint = SpotlightAccent,
                     modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+        if (!viewed) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 1.dp, y = 1.dp)
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(SpotlightAccent)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(Color.White.copy(alpha = 0.22f), Color.Transparent),
+                            radius = 14.dp.value * 2
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
                 )
             }
         }
@@ -352,13 +336,13 @@ fun SpotlightStoryCard(
     onRingClick: () -> Unit,
     albumArtUrl: String? = null,
     storyAvailable: Boolean = true,
+    storyViewed: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     GlassCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .premiumClickable(onClick = onClick, pressedScale = 0.96f),
-        backgroundColor = me.avinas.tempo.ui.theme.NeonRed.copy(alpha = 0.12f),
+        modifier = modifier.fillMaxWidth().premiumClickable(onClick = onClick, pressedScale = 0.98f),
+        accentColor = me.avinas.tempo.ui.theme.TempoPrimary,
+        accentStrength = 0.06f,
         contentPadding = PaddingValues(16.dp)
     ) {
         Row(
@@ -367,7 +351,7 @@ fun SpotlightStoryCard(
             modifier = Modifier.fillMaxWidth()
         ) {
             if (storyAvailable) {
-                SpotlightRing(albumArtUrl = albumArtUrl, onClick = onRingClick)
+                SpotlightRing(albumArtUrl = albumArtUrl, viewed = storyViewed, onClick = onRingClick)
             }
 
             Column(
@@ -376,20 +360,20 @@ fun SpotlightStoryCard(
                 Text(
                     text = stringResource(R.string.home_spotlight_title),
                     style = MaterialTheme.typography.titleLarge,
-                    color = Color.White,
+                    color = TextPrimary,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = stringResource(R.string.home_spotlight_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f)
+                    color = TextSecondary
                 )
             }
 
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.5f),
+                tint = TextTertiary,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -543,7 +527,7 @@ fun WeekInReviewGrid(
             // Discoveries
             GlassCard(
                 modifier = Modifier.weight(1f),
-                backgroundColor = Color(0xFFA855F7).copy(alpha = 0.1f), // Purple
+                backgroundColor = InsightDanceability.copy(alpha = 0.1f),
                 variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
             ) {
                 Column(
@@ -554,13 +538,13 @@ fun WeekInReviewGrid(
                         modifier = Modifier
                             .size(56.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFA855F7).copy(alpha = 0.2f)),
+                            .background(InsightDanceability.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Explore,
                             contentDescription = null,
-                            tint = Color(0xFFA855F7), // Purple 400
+                            tint = InsightDanceability,
                             modifier = Modifier.size(32.dp)
                         )
                     }
@@ -568,7 +552,7 @@ fun WeekInReviewGrid(
                     Text(
                         text = stringResource(R.string.home_new_finds),
                         style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFFA855F7)
+                        color = InsightDanceability
                     )
                     Text(
                         text = "$newDiscoveries",
@@ -610,24 +594,24 @@ fun DiscoverySection(
                 title = stringResource(R.string.home_found_artists, newArtists),
                 subtitle = stringResource(R.string.home_expand_horizon),
                 icon = Icons.Default.Explore,
-                color = Color(0xFF0EA5E9), // Sky 500
-                backgroundColor = Color(0xFF0369A1).copy(alpha = 0.2f)
+                color = TempoSky,
+                backgroundColor = TempoInfo.copy(alpha = 0.2f)
             )
             
             DiscoveryCard(
                 title = stringResource(R.string.home_discovered_tracks, newTracks),
                 subtitle = stringResource(R.string.home_fresh_beats),
                 icon = Icons.Default.History,
-                color = Color(0xFFF43F5E), // Rose 500
-                backgroundColor = Color(0xFFBE123C).copy(alpha = 0.2f)
+                color = TempoError,
+                backgroundColor = TempoErrorDeep.copy(alpha = 0.2f)
             )
             
             DiscoveryCard(
                 title = stringResource(R.string.home_variety_score, varietyScore),
                 subtitle = stringResource(R.string.home_how_unique),
                 icon = Icons.Default.Fingerprint,
-                color = Color(0xFF8B5CF6), // Violet 500
-                backgroundColor = Color(0xFF6D28D9).copy(alpha = 0.2f)
+                color = InsightMood,
+                backgroundColor = TertiaryPurple.copy(alpha = 0.2f)
             )
         }
     }

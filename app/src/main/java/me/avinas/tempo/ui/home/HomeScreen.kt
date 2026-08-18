@@ -1,7 +1,9 @@
 package me.avinas.tempo.ui.home
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-
+import me.avinas.tempo.ui.theme.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
@@ -32,10 +34,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.TimePeriodSelector
+import me.avinas.tempo.ui.stats.StatsShareDialog
+import me.avinas.tempo.ui.stats.StatsTab
 import me.avinas.tempo.ui.home.components.*
 import me.avinas.tempo.data.stats.InsightCardData
 import me.avinas.tempo.data.stats.InsightType
@@ -104,7 +109,7 @@ fun HomeScreen(
                     state = lazyListState,
                     contentPadding = PaddingValues(bottom = 200.dp),
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     item(key = "header") {
                         VibeHeader(
@@ -123,8 +128,6 @@ fun HomeScreen(
                     
                     if (uiState.hasData) {
                         item(key = "hero") {
-                            val overview = uiState.listeningOverview
-                            val comparison = uiState.periodComparison
                             
                             val timeString = remember(uiState.listeningOverview?.totalListeningTimeMs) {
                                 val totalMs = uiState.listeningOverview?.totalListeningTimeMs ?: 0
@@ -158,7 +161,6 @@ fun HomeScreen(
                             Column(
                                 modifier = Modifier
                                     .padding(horizontal = 16.dp)
-                                    .padding(top = 16.dp)
                             ) {
                                 HeroCard(
                                     userName = uiState.userName ?: stringResource(R.string.home_user_default),
@@ -184,10 +186,11 @@ fun HomeScreen(
                                 me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.getDirectStoryTimeRange()
                             }
 
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 SpotlightStoryCard(
                                     onClick = {
                                         walkthroughController.dismiss()
+                                        viewModel.onSpotlightViewed()
                                         if (directStoryTimeRange != null) {
                                             onNavigateToSpotlight(directStoryTimeRange, false)
                                         } else {
@@ -196,12 +199,13 @@ fun HomeScreen(
                                     },
                                     onRingClick = {
                                         walkthroughController.dismiss()
+                                        viewModel.onSpotlightViewed()
                                         if (directStoryTimeRange != null) {
                                             onNavigateToSpotlight(directStoryTimeRange, true)
                                         }
                                     },
                                     albumArtUrl = uiState.spotlightTopTrack?.albumArtUrl,
-                                    storyAvailable = directStoryTimeRange != null,
+                                    storyViewed = uiState.spotlightStoryViewed,
                                     modifier = Modifier.onGloballyPositioned { coordinates ->
                                         walkthroughController.registerTarget(
                                             me.avinas.tempo.ui.components.WalkthroughStep.HOME_SPOTLIGHT,
@@ -213,7 +217,7 @@ fun HomeScreen(
                         }
 
                         item(key = "quickstats") {
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 QuickStatsRow(
                                     topArtistName = uiState.topArtist?.artist,
                                     topArtistImage = uiState.topArtist?.imageUrl,
@@ -253,7 +257,7 @@ fun HomeScreen(
                     
                     if (uiState.todayOverview?.totalPlayCount?.let { it > 0 } == true) {
                         item(key = "todays_listen") {
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 TodaysListenWidget(
                                     todayOverview = uiState.todayOverview,
                                     topTrack = uiState.todayTopTrack,
@@ -282,15 +286,23 @@ fun HomeScreen(
 
                     if (uiState.insights.isNotEmpty()) {
                         item(key = "insights_header") {
-                            Text(
-                                text = stringResource(R.string.home_your_signal),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 12.dp)
-                            )
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                Text(
+                                    text = stringResource(R.string.home_your_signal),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 8.dp)
+                                        .width(24.dp)
+                                        .height(1.dp)
+                                        .background(Divider)
+                                )
+                            }
                         }
-                        
+
                         item(key = "insights_feed") {
                             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 InsightFeed(
@@ -298,7 +310,6 @@ fun HomeScreen(
                                     onNavigateToTrack = onNavigateToTrack,
                                     onNavigateToArtist = onNavigateToArtist
                                 )
-                                Spacer(modifier = Modifier.height(16.dp))
                             }
                         }
                     }
@@ -316,42 +327,59 @@ fun HomeScreen(
                 targetValue = headerAlpha,
                 label = "headerAlpha"
             )
-            val backgroundColor = TempoDarkBackground.copy(alpha = headerAlphaAnimated)
+            val barBrush = Brush.verticalGradient(
+                colors = listOf(
+                    TempoDarkBackground.copy(alpha = headerAlphaAnimated),
+                    TempoDarkBackground.copy(alpha = headerAlphaAnimated * 0.55f)
+                )
+            )
 
-            // Custom Top Bar (Non-blocking when transparent)
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .background(backgroundColor)
+                    .background(barBrush)
                     .statusBarsPadding()
-                    .height(64.dp) // Standard AppBar height
+                    .height(56.dp)
             ) {
-                // Title
                 Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.CenterStart
                 ) {
                     Text(
                         text = stringResource(R.string.home_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = headerAlphaAnimated)
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary.copy(alpha = headerAlphaAnimated),
+                        letterSpacing = 0.2.sp
                     )
                 }
-                
-                // Settings Button
                 IconButton(
                     onClick = onNavigateToSettings,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(end = 8.dp),
+                        .padding(end = 4.dp),
                     colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = if (headerAlphaAnimated > 0.5f) Color.Transparent else Color.White.copy(alpha = 0.1f),
-                        contentColor = Color.White
+                        containerColor = Color.Transparent,
+                        contentColor = TextSecondary
                     )
                 ) {
-                    Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.home_settings))
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = stringResource(R.string.home_settings),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                if (headerAlphaAnimated > 0.02f) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(me.avinas.tempo.ui.theme.Divider.copy(alpha = headerAlphaAnimated * 0.9f))
+                    )
                 }
             }
             
@@ -396,6 +424,28 @@ fun HomeScreen(
             )
         }
         
+        // Share Nudge — gated in the ViewModel; opens the artist share preview
+        // (music share card) directly instead of showing a message popup. Never
+        // stacks with the rate popup or spotlight reminder.
+        if (uiState.showShareNudge && uiState.shareNudgeArtists.isNotEmpty() &&
+            !uiState.showRateAppPopup && !uiState.showSpotlightReminder
+        ) {
+            val nudgeRange = uiState.shareNudgeTimeRange ?: TimeRange.THIS_WEEK
+            StatsShareDialog(
+                tab = StatsTab.TOP_ARTISTS,
+                timeRange = nudgeRange,
+                items = uiState.shareNudgeArtists,
+                overview = uiState.shareNudgeOverview,
+                nudgeCaption = stringResource(
+                    if (nudgeRange == TimeRange.THIS_MONTH) R.string.share_nudge_caption_monthly
+                    else R.string.share_nudge_caption_weekly
+                ),
+                nudgeHint = stringResource(R.string.share_nudge_hint),
+                onDismiss = viewModel::onShareNudgeDismissed,
+                onShared = viewModel::onShareNudgeShared
+            )
+        }
+
         // Spotlight Story Reminder Popup
         val reminderType = uiState.reminderType
         if (uiState.showSpotlightReminder && reminderType != null) {
@@ -426,15 +476,15 @@ fun HomeScreen(
 @Composable
 private fun mapInsightToHabit(insight: InsightCardData): HabitInsightData {
     val (icon, color, gradient) = when(insight.type) {
-        InsightType.MOOD -> Triple(Icons.Default.Face, Color(0xFF8B5CF6), listOf(Color(0xFF8B5CF6).copy(alpha=0.4f), Color(0xFF6D28D9).copy(alpha=0.1f)))
-        InsightType.PEAK_TIME -> Triple(Icons.Default.DateRange, Color(0xFFF59E0B), listOf(Color(0xFFF59E0B).copy(alpha=0.4f), Color(0xFFD97706).copy(alpha=0.1f)))
-        InsightType.BINGE -> Triple(Icons.Filled.Bolt, Color(0xFFEC4899), listOf(Color(0xFFEC4899).copy(alpha=0.4f), Color(0xFFBE185D).copy(alpha=0.1f)))
-        InsightType.DISCOVERY -> Triple(Icons.Default.Celebration, Color(0xFF10B981), listOf(Color(0xFF10B981).copy(alpha=0.4f), Color(0xFF059669).copy(alpha=0.1f)))
-        InsightType.ENERGY -> Triple(Icons.Default.Bolt, Color(0xFFEF4444), listOf(Color(0xFFEF4444).copy(alpha=0.4f), Color(0xFF991B1B).copy(alpha=0.1f)))
-        InsightType.DANCEABILITY -> Triple(Icons.Default.Celebration, Color(0xFFA855F7), listOf(Color(0xFFA855F7).copy(alpha=0.4f), Color(0xFF6B21A8).copy(alpha=0.1f)))
-        InsightType.TEMPO -> Triple(Icons.Default.Speed, Color(0xFF06B6D4), listOf(Color(0xFF06B6D4).copy(alpha=0.4f), Color(0xFF155E75).copy(alpha=0.1f)))
-        InsightType.ACOUSTICNESS -> Triple(Icons.Default.Piano, Color(0xFF22C55E), listOf(Color(0xFF22C55E).copy(alpha=0.4f), Color(0xFF166534).copy(alpha=0.1f)))
-        else -> Triple(Icons.Default.DateRange, Color.Gray, listOf(Color.Gray.copy(alpha=0.2f), Color.DarkGray.copy(alpha=0.1f)))
+        InsightType.MOOD -> Triple(Icons.Default.Face, InsightMood, listOf(InsightMood.copy(alpha=0.4f), InsightMood.copy(alpha=0.1f)))
+        InsightType.PEAK_TIME -> Triple(Icons.Default.DateRange, InsightPeakTime, listOf(InsightPeakTime.copy(alpha=0.4f), InsightPeakTime.copy(alpha=0.1f)))
+        InsightType.BINGE -> Triple(Icons.Filled.Bolt, InsightBinge, listOf(InsightBinge.copy(alpha=0.4f), InsightBinge.copy(alpha=0.1f)))
+        InsightType.DISCOVERY -> Triple(Icons.Default.Celebration, InsightDiscovery, listOf(InsightDiscovery.copy(alpha=0.4f), InsightDiscovery.copy(alpha=0.1f)))
+        InsightType.ENERGY -> Triple(Icons.Default.Bolt, InsightEnergy, listOf(InsightEnergy.copy(alpha=0.4f), InsightEnergy.copy(alpha=0.1f)))
+        InsightType.DANCEABILITY -> Triple(Icons.Default.Celebration, InsightDanceability, listOf(InsightDanceability.copy(alpha=0.4f), InsightDanceability.copy(alpha=0.1f)))
+        InsightType.TEMPO -> Triple(Icons.Default.Speed, InsightTempo, listOf(InsightTempo.copy(alpha=0.4f), InsightTempo.copy(alpha=0.1f)))
+        InsightType.ACOUSTICNESS -> Triple(Icons.Default.Piano, InsightAcousticness, listOf(InsightAcousticness.copy(alpha=0.4f), InsightAcousticness.copy(alpha=0.1f)))
+        else -> Triple(Icons.Default.DateRange, TextTertiary, listOf(TextTertiary.copy(alpha=0.2f), TextTertiary.copy(alpha=0.1f)))
     }
     
     return HabitInsightData(

@@ -164,6 +164,50 @@ body {
   color: var(--text-muted);
 }
 
+/* ── Socket / live-connection indicator ── */
+.socket-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 99px;
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.socket-indicator::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.socket-indicator.socket-connected {
+  color: var(--success);
+  background: var(--success-glow);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.socket-indicator.socket-connecting,
+.socket-indicator.socket-reconnecting {
+  color: var(--warning);
+  background: var(--warning-glow);
+  border-color: rgba(251, 191, 36, 0.25);
+}
+
+.socket-indicator.socket-connected::before {
+  animation: socket-pulse 2s ease-in-out infinite;
+}
+
+@keyframes socket-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 /* ── Tabs Navigation ── */
 .tab-nav {
   display: grid;
@@ -667,6 +711,12 @@ body {
   font-weight: 600;
 }
 
+.np-duration {
+  color: var(--text-muted);
+  opacity: 0.7;
+  font-weight: 500;
+}
+
 .np-meta-grid {
   border-top: 1px solid var(--border);
   padding-top: 10px;
@@ -802,6 +852,18 @@ body {
   margin-bottom: 8px;
   min-height: 14px;
   font-weight: 500;
+}
+
+.sync-status.syncing {
+  color: var(--accent-light);
+}
+
+.sync-status.warning {
+  color: var(--warning);
+}
+
+.sync-status.error {
+  color: var(--danger);
 }
 
 .queue-list {

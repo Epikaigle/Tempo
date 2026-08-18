@@ -30,4 +30,9 @@ class RoomPreferencesRepository @Inject constructor(private val dao: UserPrefere
         val prefs = dao.getSync() ?: UserPreferences()
         dao.upsert(prefs.copy(lastAllTimeReminderShown = date))
     }
+
+    override suspend fun updateLastSpotlightStoryViewed(periodKey: String) {
+        val prefs = dao.getSync() ?: UserPreferences()
+        dao.upsert(prefs.copy(lastSpotlightStoryViewed = periodKey))
+    }
 }

@@ -1,6 +1,8 @@
 package me.avinas.tempo.ui.stats
 
 import android.widget.Toast
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +30,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -38,6 +41,7 @@ import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.components.CaptureWrapper
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.rememberCaptureController
+import me.avinas.tempo.ui.onboarding.dataStore
 import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.utils.ShareUtils
 
@@ -50,7 +54,13 @@ fun StatsShareDialog(
     timeRange: TimeRange,
     items: List<Any>,
     overview: ListeningOverview?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    // Optional subtle share nudge context (shown quietly above the share button).
+    nudgeCaption: String? = null,
+    nudgeHint: String? = null,
+    // Invoked instead of onDismiss after a successful share (lets the caller
+    // distinguish "shared" from "closed without sharing").
+    onShared: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val captureController = rememberCaptureController()
@@ -65,7 +75,13 @@ fun StatsShareDialog(
             if (!success) {
                 Toast.makeText(context, "Failed to share image", Toast.LENGTH_SHORT).show()
             } else {
-                onDismiss()
+                // Record the successful share so promotional nudges can back off.
+                runCatching {
+                    context.dataStore.edit { prefs ->
+                        prefs[longPreferencesKey("share_last_success")] = System.currentTimeMillis()
+                    }
+                }
+                if (onShared != null) onShared() else onDismiss()
             }
         }
     }
@@ -157,6 +173,34 @@ fun StatsShareDialog(
                     onConfigChange = { config = it },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
                 )
+
+                // Subtle nudge caption — quiet, understated context line
+                if (!nudgeCaption.isNullOrEmpty() || !nudgeHint.isNullOrEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (!nudgeCaption.isNullOrEmpty()) {
+                            Text(
+                                text = nudgeCaption,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.6f),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                        if (!nudgeHint.isNullOrEmpty()) {
+                            Text(
+                                text = nudgeHint,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.4f),
+                                letterSpacing = 2.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
 
                 // Share button
                 Button(

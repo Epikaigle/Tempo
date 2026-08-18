@@ -285,26 +285,7 @@ export class PlaybackTracker {
 
       this.accruePendingListenTime(tracker, now);
       const prevEvent = this.finalizeTab(tracker);
-
-      // Start tracking new track
-      tracker.currentTrackKey = trackKey;
-      tracker.accumulatedListenMs = 0;
-      tracker.lastPositionMs = positionMs;
-      tracker.lastPollTime = now;
-      tracker.logged = false;
-      tracker.replayCount = 0;
-      tracker.trackDurationMs = durationMs;
-      tracker.detectedSite = site;
-      tracker._isMuted = isMuted(raw);
-      tracker.pauseCount = 0;
-      tracker.seekCount = 0;
-      tracker.wasPlaying = raw.isPlaying;
-      tracker._sessionId = generateSessionId();
-      tracker.lastVolume = raw.volume;
-      tracker.hasPositionData = positionMs >= 0;
-      tracker.lastRaw = raw;
-      tracker.consecutiveStuckPolls = 0;
-      tracker.eligible = false;
+      this.startNewSession(tracker, raw, site, trackKey, positionMs, durationMs, now);
 
       return prevEvent;
     }
@@ -336,13 +317,35 @@ export class PlaybackTracker {
       tracker.lastStateChangeTime = now;
     }
 
-    // Detect replay: position jumped back to near 0 while same track
-    if (
+    // Detect replay / position reset: position jumped back to ~0 while playing.
+    //
+    // This is the crux of the "3-minute song shows as 15 minutes" bug. On
+    // YTMusic (and other auto-advancing players) the metadata can lag, so the
+    // next song arrives with the SAME title|artist|album key. The position
+    // resets to ~0 but the trackKey doesn't change, so without intervention the
+    // tracker keeps accruing listen time across many songs into one record.
+    //
+    // Fix: once this session has accrued enough listen time to be eligible for
+    // logging, a position reset means the previous playback has effectively
+    // ended. Finalize it (which logs it if it meets the completion threshold)
+    // and start a fresh session — exactly like a track change. Genuine replays
+    // are also handled correctly: each full listen becomes its own play.
+    const isPositionReset =
       tracker.lastPositionMs > REPLAY_POSITION_THRESHOLD_MS &&
       positionMs >= 0 &&
       positionMs < REPLAY_POSITION_THRESHOLD_MS &&
-      raw.isPlaying
-    ) {
+      raw.isPlaying;
+
+    if (isPositionReset) {
+      if (tracker.eligible) {
+        // Track boundary — commit the previous session, start clean.
+        this.accruePendingListenTime(tracker, now);
+        const prevEvent = this.finalizeTab(tracker);
+        this.startNewSession(tracker, raw, site, trackKey, positionMs, durationMs, now);
+        return prevEvent;
+      }
+      // Too early to be a real boundary (likely a glitch or instant replay) —
+      // just count it and keep accumulating.
       tracker.replayCount++;
     }
 
@@ -443,6 +446,62 @@ export class PlaybackTracker {
     return events;
   }
 
+  /**
+   * List tab ids of sessions that would be swept, WITHOUT finalizing them.
+   * Lets the service worker check tab.audible first so a live playing tab
+   * that is merely throttled (Firefox/Zen timer clamping) is not finalized
+   * prematurely and double-counted.
+   */
+  listStaleSessionTabIds(staleAfterMs: number): number[] {
+    const now = Date.now();
+    const ids: number[] = [];
+    for (const [tabId, tracker] of this.trackers) {
+      if (tracker.currentTrackKey === null) continue;
+      if (!tracker.wasPlaying) continue;
+      if (now - tracker.lastPollTime < staleAfterMs) continue;
+      ids.push(tabId);
+    }
+    return ids;
+  }
+
+  /**
+   * Finalize sessions that went silent while marked as playing.
+   *
+   * Safety net for environments where track-end signals get lost: service
+   * worker hibernation gaps, Firefox/Zen event-page suspension, laptop lid
+   * close, or tabs killed without firing unload events. Without this, accrued
+   * listen time only commits when the popup happens to be open.
+   *
+   * Only sessions last observed PLAYING are swept. Paused sessions stay
+   * untouched — a paused tab legitimately goes silent (dedup suppresses
+   * unchanged state) and its accrued time must survive until resume.
+   *
+   * `excludeTabIds` skips sessions whose tabs are confirmed still alive
+   * (e.g. chrome.tabs reports them as audible), preventing premature
+   * finalization of throttled-but-playing tabs.
+   *
+   * Returns finalized sessions with their tab ids so the caller can clean up
+   * now-playing snapshots and queue logged plays.
+   */
+  sweepStaleSessions(staleAfterMs: number, excludeTabIds?: ReadonlySet<number>): Array<{ tabId: number; event: TrackEvent }> {
+    const now = Date.now();
+    const results: Array<{ tabId: number; event: TrackEvent }> = [];
+
+    for (const [tabId, tracker] of this.trackers) {
+      if (tracker.currentTrackKey === null) continue;
+      if (!tracker.wasPlaying) continue;
+      if (now - tracker.lastPollTime < staleAfterMs) continue;
+      if (excludeTabIds?.has(tabId)) continue;
+
+      this.accruePendingListenTime(tracker, now);
+      const event = this.finalizeTab(tracker);
+      this.trackers.delete(tabId);
+      results.push({ tabId, event });
+    }
+
+    return results;
+  }
+
   /** Build a live NowPlaying snapshot for the popup UI. Gets best tab. */
   buildLiveSnapshot(raw: RawMediaState, site: string | null): NowPlaying {
     const tracker = this.getTracker(raw.tabId);
@@ -490,6 +549,45 @@ export class PlaybackTracker {
 
     tracker.accumulatedListenMs += this.applyDurationCap(tracker, pendingMs);
     tracker.lastPollTime = now;
+  }
+
+  /**
+   * Reset a tab tracker to a fresh session for a (new) track. Used both for
+   * real track changes and for replays (position reset to ~0 while playing),
+   * so every counter — including pause/position-update anomaly fields — starts
+   * clean instead of leaking across tracks.
+   */
+  private startNewSession(
+    tracker: TabTracker,
+    raw: RawMediaState,
+    site: string | null,
+    trackKey: string,
+    positionMs: number,
+    durationMs: number,
+    now: number,
+  ): void {
+    tracker.currentTrackKey = trackKey;
+    tracker.accumulatedListenMs = 0;
+    tracker.lastPositionMs = positionMs;
+    tracker.lastPollTime = now;
+    tracker.logged = false;
+    tracker.replayCount = 0;
+    tracker.trackDurationMs = durationMs;
+    tracker.detectedSite = site;
+    tracker._isMuted = isMuted(raw);
+    tracker.pauseCount = 0;
+    tracker.seekCount = 0;
+    tracker.wasPlaying = raw.isPlaying;
+    tracker._sessionId = generateSessionId();
+    tracker.lastVolume = raw.volume;
+    tracker.hasPositionData = positionMs >= 0;
+    tracker.lastRaw = raw;
+    tracker.consecutiveStuckPolls = 0;
+    tracker.eligible = false;
+    tracker.totalPauseDurationMs = 0;
+    tracker.positionUpdatesCount = positionMs >= 0 ? 1 : 0;
+    tracker.lastStateChangeTime = 0;
+    tracker._isPaused = false;
   }
 
   private computeCompletionPercentage(tracker: TabTracker): number {

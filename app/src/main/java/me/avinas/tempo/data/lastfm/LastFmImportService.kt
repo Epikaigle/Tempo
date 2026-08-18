@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.BuildConfig
+import me.avinas.tempo.data.local.ArchiveTimestampCodec
 import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.LastFmImportMetadataDao
 import me.avinas.tempo.data.local.dao.ListeningEventDao
@@ -1215,7 +1216,7 @@ class LastFmImportService @Inject constructor(
                 artistNameNormalized = pending.artistName.lowercase().trim(),
                 albumName = pending.albumName,
                 musicbrainzId = pending.musicbrainzId,
-                timestampsBlob = compressTimestamps(timestamps),
+                timestampsBlob = ArchiveTimestampCodec.compress(timestamps),
                 playCount = timestamps.size,
                 firstScrobble = timestamps.first(),
                 lastScrobble = timestamps.last(),
@@ -1227,37 +1228,10 @@ class LastFmImportService @Inject constructor(
             // Use merge upsert to handle tracks spanning multiple batches
             scrobbleArchiveDao.upsertWithMerge(
                 archive = archive,
-                decompressTimestamps = ::decompressTimestamps,
-                compressTimestamps = ::compressTimestamps
+                decompressTimestamps = ArchiveTimestampCodec::decompress,
+                compressTimestamps = ArchiveTimestampCodec::compress
             )
         }
-    }
-    
-    /**
-     * Compress timestamps using delta encoding.
-     */
-    private fun compressTimestamps(timestamps: List<Long>): ByteArray {
-        if (timestamps.isEmpty()) return ByteArray(0)
-        
-        val output = java.io.ByteArrayOutputStream()
-        val dataOut = java.io.DataOutputStream(output)
-        
-        // Write first timestamp as base
-        dataOut.writeLong(timestamps.first())
-        
-        // Write count
-        dataOut.writeInt(timestamps.size)
-        
-        // Write deltas (in seconds to save space)
-        var prev = timestamps.first()
-        for (i in 1 until timestamps.size) {
-            val delta = ((timestamps[i] - prev) / 1000).toInt()
-            dataOut.writeInt(delta)
-            prev = timestamps[i]
-        }
-        
-        dataOut.flush()
-        return output.toByteArray()
     }
     
     /**
@@ -1409,7 +1383,7 @@ class LastFmImportService @Inject constructor(
             }
             
             // Decompress timestamps
-            val timestamps = decompressTimestamps(archive.timestampsBlob).sorted()
+            val timestamps = ArchiveTimestampCodec.decompress(archive.timestampsBlob).sorted()
             
             // Create listening events for each timestamp, calculating isReplay
             val events = mutableListOf<ListeningEvent>()
@@ -1471,39 +1445,6 @@ class LastFmImportService @Inject constructor(
         val duplicatesSkipped: Int,
         val isNewTrack: Boolean
     )
-    
-    /**
-     * Decompress timestamps from archive blob.
-     */
-    private fun decompressTimestamps(blob: ByteArray): List<Long> {
-        if (blob.isEmpty()) return emptyList()
-        return try {
-            val input = java.io.DataInputStream(java.io.ByteArrayInputStream(blob))
-
-            // Read base timestamp
-            val baseTimestamp = input.readLong()
-
-            // Read count
-            val count = input.readInt()
-
-            if (count <= 1) return listOf(baseTimestamp)
-
-            // Read deltas and reconstruct timestamps
-            val timestamps = mutableListOf(baseTimestamp)
-            var current = baseTimestamp
-
-            repeat(count - 1) {
-                val deltaSec = input.readInt()
-                current += deltaSec * 1000L
-                timestamps.add(current)
-            }
-
-            timestamps
-        } catch (e: java.io.IOException) {
-            Log.w(TAG, "decompressTimestamps: truncated or malformed blob (${blob.size} bytes), returning empty list", e)
-            emptyList()
-        }
-    }
     
     /**
      * Get archive statistics for UI display.
@@ -1578,7 +1519,7 @@ class LastFmImportService @Inject constructor(
         val expandedItems = mutableListOf<ArchiveHistoryItem>()
         
         for (archive in archives) {
-            val timestamps = decompressTimestamps(archive.timestampsBlob)
+            val timestamps = ArchiveTimestampCodec.decompress(archive.timestampsBlob)
             
             // Filter timestamps to those in range
             val inRangeTimestamps = timestamps.filter { ts ->
@@ -1623,7 +1564,7 @@ class LastFmImportService @Inject constructor(
         
         var totalCount = 0
         for (archive in archives) {
-            val timestamps = decompressTimestamps(archive.timestampsBlob)
+            val timestamps = ArchiveTimestampCodec.decompress(archive.timestampsBlob)
             totalCount += timestamps.count { it in startTime..endTime }
         }
         
@@ -1645,7 +1586,7 @@ class LastFmImportService @Inject constructor(
         val expandedItems = mutableListOf<ArchiveHistoryItem>()
         
         for (archive in archives) {
-            val timestamps = decompressTimestamps(archive.timestampsBlob)
+            val timestamps = ArchiveTimestampCodec.decompress(archive.timestampsBlob)
             
             // Filter timestamps to range if specified
             val filteredTimestamps = timestamps.filter { ts ->

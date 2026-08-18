@@ -351,11 +351,24 @@ interface ListeningEventDao {
     @Query("DELETE FROM listening_events WHERE track_id = :trackId")
     suspend fun deleteByTrackId(trackId: Long)
     
+
+
     /**
-     * Move events from one track to another (used during merge).
+     * Delete all listening events for one track.
+     * Used by track merge after the events have been re-inserted against
+     * the target track through the dedup pipeline.
      */
-    @Query("UPDATE listening_events SET track_id = :targetTrackId WHERE track_id = :sourceTrackId")
-    suspend fun reattributeEvents(sourceTrackId: Long, targetTrackId: Long)
+    @Query("DELETE FROM listening_events WHERE track_id = :trackId")
+    suspend fun deleteEventsForTrack(trackId: Long): Int
+
+    /**
+     * Keyset page of listening events for backup export.
+     * Rows are fetched in id order, page after page, so the full history
+     * (potentially hundreds of thousands of rows) is never materialized
+     * in memory at once. Pass the last seen id as [afterId], starting at 0.
+     */
+    @Query("SELECT * FROM listening_events WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+    suspend fun getEventsPage(afterId: Long, limit: Int): List<ListeningEvent>
     
     // =====================
     // Enhanced Engagement Queries
@@ -444,12 +457,6 @@ interface ListeningEventDao {
     @Query("SELECT AVG(completionPercentage) FROM listening_events WHERE timestamp >= :startTime AND timestamp <= :endTime")
     suspend fun getAverageCompletion(startTime: Long, endTime: Long): Float?
     
-    /**
-     * Get all listening events for export.
-     */
-    @Query("SELECT * FROM listening_events ORDER BY timestamp DESC")
-    suspend fun getAllEventsSync(): List<ListeningEvent>
-
     @Query("SELECT COUNT(*) FROM listening_events")
     suspend fun getCount(): Int
     

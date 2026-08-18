@@ -36,7 +36,7 @@ data class Artist(
      * This helps prevent duplicate entries like "KR$NA" vs "Krsna" vs "KRSNA".
      */
     @ColumnInfo(name = "normalized_name")
-    val normalizedName: String = name.lowercase().trim(),
+    val normalizedName: String = normalizeName(name),
     
     @ColumnInfo(name = "image_url") 
     val imageUrl: String?,

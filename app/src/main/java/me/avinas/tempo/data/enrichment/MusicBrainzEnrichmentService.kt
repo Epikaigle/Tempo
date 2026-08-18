@@ -884,9 +884,11 @@ class MusicBrainzEnrichmentService @Inject constructor(
         existingMetadata: EnrichedMetadata?,
         reason: String
     ): EnrichedMetadata {
-        return EnrichedMetadata(
-            id = existingMetadata?.id ?: 0,
-            trackId = track.id,
+        // Preserve any data already gathered by other sources (iTunes art, genres,
+        // audio features...). Building a fresh row here used to wipe that data when
+        // MusicBrainz alone could not find the track.
+        val base = existingMetadata ?: EnrichedMetadata(trackId = track.id)
+        return base.copy(
             enrichmentStatus = EnrichmentStatus.NOT_FOUND,
             enrichmentError = reason,
             lastEnrichmentAttempt = System.currentTimeMillis(),

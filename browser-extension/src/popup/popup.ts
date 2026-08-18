@@ -14,6 +14,7 @@ import { MessageType } from '../shared/types';
 import type { NowPlaying, Play, Settings, PairingInfo, YoutubeChannelSuggestion } from '../shared/types';
 import { generateQrDataUrl } from './qr';
 import { signRequest, validatePingResponse, pairingAgeDays } from '../shared/security';
+import type { SyncStatus } from '../background/sync';
 
 // ---- Constants -------------------------------------------------------------
 
@@ -321,6 +322,7 @@ async function refreshNowPlaying() {
     document.getElementById('np-artist')!.textContent      = np.artist || 'Unknown Artist';
     document.getElementById('np-album')!.textContent       = np.album || '';
     document.getElementById('np-listened')!.textContent    = formatDuration(np.listenedMs);
+    document.getElementById('np-duration')!.textContent    = np.durationMs > 0 ? `/ ${formatDuration(np.durationMs)}` : '';
     document.getElementById('np-completion')!.textContent  = `${Math.round(np.completionPercentage)}%`;
     document.getElementById('np-source')!.textContent      = sourceName;
     (document.getElementById('np-progress') as HTMLElement).style.width = `${Math.min(np.completionPercentage, 100)}%`;
@@ -376,6 +378,64 @@ function startNpPolling() {
 
 const MAX_INPUT_LEN = 100;
 
+// Human-readable labels for classified sync errors (mirrors SyncErrorKind).
+const SYNC_ERROR_LABELS: Record<string, string> = {
+  rate_limited: 'Phone asked us to slow down',
+  auth: 'Phone rejected the connection (auth)',
+  rejected: 'Phone rejected the data',
+  server: 'Phone server error',
+  network: 'Network error',
+  unreachable: 'Phone unreachable',
+  battery: 'Phone battery critically low',
+  unknown: 'Sync failed',
+};
+
+function formatCountdown(ms: number): string {
+  const s = Math.max(1, Math.ceil(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${s % 60}s`;
+}
+
+/**
+ * Render the sync status line with classified error detail, rate-limit
+ * countdown, and next-retry time — instead of a raw error string.
+ */
+function renderSyncStatus(el: HTMLElement, status: SyncStatus | null | undefined): void {
+  const now = Date.now();
+
+  if (status?.isSyncing) {
+    el.textContent = 'Syncing…';
+    el.className = 'sync-status syncing';
+    return;
+  }
+
+  const rateLimitedUntil = typeof status?.rateLimitedUntil === 'number' ? status.rateLimitedUntil : null;
+  if (rateLimitedUntil !== null && rateLimitedUntil > now) {
+    el.textContent = `Rate limited — retrying in ${formatCountdown(rateLimitedUntil - now)} (plays stay queued)`;
+    el.className = 'sync-status warning';
+    return;
+  }
+
+  const kind: string | null = status?.lastErrorKind ?? null;
+  if (kind && status?.lastSyncResult?.startsWith('Failed')) {
+    const label = SYNC_ERROR_LABELS[kind] ?? 'Sync failed';
+    const http = typeof status.lastErrorStatus === 'number' ? ` (HTTP ${status.lastErrorStatus})` : '';
+    const retry = typeof status.nextRetryAt === 'number' && status.nextRetryAt > now
+      ? ` — retry in ${formatCountdown(status.nextRetryAt - now)}`
+      : '';
+    const tone = kind === 'rate_limited' || kind === 'battery' ? 'warning' : 'error';
+    el.textContent = `${label}${http}${retry}`;
+    el.className = `sync-status ${tone}`;
+    return;
+  }
+
+  el.textContent = status?.lastSyncTime
+    ? `Last sync: ${timeAgo(status.lastSyncTime)} — ${status.lastSyncResult ?? ''}`
+    : (currentPairing ? 'Not synced yet' : 'Pair your phone to start syncing');
+  el.className = 'sync-status';
+}
+
 async function refreshQueue() {
   try {
     const [countR, itemsR, statusR] = await Promise.all([
@@ -388,9 +448,7 @@ async function refreshQueue() {
     document.getElementById('queue-count')!.textContent = String(currentQueueCount);
 
     const statusEl = document.getElementById('sync-status')!;
-    statusEl.textContent = statusR?.lastSyncTime
-      ? `Last sync: ${timeAgo(statusR.lastSyncTime)} — ${statusR.lastSyncResult ?? ''}`
-      : (currentPairing ? 'Not synced yet' : 'Pair your phone to start syncing');
+    renderSyncStatus(statusEl, statusR);
 
     const listEl = document.getElementById('queue-list')!;
     const plays: Play[] = itemsR?.plays ?? [];
@@ -1507,6 +1565,12 @@ async function autoConnectIfPaired() {
   } finally {
     _autoConnectRunning = false;
   }
+}
+
+// Show the real manifest version instead of a hardcoded string.
+const versionEl = document.getElementById('version-info');
+if (versionEl) {
+  versionEl.textContent = `Tempo Stats v${chrome.runtime.getManifest().version}`;
 }
 
 startNpPolling();

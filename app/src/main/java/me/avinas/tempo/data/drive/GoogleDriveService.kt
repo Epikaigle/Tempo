@@ -55,6 +55,9 @@ class GoogleDriveService @Inject constructor(
         const val MAX_BACKUPS = 5
         private const val MIME_TYPE_FOLDER = "application/vnd.google-apps.folder"
         private const val MIME_TYPE_ZIP = "application/zip"
+        // Transient-failure retry policy for executeWithRetry
+        private const val MAX_TRANSIENT_RETRIES = 3
+        private const val RETRY_BASE_DELAY_MS = 2000L
     }
     
     private var driveService: Drive? = null
@@ -110,7 +113,12 @@ class GoogleDriveService @Inject constructor(
      */
     
     /**
-     * Execute a Drive API operation with automatic retry on 401 Unauthorized and network errors.
+     * Execute a Drive API operation with automatic retry on 401 Unauthorized,
+     * transient server errors (429/5xx) and network errors.
+     *
+     * Transient failures get up to [MAX_TRANSIENT_RETRIES] attempts with
+     * exponential backoff (2s, 4s, 8s). A single 401 triggers one token
+     * refresh + retry.
      */
     private suspend fun <T> executeWithRetry(
         retryCount: Int = 0,
@@ -140,12 +148,23 @@ class GoogleDriveService @Inject constructor(
                     backupFolderId = null
                     throw DriveException.Server("Resource not found. Please try again.", e)
                 }
+                429, 500, 502, 503 -> {
+                    // Rate-limited or transient server error — retry with backoff
+                    if (retryCount < MAX_TRANSIENT_RETRIES) {
+                        val backoffMs = RETRY_BASE_DELAY_MS * (1L shl retryCount)
+                        Log.w(TAG, "Transient Drive error ${e.statusCode} (attempt ${retryCount + 1}), retrying in ${backoffMs}ms")
+                        delay(backoffMs)
+                        return executeWithRetry(retryCount + 1, block)
+                    }
+                    throw DriveException.Server("Drive is temporarily unavailable (${e.statusCode}). Please try again later.", e)
+                }
                 else -> throw DriveException.Server("Drive Error: ${e.message}", e)
             }
         } catch (e: IOException) {
-            if (retryCount < 1) {
-                Log.w(TAG, "Network error (attempt ${retryCount + 1}), retrying...")
-                delay(2000)
+            if (retryCount < MAX_TRANSIENT_RETRIES) {
+                val backoffMs = RETRY_BASE_DELAY_MS * (1L shl retryCount)
+                Log.w(TAG, "Network error (attempt ${retryCount + 1}), retrying in ${backoffMs}ms...")
+                delay(backoffMs)
                 return executeWithRetry(retryCount + 1, block)
             }
             throw DriveException.Network("Network unavailable. Please check your connection.", e)
@@ -244,7 +263,7 @@ class GoogleDriveService @Inject constructor(
             
             executeWithRetry { service ->
                 // Generate backup filename with timestamp
-                val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US).format(Date())
+                val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
                 val deviceName = "${Build.MANUFACTURER}_${Build.MODEL}".replace(" ", "_")
                 val fileName = "tempo_backup_${timestamp}_${deviceName}.tempo"
                 
@@ -352,11 +371,13 @@ class GoogleDriveService @Inject constructor(
                 
                 progressCallback?.invoke(0.2f)
                 
-                // Create local file
+                // Create local file. The Drive file name is untrusted input —
+                // strip any path components so a hostile name cannot escape the
+                // download directory.
                 val cacheDir = File(context.cacheDir, "drive_downloads")
                 if (!cacheDir.exists()) cacheDir.mkdirs()
                 
-                val file = File(cacheDir, driveFile.name ?: "backup.tempo")
+                val file = File(cacheDir, sanitizeDriveFileName(driveFile.name))
                 
                 // Download file
                 FileOutputStream(file).use { outputStream ->
@@ -364,9 +385,21 @@ class GoogleDriveService @Inject constructor(
                         .executeMediaAndDownloadTo(outputStream)
                 }
                 
+                // Verify the download is complete. A truncated backup would
+                // otherwise fail deep inside import with a confusing error —
+                // or worse, restore partial data.
+                val expectedSize = driveFile.getSize()
+                if (expectedSize != null && file.length() != expectedSize) {
+                    val actualSize = file.length()
+                    file.delete()
+                    throw IOException(
+                        "Downloaded backup is incomplete: expected $expectedSize bytes, got $actualSize"
+                    )
+                }
+                
                 progressCallback?.invoke(1.0f)
                 
-                Log.i(TAG, "Downloaded backup: ${file.name}")
+                Log.i(TAG, "Downloaded backup: ${file.name} (${file.length()} bytes)")
                 file
             }
             DriveRestoreResult.Success(localFile)
@@ -377,6 +410,20 @@ class GoogleDriveService @Inject constructor(
             Log.e(TAG, "Download failed", e)
             DriveRestoreResult.Error("Download failed: ${e.message}", e)
         }
+    }
+
+    /**
+     * Sanitize an untrusted Drive file name for use as a local file name.
+     * Strips path separators and directory components so the file can never
+     * be written outside the download directory. Falls back to a safe default.
+     */
+    private fun sanitizeDriveFileName(driveName: String?): String {
+        val fallback = "backup.tempo"
+        if (driveName.isNullOrBlank()) return fallback
+        // Take only the final path component, then strip any remaining separators
+        val baseName = driveName.substringAfterLast('/').substringAfterLast('\\')
+        val sanitized = baseName.replace("/", "").replace("\\", "").trim()
+        return if (sanitized.isBlank() || sanitized == "." || sanitized == "..") fallback else sanitized
     }
     
     /**

@@ -2,8 +2,14 @@ package me.avinas.tempo.ui.stats
 
 import me.avinas.tempo.ui.details.formatListeningTime
 import me.avinas.tempo.ui.theme.TempoDarkBackground
+import me.avinas.tempo.ui.theme.TempoDarkSurfaceSunken
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoPrimaryDeep
+import me.avinas.tempo.ui.theme.TempoAccentBright
+import me.avinas.tempo.ui.theme.TextOnAccent
 import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.ui.theme.innerShadow
+import me.avinas.tempo.ui.theme.premiumClickable
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Brush
 
@@ -19,9 +25,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.MusicNote
@@ -34,10 +43,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -51,7 +62,6 @@ import me.avinas.tempo.data.stats.TopTrack
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.TimePeriodSelector
-import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.ui.theme.TempoSecondary
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
@@ -124,9 +134,9 @@ fun StatsScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp) // Increased spacing for vertical rhythm
             ) {
-                // 1. Sticky Tab Selector
+                // 1. Sticky Tab Selector + Search
                 stickyHeader(key = "sticky_tab_selector") {
-                     Box(
+                     Column(
                          modifier = Modifier
                              .fillMaxWidth()
                              .padding(bottom = 12.dp)
@@ -134,6 +144,19 @@ fun StatsScreen(
                          StatsTabSelector(
                              selectedTab = uiState.selectedTab,
                              onTabSelected = viewModel::onTabSelected
+                         )
+                         Spacer(modifier = Modifier.height(10.dp))
+                         StatsSearchField(
+                             query = uiState.searchQuery,
+                             onQueryChange = viewModel::onSearchQueryChanged,
+                             placeholder = stringResource(
+                                 when (uiState.selectedTab) {
+                                     StatsTab.TOP_SONGS -> R.string.stats_search_hint_songs
+                                     StatsTab.TOP_ARTISTS -> R.string.stats_search_hint_artists
+                                     StatsTab.TOP_ALBUMS -> R.string.stats_search_hint_albums
+                                 }
+                             ),
+                             modifier = Modifier.padding(horizontal = 16.dp)
                          )
                      }
                 }
@@ -167,18 +190,24 @@ fun StatsScreen(
                 // 2. Stats Items
                 if (!uiState.isLoading && uiState.items.isEmpty()) {
                     item(key = "empty_state") {
-                        me.avinas.tempo.ui.components.EmptyState(
-                             modifier = Modifier
-                                 .fillMaxWidth()
-                                 .fillParentMaxHeight(0.7f), // Dynamic height relative to parent container
-                             timeRange = uiState.selectedTimeRange,
-                             onCheckSupportedApps = onNavigateToSupportedApps
-                        )
+                        if (uiState.searchQuery.isNotBlank()) {
+                            SearchEmptyState(query = uiState.searchQuery)
+                        } else {
+                            me.avinas.tempo.ui.components.EmptyState(
+                                 modifier = Modifier
+                                     .fillMaxWidth()
+                                     .fillParentMaxHeight(0.7f), // Dynamic height relative to parent container
+                                 timeRange = uiState.selectedTimeRange,
+                                 onCheckSupportedApps = onNavigateToSupportedApps
+                            )
+                        }
                     }
                 } else if (!uiState.isLoading && uiState.items.isNotEmpty()) {
-                    // Separate #1 Item for Hero Treatment
-                    val firstItem = uiState.items.firstOrNull()
-                    val remainingItems = uiState.items.drop(1)
+                    // In search mode there is no hero: every match is shown with its
+                    // global ranking position, which is the point of the search.
+                    val isSearching = uiState.searchQuery.isNotBlank()
+                    val firstItem = if (isSearching) null else uiState.items.firstOrNull()
+                    val remainingItems = if (isSearching) uiState.items else uiState.items.drop(1)
 
 
                     // Rank 1 Hero
@@ -231,7 +260,7 @@ fun StatsScreen(
                             }
                         }
                     ) { index, item ->
-                        val rank = index + 2 // Start from 2
+                        val rank = if (isSearching) (itemRank(item) ?: index + 1) else index + 2 // Search shows global rank
                         GlassStatItem(
                             rank = rank,
                             item = item,
@@ -537,47 +566,194 @@ fun EmptyStatsState() {
     }
 }
 
-private val MutedFuchsia = Color(0xFFCE58E0)
-
 @Composable
 fun StatsTabSelector(selectedTab: StatsTab, onTabSelected: (StatsTab) -> Unit) {
-    Row(
+    Box(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .height(48.dp)
-            .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(24.dp)) // Beautiful border
-            .background(Color.Transparent, RoundedCornerShape(24.dp))
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .height(50.dp)
+            .clip(RoundedCornerShape(25.dp))
+            .background(TempoDarkSurfaceSunken)
+            .innerShadow(
+                color = Color.Black.copy(alpha = 0.55f),
+                cornersRadius = 25.dp,
+                blur = 4.dp,
+                offsetY = 2.dp
+            )
+            .border(
+                1.dp,
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.14f),
+                        Color.White.copy(alpha = 0.03f)
+                    )
+                ),
+                RoundedCornerShape(25.dp)
+            )
+            .padding(3.dp)
     ) {
-        StatsTab.entries.forEach { tab ->
-            val isSelected = tab == selectedTab
-            val backgroundColor by animateColorAsState(if (isSelected) MutedFuchsia else Color.Transparent, label = "tabBackgroundColor")
-            val contentColor by animateColorAsState(if (isSelected) Color.White else Color(0xFFE5E7EB), label = "tabContentColor")
-            
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(backgroundColor)
-                    .clickable { onTabSelected(tab) },
-                contentAlignment = Alignment.Center
-            ) {
-                 Text(
-                    text = when (tab) {
-                        StatsTab.TOP_SONGS -> stringResource(R.string.stats_tab_songs)
-                        StatsTab.TOP_ARTISTS -> stringResource(R.string.stats_tab_artists)
-                        StatsTab.TOP_ALBUMS -> stringResource(R.string.stats_tab_albums)
-                    },
-                    color = contentColor,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            StatsTab.entries.forEach { tab ->
+                val isSelected = tab == selectedTab
+                val contentColor by animateColorAsState(
+                    targetValue = if (isSelected) TextOnAccent else Color.White.copy(alpha = 0.7f),
+                    label = "tabContentColor"
                 )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .then(
+                            if (isSelected) {
+                                Modifier
+                                    .shadow(
+                                        elevation = 4.dp,
+                                        shape = RoundedCornerShape(22.dp),
+                                        spotColor = TempoPrimary.copy(alpha = 0.4f),
+                                        ambientColor = Color.Black.copy(alpha = 0.7f)
+                                    )
+                                    .clip(RoundedCornerShape(22.dp))
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                TempoAccentBright,
+                                                TempoPrimary,
+                                                TempoPrimaryDeep
+                                            )
+                                        )
+                                    )
+                                    .border(
+                                        1.dp,
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                Color.White.copy(alpha = 0.45f),
+                                                Color.Transparent
+                                            )
+                                        ),
+                                        RoundedCornerShape(22.dp)
+                                    )
+                            } else {
+                                Modifier.clip(RoundedCornerShape(22.dp))
+                            }
+                        )
+                        .premiumClickable(
+                            onClick = { onTabSelected(tab) },
+                            pressedScale = 0.96f
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = when (tab) {
+                            StatsTab.TOP_SONGS -> stringResource(R.string.stats_tab_songs)
+                            StatsTab.TOP_ARTISTS -> stringResource(R.string.stats_tab_artists)
+                            StatsTab.TOP_ALBUMS -> stringResource(R.string.stats_tab_albums)
+                        },
+                        color = contentColor,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                    )
+                }
             }
         }
     }
+}
+
+@Composable
+private fun StatsSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier
+) {
+    GlassCard(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(46.dp),
+        shape = RoundedCornerShape(23.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+        backgroundColor = Color.Black.copy(alpha = 0.5f),
+        variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                tint = Color(0xFFCAC4D0)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Box(modifier = Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    Text(
+                        text = placeholder,
+                        color = Color(0xFFCAC4D0),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                    singleLine = true,
+                    cursorBrush = SolidColor(TempoRed),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            if (query.isNotEmpty()) {
+                IconButton(
+                    onClick = { onQueryChange("") },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.stats_search_clear),
+                        tint = Color(0xFFCAC4D0)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchEmptyState(query: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 64.dp, horizontal = 32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp),
+                tint = Color.White.copy(alpha = 0.4f)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.stats_search_no_results, query),
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/** Global ranking position carried by search results (null outside search mode). */
+private fun itemRank(item: Any): Int? = when (item) {
+    is TopTrack -> item.rank
+    is TopArtist -> item.rank
+    is TopAlbum -> item.rank
+    else -> null
 }
 
 @Composable

@@ -79,6 +79,16 @@ interface EnrichedMetadataRepository {
     /** Re-queue all non-enriched tracks to PENDING (for "Enrich All"). Returns rows updated. */
     suspend fun requeueAllForEnrichment(): Int
 
+    /** Tracks that have no enriched_metadata row at all (never queued for enrichment). */
+    suspend fun countTracksWithoutEnrichedMetadata(): Int
+
+    /**
+     * Create PENDING rows for every track that has no enriched_metadata row yet.
+     * Called by "Enrich All" so never-queued tracks are included in the sweep.
+     * Returns the number of rows inserted.
+     */
+    suspend fun ensurePendingForAllTracks(): Int
+
     /** Defer low-play PENDING tracks to SKIPPED (large-import cap). Returns rows updated. */
     suspend fun markLowPlayPendingAsSkipped(minPlayCount: Int = 2): Int
     

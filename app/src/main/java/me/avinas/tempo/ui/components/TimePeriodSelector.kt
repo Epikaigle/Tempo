@@ -22,8 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.avinas.tempo.data.stats.TimeRange
-import me.avinas.tempo.ui.theme.TempoRed
-import me.avinas.tempo.ui.theme.premiumClickable
+import me.avinas.tempo.ui.theme.*
 
 @Composable
 fun TimePeriodSelector(
@@ -36,7 +35,7 @@ fun TimePeriodSelector(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp)
-            .background(Color.Black, RoundedCornerShape(24.dp)) // Dark Pill for better visibility
+            .background(TempoDarkSurfaceSunken, RoundedCornerShape(24.dp))
             .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(24.dp)) // Subtle border
             .padding(2.dp)
     ) {

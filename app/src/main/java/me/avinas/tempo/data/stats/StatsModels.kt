@@ -1,6 +1,7 @@
 package me.avinas.tempo.data.stats
 
 import androidx.room.ColumnInfo
+import androidx.room.Ignore
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -171,6 +172,9 @@ data class TopTrack(
     @ColumnInfo(name = "preview_url") val previewUrl: String? = null, // From enriched_metadata
     @ColumnInfo(name = "combined_score") val combinedScore: Double? = null // For combined ranking, not stored in DB
 ) {
+    /** Global rank within the current ranking; only populated by search. Not a DB column. */
+    @Ignore
+    var rank: Int? = null
     val totalTimeMinutes: Long get() = totalTimeMs / 60_000
     val averagePlayDurationMs: Long get() = if (playCount > 0) totalTimeMs / playCount else 0
 }
@@ -201,6 +205,9 @@ data class TopArtist(
     @ColumnInfo(name = "image_url") val imageUrl: String? = null,
     @ColumnInfo(name = "country") val country: String? = null
 ) {
+    /** Global rank within the current ranking; only populated by search. Not a DB column. */
+    @Ignore
+    var rank: Int? = null
     val totalTimeMinutes: Long get() = totalTimeMs / 60_000
     val totalTimeHours: Double get() = totalTimeMs / 3_600_000.0
 }
@@ -216,6 +223,9 @@ data class TopAlbum(
     @ColumnInfo(name = "total_time_ms") val totalTimeMs: Long,
     @ColumnInfo(name = "unique_tracks") val uniqueTracks: Int
 ) {
+    /** Global rank within the current ranking; only populated by search. Not a DB column. */
+    @Ignore
+    var rank: Int? = null
     val totalTimeMinutes: Long get() = totalTimeMs / 60_000
 }
 

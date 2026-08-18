@@ -317,6 +317,12 @@ class EnrichmentWorker @AssistedInject constructor(
          * [total]. Runs as a foreground OneTime worker (tagged TAG_ENRICH_ALL) that survives
          * the user leaving the screen; cancellable via [cancelEnrichAll]. Progress is reported
          * via setProgress("processed", "total") and observed through getWorkInfosByTagFlow.
+         *
+         * Expedited so the sweep starts immediately when the user taps the button instead
+         * of waiting for the periodic scheduler. REPLACE (not KEEP) so a sweep can be
+         * started again after a previous run was cancelled or failed — with KEEP the
+         * finished/cancelled work would block every future enqueue and the button would
+         * appear to do nothing.
          */
         fun enqueueEnrichAll(context: Context, total: Int) {
             val constraints = Constraints.Builder()
@@ -330,12 +336,13 @@ class EnrichmentWorker @AssistedInject constructor(
             val workRequest = OneTimeWorkRequestBuilder<EnrichmentWorker>()
                 .setConstraints(constraints)
                 .setInputData(inputData)
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setBackoffCriteria(BackoffPolicy.LINEAR, 1, TimeUnit.MINUTES)
                 .addTag(TAG_ENRICH_ALL)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME_ENRICH_ALL,
-                ExistingWorkPolicy.KEEP,
+                ExistingWorkPolicy.REPLACE,
                 workRequest
             )
             Log.i(TAG, "Enrich All enqueued for $total tracks")
@@ -473,12 +480,23 @@ class EnrichmentWorker @AssistedInject constructor(
         val track = trackDao.getTrackById(trackId)
         if (track == null) {
             Log.w(TAG, "Track $trackId not found")
+            // Orphan metadata row (track deleted): remove it so it can never be
+            // picked up by a sweep again.
+            enrichedMetadataDao.deleteByTrackId(trackId)
             return
         }
         
-        // Skip enrichment if artist is unknown - metadata hasn't settled yet
+        // Skip enrichment if artist is unknown - metadata hasn't settled yet.
+        // Mark SKIPPED so it does not stay PENDING: bulk sweeps ("Enrich All") fetch
+        // PENDING rows until none remain, and an un-enrichable PENDING track would be
+        // re-processed forever, freezing the progress bar. When the real artist arrives
+        // the track is re-queued (markForReEnrichment) and enriched normally.
         if (me.avinas.tempo.utils.ArtistParser.isUnknownArtist(track.artist)) {
             Log.d(TAG, "Skipping enrichment for track $trackId: artist is unknown")
+            val meta = enrichedMetadataDao.forTrackSync(trackId)
+            if (meta != null && meta.enrichmentStatus == EnrichmentStatus.PENDING) {
+                enrichedMetadataDao.upsert(meta.copy(enrichmentStatus = EnrichmentStatus.SKIPPED))
+            }
             return
         }
 
@@ -606,6 +624,41 @@ class EnrichmentWorker @AssistedInject constructor(
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to propagate album art to Track entity", e)
+        }
+
+        // Guarantee a terminal status: every processed track must leave PENDING.
+        // If all strategies ran and the row is still PENDING, settle it based on what
+        // was actually gathered. Without this, tracks no source could match stay
+        // PENDING forever and bulk sweeps ("Enrich All") re-process them in an
+        // infinite loop, freezing the progress bar.
+        // Also upgrade NOT_FOUND/FAILED rows that DID gain data from a later source
+        // in the chain (e.g. MusicBrainz missed it but iTunes found art) — otherwise
+        // the report would count them as "not found" even though they have metadata.
+        val settled = enrichedMetadataDao.forTrackSync(trackId)
+        if (settled != null &&
+            settled.enrichmentStatus in listOf(
+                EnrichmentStatus.PENDING,
+                EnrichmentStatus.NOT_FOUND,
+                EnrichmentStatus.FAILED,
+                EnrichmentStatus.SKIPPED
+            )
+        ) {
+            val gainedData = !settled.albumArtUrl.isNullOrBlank() ||
+                settled.genres.isNotEmpty() ||
+                settled.audioFeaturesJson != null ||
+                settled.hasArtistImage() ||
+                settled.previewUrl != null
+            if (gainedData || settled.enrichmentStatus == EnrichmentStatus.PENDING) {
+                val terminalStatus = if (gainedData) EnrichmentStatus.ENRICHED else EnrichmentStatus.NOT_FOUND
+                enrichedMetadataDao.upsert(settled.copy(
+                    enrichmentStatus = terminalStatus,
+                    enrichmentError = if (gainedData) null else "No source matched this track",
+                    retryCount = 0,
+                    lastEnrichmentAttempt = System.currentTimeMillis(),
+                    cacheTimestamp = System.currentTimeMillis()
+                ))
+                Log.d(TAG, "Track $trackId settled to $terminalStatus after full strategy chain")
+            }
         }
     }
 
@@ -806,25 +859,57 @@ class EnrichmentWorker @AssistedInject constructor(
      * can render a progress bar. Runs as a foreground worker so it survives the user leaving
      * the screen; cancellable via cancelEnrichAll(). Progress is stateless (total - remaining
      * PENDING) so it stays correct even if the worker is killed and the user re-taps.
-     * ponytail: single long-running foreground loop; if the OS kills it the user can re-tap,
-     * and the periodic worker continues the backlog eventually.
+     *
+     * Termination guarantees:
+     * - enrichSpecificTrack() always moves a processed track out of PENDING (to ENRICHED,
+     *   NOT_FOUND, FAILED or SKIPPED), so the PENDING count strictly decreases.
+     * - As a belt-and-braces guard, if a full batch makes no progress (PENDING count does
+     *   not drop), the sweep stops instead of looping forever — the user previously saw
+     *   this as the progress bar freezing and never finishing.
      */
     private suspend fun enrichAll(): Result {
         val total = inputData.getInt("total_to_process", 0).coerceAtLeast(1)
         val batchSize = 25
-        var safety = 0
+        // Track IDs already processed in this sweep. enrichSpecificTrack() guarantees each
+        // processed track leaves PENDING, so a healthy sweep never returns the same ID
+        // twice. If a whole batch comes back already-seen, the sweep is stuck — stop
+        // instead of looping forever (the user-visible "freezes and never finishes").
+        val processedIds = HashSet<Long>()
         while (!isStopped) {
             val batch = enrichedMetadataDao.getTracksNeedingEnrichment(EnrichmentStatus.PENDING, batchSize)
             if (batch.isEmpty()) break
+            if (batch.all { it.trackId in processedIds }) {
+                Log.w(TAG, "Enrich All stalled: batch of ${batch.size} tracks already processed but still PENDING, stopping sweep")
+                break
+            }
             for (metadata in batch) {
                 if (isStopped) break
-                enrichSpecificTrack(metadata.trackId)
+                processedIds.add(metadata.trackId)
+                try {
+                    enrichSpecificTrack(metadata.trackId)
+                } catch (e: Exception) {
+                    // One bad track must not abort the whole sweep. Mark it FAILED so
+                    // it leaves PENDING (the periodic worker retries it later) and move on.
+                    Log.e(TAG, "Enrich All: track ${metadata.trackId} threw, marking FAILED", e)
+                    val meta = enrichedMetadataDao.forTrackSync(metadata.trackId)
+                    if (meta != null && meta.enrichmentStatus == EnrichmentStatus.PENDING) {
+                        enrichedMetadataDao.upsert(meta.copy(
+                            enrichmentStatus = EnrichmentStatus.FAILED,
+                            enrichmentError = e.message ?: "Enrichment crashed",
+                            retryCount = meta.retryCount + 1,
+                            lastEnrichmentAttempt = System.currentTimeMillis()
+                        ))
+                    }
+                }
+                // Report progress per track so the bar moves smoothly instead of in
+                // 25-track jumps.
+                val remaining = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
+                setProgress(workDataOf(
+                    "processed" to (total - remaining).coerceIn(0, total),
+                    "total" to total
+                ))
                 kotlinx.coroutines.delay(INTER_TRACK_DELAY_MS)
             }
-            val remaining = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
-            val processed = (total - remaining).coerceIn(0, total)
-            setProgress(workDataOf("processed" to processed, "total" to total))
-            if (++safety > 50000) break // ponytail: hard cap against runaway loops
         }
         statsRepository.invalidateCache()
         val remaining = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)

@@ -20,7 +20,7 @@ interface ArtistDao {
     @Query("SELECT * FROM artists")
     fun getAllArtists(): Flow<List<Artist>>
     
-    @Query("SELECT * FROM artists LIMIT 500")
+    @Query("SELECT * FROM artists")
     suspend fun getAllArtistsSync(): List<Artist>
 
     @Query("SELECT COUNT(*) FROM artists")

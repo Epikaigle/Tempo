@@ -6,6 +6,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import me.avinas.tempo.data.repository.ChallengeRepository
 import me.avinas.tempo.data.repository.GamificationRepository
 import me.avinas.tempo.data.repository.PreferencesRepository
 import kotlinx.coroutines.flow.first
@@ -23,7 +24,8 @@ class GamificationWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
     private val gamificationRepository: GamificationRepository,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val challengeRepository: ChallengeRepository
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -86,18 +88,33 @@ class GamificationWorker @AssistedInject constructor(
             }
 
             Log.i(TAG, "Starting gamification refresh...")
-            
+
+            // Refresh daily-challenge progress from listening history BEFORE the
+            // full XP/badge recompute. Challenge progress was previously only
+            // updated when the user opened the Profile screen, so plays recorded
+            // in the background never advanced (or completed) challenges until
+            // the UI was visited — the "played music not counted in challenges"
+            // complaint. Doing it here keeps challenges current even when the
+            // app is only running its background workers.
+            try {
+                challengeRepository.refreshChallengeProgress()
+            } catch (e: Exception) {
+                // Non-fatal: a challenge-progress failure must not block the
+                // deterministic XP/badge recompute below.
+                Log.w(TAG, "Challenge progress refresh failed", e)
+            }
+
             val result = gamificationRepository.fullRefresh()
-            
+
             Log.i(TAG, "Gamification refresh complete: " +
                     "Level ${result.levelUpResult.newLevel}, " +
                     "XP ${result.levelUpResult.totalXp}, " +
                     "${result.newlyEarnedBadgeIds.size} new badges")
-            
+
             if (result.levelUpResult.didLevelUp) {
                 Log.i(TAG, "🎉 Level up! ${result.levelUpResult.previousLevel} → ${result.levelUpResult.newLevel}")
             }
-            
+
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Gamification refresh failed", e)

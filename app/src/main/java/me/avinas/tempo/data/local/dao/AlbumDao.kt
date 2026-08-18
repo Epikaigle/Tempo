@@ -57,6 +57,14 @@ interface AlbumDao {
     @Query("SELECT * FROM albums")
     suspend fun getAllSync(): List<Album>
 
+    /**
+     * Re-parent all albums from one artist to another.
+     * Used during artist merge so the source artist's CASCADE delete
+     * does not destroy album rows.
+     */
+    @Query("UPDATE albums SET artist_id = :targetArtistId WHERE artist_id = :sourceArtistId")
+    suspend fun reassignArtist(sourceArtistId: Long, targetArtistId: Long): Int
+
     @Query("SELECT artwork_url FROM albums WHERE artwork_url LIKE 'file://%'")
     suspend fun getLocalImageUrls(): List<String>
 }

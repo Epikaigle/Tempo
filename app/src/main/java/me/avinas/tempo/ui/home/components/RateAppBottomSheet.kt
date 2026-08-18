@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.*
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 
@@ -32,7 +32,7 @@ fun RateAppBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF0F172A), // DeepOcean background
+        containerColor = TempoDarkSurfaceSunken,
         dragHandle = { BottomSheetDefaults.DragHandle() },
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
@@ -48,20 +48,20 @@ fun RateAppBottomSheet(
                 modifier = Modifier
                     .size(80.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFFFD700).copy(alpha = 0.1f)),
+                    .background(GoldPrimary.copy(alpha = 0.1f)),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
                     modifier = Modifier
                         .size(60.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFFFD700).copy(alpha = 0.2f)),
+                    .background(GoldPrimary.copy(alpha = 0.2f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = null,
-                        tint = Color(0xFFFFD700),
+                        tint = GoldPrimary,
                         modifier = Modifier.size(40.dp)
                     )
                 }

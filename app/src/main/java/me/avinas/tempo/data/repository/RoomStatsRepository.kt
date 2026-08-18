@@ -943,6 +943,163 @@ class RoomStatsRepository @Inject constructor(
     }
 
     // =====================
+    // Ranking Search
+    // =====================
+
+    /**
+     * Search the track ranking. The DAO computes the full ranking once (CTE) and
+     * returns only matching rows with their global rank, so at most [limit] rows
+     * cross into Kotlin. Results are cached like other top-chart queries.
+     */
+    override suspend fun searchTopTracks(
+        timeRange: TimeRange,
+        sortBy: SortBy,
+        query: String,
+        limit: Int
+    ): List<TopTrack> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return emptyList()
+
+        val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
+        val key = "search_tracks_${timeRange.name}_${sortBy.name}_${trimmed.lowercase()}_${limit}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}"
+        return getCached(key) {
+            val startTime = timeRange.getStartTimestamp()
+            val endTime = timeRange.getEndTimestamp()
+            val rows = when (sortBy) {
+                SortBy.PLAY_COUNT -> statsDao.searchTopTracksByPlayCount(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
+                SortBy.TOTAL_TIME -> statsDao.searchTopTracksByTime(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
+                SortBy.COMBINED_SCORE -> statsDao.searchTopTracksByCombinedScore(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
+            }
+            // Rows arrive ordered by global rank; carry the SQL-computed rank onto the item
+            rows.map { it.item.apply { rank = it.globalRank } }
+        }
+    }
+
+    /**
+     * Search the artist ranking.
+     *
+     * Unlike tracks/albums, artist stats must go through the split/aggregate/alias
+     * pipeline (multi-artist strings, renamed/merged artists), so SQL-side filtering
+     * is not possible without breaking alias resolution. Instead we scan a bounded
+     * raw set (top 1000 by play count — the same cap the list view uses, extended
+     * for search depth), aggregate, then filter + rank in Kotlin.
+     */
+    override suspend fun searchTopArtists(
+        timeRange: TimeRange,
+        sortBy: SortBy,
+        query: String,
+        limit: Int
+    ): List<TopArtist> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return emptyList()
+
+        val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
+        val key = "search_artists_${timeRange.name}_${sortBy.name}_${trimmed.lowercase()}_${limit}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}"
+        return getCached(key) {
+            val startTime = timeRange.getStartTimestamp()
+            val endTime = timeRange.getEndTimestamp()
+
+            // Bounded scan: top 1000 raw artist strings by play count
+            val rawStats = statsDao.getAllArtistStatsRawFiltered(
+                startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, 1000
+            )
+
+            // Split multi-artist entries and aggregate by individual artist (same as list view)
+            val artistStatsMap = mutableMapOf<String, ArtistAggregator>()
+            val aliases = artistAliasDao.getAllSync()
+            val aliasMap = aliases.associateBy({ it.originalNameNormalized }, { it.targetArtistId })
+            val resolvedNamesCache = mutableMapOf<Long, String>()
+
+            for (raw in rawStats) {
+                val individualArtists = ArtistParser.getAllArtists(raw.artist)
+                for (artistName in individualArtists) {
+                    val name = artistName.trim()
+                    if (name.isBlank()) continue
+
+                    val normalizedName = me.avinas.tempo.data.local.entities.Artist.normalizeName(name)
+                    val targetArtistId = aliasMap[normalizedName]
+                    val resolvedName = if (targetArtistId != null) {
+                        resolvedNamesCache.getOrPut(targetArtistId) {
+                            artistDao.getArtistById(targetArtistId)?.name ?: name
+                        }
+                    } else {
+                        name
+                    }
+
+                    artistStatsMap.getOrPut(resolvedName) { ArtistAggregator(resolvedName) }.addStats(raw)
+                }
+            }
+
+            // Rank the FULL aggregated set, then keep only matches
+            val allArtists = artistStatsMap.values.map { agg -> agg.toTopArtist() }
+            val sortedArtists = when (sortBy) {
+                SortBy.PLAY_COUNT -> allArtists.sortedByDescending { it.playCount }
+                SortBy.TOTAL_TIME -> allArtists.sortedByDescending { it.totalTimeMs }
+                SortBy.COMBINED_SCORE -> {
+                    val maxPlays = allArtists.maxOfOrNull { it.playCount } ?: 1
+                    val maxTime = allArtists.maxOfOrNull { it.totalTimeMs } ?: 1L
+                    allArtists.sortedByDescending { artist ->
+                        (0.5 * artist.playCount.toDouble() / maxPlays) +
+                        (0.5 * artist.totalTimeMs.toDouble() / maxTime)
+                    }
+                }
+            }
+
+            val queryLower = trimmed.lowercase()
+            val matches = sortedArtists
+                .onEachIndexed { index, artist -> artist.rank = index + 1 }
+                .filter { it.artist.lowercase().contains(queryLower) }
+                .take(limit)
+
+            // Enrich matches with image/ID/country in parallel (DB-only, no network)
+            coroutineScope {
+                matches.map { artist ->
+                    async {
+                        val imageUrl = getArtistImageUrlWithFallback(artist.artist, dbOnly = true)
+                        val country = getArtistCountry(artist.artist)
+                        val normalizedName = me.avinas.tempo.data.local.entities.Artist.normalizeName(artist.artist)
+                        val alias = artistAliasDao.findAlias(normalizedName)
+                        val artistEntity = if (alias != null) {
+                            artistDao.getArtistById(alias.targetArtistId)
+                        } else {
+                            artistDao.getArtistByNormalizedName(normalizedName)
+                                ?: artistDao.getArtistByName(artist.artist)
+                        }
+                        artist.copy(
+                            artistId = artistEntity?.id,
+                            imageUrl = imageUrl,
+                            country = country
+                        ).apply { rank = artist.rank }
+                    }
+                }.awaitAll()
+            }
+        }
+    }
+
+    /**
+     * Search the album ranking. The DAO computes the full ranking once (CTE) and
+     * returns only matching rows with their global rank.
+     */
+    override suspend fun searchTopAlbums(
+        timeRange: TimeRange,
+        query: String,
+        limit: Int
+    ): List<TopAlbum> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return emptyList()
+
+        val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
+        val key = "search_albums_${timeRange.name}_${trimmed.lowercase()}_${limit}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}"
+        return getCached(key) {
+            val startTime = timeRange.getStartTimestamp()
+            val endTime = timeRange.getEndTimestamp()
+            val rows = statsDao.searchTopAlbums(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
+            // Rows arrive ordered by global rank; carry the SQL-computed rank onto the item
+            rows.map { it.item.apply { rank = it.globalRank } }
+        }
+    }
+
+    // =====================
     // Temporal Analysis
     // =====================
 

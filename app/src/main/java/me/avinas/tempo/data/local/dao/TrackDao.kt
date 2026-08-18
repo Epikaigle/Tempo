@@ -247,33 +247,20 @@ interface TrackDao {
     suspend fun replaceArtistName(oldArtistName: String, newArtistName: String): Int
     
     /**
-     * Replace old artist name within multi-artist strings.
-     * For example: "OldArtist, OtherArtist" -> "NewArtist, OtherArtist"
-     * 
-     * Uses word boundary matching to avoid partial replacements:
-     * - Matches ", OldArtist" or "OldArtist, " patterns
-     * - Avoids replacing "Art" inside "Artie Shaw"
+     * Tracks whose artist string contains the given name anywhere
+     * (case-insensitive). Uses INSTR instead of LIKE so names containing
+     * '%' or '_' are matched literally, not as wildcards. Used during
+     * artist merge to find multi-artist strings needing segment
+     * replacement; the actual replacement happens in Kotlin.
      */
-    @Query("""
-        UPDATE tracks SET artist = 
-            CASE 
-                WHEN LOWER(artist) LIKE LOWER(:oldArtistName) || ', %' THEN 
-                    :newArtistName || SUBSTR(artist, LENGTH(:oldArtistName) + 1)
-                WHEN LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) THEN 
-                    SUBSTR(artist, 1, LENGTH(artist) - LENGTH(:oldArtistName)) || :newArtistName
-                WHEN LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) || ', %' THEN
-                    REPLACE(
-                        REPLACE(artist, ', ' || :oldArtistName || ', ', ', ' || :newArtistName || ', '),
-                        ', ' || :oldArtistName || ',', ', ' || :newArtistName || ','
-                    )
-                ELSE artist
-            END
-        WHERE (
-            LOWER(artist) LIKE LOWER(:oldArtistName) || ', %' 
-            OR LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) 
-            OR LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) || ', %'
-        )
-    """)
-    suspend fun replaceArtistNameInMultiArtist(oldArtistName: String, newArtistName: String): Int
+    @Query("SELECT * FROM tracks WHERE INSTR(LOWER(artist), LOWER(:name)) > 0")
+    suspend fun getTracksContainingArtistName(name: String): List<Track>
+
+    /**
+     * Update the raw artist string of a single track.
+     * Used during artist merge after Kotlin-side segment replacement.
+     */
+    @Query("UPDATE tracks SET artist = :artist WHERE id = :trackId")
+    suspend fun updateArtistString(trackId: Long, artist: String): Int
 }
 

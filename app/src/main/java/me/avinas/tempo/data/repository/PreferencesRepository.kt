@@ -12,4 +12,5 @@ interface PreferencesRepository {
     suspend fun updateLastMonthlyReminderShown(date: String)
     suspend fun updateLastYearlyReminderShown(date: String)
     suspend fun updateLastAllTimeReminderShown(date: String)
+    suspend fun updateLastSpotlightStoryViewed(periodKey: String)
 }

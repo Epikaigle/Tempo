@@ -520,7 +520,7 @@ fun SettingsScreen(
 
                         SettingsOption(
                             title = "Import YouTube Music Data",
-                            subtitle = "Import listening history from YouTube Takeout (JSON format)",
+                            subtitle = "Import listening history from a YouTube Takeout ZIP (JSON or HTML)",
                             onClick = { onNavigateToYouTubeMusicImport?.invoke() }
                         )
                     }

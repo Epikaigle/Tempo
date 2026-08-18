@@ -611,6 +611,11 @@
     <string name="stats_rank_1_track">#1 Titel</string>
     <string name="stats_rank_1_artist">#1 Künstler</string>
     <string name="stats_rank_1_album">#1 Album</string>
+    <string name="stats_search_hint_songs">Titel, Künstler, Alben suchen…</string>
+    <string name="stats_search_hint_artists">Künstler suchen…</string>
+    <string name="stats_search_hint_albums">Alben, Künstler suchen…</string>
+    <string name="stats_search_clear">Suche löschen</string>
+    <string name="stats_search_no_results">Keine Treffer für „%1$s“ in diesem Ranking</string>
 
     <!-- History Screen -->
     <string name="history_filter_title">Verlauf filtern</string>
@@ -724,15 +729,15 @@
     <string name="details_unknown_album">Unbekanntes Album</string>
 
     <!-- Fan Status Percentiles -->
-    <string name="fan_status_top_1">Top 1%% Künstler</string>
+    <string name="fan_status_top_1">Top 1% Künstler</string>
     <string name="fan_status_top_1_desc">Dies ist einer deiner absoluten Favoriten!</string>
-    <string name="fan_status_top_5">Top 5%% Künstler</string>
+    <string name="fan_status_top_5">Top 5% Künstler</string>
     <string name="fan_status_top_5_desc">Du hörst ihn öfter als die meisten anderen.</string>
-    <string name="fan_status_top_10">Top 10%% Künstler</string>
+    <string name="fan_status_top_10">Top 10% Künstler</string>
     <string name="fan_status_top_10_desc">Ganz klar eine deiner Top-Wahlen.</string>
-    <string name="fan_status_top_25">Top 25%% Künstler</string>
+    <string name="fan_status_top_25">Top 25% Künstler</string>
     <string name="fan_status_top_25_desc">Ein fester Bestandteil deiner Rotation.</string>
-    <string name="fan_status_top_50">Top 50%% Künstler</string>
+    <string name="fan_status_top_50">Top 50% Künstler</string>
     <string name="fan_status_top_50_desc">Du hörst ihn gelegentlich.</string>
     <!-- Fan Status Counts -->
     <string name="fan_status_ultimate">Ultimativer Stan</string>

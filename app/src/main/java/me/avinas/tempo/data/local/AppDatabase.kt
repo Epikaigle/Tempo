@@ -32,7 +32,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         DailyChallenge::class, // Gamification: daily challenges
         DesktopPairingSession::class // Desktop Satellite pairing sessions
     ],
-    version = 50, // Migration 50: Add content_fingerprint to listening_events for import idempotency
+    version = 51, // Migration 51: Add lastSpotlightStoryViewed to user_preferences
     exportSchema = true  // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
@@ -59,7 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val TAG = "AppDatabase"
         
         /** Current Room schema version — keep in sync with the @Database(version = ...) annotation. */
-        const val VERSION = 50
+        const val VERSION = 51
         
         /**
          * Migration from version 6 to 7: Add enhanced tracking columns to listening_events.
@@ -2086,6 +2086,19 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
+         * Migration from version 50 to 51: Add lastSpotlightStoryViewed to user_preferences.
+         * Tracks which Spotlight story period the user has already viewed, so the
+         * home-screen ring can switch from colored (new) to gray (viewed).
+         */
+        val MIGRATION_50_51 = object : Migration(50, 51) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Starting migration from version 50 to 51 - Add lastSpotlightStoryViewed to user_preferences")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN lastSpotlightStoryViewed TEXT DEFAULT NULL")
+                Log.i(TAG, "Migration from version 50 to 51 completed successfully")
+            }
+        }
+
+        /**
          * All migrations in order.
          */
         val ALL_MIGRATIONS = arrayOf(
@@ -2132,7 +2145,8 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_46_47,     // Remove redundant timestamp index
             MIGRATION_47_48,     // Add lastWeeklyReminderShown to user_preferences
             MIGRATION_48_49,     // Add youtube_id column to tracks
-            MIGRATION_49_50      // Add content_fingerprint to listening_events (import idempotency)
+            MIGRATION_49_50,     // Add content_fingerprint to listening_events (import idempotency)
+            MIGRATION_50_51      // Add lastSpotlightStoryViewed to user_preferences (spotlight ring viewed state)
         )
     }
 }

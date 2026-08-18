@@ -18,6 +18,7 @@ import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.repository.ArtistLinkingService
+import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.TrackResolver
 import me.avinas.tempo.worker.EnrichmentWorker
 import okio.buffer
@@ -40,7 +41,8 @@ class YouTubeMusicImportService @Inject constructor(
     private val trackResolver: TrackResolver,
     private val listeningEventDao: ListeningEventDao,
     private val artistLinkingService: ArtistLinkingService,
-    private val enrichedMetadataDao: EnrichedMetadataDao
+    private val enrichedMetadataDao: EnrichedMetadataDao,
+    private val statsRepository: StatsRepository
 ) {
     companion object {
         private const val TAG = "YouTubeMusicImport"
@@ -232,6 +234,10 @@ class YouTubeMusicImportService @Inject constructor(
             }
         }
 
+        if (eventsCreated > 0) {
+            statsRepository.invalidateCache()
+        }
+
         for ((trackId, entry) in pendingEnrichedMetadata) {
             createEnrichedMetadata(trackId, entry)
         }
@@ -346,13 +352,13 @@ class YouTubeMusicImportService @Inject constructor(
             val error = when {
                 allZipEntryNames.isEmpty() -> {
                     "ZIP $fileName appears to be empty or is another part of a split archive. " +
-                        "Make sure you select the ZIP chunk that contains the 'history' folder."
+                        "Select the ZIP that contains the 'history' folder (watch-history.json), or select all ZIP parts at once."
                 }
                 else -> {
                     val sampleNames = allZipEntryNames.take(15).joinToString(", ")
-                    "No watch-history file found in ZIP $fileName. Found ${allZipEntryNames.size} files: $sampleNames" +
-                        if (allZipEntryNames.size > 15) "..." else "" +
-                        ". If your export was split into multiple ZIPs, try selecting a different one."
+                    val ellipsis = if (allZipEntryNames.size > 15) "..." else ""
+                    "No watch-history file found in ZIP $fileName. Found ${allZipEntryNames.size} files: $sampleNames$ellipsis " +
+                        "If your export was split into multiple ZIPs, select the one containing the 'history' folder — or select all of them at once."
                 }
             }
             return ParseResult(errors = listOf(error))

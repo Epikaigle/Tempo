@@ -39,6 +39,7 @@ import me.avinas.tempo.ui.components.CaptureWrapper
 import me.avinas.tempo.ui.components.rememberCaptureController
 import me.avinas.tempo.utils.ShareUtils
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -55,6 +56,11 @@ fun SpotlightStoryScreen(
     storyPages: List<SpotlightStoryPage>,
     onClose: () -> Unit
 ) {
+    // Freeze the page list for the whole playback session. The ViewModel regenerates
+    // story pages reactively on every new listening event; if the live list were used,
+    // a scrobble landing mid-story could change the page count (optional slides vary),
+    // clamping the pager's current page and restarting the timer mid-playback.
+    val storyPages = remember { storyPages }
     val pagerState = rememberPagerState(pageCount = { storyPages.size })
     val coroutineScope = rememberCoroutineScope()
     val currentProgress = remember { Animatable(0f) }
@@ -233,14 +239,20 @@ fun SpotlightStoryScreen(
         }
     }
 
-    // Reset progress when page changes
-    LaunchedEffect(pagerState.currentPage) {
-        currentProgress.snapTo(0f)
-    }
+    // Tracks which page the current progress bar value belongs to. Progress must be
+    // reset inside the auto-advance coroutine itself, not in a separate LaunchedEffect:
+    // a sibling reset effect races this one over the Animatable's mutex, and if the
+    // timer reads the previous page's near-1f progress before the snap lands, the
+    // remaining duration collapses to ~0ms and the story skips pages instantly.
+    val timerPageIndex = remember { mutableIntStateOf(-1) }
 
     // Auto-advance logic with pause support
     LaunchedEffect(pagerState.currentPage, isPaused) {
         if (!isPaused) {
+             if (timerPageIndex.value != pagerState.currentPage) {
+                 currentProgress.snapTo(0f)
+                 timerPageIndex.value = pagerState.currentPage
+             }
              val remainingTime = (1f - currentProgress.value) * 15000
              if (remainingTime > 0) {
                  currentProgress.animateTo(

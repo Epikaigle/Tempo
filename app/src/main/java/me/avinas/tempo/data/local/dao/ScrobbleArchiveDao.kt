@@ -27,6 +27,12 @@ interface ScrobbleArchiveDao {
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(archives: List<ScrobbleArchive>): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(archive: ScrobbleArchive): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllIgnore(archives: List<ScrobbleArchive>): List<Long>
     
     @Update
     suspend fun update(archive: ScrobbleArchive)
@@ -55,6 +61,15 @@ interface ScrobbleArchiveDao {
     
     @Query("SELECT * FROM scrobbles_archive ORDER BY play_count DESC")
     fun observeAll(): Flow<List<ScrobbleArchive>>
+
+    /**
+     * Keyset page of archive rows for backup export.
+     * Rows are fetched in id order, page after page, so the full archive
+     * (200K+ rows for large Last.fm histories) is never materialized in
+     * memory at once. Pass the last seen id as [afterId], starting at 0.
+     */
+    @Query("SELECT * FROM scrobbles_archive WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
+    suspend fun getArchivePage(afterId: Long, limit: Int): List<ScrobbleArchive>
     
     /**
      * Get total count of archived tracks.
@@ -116,6 +131,14 @@ interface ScrobbleArchiveDao {
         LIMIT 1
     """)
     suspend fun findByArtistAndTitle(artist: String, title: String): ScrobbleArchive?
+
+    /**
+     * Get all archive rows for a normalized artist name.
+     * Used during artist merge to rewrite archived scrobbles to the
+     * canonical artist identity.
+     */
+    @Query("SELECT * FROM scrobbles_archive WHERE artist_name_normalized = :artistNormalized")
+    suspend fun getByArtistNormalized(artistNormalized: String): List<ScrobbleArchive>
     
     // =====================
     // Date Range Queries

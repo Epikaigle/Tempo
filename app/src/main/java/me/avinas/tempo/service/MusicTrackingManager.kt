@@ -27,7 +27,8 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class MusicTrackingManager(
     private val listeningRepository: ListeningRepository,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val offlineEventStore: OfflineEventStore? = null
 ) {
     companion object {
         private const val TAG = "MusicTrackingManager"
@@ -70,6 +71,19 @@ class MusicTrackingManager(
     private var batchJob: Job? = null
     
     init {
+        // Restore events that failed to persist in a previous process lifetime.
+        // An OEM kill or reboot must not discard plays that were already recorded.
+        offlineEventStore?.let { store ->
+            try {
+                val restored = store.load()
+                if (restored.isNotEmpty()) {
+                    restored.forEach { pending -> offlineQueue[pending.key()] = pending }
+                    Log.i(TAG, "Restored ${restored.size} offline events from durable storage")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to restore offline events", e)
+            }
+        }
         startBatchProcessor()
         startOfflineQueueProcessor()
     }
@@ -170,16 +184,19 @@ class MusicTrackingManager(
      */
     suspend fun flushAll() {
         Log.i(TAG, "Flushing all pending events...")
-        
+
         // Close channel to stop accepting new events
         eventChannel.close()
-        
+
         // Wait for batch processor to finish
         batchJob?.join()
-        
+
         // Process any remaining offline queue
         processOfflineQueue()
-        
+
+        // Persist whatever could still not be saved so it survives process death
+        persistOfflineQueue()
+
         Log.i(TAG, "Flush complete. Metrics: ${_metrics.value}")
     }
     
@@ -203,22 +220,44 @@ class MusicTrackingManager(
         batchJob = scope.launch {
             val batch = mutableListOf<PendingEvent>()
             var lastFlushTime = System.currentTimeMillis()
-            
+
             try {
-                for (event in eventChannel) {
+                while (true) {
+                    // Wait for the next event, but never longer than the batch
+                    // timeout. The previous implementation only flushed when a NEW
+                    // event arrived, so the last events of a quiet period could sit
+                    // in memory indefinitely (and be lost on a process kill).
+                    val remaining = BATCH_TIMEOUT_MS - (System.currentTimeMillis() - lastFlushTime)
+                    val result = if (remaining > 0) {
+                        withTimeoutOrNull(remaining) { eventChannel.receiveCatching() }
+                    } else {
+                        null
+                    }
+
+                    if (result == null) {
+                        // Timeout with no new event — flush what we have
+                        if (batch.isNotEmpty()) {
+                            processBatch(batch.toList())
+                            batch.clear()
+                        }
+                        lastFlushTime = System.currentTimeMillis()
+                        continue
+                    }
+
+                    val event = result.getOrNull() ?: break // channel closed
                     batch.add(event)
-                    
+
                     val now = System.currentTimeMillis()
                     val shouldFlush = batch.size >= BATCH_SIZE ||
                             (now - lastFlushTime) >= BATCH_TIMEOUT_MS
-                    
-                    if (shouldFlush && batch.isNotEmpty()) {
+
+                    if (shouldFlush) {
                         processBatch(batch.toList())
                         batch.clear()
                         lastFlushTime = now
                     }
                 }
-                
+
                 // Process remaining events when channel closes
                 if (batch.isNotEmpty()) {
                     processBatch(batch.toList())
@@ -273,9 +312,10 @@ class MusicTrackingManager(
         if (pending.retryCount >= MAX_RETRIES) {
             Log.e(TAG, "Event exceeded max retries, discarding: trackId=${pending.event.track_id}")
             updateMetrics { it.copy(eventsDropped = it.eventsDropped + 1) }
+            persistOfflineQueue()
             return
         }
-        
+
         if (offlineQueue.size >= MAX_OFFLINE_QUEUE_SIZE) {
             // Remove oldest event to make room
             offlineQueue.entries.minByOrNull { it.value.queuedAt }?.key?.let {
@@ -283,10 +323,19 @@ class MusicTrackingManager(
                 updateMetrics { m -> m.copy(eventsDropped = m.eventsDropped + 1) }
             }
         }
-        
-        val key = "${pending.event.track_id}_${pending.event.timestamp}"
-        offlineQueue[key] = pending.copy(retryCount = pending.retryCount + 1)
+
+        offlineQueue[pending.key()] = pending.copy(retryCount = pending.retryCount + 1)
         updateMetrics { it.copy(eventsInOfflineQueue = offlineQueue.size) }
+        persistOfflineQueue()
+    }
+
+    /** Mirror the in-memory offline queue to durable storage (best effort). */
+    private fun persistOfflineQueue() {
+        try {
+            offlineEventStore?.save(offlineQueue.values)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist offline queue", e)
+        }
     }
     
     private fun startOfflineQueueProcessor() {
@@ -315,19 +364,23 @@ class MusicTrackingManager(
     
     private suspend fun processOfflineQueue() {
         if (offlineQueue.isEmpty()) return
-        
+
         Log.d(TAG, "Processing offline queue: ${offlineQueue.size} events")
-        
+
+        // Crash-safe: remove each event from the queue (and durable storage) only
+        // AFTER it has been successfully inserted. Clearing the whole map up front
+        // (the old behavior) meant a process death mid-loop silently discarded
+        // every event that had not been retried yet.
         val toProcess = offlineQueue.values.toList()
-        offlineQueue.clear()
-        
+
         for (pending in toProcess) {
             try {
                 val delay = calculateRetryDelay(pending.retryCount)
                 delay(delay)
-                
+
                 val id = listeningRepository.insert(pending.event)
                 if (id > 0) {
+                    offlineQueue.remove(pending.key())
                     updateMetrics { it.copy(eventsSaved = it.eventsSaved + 1) }
                 } else {
                     handleFailedEvent(pending)
@@ -337,8 +390,9 @@ class MusicTrackingManager(
                 handleFailedEvent(pending)
             }
         }
-        
+
         updateMetrics { it.copy(eventsInOfflineQueue = offlineQueue.size) }
+        persistOfflineQueue()
     }
     
     private suspend fun <T> withRetry(
@@ -397,7 +451,10 @@ data class PendingEvent(
     val sessionId: String,
     val queuedAt: Long,
     val retryCount: Int
-)
+) {
+    /** Stable identity for the offline queue map and durable storage. */
+    fun key(): String = "${event.track_id}_${event.timestamp}"
+}
 
 /**
  * Session state for recovery.

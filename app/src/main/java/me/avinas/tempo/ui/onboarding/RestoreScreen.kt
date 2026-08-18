@@ -1623,7 +1623,7 @@ fun YouTubeMusicImportCard(
                                     ) {
                                         append("takeout.google.com")
                                     }
-                                    append(", deselect all → select only \"YouTube and YouTube Music\" → only \"history\" → JSON format. Download the ZIP and select it here directly. You can also do this later from Settings.")
+                                    append(", deselect all → select only \"YouTube and YouTube Music\" → only \"history\" → JSON format. Download the ZIP and select it here directly (if Takeout split the export into several ZIPs, select all of them). You can also do this later from Settings.")
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.7f)

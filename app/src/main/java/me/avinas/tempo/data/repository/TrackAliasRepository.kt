@@ -3,9 +3,12 @@ package me.avinas.tempo.data.repository
 import android.util.Log
 import androidx.room.withTransaction
 import me.avinas.tempo.data.local.AppDatabase
+import me.avinas.tempo.data.local.ArchiveTimestampCodec
 import me.avinas.tempo.data.local.dao.ListeningEventDao
+import me.avinas.tempo.data.local.dao.ScrobbleArchiveDao
 import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.dao.TrackAliasDao
+import me.avinas.tempo.data.local.entities.ScrobbleArchive
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.local.entities.TrackAlias
 import javax.inject.Inject
@@ -28,6 +31,7 @@ class TrackAliasRepository @Inject constructor(
     private val trackAliasDao: TrackAliasDao,
     private val listeningEventDao: ListeningEventDao,
     private val trackDao: TrackDao,
+    private val scrobbleArchiveDao: ScrobbleArchiveDao,
     private val database: AppDatabase,
     private val statsRepository: StatsRepository
 ) {
@@ -136,11 +140,51 @@ class TrackAliasRepository @Inject constructor(
                     Log.d(TAG, "Updated target track metadata")
                 }
                 
-                // 4. Move listening history
-                listeningEventDao.reattributeEvents(sourceTrackId, targetTrackId)
-                Log.d(TAG, "Reattributed listening events from source to target")
-                
-                // 5. Delete source track (CASCADE will clean up old aliases and track_artists)
+                // 4. Move listening history through the dedup pipeline.
+                // A blind UPDATE (old reattributeEvents) kept stale content
+                // fingerprints computed for the source track and double-counted
+                // plays that already existed on the target. Re-inserting with
+                // contentFingerprint=null forces recomputation for the target
+                // track and reconciles same-play conflicts.
+                val sourceEvents = listeningEventDao.getEventsForTrack(sourceTrackId)
+                if (sourceEvents.isNotEmpty()) {
+                    val moved = sourceEvents.map {
+                        it.copy(id = 0, track_id = targetTrackId, contentFingerprint = null)
+                    }
+                    val moveResult = listeningEventDao.insertAllBatchedWithDedup(moved)
+                    listeningEventDao.deleteEventsForTrack(sourceTrackId)
+                    Log.d(TAG, "Moved listening history: ${moveResult.inserted} inserted, " +
+                            "${moveResult.skipped} deduplicated against target")
+                }
+
+                // 5. Re-key the compressed scrobble archive row (Last.fm long-tail
+                // history) so it follows the merged identity. Timestamps are union-
+                // merged in case the target already has its own archive row.
+                val archiveRow = scrobbleArchiveDao.findByArtistAndTitle(
+                    sourceTrack.artist, sourceTrack.title
+                )
+                if (archiveRow != null) {
+                    val newHash = ScrobbleArchive.generateTrackHash(targetTrack.artist, targetTrack.title)
+                    if (newHash != archiveRow.trackHash) {
+                        val retargeted = archiveRow.copy(
+                            id = 0,
+                            trackHash = newHash,
+                            trackTitle = targetTrack.title,
+                            artistName = targetTrack.artist,
+                            artistNameNormalized = targetTrack.artist.lowercase().trim(),
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        scrobbleArchiveDao.upsertWithMerge(
+                            retargeted,
+                            ArchiveTimestampCodec::decompress,
+                            ArchiveTimestampCodec::compress
+                        )
+                        scrobbleArchiveDao.delete(archiveRow)
+                        Log.d(TAG, "Re-keyed scrobble archive row to target identity")
+                    }
+                }
+
+                // 6. Delete source track (CASCADE will clean up old aliases and track_artists)
                 trackDao.deleteById(sourceTrackId)
                 Log.i(TAG, "Deleted source track '${sourceTrack.title}'")
             }

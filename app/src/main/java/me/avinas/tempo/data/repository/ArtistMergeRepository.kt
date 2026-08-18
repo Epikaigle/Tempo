@@ -3,12 +3,17 @@ package me.avinas.tempo.data.repository
 import android.util.Log
 import androidx.room.withTransaction
 import me.avinas.tempo.data.local.AppDatabase
+import me.avinas.tempo.data.local.ArchiveTimestampCodec
+import me.avinas.tempo.data.local.dao.AlbumDao
 import me.avinas.tempo.data.local.dao.ArtistAliasDao
 import me.avinas.tempo.data.local.dao.ArtistDao
+import me.avinas.tempo.data.local.dao.ScrobbleArchiveDao
 import me.avinas.tempo.data.local.dao.TrackArtistDao
 import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.entities.Artist
 import me.avinas.tempo.data.local.entities.ArtistAlias
+import me.avinas.tempo.data.local.entities.ScrobbleArchive
+import me.avinas.tempo.utils.ArtistNameReplacer
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,6 +34,8 @@ class ArtistMergeRepository @Inject constructor(
     private val artistDao: ArtistDao,
     private val trackArtistDao: TrackArtistDao,
     private val trackDao: TrackDao,
+    private val albumDao: AlbumDao,
+    private val scrobbleArchiveDao: ScrobbleArchiveDao,
     private val database: AppDatabase,
     private val statsRepository: StatsRepository
 ) {
@@ -167,6 +174,14 @@ class ArtistMergeRepository @Inject constructor(
                 // 4. Update tracks.primary_artist_id references
                 updatePrimaryArtistReferences(sourceArtistId, targetArtistId)
 
+                // 4b. Re-parent albums. Without this the source artist's albums
+                // were CASCADE-deleted along with it, silently losing album rows
+                // (and their artwork/MBIDs) on every merge.
+                val reparentedAlbums = albumDao.reassignArtist(sourceArtistId, targetArtistId)
+                if (reparentedAlbums > 0) {
+                    Log.d(TAG, "Re-parented $reparentedAlbums albums to target artist")
+                }
+
                 // 5. Copy metadata from source to target if target lacks it
                 // Note: We skip copying Spotify/MusicBrainz IDs if target already has one
                 // to avoid unique constraint violations
@@ -190,11 +205,56 @@ class ArtistMergeRepository @Inject constructor(
                 val exactReplaced = trackDao.replaceArtistName(sourceArtist.name, targetArtist.name)
                 Log.d(TAG, "Replaced artist name in $exactReplaced tracks (exact match)")
                 
-                // Then handle multi-artist strings (e.g., "OldArtist, OtherArtist")
-                // Skip if source and target have the same name (case-insensitive) to avoid no-op queries
+                // Then handle multi-artist strings (e.g., "OldArtist, OtherArtist").
+                // Skip if source and target have the same name (case-insensitive).
+                // The replacement runs in Kotlin over INSTR-selected candidates:
+                // word-boundary safe, wildcard-safe (names with % or _ are matched
+                // literally), and covers every separator (, & | / + x feat. with ...),
+                // unlike the old LIKE-based SQL which only handled ", ".
                 if (!sourceArtist.name.equals(targetArtist.name, ignoreCase = true)) {
-                    val multiReplaced = trackDao.replaceArtistNameInMultiArtist(sourceArtist.name, targetArtist.name)
+                    val candidates = trackDao.getTracksContainingArtistName(sourceArtist.name)
+                    var multiReplaced = 0
+                    for (track in candidates) {
+                        // Exact matches were already handled by replaceArtistName above
+                        if (track.artist.equals(sourceArtist.name, ignoreCase = true)) continue
+                        val updated = ArtistNameReplacer.replaceSegment(
+                            track.artist, sourceArtist.name, targetArtist.name
+                        ) ?: continue
+                        trackDao.updateArtistString(track.id, updated)
+                        multiReplaced++
+                    }
                     Log.d(TAG, "Replaced artist name in multi-artist strings: $multiReplaced tracks")
+                }
+
+                // 6b. Rewrite compressed scrobble archive rows (Last.fm long-tail
+                // history). The archive is keyed by artist name, not artist id, so
+                // it was previously left pointing at the dead source identity.
+                // Timestamps are union-merged in case the target already has a row
+                // for the same title.
+                val sourceArchiveRows = scrobbleArchiveDao.getByArtistNormalized(
+                    sourceArtist.name.lowercase().trim()
+                )
+                var archiveRewritten = 0
+                for (row in sourceArchiveRows) {
+                    val newHash = ScrobbleArchive.generateTrackHash(targetArtist.name, row.trackTitle)
+                    if (newHash == row.trackHash) continue // identical identity, nothing to do
+                    val retargeted = row.copy(
+                        id = 0,
+                        trackHash = newHash,
+                        artistName = targetArtist.name,
+                        artistNameNormalized = targetArtist.name.lowercase().trim(),
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    scrobbleArchiveDao.upsertWithMerge(
+                        retargeted,
+                        ArchiveTimestampCodec::decompress,
+                        ArchiveTimestampCodec::compress
+                    )
+                    scrobbleArchiveDao.delete(row)
+                    archiveRewritten++
+                }
+                if (archiveRewritten > 0) {
+                    Log.d(TAG, "Rewrote $archiveRewritten scrobble archive rows to target identity")
                 }
 
                 // 7. Delete source artist

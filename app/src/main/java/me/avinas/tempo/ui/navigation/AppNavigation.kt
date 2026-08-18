@@ -374,7 +374,8 @@ fun AppNavigation(
                         me.avinas.tempo.ui.details.AlbumDetailsScreen(
                             albumId = albumId,
                             onNavigateBack = { navController.popBackStack() },
-                            onNavigateToSong = { trackId -> navController.safeNavigate(Screen.SongDetails.createRoute(trackId)) }
+                            onNavigateToSong = { trackId -> navController.safeNavigate(Screen.SongDetails.createRoute(trackId)) },
+                            onNavigateToArtist = { artistId -> navController.safeNavigate(Screen.ArtistDetails.createRouteById(artistId)) }
                         )
                     }
 

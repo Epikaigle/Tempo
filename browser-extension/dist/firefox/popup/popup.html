@@ -30,6 +30,9 @@
             <p class="app-subtitle">Track browser plays · sync to Tempo</p>
           </div>
         </div>
+        <div class="header-right">
+          <span class="socket-indicator" id="socket-indicator" style="display:none;"></span>
+        </div>
       </div>
       
       <!-- Top Navigation Tabs -->
@@ -168,6 +171,7 @@
             </div>
             <div class="progress-time-row">
               <span id="np-listened">0s</span>
+              <span id="np-duration" class="np-duration"></span>
               <span id="np-completion">0%</span>
             </div>
           </div>
@@ -574,7 +578,7 @@
           </button>
         </div>
 
-        <div class="version-info">Tempo Stats v1.0.0</div>
+        <div class="version-info" id="version-info">Tempo Stats</div>
       </section>
 
     </main>

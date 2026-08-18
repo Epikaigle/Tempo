@@ -94,7 +94,7 @@ class HomeViewModel @Inject constructor(
                 }
         }
         
-        // Listen for preference changes (e.g. Gamification toggle)
+        // Listen for preference changes (e.g. Gamification toggle, spotlight viewed state)
         viewModelScope.launch {
             var lastGamificationState: Boolean? = null
             preferencesRepository.preferences().collect { prefs ->
@@ -103,6 +103,14 @@ class HomeViewModel @Inject constructor(
                     loadData() // Reload if toggle changed
                 }
                 lastGamificationState = state
+
+                // Compute spotlight story viewed state
+                val storyTimeRange = me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.getDirectStoryTimeRange()
+                val currentKey = if (storyTimeRange != null) {
+                    me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.storyPeriodKey(storyTimeRange)
+                } else null
+                val viewed = currentKey != null && currentKey == prefs?.lastSpotlightStoryViewed
+                _uiState.update { it.copy(spotlightStoryViewed = viewed) }
             }
         }
     }
@@ -269,6 +277,9 @@ class HomeViewModel @Inject constructor(
                         todayHourlyDistribution = todayHourly
                     )
                 }
+
+                // Share nudge — evaluate once per session, once home data is ready.
+                maybeShowShareNudge()
             }
         } catch (e: Exception) {
             _uiState.update { it.copy(isLoading = false, error = e.message) }
@@ -544,6 +555,127 @@ class HomeViewModel @Inject constructor(
     }
     
     /**
+     * Session guard: the share nudge is evaluated at most once per app session so a
+     * time-range change or pull-to-refresh can never re-trigger it mid-use.
+     */
+    private var shareNudgeEvaluated = false
+
+    /**
+     * Smart, non-intrusive promotion of the share feature. On app open (once per
+     * session, after home data settles) it checks a chain of gates and — only when
+     * all pass — opens the artist share preview directly on the home screen.
+     * Gates (cheapest first):
+     *  1. Dismissed 3 times — the user isn't interested; stop permanently.
+     *  2. Cooldown — at most once every 7 days.
+     *  3. Shared anything in the last 14 days — they already know the feature.
+     *  4. Fewer than 20 real plays — nothing worth sharing yet (also skips new users).
+     *  5. Never stacks on top of the rate popup or spotlight reminder.
+     */
+    private fun maybeShowShareNudge() {
+        if (shareNudgeEvaluated) return
+        shareNudgeEvaluated = true
+        viewModelScope.launch {
+            try {
+                // Let the home screen settle before any overlay appears.
+                delay(1500)
+
+                val state = _uiState.value
+                if (state.showRateAppPopup || state.showSpotlightReminder || state.showShareNudge) return@launch
+
+                val preferences = context.dataStore.data.first()
+
+                // 1. Dismissed too many times — permanent suppression.
+                val dismissCount = preferences[intPreferencesKey("share_nudge_dismiss_count")] ?: 0
+                if (dismissCount >= 3) return@launch
+
+                // 2. Cooldown: at most once every 7 days.
+                val lastShown = preferences[longPreferencesKey("share_nudge_last_shown")] ?: 0L
+                if (System.currentTimeMillis() - lastShown <= 7 * 24 * 60 * 60 * 1000L) return@launch
+
+                // 3. Shared in the last 14 days — they already know the feature.
+                val lastShared = preferences[longPreferencesKey("share_last_success")] ?: 0L
+                if (lastShared > 0L && System.currentTimeMillis() - lastShared <= 14 * 24 * 60 * 60 * 1000L) return@launch
+
+                // 4. Engagement: enough real plays for a card worth sharing.
+                if (listeningEventDao.getRealPlayCount() < 20) return@launch
+
+                // Freshest recap period wins for the card; weekly otherwise.
+                val today = java.time.LocalDate.now()
+                val timeRange =
+                    if (today.dayOfMonth == today.lengthOfMonth()) TimeRange.THIS_MONTH
+                    else TimeRange.THIS_WEEK
+                val artists = statsRepository.getTopArtists(
+                    timeRange,
+                    sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE,
+                    pageSize = 10,
+                    withLeeway = false
+                ).items
+                if (artists.isEmpty()) return@launch
+                val overview = statsRepository.getListeningOverview(timeRange, withLeeway = false)
+                if (overview.totalPlayCount <= 0) return@launch
+
+                // Mark shown immediately so re-entry can't double-fire.
+                context.dataStore.edit { prefs ->
+                    prefs[longPreferencesKey("share_nudge_last_shown")] = System.currentTimeMillis()
+                }
+
+                _uiState.update {
+                    it.copy(
+                        showShareNudge = true,
+                        shareNudgeTimeRange = timeRange,
+                        shareNudgeArtists = artists,
+                        shareNudgeOverview = overview
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.d("HomeViewModel", "Share nudge skipped: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * The user closed the share preview without sharing. Counts toward the
+     * 3-dismiss permanent suppression.
+     */
+    fun onShareNudgeDismissed() {
+        _uiState.update {
+            it.copy(
+                showShareNudge = false,
+                shareNudgeTimeRange = null,
+                shareNudgeArtists = emptyList(),
+                shareNudgeOverview = null
+            )
+        }
+        viewModelScope.launch {
+            context.dataStore.edit { prefs ->
+                val current = prefs[intPreferencesKey("share_nudge_dismiss_count")] ?: 0
+                prefs[intPreferencesKey("share_nudge_dismiss_count")] = current + 1
+            }
+        }
+    }
+
+    /**
+     * The user shared from the nudge. Engagement: reset the dismiss counter so the
+     * nudge can return after the normal cooldown, and record the share.
+     */
+    fun onShareNudgeShared() {
+        _uiState.update {
+            it.copy(
+                showShareNudge = false,
+                shareNudgeTimeRange = null,
+                shareNudgeArtists = emptyList(),
+                shareNudgeOverview = null
+            )
+        }
+        viewModelScope.launch {
+            context.dataStore.edit { prefs ->
+                prefs[intPreferencesKey("share_nudge_dismiss_count")] = 0
+                prefs[longPreferencesKey("share_last_success")] = System.currentTimeMillis()
+            }
+        }
+    }
+
+    /**
      * Check if we should show a Spotlight Story reminder.
      * Shows reminder on:
      * - Sunday (for THIS_WEEK story)
@@ -664,6 +796,20 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Mark the current Spotlight story period as viewed.
+     * Called when the user taps the story ring/card on the home screen.
+     * Persists the period key so the ring shows gray until a new story period unlocks.
+     */
+    fun onSpotlightViewed() {
+        viewModelScope.launch {
+            val storyTimeRange = me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.getDirectStoryTimeRange()
+                ?: return@launch
+            val key = me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.storyPeriodKey(storyTimeRange)
+            preferencesRepository.updateLastSpotlightStoryViewed(key)
+        }
+    }
 }
 
 @Immutable
@@ -690,6 +836,13 @@ data class HomeUiState(
     val userName: String? = null,
     val profileImagePath: String? = null,
     val showRateAppPopup: Boolean = false,
+
+    // Share Nudge — gated promotion of the share feature; opens the artist share
+    // preview (StatsShareDialog) directly instead of showing a message popup.
+    val showShareNudge: Boolean = false,
+    val shareNudgeTimeRange: TimeRange? = null,
+    val shareNudgeArtists: List<me.avinas.tempo.data.stats.TopArtist> = emptyList(),
+    val shareNudgeOverview: me.avinas.tempo.data.stats.ListeningOverview? = null,
     
     // Spotlight Story Reminder
     val showSpotlightReminder: Boolean = false,
@@ -703,5 +856,6 @@ data class HomeUiState(
     val todayOverview: me.avinas.tempo.data.stats.ListeningOverview? = null,
     val todayTopTrack: me.avinas.tempo.data.stats.TopTrack? = null,
     val todayTopArtist: me.avinas.tempo.data.stats.TopArtist? = null,
-    val todayHourlyDistribution: List<me.avinas.tempo.data.stats.HourlyDistribution> = emptyList()
+    val todayHourlyDistribution: List<me.avinas.tempo.data.stats.HourlyDistribution> = emptyList(),
+    val spotlightStoryViewed: Boolean = false
 )
