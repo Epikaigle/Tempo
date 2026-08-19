@@ -57,6 +57,13 @@ interface ArtistAliasDao {
     suspend fun findAliasesByNormalizedNames(normalizedNames: List<String>): List<ArtistAlias>
 
     /**
+     * Update the normalized lookup key of an alias (used by the one-time
+     * artist-repair service when normalization rules change).
+     */
+    @Query("UPDATE artist_aliases SET original_name_normalized = :newKey WHERE id = :id")
+    suspend fun updateNormalizedName(id: Long, newKey: String)
+
+    /**
      * Get all aliases that point to a specific target artist.
      */
     @Query("SELECT * FROM artist_aliases WHERE target_artist_id = :artistId ORDER BY created_at DESC")

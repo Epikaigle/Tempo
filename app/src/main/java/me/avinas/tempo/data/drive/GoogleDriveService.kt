@@ -124,7 +124,9 @@ class GoogleDriveService @Inject constructor(
         retryCount: Int = 0,
         block: suspend (Drive) -> T
     ): T {
-        val service = getDriveService() ?: throw DriveException.Auth("Not signed in")
+        val service = getDriveService() ?: throw DriveException.Auth(
+            "Google Drive authorization incomplete. Please sign out and sign in again."
+        )
         
         return try {
             block(service)
@@ -134,6 +136,7 @@ class GoogleDriveService @Inject constructor(
                     Log.w(TAG, "Authorization failed (401) - attempting refresh")
                     driveService = null
                     cachedAccessToken = null
+                    authManager.clearPersistedAccessToken()
                     
                     if (retryCount < 1 && authManager.refreshAccessToken()) {
                         Log.i(TAG, "Token refreshed, retrying operation")
@@ -142,7 +145,21 @@ class GoogleDriveService @Inject constructor(
                         throw DriveException.Auth("Session expired. Please sign in again.", e)
                     }
                 }
-                403 -> throw DriveException.Auth("Permission denied. Check Drive access.", e)
+                403 -> {
+                    // 403 from Drive = the access token is valid but does NOT have the
+                    // required scope (usually drive.file) or can't access the resource.
+                    // Surface the real Google reason and force a clean re-auth.
+                    val reason = e.details?.message ?: e.statusMessage ?: e.message
+                    Log.e(TAG, "Drive API returned 403 Permission denied: $reason", e)
+                    driveService = null
+                    cachedAccessToken = null
+                    authManager.invalidateAuthorization()
+                    authManager.clearPersistedAccessToken()
+                    throw DriveException.Auth(
+                        "Permission denied. Check Drive access. $reason",
+                        e
+                    )
+                }
                 404 -> {
                     // Resource may have been deleted externally, clear cached folder ID
                     backupFolderId = null

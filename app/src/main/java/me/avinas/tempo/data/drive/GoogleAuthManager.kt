@@ -1,5 +1,6 @@
 package me.avinas.tempo.data.drive
 
+import android.accounts.Account
 import android.app.Activity
 import android.content.Context
 import android.util.Log
@@ -14,6 +15,7 @@ import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -170,11 +172,7 @@ class GoogleAuthManager @Inject constructor(
         try {
             Log.d(TAG, "Requesting Drive authorization")
             
-            val authRequest = AuthorizationRequest.Builder()
-                .setRequestedScopes(listOf(DRIVE_SCOPE))
-                .build()
-            
-            authorizationResult = authorizationClient.authorize(authRequest).await()
+            authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
             
             if (authorizationResult?.hasResolution() == true) {
                 Log.d(TAG, "Drive authorization requires user consent - pendingIntent available")
@@ -182,16 +180,45 @@ class GoogleAuthManager @Inject constructor(
                 false
             } else {
                 val accessToken = authorizationResult?.accessToken
-                Log.i(TAG, "Drive authorization granted, accessToken present: ${accessToken != null}")
+                val grantedScopes = authorizationResult?.grantedScopes.orEmpty()
+                val hasDriveScope = grantedScopes.any { it.contains(DriveScopes.DRIVE_FILE) }
+                Log.i(
+                    TAG,
+                    "Drive authorization granted, accessToken present: ${accessToken != null}, " +
+                        "drive.file scope granted: $hasDriveScope, scopes: $grantedScopes"
+                )
                 _needsDriveConsent.value = false
                 
-                // Persist the access token for background workers
-                if (accessToken != null) {
-                    tokenStorage.saveAccessToken(accessToken)
-                    Log.d(TAG, "Access token persisted to secure storage")
+                if (accessToken == null || !hasDriveScope) {
+                    // This is the classic cause of "Permission denied. Check Drive access.":
+                    // the token was issued but does not carry drive.file, so the Drive API
+                    // answers 403. Do not persist a broken token.
+                    Log.e(
+                        TAG,
+                        "Drive authorization did not grant the drive.file scope. " +
+                            "Ensure the OAuth consent screen for client ${BuildConfig.GOOGLE_WEB_CLIENT_ID} " +
+                            "includes https://www.googleapis.com/auth/drive.file"
+                    )
+                    tokenStorage.clearToken()
+                    return@withContext false
                 }
                 
+                // Persist the access token for background workers
+                tokenStorage.saveAccessToken(accessToken)
+                Log.d(TAG, "Access token persisted to secure storage")
+                
                 true
+            }
+        } catch (e: ApiException) {
+            // GMS may throw ApiException carrying the consent pendingIntent
+            val resolution = e.status.resolution
+            if (resolution != null) {
+                Log.d(TAG, "Drive authorization requires user consent (ApiException) - pendingIntent available")
+                _needsDriveConsent.value = true
+                false
+            } else {
+                Log.e(TAG, "Failed to request Drive authorization (${e.status.statusCode}: ${e.status.statusMessage})", e)
+                false
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to request Drive authorization", e)
@@ -208,23 +235,26 @@ class GoogleAuthManager @Inject constructor(
             Log.d(TAG, "Completing consent flow, re-requesting authorization")
             _needsDriveConsent.value = false
             
-            val authRequest = AuthorizationRequest.Builder()
-                .setRequestedScopes(listOf(DRIVE_SCOPE))
-                .build()
-            
-            authorizationResult = authorizationClient.authorize(authRequest).await()
+            authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
             
             val accessToken = authorizationResult?.accessToken
-            val hasToken = accessToken != null
-            Log.i(TAG, "Consent flow completed, accessToken present: $hasToken")
+            val grantedScopes = authorizationResult?.grantedScopes.orEmpty()
+            val hasDriveScope = grantedScopes.any { it.contains(DriveScopes.DRIVE_FILE) }
+            val hasToken = accessToken != null && hasDriveScope
+            Log.i(TAG, "Consent flow completed, accessToken present: $hasToken, drive.file scope: $hasDriveScope")
             
             // Persist the access token for background workers
-            if (accessToken != null) {
+            if (accessToken != null && hasDriveScope) {
                 tokenStorage.saveAccessToken(accessToken)
                 Log.d(TAG, "Access token persisted to secure storage")
+            } else {
+                tokenStorage.clearToken()
             }
             
             hasToken
+        } catch (e: ApiException) {
+            Log.e(TAG, "Failed to complete consent flow (${e.status.statusCode}: ${e.status.statusMessage})", e)
+            false
         } catch (e: Exception) {
             Log.e(TAG, "Failed to complete consent flow", e)
             false
@@ -236,6 +266,39 @@ class GoogleAuthManager @Inject constructor(
      * May return null if not authorized yet.
      */
     fun getAuthorizationResult(): AuthorizationResult? = authorizationResult
+
+    /**
+     * Build the Drive authorization request.
+     *
+     * Binds the token to the OAuth Web client (GOOGLE_WEB_CLIENT_ID) and to the
+     * account the user signed in with, so Google Play services issues an access
+     * token against the consent screen that lists the `drive.file` scope.
+     *
+     * Without an explicit client binding (or the `default_web_client_id` string
+     * resource), Google Play services falls back to an implicit OAuth client and
+     * may return a token that does NOT include `drive.file`. The Drive API then
+     * answers HTTP 403 "Permission denied" (insufficientPermissions).
+     */
+    private fun buildDriveAuthRequest(): AuthorizationRequest {
+        val builder = AuthorizationRequest.Builder()
+            .setRequestedScopes(listOf(DRIVE_SCOPE))
+
+        // Pin the authorization to the exact account used for sign-in.
+        _currentAccount.value?.let { account ->
+            builder.setAccount(Account(account.email, "com.google"))
+        }
+
+        // requestOfflineAccess(webClientId) ties the request to the configured
+        // OAuth client AND keeps Google Play services able to mint fresh access
+        // tokens for background workers. Skipped when no client ID is baked in
+        // (e.g. CI builds without local.properties) - GMS then uses the
+        // default_web_client_id resource.
+        if (!BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
+            builder.requestOfflineAccess(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+        }
+
+        return builder.build()
+    }
     
     /**
      * Check if Drive authorization requires user consent.
@@ -277,9 +340,20 @@ class GoogleAuthManager @Inject constructor(
             // Fallback to persisted token storage (for background workers)
             val persistedToken = tokenStorage.getAccessToken()
             if (persistedToken != null) {
+                // Proactively refresh expired tokens so background workers don't
+                // burn a guaranteed 401 round-trip (and so a stale / incorrectly
+                // scoped token is never reused).
                 if (tokenStorage.isTokenExpired()) {
-                    Log.w(TAG, "Persisted token is expired, needs refresh")
-                    // Token is expired, but we return it anyway - caller can detect 401 and refresh
+                    Log.w(TAG, "Persisted token is expired, attempting silent refresh")
+                    if (refreshAccessToken()) {
+                        val freshToken = tokenStorage.getAccessToken()
+                        if (freshToken != null) {
+                            Log.d(TAG, "Got fresh token via silent refresh")
+                            return@withContext freshToken
+                        }
+                    }
+                    Log.w(TAG, "Silent refresh failed, falling back to stored token (Drive will retry via 401)")
+                    return@withContext persistedToken
                 }
                 Log.d(TAG, "Using persisted token from storage")
                 return@withContext persistedToken
@@ -301,12 +375,8 @@ class GoogleAuthManager @Inject constructor(
         try {
             Log.d(TAG, "Refreshing access token")
             
-            val authRequest = AuthorizationRequest.Builder()
-                .setRequestedScopes(listOf(DRIVE_SCOPE))
-                .build()
-            
             // Re-authorize to get a fresh token
-            authorizationResult = authorizationClient.authorize(authRequest).await()
+            authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
             
             if (authorizationResult?.hasResolution() == true) {
                 Log.d(TAG, "Refresh requires user consent")
@@ -314,21 +384,47 @@ class GoogleAuthManager @Inject constructor(
                 false
             } else {
                 val accessToken = authorizationResult?.accessToken
-                val hasToken = accessToken != null
-                Log.i(TAG, "Token refreshed successfully: $hasToken")
+                val grantedScopes = authorizationResult?.grantedScopes.orEmpty()
+                val hasDriveScope = grantedScopes.any { it.contains(DriveScopes.DRIVE_FILE) }
+                val hasToken = accessToken != null && hasDriveScope
+                Log.i(TAG, "Token refreshed successfully: $hasToken (drive.file scope: $hasDriveScope)")
                 
                 // Persist the refreshed token
-                if (accessToken != null) {
+                if (accessToken != null && hasDriveScope) {
                     tokenStorage.saveAccessToken(accessToken)
                     Log.d(TAG, "Refreshed token persisted to secure storage")
+                } else {
+                    tokenStorage.clearToken()
                 }
                 
                 hasToken
             }
+        } catch (e: ApiException) {
+            Log.w(TAG, "Refresh failed (${e.status.statusCode}: ${e.status.statusMessage})", e)
+            if (e.status.resolution != null) {
+                _needsDriveConsent.value = true
+            }
+            false
         } catch (e: Exception) {
             Log.e(TAG, "Failed to refresh token", e)
             false
         }
+    }
+    
+    /**
+     * Drop the in-memory authorization so the next Drive call re-authorizes.
+     * Called when Google returns HTTP 403 (the token lacks the required scope).
+     */
+    fun invalidateAuthorization() {
+        authorizationResult = null
+    }
+    
+    /**
+     * Drop the persisted access token. Called when a token is known to be
+     * broken (wrong scope / denied permissions).
+     */
+    fun clearPersistedAccessToken() {
+        tokenStorage.clearToken()
     }
     
     /**
@@ -449,11 +545,7 @@ class GoogleAuthManager @Inject constructor(
         try {
             Log.d(TAG, "Attempting silent re-authorization with Google Play Services")
             
-            val authRequest = AuthorizationRequest.Builder()
-                .setRequestedScopes(listOf(DRIVE_SCOPE))
-                .build()
-            
-            authorizationResult = authorizationClient.authorize(authRequest).await()
+            authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
             
             // Check if we got a token without needing user consent
             if (authorizationResult?.hasResolution() == true) {
@@ -462,7 +554,9 @@ class GoogleAuthManager @Inject constructor(
             }
             
             val accessToken = authorizationResult?.accessToken
-            if (accessToken != null) {
+            val grantedScopes = authorizationResult?.grantedScopes.orEmpty()
+            val hasDriveScope = grantedScopes.any { it.contains(DriveScopes.DRIVE_FILE) }
+            if (accessToken != null && hasDriveScope) {
                 // Successfully got a fresh token
                 tokenStorage.saveAccessToken(accessToken)
                 _isSignedIn.value = true
@@ -470,7 +564,7 @@ class GoogleAuthManager @Inject constructor(
                 return@withContext true
             }
             
-            Log.w(TAG, "Re-authorization completed but no access token received")
+            Log.w(TAG, "Re-authorization completed but no drive.file-scoped access token received (scopes: $grantedScopes)")
             return@withContext false
             
         } catch (e: Exception) {

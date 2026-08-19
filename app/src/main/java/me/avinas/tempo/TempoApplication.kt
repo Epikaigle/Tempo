@@ -51,6 +51,9 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     lateinit var userKnownArtistDao: UserKnownArtistDao
 
     @Inject
+    lateinit var artistRepairService: me.avinas.tempo.data.repository.ArtistRepairService
+
+    @Inject
     lateinit var backupSettingsManager: BackupSettingsManager
     
     // Background executor for non-critical initialization
@@ -94,6 +97,15 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
             try {
                 val names = userKnownArtistDao.getAllNormalizedNames().toSet()
                 ArtistParser.loadUserKnownBands(names)
+
+                // One-time data repair; no-ops once applied (versioned flag).
+                // For users coming from public 4.8.2 the flag is already set,
+                // so this never re-runs on their devices.
+                try {
+                    artistRepairService.runRepairIfNeeded()
+                } catch (e: Exception) {
+                    android.util.Log.w("TempoApplication", "Artist repair invocation failed", e)
+                }
             } catch (e: Exception) {
                 android.util.Log.w("TempoApplication", "Failed to load user known artists", e)
             }

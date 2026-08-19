@@ -13,6 +13,7 @@ import me.avinas.tempo.data.remote.spotify.SpotifyAudioFeatures
 import me.avinas.tempo.data.remote.spotify.SpotifyAuthManager
 import me.avinas.tempo.data.remote.spotify.SpotifyFullArtist
 import me.avinas.tempo.data.remote.spotify.SpotifyTrack
+import me.avinas.tempo.utils.ArtistParser
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -67,10 +68,6 @@ class SpotifyEnrichmentService @Inject constructor(
         private const val TAG = "SpotifyEnrichment"
         private const val MIN_MATCH_SCORE = 0.7 // Minimum similarity score to accept match
         private const val RATE_LIMIT_DELAY_MS = 100L // Small delay between requests
-        
-        // Pre-compiled regex patterns to avoid repeated native memory allocation
-        private val SPECIAL_CHARS_PATTERN = Regex("[^a-z0-9\\s]")
-        private val WHITESPACE_PATTERN = Regex("\\s+")
     }
 
     /**
@@ -382,12 +379,11 @@ class SpotifyEnrichmentService @Inject constructor(
 
     /**
      * Normalize string for comparison.
+     * Delegates to the shared Unicode-aware implementation so non-ASCII
+     * (e.g. Japanese) names are preserved instead of being stripped to "".
      */
     private fun normalizeString(str: String): String {
-        return str.lowercase()
-            .replace(SPECIAL_CHARS_PATTERN, "")
-            .replace(WHITESPACE_PATTERN, " ")
-            .trim()
+        return ArtistParser.normalizeForSearch(str)
     }
 
     /**
@@ -1138,14 +1134,11 @@ class SpotifyEnrichmentService @Inject constructor(
     
     /**
      * Normalize artist name for comparison purposes.
-     * Removes special characters, extra whitespace, and converts to lowercase.
+     * Delegates to the shared Unicode-aware implementation so non-ASCII
+     * (e.g. Japanese) names are preserved instead of being stripped to "".
      */
     private fun normalizeArtistNameForComparison(name: String): String {
-        return name
-            .lowercase()
-            .trim()
-            .replace(SPECIAL_CHARS_PATTERN, "") // Remove special chars
-            .replace(WHITESPACE_PATTERN, " ") // Normalize whitespace
+        return ArtistParser.normalizeForSearch(name)
     }
 
     /**

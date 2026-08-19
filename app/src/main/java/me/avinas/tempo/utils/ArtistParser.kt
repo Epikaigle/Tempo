@@ -307,7 +307,7 @@ object ArtistParser {
     private val WHITESPACE_PATTERN = Regex("\\s+")
     private val TRAILING_BRACKETS_PATTERN = Regex("[)\\]]+$")
     private val LEADING_BRACKETS_PATTERN = Regex("^[(&\\[]+")
-    private val SPECIAL_CHARS_PATTERN = Regex("[^a-z0-9\\s]")
+    private val SPECIAL_CHARS_PATTERN = Regex("[^\\p{L}\\p{N}\\s]")
     private val EMBEDDED_FEAT_PATTERN = Regex("\\s*[\\[(]\\s*(?:feat\\.?|ft\\.?|featuring|with)\\s+[^)\\]]+[)\\]]", RegexOption.IGNORE_CASE)
     private val TRAILING_FEAT_PATTERN = Regex("\\s+(?:feat\\.?|ft\\.?)\\s+.*$", RegexOption.IGNORE_CASE)
     private val VERSION_INFO_PATTERN = Regex("\\s*[\\[(]\\s*(?:Remaster(?:ed)?|Deluxe|Radio Edit|Single Version|Album Version)\\s*[)\\]]", RegexOption.IGNORE_CASE)
@@ -511,7 +511,7 @@ object ArtistParser {
      * @return Normalized string for comparison
      */
     fun normalizeForSearch(artistString: String): String {
-        return artistString
+        return java.text.Normalizer.normalize(artistString, java.text.Normalizer.Form.NFKC)
             .lowercase()
             .replace("$", "s") // Handle stylized '$' as 's' (e.g. KR$ NA -> krsna, Ke$ha -> kesha)
             .replace(SPECIAL_CHARS_PATTERN, "")
@@ -530,6 +530,11 @@ object ArtistParser {
     fun isSameArtist(artist1: String, artist2: String): Boolean {
         val norm1 = normalizeForSearch(artist1)
         val norm2 = normalizeForSearch(artist2)
+
+        // Guard: never treat blank normalized names as a match.
+        // Two different names (e.g. symbol-only or unsupported scripts) must
+        // never collapse into an empty-key equality.
+        if (norm1.isBlank() || norm2.isBlank()) return false
 
         // Exact match after normalization
         if (norm1 == norm2) return true
@@ -565,6 +570,9 @@ object ArtistParser {
     fun isStrictSameArtist(artist1: String, artist2: String): Boolean {
         val norm1 = normalizeForSearch(artist1)
         val norm2 = normalizeForSearch(artist2)
+
+        // Guard: blank normalized names are never a match (see isSameArtist)
+        if (norm1.isBlank() || norm2.isBlank()) return false
 
         // Exact match after normalization
         if (norm1 == norm2) return true
