@@ -39,6 +39,13 @@ android {
         versionName = "4.8.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Unit tests execute real Android-library code paths (e.g. Room Migration
+        // objects that log via android.util.Log); return defaults instead of
+        // throwing "not mocked" for framework calls that don't affect test logic.
+        testOptions {
+            unitTests.isReturnDefaultValues = true
+        }
         
         // API Configuration via BuildConfig
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"${localProperties.getProperty("SPOTIFY_CLIENT_ID", "")}\"")
