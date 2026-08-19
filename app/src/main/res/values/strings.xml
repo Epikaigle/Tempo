@@ -297,7 +297,7 @@
     <string name="album_songs_count">%1$d songs</string>
     <string name="album_track_one_play">1 play</string>
     <string name="album_track_plays">%1$d plays</string>
-    <string name="album_footer">Tempo Album Stats</string>
+    <string name="album_footer">Tempo</string>
 
     <!-- Merge dialogs -->
     <string name="merge_confirm">Confirm Merge</string>
@@ -398,6 +398,7 @@
     <string name="share_failed">Failed to share image</string>
     <string name="share_content_description">Share</string>
     <string name="share_brand">TEMPO</string>
+    <string name="share_theme_label">Theme</string>
     <!-- Subtle share nudge (opens the artist share preview directly; kept understated) -->
     <string name="share_nudge_caption_weekly">Your week in music</string>
     <string name="share_nudge_caption_monthly">Your month in music</string>
@@ -779,9 +780,11 @@
     <string name="stats_share_theme_label">Theme</string>
     <string name="stats_share_layout_label">Layout</string>
     <string name="stats_share_theme_midnight">Midnight</string>
-    <string name="stats_share_theme_sunset">Sunset</string>
+    <string name="stats_share_theme_rose">Rose</string>
     <string name="stats_share_theme_aurora">Aurora</string>
     <string name="stats_share_theme_mono">Mono</string>
+    <string name="stats_share_theme_daylight">Daylight</string>
+    <string name="stats_share_theme_ocean">Ocean</string>
     <string name="stats_share_layout_list">List</string>
     <string name="stats_share_layout_podium">Podium</string>
     <string name="stats_share_layout_grid">Grid</string>
@@ -1279,7 +1282,7 @@
     <string name="details_telemetry_pauses_sub">Avg per play</string>
     <string name="details_telemetry_sessions_sub">Listening sessions</string>
     <string name="details_streaming_title">Streaming &amp; Actions</string>
-    <string name="details_footer">Tempo Track Stats</string>
+    <string name="details_footer">Tempo</string>
 
     <!-- Welcome to Tempo / Onboarding Final -->
     <string name="welcome_ready">All Set!</string>

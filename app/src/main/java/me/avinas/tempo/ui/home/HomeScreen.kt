@@ -205,6 +205,7 @@ fun HomeScreen(
                                         }
                                     },
                                     albumArtUrl = uiState.spotlightTopTrack?.albumArtUrl,
+                                    storyAvailable = directStoryTimeRange != null,
                                     storyViewed = uiState.spotlightStoryViewed,
                                     modifier = Modifier.onGloballyPositioned { coordinates ->
                                         walkthroughController.registerTarget(

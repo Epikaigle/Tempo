@@ -67,7 +67,9 @@ data class Artist(
         // (Latin, Japanese, Korean, Cyrillic, Arabic, ...) and only strips
         // punctuation/symbols. The old [^a-z0-9\s] pattern erased every non-ASCII
         // character, collapsing all CJK artist names into the same "" key.
-        private val SPECIAL_CHARS_PATTERN = Regex("[^\\p{L}\\p{N}\\s]")
+        // \p{M} keeps combining marks of non-Latin scripts (Devanagari matras,
+        // Thai vowels, Arabic harakat) so distinct names keep distinct keys.
+        private val SPECIAL_CHARS_PATTERN = Regex("[^\\p{L}\\p{N}\\p{M}\\s]")
         private val WHITESPACE_PATTERN = Regex("\\s+")
 
         /**

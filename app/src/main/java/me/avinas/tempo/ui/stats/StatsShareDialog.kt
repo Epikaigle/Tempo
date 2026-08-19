@@ -4,7 +4,6 @@ import android.widget.Toast
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -22,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -41,6 +39,8 @@ import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.components.CaptureWrapper
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.rememberCaptureController
+import me.avinas.tempo.ui.components.ShareTheme
+import me.avinas.tempo.ui.components.ThemeSwatch
 import me.avinas.tempo.ui.onboarding.dataStore
 import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.utils.ShareUtils
@@ -281,7 +281,7 @@ private fun ConfigPanel(
                     }
                 }
             }
-            // Row 2: Theme + Summary
+            // Row 2: Theme (full width — six swatches) + Summary
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -290,7 +290,7 @@ private fun ConfigPanel(
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     ConfigLabel(text = stringResource(R.string.stats_share_theme_label))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        StatsShareTheme.entries.forEach { t ->
+                        ShareTheme.entries.forEach { t ->
                             ThemeSwatch(
                                 theme = t,
                                 selected = config.theme == t,
@@ -299,7 +299,7 @@ private fun ConfigPanel(
                         }
                     }
                 }
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     ConfigLabel(text = stringResource(R.string.stats_share_summary))
                     SummaryToggle(
                         enabled = config.showSummary,
@@ -360,27 +360,6 @@ private fun CountToggle(text: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun ThemeSwatch(theme: StatsShareTheme, selected: Boolean, onClick: () -> Unit) {
-    val palette = theme.palette
-    Box(
-        modifier = Modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(Brush.linearGradient(palette.gradient))
-            .clickable(onClick = onClick)
-            .border(
-                width = if (selected) 3.dp else 1.dp,
-                color = if (selected) Color.White else Color.White.copy(alpha = 0.15f),
-                shape = CircleShape
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        if (selected) {
-            Box(modifier = Modifier.size(6.dp).background(Color.White, CircleShape))
-        }
-    }
-}
 
 @Composable
 private fun SummaryToggle(enabled: Boolean, onToggle: (Boolean) -> Unit) {

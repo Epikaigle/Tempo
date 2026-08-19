@@ -11,11 +11,7 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <!-- Animated mesh background blobs -->
-  <div class="mesh-backdrop">
-    <div class="mesh-blob blob-1"></div>
-    <div class="mesh-blob blob-2"></div>
-  </div>
+  <!-- Ambient glow is drawn by body::before in popup.css -->
 
   <div class="app">
     <!-- Header -->
@@ -36,14 +32,14 @@
       </div>
       
       <!-- Top Navigation Tabs -->
-      <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="now-playing" title="Now Playing">
+      <nav class="tab-nav" role="tablist" aria-label="Sections">
+        <button class="tab-btn active" id="tabbtn-now-playing" data-tab="now-playing" title="Now Playing" role="tab" aria-selected="true" aria-controls="tab-now-playing">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
           <span>Now</span>
         </button>
-        <button class="tab-btn" data-tab="queue" title="Queue">
+        <button class="tab-btn" id="tabbtn-queue" data-tab="queue" title="Queue" role="tab" aria-selected="false" aria-controls="tab-queue">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="8" y1="6" x2="21" y2="6"></line>
             <line x1="8" y1="12" x2="21" y2="12"></line>
@@ -54,7 +50,7 @@
           </svg>
           <span>Queue</span>
         </button>
-        <button class="tab-btn" data-tab="pairing" title="Pairing">
+        <button class="tab-btn" id="tabbtn-pairing" data-tab="pairing" title="Pairing" role="tab" aria-selected="false" aria-controls="tab-pairing">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
             <polyline points="16 6 12 2 8 6"></polyline>
@@ -62,14 +58,14 @@
           </svg>
           <span>Pair</span>
         </button>
-        <button class="tab-btn" data-tab="artists" title="Known Artists">
+        <button class="tab-btn" id="tabbtn-artists" data-tab="artists" title="Known Artists" role="tab" aria-selected="false" aria-controls="tab-artists">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
             <circle cx="12" cy="7" r="4"></circle>
           </svg>
           <span>Artists</span>
         </button>
-        <button class="tab-btn" data-tab="settings" title="Settings">
+        <button class="tab-btn" id="tabbtn-settings" data-tab="settings" title="Settings" role="tab" aria-selected="false" aria-controls="tab-settings">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -82,7 +78,7 @@
     <main class="content">
 
       <!-- ═══════════════ NOW PLAYING ═══════════════ -->
-      <section id="tab-now-playing" class="tab-panel active">
+      <section id="tab-now-playing" class="tab-panel active" role="tabpanel" aria-labelledby="tabbtn-now-playing">
         <!-- Setup Promotion Hero (visible when NOT paired or NOT playing) -->
         <div class="hero-card" id="home-hero-card">
           <div class="hero-status" id="home-status-pill">Setup required</div>
@@ -218,7 +214,7 @@
       </section>
 
       <!-- ═══════════════ QUEUE ═══════════════ -->
-      <section id="tab-queue" class="tab-panel">
+      <section id="tab-queue" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-queue">
         <!-- Not Paired Alert banner -->
         <div class="inline-banner" id="queue-banner" style="display:none;">
           <div class="inline-banner-content">
@@ -273,7 +269,7 @@
       </section>
 
       <!-- ═══════════════ PAIRING ═══════════════ -->
-      <section id="tab-pairing" class="tab-panel">
+      <section id="tab-pairing" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-pairing">
 
         <!-- ── CONNECTED STATE ── -->
         <div id="pairing-connected" style="display:none;">
@@ -388,8 +384,8 @@
                 <div class="expectation-copy">Keep this popup open. If it takes longer, you can enter the IP address manually.</div>
               </div>
 
-              <button class="btn btn-primary" id="btn-start-scan" style="width:100%; margin:12px 0;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <button class="btn btn-scan-cta" id="btn-start-scan" style="margin:12px 0;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="20 6 9 17 4 12"></polyline>
                 </svg>
                 I've scanned the QR code
@@ -431,7 +427,7 @@
               <!-- Footer: expiry + refresh -->
               <div class="qr-footer">
                 <span id="qr-expiry" class="qr-expiry"></span>
-                <button class="btn-link" id="btn-refresh-qr">↺ New QR</button>
+                <button class="btn-link" id="btn-refresh-qr"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M21.5 2v6h-6"></path><path d="M21.34 15.57a10 10 0 1 1-.57-8.38l.56-1.19"></path></svg> New QR</button>
               </div>
             </div>
           </div>
@@ -459,7 +455,7 @@
                   </button>
                 </form>
                 <button class="btn-link" id="btn-back-to-qr" style="margin-top:12px; display:block; text-align:center; width:100%;">
-                  ← Back to QR Code scan
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Back to QR Code scan
                 </button>
               </div>
             </div>
@@ -469,7 +465,7 @@
       </section>
 
       <!-- ═══════════════ ARTISTS ═══════════════ -->
-      <section id="tab-artists" class="tab-panel">
+      <section id="tab-artists" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-artists">
         <h3 class="section-title">Known Artists</h3>
         <p class="text-muted text-sm">Allow tracking on ambiguous pages for these artists.</p>
         <div class="list-input">
@@ -492,7 +488,7 @@
       </section>
 
       <!-- ═══════════════ SETTINGS ═══════════════ -->
-      <section id="tab-settings" class="tab-panel">
+      <section id="tab-settings" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-settings">
         <div class="setting-group">
           <div class="setting-row">
             <div class="setting-info">
@@ -583,6 +579,7 @@
 
     </main>
   </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="popup.js" type="module"></script>
 </body>
 </html>

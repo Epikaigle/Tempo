@@ -31,26 +31,20 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.GraphicEq
 
 /**
- * Common background for share cards to ensure brand consistency.
+ * Common background for share cards. Themed via [ShareThemePalette] so every
+ * share surface (stats, song, artist) offers the same theme set and keeps
+ * text readable on both dark and light backdrops.
  */
 @Composable
 fun ShareCardBackground(
     imageUrl: String? = null,
+    palette: ShareThemePalette,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
-    // Deep Ocean themed gradient
     Box(
         modifier = modifier
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        TempoDarkBackground, // Slate 900
-                        Color(0xFF1E1B4B), // Indigo 950
-                        Color(0xFF312E81)  // Indigo 900
-                    )
-                )
-            )
+            .background(brush = Brush.verticalGradient(palette.gradient))
     ) {
         // Blurred dynamic background image if available
         if (!imageUrl.isNullOrBlank()) {
@@ -66,15 +60,7 @@ fun ShareCardBackground(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = 0.55f),
-                                Color(0xFF0F0F12).copy(alpha = 0.8f),
-                                Color(0xFF0D0D10).copy(alpha = 0.95f)
-                            )
-                        )
-                    )
+                    .background(brush = Brush.verticalGradient(palette.overlay))
             )
         }
 
@@ -87,14 +73,14 @@ fun ShareCardBackground(
                 .background(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFFA855F7).copy(alpha = 0.15f),
+                            palette.glowTop.copy(alpha = palette.glowAlpha),
                             Color.Transparent
                         )
                     ),
                     shape = CircleShape
                 )
         )
-        
+
         Box(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -103,16 +89,16 @@ fun ShareCardBackground(
                 .background(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFFEC4899).copy(alpha = 0.15f),
+                            palette.glowBottom.copy(alpha = palette.glowAlpha),
                             Color.Transparent
                         )
                     ),
                     shape = CircleShape
                 )
         )
-        
+
         content()
-        
+
         // Minimal Branding at Bottom
         Column(
             modifier = Modifier
@@ -124,7 +110,7 @@ fun ShareCardBackground(
                 text = stringResource(R.string.share_brand),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Black,
-                color = Color.White.copy(alpha = 0.7f),
+                color = palette.branding,
                 letterSpacing = 4.sp
             )
         }
@@ -138,10 +124,13 @@ fun ShareCardBackground(
 fun ArtistShareCard(
     artistDetails: ArtistDetails,
     percentile: Double? = null,
+    theme: ShareTheme = ShareTheme.MIDNIGHT,
     modifier: Modifier = Modifier
 ) {
+    val palette = theme.palette
     ShareCardBackground(
         imageUrl = artistDetails.artist.imageUrl,
+        palette = palette,
         modifier = modifier.aspectRatio(9f/16f)
     ) {
         FitToHeight(
@@ -159,7 +148,7 @@ fun ArtistShareCard(
                     modifier = Modifier
                         .size(160.dp)
                         .clip(CircleShape)
-                        .border(4.dp, Color.White.copy(alpha = 0.1f), CircleShape)
+                        .border(4.dp, palette.divider, CircleShape)
                 ) {
                     val imageUrl = artistDetails.artist.imageUrl
 
@@ -171,10 +160,10 @@ fun ArtistShareCard(
                         allowHardware = false,
                         placeholder = {
                             Box(
-                                modifier = Modifier.fillMaxSize().background(Color.Gray),
+                                modifier = Modifier.fillMaxSize().background(palette.cellPlaceholder),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White)
+                                Icon(Icons.Default.MusicNote, contentDescription = null, tint = palette.textSecondary)
                             }
                         }
                     )
@@ -184,7 +173,7 @@ fun ArtistShareCard(
                 Text(
                     text = artistDetails.artist.name,
                     style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black, fontSize = 32.sp),
-                    color = Color.White,
+                    color = palette.textPrimary,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     lineHeight = 36.sp,
                     maxLines = 2
@@ -199,13 +188,13 @@ fun ArtistShareCard(
                         if (artistDetails.country != null) {
                             GlassCard(
                                 shape = RoundedCornerShape(50),
-                                backgroundColor = Color.White.copy(alpha = 0.1f),
+                                backgroundColor = palette.surface,
                                 fillMaxWidth = false
                             ) {
                                 Text(
                                     text = stringResource(R.string.share_country_format, artistDetails.country),
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = Color.White,
+                                    color = palette.textPrimary,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
@@ -244,7 +233,10 @@ fun ArtistShareCard(
                                     text = "$badgeEmoji $badgeText",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = badgeColor,
+                                    // Semantic badge colors are tuned for dark
+                                    // backdrops; fall back to the theme's strong
+                                    // text on light themes to stay readable.
+                                    color = if (palette.isDark) badgeColor else palette.textStrong,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
@@ -255,8 +247,8 @@ fun ArtistShareCard(
                 // Stats Grid (GlassCard)
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(20.dp)
+                    backgroundColor = palette.surface,
+                    shape = palette.cardShape
                 ) {
                     Row(
                         modifier = Modifier
@@ -269,7 +261,7 @@ fun ArtistShareCard(
                             Text(
                                 text = stringResource(R.string.share_total_time),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = palette.textSecondary,
                                 letterSpacing = 1.5.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -277,7 +269,7 @@ fun ArtistShareCard(
                                 text = stringResource(R.string.share_min_format, artistDetails.personalTotalTimeMinutes),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = palette.textPrimary
                             )
                         }
 
@@ -285,14 +277,14 @@ fun ArtistShareCard(
                             modifier = Modifier
                                 .height(30.dp)
                                 .width(1.dp)
-                                .background(Color.White.copy(alpha = 0.15f))
+                                .background(palette.divider)
                         )
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = stringResource(R.string.share_unique_songs),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = palette.textSecondary,
                                 letterSpacing = 1.5.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -300,7 +292,7 @@ fun ArtistShareCard(
                                 text = artistDetails.uniqueTracksPlayed.toString(),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = palette.textPrimary
                             )
                         }
                     }
@@ -311,9 +303,9 @@ fun ArtistShareCard(
                     GlassCard(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(16.dp)),
-                        backgroundColor = Color.Black.copy(alpha = 0.4f),
-                        shape = RoundedCornerShape(16.dp)
+                            .border(1.dp, palette.divider, palette.cardShape),
+                        backgroundColor = palette.surfaceStrong,
+                        shape = palette.cardShape
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp)
@@ -321,7 +313,7 @@ fun ArtistShareCard(
                             Text(
                                 text = stringResource(R.string.share_top_songs),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.8f),
+                                color = palette.textPrimary,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
@@ -330,7 +322,7 @@ fun ArtistShareCard(
                                 if (index > 0) {
                                     HorizontalDivider(
                                         modifier = Modifier.padding(vertical = 4.dp),
-                                        color = Color.White.copy(alpha = 0.08f),
+                                        color = palette.divider,
                                         thickness = 0.5.dp
                                     )
                                 }
@@ -340,18 +332,17 @@ fun ArtistShareCard(
                                         .padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    val badgeColors = when (index) {
+                                        0 -> listOf(Color(0xFFFBBF24), Color(0xFFF59E0B))
+                                        1 -> listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8))
+                                        else -> listOf(Color(0xFFCD7F32), Color(0xFFB45309))
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .size(20.dp)
                                             .background(
-                                                brush = Brush.linearGradient(
-                                                    colors = when (index) {
-                                                        0 -> listOf(Color(0xFFFBBF24), Color(0xFFF59E0B))
-                                                        1 -> listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8))
-                                                        else -> listOf(Color(0xFFCD7F32), Color(0xFFB45309))
-                                                    }
-                                                ),
-                                                shape = CircleShape
+                                                brush = Brush.linearGradient(colors = badgeColors),
+                                                shape = palette.badgeShape
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -359,7 +350,7 @@ fun ArtistShareCard(
                                             text = "${index + 1}",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.Black,
+                                            color = palette.contrastingText(badgeColors.first()),
                                             fontSize = 10.sp
                                         )
                                     }
@@ -367,7 +358,7 @@ fun ArtistShareCard(
                                     Text(
                                         text = song.title,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.White,
+                                        color = palette.textPrimary,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -377,7 +368,7 @@ fun ArtistShareCard(
                                         text = stringResource(R.string.share_plays_format, song.playCount),
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color.White.copy(alpha = 0.8f)
+                                        color = palette.textSecondary
                                     )
                                 }
                             }
@@ -395,10 +386,13 @@ fun ArtistShareCard(
 @Composable
 fun SongShareCard(
     trackDetails: TrackDetails,
+    theme: ShareTheme = ShareTheme.MIDNIGHT,
     modifier: Modifier = Modifier
 ) {
+    val palette = theme.palette
     ShareCardBackground(
         imageUrl = trackDetails.track.albumArtUrl,
+        palette = palette,
         modifier = modifier.aspectRatio(9f/16f)
     ) {
         FitToHeight(
@@ -421,7 +415,7 @@ fun SongShareCard(
                             .background(
                                 brush = Brush.radialGradient(
                                     colors = listOf(
-                                        Color.White.copy(alpha = 0.25f),
+                                        palette.heroGlow,
                                         Color.Transparent
                                     )
                                 ),
@@ -431,7 +425,7 @@ fun SongShareCard(
 
                     GlassCard(
                         modifier = Modifier.size(280.dp),
-                        shape = RoundedCornerShape(24.dp)
+                        shape = palette.cardShape
                     ) {
                         CachedAsyncImage(
                             imageUrl = trackDetails.track.albumArtUrl,
@@ -441,10 +435,10 @@ fun SongShareCard(
                             allowHardware = false,
                             placeholder = {
                                 Box(
-                                    modifier = Modifier.fillMaxSize().background(Color.Gray),
+                                    modifier = Modifier.fillMaxSize().background(palette.cellPlaceholder),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White)
+                                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = palette.textSecondary)
                                 }
                             }
                         )
@@ -455,7 +449,7 @@ fun SongShareCard(
                 Text(
                     text = trackDetails.track.title,
                     style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black, fontSize = 28.sp),
-                    color = Color.White,
+                    color = palette.textPrimary,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -464,7 +458,9 @@ fun SongShareCard(
                 Text(
                     text = trackDetails.track.artist,
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFFE9D5FF),
+                    // Lavender artist credit is tuned for dark backdrops; use the
+                    // theme accent on light themes to stay readable.
+                    color = if (palette.isDark) Color(0xFFE9D5FF) else palette.accent,
                     fontWeight = FontWeight.Bold,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
@@ -472,8 +468,8 @@ fun SongShareCard(
                 // Detailed Stats Grid
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(20.dp)
+                    backgroundColor = palette.surface,
+                    shape = palette.cardShape
                 ) {
                     Row(
                         modifier = Modifier
@@ -488,14 +484,14 @@ fun SongShareCard(
                                 Icon(
                                     imageVector = Icons.Default.GraphicEq,
                                     contentDescription = null,
-                                    tint = Color(0xFFF472B6),
+                                    tint = if (palette.isDark) Color(0xFFF472B6) else palette.accent,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = stringResource(R.string.share_plays_label),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = palette.textSecondary,
                                     letterSpacing = 2.sp
                                 )
                             }
@@ -504,7 +500,7 @@ fun SongShareCard(
                                 text = trackDetails.playCount.toString(),
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = palette.textPrimary
                             )
                         }
 
@@ -513,7 +509,7 @@ fun SongShareCard(
                             modifier = Modifier
                                 .height(40.dp)
                                 .width(1.dp)
-                                .background(Color.White.copy(alpha = 0.15f))
+                                .background(palette.divider)
                         )
 
                         // Total Time
@@ -522,14 +518,14 @@ fun SongShareCard(
                                 Icon(
                                     imageVector = Icons.Default.MusicNote,
                                     contentDescription = null,
-                                    tint = Color(0xFFC084FC),
+                                    tint = if (palette.isDark) Color(0xFFC084FC) else palette.accent,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = stringResource(R.string.share_minutes),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = palette.textSecondary,
                                     letterSpacing = 2.sp
                                 )
                             }
@@ -538,7 +534,7 @@ fun SongShareCard(
                                 text = trackDetails.totalTimeMinutes.toString(),
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = palette.textPrimary
                             )
                         }
                     }

@@ -892,8 +892,10 @@ class MusicTrackingService : NotificationListenerService() {
     // Recent plays cache for replay detection (trackId -> lastPlayTimestamp)
     private val recentPlaysCache = java.util.concurrent.ConcurrentHashMap<Long, Long>()
     
-    // Estimated durations cache (title+artist hash -> duration) for when MediaSession doesn't provide duration
-    private val durationEstimateCache = mutableMapOf<String, Long>()
+    // Estimated durations cache (title+artist hash -> duration) for when MediaSession doesn't provide duration.
+    // LruCache is both thread-safe (read on the notification thread, written from IO
+    // coroutines) and bounded, so a long-lived listener can't accumulate entries forever.
+    private val durationEstimateCache = android.util.LruCache<String, Long>(512)
     
     // Smart Metadata: Cached user preference for matching strictness
     // This avoids database call on every track match (preferences rarely change)
@@ -913,17 +915,13 @@ class MusicTrackingService : NotificationListenerService() {
     private var lastNotificationUpdate = 0L
     private var lastNotificationContent = ""
     
-    // Pending metadata debounce - waits briefly for complete metadata before inserting tracks
-    // Key: packageName, Value: pending job that will insert the track
-    private val pendingTrackInserts = mutableMapOf<String, Job>()
-    
-    // How long to wait for complete metadata (artist) before inserting track
-    private val METADATA_DEBOUNCE_MS = 500L
-    
     // Cache for local MediaSession metadata by trackId
     // Used as ultimate fallback for genre when external sources fail
-    // Music players often send metadata in stages, so we keep updating this
-    private val localMetadataCache = mutableMapOf<Long, LocalMediaMetadata>()
+    // Music players often send metadata in stages, so we keep updating this.
+    // Bounded, thread-safe LRU: entries can hold album-art bitmaps, so an unbounded
+    // map would retain one bitmap per unique track played for the service's lifetime
+    // (the listener can stay alive for weeks).
+    private val localMetadataCache = android.util.LruCache<Long, LocalMediaMetadata>(64)
     
     // =====================
     // Log Spam Prevention
@@ -2137,7 +2135,7 @@ class MusicTrackingService : NotificationListenerService() {
 
                 // Try to get cached duration estimate for this track
                 val cachedDurationKey = generateHash("$title|$artist")
-                val cachedDuration = durationEstimateCache[cachedDurationKey]
+                val cachedDuration = durationEstimateCache.get(cachedDurationKey)
 
                 // Clear log debounce caches for fresh logging on new track
                 loggedArtistExtractionFailures.clear()
@@ -2173,7 +2171,7 @@ class MusicTrackingService : NotificationListenerService() {
                         if (duration != null && duration > 0) {
                             newSession.estimatedDurationMs = duration
                             // Also cache it for future use
-                            durationEstimateCache[cachedDurationKey] = duration
+                            durationEstimateCache.put(cachedDurationKey, duration)
                         }
                         
                         Log.d(TAG, "Track ID ${track.id} assigned for '${title}' (duration: ${newSession.estimatedDurationMs?.let { "${it/1000}s" } ?: "unknown"})")
@@ -2414,12 +2412,17 @@ class MusicTrackingService : NotificationListenerService() {
      * Key insight: Even if external enrichment succeeded, it might not have found genres.
      * In that case, we should still use local genre if available.
      */
-    private val loggedEnrichedTracks = mutableSetOf<Long>() // Track IDs we've already logged as enriched
+    // Track IDs we've already logged as enriched (gates a log message only).
+    // Bounded LRU + lock: written from IO coroutines on multiple threads, and an
+    // unbounded set would grow for the lifetime of the listener service.
+    private val loggedEnrichedTracks = object : LinkedHashMap<Long, Boolean>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Boolean>): Boolean = size > 256
+    }
     
     private suspend fun saveLocalMetadataFallback(trackId: Long, localMetadata: LocalMediaMetadata) {
         try {
             // Always update the local metadata cache (music players send metadata in stages)
-            val cachedMetadata = localMetadataCache[trackId]
+            val cachedMetadata = localMetadataCache.get(trackId)
             val updatedLocalMetadata = if (cachedMetadata != null) {
                 // Merge: prefer non-null values from latest metadata
                 cachedMetadata.copy(
@@ -2433,7 +2436,7 @@ class MusicTrackingService : NotificationListenerService() {
             } else {
                 localMetadata
             }
-            localMetadataCache[trackId] = updatedLocalMetadata
+            localMetadataCache.put(trackId, updatedLocalMetadata)
             
             // IMPORTANT: Always save local bitmap to storage immediately if we have one
             // This ensures we have a local backup even if enriched URL exists but fails to load
@@ -2480,7 +2483,15 @@ class MusicTrackingService : NotificationListenerService() {
                 }
                 
                 // Only log once per track to reduce spam
-                if (loggedEnrichedTracks.add(trackId)) {
+                val shouldLogEnriched = synchronized(loggedEnrichedTracks) {
+                    if (loggedEnrichedTracks.containsKey(trackId)) {
+                        false
+                    } else {
+                        loggedEnrichedTracks[trackId] = true
+                        true
+                    }
+                }
+                if (shouldLogEnriched) {
                      val hasGenres = !existingMetadata?.genres.isNullOrEmpty()
                      val localHasGenre = updatedLocalMetadata.genre != null
                      if (!hasGenres && !localHasGenre) {
@@ -2874,7 +2885,7 @@ class MusicTrackingService : NotificationListenerService() {
         session.estimatedDurationMs?.let { duration ->
             if (duration > 0) {
                 val key = generateHash("${session.title}|${session.artist}")
-                durationEstimateCache[key] = duration
+                durationEstimateCache.put(key, duration)
             }
         }
 
@@ -3297,7 +3308,7 @@ class MusicTrackingService : NotificationListenerService() {
                 serviceScope.launch {
                     try {
                         // Update cache with latest metadata
-                        val cached = localMetadataCache[trackId]
+                        val cached = localMetadataCache.get(trackId)
                         val hasNewData = cached == null || 
                             (localMetadata.genre != null && cached.genre == null) ||
                             (localMetadata.year != null && cached.year == null) ||
@@ -3306,7 +3317,7 @@ class MusicTrackingService : NotificationListenerService() {
                         
                         if (hasNewData) {
                             // Always update the cache with latest data
-                            localMetadataCache[trackId] = if (cached != null) {
+                            localMetadataCache.put(trackId, if (cached != null) {
                                 cached.copy(
                                     genre = localMetadata.genre ?: cached.genre,
                                     album = localMetadata.album ?: cached.album,
@@ -3317,7 +3328,7 @@ class MusicTrackingService : NotificationListenerService() {
                                 )
                             } else {
                                 localMetadata
-                            }
+                            })
                             Log.d(TAG, "Updated local metadata cache for track $trackId (genre: ${localMetadata.genre}, album: ${localMetadata.album})")
                         }
                     } catch (e: Exception) {
@@ -3338,7 +3349,7 @@ class MusicTrackingService : NotificationListenerService() {
                         
                         if (stillSameSession) {
                             Log.d(TAG, "Performing delayed metadata retry for track $trackId after 1 minute")
-                            val latestCachedMetadata = localMetadataCache[trackId]
+                            val latestCachedMetadata = localMetadataCache.get(trackId)
                             if (latestCachedMetadata != null) {
                                 saveLocalMetadataFallback(trackId, latestCachedMetadata)
                             }
@@ -3459,24 +3470,24 @@ class MusicTrackingService : NotificationListenerService() {
                         
                         // Ensure locally extracted art URI is available to the fallback logic
                         if (localArtUrl != null) {
-                            val currentCache = localMetadataCache[track.id] ?: localMetadata
+                            val currentCache = localMetadataCache.get(track.id) ?: localMetadata
                             if (currentCache != null) {
-                                localMetadataCache[track.id] = currentCache.copy(albumArtUri = localArtUrl)
+                                localMetadataCache.put(track.id, currentCache.copy(albumArtUri = localArtUrl))
                                 Log.d(TAG, "Updated local metadata cache with art URI: $localArtUrl")
                             } else if (localMetadata == null) {
-                                localMetadataCache[track.id] = LocalMediaMetadata(
+                                localMetadataCache.put(track.id, LocalMediaMetadata(
                                     title = title,
                                     artist = artist,
                                     album = album,
                                     albumArtUri = localArtUrl
-                                )
+                                ))
                             }
                         }
                         
                         // Save local metadata as fallback (delayed to let external enrichment run first)
                         if (localMetadata != null && localMetadata.hasRichMetadata()) {
                             delay(30_000)
-                            val latestMetadata = localMetadataCache[track.id] ?: localMetadata
+                            val latestMetadata = localMetadataCache.get(track.id) ?: localMetadata
                             saveLocalMetadataFallback(track.id, latestMetadata)
                         } else if (localArtUrl != null) {
                             delay(20_000)

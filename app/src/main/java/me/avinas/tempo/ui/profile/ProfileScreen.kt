@@ -1,7 +1,10 @@
 package me.avinas.tempo.ui.profile
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -16,10 +19,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
-import androidx.compose.material.icons.automirrored.filled.StarHalf
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,11 +33,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -57,9 +65,7 @@ import me.avinas.tempo.data.local.entities.UserLevel
 import me.avinas.tempo.data.stats.GamificationEngine
 import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.ui.components.DeepOceanBackground
-import kotlin.math.cos
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 // =====================================================================
 // Design tokens — one disciplined palette, clear hierarchy, no neon.
@@ -83,39 +89,6 @@ private fun darkTint(color: Color, factor: Float = 0.22f): Color = Color(
     blue = (color.blue * factor + 0.04f).coerceIn(0f, 1f)
 )
 
-// =====================
-// Badge icon mapping
-// =====================
-private fun getBadgeIcon(iconName: String): ImageVector = when (iconName) {
-    "music_note" -> Icons.Default.MusicNote
-    "century" -> Icons.Default.Star
-    "star_half" -> Icons.AutoMirrored.Filled.StarHalf
-    "star" -> Icons.Default.Star
-    "diamond" -> Icons.Default.Diamond
-    "emoji_events" -> Icons.Default.EmojiEvents
-    "timer" -> Icons.Default.Timer
-    "schedule" -> Icons.Default.Schedule
-    "hourglass_full" -> Icons.Default.HourglassFull
-    "headphones" -> Icons.Default.Headphones
-    "local_fire_department" -> Icons.Default.LocalFireDepartment
-    "whatshot" -> Icons.Default.Whatshot
-    "military_tech" -> Icons.Default.MilitaryTech
-    "auto_awesome" -> Icons.Default.AutoAwesome
-    "explore" -> Icons.Default.Explore
-    "collections" -> Icons.Default.Collections
-    "public" -> Icons.Default.Public
-    "category" -> Icons.Default.Category
-    "palette" -> Icons.Default.Palette
-    "nightlight" -> Icons.Default.Nightlight
-    "wb_sunny" -> Icons.Default.WbSunny
-    "directions_run" -> Icons.AutoMirrored.Filled.DirectionsRun
-    "grade" -> Icons.Default.Grade
-    "looks_one" -> Icons.Default.LooksOne
-    "workspace_premium" -> Icons.Default.WorkspacePremium
-    "shield" -> Icons.Default.Shield
-    else -> Icons.Default.Star
-}
-
 private fun getCategoryColor(category: String): Color = when (category) {
     "MILESTONE" -> Color(0xFFF59E0B)
     "TIME" -> Color(0xFF3B82F6)
@@ -134,6 +107,15 @@ private fun getCategoryLabel(category: String): String = when (category) {
     "ENGAGEMENT" -> "Engagement"
     "LEVEL" -> "Levels"
     else -> category
+}
+
+private fun getChallengeCategoryIcon(category: String): ImageVector = when (category) {
+    "VOLUME" -> Icons.Default.MusicNote
+    "TIME" -> Icons.Default.Schedule
+    "VARIETY" -> Icons.Default.Palette
+    "DISCOVERY" -> Icons.Default.AutoAwesome
+    "EXPLORATION" -> Icons.Default.Explore
+    else -> Icons.Default.Star
 }
 
 // =====================================================================
@@ -237,6 +219,34 @@ private fun TopBarActionButton(icon: ImageVector, contentDescription: String, on
     }
 }
 
+/** Compact identity shown in the top bar once the hero card scrolls out of view. */
+@Composable
+private fun CollapsingProfileTitle(visible: Boolean, userName: String, level: Int, title: String) {
+    AnimatedVisibility(visible = visible, enter = fadeIn(tween(220)), exit = fadeOut(tween(180))) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = userName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "Level $level · $title",
+                style = MaterialTheme.typography.labelSmall,
+                color = ProfileAccentLight,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 @Composable
 private fun XpChip(xp: Int) {
     Row(
@@ -282,6 +292,10 @@ fun ProfileScreen(
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(0) }
+    val listState = rememberLazyListState()
+    val heroScrolledPast by remember {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 }
+    }
 
     DeepOceanBackground {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -296,6 +310,7 @@ fun ProfileScreen(
                     val sidePadding = if (compact) 16.dp else 20.dp
 
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(bottom = 132.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -340,10 +355,11 @@ fun ProfileScreen(
                                 challengesSection(
                                     challenges = uiState.challenges,
                                     totalXpAvailable = uiState.challengeXpTotal,
+                                    claimedChallengeIds = uiState.claimedChallengeIds,
                                     onClaimChallenge = viewModel::claimChallenge,
                                     sidePadding = sidePadding
                                 )
-                            } else {
+                            } else if (!uiState.isLoading) {
                                 item(key = "empty_challenges") {
                                     Column(modifier = Modifier.padding(horizontal = sidePadding)) {
                                         EmptyChallengesState()
@@ -377,6 +393,14 @@ fun ProfileScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TopBarActionButton(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", onClick = onBack)
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    CollapsingProfileTitle(
+                        visible = heroScrolledPast,
+                        userName = uiState.userName,
+                        level = uiState.userLevel.currentLevel,
+                        title = uiState.userTitle
+                    )
+                }
                 TopBarActionButton(icon = Icons.Default.Settings, contentDescription = "Settings", onClick = onNavigateToSettings)
             }
         }
@@ -620,18 +644,12 @@ private fun StatsSection(
                 InlineStat(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Default.AutoAwesome,
-                    value = "${userLevel.xpRemaining}",
-                    label = "XP to level",
+                    value = "${userLevel.totalXp}",
+                    label = "Total XP",
                     accent = Amber
                 )
             }
         }
-
-        Text(
-            text = "Best streak is ${userLevel.longestStreak} days. You're ${(userLevel.levelProgress * 100).roundToInt()}% of the way to the next level.",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextTertiary
-        )
     }
 }
 
@@ -713,33 +731,51 @@ private fun TabSwitcher(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit
 ) {
-    Row(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(ProfileSurface)
             .border(1.dp, ProfileBorder, RoundedCornerShape(16.dp))
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+            .padding(4.dp)
     ) {
-        tabs.forEachIndexed { index, title ->
-            val selected = selectedTab == index
+        val tabWidth = maxWidth / tabs.size
+        val indicatorPosition by animateFloatAsState(
+            targetValue = selectedTab.toFloat(),
+            animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+            label = "tabIndicator"
+        )
+        // Indicator layer: matchParentSize() sizes this box to the height the
+        // tab Row gives the parent without taking part in its measurement, so
+        // the sliding highlight can use fillMaxHeight() without an intrinsic
+        // measurement (intrinsic queries on BoxWithConstraints/SubcomposeLayout
+        // crash with IllegalStateException).
+        Box(modifier = Modifier.matchParentSize()) {
             Box(
                 modifier = Modifier
-                    .weight(1f)
+                    .offset(x = tabWidth * indicatorPosition)
+                    .width(tabWidth)
+                    .fillMaxHeight()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (selected) ProfileAccent.copy(alpha = 0.22f) else Color.Transparent)
-                    .border(1.dp, if (selected) ProfileAccent.copy(alpha = 0.45f) else Color.Transparent, RoundedCornerShape(12.dp))
-                    .clickable { onTabSelected(index) }
-                    .padding(vertical = 12.dp, horizontal = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
+                    .background(ProfileAccent.copy(alpha = 0.22f))
+                    .border(1.dp, ProfileAccent.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+            )
+        }
+        Row(modifier = Modifier.fillMaxWidth()) {
+            tabs.forEachIndexed { index, title ->
+                val selected = selectedTab == index
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = if (selected) TextPrimary else TextTertiary,
-                    maxLines = 1
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onTabSelected(index) }
+                        .padding(vertical = 12.dp, horizontal = 8.dp)
                 )
             }
         }
@@ -752,12 +788,14 @@ private fun TabSwitcher(
 private fun LazyListScope.challengesSection(
     challenges: List<DailyChallenge>,
     totalXpAvailable: Int,
+    claimedChallengeIds: Set<Long>,
     onClaimChallenge: (Long) -> Unit,
     sidePadding: Dp
 ) {
     val completedCount = challenges.count { it.isCompleted }
     item(key = "challenges_header") {
-        val resetLabel = remember {
+        // Recomputed per composition so the countdown stays accurate while the screen is open.
+        val resetLabel = run {
             val midnight = LocalDate.now().plusDays(1)
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
             val diffMs = midnight - System.currentTimeMillis()
@@ -791,7 +829,11 @@ private fun LazyListScope.challengesSection(
                 .fillMaxWidth()
                 .padding(horizontal = sidePadding)
         ) {
-            ChallengeCard(challenge = challenge, onClaim = { onClaimChallenge(challenge.id) })
+            ChallengeCard(
+                challenge = challenge,
+                isClaimed = challenge.id in claimedChallengeIds,
+                onClaim = { onClaimChallenge(challenge.id) }
+            )
             Spacer(modifier = Modifier.height(12.dp))
         }
     }
@@ -821,7 +863,11 @@ private fun EmptyChallengesState() {
 }
 
 @Composable
-private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
+private fun ChallengeCard(
+    challenge: DailyChallenge,
+    isClaimed: Boolean,
+    onClaim: () -> Unit
+) {
     val isCompleted = challenge.isCompleted
     val diffColor = when (challenge.difficulty) {
         "EASY" -> Emerald
@@ -835,6 +881,7 @@ private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
         animationSpec = tween(1200, easing = FastOutSlowInEasing),
         label = "challengeProgress"
     )
+    val haptic = LocalHapticFeedback.current
 
     Box(
         modifier = Modifier
@@ -843,7 +890,7 @@ private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
             .background(ProfileSurface)
             .border(1.dp, if (isCompleted) Emerald.copy(alpha = 0.30f) else ProfileBorder, RoundedCornerShape(20.dp))
     ) {
-        if (isCompleted) {
+        if (isCompleted && !isClaimed) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -863,9 +910,24 @@ private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
         ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.Top
         ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(accent.copy(alpha = if (isCompleted) 0.18f else 0.12f))
+                    .border(1.dp, accent.copy(alpha = if (isCompleted) 0.45f else 0.28f), RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = getChallengeCategoryIcon(challenge.category),
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(accent))
@@ -892,7 +954,6 @@ private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
                     lineHeight = 20.sp
                 )
             }
-            Spacer(modifier = Modifier.width(14.dp))
             Column(horizontalAlignment = Alignment.End) {
                 Text(text = "+${challenge.xpReward}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = accent)
                 Text(text = "XP", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = accent.copy(alpha = 0.7f), letterSpacing = 1.sp)
@@ -907,17 +968,48 @@ private fun ChallengeCard(challenge: DailyChallenge, onClaim: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "${challenge.currentProgress}/${challenge.targetValue} progress",
+                text = "${challenge.currentProgress} / ${challenge.targetValue}",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = if (isCompleted) Emerald else TextSecondary
             )
-            Text(
-                text = if (isCompleted) "Completed" else "In progress",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = accent
-            )
+            when {
+                isCompleted && !isClaimed -> {
+                    Button(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onClaim()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Emerald,
+                            contentColor = Color(0xFF052E1E)
+                        ),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.CardGiftcard, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "Claim +${challenge.xpReward} XP", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    }
+                }
+                isCompleted -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = Emerald, modifier = Modifier.size(16.dp))
+                        Text(text = "Claimed", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = Emerald)
+                    }
+                }
+                else -> {
+                    Text(
+                        text = "In progress",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = accent
+                    )
+                }
+            }
         }
         }
     }
@@ -1098,8 +1190,9 @@ private fun getUniqueBadgeColor(badgeId: String): Color = when (badgeId) {
 }
 
 // =====================
-// Rarity presentation — a second axis on top of the star-tier metallic material.
-// COMMON: clean, no extras. RARE: colored rim. EPIC+: rim + aura glow.
+// Rarity presentation — rarity decides the *material* the medallion is
+// struck from: pewter, silver, gold, rose gold, prismatic. The metal of the
+// rim is the first thing the eye reads, so prestige telegraphs instantly.
 // =====================
 private fun getRarityColor(rarity: GamificationEngine.BadgeRarity): Color = when (rarity) {
     GamificationEngine.BadgeRarity.COMMON -> Color(0xFF9CA3AF)
@@ -1109,12 +1202,18 @@ private fun getRarityColor(rarity: GamificationEngine.BadgeRarity): Color = when
     GamificationEngine.BadgeRarity.MYTHIC -> Color(0xFFEC4899)
 }
 
-private fun getRarityRimAlpha(rarity: GamificationEngine.BadgeRarity): Float = when (rarity) {
-    GamificationEngine.BadgeRarity.COMMON -> 0f
-    GamificationEngine.BadgeRarity.RARE -> 0.45f
-    GamificationEngine.BadgeRarity.EPIC -> 0.65f
-    GamificationEngine.BadgeRarity.LEGENDARY -> 0.8f
-    GamificationEngine.BadgeRarity.MYTHIC -> 0.95f
+/** The metal gradient of the coin rim, light struck from the upper left. */
+private fun getRarityMetal(rarity: GamificationEngine.BadgeRarity): List<Color> = when (rarity) {
+    GamificationEngine.BadgeRarity.COMMON ->
+        listOf(Color(0xFFDCDFE4), Color(0xFF9CA3AB), Color(0xFF5F646B), Color(0xFFB9BDC3))
+    GamificationEngine.BadgeRarity.RARE ->
+        listOf(Color(0xFFF4F8FF), Color(0xFFC3D5EE), Color(0xFF8199BE), Color(0xFFE1EBF8))
+    GamificationEngine.BadgeRarity.EPIC ->
+        listOf(Color(0xFFFFF6D9), Color(0xFFF4CF6D), Color(0xFFBA8C20), Color(0xFFF1DE9E))
+    GamificationEngine.BadgeRarity.LEGENDARY ->
+        listOf(Color(0xFFFFEFEE), Color(0xFFF8C3CC), Color(0xFFC57486), Color(0xFFFFDCE1))
+    GamificationEngine.BadgeRarity.MYTHIC ->
+        listOf(Color(0xFFE4D4FF), Color(0xFFAEE9F7), Color(0xFFFBD3E9), Color(0xFFD8F5E3), Color(0xFFFDE9C8))
 }
 
 private fun getRarityGlowAlpha(rarity: GamificationEngine.BadgeRarity): Float = when (rarity) {
@@ -1125,161 +1224,133 @@ private fun getRarityGlowAlpha(rarity: GamificationEngine.BadgeRarity): Float = 
     GamificationEngine.BadgeRarity.MYTHIC -> 0.42f
 }
 
-private fun getBadgeShapePath(size: Size, badgeId: String): androidx.compose.ui.graphics.Path {
-    val path = androidx.compose.ui.graphics.Path()
-    val cx = size.width / 2f
-    val cy = size.height / 2f
-    val radius = size.width.coerceAtMost(size.height) / 2f
-
-    fun drawPolygon(sides: Int, rotationDegrees: Float = 0f) {
-        for (i in 0 until sides) {
-            val angle = i * (360f / sides) + rotationDegrees
-            val rad = Math.toRadians(angle.toDouble())
-            val x = cx + radius * cos(rad).toFloat()
-            val y = cy + radius * sin(rad).toFloat()
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        path.close()
-    }
-
-    fun drawStar(points: Int, innerRatio: Float, rotationDegrees: Float = 0f) {
-        for (i in 0 until points * 2) {
-            val angle = i * (180f / points) + rotationDegrees
-            val rad = Math.toRadians(angle.toDouble())
-            val r = if (i % 2 == 0) radius else radius * innerRatio
-            val x = cx + r * cos(rad).toFloat()
-            val y = cy + r * sin(rad).toFloat()
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        path.close()
-    }
-
-    fun drawShield(widthFactor: Float = 1f) {
-        val w = radius * widthFactor
-        path.moveTo(cx, cy - radius)
-        path.lineTo(cx + w, cy - radius * 0.8f)
-        path.lineTo(cx + w, cy + radius * 0.2f)
-        path.quadraticTo(cx + w * 0.5f, cy + radius, cx, cy + radius)
-        path.quadraticTo(cx - w * 0.5f, cy + radius, cx - w, cy + radius * 0.2f)
-        path.lineTo(cx - w, cy - radius * 0.8f)
-        path.close()
-    }
-
-    when (badgeId) {
-        "first_play" -> drawPolygon(3, -90f)
-        "plays_100" -> drawPolygon(4, 45f)
-        "plays_500" -> drawPolygon(5, -90f)
-        "plays_1000" -> drawPolygon(6, 0f)
-        "plays_5000" -> drawPolygon(8, 22.5f)
-        "plays_10000" -> drawStar(10, 0.7f, -90f)
-        "time_1h" -> drawStar(4, 0.6f, 0f)
-        "time_24h" -> drawStar(8, 0.8f, 0f)
-        "time_100h" -> drawStar(12, 0.85f, 0f)
-        "time_500h" -> drawStar(24, 0.9f, 0f)
-        "streak_7" -> drawShield(0.7f)
-        "streak_30" -> drawShield(0.85f)
-        "streak_100" -> drawShield(1.0f)
-        "streak_365" -> drawStar(16, 0.6f, -90f)
-        "artists_10" -> drawStar(4, 0.3f, 45f)
-        "artists_50" -> drawStar(8, 0.5f, 22.5f)
-        "artists_100" -> drawStar(12, 0.5f, 0f)
-        "genres_10" -> drawStar(5, 0.4f, -90f)
-        "genres_25" -> drawStar(7, 0.45f, -90f)
-        "night_owl" -> { path.addOval(androidx.compose.ui.geometry.Rect(cx - radius, cy - radius, cx + radius, cy + radius)) }
-        "early_bird" -> drawStar(8, 0.6f, 0f)
-        "marathon" -> drawPolygon(4, 0f)
-        "level_5" -> drawPolygon(3, 90f)
-        "level_10" -> { path.moveTo(cx, cy - radius); path.lineTo(cx + radius * 0.8f, cy); path.lineTo(cx, cy + radius); path.lineTo(cx - radius * 0.8f, cy); path.close() }
-        "level_25" -> drawPolygon(5, 90f)
-        "level_50" -> drawPolygon(6, 30f)
-        "level_75" -> drawStar(6, 0.7f, 30f)
-        "level_100" -> drawStar(8, 0.7f, 22.5f)
-        else -> drawPolygon(6, 0f)
-    }
-    return path
+private fun getRarityGlintAlpha(rarity: GamificationEngine.BadgeRarity): Float = when (rarity) {
+    GamificationEngine.BadgeRarity.COMMON -> 0.13f
+    GamificationEngine.BadgeRarity.RARE -> 0.15f
+    GamificationEngine.BadgeRarity.EPIC -> 0.18f
+    GamificationEngine.BadgeRarity.LEGENDARY -> 0.22f
+    GamificationEngine.BadgeRarity.MYTHIC -> 0.28f
 }
 
+// =====================================================================
+// Badge emblem — a struck collector's medallion. Rarity decides the metal
+// of the rim, the badge's intrinsic color becomes the enamel face, and a
+// slow specular glint sweeps across earned coins like foil under light.
+// Locked badges are unstruck blanks: dark graphite with a faint imprint.
+// =====================================================================
 @Composable
 private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier = Modifier) {
     val isEarned = badge.isEarned
     val rarity = GamificationEngine.getRarity(badge.badgeId)
     val rarityColor = getRarityColor(rarity)
-    val rimAlpha = if (isEarned) getRarityRimAlpha(rarity) else 0f
+    val metal = getRarityMetal(rarity)
     val glowAlpha = if (isEarned) getRarityGlowAlpha(rarity) else 0f
-    val metallicShineColors = when {
-        !isEarned -> listOf(Color(0xFF2A2A2A), Color(0xFF1A1A1A), Color(0xFF111111))
-        badge.stars <= 2 -> listOf(Color(0xFFE8A870), Color(0xFFCD7F32), Color(0xFFA0522D), Color(0xFF7B3820))
-        badge.stars <= 4 -> listOf(Color(0xFFFFFFFF), Color(0xFFD0D0D0), Color(0xFF909090), Color(0xFF5A5A5A))
-        else -> listOf(Color(0xFFFFEE80), Color(0xFFFFD700), Color(0xFFE6A000), Color(0xFFC07800))
+    val glintAlpha = getRarityGlintAlpha(rarity)
+    val art = remember(badge.badgeId) { BadgeArt.artFor(badge.badgeId) }
+
+    // Slow glint sweep — staggered per badge so a grid of coins never syncs up.
+    val glint = rememberInfiniteTransition(label = "badgeGlint")
+    val glintPhase by glint.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 3400, easing = LinearEasing)),
+        label = "glintPhase"
+    )
+    val glintOffset = remember(badge.badgeId) {
+        (kotlin.math.abs(badge.badgeId.hashCode()) % 100) / 100f
     }
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val path = getBadgeShapePath(size, badge.badgeId)
             val center = Offset(size.width / 2f, size.height / 2f)
+            val radius = size.minDimension / 2f
+            val faceRadius = radius * 0.79f
 
-            // Rarity aura — a soft circular glow behind the medal for EPIC+.
+            // Rarity aura — soft light bleeding off EPIC+ coins.
             if (glowAlpha > 0f) {
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(rarityColor.copy(alpha = glowAlpha), Color.Transparent),
                         center = center,
-                        radius = size.minDimension / 2f
-                    )
+                        radius = radius * 1.05f
+                    ),
+                    radius = radius * 1.05f,
+                    center = center
                 )
             }
 
-            // Metallic body (full size).
-            drawPath(
-                path = path,
-                brush = Brush.linearGradient(
-                    colors = metallicShineColors,
-                    start = Offset(size.width * 0.1f, 0f),
-                    end = Offset(size.width * 0.9f, size.height)
-                ),
-                style = androidx.compose.ui.graphics.drawscope.Fill
-            )
-
-            // Rarity rim — a colored edge that telegraphs rarity at a glance.
-            if (rimAlpha > 0f) {
-                drawPath(
-                    path = path,
-                    color = rarityColor.copy(alpha = rimAlpha),
-                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+            // Rim — the coin is struck from its rarity metal.
+            val rimBrush = if (rarity == GamificationEngine.BadgeRarity.MYTHIC && isEarned) {
+                Brush.sweepGradient(metal, center)
+            } else {
+                Brush.linearGradient(
+                    colors = metal,
+                    start = Offset(size.width * 0.15f, 0f),
+                    end = Offset(size.width * 0.85f, size.height)
                 )
             }
+            drawCircle(brush = rimBrush, radius = radius, center = center)
 
-            drawContext.transform.translate(center.x, center.y)
-            drawContext.transform.scale(0.88f, 0.88f)
-            drawContext.transform.translate(-center.x, -center.y)
-
-            val innerPath = getBadgeShapePath(size, badge.badgeId)
-            if (isEarned) {
-                drawPath(
-                    path = innerPath,
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color.White.copy(alpha = 0.45f), intrinsicColor, intrinsicColor.copy(alpha = 0.7f), Color.Black.copy(alpha = 0.5f)),
-                        center = Offset(center.x * 0.7f, center.y * 0.5f),
-                        radius = size.width * 0.9f
-                    )
+            // Enamel face — the badge's own color, lit from the upper left.
+            val faceBrush = if (isEarned) {
+                Brush.radialGradient(
+                    colors = listOf(
+                        lerp(intrinsicColor, Color.White, 0.38f),
+                        intrinsicColor,
+                        lerp(intrinsicColor, Color.Black, 0.42f)
+                    ),
+                    center = Offset(center.x - radius * 0.3f, center.y - radius * 0.38f),
+                    radius = radius * 1.35f
                 )
             } else {
-                drawPath(
-                    path = innerPath,
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF2C2C2E), Color(0xFF1C1C1E)),
-                        center = center,
-                        radius = size.width * 0.7f
-                    )
+                Brush.radialGradient(
+                    colors = listOf(Color(0xFF2B2B31), Color(0xFF131317)),
+                    center = Offset(center.x - radius * 0.25f, center.y - radius * 0.3f),
+                    radius = radius * 1.2f
                 )
+            }
+            drawCircle(brush = faceBrush, radius = faceRadius, center = center)
+
+            // Engraved hairline ring just inside the rim.
+            drawCircle(
+                color = Color.White.copy(alpha = if (isEarned) 0.25f else 0.08f),
+                radius = faceRadius * 0.9f,
+                center = center,
+                style = Stroke(width = 1.dp.toPx())
+            )
+
+            // Specular glint — a diagonal foil highlight crossing the face.
+            if (isEarned) {
+                val phase = (glintPhase + glintOffset) % 1f
+                val stripeWidth = radius * 0.85f
+                val travel = radius * 4f
+                val x = -stripeWidth + travel * phase
+                val coinPath = Path().apply { addOval(Rect(center, faceRadius)) }
+                clipPath(coinPath) {
+                    rotate(degrees = -24f, pivot = center) {
+                        drawRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = glintAlpha),
+                                    Color.Transparent
+                                ),
+                                startX = x,
+                                endX = x + stripeWidth
+                            ),
+                            topLeft = Offset(x, center.y - radius * 1.6f),
+                            size = Size(stripeWidth, radius * 3.2f)
+                        )
+                    }
+                }
             }
         }
 
         Icon(
-            imageVector = getBadgeIcon(badge.iconName),
+            imageVector = art,
             contentDescription = badge.name,
-            tint = if (isEarned) Color.White.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.2f),
-            modifier = Modifier.size(24.dp)
+            tint = if (isEarned) Color.White.copy(alpha = 0.96f) else Color.White.copy(alpha = 0.22f),
+            modifier = Modifier.size(30.dp)
         )
     }
 }
@@ -1290,38 +1361,87 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: 
     val rarity = GamificationEngine.getRarity(badge.badgeId)
     val rarityColor = getRarityColor(rarity)
     val isEarned = badge.isEarned
+    val isBeginner = badge.badgeId in GamificationEngine.BEGINNER_BADGES
     val targetProgress = if (isEarned) 1f else badge.progressFraction
     val animatedProgress by animateFloatAsState(
         targetValue = targetProgress,
         animationSpec = tween(1200, easing = FastOutSlowInEasing),
         label = "fill"
     )
-    val containerColor = if (isEarned) darkTint(intrinsicColor) else Color(0xFF161618)
-    val isBeginner = badge.badgeId in GamificationEngine.BEGINNER_BADGES
+    // Mint mark — when this badge was earned, like an engraving on a real coin.
+    val earnedDate = remember(badge.earnedAt) {
+        if (badge.isEarned && badge.earnedAt > 0L) {
+            java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.getDefault())
+                .format(java.util.Date(badge.earnedAt))
+        } else null
+    }
     // Border intensity escalates with rarity so prestige reads at a glance.
     val earnedBorderAlpha = (0.20f + rarity.sortWeight * 0.12f).coerceAtMost(0.70f)
 
     Card(
         modifier = modifier.animateContentSize(),
         shape = RoundedCornerShape(22.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isEarned) (3 + rarity.sortWeight).dp else 2.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isEarned) (2 + rarity.sortWeight).dp else 1.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         border = if (isSpotlight) {
             BorderStroke(2.dp, intrinsicColor.copy(alpha = 0.7f))
         } else {
             BorderStroke(1.dp, if (isEarned) intrinsicColor.copy(alpha = earnedBorderAlpha) else ProfileBorder)
         }
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    if (isEarned) {
+                        Brush.verticalGradient(listOf(darkTint(intrinsicColor, 0.40f), ProfileSurface))
+                    } else {
+                        Brush.verticalGradient(listOf(Color(0xFF191920), ProfileSurface))
+                    }
+                )
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                BadgeEmblem(badge = badge, intrinsicColor = intrinsicColor, modifier = Modifier.size(76.dp))
+                // Display case — showcase glow, the medallion, and a pedestal shadow.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(104.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        if (isEarned) intrinsicColor.copy(alpha = 0.20f) else intrinsicColor.copy(alpha = 0.06f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        BadgeEmblem(badge = badge, intrinsicColor = intrinsicColor, modifier = Modifier.size(76.dp))
+                        Spacer(modifier = Modifier.height(7.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(width = 46.dp, height = 5.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f), Color.Transparent)
+                                    )
+                                )
+                        )
+                    }
+                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
                     text = badge.name,
@@ -1345,6 +1465,17 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: 
                     overflow = TextOverflow.Ellipsis,
                     lineHeight = 13.sp
                 )
+
+                if (earnedDate != null) {
+                    Spacer(modifier = Modifier.height(5.dp))
+                    Text(
+                        text = "EARNED · $earnedDate",
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp,
+                        color = intrinsicColor.copy(alpha = 0.85f)
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -1373,13 +1504,19 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: 
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         if (badge.isMaxed) {
+                            // Gold foil — a maxed badge is the peak of its line.
                             Box(
                                 modifier = Modifier
-                                    .background(intrinsicColor.copy(alpha = 0.22f), RoundedCornerShape(50))
-                                    .border(1.dp, intrinsicColor.copy(alpha = 0.5f), RoundedCornerShape(50))
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(Color(0xFFF59E0B).copy(alpha = 0.28f), Color(0xFFEAB308).copy(alpha = 0.28f))
+                                        ),
+                                        RoundedCornerShape(50)
+                                    )
+                                    .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.6f), RoundedCornerShape(50))
                                     .padding(horizontal = 12.dp, vertical = 4.dp)
                             ) {
-                                Text(text = "MAXED", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = intrinsicColor, letterSpacing = 1.sp)
+                                Text(text = "MAXED", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFFCD34D), letterSpacing = 1.sp)
                             }
                         } else {
                             Box(
@@ -1420,14 +1557,16 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier, isSpotlight: 
             }
 
             // Rarity tag — always visible so locked badges advertise the prize they hide.
-            Box(
+            Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(8.dp)
-                    .background(rarityColor.copy(alpha = if (isEarned) 0.16f else 0.08f), RoundedCornerShape(50))
-                    .border(1.dp, rarityColor.copy(alpha = if (isEarned) 0.45f else 0.18f), RoundedCornerShape(50))
-                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                    .background(rarityColor.copy(alpha = if (isEarned) 0.14f else 0.07f), RoundedCornerShape(50))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(rarityColor))
                 Text(
                     text = rarity.label.uppercase(),
                     style = MaterialTheme.typography.labelSmall,

@@ -530,8 +530,8 @@ fun SongDetailsContent(
     if (showShareDialog) {
         SharePreviewDialog(
             onDismiss = { showShareDialog = false },
-            contentToShare = {
-                SongShareCard(trackDetails = trackDetails)
+            contentToShare = { theme ->
+                SongShareCard(trackDetails = trackDetails, theme = theme)
             },
         )
     }

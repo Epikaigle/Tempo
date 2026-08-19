@@ -386,6 +386,7 @@
     <string name="share_failed">Не удалось поделиться изображением</string>
     <string name="share_content_description">Поделиться</string>
     <string name="share_brand">TEMPO</string>
+    <string name="share_theme_label">Тема</string>
     <string name="share_total_time">ОБЩЕЕ ВРЕМЯ</string>
     <string name="share_unique_songs">УНИКАЛЬНЫЕ ПЕСНИ</string>
     <string name="share_top_songs">ТОП ПЕСЕН</string>
@@ -756,9 +757,11 @@
     <string name="stats_share_theme_label">Тема</string>
     <string name="stats_share_layout_label">Шаблон</string>
     <string name="stats_share_theme_midnight">Полночь</string>
-    <string name="stats_share_theme_sunset">Закат</string>
+    <string name="stats_share_theme_rose">Роза</string>
     <string name="stats_share_theme_aurora">Аврора</string>
     <string name="stats_share_theme_mono">Монохром</string>
+    <string name="stats_share_theme_daylight">Дневной свет</string>
+    <string name="stats_share_theme_ocean">Океан</string>
     <string name="stats_share_layout_list">Список</string>
     <string name="stats_share_layout_podium">Подиум</string>
     <string name="stats_share_layout_grid">Сетка</string>

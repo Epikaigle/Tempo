@@ -57,7 +57,7 @@ interface TrackDao {
         SELECT * FROM tracks
         WHERE artist = :artistName
         AND (album IS NULL OR album != :albumTitle)
-        AND (:query = '' OR LOWER(title) LIKE '%' || LOWER(:query) || '%')
+        AND (:query = '' OR INSTR(LOWER(title), LOWER(:query)) > 0)
         ORDER BY title ASC
         LIMIT 100
     """)
@@ -99,14 +99,16 @@ interface TrackDao {
     
     /**
      * Find track by title with fuzzy artist match.
+     * Uses INSTR instead of LIKE so '%'/'_' in artist names are matched
+     * literally, not as SQL wildcards.
      */
     @Query("""
         SELECT * FROM tracks 
         WHERE LOWER(title) = LOWER(:title) 
         AND (
             LOWER(artist) = LOWER(:artist) 
-            OR LOWER(artist) LIKE '%' || LOWER(:artist) || '%'
-            OR LOWER(:artist) LIKE '%' || LOWER(artist) || '%'
+            OR INSTR(LOWER(artist), LOWER(:artist)) > 0
+            OR INSTR(LOWER(:artist), LOWER(artist)) > 0
         )
         LIMIT 1
     """)
@@ -122,11 +124,12 @@ interface TrackDao {
     /**
      * Return a bounded set of tracks where artist name partially matches.
      * Used for fuzzy matching without loading the entire table into memory.
+     * INSTR keeps '%'/'_' in names literal (no wildcard surprises).
      */
     @Query("""
         SELECT * FROM tracks 
-        WHERE LOWER(artist) LIKE '%' || LOWER(:artist) || '%'
-        OR LOWER(:artist) LIKE '%' || LOWER(artist) || '%'
+        WHERE INSTR(LOWER(artist), LOWER(:artist)) > 0
+        OR INSTR(LOWER(:artist), LOWER(artist)) > 0
         LIMIT 200
     """)
     suspend fun findCandidatesByArtist(artist: String): List<Track>
@@ -134,11 +137,12 @@ interface TrackDao {
     /**
      * Return a bounded set of tracks for fuzzy matching.
      * Combines title and artist partial matches.
+     * INSTR keeps '%'/'_' in names literal (no wildcard surprises).
      */
     @Query("""
         SELECT * FROM tracks 
-        WHERE LOWER(title) LIKE '%' || LOWER(:title) || '%'
-        OR LOWER(artist) LIKE '%' || LOWER(:artist) || '%'
+        WHERE INSTR(LOWER(title), LOWER(:title)) > 0
+        OR INSTR(LOWER(artist), LOWER(:artist)) > 0
         LIMIT 200
     """)
     suspend fun findFuzzyCandidates(title: String, artist: String): List<Track>
@@ -198,15 +202,17 @@ interface TrackDao {
     /**
      * Search tracks by title.
      * Limited to 50 results to prevent memory issues with large libraries.
+     * INSTR keeps '%'/'_' in the query literal (no wildcard surprises).
      */
-    @Query("SELECT * FROM tracks WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' ORDER BY title ASC LIMIT 50")
+    @Query("SELECT * FROM tracks WHERE INSTR(LOWER(title), LOWER(:query)) > 0 ORDER BY title ASC LIMIT 50")
     suspend fun searchByTitle(query: String): List<Track>
     
     /**
      * Search tracks by artist name.
      * Limited to 50 results to prevent memory issues with large libraries.
+     * INSTR keeps '%'/'_' in the query literal (no wildcard surprises).
      */
-    @Query("SELECT * FROM tracks WHERE LOWER(artist) LIKE '%' || LOWER(:query) || '%' ORDER BY title ASC LIMIT 50")
+    @Query("SELECT * FROM tracks WHERE INSTR(LOWER(artist), LOWER(:query)) > 0 ORDER BY title ASC LIMIT 50")
     suspend fun searchByArtist(query: String): List<Track>
     
     // =====================

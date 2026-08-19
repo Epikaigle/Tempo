@@ -307,7 +307,10 @@ object ArtistParser {
     private val WHITESPACE_PATTERN = Regex("\\s+")
     private val TRAILING_BRACKETS_PATTERN = Regex("[)\\]]+$")
     private val LEADING_BRACKETS_PATTERN = Regex("^[(&\\[]+")
-    private val SPECIAL_CHARS_PATTERN = Regex("[^\\p{L}\\p{N}\\s]")
+    // \p{M} keeps combining marks of non-Latin scripts (Devanagari matras,
+    // Thai vowels, Arabic harakat) — Latin diacritics are already folded by
+    // UnicodeUtils.foldForMatching in normalizeForSearch.
+    private val SPECIAL_CHARS_PATTERN = Regex("[^\\p{L}\\p{N}\\p{M}\\s]")
     private val EMBEDDED_FEAT_PATTERN = Regex("\\s*[\\[(]\\s*(?:feat\\.?|ft\\.?|featuring|with)\\s+[^)\\]]+[)\\]]", RegexOption.IGNORE_CASE)
     private val TRAILING_FEAT_PATTERN = Regex("\\s+(?:feat\\.?|ft\\.?)\\s+.*$", RegexOption.IGNORE_CASE)
     private val VERSION_INFO_PATTERN = Regex("\\s*[\\[(]\\s*(?:Remaster(?:ed)?|Deluxe|Radio Edit|Single Version|Album Version)\\s*[)\\]]", RegexOption.IGNORE_CASE)
@@ -505,13 +508,17 @@ object ArtistParser {
 
     /**
      * Normalize an artist string for comparison/search purposes.
-     * Removes special characters, lowercases, and normalizes whitespace.
+     * Lowercases, folds Latin diacritics, strips invisible zero-width
+     * characters and special characters while preserving letters of every
+     * writing system.
      * 
      * @param artistString The artist string to normalize
      * @return Normalized string for comparison
      */
     fun normalizeForSearch(artistString: String): String {
-        return java.text.Normalizer.normalize(artistString, java.text.Normalizer.Form.NFKC)
+        return UnicodeUtils.foldForMatching(
+                UnicodeUtils.stripInvisibleChars(artistString)
+            )
             .lowercase()
             .replace("$", "s") // Handle stylized '$' as 's' (e.g. KR$ NA -> krsna, Ke$ha -> kesha)
             .replace(SPECIAL_CHARS_PATTERN, "")
@@ -539,8 +546,12 @@ object ArtistParser {
         // Exact match after normalization
         if (norm1 == norm2) return true
 
-        // Check if one contains the other (handles "Artist" vs "The Artist")
-        if (norm1.contains(norm2) || norm2.contains(norm1)) return true
+        // Check if one contains the other (handles "Artist" vs "The Artist").
+        // Guard: only allow the containment shortcut when the shorter name is
+        // long enough. In CJK and other compact scripts a 1-2 character name
+        // is a complete, distinct artist — "周杰" must NOT match "周杰伦".
+        val shorter = if (norm1.length <= norm2.length) norm1 else norm2
+        if (shorter.length >= 3 && (norm1.contains(norm2) || norm2.contains(norm1))) return true
 
         // Check if the parsed primary artists match
         val primary1 = normalizeForSearch(getPrimaryArtist(artist1))

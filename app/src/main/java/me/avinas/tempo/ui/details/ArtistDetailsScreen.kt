@@ -362,8 +362,11 @@ fun ArtistDetailsContent(
                 }
             }
 
-            item(key = "bottom_spacer") {
-                Spacer(modifier = Modifier.height(32.dp))
+            // 7. Footer
+            item(key = "footer") {
+                Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 32.dp)) {
+                    ArtistDetailsFooter()
+                }
             }
         }
 
@@ -457,8 +460,8 @@ fun ArtistDetailsContent(
         if (showShareDialog) {
             SharePreviewDialog(
                 onDismiss = { showShareDialog = false },
-                contentToShare = {
-                    ArtistShareCard(artistDetails = artistDetails, percentile = uiState.artistPercentile)
+                contentToShare = { theme ->
+                    ArtistShareCard(artistDetails = artistDetails, percentile = uiState.artistPercentile, theme = theme)
                 }
             )
         }
@@ -1481,3 +1484,30 @@ fun formatDate(timestamp: Long): String {
     val sdf = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
     return sdf.format(Date(timestamp))
 }
+
+// ──────────────────────────────────────────────────────────────
+// Footer
+// ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun ArtistDetailsFooter() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(36.dp)
+                .height(1.dp)
+                .background(GlassBorderSoft),
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        Text(
+            text = stringResource(R.string.details_footer).uppercase(Locale.getDefault()),
+            style = KickerSmall,
+            color = TextTertiary,
+            letterSpacing = 2.sp,
+        )
+    }
+}
+

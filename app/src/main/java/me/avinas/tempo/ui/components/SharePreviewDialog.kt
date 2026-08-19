@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
@@ -39,12 +40,13 @@ private val CardDesignHeight = 640.dp
 @Composable
 fun SharePreviewDialog(
     onDismiss: () -> Unit,
-    contentToShare: @Composable () -> Unit
+    contentToShare: @Composable (theme: ShareTheme) -> Unit
 ) {
     val context = LocalContext.current
     val captureController = rememberCaptureController()
     val coroutineScope = rememberCoroutineScope()
     var isSharing by remember { mutableStateOf(false) }
+    var theme by remember { mutableStateOf(ShareTheme.MIDNIGHT) }
     val shareFailedText = stringResource(R.string.share_failed)
 
     LaunchedEffect(Unit) {
@@ -88,7 +90,7 @@ fun SharePreviewDialog(
                     controller = captureController,
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    contentToShare()
+                    contentToShare(theme)
                 }
             }
 
@@ -168,7 +170,33 @@ fun SharePreviewDialog(
                                     transformOrigin = TransformOrigin(0.5f, 0.5f)
                                 )
                         ) {
-                            contentToShare()
+                            contentToShare(theme)
+                        }
+                    }
+                }
+
+                // Theme picker
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.share_theme_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.55f),
+                        letterSpacing = 1.2.sp,
+                        modifier = Modifier.padding(end = 10.dp)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ShareTheme.entries.forEach { t ->
+                            ThemeSwatch(
+                                theme = t,
+                                selected = theme == t,
+                                onClick = { theme = t }
+                            )
                         }
                     }
                 }

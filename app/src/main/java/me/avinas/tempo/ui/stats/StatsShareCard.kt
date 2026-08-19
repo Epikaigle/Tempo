@@ -1,6 +1,8 @@
 package me.avinas.tempo.ui.stats
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
+import me.avinas.tempo.ui.components.ShareTheme
+import me.avinas.tempo.ui.components.ShareThemePalette
+import me.avinas.tempo.ui.components.contrastingText
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,77 +50,13 @@ enum class StatsShareCount(val count: Int) {
 
 enum class StatsShareLayout { LIST, PODIUM, GRID }
 
-data class StatsShareThemePalette(
-    val gradient: List<Color>,
-    val overlay: List<Color>,
-    val accent: Color,
-    val glowTop: Color,
-    val glowBottom: Color,
-    val rank1Tint: Color
-)
-
-enum class StatsShareTheme(val palette: StatsShareThemePalette) {
-    MIDNIGHT(
-        StatsShareThemePalette(
-            gradient = listOf(TempoDarkBackground, Color(0xFF1E1B4B), Color(0xFF312E81)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.55f),
-                Color(0xFF0F0F12).copy(alpha = 0.8f),
-                Color(0xFF0D0D10).copy(alpha = 0.95f)
-            ),
-            accent = Color(0xFFFBBF24),
-            glowTop = Color(0xFFA855F7),
-            glowBottom = Color(0xFFEC4899),
-            rank1Tint = Color(0xFFF59E0B)
-        )
-    ),
-    SUNSET(
-        StatsShareThemePalette(
-            gradient = listOf(Color(0xFF1A0F0F), Color(0xFF7C2D12), Color(0xFFB91C1C)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.55f),
-                Color(0xFF1A0A0A).copy(alpha = 0.8f),
-                Color(0xFF0D0505).copy(alpha = 0.95f)
-            ),
-            accent = Color(0xFFFBBF24),
-            glowTop = Color(0xFFF97316),
-            glowBottom = Color(0xFFEF4444),
-            rank1Tint = Color(0xFFF97316)
-        )
-    ),
-    AURORA(
-        StatsShareThemePalette(
-            gradient = listOf(Color(0xFF0A0F0D), Color(0xFF064E3B), Color(0xFF1E3A8A)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.5f),
-                Color(0xFF0A0F12).copy(alpha = 0.8f),
-                Color(0xFF050D10).copy(alpha = 0.95f)
-            ),
-            accent = Color(0xFF34D399),
-            glowTop = Color(0xFF10B981),
-            glowBottom = Color(0xFF3B82F6),
-            rank1Tint = Color(0xFF34D399)
-        )
-    ),
-    MONO(
-        StatsShareThemePalette(
-            gradient = listOf(Color(0xFF0A0A0A), Color(0xFF1F1F1F), Color(0xFF2A2A2A)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.5f),
-                Color(0xFF111111).copy(alpha = 0.8f),
-                Color(0xFF0A0A0A).copy(alpha = 0.95f)
-            ),
-            accent = Color(0xFFE5E7EB),
-            glowTop = Color(0xFF9CA3AF),
-            glowBottom = Color(0xFFD1D5DB),
-            rank1Tint = Color(0xFFE5E7EB)
-        )
-    )
-}
+// Theme system (ShareTheme / ShareThemePalette) lives in
+// ui/components/ShareTheme.kt — shared with the song/artist details share
+// cards so every share surface offers the same themes.
 
 data class StatsShareConfig(
     val count: StatsShareCount = StatsShareCount.TOP_5,
-    val theme: StatsShareTheme = StatsShareTheme.MIDNIGHT,
+    val theme: ShareTheme = ShareTheme.MIDNIGHT,
     val layout: StatsShareLayout = StatsShareLayout.LIST,
     val showSummary: Boolean = true
 )
@@ -207,7 +145,7 @@ fun StatsShareCard(
                                 text = stringResource(titleRes),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = palette.textPrimary
                             )
                             Text(
                                 text = stringResource(periodRes),
@@ -227,7 +165,7 @@ fun StatsShareCard(
                         Text(
                             text = stringResource(R.string.stats_no_stats_yet),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = palette.textSecondary,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -248,7 +186,7 @@ fun StatsShareCard(
 @Composable
 private fun StatsShareBackground(
     imageUrl: String?,
-    palette: StatsShareThemePalette,
+    palette: ShareThemePalette,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
@@ -305,7 +243,7 @@ private fun StatsShareBackground(
                 text = "TEMPO",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Black,
-                color = Color.White.copy(alpha = 0.7f),
+                color = palette.branding,
                 letterSpacing = 4.sp
             )
         }
@@ -313,11 +251,11 @@ private fun StatsShareBackground(
 }
 
 @Composable
-private fun SummaryCard(overview: ListeningOverview, palette: StatsShareThemePalette) {
+private fun SummaryCard(overview: ListeningOverview, palette: ShareThemePalette) {
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        backgroundColor = Color.White.copy(alpha = 0.08f),
-        shape = RoundedCornerShape(20.dp),
+        backgroundColor = palette.surface,
+        shape = palette.cardShape,
         borderColor = palette.accent.copy(alpha = 0.25f),
         borderWidth = 1.dp,
         contentPadding = PaddingValues(10.dp)
@@ -335,14 +273,14 @@ private fun SummaryCard(overview: ListeningOverview, palette: StatsShareThemePal
                 palette = palette,
                 modifier = Modifier.weight(1f)
             )
-            SummaryDivider()
+            SummaryDivider(palette)
             SummaryStat(
                 label = stringResource(R.string.stats_share_stat_plays),
                 value = overview.totalPlayCount.toString(),
                 palette = palette,
                 modifier = Modifier.weight(1f)
             )
-            SummaryDivider()
+            SummaryDivider(palette)
             SummaryStat(
                 label = stringResource(R.string.stats_share_stat_unique),
                 value = overview.uniqueTracksCount.toString(),
@@ -354,7 +292,7 @@ private fun SummaryCard(overview: ListeningOverview, palette: StatsShareThemePal
 }
 
 @Composable
-private fun SummaryStat(label: String, value: String, palette: StatsShareThemePalette, modifier: Modifier = Modifier) {
+private fun SummaryStat(label: String, value: String, palette: ShareThemePalette, modifier: Modifier = Modifier) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
@@ -362,7 +300,7 @@ private fun SummaryStat(label: String, value: String, palette: StatsShareThemePa
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.6f),
+            color = palette.textSecondary,
             letterSpacing = 1.5.sp
         )
         Spacer(modifier = Modifier.height(3.dp))
@@ -370,7 +308,7 @@ private fun SummaryStat(label: String, value: String, palette: StatsShareThemePa
             text = value,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Black,
-            color = Color.White,
+            color = palette.textPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -378,17 +316,20 @@ private fun SummaryStat(label: String, value: String, palette: StatsShareThemePa
 }
 
 @Composable
-private fun SummaryDivider() {
+private fun SummaryDivider(palette: ShareThemePalette) {
     Box(
         modifier = Modifier
             .height(30.dp)
             .width(1.dp)
-            .background(Color.White.copy(alpha = 0.15f))
+            .background(palette.divider)
     )
 }
 
+// Rank-badge/pedestal text contrast is provided by
+// ShareThemePalette.contrastingText() in ui/components/ShareTheme.kt.
+
 @Composable
-private fun RankBadge(rank: Int, size: Dp, palette: StatsShareThemePalette) {
+private fun RankBadge(rank: Int, size: Dp, palette: ShareThemePalette) {
     val colors = when (rank) {
         1 -> listOf(palette.rank1Tint, palette.rank1Tint)
         2 -> listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8))
@@ -398,14 +339,14 @@ private fun RankBadge(rank: Int, size: Dp, palette: StatsShareThemePalette) {
     Box(
         modifier = Modifier
             .size(size)
-            .background(brush = Brush.linearGradient(colors), CircleShape),
+            .background(brush = Brush.linearGradient(colors), palette.badgeShape),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = "$rank",
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color = Color.Black,
+            color = palette.contrastingText(colors.first()),
             fontSize = (size.value * 0.5f).sp
         )
     }
@@ -444,7 +385,7 @@ private fun ItemThumbnail(
 }
 
 @Composable
-private fun ListLayout(items: List<StatsItemInfo>, palette: StatsShareThemePalette, count: StatsShareCount) {
+private fun ListLayout(items: List<StatsItemInfo>, palette: ShareThemePalette, count: StatsShareCount) {
     val showHero = count != StatsShareCount.TOP_10
     val rowHeight = when (count) {
         StatsShareCount.TOP_3 -> 46.dp
@@ -485,7 +426,7 @@ private fun ListLayout(items: List<StatsItemInfo>, palette: StatsShareThemePalet
                         text = hero.title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Black,
-                        color = Color.White,
+                        color = palette.textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -493,7 +434,7 @@ private fun ListLayout(items: List<StatsItemInfo>, palette: StatsShareThemePalet
                         Text(
                             text = hero.subtitle,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = palette.textSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -508,7 +449,7 @@ private fun ListLayout(items: List<StatsItemInfo>, palette: StatsShareThemePalet
             }
             val rest = items.drop(1)
             if (rest.isNotEmpty()) {
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 0.5.dp)
+                HorizontalDivider(color = palette.divider, thickness = 0.5.dp)
             }
             rest.forEachIndexed { index, info ->
                 CompactRow(
@@ -542,7 +483,7 @@ private fun CompactRow(
     rowHeight: Dp,
     thumbSize: Dp,
     showSubtitle: Boolean,
-    palette: StatsShareThemePalette
+    palette: ShareThemePalette
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().height(rowHeight),
@@ -550,13 +491,13 @@ private fun CompactRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         RankBadge(rank = rank, size = 20.dp, palette = palette)
-        ItemThumbnail(size = thumbSize, imageUrl = info.imageUrl)
+        ItemThumbnail(size = thumbSize, imageUrl = info.imageUrl, shape = palette.thumbShape)
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = info.title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = palette.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -564,7 +505,7 @@ private fun CompactRow(
                 Text(
                     text = info.subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = palette.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -580,7 +521,7 @@ private fun CompactRow(
 }
 
 @Composable
-private fun PodiumLayout(items: List<StatsItemInfo>, palette: StatsShareThemePalette, count: StatsShareCount) {
+private fun PodiumLayout(items: List<StatsItemInfo>, palette: ShareThemePalette, count: StatsShareCount) {
     val topThree = items.take(3)
     val rest = items.drop(3)
     val rowHeight = when (count) {
@@ -622,12 +563,12 @@ private fun PodiumLayout(items: List<StatsItemInfo>, palette: StatsShareThemePal
                     if (topThree.size > 2) {
                         steps.add(PodiumStepData(topThree[2], 3, 38.dp, 48.dp, Color(0xFFCD7F32)))
                     }
-                    steps.forEach { PodiumStep(it) }
+                    steps.forEach { PodiumStep(it, palette) }
                 }
             }
         }
         if (rest.isNotEmpty()) {
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 0.5.dp)
+            HorizontalDivider(color = palette.divider, thickness = 0.5.dp)
             rest.forEachIndexed { index, info ->
                 CompactRow(
                     rank = index + 4,
@@ -652,7 +593,7 @@ private data class PodiumStepData(
 )
 
 @Composable
-private fun PodiumStep(step: PodiumStepData) {
+private fun PodiumStep(step: PodiumStepData, palette: ShareThemePalette) {
     Column(
         modifier = Modifier.width(104.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -679,7 +620,7 @@ private fun PodiumStep(step: PodiumStepData) {
             text = step.info.title,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = palette.textPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
@@ -688,7 +629,9 @@ private fun PodiumStep(step: PodiumStepData) {
             text = formatListeningTime(step.info.timeMs),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color = step.tint
+            // Medal tints (esp. silver) are tuned for dark backdrops; fall back to
+            // the theme's readable primary text on light themes.
+            color = if (palette.isDark) step.tint else palette.textPrimary
         )
         Spacer(modifier = Modifier.height(5.dp))
         // Pedestal
@@ -709,14 +652,14 @@ private fun PodiumStep(step: PodiumStepData) {
                 text = "${step.rank}",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Black,
-                color = Color.Black.copy(alpha = 0.85f)
+                color = palette.contrastingText(step.tint)
             )
         }
     }
 }
 
 @Composable
-private fun GridLayout(items: List<StatsItemInfo>, palette: StatsShareThemePalette, count: StatsShareCount) {
+private fun GridLayout(items: List<StatsItemInfo>, palette: ShareThemePalette, count: StatsShareCount) {
     val featured = count != StatsShareCount.TOP_10
     val featuredHeight = when (count) {
         StatsShareCount.TOP_3 -> 150.dp
@@ -769,16 +712,16 @@ private fun PosterCell(
     info: StatsItemInfo,
     rank: Int,
     height: Dp,
-    palette: StatsShareThemePalette,
+    palette: ShareThemePalette,
     large: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = palette.cardShape
     Box(
         modifier = modifier
             .height(height)
             .clip(shape)
-            .background(Color(0xFF1A1A1A))
+            .background(palette.cellBackground)
     ) {
         CachedAsyncImage(
             imageUrl = info.imageUrl,
@@ -788,10 +731,10 @@ private fun PosterCell(
             allowHardware = false,
             placeholder = {
                 Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF2A2A2A)),
+                    modifier = Modifier.fillMaxSize().background(palette.cellPlaceholder),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.5f))
+                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = palette.textSecondary)
                 }
             }
         )
@@ -817,16 +760,16 @@ private fun PosterCell(
                 .size(if (large) 26.dp else 22.dp)
                 .background(
                     brush = Brush.linearGradient(listOf(palette.accent, palette.accent.copy(alpha = 0.7f))),
-                    CircleShape
+                    palette.badgeShape
                 )
-                .border(1.dp, Color.Black.copy(alpha = 0.15f), CircleShape),
+                .border(1.dp, Color.Black.copy(alpha = 0.15f), palette.badgeShape),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "$rank",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Black,
-                color = Color.Black,
+                color = palette.contrastingText(palette.accent),
                 fontSize = if (large) 12.sp else 10.sp
             )
         }
@@ -861,7 +804,7 @@ private fun PosterCell(
                     text = formatListeningTime(info.timeMs),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = palette.accent
+                    color = Color.White
                 )
             }
         }
