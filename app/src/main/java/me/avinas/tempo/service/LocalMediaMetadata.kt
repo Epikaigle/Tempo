@@ -302,6 +302,23 @@ data class LocalMediaMetadata(
         }
         
         /**
+         * Downsample a bitmap so cached metadata stays small. Matches the 512px cap
+         * used when saving art to storage, so persisted output is unchanged.
+         */
+        private fun downsample(bitmap: Bitmap?, maxDimension: Int = 512): Bitmap? {
+            if (bitmap == null) return null
+            val w = bitmap.width.toFloat()
+            val h = bitmap.height.toFloat()
+            if (w <= maxDimension && h <= maxDimension) return bitmap
+            val ratio = (maxDimension / maxOf(w, h)).coerceAtMost(1f)
+            return try {
+                Bitmap.createScaledBitmap(bitmap, (w * ratio).toInt(), (h * ratio).toInt(), true)
+            } catch (e: Exception) {
+                bitmap
+            }
+        }
+
+        /**
          * Extract all available metadata from Android MediaMetadata.
          * Uses comprehensive fallback chain for artist extraction.
          */
@@ -363,10 +380,14 @@ data class LocalMediaMetadata(
                 // Genre
                 genre = metadata.getString(MediaMetadata.METADATA_KEY_GENRE)?.takeIf { it.isNotBlank() },
                 
-                // Album art
-                albumArtBitmap = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-                    ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
-                    ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON),
+                // Album art (downsampled: every consumer saves at <=512px anyway, and
+                // these instances end up cached in-memory by the tracking service —
+                // full-size bitmaps there would add up to megabytes over a listening session)
+                albumArtBitmap = downsample(
+                    metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                        ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                        ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+                ),
                 albumArtUri = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)?.takeIf { it.isNotBlank() },
                 artUri = metadata.getString(MediaMetadata.METADATA_KEY_ART_URI)?.takeIf { it.isNotBlank() },
                 

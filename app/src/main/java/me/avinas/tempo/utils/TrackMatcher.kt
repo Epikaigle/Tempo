@@ -1,7 +1,6 @@
 package me.avinas.tempo.utils
 
 import android.util.Log
-import java.text.Normalizer
 import kotlin.math.max
 import kotlin.math.min
 
@@ -67,9 +66,12 @@ object TrackMatcher {
         Regex("""\s*[\(\[]?\s*(?:explicit|clean|censored)\s*[\)\]]?""", RegexOption.IGNORE_CASE)
     )
     
-    private val PUNCTUATION_REGEX = Regex("""[^\p{L}\p{N}\s]""")
+    // Keep combining marks (\p{M}) — after foldForMatching they belong to
+    // non-Latin scripts (Thai vowels, Devanagari matras, Arabic harakat)
+    // where they are semantically required. Latin diacritics were already
+    // folded away by UnicodeUtils.foldForMatching.
+    private val PUNCTUATION_REGEX = Regex("""[^\p{L}\p{N}\p{M}\s]""")
     private val WHITESPACE_REGEX = Regex("""\s+""")
-    private val UNICODE_MARKS_PATTERN = Regex("""\p{M}""")
     
     /**
      * Check if two tracks match, considering common variations.
@@ -174,10 +176,12 @@ object TrackMatcher {
         // Pre-filter: only consider candidates that share at least some words with the target
         // This drastically reduces the number of expensive regex normalizations
         // Use length > 1 for titles (handles short titles like "Go", "If", "Up")
+        // but keep single characters when they are non-ASCII letters: in CJK,
+        // Hangul and similar scripts a single character is a complete word.
         val targetTitleWords = targetTitleLower.split(" ", "-", "_")
-            .filter { it.length > 1 }.toSet()
+            .filter { it.length > 1 || UnicodeUtils.hasNonAsciiLetter(it) }.toSet()
         val targetArtistWords = targetArtistLower.split(" ", "-", "_")
-            .filter { it.length > 1 }.toSet()
+            .filter { it.length > 1 || UnicodeUtils.hasNonAsciiLetter(it) }.toSet()
         
         val filteredCandidates = if (targetTitleWords.isNotEmpty()) {
             candidates.filter { candidate ->
@@ -287,9 +291,13 @@ object TrackMatcher {
             normalized = pattern.replace(normalized, "")
         }
         
-        // Unicode normalization (NFD then remove marks)
-        normalized = Normalizer.normalize(normalized, Normalizer.Form.NFD)
-            .replace(UNICODE_MARKS_PATTERN, "")
+        // Unicode normalization: fold Latin/Greek/Cyrillic diacritics (é -> e)
+        // while preserving marks of other scripts (Hangul jamo, Devanagari
+        // matras, Thai vowels, Arabic harakat). NFKC inside also folds
+        // full-width/half-width variants (ＹＯＡＳＯＢＩ <-> YOASOBI).
+        normalized = UnicodeUtils.foldForMatching(
+            UnicodeUtils.stripInvisibleChars(normalized)
+        )
         
         // Normalize punctuation and whitespace
         normalized = PUNCTUATION_REGEX.replace(normalized, " ")
@@ -314,9 +322,12 @@ object TrackMatcher {
             normalized = pattern.replace(normalized, " ")
         }
         
-        // Unicode normalization
-        normalized = Normalizer.normalize(normalized, Normalizer.Form.NFD)
-            .replace(UNICODE_MARKS_PATTERN, "")
+        // Same script-aware Unicode folding as normalizeTitle: strips Latin
+        // diacritics for matching, preserves marks of all other scripts so
+        // Korean/Indic/Thai/Arabic artist names stay distinct.
+        normalized = UnicodeUtils.foldForMatching(
+            UnicodeUtils.stripInvisibleChars(normalized)
+        )
         
         // Normalize punctuation
         normalized = PUNCTUATION_REGEX.replace(normalized, " ")

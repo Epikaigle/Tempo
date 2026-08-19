@@ -1,73 +1,198 @@
 # Contributing to Tempo
 
-Thank you for contributing to Tempo. This guide outlines the contribution workflow and project principles.
+**Thank you for your interest in making Tempo better!** 🎉
 
-## Project Principles
+Your contributions (whether bug fixes, features, documentation, or testing) are genuinely valued. This guide will help you contribute effectively while understanding the project's goals and workflow.
 
-Tempo is built around three core principles:
-- **Local-first**: Data remains on the device with no cloud server dependencies.
-- **Privacy**: No user tracking, analytics, or external data collection.
-- **Focused scope**: Changes prioritize stability and accuracy over feature density.
+## About the Project
 
-Changes should align with these principles.
+Tempo is an **AGPLv3-licensed project (with custom limitations)** with a clear vision: to be the best local-first music companion app that respects user privacy and data ownership. While I built it to solve a specific problem, community contributions help make it better for everyone.
+
+The codebase is open for learning, auditing, and contribution, with a license that protects against commercial exploitation while enabling collaboration.
+
+## Project Philosophy
+
+Tempo is built on these principles:
+- **User-first**: Features serve real user needs, not trends
+- **Privacy-first**: Data stays on the device, no tracking
+- **Local-first**: No cloud dependency
+- **Intentional design**: Every feature has a purpose
+
+**What this means for contributions:**
+- Quality and stability matter more than feature count
+- Changes should align with the core philosophy
+- Thoughtful, focused improvements are preferred over large rewrites
+- User experience consistency is important
 
 ## How to Contribute
 
-### Workflow
+### Contribution Workflow
 
-1. Fork the repository.
-2. Create a feature branch for your work.
-3. Commit focused, atomic changes.
-4. Submit a pull request to the `main` branch.
-
-### Pull Request Guidelines
-
-Include the following in your pull request description:
-- Summary of the changes and why they were made.
-- Relevant issue numbers.
-- Screenshots or screen recordings for UI changes.
-- Verification steps or test results.
-
-Pull requests are evaluated on code quality, performance impact, and project scope. Maintainers will provide feedback if changes or alternative approaches are required.
-
-### Types of Contributions
-
-- **Bug Fixes**: Resolve crashes, UI rendering errors, or database migration bugs.
-- **Feature Enhancements**: Improve existing workflows, accessibility, or error handling.
-- **Documentation**: Clarify setup steps, code comments, or API references.
-- **Localization**: Add translations or improve right-to-left layout support.
-
-### Major Changes
-
-Before starting work on large features, architecture refactors, or UI redesigns, open an issue to discuss the approach. This avoids unnecessary work on features that conflict with the project direction.
-
-## UI & Design Guidelines
-
-Tempo uses Jetpack Compose and Material 3 design components.
-
-- **Encouraged**: Usability adjustments (spacing, touch targets, contrast), screen reader accessibility fixes, animation performance polish.
-- **Requires prior discussion**: Visual identity updates (colors, fonts), structural navigation redesigns, or replacing established UI components.
-
-## Code Quality Standards
-
-- **Follow existing patterns**: Keep code consistent with existing MVVM, Clean Architecture, and Hilt setup.
-- **Minimize external libraries**: Add dependencies only when necessary.
-- **Write readable code**: Prefer clear function and variable names over complex inline logic.
-- **Verify changes**: Confirm the project builds cleanly and existing functionality remains unbroken.
-
-## Development Setup
-
-- **Language**: Kotlin
-- **UI Framework**: Jetpack Compose (Material 3)
-- **Architecture**: MVVM + Clean Architecture with Hilt
-- **Min SDK**: 26 (Android 8.0)
-- **Target SDK**: 36 (Android 16)
-
-Run a local build before submitting:
-```bash
-./gradlew build
+```
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a Pull Request
 ```
 
-## Licensing
+**What to include in your PR:**
+- Clear explanation of what changed and why
+- Screenshots or videos for UI changes
+- Test cases for bug fixes (when applicable)
+- Reference to related issues (if any)
 
-By contributing, you agree that your contributions are licensed under the project's custom modified AGPLv3 License. See [LICENSE](LICENSE) for full details.
+All PRs are reviewed carefully. I may:
+- Merge as-is
+- Request changes or improvements
+- Ask questions for clarification
+- Suggest alternative approaches
+
+**Note:** Not all PRs will be merged, but that's okay! Sometimes it's about timing, fit, or project direction. A declined PR isn't a judgment of your skills.
+
+### Types of Contributions Welcome
+
+**🐛 Bug Fixes**
+- Crashes, UI glitches, data issues
+- Performance improvements
+- Edge case handling
+
+**✨ Feature Enhancements**
+- Improvements to existing features
+- Better error handling
+- Accessibility improvements
+
+**📝 Documentation**
+- Code comments
+- README improvements
+- API documentation
+- User guides
+
+**🌍 Localization**
+- Translations
+- RTL support
+- Regional improvements
+
+**🧪 Testing & QA**
+- Bug reports with reproduction steps
+- Edge case testing
+- Performance profiling
+
+### Before Starting Major Work
+
+For significant changes, **please open an issue first** to discuss:
+- Large architectural changes
+- New major features
+- UI redesigns
+- Changes to core behavior
+
+This helps avoid wasted effort on changes that may not align with the project's direction.
+
+## UI & Design Contributions
+
+Tempo has an established visual language and interaction model built with Jetpack Compose and Material 3.
+
+**UI improvements welcome:**
+- Usability enhancements (better spacing, alignment, hierarchy)
+- Accessibility improvements (contrast, screen readers, tap targets)
+- Consistency fixes across screens
+- Animation polish
+
+**Please discuss first:**
+- Complete UI redesigns
+- Changes to the visual identity (colors, typography, iconography)
+- Major navigation changes
+- Replacing existing design patterns
+
+> **Note:** Design work in Figma is appreciated, but implementation in code is what matters. Focus on working prototypes when possible.
+
+## Feature Contributions
+
+**Before building a new feature:**
+1. Check existing issues (it might already be planned)
+2. Open an issue to discuss the idea
+3. Describe the **problem** you're solving, not just the solution
+4. Wait for feedback before investing significant time
+
+Some feature requests may be deferred, scoped differently, or declined based on:
+- Alignment with project philosophy
+- Maintenance complexity
+- Impact on app size or performance
+- User experience consistency
+
+## Decision Making
+
+Tempo is maintained by a single owner with a clear vision for the product. This ensures:
+- **Consistency**: Clear direction and cohesive experience
+- **Quality**: Thoughtful review of all changes
+- **Sustainability**: Manageable scope and maintenance
+
+**This doesn't mean contributions are unwelcome**. It means they're reviewed carefully to ensure they benefit users and align with the project's goals.
+
+If a PR is declined, it's about fit with the project direction, not a judgment of your abilities. Feedback will be provided to help you understand the decision.
+
+## Attribution & Credit
+
+- All contributors are credited in git commit history
+- Significant contributions may be highlighted in documentation
+- The project remains authored and maintained by its original creator
+
+## Code Quality Guidelines
+
+To maintain a healthy codebase:
+- **Follow existing patterns**: Match the code style and architecture already in place
+- **Keep dependencies minimal**: Only add libraries when truly necessary
+- **Stay focused**: One PR should address one issue or feature
+- **Write for humans**: Code should be readable and maintainable
+- **Test your changes**: Verify the feature works and doesn't break existing functionality
+
+## Development Environment
+
+- **Language**: Kotlin
+- **UI**: Jetpack Compose (Material 3)
+- **Architecture**: MVVM + Clean Architecture with Hilt
+- **Min SDK**: 26 (Android 8.0)
+- **Target SDK**: 34 (Android 14)
+
+Run `./gradlew build` to ensure your changes compile successfully.
+
+## Community Values
+
+**Welcome contributors who:**
+- Want to learn and grow
+- Care about user privacy and data ownership
+- Value quality over quantity
+- Respect the project's vision
+- Communicate thoughtfully
+
+**This might not be the right fit if you're looking to:**
+- Rush changes without review
+- Fundamentally alter the project's direction
+- Fork for commercial purposes (see LICENSE)
+- Ignore maintainer feedback
+
+## Contributor License
+
+By contributing to Tempo, you agree that your contributions will be licensed under the project's [custom modified AGPLv3 License](LICENSE).
+
+Your contributions remain attributed to you in the git history and may be acknowledged in documentation for significant work.
+
+## Getting Help
+
+- **Questions?** Open a discussion or issue
+- **Stuck?** Ask for help. Collaboration is encouraged
+- **Found a bug?** Report it with steps to reproduce
+- **Idea for improvement?** Share it in an issue first
+
+## Thank You
+
+Every contribution makes Tempo better, whether it's a one-line typo fix or a major feature. Your time and effort are valued.
+
+Tempo uses a **custom modified AGPLv3 License** to protect it from commercial exploitation while keeping it open for learning, auditing, and collaboration. This approach ensures the app stays free, privacy-focused, and user-first.
+
+Thank you for being part of this project. 🎵
+
+---
+
+**Ready to contribute?** Fork the repo and submit your first PR!
+
+**Questions?** Open an issue or discussion. I'm happy to help.

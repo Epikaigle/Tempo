@@ -22,13 +22,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.data.remote.spotify.SpotifyAuthManager
-import me.avinas.tempo.ui.theme.SpotifyGreen
-import me.avinas.tempo.ui.theme.TempoBackground
-import me.avinas.tempo.ui.theme.TempoErrorAlt
-import me.avinas.tempo.ui.theme.TempoInfo
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoSuccess
-import me.avinas.tempo.ui.theme.TempoWarning
 
 /**
  * Spotify connection screen that explains benefits and allows users to connect.
@@ -44,8 +37,8 @@ fun SpotifyLoginScreen(
     onSkip: (() -> Unit)? = null
 ) {
     // Spotify brand colors
-    val spotifyGreen = SpotifyGreen
-    val spotifyBlack = TempoBackground
+    val spotifyGreen = Color(0xFF1DB954)
+    val spotifyBlack = Color(0xFF191414)
     
     me.avinas.tempo.ui.components.DeepOceanBackground(
         modifier = Modifier.fillMaxSize()
@@ -119,7 +112,7 @@ fun SpotifyLoginScreen(
                 icon = Icons.Default.Favorite,
                 title = "Mood Analysis",
                 description = "See how happy or melancholic your music is",
-                accentColor = TempoErrorAlt
+                accentColor = Color(0xFFE91E63)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -128,7 +121,7 @@ fun SpotifyLoginScreen(
                 icon = Icons.Default.Star,
                 title = "Energy Insights",
                 description = "Track your music's intensity over time",
-                accentColor = TempoWarning
+                accentColor = Color(0xFFFF9800)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -137,7 +130,7 @@ fun SpotifyLoginScreen(
                 icon = Icons.Default.Settings,
                 title = "Danceability Score",
                 description = "Find out how danceable your playlists are",
-                accentColor = TempoPrimary
+                accentColor = Color(0xFF9C27B0)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -146,7 +139,7 @@ fun SpotifyLoginScreen(
                 icon = Icons.AutoMirrored.Filled.ArrowForward,
                 title = "Tempo Stats",
                 description = "Discover your preferred BPM ranges",
-                accentColor = TempoInfo
+                accentColor = Color(0xFF2196F3)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -155,7 +148,7 @@ fun SpotifyLoginScreen(
                 icon = Icons.Default.Face,
                 title = "Acoustic vs Electronic",
                 description = "See your balance of acoustic and electronic music",
-                accentColor = TempoSuccess
+                accentColor = Color(0xFF4CAF50)
             )
             
             Spacer(modifier = Modifier.height(32.dp))
@@ -305,7 +298,7 @@ fun SpotifyUpgradePrompt(
     onConnectClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val spotifyGreen = SpotifyGreen
+    val spotifyGreen = Color(0xFF1DB954)
     
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -372,7 +365,7 @@ fun SpotifyUpgradePrompt(
 fun SpotifyRequiredBadge(
     modifier: Modifier = Modifier
 ) {
-    val spotifyGreen = SpotifyGreen
+    val spotifyGreen = Color(0xFF1DB954)
     
     Surface(
         modifier = modifier,

@@ -13,12 +13,15 @@ import me.avinas.tempo.BuildConfig
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.profile.ProfileIdentityManager
+import com.squareup.moshi.JsonReader
 import com.squareup.moshi.JsonWriter
 import me.avinas.tempo.worker.PostRestoreCacheWorker
 import okio.buffer
 import okio.sink
 import okio.source
+import me.avinas.tempo.data.local.ArchiveTimestampCodec
 import java.io.*
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -48,9 +51,24 @@ class ImportExportManager @Inject constructor(
         private const val IMAGES_DIR = "images/"
         private const val MAX_BUNDLED_IMAGE_BYTES = 10L * 1024L * 1024L
         private const val MAX_TOTAL_IMAGE_BYTES = 50L * 1024L * 1024L
+
+        // Page size for keyset-streaming the unbounded tables (listening events,
+        // scrobble archive) during export. Keeps peak memory flat regardless of
+        // library size.
+        private const val EXPORT_PAGE_SIZE = 2000
+
+        // Chunk size for feeding streamed import rows into the dedup pipeline.
+        private const val EVENT_IMPORT_CHUNK = 5000
+        private const val ARCHIVE_IMPORT_CHUNK = 500
     }
     
     private val moshi = buildImportExportMoshi()
+    private val codec = TempoExportJsonCodec(moshi)
+
+    // ImportExportManager is a singleton and both export and import mutate shared
+    // state (progress flow) while hammering the DB. A manual backup and a scheduled
+    // worker backup must never interleave, so only one operation runs at a time.
+    private val operationInProgress = AtomicBoolean(false)
     
     private val _progress = MutableStateFlow<ImportExportProgress?>(null)
     val progress: StateFlow<ImportExportProgress?> = _progress.asStateFlow()
@@ -65,15 +83,22 @@ class ImportExportManager @Inject constructor(
         uri: Uri, 
         includeLocalImages: Boolean = true
     ): ImportExportResult = withContext(Dispatchers.IO) {
+        if (!operationInProgress.compareAndSet(false, true)) {
+            return@withContext ImportExportResult.Error(
+                "Another backup/restore is already in progress. Please wait for it to finish."
+            )
+        }
         try {
             _progress.value = ImportExportProgress("Collecting data...", 0, 100, true)
             
-            // Collect all data
+            // Collect all bounded tables. The two unbounded tables (listening events,
+            // scrobble archive) are NOT loaded here — they are streamed page by page
+            // straight into the JSON writer below, so peak memory stays flat no
+            // matter how large the library is.
             val tracks = database.trackDao().getAllSync()
             val artists = database.artistDao().getAllArtistsSync()
             val albums = database.albumDao().getAllSync()
             val trackArtists = database.trackArtistDao().getAllSync()
-            val listeningEvents = database.listeningEventDao().getAllEventsSync()
             val enrichedMetadata = database.enrichedMetadataDao().getAllSync()
             val userPrefs = database.userPreferencesDao().getSync()
             val artistAliases = database.artistAliasDao().getAllSync()
@@ -82,7 +107,6 @@ class ImportExportManager @Inject constructor(
             val trackAliases = database.trackAliasDao().getAllSync()
             val manualContentMarks = database.manualContentMarkDao().getAllSync()
             val appPreferences = database.appPreferenceDao().getAllSync()
-            val scrobbleArchive = database.scrobbleArchiveDao().getAll()
             val lastFmImportMetadata = database.lastFmImportMetadataDao().getAll()
             
             // v6: Collect gamification data
@@ -144,7 +168,10 @@ class ImportExportManager @Inject constructor(
                     
                     _progress.value = ImportExportProgress("Writing data...", 80, 100)
                     
-                    // Create export data using current database schema version
+                    // Shell document carrying every bounded table. The codec streams
+                    // listening events and scrobble archive rows page by page through
+                    // the lambdas below (keyset pagination on the primary key), so
+                    // neither table is ever held in memory whole.
                     val exportData = TempoExportData(
                         appVersion = BuildConfig.VERSION_NAME,
                         schemaVersion = AppDatabase.VERSION,
@@ -154,7 +181,7 @@ class ImportExportManager @Inject constructor(
                         artists = artists,
                         albums = albums,
                         trackArtists = trackArtists,
-                        listeningEvents = listeningEvents,
+                        listeningEvents = emptyList(),
                         enrichedMetadata = enrichedMetadata,
                         userPreferences = userPrefs,
                         userLevel = userLevel,
@@ -165,22 +192,38 @@ class ImportExportManager @Inject constructor(
                         trackAliases = trackAliases,
                         manualContentMarks = manualContentMarks,
                         appPreferences = appPreferences,
-                        scrobbleArchive = scrobbleArchive,
+                        scrobbleArchive = emptyList(),
                         lastFmImportMetadata = lastFmImportMetadata,
                         localImageManifest = localImageManifest,
                         hotlinkedUrls = hotlinkUrls
                     )
-                    
-                    // Serialize and write data.json. Stream the JSON straight into the
-                    // zip entry via a JsonWriter over an okio sink so the full document
-                    // is never held in memory at once (prevents OutOfMemoryError on
-                    // large libraries with many listening events / scrobble rows).
-                    val adapter = moshi.adapter(TempoExportData::class.java)
+
+                    var lastEventId = 0L
+                    var eventsWritten = 0
+                    var lastArchiveId = 0L
 
                     zipOut.putNextEntry(ZipEntry(TempoExportData.DATA_FILENAME))
                     val dataSink = zipOut.sink().buffer()
                     val jsonWriter = JsonWriter.of(dataSink)
-                    adapter.toJson(jsonWriter, exportData)
+                    codec.write(
+                        writer = jsonWriter,
+                        shell = exportData,
+                        eventPages = {
+                            val page = database.listeningEventDao()
+                                .getEventsPage(lastEventId, EXPORT_PAGE_SIZE)
+                            if (page.isNotEmpty()) {
+                                lastEventId = page.last().id
+                                eventsWritten += page.size
+                            }
+                            page
+                        },
+                        archivePages = {
+                            val page = database.scrobbleArchiveDao()
+                                .getArchivePage(lastArchiveId, EXPORT_PAGE_SIZE)
+                            if (page.isNotEmpty()) lastArchiveId = page.last().id
+                            page
+                        }
+                    )
                     dataSink.flush()
                     zipOut.closeEntry()
                     
@@ -190,7 +233,7 @@ class ImportExportManager @Inject constructor(
                         tracksCount = tracks.size,
                         artistsCount = artists.size,
                         albumsCount = albums.size,
-                        eventsCount = listeningEvents.size,
+                        eventsCount = eventsWritten,
                         imagesCount = bundledCount
                     )
                 }
@@ -200,6 +243,7 @@ class ImportExportManager @Inject constructor(
             Log.e(TAG, "Export failed", e)
             ImportExportResult.Error("Export failed: ${e.message}", e)
         } finally {
+            operationInProgress.set(false)
             delay(1000)
             _progress.value = null
         }
@@ -215,6 +259,21 @@ class ImportExportManager @Inject constructor(
         uri: Uri,
         conflictStrategy: ImportConflictStrategy
     ): ImportExportResult = withContext(Dispatchers.IO) {
+        if (!operationInProgress.compareAndSet(false, true)) {
+            return@withContext ImportExportResult.Error(
+                "Another backup/restore is already in progress. Please wait for it to finish."
+            )
+        }
+
+        // The two unbounded arrays (listening events, scrobble archive) are streamed
+        // out of the ZIP into JSON-lines staging files during pass 1, then replayed
+        // chunk by chunk inside the DB transaction. Neither table is ever held in
+        // memory whole, so restores of huge libraries cannot OOM.
+        val stagedEventsFile = File(context.cacheDir, "import_events.jsonl")
+        val stagedArchiveFile = File(context.cacheDir, "import_archive.jsonl")
+        stagedEventsFile.delete()
+        stagedArchiveFile.delete()
+
         try {
             _progress.value = ImportExportProgress("Reading backup file...", 0, 100, true)
             
@@ -222,6 +281,8 @@ class ImportExportManager @Inject constructor(
             var exportData: TempoExportData? = null
             val extractedImages = mutableMapOf<String, String>() // bundledName -> newPath
             var totalExtractedImageBytes = 0L
+            var stagedEventCount = 0
+            var stagedArchiveCount = 0
             
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
                 ZipInputStream(BufferedInputStream(inputStream)).use { zipIn ->
@@ -229,10 +290,34 @@ class ImportExportManager @Inject constructor(
                     while (entry != null) {
                         when {
                             entry.name == TempoExportData.DATA_FILENAME -> {
-                                // Use streaming to avoid loading entire JSON into memory
-                                val adapter = moshi.adapter(TempoExportData::class.java)
-                                val bufferedSource = zipIn.source().buffer()
-                                exportData = adapter.fromJson(bufferedSource)
+                                // Stream-parse the document: bounded tables are collected,
+                                // unbounded arrays are staged row by row.
+                                val reader = JsonReader.of(zipIn.source().buffer())
+                                val eventAdapter = moshi.adapter(ListeningEvent::class.java)
+                                val archiveAdapter = moshi.adapter(ScrobbleArchive::class.java)
+                                val eventSink = stagedEventsFile.sink().buffer()
+                                val archiveSink = stagedArchiveFile.sink().buffer()
+                                try {
+                                    exportData = codec.read(
+                                        reader,
+                                        TempoExportJsonCodec.StreamHandlers(
+                                            onListeningEvent = { event ->
+                                                eventAdapter.toJson(eventSink, event)
+                                                eventSink.writeUtf8("\n")
+                                                stagedEventCount++
+                                            },
+                                            onScrobbleArchiveRow = { row ->
+                                                archiveAdapter.toJson(archiveSink, row)
+                                                archiveSink.writeUtf8("\n")
+                                                stagedArchiveCount++
+                                            }
+                                        )
+                                    )
+                                } finally {
+                                    // flush only — close() would close the ZipInputStream
+                                    eventSink.flush()
+                                    archiveSink.flush()
+                                }
                             }
                             entry.name.startsWith(IMAGES_DIR) && !entry.isDirectory -> {
                                 // Extract image to local storage
@@ -265,7 +350,7 @@ class ImportExportManager @Inject constructor(
                 )
             }
             
-            Log.i(TAG, "Extracted ${extractedImages.size} images")
+            Log.i(TAG, "Extracted ${extractedImages.size} images, staged $stagedEventCount events and $stagedArchiveCount archive rows")
             
             // Build path mapping: old file:// path -> new file:// path
             val pathMapping = data.localImageManifest.mapNotNull { (bundledName, originalPath) ->
@@ -295,7 +380,16 @@ class ImportExportManager @Inject constructor(
                 
                 if (existingArtist != null) {
                     if (conflictStrategy == ImportConflictStrategy.REPLACE) {
-                        database.artistDao().update(remappedArtist.copy(id = existingArtist.id))
+                        // Guard the unique musicbrainz_id index: if the backup's MBID
+                        // already belongs to a DIFFERENT artist row, applying it here
+                        // would throw and abort the whole restore. Drop it instead.
+                        val safeArtist = remappedArtist.copy(
+                            musicbrainzId = remappedArtist.musicbrainzId?.let { mbid ->
+                                val holder = database.artistDao().getArtistByMusicBrainzId(mbid)
+                                if (holder == null || holder.id == existingArtist.id) mbid else null
+                            }
+                        )
+                        database.artistDao().update(safeArtist.copy(id = existingArtist.id))
                     }
                     artistIdMap[artist.id] = existingArtist.id
                 } else {
@@ -303,6 +397,11 @@ class ImportExportManager @Inject constructor(
                     if (newId > 0) {
                         artistIdMap[artist.id] = newId
                         importedArtists++
+                    } else {
+                        // IGNORE'd insert (unique constraint raced) — recover the
+                        // mapping via lookup so dependent rows are not orphaned.
+                        database.artistDao().getArtistByNormalizedName(remappedArtist.normalizedName)
+                            ?.let { artistIdMap[artist.id] = it.id }
                     }
                 }
             }
@@ -325,7 +424,14 @@ class ImportExportManager @Inject constructor(
                 
                 if (existingAlbum != null) {
                     if (conflictStrategy == ImportConflictStrategy.REPLACE) {
-                        database.albumDao().update(remappedAlbum.copy(id = existingAlbum.id))
+                        // Guard the unique musicbrainz_id index (see artist guard above).
+                        val safeAlbum = remappedAlbum.copy(
+                            musicbrainzId = remappedAlbum.musicbrainzId?.let { mbid ->
+                                val holder = database.albumDao().getAlbumByMusicBrainzId(mbid)
+                                if (holder == null || holder.id == existingAlbum.id) mbid else null
+                            }
+                        )
+                        database.albumDao().update(safeAlbum.copy(id = existingAlbum.id))
                     }
                     albumIdMap[album.id] = existingAlbum.id
                 } else {
@@ -333,6 +439,10 @@ class ImportExportManager @Inject constructor(
                     if (newId > 0) {
                         albumIdMap[album.id] = newId
                         importedAlbums++
+                    } else {
+                        // IGNORE'd insert — recover the mapping via lookup.
+                        database.albumDao().getAlbumByTitleAndArtist(album.title, artistName)
+                            ?.let { albumIdMap[album.id] = it.id }
                     }
                 }
             }
@@ -350,12 +460,31 @@ class ImportExportManager @Inject constructor(
                 
                 if (existingTrack != null) {
                     if (conflictStrategy == ImportConflictStrategy.REPLACE) {
-                        database.trackDao().update(remappedTrack.copy(id = existingTrack.id))
+                        // Guard the unique spotify_id / youtube_id indices: if the
+                        // backup's IDs already belong to a DIFFERENT track row,
+                        // applying them would throw and abort the whole restore.
+                        val safeTrack = remappedTrack.copy(
+                            spotifyId = remappedTrack.spotifyId?.let { sid ->
+                                val holder = database.trackDao().findBySpotifyId(sid)
+                                if (holder == null || holder.id == existingTrack.id) sid else null
+                            },
+                            youtubeId = remappedTrack.youtubeId?.let { yid ->
+                                val holder = database.trackDao().findByYoutubeId(yid)
+                                if (holder == null || holder.id == existingTrack.id) yid else null
+                            }
+                        )
+                        database.trackDao().update(safeTrack.copy(id = existingTrack.id))
                     } else {
+                        // Backfill missing fields, but never steal a unique ID that
+                        // another track already owns.
                         val backfilled = existingTrack.copy(
-                            spotifyId = existingTrack.spotifyId ?: remappedTrack.spotifyId,
+                            spotifyId = existingTrack.spotifyId ?: remappedTrack.spotifyId?.let { sid ->
+                                if (database.trackDao().findBySpotifyId(sid) == null) sid else null
+                            },
                             musicbrainzId = existingTrack.musicbrainzId ?: remappedTrack.musicbrainzId,
-                            youtubeId = existingTrack.youtubeId ?: remappedTrack.youtubeId,
+                            youtubeId = existingTrack.youtubeId ?: remappedTrack.youtubeId?.let { yid ->
+                                if (database.trackDao().findByYoutubeId(yid) == null) yid else null
+                            },
                             album = existingTrack.album ?: remappedTrack.album,
                             albumArtUrl = existingTrack.albumArtUrl ?: remappedTrack.albumArtUrl,
                             duration = existingTrack.duration ?: remappedTrack.duration
@@ -370,6 +499,15 @@ class ImportExportManager @Inject constructor(
                     if (newId > 0) {
                         trackIdMap[track.id] = newId
                         importedTracks++
+                    } else {
+                        // IGNORE'd insert (unique spotify/youtube id raced) — recover
+                        // the mapping via lookup so listening events are not dropped.
+                        val recovered = remappedTrack.spotifyId?.takeIf { it.isNotBlank() }
+                            ?.let { database.trackDao().findBySpotifyId(it) }
+                            ?: remappedTrack.youtubeId?.takeIf { it.isNotBlank() }
+                                ?.let { database.trackDao().findByYoutubeId(it) }
+                            ?: database.trackDao().findByTitleAndArtist(remappedTrack.title, remappedTrack.artist)
+                        recovered?.let { trackIdMap[track.id] = it.id }
                     }
                 }
             }
@@ -386,15 +524,13 @@ class ImportExportManager @Inject constructor(
             
             _progress.value = ImportExportProgress("Importing listening history...", 65, 100)
             
-            // Import ListeningEvents - SORTED CHRONOLOGICALLY, deduplicated against existing rows
-            val sortedEvents = data.listeningEvents.sortedBy { it.timestamp }
-            val remappedEvents = sortedEvents.mapNotNull { event ->
-                val newTrackId = trackIdMap[event.track_id] ?: return@mapNotNull null
-                event.copy(id = 0, track_id = newTrackId)
-            }
-            val dedupResult = database.listeningEventDao().insertAllBatchedWithDedup(remappedEvents)
-            importedEvents = dedupResult.inserted
-            Log.i(TAG, "Imported $importedEvents listening events (${dedupResult.skipped} skipped as duplicates)")
+            // Import ListeningEvents from the staged JSON-lines file, chunk by chunk,
+            // through the dedup pipeline. Rows are remapped to local track IDs; rows
+            // whose track could not be mapped are skipped. The pipeline deduplicates
+            // against existing rows (fingerprint + temporal reconciliation), so a
+            // re-import is a no-op and real listening data is never overwritten.
+            importedEvents = replayStagedEvents(stagedEventsFile, trackIdMap)
+            Log.i(TAG, "Imported $importedEvents listening events from staged file")
             
             _progress.value = ImportExportProgress("Importing metadata...", 80, 100)
             
@@ -517,12 +653,14 @@ class ImportExportManager @Inject constructor(
                 Log.i(TAG, "Imported ${data.appPreferences.size} app preferences")
             }
             
-            // v5: Import Scrobble Archive (Last.fm compressed history)
-            if (data.scrobbleArchive.isNotEmpty()) {
-                val remappedArchive = data.scrobbleArchive.map { it.copy(id = 0) }
-                database.scrobbleArchiveDao().insertAll(remappedArchive)
-                Log.i(TAG, "Imported ${data.scrobbleArchive.size} archived scrobble entries")
-            }
+            // v5: Import Scrobble Archive (Last.fm compressed history) from the
+            // staged JSON-lines file, chunk by chunk. Conflict handling:
+            //  - SKIP: never touch existing rows (IGNORE insert). An older backup
+            //    can no longer regress newer play counts / timestamp blobs.
+            //  - REPLACE: merge timestamp sets so the union of both histories is
+            //    kept instead of one side silently overwriting the other.
+            val archiveStats = replayStagedArchive(stagedArchiveFile, conflictStrategy)
+            Log.i(TAG, "Imported scrobble archive: ${archiveStats.first} new, ${archiveStats.second} merged/skipped")
             
             // v5: Import Last.fm Import Metadata
             if (data.lastFmImportMetadata.isNotEmpty()) {
@@ -568,9 +706,120 @@ class ImportExportManager @Inject constructor(
             Log.e(TAG, "Import failed", e)
             ImportExportResult.Error("Import failed: ${e.message}", e)
         } finally {
+            operationInProgress.set(false)
+            stagedEventsFile.delete()
+            stagedArchiveFile.delete()
             delay(1000)
             _progress.value = null
         }
+    }
+
+    /**
+     * Replays staged listening events (one JSON object per line) in chunks through
+     * the dedup pipeline. Rows whose track could not be mapped are skipped.
+     * Returns the number of newly inserted events.
+     */
+    private suspend fun replayStagedEvents(
+        stagedFile: File,
+        trackIdMap: Map<Long, Long>
+    ): Int {
+        if (!stagedFile.exists() || stagedFile.length() == 0L) return 0
+
+        val eventAdapter = moshi.adapter(ListeningEvent::class.java)
+        var inserted = 0
+        var chunk = ArrayList<ListeningEvent>(EVENT_IMPORT_CHUNK)
+
+        suspend fun flush() {
+            if (chunk.isEmpty()) return
+            val result = database.listeningEventDao().insertAllBatchedWithDedup(chunk)
+            inserted += result.inserted
+            chunk = ArrayList(EVENT_IMPORT_CHUNK)
+        }
+
+        stagedFile.bufferedReader().useLines { lines ->
+            for (line in lines) {
+                if (line.isBlank()) continue
+                val event = try {
+                    eventAdapter.fromJson(line)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Skipping malformed staged listening event", e)
+                    null
+                } ?: continue
+                val newTrackId = trackIdMap[event.track_id] ?: continue
+                chunk.add(event.copy(id = 0, track_id = newTrackId))
+                if (chunk.size >= EVENT_IMPORT_CHUNK) {
+                    flush()
+                }
+            }
+        }
+        flush()
+        return inserted
+    }
+
+    /**
+     * Replays staged scrobble archive rows (one JSON object per line) in chunks.
+     *
+     * - [ImportConflictStrategy.SKIP]: existing rows are never touched (IGNORE
+     *   insert), so an older backup cannot regress newer play counts.
+     * - [ImportConflictStrategy.REPLACE]: timestamp sets are merged (union) so
+     *   neither side of the history is silently lost.
+     *
+     * Returns (newRows, mergedOrSkippedRows).
+     */
+    private suspend fun replayStagedArchive(
+        stagedFile: File,
+        conflictStrategy: ImportConflictStrategy
+    ): Pair<Int, Int> {
+        if (!stagedFile.exists() || stagedFile.length() == 0L) return 0 to 0
+
+        val archiveAdapter = moshi.adapter(ScrobbleArchive::class.java)
+        var newRows = 0
+        var mergedOrSkipped = 0
+        var chunk = ArrayList<ScrobbleArchive>(ARCHIVE_IMPORT_CHUNK)
+
+        suspend fun flush() {
+            if (chunk.isEmpty()) return
+            when (conflictStrategy) {
+                ImportConflictStrategy.SKIP -> {
+                    // IGNORE insert returns -1 for rows skipped by the unique
+                    // track_hash index, so the return values tell us exactly
+                    // how many were new vs. skipped.
+                    val results = database.scrobbleArchiveDao().insertAllIgnore(chunk.map { it.copy(id = 0) })
+                    val inserted = results.count { it > 0 }
+                    newRows += inserted
+                    mergedOrSkipped += chunk.size - inserted
+                }
+                ImportConflictStrategy.REPLACE -> {
+                    for (row in chunk) {
+                        val (id, _) = database.scrobbleArchiveDao().upsertWithMerge(
+                            row.copy(id = 0),
+                            ArchiveTimestampCodec::decompress,
+                            ArchiveTimestampCodec::compress
+                        )
+                        if (id > 0) newRows++ else mergedOrSkipped++
+                    }
+                }
+            }
+            chunk = ArrayList(ARCHIVE_IMPORT_CHUNK)
+        }
+
+        stagedFile.bufferedReader().useLines { lines ->
+            for (line in lines) {
+                if (line.isBlank()) continue
+                val row = try {
+                    archiveAdapter.fromJson(line)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Skipping malformed staged scrobble archive row", e)
+                    null
+                } ?: continue
+                chunk.add(row)
+                if (chunk.size >= ARCHIVE_IMPORT_CHUNK) {
+                    flush()
+                }
+            }
+        }
+        flush()
+        return newRows to mergedOrSkipped
     }
     
     /**

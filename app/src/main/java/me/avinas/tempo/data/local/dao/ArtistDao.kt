@@ -20,16 +20,8 @@ interface ArtistDao {
     @Query("SELECT * FROM artists")
     fun getAllArtists(): Flow<List<Artist>>
     
-    @Query("SELECT * FROM artists LIMIT 500")
-    suspend fun getAllArtistsSync(): List<Artist>
-
-    /**
-     * Get ALL artists without any limit.
-     * Intended for one-time maintenance tasks (e.g. data repair) — prefer
-     * [getAllArtistsSync] or paged queries for regular UI/business logic.
-     */
     @Query("SELECT * FROM artists")
-    suspend fun getAllSync(): List<Artist>
+    suspend fun getAllArtistsSync(): List<Artist>
 
     @Query("SELECT COUNT(*) FROM artists")
     suspend fun getCount(): Int

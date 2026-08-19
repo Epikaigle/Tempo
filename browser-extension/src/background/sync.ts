@@ -30,6 +30,66 @@ const TOKEN_REFRESH_ALARM_NAME = 'tempo-token-refresh';
 const TOKEN_REFRESH_INTERVAL_MINUTES = 60;
 const AUTH_FAILURE_THRESHOLD = 3;
 
+/** Default cooldown when the phone rate-limits us and gives no Retry-After. */
+const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000;
+/** Never cool down for less than this, even with a tiny Retry-After. */
+const MIN_RATE_LIMIT_COOLDOWN_MS = 30_000;
+/** Exponential retry-alarm cap. */
+const MAX_RETRY_DELAY_MINUTES = 60;
+
+// ---- Error taxonomy ---------------------------------------------------------
+//
+// User-reported failure modes (401, 502, "Phone Unreachable", RateLimited)
+// need different reactions:
+//   • rate_limited / server / network / unreachable / battery are TRANSIENT —
+//     plays stay queued and we back off exponentially instead of hammering.
+//   • auth / rejected are FATAL for the current batch — plays are marked
+//     failed so the user sees them and can retry deliberately.
+
+export type SyncErrorKind =
+  | 'rate_limited'
+  | 'auth'
+  | 'rejected'
+  | 'server'
+  | 'network'
+  | 'unreachable'
+  | 'battery'
+  | 'unknown';
+
+export class SyncError extends Error {
+  constructor(
+    message: string,
+    readonly kind: SyncErrorKind,
+    readonly httpStatus?: number,
+    readonly retryAfterMs?: number,
+  ) {
+    super(message);
+    this.name = 'SyncError';
+  }
+}
+
+/** Transient errors keep plays queued; fatal errors mark them failed. */
+export function isTransientSyncError(kind: SyncErrorKind): boolean {
+  return kind === 'rate_limited' || kind === 'server' || kind === 'network' ||
+         kind === 'unreachable' || kind === 'battery';
+}
+
+/** Exponential backoff for the retry alarm: 0.5, 1, 2, 4, 8, … capped at 60 min. */
+export function backoffDelayMinutes(consecutiveFailures: number): number {
+  const exp = Math.max(consecutiveFailures - 1, 0);
+  return Math.min(0.5 * Math.pow(2, exp), MAX_RETRY_DELAY_MINUTES);
+}
+
+/** Parse a Retry-After header (delta-seconds or HTTP-date) into milliseconds. */
+function parseRetryAfterMs(headerValue: string | null): number | undefined {
+  if (!headerValue) return undefined;
+  const seconds = Number(headerValue);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const dateMs = Date.parse(headerValue);
+  if (!Number.isNaN(dateMs)) return Math.max(dateMs - Date.now(), 0);
+  return undefined;
+}
+
 // ---- Adaptive sync --------------------------------------------------------
 
 function getAdaptiveSyncInterval(queueSize: number, baseIntervalMinutes: number): number {
@@ -81,12 +141,65 @@ export interface SyncStatus {
   lastSyncResult: string | null;
   isSyncing: boolean;
   queueCount: number;
+  /** Classified kind of the last failure, if any. */
+  lastErrorKind: SyncErrorKind | null;
+  /** HTTP status of the last failure, if any. */
+  lastErrorStatus: number | null;
+  /** Consecutive failed sync attempts (resets on success). */
+  consecutiveFailures: number;
+  /** Epoch ms until which we are cooling down after a rate limit, if any. */
+  rateLimitedUntil: number | null;
+  /** Epoch ms of the next scheduled retry, if one is pending. */
+  nextRetryAt: number | null;
 }
 
 let _isSyncing = false;
 let _lastSyncTime: string | null = null;
 let _lastSyncResult: string | null = null;
 let _lastSubnetScanAt = 0;
+let _lastErrorKind: SyncErrorKind | null = null;
+let _lastErrorStatus: number | null = null;
+let _consecutiveFailures = 0;
+let _rateLimitedUntil: number | null = null;
+let _nextRetryAt: number | null = null;
+
+/** Persist backoff state so a service-worker restart doesn't reset cooldowns. */
+async function persistBackoffState(): Promise<void> {
+  try {
+    await storage.saveSyncBackoff({
+      lastErrorKind: _lastErrorKind,
+      lastErrorStatus: _lastErrorStatus,
+      consecutiveFailures: _consecutiveFailures,
+      rateLimitedUntil: _rateLimitedUntil,
+      nextRetryAt: _nextRetryAt,
+      lastSyncTime: _lastSyncTime,
+      lastSyncResult: _lastSyncResult,
+    });
+  } catch { /* best-effort */ }
+}
+
+/**
+ * Restore backoff state after service-worker hibernation. Called once at
+ * startup; without it a worker restart would forget an active rate-limit
+ * cooldown and immediately hammer the phone again.
+ */
+export async function restoreBackoffState(): Promise<void> {
+  try {
+    const saved = await storage.getSyncBackoff();
+    if (!saved) return;
+    _lastErrorKind = (saved.lastErrorKind as SyncErrorKind | null) ?? null;
+    _lastErrorStatus = saved.lastErrorStatus ?? null;
+    _consecutiveFailures = saved.consecutiveFailures ?? 0;
+    _rateLimitedUntil = saved.rateLimitedUntil ?? null;
+    _nextRetryAt = saved.nextRetryAt ?? null;
+    _lastSyncTime = saved.lastSyncTime ?? null;
+    _lastSyncResult = saved.lastSyncResult ?? null;
+    console.log(
+      `[Tempo] Restored sync backoff state (failures=${_consecutiveFailures}, ` +
+      `rateLimited=${_rateLimitedUntil ? 'yes' : 'no'})`,
+    );
+  } catch { /* best-effort */ }
+}
 
 export interface SyncOptions {
   forceDiscovery?: boolean;
@@ -98,6 +211,11 @@ export function getSyncStatus(queueCount: number): SyncStatus {
     lastSyncResult: _lastSyncResult,
     isSyncing: _isSyncing,
     queueCount,
+    lastErrorKind: _lastErrorKind,
+    lastErrorStatus: _lastErrorStatus,
+    consecutiveFailures: _consecutiveFailures,
+    rateLimitedUntil: _rateLimitedUntil,
+    nextRetryAt: _nextRetryAt,
   };
 }
 
@@ -406,14 +524,25 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
   _isSyncing = true;
 
   try {
+    // 0. Rate-limit cooldown — if the phone recently told us to slow down,
+    //    don't even try. Hammering during cooldown is what causes repeated
+    //    RateLimited errors.
+    if (_rateLimitedUntil && Date.now() < _rateLimitedUntil) {
+      const waitS = Math.ceil((_rateLimitedUntil - Date.now()) / 1000);
+      console.log(`[Tempo] Sync skipped — rate-limit cooldown active (${waitS}s remaining)`);
+      _lastSyncResult = `Waiting ${waitS}s before retrying (phone rate limit)`;
+      _lastSyncTime = new Date().toISOString();
+      return 0;
+    }
+
     // 1. Get pairing info
     let pairing = await storage.getPairing();
     if (!pairing) {
-      throw new Error('Not paired with any device');
+      throw new SyncError('Not paired with any device', 'unknown');
     }
 
     if (!pairing.authToken) {
-      throw new Error('Auth token not available — please re-pair from the popup (session may have expired)');
+      throw new SyncError('Auth token not available — please re-pair from the popup (session may have expired)', 'auth');
     }
 
     // 2. Retry any previously failed plays first
@@ -433,7 +562,10 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
     // 4. Resolve phone address
     const address = await resolvePhoneAddress(pairing, options);
     if (!address) {
-      throw new Error(`Cannot reach phone at ${pairing.phoneIp}:${pairing.phonePort}`);
+      throw new SyncError(
+        `Cannot reach phone at ${pairing.phoneIp}:${pairing.phonePort}`,
+        'unreachable',
+      );
     }
 
     // 4a. Sync resolved address back into local pairing so any subsequent
@@ -447,13 +579,16 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
     const hasPermission = await hasHostPermission(origin);
     if (!hasPermission) {
       console.warn(`[Tempo] Missing host permission for ${origin} — re-pair from popup to grant it`);
-      throw new Error(`Missing network permission for ${address.ip}. Open the extension popup and re-pair to grant access.`);
+      throw new SyncError(
+        `Missing network permission for ${address.ip}. Open the extension popup and re-pair to grant access.`,
+        'unknown',
+      );
     }
 
     // 5. Check phone battery
     const batteryOk = await checkPhoneBattery(address.ip, address.port, pairing.authToken);
     if (!batteryOk) {
-      throw new Error('Phone battery is critically low, sync postponed');
+      throw new SyncError('Phone battery is critically low, sync postponed', 'battery');
     }
 
     // 6. Check for stale checkpoint from previous hibernation
@@ -535,16 +670,23 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
         await storage.markPlaysSynced(batchIds);
         totalSynced += batch.length;
       } else {
-        throw new Error(`Phone rejected batch ${i + 1}: server returned ok=false`);
+        throw new SyncError(`Phone rejected batch ${i + 1}: server returned ok=false`, 'rejected');
       }
     }
 
     await storage.clearSyncCheckpoint();
 
-    // 7. Record success
+    // 7. Record success — reset all backoff state
     await storage.recordSync(totalSynced, 'success', null);
     _lastSyncResult = `Synced ${totalSynced} plays`;
     _lastSyncTime = new Date().toISOString();
+    _lastErrorKind = null;
+    _lastErrorStatus = null;
+    _consecutiveFailures = 0;
+    _rateLimitedUntil = null;
+    _nextRetryAt = null;
+    await chrome.alarms.clear(RETRY_ALARM_NAME);
+    await persistBackoffState();
 
     // 8. Cleanup old records
     await storage.cleanupOldRecords();
@@ -555,21 +697,51 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
 
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
+    const kind: SyncErrorKind = error instanceof SyncError ? error.kind : 'unknown';
+    const httpStatus = error instanceof SyncError ? error.httpStatus : undefined;
+    const transient = isTransientSyncError(kind);
+
     _lastSyncResult = `Failed: ${msg}`;
     _lastSyncTime = new Date().toISOString();
+    _lastErrorKind = kind;
+    _lastErrorStatus = httpStatus ?? null;
+    _consecutiveFailures++;
 
-    // Mark all remaining queued plays as failed
     try {
-      const plays = await storage.getQueuedPlays();
-      const ids = plays.filter(p => p.id != null).map(p => p.id!);
-      await storage.markPlaysFailed(ids);
+      if (kind === 'rate_limited') {
+        // Honor Retry-After; default to 60s. Plays stay queued — this is a
+        // "slow down" signal, not a failure.
+        const cooldownMs = Math.max(
+          (error instanceof SyncError ? error.retryAfterMs : undefined) ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS,
+          MIN_RATE_LIMIT_COOLDOWN_MS,
+        );
+        _rateLimitedUntil = Date.now() + cooldownMs;
+        const delayMin = Math.max(cooldownMs / 60_000, 0.5);
+        await scheduleRetryAlarm(delayMin);
+        console.warn(`[Tempo] Rate limited — cooling down ${Math.round(cooldownMs / 1000)}s, plays stay queued`);
+      } else if (kind === 'auth') {
+        // Stale token: try refreshing once, then retry soon. Plays stay queued.
+        await refreshToken();
+        await scheduleRetryAlarm(2);
+        console.warn('[Tempo] Auth failure — token refreshed, retry scheduled');
+      } else if (transient) {
+        // Network/server/unreachable/battery: plays stay queued, exponential backoff.
+        const delayMin = backoffDelayMinutes(_consecutiveFailures);
+        await scheduleRetryAlarm(delayMin);
+        console.warn(`[Tempo] Transient sync failure (${kind}) — retry in ${delayMin} min, plays stay queued`);
+      } else {
+        // Fatal (rejected/unknown): mark plays failed so the user can act.
+        const plays = await storage.getQueuedPlays();
+        const ids = plays.filter(p => p.id != null).map(p => p.id!);
+        await storage.markPlaysFailed(ids);
+        await scheduleRetryAlarm(10);
+      }
+    } catch { /* ignore — status already recorded */ }
 
-      // Schedule a retry alarm for 5 minutes from now
-      await scheduleRetryAlarm(5);
-    } catch { /* ignore */ }
+    await persistBackoffState();
 
     await storage.recordSync(0, 'failed', msg);
-    console.error(`[Tempo] Sync failed: ${msg}`);
+    console.error(`[Tempo] Sync failed (${kind}): ${msg}`);
     throw error;
   } finally {
     _isSyncing = false;
@@ -581,7 +753,7 @@ async function sendWithRetry(url: string, payload: SyncPayload, authToken: strin
   const encryptedBody = await encryptBody(payloadJson, authToken);
 
   let delayMs = INITIAL_RETRY_DELAY_MS;
-  let lastError = '';
+  let lastError: SyncError | null = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
@@ -621,30 +793,72 @@ async function sendWithRetry(url: string, payload: SyncPayload, authToken: strin
       }
 
       const body = await response.text();
+      const bodyLower = body.toLowerCase();
 
-      if (body.includes('battery_critical')) {
-        throw new Error('Phone battery is critically low');
+      // ---- Classify the failure -------------------------------------------
+
+      if (bodyLower.includes('battery_critical')) {
+        throw new SyncError('Phone battery is critically low', 'battery', response.status);
       }
 
+      // Rate limiting (HTTP 429 or RateLimited in body). Transient — honor
+      // Retry-After and back off at the sync level; do NOT retry immediately,
+      // that is exactly what triggers repeated rate limiting.
+      if (response.status === 429 || bodyLower.includes('ratelimited') || bodyLower.includes('rate_limited')) {
+        const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
+        throw new SyncError(
+          `Rate limited by phone (HTTP ${response.status})`,
+          'rate_limited',
+          response.status,
+          retryAfterMs,
+        );
+      }
+
+      // Auth failure — token is stale/rotated. Retrying with the same token is
+      // pointless; the sync layer refreshes the token and reschedules.
+      if (response.status === 401 || response.status === 403) {
+        throw new SyncError(
+          `Phone rejected auth (HTTP ${response.status}) — token may be stale`,
+          'auth',
+          response.status,
+        );
+      }
+
+      // Other 4xx — the phone actively rejected the payload. Fatal for this batch.
       if (response.status >= 400 && response.status < 500) {
-        throw new Error(`Phone rejected payload: HTTP ${response.status} - ${body}`);
+        throw new SyncError(
+          `Phone rejected payload: HTTP ${response.status} - ${body.slice(0, 200)}`,
+          'rejected',
+          response.status,
+        );
       }
 
-      lastError = `HTTP ${response.status}: ${body}`;
+      // 5xx — transient server-side failure (e.g. 502 Bad Gateway). Retry.
+      lastError = new SyncError(`HTTP ${response.status}: ${body.slice(0, 200)}`, 'server', response.status);
     } catch (e) {
-      if (e instanceof Error && e.message.includes('rejected')) throw e;
-      if (e instanceof Error && e.message.includes('battery')) throw e;
-      lastError = e instanceof Error ? e.message : String(e);
+      // Classified errors propagate immediately (no point retrying the same way).
+      if (e instanceof SyncError) throw e;
+
+      const msg = e instanceof Error ? e.message : String(e);
+      const isAbort = msg.includes('abort') || msg.includes('TimeoutError');
+      lastError = new SyncError(
+        isAbort ? 'Request timed out' : msg,
+        isAbort ? 'unreachable' : 'network',
+      );
     }
 
     if (attempt < MAX_RETRIES) {
-      console.log(`[Tempo] Attempt ${attempt}/${MAX_RETRIES} failed, retrying in ${delayMs}ms...`);
+      console.log(`[Tempo] Attempt ${attempt}/${MAX_RETRIES} failed (${lastError?.kind}), retrying in ${delayMs}ms...`);
       await new Promise(resolve => setTimeout(resolve, delayMs));
       delayMs *= 2;
     }
   }
 
-  throw new Error(`All ${MAX_RETRIES} attempts failed: ${lastError}`);
+  throw new SyncError(
+    `All ${MAX_RETRIES} attempts failed: ${lastError?.message ?? 'unknown error'}`,
+    lastError?.kind ?? 'unknown',
+    lastError?.httpStatus,
+  );
 }
 
 // ---- Alarm-based retry scheduling (hibernation-safe) -----------------------
@@ -657,10 +871,12 @@ export async function scheduleRetryAlarm(delayMinutes: number): Promise<void> {
   // Clear any existing retry alarm
   await chrome.alarms.clear(RETRY_ALARM_NAME);
 
+  const clamped = Math.max(delayMinutes, 0.5); // Minimum 30 seconds
   chrome.alarms.create(RETRY_ALARM_NAME, {
-    delayInMinutes: Math.max(delayMinutes, 0.5), // Minimum 30 seconds
+    delayInMinutes: clamped,
   });
-  console.log(`[Tempo] Retry sync alarm scheduled in ${delayMinutes} minutes`);
+  _nextRetryAt = Date.now() + clamped * 60_000;
+  console.log(`[Tempo] Retry sync alarm scheduled in ${clamped} minutes`);
 }
 
 /**

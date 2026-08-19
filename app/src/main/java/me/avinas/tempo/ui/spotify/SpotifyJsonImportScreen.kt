@@ -1,11 +1,5 @@
 package me.avinas.tempo.ui.spotify
 
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.SpotifyGreen
-import me.avinas.tempo.ui.theme.Divider
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoWarning
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -96,7 +90,7 @@ fun SpotifyJsonImportScreen(
                             Icon(
                                 imageVector = Icons.Default.Description,
                                 contentDescription = null,
-                                tint = SpotifyGreen,
+                                tint = Color(0xFF1DB954),
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -104,7 +98,7 @@ fun SpotifyJsonImportScreen(
                                 text = "Spotify Data Import",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                                color = Color.White
                             )
                         }
                     },
@@ -113,7 +107,7 @@ fun SpotifyJsonImportScreen(
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = TextPrimary
+                                tint = Color.White
                             )
                         }
                     },
@@ -199,7 +193,7 @@ private fun IdleContent(
             Icon(
                 imageVector = Icons.Default.FileOpen,
                 contentDescription = null,
-                tint = SpotifyGreen,
+                tint = Color(0xFF1DB954),
                 modifier = Modifier.size(48.dp)
             )
 
@@ -209,7 +203,7 @@ private fun IdleContent(
                 text = "Import from Spotify Data Export",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary,
+                color = Color.White,
                 textAlign = TextAlign.Center
             )
 
@@ -221,7 +215,7 @@ private fun IdleContent(
                     withLink(
                         LinkAnnotation.Url(
                             url = "https://spotify.com/account/privacy",
-                            styles = TextLinkStyles(style = SpanStyle(color = SpotifyGreen, textDecoration = TextDecoration.Underline))
+                            styles = TextLinkStyles(style = SpanStyle(color = Color(0xFF1DB954), textDecoration = TextDecoration.Underline))
                         )
                     ) {
                         append("spotify.com/account/privacy")
@@ -229,7 +223,7 @@ private fun IdleContent(
                     append(", then select the StreamingHistory or endsong JSON files here.")
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
+                color = Color.White.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center
             )
 
@@ -238,7 +232,7 @@ private fun IdleContent(
             Button(
                 onClick = onSelectFiles,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = SpotifyGreen
+                    containerColor = Color(0xFF1DB954)
                 ),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -258,7 +252,7 @@ private fun IdleContent(
                             text = "${selectedUris.size} file(s) selected",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
-                            color = TextPrimary
+                            color = Color.White
                         )
 
                         Spacer(modifier = Modifier.height(4.dp))
@@ -266,7 +260,7 @@ private fun IdleContent(
                         Text(
                             text = "Ready to import",
                             style = MaterialTheme.typography.bodySmall,
-                            color = SpotifyGreen
+                            color = Color(0xFF1DB954)
                         )
                     }
                 }
@@ -287,7 +281,7 @@ private fun IdleContent(
                     Button(
                         onClick = onImport,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = SpotifyGreen
+                            containerColor = Color(0xFF1DB954)
                         ),
                         modifier = Modifier.weight(1f)
                     ) {
@@ -308,7 +302,7 @@ private fun IdleContent(
                 text = "How to get your Spotify data",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = Color.White
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -319,7 +313,7 @@ private fun IdleContent(
                     withLink(
                         LinkAnnotation.Url(
                             url = "https://spotify.com/account/privacy",
-                            styles = TextLinkStyles(style = SpanStyle(color = SpotifyGreen, textDecoration = TextDecoration.Underline))
+                            styles = TextLinkStyles(style = SpanStyle(color = Color(0xFF1DB954), textDecoration = TextDecoration.Underline))
                         )
                     ) {
                         append("spotify.com/account/privacy")
@@ -335,7 +329,7 @@ private fun IdleContent(
                 Text(
                     text = step,
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
+                    color = Color.White.copy(alpha = 0.7f),
                     modifier = Modifier.padding(vertical = 2.dp)
                 )
             }
@@ -353,7 +347,7 @@ private fun ImportingContent(importState: SpotifyJsonImportService.ImportState) 
             modifier = Modifier.fillMaxWidth()
         ) {
             CircularProgressIndicator(
-                color = SpotifyGreen,
+                color = Color(0xFF1DB954),
                 modifier = Modifier.size(48.dp)
             )
 
@@ -363,7 +357,7 @@ private fun ImportingContent(importState: SpotifyJsonImportService.ImportState) 
                 text = "Importing...",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = Color.White
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -384,7 +378,7 @@ private fun ImportingContent(importState: SpotifyJsonImportService.ImportState) 
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
+                color = Color.White.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center
             )
 
@@ -393,8 +387,8 @@ private fun ImportingContent(importState: SpotifyJsonImportService.ImportState) 
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier.fillMaxWidth(),
-                color = SpotifyGreen,
-                trackColor = Divider
+                color = Color(0xFF1DB954),
+                trackColor = Color.White.copy(alpha = 0.1f)
             )
         }
     }
@@ -416,7 +410,7 @@ private fun CompletedContent(
             Icon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = null,
-                tint = SpotifyGreen,
+                tint = Color(0xFF1DB954),
                 modifier = Modifier.size(56.dp)
             )
 
@@ -426,7 +420,7 @@ private fun CompletedContent(
                 text = "Import Complete!",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = Color.White
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -440,9 +434,6 @@ private fun CompletedContent(
             if (result.lowQualitySkipped > 0) {
                 StatRow("Low-quality plays skipped", result.lowQualitySkipped)
             }
-            if (result.invalidSkipped > 0) {
-                StatRow("Unreadable entries skipped", result.invalidSkipped)
-            }
             StatRow("Files processed", result.filesProcessed)
 
             if (result.errors.isNotEmpty()) {
@@ -450,7 +441,7 @@ private fun CompletedContent(
                 Text(
                     text = "${result.errors.size} warnings",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TempoWarning
+                    color = Color(0xFFFFA500)
                 )
             }
 
@@ -462,7 +453,7 @@ private fun CompletedContent(
                     onNavigateBack()
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = SpotifyGreen
+                    containerColor = Color(0xFF1DB954)
                 ),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -483,13 +474,13 @@ private fun StatRow(label: String, value: Int) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
+            color = Color.White.copy(alpha = 0.7f)
         )
         Text(
             text = value.toString(),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary
+            color = Color.White
         )
     }
 }
@@ -510,7 +501,7 @@ private fun ErrorContent(
             Icon(
                 imageVector = Icons.Default.Error,
                 contentDescription = null,
-                tint = TempoError,
+                tint = Color(0xFFE74C3C),
                 modifier = Modifier.size(56.dp)
             )
 
@@ -520,7 +511,7 @@ private fun ErrorContent(
                 text = "Import Failed",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = Color.White
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -528,7 +519,7 @@ private fun ErrorContent(
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
+                color = Color.White.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center
             )
 
@@ -548,7 +539,7 @@ private fun ErrorContent(
                 Button(
                     onClick = onRetry,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = SpotifyGreen
+                        containerColor = Color(0xFF1DB954)
                     ),
                     modifier = Modifier.weight(1f)
                 ) {

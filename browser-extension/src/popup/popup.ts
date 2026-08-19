@@ -14,6 +14,7 @@ import { MessageType } from '../shared/types';
 import type { NowPlaying, Play, Settings, PairingInfo, YoutubeChannelSuggestion } from '../shared/types';
 import { generateQrDataUrl } from './qr';
 import { signRequest, validatePingResponse, pairingAgeDays } from '../shared/security';
+import type { SyncStatus } from '../background/sync';
 
 // ---- Constants -------------------------------------------------------------
 
@@ -154,9 +155,14 @@ function isPairingTabActive(): boolean {
 }
 
 function switchTab(tabId: string) {
-  tabBtns.forEach(b  => b.classList.remove('active'));
+  tabBtns.forEach(b => {
+    b.classList.remove('active');
+    b.setAttribute('aria-selected', 'false');
+  });
   tabPanels.forEach(p => p.classList.remove('active'));
-  document.querySelector<HTMLButtonElement>(`.tab-btn[data-tab="${tabId}"]`)?.classList.add('active');
+  const btn = document.querySelector<HTMLButtonElement>(`.tab-btn[data-tab="${tabId}"]`);
+  btn?.classList.add('active');
+  btn?.setAttribute('aria-selected', 'true');
   document.getElementById(`tab-${tabId}`)?.classList.add('active');
   switch (tabId) {
     case 'now-playing': refreshNowPlaying(); break;
@@ -171,10 +177,59 @@ function switchTab(tabId: string) {
 // in manifest.json — granted at install, no runtime request needed.
 tabBtns.forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab!)));
 
+// Arrow-key navigation across the tablist (WAI-ARIA tabs pattern).
+document.querySelector('.tab-nav')?.addEventListener('keydown', (e) => {
+  const key = (e as KeyboardEvent).key;
+  if (key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+  e.preventDefault();
+  const btns = Array.from(tabBtns);
+  const idx  = btns.findIndex(b => b.classList.contains('active'));
+  const next = key === 'ArrowRight'
+    ? btns[(idx + 1) % btns.length]
+    : btns[(idx - 1 + btns.length) % btns.length];
+  switchTab(next.dataset.tab!);
+  next.focus();
+});
+
 // ---- Utility ---------------------------------------------------------------
 
 function send(type: string, data?: any): Promise<any> {
   return chrome.runtime.sendMessage({ type, ...data });
+}
+
+// ---- Toast feedback --------------------------------------------------------
+
+let toastTimer: number | undefined;
+
+function toast(message: string, kind: 'success' | 'error' | 'info' = 'info'): void {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = message;
+  el.classList.remove('toast-success', 'toast-error');
+  if (kind === 'success') el.classList.add('toast-success');
+  if (kind === 'error')   el.classList.add('toast-error');
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+// Two-step inline confirm: first click arms the button, second click fires.
+// Replaces native confirm() which is unavailable in MV3 popups.
+function armToConfirm(btn: HTMLButtonElement, armedLabel: string, onConfirm: () => void): void {
+  if (btn.classList.contains('armed')) {
+    btn.classList.remove('armed');
+    onConfirm();
+    return;
+  }
+  const original = btn.innerHTML;
+  btn.classList.add('armed');
+  btn.innerHTML = armedLabel;
+  setTimeout(() => {
+    if (btn.classList.contains('armed')) {
+      btn.classList.remove('armed');
+      btn.innerHTML = original;
+    }
+  }, 3000);
 }
 
 function formatDuration(ms: number): string {
@@ -321,6 +376,7 @@ async function refreshNowPlaying() {
     document.getElementById('np-artist')!.textContent      = np.artist || 'Unknown Artist';
     document.getElementById('np-album')!.textContent       = np.album || '';
     document.getElementById('np-listened')!.textContent    = formatDuration(np.listenedMs);
+    document.getElementById('np-duration')!.textContent    = np.durationMs > 0 ? `/ ${formatDuration(np.durationMs)}` : '';
     document.getElementById('np-completion')!.textContent  = `${Math.round(np.completionPercentage)}%`;
     document.getElementById('np-source')!.textContent      = sourceName;
     (document.getElementById('np-progress') as HTMLElement).style.width = `${Math.min(np.completionPercentage, 100)}%`;
@@ -376,6 +432,64 @@ function startNpPolling() {
 
 const MAX_INPUT_LEN = 100;
 
+// Human-readable labels for classified sync errors (mirrors SyncErrorKind).
+const SYNC_ERROR_LABELS: Record<string, string> = {
+  rate_limited: 'Phone asked us to slow down',
+  auth: 'Phone rejected the connection (auth)',
+  rejected: 'Phone rejected the data',
+  server: 'Phone server error',
+  network: 'Network error',
+  unreachable: 'Phone unreachable',
+  battery: 'Phone battery critically low',
+  unknown: 'Sync failed',
+};
+
+function formatCountdown(ms: number): string {
+  const s = Math.max(1, Math.ceil(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${s % 60}s`;
+}
+
+/**
+ * Render the sync status line with classified error detail, rate-limit
+ * countdown, and next-retry time — instead of a raw error string.
+ */
+function renderSyncStatus(el: HTMLElement, status: SyncStatus | null | undefined): void {
+  const now = Date.now();
+
+  if (status?.isSyncing) {
+    el.textContent = 'Syncing…';
+    el.className = 'sync-status syncing';
+    return;
+  }
+
+  const rateLimitedUntil = typeof status?.rateLimitedUntil === 'number' ? status.rateLimitedUntil : null;
+  if (rateLimitedUntil !== null && rateLimitedUntil > now) {
+    el.textContent = `Rate limited — retrying in ${formatCountdown(rateLimitedUntil - now)} (plays stay queued)`;
+    el.className = 'sync-status warning';
+    return;
+  }
+
+  const kind: string | null = status?.lastErrorKind ?? null;
+  if (kind && status?.lastSyncResult?.startsWith('Failed')) {
+    const label = SYNC_ERROR_LABELS[kind] ?? 'Sync failed';
+    const http = typeof status.lastErrorStatus === 'number' ? ` (HTTP ${status.lastErrorStatus})` : '';
+    const retry = typeof status.nextRetryAt === 'number' && status.nextRetryAt > now
+      ? ` — retry in ${formatCountdown(status.nextRetryAt - now)}`
+      : '';
+    const tone = kind === 'rate_limited' || kind === 'battery' ? 'warning' : 'error';
+    el.textContent = `${label}${http}${retry}`;
+    el.className = `sync-status ${tone}`;
+    return;
+  }
+
+  el.textContent = status?.lastSyncTime
+    ? `Last sync: ${timeAgo(status.lastSyncTime)} — ${status.lastSyncResult ?? ''}`
+    : (currentPairing ? 'Not synced yet' : 'Pair your phone to start syncing');
+  el.className = 'sync-status';
+}
+
 async function refreshQueue() {
   try {
     const [countR, itemsR, statusR] = await Promise.all([
@@ -388,9 +502,7 @@ async function refreshQueue() {
     document.getElementById('queue-count')!.textContent = String(currentQueueCount);
 
     const statusEl = document.getElementById('sync-status')!;
-    statusEl.textContent = statusR?.lastSyncTime
-      ? `Last sync: ${timeAgo(statusR.lastSyncTime)} — ${statusR.lastSyncResult ?? ''}`
-      : (currentPairing ? 'Not synced yet' : 'Pair your phone to start syncing');
+    renderSyncStatus(statusEl, statusR);
 
     const listEl = document.getElementById('queue-list')!;
     const plays: Play[] = itemsR?.plays ?? [];
@@ -457,10 +569,13 @@ document.getElementById('btn-sync-now')?.addEventListener('click', async () => {
   }, 2500);
 });
 
-document.getElementById('btn-clear-queue')?.addEventListener('click', async () => {
-  if (!confirm('Clear all queued plays? This cannot be undone.')) return;
-  await send(MessageType.ClearQueue);
-  refreshQueue();
+document.getElementById('btn-clear-queue')?.addEventListener('click', (e) => {
+  const btn = e.currentTarget as HTMLButtonElement;
+  armToConfirm(btn, 'Sure?', async () => {
+    await send(MessageType.ClearQueue);
+    toast('Queue cleared', 'success');
+    refreshQueue();
+  });
 });
 
 
@@ -1242,12 +1357,15 @@ document.getElementById('btn-rebuild-connection')?.addEventListener('click', asy
 });
 
 // Unpair
-document.getElementById('btn-unpair')?.addEventListener('click', async () => {
-  if (!confirm('Unpair from this device?')) return;
-  await send(MessageType.RemovePairing);
-  await chrome.storage.local.remove([QR_TOKEN_KEY, QR_EXPIRY_KEY]);
-  currentPairingToken = null;
-  refreshPairing();
+document.getElementById('btn-unpair')?.addEventListener('click', (e) => {
+  const btn = e.currentTarget as HTMLButtonElement;
+  armToConfirm(btn, 'Confirm unpair?', async () => {
+    await send(MessageType.RemovePairing);
+    await chrome.storage.local.remove([QR_TOKEN_KEY, QR_EXPIRY_KEY]);
+    currentPairingToken = null;
+    toast('Unpaired from device', 'success');
+    refreshPairing();
+  });
 });
 
 // ---- Nav helpers -----------------------------------------------------------
@@ -1306,16 +1424,19 @@ async function refreshArtists() {
     renderTagList('artist-list', settings.knownArtists, async removed => {
       settings.knownArtists = settings.knownArtists.filter(a => a !== removed);
       await send(MessageType.SetSettings, { settings });
+      toast(`Removed ${removed}`, 'success');
       refreshArtists();
     });
     renderTagList('channel-list', settings.youtubeChannels, async removed => {
       settings.youtubeChannels = settings.youtubeChannels.filter(c => c !== removed);
       await send(MessageType.SetSettings, { settings });
+      toast(`Removed ${removed}`, 'success');
       refreshArtists();
     });
     renderTagList('blocked-channel-list', settings.blockedYoutubeChannels, async removed => {
       settings.blockedYoutubeChannels = settings.blockedYoutubeChannels.filter(c => c !== removed);
       await send(MessageType.SetSettings, { settings });
+      toast(`Removed ${removed}`, 'success');
       refreshArtists();
     });
   } catch (err) { console.warn('[Tempo] refreshArtists failed:', err); }
@@ -1328,7 +1449,7 @@ function renderTagList(cid: string, items: string[], onRemove: (item: string) =>
     return;
   }
   c.innerHTML = items.map(item =>
-    `<span class="tag">${escapeHtml(item)}<span class="tag-remove" data-item="${escapeHtml(item)}">×</span></span>`
+    `<span class="tag">${escapeHtml(item)}<button type="button" class="tag-remove" data-item="${escapeHtml(item)}" aria-label="Remove ${escapeHtml(item)}">×</button></span>`
   ).join('');
   c.querySelectorAll('.tag-remove').forEach(el =>
     el.addEventListener('click', () => onRemove((el as HTMLElement).dataset.item!))
@@ -1344,9 +1465,12 @@ function renderTagList(cid: string, items: string[], onRemove: (item: string) =>
     const resp     = await send(MessageType.GetSettings);
     const settings: Settings = resp?.settings ?? { ...DEFAULT_SETTINGS };
     const list     = isArtist ? settings.knownArtists : settings.youtubeChannels;
-    if (!list.includes(name)) {
+    if (list.includes(name)) {
+      toast(`${name} is already added`, 'info');
+    } else {
       list.push(name);
       await send(MessageType.SetSettings, { settings });
+      toast(`Added ${name}`, 'success');
     }
     input.value = '';
     refreshArtists();
@@ -1416,14 +1540,14 @@ document.getElementById('btn-export')?.addEventListener('click', async () => {
   try {
     const r = await send(MessageType.ExportPlays);
     const plays = r?.plays ?? [];
-    if (!plays.length) { alert('No plays to export.'); return; }
+    if (!plays.length) { toast('No plays to export', 'info'); return; }
     const url = URL.createObjectURL(new Blob([JSON.stringify(plays, null, 2)], { type: 'application/json' }));
     Object.assign(document.createElement('a'), {
       href: url,
       download: `tempo-plays-${new Date().toISOString().slice(0, 10)}.json`,
     }).click();
     URL.revokeObjectURL(url);
-  } catch { alert('Export failed.'); }
+  } catch { toast('Export failed', 'error'); }
 });
 
 // ---- Background message listener ------------------------------------------
@@ -1507,6 +1631,12 @@ async function autoConnectIfPaired() {
   } finally {
     _autoConnectRunning = false;
   }
+}
+
+// Show the real manifest version instead of a hardcoded string.
+const versionEl = document.getElementById('version-info');
+if (versionEl) {
+  versionEl.textContent = `Tempo Stats v${chrome.runtime.getManifest().version}`;
 }
 
 startNpPolling();

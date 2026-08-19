@@ -24,15 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoBackground
-import me.avinas.tempo.ui.theme.TempoCyan
-import me.avinas.tempo.ui.theme.TempoErrorDeep
-import me.avinas.tempo.ui.theme.TempoInfoSoft
-import me.avinas.tempo.ui.theme.TempoPrimaryMuted
-import me.avinas.tempo.ui.theme.TempoSurfaceDialog
-import me.avinas.tempo.ui.theme.TempoWarning
-import me.avinas.tempo.ui.theme.TempoSurfaceSunken
 
 /**
  * Bottom sheet for selecting canvas backgrounds.
@@ -50,7 +41,7 @@ fun BackgroundPickerSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = TempoSurfaceSunken.copy(alpha = 0.95f),
+        containerColor = Color(0xFF0F172A).copy(alpha = 0.95f),
         contentColor = Color.White,
         dragHandle = {
             Box(
@@ -168,8 +159,8 @@ private fun BackgroundThumbnail(
                 Brush.sweepGradient(
                     listOf(
                         Color(0xFFF9A8D4),
-                        TempoAccent,
-                        TempoCyan,
+                        Color(0xFFC4B5FD),
+                        Color(0xFF67E8F9),
                         Color(0xFFF0ABFC),
                         Color(0xFFF9A8D4)
                     )
@@ -179,7 +170,7 @@ private fun BackgroundThumbnail(
         "midnight_grain" -> {
             Modifier.background(
                 Brush.radialGradient(
-                    colors = listOf(TempoSurfaceDialog, Color(0xFF020617)),
+                    colors = listOf(Color(0xFF1E293B), Color(0xFF020617)),
                     radius = 200f
                 )
             )
@@ -187,14 +178,14 @@ private fun BackgroundThumbnail(
         "sunset_blur" -> {
             Modifier.background(
                 Brush.linearGradient(
-                    colors = listOf(Color(0xFF0D5C4A), TempoErrorDeep, TempoWarning)
+                    colors = listOf(Color(0xFF4C1D95), Color(0xFFBE185D), Color(0xFFFB923C))
                 )
             )
         }
         "electric_void" -> {
             Modifier.background(
                 Brush.radialGradient(
-                    colors = listOf(TempoPrimaryMuted, Color(0xFF1D4ED8), TempoBackground),
+                    colors = listOf(Color(0xFF7C3AED), Color(0xFF1D4ED8), Color(0xFF000000)),
                     radius = 150f
                 )
             )
@@ -234,13 +225,13 @@ private fun BackgroundThumbnail(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.3f))
-                        .border(2.dp, TempoInfoSoft, RoundedCornerShape(12.dp)),
+                        .border(2.dp, Color(0xFF60A5FA), RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
                             .size(24.dp)
-                            .background(TempoInfoSoft, CircleShape),
+                            .background(Color(0xFF60A5FA), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(

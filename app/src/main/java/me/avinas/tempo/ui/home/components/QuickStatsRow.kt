@@ -1,6 +1,7 @@
 package me.avinas.tempo.ui.home.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,21 +14,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import me.avinas.tempo.R
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import me.avinas.tempo.R
 import me.avinas.tempo.ui.components.CachedAsyncImage
-import me.avinas.tempo.ui.theme.premiumClickable
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoInfo
-import me.avinas.tempo.ui.theme.TempoSurfaceSunken
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.*
 
+/* Hallmark · QuickStatsRow — two figures, shared baseline */
 @Composable
 fun QuickStatsRow(
     topArtistName: String?,
@@ -40,113 +39,102 @@ fun QuickStatsRow(
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.Top
     ) {
-        // Top Artist Item
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
             modifier = Modifier
                 .weight(1f)
                 .then(
-                    if (onArtistClick != null && topArtistName != null) {
-                        Modifier.premiumClickable(onClick = onArtistClick, pressedScale = 0.96f)
-                    } else Modifier
+                    if (onArtistClick != null && topArtistName != null)
+                        Modifier.premiumClickable(onClick = onArtistClick, pressedScale = 0.97f)
+                    else Modifier
                 )
         ) {
-            CachedAsyncImage(
-                imageUrl = topArtistImage,
-                contentDescription = null,
+            Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(80.dp)
                     .clip(CircleShape)
-                    .background(TempoSurfaceSunken),
-                contentScale = ContentScale.Crop,
-                placeholder = {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(TempoSurfaceSunken),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            tint = TextTertiary,
-                            modifier = Modifier.size(32.dp)
-                        )
+                    .background(GlassFrostSoft)
+                    .border(1.dp, GlassBorderSoft, CircleShape)
+            ) {
+                CachedAsyncImage(
+                    imageUrl = topArtistImage,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    placeholder = {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Person, null, tint = Color.White.copy(alpha = 0.22f), modifier = Modifier.size(28.dp))
+                        }
                     }
-                }
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = topArtistName ?: "—",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = stringResource(R.string.home_top_artist),
                 style = MaterialTheme.typography.labelSmall,
-                color = me.avinas.tempo.ui.theme.TempoAccent.copy(alpha = 0.8f),
+                color = TextSecondary,
+                letterSpacing = 0.3.sp,
                 maxLines = 1
-            )
-            Text(
-                text = topArtistName ?: "-",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
             )
         }
 
-        // Top Track Item
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
             modifier = Modifier
                 .weight(1f)
                 .then(
-                    if (onTrackClick != null && topTrackName != null) {
-                        Modifier.premiumClickable(onClick = onTrackClick, pressedScale = 0.96f)
-                    } else Modifier
+                    if (onTrackClick != null && topTrackName != null)
+                        Modifier.premiumClickable(onClick = onTrackClick, pressedScale = 0.97f)
+                    else Modifier
                 )
         ) {
-            CachedAsyncImage(
-                imageUrl = topTrackImage,
-                contentDescription = null,
+            Box(
                 modifier = Modifier
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(TempoSurfaceSunken),
-                contentScale = ContentScale.Crop,
-                placeholder = {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(TempoSurfaceSunken),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = TextTertiary,
-                            modifier = Modifier.size(32.dp)
-                        )
+                    .size(80.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(GlassFrostSoft)
+                    .border(1.dp, GlassBorderSoft, RoundedCornerShape(16.dp))
+            ) {
+                CachedAsyncImage(
+                    imageUrl = topTrackImage,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    placeholder = {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.MusicNote, null, tint = Color.White.copy(alpha = 0.22f), modifier = Modifier.size(28.dp))
+                        }
                     }
-                }
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = stringResource(R.string.home_on_repeat),
-                style = MaterialTheme.typography.labelSmall,
-                color = me.avinas.tempo.ui.theme.TempoInfo.copy(alpha = 0.8f),
-                maxLines = 1
-            )
-            Text(
-                text = topTrackName ?: "-",
+                text = topTrackName ?: "—",
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 color = TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.home_on_repeat),
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+                letterSpacing = 0.3.sp,
+                maxLines = 1
             )
         }
     }

@@ -1,19 +1,9 @@
 package me.avinas.tempo.ui.home
 
-import me.avinas.tempo.ui.theme.TempoBackground
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoPrimaryDim
-import me.avinas.tempo.ui.theme.TempoWarning
-import me.avinas.tempo.ui.theme.TempoWarningDeep
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoErrorDeep
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoSuccess
-import me.avinas.tempo.ui.theme.TempoSuccessDeep
-import me.avinas.tempo.ui.theme.TempoCyan
-import me.avinas.tempo.ui.theme.TextTertiary
-import me.avinas.tempo.ui.theme.TempoSurfaceSunken
-
+import me.avinas.tempo.ui.theme.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
@@ -28,7 +18,6 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Piano
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -45,13 +34,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import me.avinas.tempo.ui.components.DeepOceanBackground
-import me.avinas.tempo.ui.components.SharePreviewDialog
-import me.avinas.tempo.ui.components.ShareTheme
 import me.avinas.tempo.ui.components.TimePeriodSelector
-import me.avinas.tempo.ui.components.VibeShareCard
+import me.avinas.tempo.ui.stats.StatsShareDialog
+import me.avinas.tempo.ui.stats.StatsTab
 import me.avinas.tempo.ui.home.components.*
 import me.avinas.tempo.data.stats.InsightCardData
 import me.avinas.tempo.data.stats.InsightType
@@ -65,7 +54,6 @@ import me.avinas.tempo.ui.components.LevelUpOverlay
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 import me.avinas.tempo.utils.ReviewUtils
-import me.avinas.tempo.ui.theme.TempoPrimaryMuted
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,10 +81,8 @@ fun HomeScreen(
     // Level-up detection
     var lastKnownLevel by remember { mutableStateOf(-1) }
     var showLevelUp by remember { mutableStateOf(false) }
-    var levelUpLevel by remember { mutableStateOf(1) }
+    var levelUpLevel by remember { mutableStateOf(0) }
     var levelUpTitle by remember { mutableStateOf("") }
-    var showVibeShare by remember { mutableStateOf(false) }
-    val audioFeatures = uiState.audioFeatures
     
     LaunchedEffect(userLevel?.currentLevel) {
         val currentLevel = userLevel?.currentLevel ?: 0
@@ -123,7 +109,7 @@ fun HomeScreen(
                     state = lazyListState,
                     contentPadding = PaddingValues(bottom = 200.dp),
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     item(key = "header") {
                         VibeHeader(
@@ -142,8 +128,6 @@ fun HomeScreen(
                     
                     if (uiState.hasData) {
                         item(key = "hero") {
-                            val overview = uiState.listeningOverview
-                            val comparison = uiState.periodComparison
                             
                             val timeString = remember(uiState.listeningOverview?.totalListeningTimeMs) {
                                 val totalMs = uiState.listeningOverview?.totalListeningTimeMs ?: 0
@@ -177,7 +161,6 @@ fun HomeScreen(
                             Column(
                                 modifier = Modifier
                                     .padding(horizontal = 16.dp)
-                                    .padding(top = 16.dp)
                             ) {
                                 HeroCard(
                                     userName = uiState.userName ?: stringResource(R.string.home_user_default),
@@ -203,20 +186,11 @@ fun HomeScreen(
                                 me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.getDirectStoryTimeRange()
                             }
 
-                            // Stable key for the currently-unlocked story period. When it matches the
-                            // persisted lastViewedSpotlightPeriod the ring renders gray (Instagram-style).
-                            val currentPeriodKey = remember(directStoryTimeRange) {
-                                directStoryTimeRange?.let {
-                                    "${it.name}:${me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.effectivePeriodStart(it)}"
-                                }
-                            }
-                            val spotlightViewed = currentPeriodKey != null &&
-                                    currentPeriodKey == uiState.lastViewedSpotlightPeriod
-
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 SpotlightStoryCard(
                                     onClick = {
                                         walkthroughController.dismiss()
+                                        viewModel.onSpotlightViewed()
                                         if (directStoryTimeRange != null) {
                                             onNavigateToSpotlight(directStoryTimeRange, false)
                                         } else {
@@ -225,16 +199,14 @@ fun HomeScreen(
                                     },
                                     onRingClick = {
                                         walkthroughController.dismiss()
-                                        // Mark this story period as viewed so the ring turns gray
-                                        // and stays gray until a new period unlocks.
-                                        currentPeriodKey?.let { viewModel.markSpotlightViewed(it) }
+                                        viewModel.onSpotlightViewed()
                                         if (directStoryTimeRange != null) {
                                             onNavigateToSpotlight(directStoryTimeRange, true)
                                         }
                                     },
                                     albumArtUrl = uiState.spotlightTopTrack?.albumArtUrl,
                                     storyAvailable = directStoryTimeRange != null,
-                                    viewed = spotlightViewed,
+                                    storyViewed = uiState.spotlightStoryViewed,
                                     modifier = Modifier.onGloballyPositioned { coordinates ->
                                         walkthroughController.registerTarget(
                                             me.avinas.tempo.ui.components.WalkthroughStep.HOME_SPOTLIGHT,
@@ -246,7 +218,7 @@ fun HomeScreen(
                         }
 
                         item(key = "quickstats") {
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 QuickStatsRow(
                                     topArtistName = uiState.topArtist?.artist,
                                     topArtistImage = uiState.topArtist?.imageUrl,
@@ -286,7 +258,7 @@ fun HomeScreen(
                     
                     if (uiState.todayOverview?.totalPlayCount?.let { it > 0 } == true) {
                         item(key = "todays_listen") {
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 TodaysListenWidget(
                                     todayOverview = uiState.todayOverview,
                                     topTrack = uiState.todayTopTrack,
@@ -315,15 +287,23 @@ fun HomeScreen(
 
                     if (uiState.insights.isNotEmpty()) {
                         item(key = "insights_header") {
-                            Text(
-                                text = stringResource(R.string.home_your_signal),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 12.dp)
-                            )
+                            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                Text(
+                                    text = stringResource(R.string.home_your_signal),
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 8.dp)
+                                        .width(24.dp)
+                                        .height(1.dp)
+                                        .background(Divider)
+                                )
+                            }
                         }
-                        
+
                         item(key = "insights_feed") {
                             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 InsightFeed(
@@ -331,7 +311,6 @@ fun HomeScreen(
                                     onNavigateToTrack = onNavigateToTrack,
                                     onNavigateToArtist = onNavigateToArtist
                                 )
-                                Spacer(modifier = Modifier.height(16.dp))
                             }
                         }
                     }
@@ -349,63 +328,59 @@ fun HomeScreen(
                 targetValue = headerAlpha,
                 label = "headerAlpha"
             )
-            val backgroundColor = TempoBackground.copy(alpha = headerAlphaAnimated)
+            val barBrush = Brush.verticalGradient(
+                colors = listOf(
+                    TempoDarkBackground.copy(alpha = headerAlphaAnimated),
+                    TempoDarkBackground.copy(alpha = headerAlphaAnimated * 0.55f)
+                )
+            )
 
-            // Custom Top Bar (Non-blocking when transparent)
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .background(backgroundColor)
+                    .background(barBrush)
                     .statusBarsPadding()
-                    .height(64.dp) // Standard AppBar height
+                    .height(56.dp)
             ) {
-                // Title
                 Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.CenterStart
                 ) {
                     Text(
                         text = stringResource(R.string.home_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = headerAlphaAnimated)
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary.copy(alpha = headerAlphaAnimated),
+                        letterSpacing = 0.2.sp
                     )
                 }
-                
-                Row(
+                IconButton(
+                    onClick = onNavigateToSettings,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
-                        .padding(end = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(end = 4.dp),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = Color.Transparent,
+                        contentColor = TextSecondary
+                    )
                 ) {
-                    // "My Music DNA" share — only when audio features are available
-                    if (audioFeatures != null && audioFeatures.tracksWithFeatures > 0) {
-                        IconButton(
-                            onClick = { showVibeShare = true },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = if (headerAlphaAnimated > 0.5f) Color.Transparent else Color.White.copy(alpha = 0.1f),
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Icon(
-                                Icons.Default.Share,
-                                contentDescription = stringResource(R.string.share_content_description)
-                            )
-                        }
-                    }
-
-                    // Settings Button
-                    IconButton(
-                        onClick = onNavigateToSettings,
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = if (headerAlphaAnimated > 0.5f) Color.Transparent else Color.White.copy(alpha = 0.1f),
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.home_settings))
-                    }
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = stringResource(R.string.home_settings),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                if (headerAlphaAnimated > 0.02f) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(me.avinas.tempo.ui.theme.Divider.copy(alpha = headerAlphaAnimated * 0.9f))
+                    )
                 }
             }
             
@@ -450,6 +425,28 @@ fun HomeScreen(
             )
         }
         
+        // Share Nudge — gated in the ViewModel; opens the artist share preview
+        // (music share card) directly instead of showing a message popup. Never
+        // stacks with the rate popup or spotlight reminder.
+        if (uiState.showShareNudge && uiState.shareNudgeArtists.isNotEmpty() &&
+            !uiState.showRateAppPopup && !uiState.showSpotlightReminder
+        ) {
+            val nudgeRange = uiState.shareNudgeTimeRange ?: TimeRange.THIS_WEEK
+            StatsShareDialog(
+                tab = StatsTab.TOP_ARTISTS,
+                timeRange = nudgeRange,
+                items = uiState.shareNudgeArtists,
+                overview = uiState.shareNudgeOverview,
+                nudgeCaption = stringResource(
+                    if (nudgeRange == TimeRange.THIS_MONTH) R.string.share_nudge_caption_monthly
+                    else R.string.share_nudge_caption_weekly
+                ),
+                nudgeHint = stringResource(R.string.share_nudge_hint),
+                onDismiss = viewModel::onShareNudgeDismissed,
+                onShared = viewModel::onShareNudgeShared
+            )
+        }
+
         // Spotlight Story Reminder Popup
         val reminderType = uiState.reminderType
         if (uiState.showSpotlightReminder && reminderType != null) {
@@ -465,49 +462,7 @@ fun HomeScreen(
                 }
             )
         }
-
-        // Share Nudge Bottom Sheet — only when no other popup is up (never stack)
-        val shareNudgeType = uiState.shareNudgeType
-        if (uiState.showShareNudge && shareNudgeType != null &&
-            !uiState.showRateAppPopup && !uiState.showSpotlightReminder
-        ) {
-            ShareNudgeBottomSheet(
-                type = shareNudgeType,
-                onDismiss = viewModel::onShareNudgeDismissed,
-                onAction = {
-                    viewModel.onShareNudgeAction()
-                    when (shareNudgeType) {
-                        ShareNudgeType.STATS -> onNavigateToStats()
-                        ShareNudgeType.WEEKLY -> onNavigateToSpotlight(TimeRange.THIS_WEEK, true)
-                        ShareNudgeType.MONTHLY -> onNavigateToSpotlight(TimeRange.THIS_MONTH, true)
-                    }
-                }
-            )
-        }
-
-        // "My Music DNA" share dialog
-        if (showVibeShare && audioFeatures != null) {
-            SharePreviewDialog(
-                onDismiss = { showVibeShare = false },
-                themes = ShareTheme.entries,
-                contentForTheme = {
-                    VibeShareCard(
-                        userName = uiState.userName,
-                        periodLabel = when (uiState.selectedTimeRange) {
-                            TimeRange.TODAY -> "TODAY"
-                            TimeRange.THIS_WEEK -> "THIS WEEK"
-                            TimeRange.THIS_MONTH -> "THIS MONTH"
-                            TimeRange.THIS_YEAR -> "THIS YEAR"
-                            TimeRange.ALL_TIME -> "ALL TIME"
-                        },
-                        audioFeatures = audioFeatures,
-                        backgroundImageUrl = uiState.topArtist?.imageUrl ?: uiState.topTrack?.albumArtUrl,
-                        theme = it
-                    )
-                }
-            )
-        }
-
+        
         // Level Up Celebration Overlay
         if (uiState.isGamificationEnabled && showLevelUp) {
             LevelUpOverlay(
@@ -522,15 +477,15 @@ fun HomeScreen(
 @Composable
 private fun mapInsightToHabit(insight: InsightCardData): HabitInsightData {
     val (icon, color, gradient) = when(insight.type) {
-        InsightType.MOOD -> Triple(Icons.Default.Face, TempoPrimary, listOf(TempoPrimary.copy(alpha=0.4f), TempoPrimaryDim.copy(alpha=0.1f)))
-        InsightType.PEAK_TIME -> Triple(Icons.Default.DateRange, TempoWarning, listOf(TempoWarning.copy(alpha=0.4f), TempoWarningDeep.copy(alpha=0.1f)))
-        InsightType.BINGE -> Triple(Icons.Filled.Bolt, TempoPrimary, listOf(TempoPrimary.copy(alpha=0.4f), TempoPrimaryDim.copy(alpha=0.1f)))
-        InsightType.DISCOVERY -> Triple(Icons.Default.Celebration, TempoSuccessDeep, listOf(TempoSuccessDeep.copy(alpha=0.4f), TempoSuccess.copy(alpha=0.1f)))
-        InsightType.ENERGY -> Triple(Icons.Default.Bolt, TempoError, listOf(TempoError.copy(alpha=0.4f), TempoErrorDeep.copy(alpha=0.1f)))
-        InsightType.DANCEABILITY -> Triple(Icons.Default.Celebration, TempoAccent, listOf(TempoAccent.copy(alpha=0.4f), TempoPrimaryMuted.copy(alpha=0.1f)))
-        InsightType.TEMPO -> Triple(Icons.Default.Speed, TempoCyan, listOf(TempoCyan.copy(alpha=0.4f), TempoCyan.copy(alpha=0.1f)))
-        InsightType.ACOUSTICNESS -> Triple(Icons.Default.Piano, TempoSuccess, listOf(TempoSuccess.copy(alpha=0.4f), TempoSuccess.copy(alpha=0.1f)))
-        else -> Triple(Icons.Default.DateRange, TextTertiary, listOf(TextTertiary.copy(alpha=0.2f), TempoSurfaceSunken.copy(alpha=0.1f)))
+        InsightType.MOOD -> Triple(Icons.Default.Face, InsightMood, listOf(InsightMood.copy(alpha=0.4f), InsightMood.copy(alpha=0.1f)))
+        InsightType.PEAK_TIME -> Triple(Icons.Default.DateRange, InsightPeakTime, listOf(InsightPeakTime.copy(alpha=0.4f), InsightPeakTime.copy(alpha=0.1f)))
+        InsightType.BINGE -> Triple(Icons.Filled.Bolt, InsightBinge, listOf(InsightBinge.copy(alpha=0.4f), InsightBinge.copy(alpha=0.1f)))
+        InsightType.DISCOVERY -> Triple(Icons.Default.Celebration, InsightDiscovery, listOf(InsightDiscovery.copy(alpha=0.4f), InsightDiscovery.copy(alpha=0.1f)))
+        InsightType.ENERGY -> Triple(Icons.Default.Bolt, InsightEnergy, listOf(InsightEnergy.copy(alpha=0.4f), InsightEnergy.copy(alpha=0.1f)))
+        InsightType.DANCEABILITY -> Triple(Icons.Default.Celebration, InsightDanceability, listOf(InsightDanceability.copy(alpha=0.4f), InsightDanceability.copy(alpha=0.1f)))
+        InsightType.TEMPO -> Triple(Icons.Default.Speed, InsightTempo, listOf(InsightTempo.copy(alpha=0.4f), InsightTempo.copy(alpha=0.1f)))
+        InsightType.ACOUSTICNESS -> Triple(Icons.Default.Piano, InsightAcousticness, listOf(InsightAcousticness.copy(alpha=0.4f), InsightAcousticness.copy(alpha=0.1f)))
+        else -> Triple(Icons.Default.DateRange, TextTertiary, listOf(TextTertiary.copy(alpha=0.2f), TextTertiary.copy(alpha=0.1f)))
     }
     
     return HabitInsightData(

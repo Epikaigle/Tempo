@@ -24,11 +24,6 @@ import me.avinas.tempo.ui.utils.isSmallScreen
 import me.avinas.tempo.ui.utils.scaledSize
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
-import me.avinas.tempo.ui.theme.SpotifyGreen
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoSuccess
-import me.avinas.tempo.ui.theme.TempoSurfaceDialog
-import me.avinas.tempo.ui.theme.TextTertiary
 
 @Composable
 fun SpotifyConnectionBottomSheet(
@@ -39,7 +34,7 @@ fun SpotifyConnectionBottomSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(TempoSurfaceDialog.copy(alpha = 0.95f)) // Charcoal Surface
+            .background(Color(0xFF1E1B24).copy(alpha = 0.95f)) // Charcoal Surface
             .navigationBarsPadding()
             .padding(horizontal = adaptiveSizeByCategory(24.dp, 20.dp, 18.dp))
             .verticalScroll(rememberScrollState())
@@ -51,7 +46,7 @@ fun SpotifyConnectionBottomSheet(
             modifier = Modifier
                 .width(40.dp)
                 .height(4.dp)
-                .background(TextTertiary.copy(alpha = 0.3f), RoundedCornerShape(2.dp))
+                .background(Color.Gray.copy(alpha = 0.3f), RoundedCornerShape(2.dp))
         )
 
         Spacer(modifier = Modifier.height(adaptiveSizeByCategory(16.dp, 14.dp, 12.dp)))
@@ -60,7 +55,7 @@ fun SpotifyConnectionBottomSheet(
         Box(
             modifier = Modifier
                 .background(
-                    color = TempoSuccess.copy(alpha = 0.15f),
+                    color = Color(0xFF22C55E).copy(alpha = 0.15f),
                     shape = RoundedCornerShape(20.dp)
                 )
                 .padding(horizontal = 16.dp, vertical = 6.dp) 
@@ -69,7 +64,7 @@ fun SpotifyConnectionBottomSheet(
                 text = stringResource(R.string.spotify_works_any_app),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = TempoSuccess
+                color = Color(0xFF22C55E)
             )
         }
 
@@ -119,7 +114,7 @@ fun SpotifyConnectionBottomSheet(
                 .fillMaxWidth()
                 .height(scaledSize(48.dp, 0.9f, 1.05f)),
             colors = ButtonDefaults.buttonColors(
-                containerColor = SpotifyGreen, // Spotify Green
+                containerColor = Color(0xFF1DB954), // Spotify Green
                 contentColor = Color.White
             ),
             shape = RoundedCornerShape(24.dp)
@@ -160,7 +155,7 @@ private fun BenefitItem(icon: androidx.compose.ui.graphics.vector.ImageVector, t
             imageVector = icon,
             contentDescription = null,
             modifier = Modifier.width(40.dp).size(24.dp),
-            tint = TempoError // Red 500
+            tint = Color(0xFFEF4444) // Red 500
         )
         Text(
             text = text,

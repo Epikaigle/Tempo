@@ -11,7 +11,7 @@ import { PlaybackTracker } from './tracker';
 import { shouldTrack, extractSite, getSourceApp, isPlainYouTube } from './site-detect';
 import { normalize, cleanTitle, cleanArtist, parseYoutubeVideo } from './normalize';
 import * as storage from './storage';
-import { syncToPhone, getSyncStatus, initAutoSync, adjustSyncInterval, initHeartbeat, initTokenRefresh, executeHeartbeat, refreshToken, SYNC_ALARM_NAME, RETRY_ALARM_NAME, HEARTBEAT_ALARM_NAME, TOKEN_REFRESH_ALARM_NAME, removeHostPermission } from './sync';
+import { syncToPhone, getSyncStatus, initAutoSync, adjustSyncInterval, initHeartbeat, initTokenRefresh, executeHeartbeat, refreshToken, restoreBackoffState, SYNC_ALARM_NAME, RETRY_ALARM_NAME, HEARTBEAT_ALARM_NAME, TOKEN_REFRESH_ALARM_NAME, removeHostPermission } from './sync';
 import { signRequest, validatePingResponse } from '../shared/security';
 import { PhoneSocket, RECONNECT_ALARM_NAME, KEEPALIVE_ALARM_NAME } from './websocket';
 
@@ -45,6 +45,29 @@ let _trackingEnabled = true;
 let _settings: Settings = { ...DEFAULT_SETTINGS };
 let _settingsLoaded = false;
 let _settingsLoadPromise: Promise<void> | null = null;
+
+// Tracker-restore gate: media updates must not be processed until the tracker
+// has been restored from session storage, or a fresh in-memory tracker would
+// clobber the restored accumulated listen time. Resolved once restore runs.
+let _trackerRestored = false;
+let _trackerRestorePromise: Promise<void> | null = null;
+let _resolveTrackerRestore: (() => void) | null = null;
+
+function trackerRestoreGate(): Promise<void> {
+  if (_trackerRestored) return Promise.resolve();
+  if (!_trackerRestorePromise) {
+    _trackerRestorePromise = new Promise<void>((resolve) => {
+      _resolveTrackerRestore = resolve;
+    });
+  }
+  return _trackerRestorePromise;
+}
+
+function markTrackerRestored(): void {
+  _trackerRestored = true;
+  _resolveTrackerRestore?.();
+  _resolveTrackerRestore = null;
+}
 
 // Badge debounce timer
 let _badgeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -135,10 +158,32 @@ async function initServiceWorker() {
     if (savedStates && savedStates.length > 0) {
       tracker.restoreFrom(savedStates);
       console.log(`[Tempo] Restored ${savedStates.length} tab tracker states`);
+
+      // Rebuild in-memory now-playing snapshots so the popup shows the current
+      // track immediately after hibernation instead of waiting for the next
+      // media tick.
+      for (const state of savedStates) {
+        const snapshot = tracker.buildLiveSnapshotForTab(state.tabId);
+        if (snapshot) {
+          snapshot.sourceApp = state.sourceApp;
+          snapshot.site = state.site ?? null;
+          tabNowPlaying.set(state.tabId, snapshot);
+        }
+      }
     }
   } catch (err) {
     console.warn('[Tempo] Could not restore tracker state:', err);
+  } finally {
+    // Release the gate regardless of outcome so media updates aren't blocked
+    // forever if restore throws or finds nothing.
+    markTrackerRestored();
   }
+
+  // Restore sync backoff state (rate-limit cooldown, failure count) so a
+  // worker restart doesn't reset it and immediately hammer the phone.
+  try {
+    await restoreBackoffState();
+  } catch { /* Non-critical */ }
 
   // Cache settings used by the hot media-update path.
   await ensureSettingsLoaded();
@@ -571,6 +616,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender)
 
 async function handleMediaUpdate(data: any, sender: chrome.runtime.MessageSender): Promise<any> {
   const tabId = sender.tab?.id ?? -1;
+  await trackerRestoreGate();
   await ensureSettingsLoaded();
 
   // Fast path: check cached tracking flag before hitting storage
@@ -685,6 +731,9 @@ async function handleMediaUpdate(data: any, sender: chrome.runtime.MessageSender
       recentPlayKeys.set(dedupKey, now);
 
       await queuePlay(normalized);
+      // Flush immediately — a hibernation before the debounce fires would
+      // restore the pre-finalization state and re-count this session.
+      persistTrackerStateNow();
       console.log(`[Tempo] ▶ Logged: "${normalized.title}" by ${normalized.artist} (${Math.round(normalized.listenedMs / 1000)}s listened)`);
       return { tracked: true, logged: true };
     }
@@ -703,7 +752,7 @@ async function handleMediaUpdate(data: any, sender: chrome.runtime.MessageSender
 
 async function handleMediaStopped(sender: chrome.runtime.MessageSender): Promise<any> {
   const tabId = sender.tab?.id ?? -1;
-
+  await trackerRestoreGate();
   const event = tracker.onPlaybackStopped(tabId);
   if (event.type === TrackEventType.ReadyToLog) {
     const np = normalize(event.nowPlaying);
@@ -715,7 +764,7 @@ async function handleMediaStopped(sender: chrome.runtime.MessageSender): Promise
 
   tabNowPlaying.delete(tabId);
   tabYoutubeSuggestions.delete(tabId);
-  persistTrackerState();
+  persistTrackerStateNow();
 
   return { ok: true };
 }
@@ -801,7 +850,7 @@ function scheduleBadgeUpdate(): void {
       const count = await storage.getQueueCount();
       if (count > 0) {
         chrome.action.setBadgeText({ text: String(count) });
-        chrome.action.setBadgeBackgroundColor({ color: '#2FDBB8' });
+        chrome.action.setBadgeBackgroundColor({ color: '#7c5cff' });
       } else {
         chrome.action.setBadgeText({ text: '' });
       }
@@ -847,6 +896,16 @@ function buildPersistSignature(states: TabTrackState[]): string {
   ].join(':')).join('|');
 }
 
+function writeTrackerStateNow(): void {
+  const states = tracker.serializeAll();
+  const signature = buildPersistSignature(states);
+  lastPersistSignature = signature;
+  lastPersistAt = Date.now();
+  storage.saveSessionState(states).catch(err => {
+    console.warn('[Tempo] Failed to persist tracker state:', err);
+  });
+}
+
 function persistTrackerState(): void {
   if (persistTimer) return; // Already scheduled — coalesce writes
   persistTimer = setTimeout(() => {
@@ -856,12 +915,22 @@ function persistTrackerState(): void {
     if (signature === lastPersistSignature && (Date.now() - lastPersistAt) < TRACKER_PERSIST_MAX_DELAY_MS) {
       return;
     }
-    lastPersistSignature = signature;
-    lastPersistAt = Date.now();
-    storage.saveSessionState(states).catch(err => {
-      console.warn('[Tempo] Failed to persist tracker state:', err);
-    });
+    writeTrackerStateNow();
   }, TRACKER_PERSIST_DEBOUNCE_MS);
+}
+
+/**
+ * Flush tracker state to session storage immediately, bypassing the debounce.
+ * Used at finalization points (track logged, tab closed, stale sweep) where a
+ * service-worker hibernation before the debounce timer fires would otherwise
+ * lose the finalized state and let a stale session be restored and re-counted.
+ */
+function persistTrackerStateNow(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  writeTrackerStateNow();
 }
 
 // ---- Clean up dedup map ----------------------------------------------------
@@ -873,6 +942,57 @@ function cleanupDedupMap(): void {
       recentPlayKeys.delete(key);
     }
   }
+}
+
+// ---- Stale-session sweep ----------------------------------------------------
+//
+// Finalizes tracking sessions that went silent while marked as playing. This is
+// the safety net that makes plays register WITHOUT the popup being open: when a
+// tab is killed, the laptop lid closes, or the service worker hibernates and
+// misses the track-end message, the accrued listen time would otherwise be lost
+// until the user happened to open the popup.
+//
+// Hidden playing tabs heartbeat every 60s (HIDDEN_HEARTBEAT_MS), so a session
+// silent for longer than 150s is genuinely dead, not just throttled.
+
+const SWEEP_STALE_ALARM_NAME = 'tempo-sweep-stale';
+const SWEEP_STALE_AFTER_MS = 150_000;
+
+async function runStaleSweep(): Promise<void> {
+  const candidates = tracker.listStaleSessionTabIds(SWEEP_STALE_AFTER_MS);
+  if (candidates.length === 0) return;
+
+  // A session being silent does NOT prove the tab is dead: Firefox/Zen can
+  // clamp background timers hard enough that a live playing tab misses the
+  // 150s window. chrome.tabs.audible is the ground truth — if the tab is
+  // still making sound, leave the session alone and let it keep accruing.
+  const alive = new Set<number>();
+  await Promise.all(candidates.map(async (tabId) => {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.audible) alive.add(tabId);
+    } catch {
+      // Tab no longer exists — safe to sweep.
+    }
+  }));
+
+  const swept = tracker.sweepStaleSessions(SWEEP_STALE_AFTER_MS, alive);
+  if (swept.length === 0) return;
+
+  for (const { tabId, event } of swept) {
+    if (event.type === TrackEventType.ReadyToLog) {
+      const np = normalize(event.nowPlaying);
+      if (np) {
+        queuePlay(np);
+        console.log(`[Tempo] ■ Finalized stale session (tab ${tabId}): "${np.title}" by ${np.artist}`);
+      }
+    }
+    tabNowPlaying.delete(tabId);
+    tabYoutubeSuggestions.delete(tabId);
+  }
+
+  persistTrackerStateNow();
+  scheduleBadgeUpdate();
 }
 
 // ---- Alarm handlers (consolidated) -----------------------------------------
@@ -904,9 +1024,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         scheduleBadgeUpdate();
         await adjustSyncInterval();
       } catch (err) {
+        // syncToPhone's catch already classified the error and scheduled the
+        // next retry with exponential backoff — do NOT override it here.
         console.warn('[Tempo] Retry sync failed:', err);
-        const { scheduleRetryAlarm } = await import('./sync');
-        await scheduleRetryAlarm(10);
       }
       break;
     }
@@ -935,6 +1055,11 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       cleanupDedupMap();
       break;
     }
+
+    case SWEEP_STALE_ALARM_NAME: {
+      await runStaleSweep();
+      break;
+    }
   }
 });
 
@@ -951,9 +1076,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
   tabNowPlaying.delete(tabId);
   tabYoutubeSuggestions.delete(tabId);
-  persistTrackerState();
+  persistTrackerStateNow();
 });
 
 // ---- Periodic dedup cleanup alarm ------------------------------------------
 
 chrome.alarms.create('tempo-dedup-cleanup', { periodInMinutes: 5 });
+
+// ---- Periodic stale-session sweep alarm ------------------------------------
+// Runs every minute so plays finalize even when the popup is never opened.
+chrome.alarms.create(SWEEP_STALE_ALARM_NAME, { periodInMinutes: 1 });

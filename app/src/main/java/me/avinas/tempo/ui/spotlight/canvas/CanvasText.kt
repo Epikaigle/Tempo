@@ -27,8 +27,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoInfoSoft
 
 /**
  * A draggable, editable text element on the canvas.
@@ -108,7 +106,7 @@ fun CanvasText(
                 if (isSelected) {
                     Modifier.border(
                         width = 2.dp,
-                        color = TempoInfoSoft,
+                        color = Color(0xFF60A5FA),
                         shape = RoundedCornerShape(8.dp)
                     )
                 } else Modifier
@@ -191,7 +189,7 @@ fun CanvasText(
                     .align(Alignment.TopEnd)
                     .offset(x = 12.dp, y = (-12).dp)
                     .size(28.dp)
-                    .background(TempoError, CircleShape)
+                    .background(Color(0xFFEF4444), CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,

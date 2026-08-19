@@ -14,10 +14,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.data.remote.spotify.SpotifyAudioFeatures
 import kotlin.math.roundToInt
-import me.avinas.tempo.ui.theme.TempoErrorAlt
-import me.avinas.tempo.ui.theme.TempoInfo
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoWarning
 
 /**
  * UI components for displaying Spotify audio features.
@@ -61,17 +57,17 @@ fun AudioFeaturesSummaryCard(
                 AudioFeatureCircle(
                     label = "Energy",
                     value = audioFeatures.energy,
-                    color = TempoWarning
+                    color = Color(0xFFFF9800)
                 )
                 AudioFeatureCircle(
                     label = "Mood",
                     value = audioFeatures.valence,
-                    color = TempoErrorAlt
+                    color = Color(0xFFE91E63)
                 )
                 AudioFeatureCircle(
                     label = "Dance",
                     value = audioFeatures.danceability,
-                    color = TempoPrimary
+                    color = Color(0xFF9C27B0)
                 )
             }
             
@@ -264,7 +260,7 @@ fun PeriodAudioStatsCard(
                 label = "Energy Level",
                 description = stats.energyDescription,
                 percentage = stats.energyPercentage,
-                color = TempoWarning
+                color = Color(0xFFFF9800)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -274,7 +270,7 @@ fun PeriodAudioStatsCard(
                 label = "Overall Mood",
                 description = stats.moodDescription,
                 percentage = stats.moodPercentage,
-                color = TempoErrorAlt
+                color = Color(0xFFE91E63)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -284,7 +280,7 @@ fun PeriodAudioStatsCard(
                 label = "Danceability",
                 description = "${stats.danceabilityPercentage}% danceable",
                 percentage = stats.danceabilityPercentage,
-                color = TempoPrimary
+                color = Color(0xFF9C27B0)
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -304,7 +300,7 @@ fun PeriodAudioStatsCard(
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = FontWeight.Bold
                     ),
-                    color = TempoInfo
+                    color = Color(0xFF2196F3)
                 )
             }
         }

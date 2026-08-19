@@ -32,7 +32,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         DailyChallenge::class, // Gamification: daily challenges
         DesktopPairingSession::class // Desktop Satellite pairing sessions
     ],
-    version = 51, // Migration 51: Add lastViewedSpotlightPeriod to user_preferences (story ring viewed state)
+    version = 52, // Migration 52: Reconcile divergent schema-51 lineages (see MIGRATION_51_52)
     exportSchema = true  // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
@@ -59,7 +59,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val TAG = "AppDatabase"
         
         /** Current Room schema version — keep in sync with the @Database(version = ...) annotation. */
-        const val VERSION = 51
+        const val VERSION = 52
         
         /**
          * Migration from version 6 to 7: Add enhanced tracking columns to listening_events.
@@ -2086,18 +2086,93 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * Migration from version 50 to 51.
-         *
-         * Adds lastViewedSpotlightPeriod to user_preferences so the home-screen
-         * story ring can persist its "viewed" (gray) state across navigation and
-         * app restarts, keyed by story period — Instagram-style.
+         * Migration from version 50 to 51: Add lastSpotlightStoryViewed to user_preferences.
+         * Tracks which Spotlight story period the user has already viewed, so the
+         * home-screen ring can switch from colored (new) to gray (viewed).
          */
         val MIGRATION_50_51 = object : Migration(50, 51) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 50 to 51 - Add lastViewedSpotlightPeriod to user_preferences")
-                db.execSQL("ALTER TABLE user_preferences ADD COLUMN lastViewedSpotlightPeriod TEXT DEFAULT NULL")
+                Log.i(TAG, "Starting migration from version 50 to 51 - Add lastSpotlightStoryViewed to user_preferences")
+                db.execSQL("ALTER TABLE user_preferences ADD COLUMN lastSpotlightStoryViewed TEXT DEFAULT NULL")
                 Log.i(TAG, "Migration from version 50 to 51 completed successfully")
             }
+        }
+
+        /**
+         * Column list shared by every schema-51 variant of user_preferences.
+         * Used by MIGRATION_51_52 to copy data across the table rebuild.
+         */
+        private val USER_PREFERENCES_SHARED_COLUMNS = listOf(
+            "id", "theme", "notifications", "spotifyLinked", "extendedAudioAnalysis",
+            "mergeAlternateVersions", "filterPodcasts", "filterAudiobooks",
+            "hasSeenHistoryCoachMark", "hasSeenSpotlightTutorial", "hasSeenStatsSortTutorial",
+            "hasSeenStatsItemClickTutorial", "lastWeeklyReminderShown", "lastMonthlyReminderShown",
+            "lastYearlyReminderShown", "lastAllTimeReminderShown", "spotifyApiOnlyMode",
+            "spotifyImportCursor", "lastSpotifyImportTimestamp", "lastfmUsername",
+            "lastfmConnected", "lastfmSyncFrequency", "smartChallengeNotifHour",
+            "smartChallengeNotifCalcTime", "isGamificationEnabled", "pauseTrackingOnLowBattery"
+        )
+
+        /**
+         * Migration from version 51 to 52: Reconcile the two divergent schema-51 lineages.
+         *
+         * Two different schema-51 variants shipped: public 4.8.2 (identity hash 37ba3299…,
+         * column `lastViewedSpotlightPeriod`) and internal (hash 0f666133…, column
+         * `lastSpotlightStoryViewed`). Both are DB version 51, so without this migration
+         * Room detects an identity-hash mismatch for cross-lineage upgraders and crashes
+         * on first DB open.
+         *
+         * The migration probes the actual table shape with PRAGMA (never assumes):
+         *  - public/unknown shape → full rebuild into the canonical 52 shape. The public
+         *    story-viewed flag is intentionally dropped (incompatible key format, cosmetic
+         *    only — no listening data lives in this table).
+         *  - canonical shape → no-op.
+         *
+         * Rebuild = CREATE + INSERT…SELECT + DROP + RENAME because minSdk-26 SQLite has
+         * no DROP COLUMN. Runs inside Room's migration transaction (crash = rollback).
+         */
+        val MIGRATION_51_52 = object : Migration(51, 52) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Starting migration from version 51 to 52 - Reconcile schema-51 lineages (user_preferences)")
+
+                val columns = mutableListOf<String>()
+                db.query("PRAGMA table_info(user_preferences)").use { cursor ->
+                    val nameIndex = cursor.getColumnIndex("name")
+                    while (cursor.moveToNext()) {
+                        columns.add(cursor.getString(nameIndex))
+                    }
+                }
+
+                val hasPublicColumn = "lastViewedSpotlightPeriod" in columns
+                val hasCanonicalColumn = "lastSpotlightStoryViewed" in columns
+                Log.i(TAG, "Schema-51 shape probe: columns=${columns.size}, " +
+                        "lastViewedSpotlightPeriod=$hasPublicColumn, " +
+                        "lastSpotlightStoryViewed=$hasCanonicalColumn")
+
+                if (hasCanonicalColumn && !hasPublicColumn) {
+                    // Internal lineage: already the canonical 52 shape — no-op.
+                    Log.i(TAG, "Canonical shape detected; migration 51→52 is a no-op")
+                } else {
+                    // Public 4.8.2 lineage or unknown shape: rebuild into canonical.
+                    Log.i(TAG, "Rebuilding user_preferences into canonical schema-52 shape")
+                    rebuildUserPreferencesToCanonical(db)
+                }
+                Log.i(TAG, "Migration from version 51 to 52 completed successfully")
+            }
+        }
+
+        /**
+         * Rebuilds user_preferences into the canonical schema-52 shape (CREATE statement
+         * copied verbatim from Room's exported schema JSON — never hand-tuned), copying
+         * all lineage-shared columns. The table has no indices, so only the table itself
+         * is recreated. Safe on minSdk-26 SQLite.
+         */
+        private fun rebuildUserPreferencesToCanonical(db: SupportSQLiteDatabase) {
+            val sharedColumns = USER_PREFERENCES_SHARED_COLUMNS.joinToString(", ")
+            db.execSQL("CREATE TABLE IF NOT EXISTS `user_preferences_new` (`id` INTEGER NOT NULL, `theme` TEXT NOT NULL, `notifications` INTEGER NOT NULL, `spotifyLinked` INTEGER NOT NULL, `extendedAudioAnalysis` INTEGER NOT NULL, `mergeAlternateVersions` INTEGER NOT NULL, `filterPodcasts` INTEGER NOT NULL, `filterAudiobooks` INTEGER NOT NULL, `hasSeenHistoryCoachMark` INTEGER NOT NULL, `hasSeenSpotlightTutorial` INTEGER NOT NULL, `hasSeenStatsSortTutorial` INTEGER NOT NULL, `hasSeenStatsItemClickTutorial` INTEGER NOT NULL, `lastWeeklyReminderShown` TEXT, `lastMonthlyReminderShown` TEXT, `lastYearlyReminderShown` TEXT, `lastAllTimeReminderShown` TEXT, `spotifyApiOnlyMode` INTEGER NOT NULL, `spotifyImportCursor` TEXT, `lastSpotifyImportTimestamp` INTEGER, `lastfmUsername` TEXT, `lastfmConnected` INTEGER NOT NULL, `lastfmSyncFrequency` TEXT NOT NULL, `smartChallengeNotifHour` INTEGER, `smartChallengeNotifCalcTime` INTEGER, `isGamificationEnabled` INTEGER NOT NULL, `pauseTrackingOnLowBattery` INTEGER NOT NULL, `lastSpotlightStoryViewed` TEXT, PRIMARY KEY(`id`))")
+            db.execSQL("INSERT INTO user_preferences_new ($sharedColumns) SELECT $sharedColumns FROM user_preferences")
+            db.execSQL("DROP TABLE user_preferences")
+            db.execSQL("ALTER TABLE user_preferences_new RENAME TO user_preferences")
         }
 
         /**
@@ -2148,7 +2223,8 @@ abstract class AppDatabase : RoomDatabase() {
             MIGRATION_47_48,     // Add lastWeeklyReminderShown to user_preferences
             MIGRATION_48_49,     // Add youtube_id column to tracks
             MIGRATION_49_50,     // Add content_fingerprint to listening_events (import idempotency)
-            MIGRATION_50_51      // Add lastViewedSpotlightPeriod to user_preferences (story ring viewed state)
+            MIGRATION_50_51,     // Add lastSpotlightStoryViewed to user_preferences (spotlight ring viewed state)
+            MIGRATION_51_52      // Reconcile divergent schema-51 lineages (public 4.8.2 vs internal)
         )
     }
 }

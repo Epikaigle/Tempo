@@ -83,6 +83,26 @@ class ServiceHealthWorker @AssistedInject constructor(
             MusicTrackingService::class.java
         )
 
+        // Self-heal: if the listener component is stuck DISABLED (e.g. a previous
+        // restart attempt died mid-toggle), re-enable it so tracking can recover
+        // without a reinstall. This runs every 15 minutes even if the app is
+        // never opened, so the kill window is bounded.
+        try {
+            val state = applicationContext.packageManager.getComponentEnabledSetting(componentName)
+            if (state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                Log.w(TAG, "Listener component is DISABLED — re-enabling (self-heal)")
+                applicationContext.packageManager.setComponentEnabledSetting(
+                    componentName,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+                requestListenerRebind(componentName)
+                return Result.success()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to check/re-enable listener component", e)
+        }
+
         // Check if notification listener permission is granted
         if (!isNotificationListenerEnabled(componentName)) {
             Log.w(TAG, "Notification listener not enabled, cannot restart service")
@@ -131,28 +151,55 @@ class ServiceHealthWorker @AssistedInject constructor(
     }
 
     private suspend fun restartService(componentName: ComponentName) {
+        val pm = applicationContext.packageManager
         try {
-            // Toggle component state to force system rebind
-            val pm = applicationContext.packageManager
-            
-            pm.setComponentEnabledSetting(
-                componentName,
-                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                android.content.pm.PackageManager.DONT_KILL_APP
-            )
-            
-            kotlinx.coroutines.delay(100) // Use coroutine delay instead of Thread.sleep
-            
-            pm.setComponentEnabledSetting(
-                componentName,
-                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                android.content.pm.PackageManager.DONT_KILL_APP
-            )
-            
+            // Toggle component state to force system rebind.
+            //
+            // CRITICAL: the re-enable MUST run even if the disable or the delay
+            // throws — otherwise the listener component is left DISABLED and
+            // tracking stays dead until the user reinstalls (the exact failure
+            // users report). Re-enable in a finally block and verify the final
+            // state afterwards.
+            try {
+                pm.setComponentEnabledSetting(
+                    componentName,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+                kotlinx.coroutines.delay(100)
+            } finally {
+                pm.setComponentEnabledSetting(
+                    componentName,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+            }
+
+            // Verify we actually ended up enabled; if not, force it once more.
+            val finalState = pm.getComponentEnabledSetting(componentName)
+            if (finalState == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                Log.e(TAG, "Component still DISABLED after toggle — forcing ENABLED")
+                pm.setComponentEnabledSetting(
+                    componentName,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+            }
+
             TrackingServiceHeartbeat.markRebindRequested(applicationContext)
             Log.i(TAG, "Service restart requested via component toggle")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to restart service", e)
+            // Last resort: make sure we never leave the component disabled.
+            try {
+                pm.setComponentEnabledSetting(
+                    componentName,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+            } catch (ignored: Exception) {
+                Log.e(TAG, "Failed to re-enable component after restart error", ignored)
+            }
         }
     }
 

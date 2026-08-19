@@ -24,7 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TempoRed
 
 /**
  * A pulsating coach mark that points to a specific target area.
@@ -53,7 +53,7 @@ fun CoachMark(
             .padding(16.dp)
             .shadow(8.dp, RoundedCornerShape(12.dp))
             .clip(RoundedCornerShape(12.dp))
-            .background(TempoPrimary)
+            .background(TempoRed)
             .clickable { onDismiss() }
             .padding(16.dp)
             // Apply pulse effect
@@ -98,7 +98,7 @@ fun CoachMark(
 @Composable
 fun CoachMarkArrow(
     modifier: Modifier = Modifier,
-    color: Color = TempoPrimary
+    color: Color = TempoRed
 ) {
     Canvas(modifier = modifier.size(16.dp, 8.dp)) {
         val path = Path().apply {

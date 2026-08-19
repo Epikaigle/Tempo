@@ -468,8 +468,8 @@
     <string name="settings_language_french">Français</string>
     <string name="settings_language_german">Allemand</string>
     <string name="settings_language_hungarian">Hongrois</string>
-    <string name="settings_language_portuguese">Portugais</string>
     <string name="settings_language_russian">Russe</string>
+    <string name="settings_language_portuguese">Portugais</string>
     <string name="settings_select_language">Choisir la langue</string>
     <string name="settings_daily_summary">Résumé quotidien</string>
     <string name="settings_daily_summary_desc">Recevez un résumé de votre écoute chaque jour à 20h</string>
@@ -612,6 +612,11 @@
     <string name="stats_rank_1_track">Titre #1</string>
     <string name="stats_rank_1_artist">Artiste #1</string>
     <string name="stats_rank_1_album">Album #1</string>
+    <string name="stats_search_hint_songs">Rechercher titres, artistes, albums…</string>
+    <string name="stats_search_hint_artists">Rechercher des artistes…</string>
+    <string name="stats_search_hint_albums">Rechercher albums, artistes…</string>
+    <string name="stats_search_clear">Effacer la recherche</string>
+    <string name="stats_search_no_results">Aucun résultat pour « %1$s » dans ce classement</string>
 
     <!-- History Screen -->
     <string name="history_filter_title">Filtrer l\'historique</string>
@@ -725,15 +730,15 @@
     <string name="details_unknown_album">Album inconnu</string>
 
     <!-- Fan Status Percentiles -->
-    <string name="fan_status_top_1">Top 1%% Artiste</string>
+    <string name="fan_status_top_1">Top 1% Artiste</string>
     <string name="fan_status_top_1_desc">C\'est l\'un de vos favoris absolus !</string>
-    <string name="fan_status_top_5">Top 5%% Artiste</string>
+    <string name="fan_status_top_5">Top 5% Artiste</string>
     <string name="fan_status_top_5_desc">Vous l\'écoutez plus que la plupart des autres.</string>
-    <string name="fan_status_top_10">Top 10%% Artiste</string>
+    <string name="fan_status_top_10">Top 10% Artiste</string>
     <string name="fan_status_top_10_desc">Certainement l\'un de vos meilleurs choix.</string>
-    <string name="fan_status_top_25">Top 25%% Artiste</string>
+    <string name="fan_status_top_25">Top 25% Artiste</string>
     <string name="fan_status_top_25_desc">Une partie solide de votre rotation.</string>
-    <string name="fan_status_top_50">Top 50%% Artiste</string>
+    <string name="fan_status_top_50">Top 50% Artiste</string>
     <string name="fan_status_top_50_desc">Vous l\'écoutez de temps en temps.</string>
     <!-- Fan Status Counts -->
     <string name="fan_status_ultimate">Fan Ultime</string>

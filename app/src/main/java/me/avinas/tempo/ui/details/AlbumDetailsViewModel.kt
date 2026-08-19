@@ -63,6 +63,10 @@ class AlbumDetailsViewModel @Inject constructor(
         }
     }
 
+    fun refresh() {
+        loadAlbumDetails()
+    }
+
     fun toggleEditMode() {
         _uiState.update { it.copy(isEditMode = !it.isEditMode) }
     }

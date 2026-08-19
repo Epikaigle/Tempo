@@ -24,12 +24,7 @@ import androidx.compose.ui.unit.dp
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.Divider
-import me.avinas.tempo.ui.theme.TempoSuccess
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.utils.OemBackgroundHelper
 
 /**
@@ -72,13 +67,13 @@ fun BackgroundProtectionScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Background Protection", color = TextPrimary) },
+                title = { Text("Background Protection", color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = TextPrimary
+                            tint = Color.White
                         )
                     }
                 },
@@ -108,7 +103,7 @@ fun BackgroundProtectionScreen(
                         Icon(
                             imageVector = Icons.Default.PhoneAndroid,
                             contentDescription = null,
-                            tint = TextPrimary,
+                            tint = Color.White,
                             modifier = Modifier.size(32.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
@@ -116,24 +111,24 @@ fun BackgroundProtectionScreen(
                             Text(
                                 text = "Detected Device",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = TextTertiary
+                                color = Color.White.copy(alpha = 0.6f)
                             )
                             Text(
                                 text = osName,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                                color = Color.White
                             )
                         }
                         
                         // Autostart status
                         val (statusIcon, statusColor, statusText) = when (autostartState) {
                             OemBackgroundHelper.AutostartState.ENABLED -> 
-                                Triple(Icons.Default.CheckCircle, TempoSuccess, "Autostart ON")
+                                Triple(Icons.Default.CheckCircle, Color(0xFF4CAF50), "Autostart ON")
                             OemBackgroundHelper.AutostartState.DISABLED -> 
-                                Triple(Icons.Default.Warning, TempoPrimary, "Autostart OFF")
+                                Triple(Icons.Default.Warning, TempoRed, "Autostart OFF")
                             OemBackgroundHelper.AutostartState.UNKNOWN -> 
-                                Triple(Icons.AutoMirrored.Filled.HelpOutline, TextTertiary, "Unknown")
+                                Triple(Icons.AutoMirrored.Filled.HelpOutline, Color.Gray, "Unknown")
                         }
                         
                         Column(horizontalAlignment = Alignment.End) {
@@ -159,7 +154,7 @@ fun BackgroundProtectionScreen(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
-                            containerColor = TempoPrimary.copy(alpha = 0.2f)
+                            containerColor = TempoRed.copy(alpha = 0.2f)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -170,14 +165,14 @@ fun BackgroundProtectionScreen(
                             Icon(
                                 imageVector = Icons.Default.Warning,
                                 contentDescription = null,
-                                tint = TempoPrimary,
+                                tint = TempoRed,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = "Autostart is disabled. Tempo may stop working in the background.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = TextPrimary
+                                color = Color.White
                             )
                         }
                     }
@@ -189,13 +184,13 @@ fun BackgroundProtectionScreen(
                     text = "Configure Settings",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+                    color = Color.White
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Xiaomi devices aggressively kill background apps. Complete these steps to ensure Tempo works reliably.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
+                    color = Color.White.copy(alpha = 0.7f)
                 )
                 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -217,7 +212,7 @@ fun BackgroundProtectionScreen(
                             onClick = { OemBackgroundHelper.openAutostartSettings(context) }
                         )
                         
-                        HorizontalDivider(color = Divider)
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         
                         // Step 2: Battery Saver
                         SettingsStep(
@@ -228,7 +223,7 @@ fun BackgroundProtectionScreen(
                             onClick = { OemBackgroundHelper.openBatterySaverSettings(context) }
                         )
                         
-                        HorizontalDivider(color = Divider)
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         
                         // Step 3: Lock in Recent Apps
                         SettingsStep(
@@ -239,7 +234,7 @@ fun BackgroundProtectionScreen(
                             showOpenButton = false
                         )
                         
-                        HorizontalDivider(color = Divider)
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         
                         // Step 4: Boost Speed Lock
                         SettingsStep(
@@ -250,7 +245,7 @@ fun BackgroundProtectionScreen(
                             onClick = { OemBackgroundHelper.openAppLockSettings(context) }
                         )
                         
-                        HorizontalDivider(color = Divider)
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                         
                         // Step 5: MIUI Optimizations (Advanced)
                         SettingsStep(
@@ -309,7 +304,7 @@ private fun SettingsStep(
             modifier = Modifier
                 .size(32.dp)
                 .background(
-                    color = if (isCompleted) TempoSuccess else TempoPrimary.copy(alpha = 0.3f),
+                    color = if (isCompleted) Color(0xFF4CAF50) else TempoRed.copy(alpha = 0.3f),
                     shape = RoundedCornerShape(16.dp)
                 ),
             contentAlignment = Alignment.Center
@@ -318,7 +313,7 @@ private fun SettingsStep(
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = "Completed",
-                    tint = TextPrimary,
+                    tint = Color.White,
                     modifier = Modifier.size(18.dp)
                 )
             } else {
@@ -326,7 +321,7 @@ private fun SettingsStep(
                     text = stepNumber.toString(),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+                    color = Color.White
                 )
             }
         }
@@ -337,7 +332,7 @@ private fun SettingsStep(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = TextSecondary,
+            tint = Color.White.copy(alpha = 0.7f),
             modifier = Modifier.size(24.dp)
         )
         
@@ -349,12 +344,12 @@ private fun SettingsStep(
                 text = title,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
-                color = TextPrimary
+                color = Color.White
             )
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodySmall,
-                color = TextTertiary
+                color = Color.White.copy(alpha = 0.6f)
             )
         }
         
@@ -363,7 +358,7 @@ private fun SettingsStep(
             TextButton(
                 onClick = onClick,
                 colors = ButtonDefaults.textButtonColors(
-                    contentColor = TempoPrimary
+                    contentColor = TempoRed
                 )
             ) {
                 Text("Open")

@@ -132,8 +132,10 @@ class DriveBackupWorker @AssistedInject constructor(
                 if (!authManager.restoreSessionSilently()) {
                     Log.e(TAG, "Could not restore Google session - user needs to sign in via app")
                     settingsManager.updateLastBackup(BackupStatus.FAILED)
-                    showNotification("Backup Failed", "Please sign in to Google in the app to enable backups")
-                    return@withContext Result.failure()
+                    notifyFirstAttempt("Backup Failed", "Please sign in to Google in the app to enable backups")
+                    // Result.retry() keeps the periodic schedule alive; Result.failure()
+                    // would cancel it permanently after a single failed run.
+                    return@withContext Result.retry()
                 }
             }
             
@@ -141,8 +143,8 @@ class DriveBackupWorker @AssistedInject constructor(
             if (authManager.getAccessToken() == null) {
                 Log.e(TAG, "No access token available - authorization may have expired")
                 settingsManager.updateLastBackup(BackupStatus.FAILED)
-                showNotification("Backup Failed", "Google authorization expired. Please sign in again.")
-                return@withContext Result.failure()
+                notifyFirstAttempt("Backup Failed", "Google authorization expired. Please sign in again.")
+                return@withContext Result.retry()
             }
             
             // Get settings
@@ -166,8 +168,8 @@ class DriveBackupWorker @AssistedInject constructor(
                 if (exportResult is me.avinas.tempo.data.importexport.ImportExportResult.Error) {
                     Log.e(TAG, "Failed to create local backup: ${exportResult.message}")
                     settingsManager.updateLastBackup(BackupStatus.FAILED)
-                    showNotification("Backup Failed", exportResult.message)
-                    return@withContext Result.failure()
+                    notifyFirstAttempt("Backup Failed", exportResult.message)
+                    return@withContext Result.retry()
                 }
                 
                 // Upload to Google Drive
@@ -190,7 +192,7 @@ class DriveBackupWorker @AssistedInject constructor(
                     is DriveBackupResult.Error -> {
                         Log.e(TAG, "Upload failed: ${uploadResult.message}")
                         settingsManager.updateLastBackup(BackupStatus.FAILED)
-                        showNotification("Backup Failed", uploadResult.message)
+                        notifyFirstAttempt("Backup Failed", uploadResult.message)
                         return@withContext Result.retry()
                     }
                 }
@@ -201,8 +203,19 @@ class DriveBackupWorker @AssistedInject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Backup worker failed", e)
             settingsManager.updateLastBackup(BackupStatus.FAILED)
-            showNotification("Backup Failed", "An unexpected error occurred")
-            Result.failure()
+            notifyFirstAttempt("Backup Failed", "An unexpected error occurred")
+            Result.retry()
+        }
+    }
+
+    /**
+     * Show a failure notification only on the first attempt of a run.
+     * WorkManager retries (with backoff) would otherwise spam the user with
+     * one notification per attempt for the same underlying failure.
+     */
+    private fun notifyFirstAttempt(title: String, message: String) {
+        if (runAttemptCount == 0) {
+            showNotification(title, message)
         }
     }
     

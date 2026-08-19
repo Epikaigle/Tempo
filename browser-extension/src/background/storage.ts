@@ -5,7 +5,7 @@
 // Uses a cached DB connection to avoid expensive open/close per operation.
 // ============================================================================
 
-import type { Play, PairingInfo, Settings, SyncRecord, TabTrackState, ConnectionHistoryEntry, ConnectionHealth, SyncCheckpoint } from '../shared/types';
+import type { Play, PairingInfo, Settings, SyncRecord, TabTrackState, ConnectionHistoryEntry, ConnectionHealth, SyncCheckpoint, SyncBackoffState } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/types';
 
 const DB_NAME = 'TempoStatsDB';
@@ -758,6 +758,33 @@ export async function saveSyncCheckpoint(checkpoint: SyncCheckpoint): Promise<vo
 export async function clearSyncCheckpoint(): Promise<void> {
   return new Promise<void>((resolve) => {
     chrome.storage.session.remove('syncCheckpoint', resolve);
+  });
+}
+
+// ---- Sync Backoff State (chrome.storage.session — survives hibernation) ----
+
+interface SyncBackoffStorageResult {
+  syncBackoff?: SyncBackoffState;
+}
+
+export async function getSyncBackoff(): Promise<SyncBackoffState | null> {
+  return new Promise<SyncBackoffState | null>((resolve) => {
+    chrome.storage.session.get('syncBackoff', (result) => {
+      const backoff = (result as SyncBackoffStorageResult).syncBackoff;
+      resolve(backoff ?? null);
+    });
+  });
+}
+
+export async function saveSyncBackoff(backoff: SyncBackoffState): Promise<void> {
+  return new Promise<void>((resolve) => {
+    chrome.storage.session.set({ syncBackoff: backoff }, resolve);
+  });
+}
+
+export async function clearSyncBackoff(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    chrome.storage.session.remove('syncBackoff', resolve);
   });
 }
 

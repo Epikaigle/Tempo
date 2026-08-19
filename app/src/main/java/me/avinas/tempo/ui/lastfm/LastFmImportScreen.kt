@@ -1,14 +1,5 @@
 package me.avinas.tempo.ui.lastfm
 
-import me.avinas.tempo.ui.theme.TextTertiary
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextQuaternary
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.LastFmRed
-import me.avinas.tempo.ui.theme.Divider
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoSuccess
-import me.avinas.tempo.ui.theme.TempoPrimary
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -110,7 +101,7 @@ fun LastFmImportScreen(
                         ) {
                             Text(
                                 text = "Import from Last.fm",
-                                color = TextPrimary
+                                color = Color.White
                             )
                         }
                     },
@@ -119,7 +110,7 @@ fun LastFmImportScreen(
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = TextPrimary
+                                tint = Color.White
                             )
                         }
                     },
@@ -218,7 +209,7 @@ private fun UsernameInputContent(
         Icon(
             painter = androidx.compose.ui.res.painterResource(id = me.avinas.tempo.R.drawable.ic_lastfm),
             contentDescription = null,
-            tint = LastFmRed,
+            tint = Color(0xFFBA0000),
             modifier = Modifier.size(64.dp)
         )
         
@@ -227,7 +218,7 @@ private fun UsernameInputContent(
         Text(
             text = "Connect Last.fm",
             style = MaterialTheme.typography.headlineMedium,
-            color = TextPrimary,
+            color = Color.White,
             fontWeight = FontWeight.Bold
         )
         
@@ -236,7 +227,7 @@ private fun UsernameInputContent(
         Text(
             text = "Import your scrobble history to unlock powerful listening insights",
             style = MaterialTheme.typography.bodyLarge,
-            color = TextSecondary,
+            color = Color.White.copy(alpha = 0.7f),
             textAlign = TextAlign.Center
         )
         
@@ -266,13 +257,13 @@ private fun UsernameInputContent(
                 }
             ),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = TextPrimary,
-                unfocusedTextColor = TextPrimary,
-                focusedBorderColor = LastFmRed,
-                unfocusedBorderColor = TextTertiary,
-                focusedLabelColor = LastFmRed,
-                unfocusedLabelColor = TextSecondary,
-                cursorColor = LastFmRed
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFBA0000),
+                unfocusedBorderColor = Color.White.copy(alpha = 0.5f),
+                focusedLabelColor = Color(0xFFBA0000),
+                unfocusedLabelColor = Color.White.copy(alpha = 0.7f),
+                cursorColor = Color(0xFFBA0000)
             ),
             modifier = Modifier.fillMaxWidth()
         )
@@ -289,8 +280,8 @@ private fun UsernameInputContent(
             },
             enabled = username.isNotBlank(),
             colors = ButtonDefaults.buttonColors(
-                containerColor = LastFmRed,
-                disabledContainerColor = LastFmRed.copy(alpha = 0.5f)
+                containerColor = Color(0xFFBA0000),
+                disabledContainerColor = Color(0xFFBA0000).copy(alpha = 0.5f)
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -310,7 +301,7 @@ private fun UsernameInputContent(
         Text(
             text = "We'll analyze your listening history and import recent scrobbles. Your data stays on your device.",
             style = MaterialTheme.typography.bodySmall,
-            color = TextTertiary,
+            color = Color.White.copy(alpha = 0.5f),
             textAlign = TextAlign.Center
         )
     }
@@ -326,13 +317,13 @@ private fun LoadingContent() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             CircularProgressIndicator(
-                color = LastFmRed,
+                color = Color(0xFFBA0000),
                 modifier = Modifier.size(48.dp)
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = "Discovering your Last.fm account...",
-                color = TextSecondary
+                color = Color.White.copy(alpha = 0.7f)
             )
         }
     }
@@ -362,7 +353,7 @@ private fun TierSelectionContent(
                     Text(
                         text = "Welcome, ${discovery.username}!",
                         style = MaterialTheme.typography.titleLarge,
-                        color = TextPrimary,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
                     
@@ -392,14 +383,14 @@ private fun TierSelectionContent(
                         Icon(
                             Icons.Default.Info,
                             contentDescription = null,
-                            tint = LastFmRed,
+                            tint = Color(0xFFBA0000),
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Recommended: $recommendedTier",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = LastFmRed
+                            color = Color(0xFFBA0000)
                         )
                     }
                 }
@@ -411,7 +402,7 @@ private fun TierSelectionContent(
             Text(
                 text = "Choose Import Level",
                 style = MaterialTheme.typography.titleMedium,
-                color = TextPrimary,
+                color = Color.White,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(top = 8.dp)
             )
@@ -450,7 +441,7 @@ private fun TierSelectionContent(
             Text(
                 text = "💡 All your history is saved! This just affects how fast your charts load.",
                 style = MaterialTheme.typography.bodySmall,
-                color = TextTertiary,
+                color = Color.White.copy(alpha = 0.5f),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
@@ -464,7 +455,7 @@ private fun TierSelectionContent(
             ) {
                 Text(
                     text = "Use a different account",
-                    color = TextSecondary
+                    color = Color.White.copy(alpha = 0.7f)
                 )
             }
         }
@@ -516,7 +507,7 @@ private fun TierCard(
                     Text(
                         text = tier.name.lowercase().replaceFirstChar { it.uppercase() },
                         style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
+                        color = Color.White,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -525,13 +516,13 @@ private fun TierCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(LastFmRed.copy(alpha = 0.3f))
+                            .background(Color(0xFFBA0000).copy(alpha = 0.3f))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = "Recommended",
                             style = MaterialTheme.typography.labelSmall,
-                            color = LastFmRed
+                            color = Color(0xFFBA0000)
                         )
                     }
                 }
@@ -542,7 +533,7 @@ private fun TierCard(
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
+                color = Color.White.copy(alpha = 0.7f)
             )
         }
     }
@@ -587,15 +578,15 @@ private fun ImportProgressContent(
             CircularProgressIndicator(
                 progress = { animatedProgress },
                 modifier = Modifier.fillMaxSize(),
-                color = LastFmRed,
-                trackColor = Divider,
+                color = Color(0xFFBA0000),
+                trackColor = Color.White.copy(alpha = 0.2f),
                 strokeWidth = 8.dp
             )
             
             Text(
                 text = "$progressPercent%",
                 style = MaterialTheme.typography.headlineMedium,
-                color = TextPrimary,
+                color = Color.White,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -605,7 +596,7 @@ private fun ImportProgressContent(
         Text(
             text = phase,
             style = MaterialTheme.typography.titleMedium,
-            color = TextPrimary,
+            color = Color.White,
             fontWeight = FontWeight.SemiBold
         )
         
@@ -614,7 +605,7 @@ private fun ImportProgressContent(
         Text(
             text = message,
             style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary,
+            color = Color.White.copy(alpha = 0.7f),
             textAlign = TextAlign.Center
         )
         
@@ -652,12 +643,12 @@ private fun ImportProgressContent(
             Icon(
                 Icons.Default.Close,
                 contentDescription = null,
-                tint = TextSecondary
+                tint = Color.White.copy(alpha = 0.7f)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = "Cancel Import",
-                color = TextSecondary
+                color = Color.White.copy(alpha = 0.7f)
             )
         }
     }
@@ -682,13 +673,13 @@ private fun ImportCompletionContent(
             modifier = Modifier
                 .size(80.dp)
                 .clip(RoundedCornerShape(40.dp))
-                .background(TempoSuccess.copy(alpha = 0.2f)),
+                .background(Color(0xFF27AE60).copy(alpha = 0.2f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.Default.Check,
                 contentDescription = null,
-                tint = TempoSuccess,
+                tint = Color(0xFF27AE60),
                 modifier = Modifier.size(40.dp)
             )
         }
@@ -698,7 +689,7 @@ private fun ImportCompletionContent(
         Text(
             text = "Import Complete!",
             style = MaterialTheme.typography.headlineMedium,
-            color = TextPrimary,
+            color = Color.White,
             fontWeight = FontWeight.Bold
         )
         
@@ -707,7 +698,7 @@ private fun ImportCompletionContent(
         Text(
             text = "Your Last.fm history is now connected",
             style = MaterialTheme.typography.bodyLarge,
-            color = TextSecondary
+            color = Color.White.copy(alpha = 0.7f)
         )
         
         Spacer(modifier = Modifier.height(32.dp))
@@ -757,7 +748,7 @@ private fun ImportCompletionContent(
         Button(
             onClick = onDone,
             colors = ButtonDefaults.buttonColors(
-                containerColor = LastFmRed
+                containerColor = Color(0xFFBA0000)
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -802,13 +793,13 @@ private fun ConnectedContent(
                     modifier = Modifier
                         .size(72.dp)
                         .clip(RoundedCornerShape(36.dp))
-                        .background(LastFmRed.copy(alpha = 0.2f)),
+                        .background(Color(0xFFBA0000).copy(alpha = 0.2f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         painter = androidx.compose.ui.res.painterResource(id = me.avinas.tempo.R.drawable.ic_lastfm),
                         contentDescription = null,
-                        tint = LastFmRed,
+                        tint = Color(0xFFBA0000),
                         modifier = Modifier.size(40.dp)
                     )
                 }
@@ -816,12 +807,12 @@ private fun ConnectedContent(
                 Text(
                     text = "Connected as",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextTertiary
+                    color = Color.White.copy(alpha = 0.6f)
                 )
                 Text(
                     text = username,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = TextPrimary,
+                    color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -838,18 +829,18 @@ private fun ConnectedContent(
                         Icon(
                             Icons.Default.Info,
                             contentDescription = null,
-                            tint = TempoError,
+                            tint = Color(0xFFE74C3C),
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = error,
                             style = MaterialTheme.typography.bodySmall,
-                            color = TempoError,
+                            color = Color(0xFFE74C3C),
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = onClearError, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = TextTertiary)
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Color.White.copy(alpha = 0.5f))
                         }
                     }
                 }
@@ -863,21 +854,21 @@ private fun ConnectedContent(
                     Text(
                         text = "Sync History",
                         style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
+                        color = Color.White,
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Sync pulls your latest scrobbles since the last import. It does not run in real time — use the button below to fetch recent plays immediately.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextTertiary
+                        color = Color.White.copy(alpha = 0.6f)
                     )
                     if (lastSyncResult != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = lastSyncResult,
                             style = MaterialTheme.typography.bodySmall,
-                            color = TempoSuccess
+                            color = Color(0xFF27AE60)
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -885,8 +876,8 @@ private fun ConnectedContent(
                         onClick = onSyncNow,
                         enabled = !isSyncing,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = LastFmRed,
-                            disabledContainerColor = LastFmRed.copy(alpha = 0.4f)
+                            containerColor = Color(0xFFBA0000),
+                            disabledContainerColor = Color(0xFFBA0000).copy(alpha = 0.4f)
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -896,7 +887,7 @@ private fun ConnectedContent(
                         if (isSyncing) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
-                                color = TextPrimary,
+                                color = Color.White,
                                 strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -916,14 +907,14 @@ private fun ConnectedContent(
                     Text(
                         text = "Automatic Sync",
                         style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
+                        color = Color.White,
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Automatically check for new scrobbles in the background.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextTertiary
+                        color = Color.White.copy(alpha = 0.6f)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     listOf("NONE" to "Off", "DAILY" to "Daily", "WEEKLY" to "Weekly").forEach { (value, label) ->
@@ -933,7 +924,7 @@ private fun ConnectedContent(
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { onSetFrequency(value) }
                                 .background(
-                                    if (syncFrequency == value) LastFmRed.copy(alpha = 0.2f)
+                                    if (syncFrequency == value) Color(0xFFBA0000).copy(alpha = 0.2f)
                                     else Color.Transparent
                                 )
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -943,13 +934,13 @@ private fun ConnectedContent(
                             Text(
                                 text = label,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = TextPrimary
+                                color = Color.White
                             )
                             if (syncFrequency == value) {
                                 Icon(
                                     Icons.Default.Check,
                                     contentDescription = null,
-                                    tint = LastFmRed,
+                                    tint = Color(0xFFBA0000),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -967,7 +958,7 @@ private fun ConnectedContent(
             ) {
                 Text(
                     text = "Disconnect Last.fm",
-                    color = TextQuaternary,
+                    color = Color.White.copy(alpha = 0.4f),
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -986,13 +977,13 @@ private fun StatItem(
         Text(
             text = value,
             style = MaterialTheme.typography.titleLarge,
-            color = TextPrimary,
+            color = Color.White,
             fontWeight = FontWeight.Bold
         )
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = TextTertiary
+            color = Color.White.copy(alpha = 0.6f)
         )
     }
 }
@@ -1012,18 +1003,18 @@ private fun ResultRow(
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextPrimary
+                color = Color.White
             )
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodySmall,
-                color = TextTertiary
+                color = Color.White.copy(alpha = 0.5f)
             )
         }
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
-            color = TempoPrimary,
+            color = Color(0xFF9B59B6),
             fontWeight = FontWeight.Bold
         )
     }
@@ -1039,15 +1030,15 @@ private fun GlassCard(
     content: @Composable () -> Unit
 ) {
     val backgroundColor = if (isHighlighted) {
-        TempoPrimary.copy(alpha = 0.15f)
+        Color(0xFF9B59B6).copy(alpha = 0.15f)
     } else {
-        Divider
+        Color.White.copy(alpha = 0.1f)
     }
     
     val borderColor = if (isHighlighted) {
-        TempoPrimary.copy(alpha = 0.5f)
+        Color(0xFF9B59B6).copy(alpha = 0.5f)
     } else {
-        Divider
+        Color.White.copy(alpha = 0.2f)
     }
 
     Card(

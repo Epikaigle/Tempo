@@ -109,9 +109,30 @@ class ArtistNormalizationTest {
         assertEquals("krsna", ArtistParser.normalizeForSearch("KR\$NA"))
     }
 
+    @Test
+    fun `normalizeForSearch folds latin diacritics but preserves other scripts`() {
+        assertEquals("beyonce", ArtistParser.normalizeForSearch("Beyoncé"))
+        // Devanagari matras survive — distinct words stay distinct
+        assertNotEquals(
+            ArtistParser.normalizeForSearch("कृष्णा"),
+            ArtistParser.normalizeForSearch("कषण")
+        )
+        // Arabic is preserved
+        assertEquals("عمرو دياب", ArtistParser.normalizeForSearch("عمرو دياب"))
+    }
+
     // =====================
     // ArtistParser.isSameArtist
     // =====================
+
+    @Test
+    fun `isSameArtist rejects short cjk names contained in longer ones`() {
+        // "周杰" is contained in "周杰伦" (Jay Chou) but is a DIFFERENT artist
+        assertFalse(ArtistParser.isSameArtist("周杰", "周杰伦"))
+        assertFalse(ArtistParser.isSameArtist("아이", "아이유"))
+        // Longer names may still use containment ("The X" vs "X" style)
+        assertTrue(ArtistParser.isSameArtist("米津玄師", "米津玄師 (Kenshi Yonezu)"))
+    }
 
     @Test
     fun `isSameArtist matches identical japanese names`() {

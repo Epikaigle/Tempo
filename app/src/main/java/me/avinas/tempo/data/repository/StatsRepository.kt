@@ -133,6 +133,43 @@ interface StatsRepository {
      * Get top genres.
      */
     suspend fun getTopGenres(timeRange: TimeRange, limit: Int = 10): List<TopGenre>
+
+    // =====================
+    // Ranking Search
+    // =====================
+
+    /**
+     * Search the track ranking by title/artist/album.
+     * Returns matches ordered by their GLOBAL rank in the current ranking
+     * (rank = position + 1), so callers can show "where they are".
+     */
+    suspend fun searchTopTracks(
+        timeRange: TimeRange,
+        sortBy: SortBy,
+        query: String,
+        limit: Int = 100
+    ): List<TopTrack>
+
+    /**
+     * Search the artist ranking by name.
+     * Returns matches ordered by their GLOBAL rank in the current ranking.
+     */
+    suspend fun searchTopArtists(
+        timeRange: TimeRange,
+        sortBy: SortBy,
+        query: String,
+        limit: Int = 100
+    ): List<TopArtist>
+
+    /**
+     * Search the album ranking by album/artist.
+     * Returns matches ordered by their GLOBAL rank in the current ranking.
+     */
+    suspend fun searchTopAlbums(
+        timeRange: TimeRange,
+        query: String,
+        limit: Int = 100
+    ): List<TopAlbum>
     
     // =====================
     // Temporal Analysis

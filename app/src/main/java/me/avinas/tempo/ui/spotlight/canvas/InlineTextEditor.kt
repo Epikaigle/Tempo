@@ -44,8 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.theme.TempoInfoSoft
-import me.avinas.tempo.ui.theme.TempoWarningBright
 
 /**
  * Instagram-style inline text editor overlay.
@@ -285,7 +283,7 @@ fun InlineTextEditor(
                         Icon(
                             imageVector = if (localStyle.hasBackground) Icons.Default.AutoAwesome else Icons.Outlined.AutoAwesome,
                             contentDescription = "Style",
-                            tint = if (localStyle.hasBackground || localStyle.hasOutline) TempoWarningBright else Color.White
+                            tint = if (localStyle.hasBackground || localStyle.hasOutline) Color(0xFFFDE047) else Color.White
                         )
                     }
                 }
@@ -423,7 +421,7 @@ private fun ColorDot(
             .background(color)
             .border(
                 width = if (isSelected) 3.dp else 1.dp,
-                color = if (isSelected) TempoInfoSoft else Color.White.copy(alpha = 0.5f),
+                color = if (isSelected) Color(0xFF60A5FA) else Color.White.copy(alpha = 0.5f),
                 shape = CircleShape
             )
             .clickable(onClick = onClick),

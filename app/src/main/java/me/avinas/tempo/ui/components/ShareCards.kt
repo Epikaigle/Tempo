@@ -1,5 +1,7 @@
 package me.avinas.tempo.ui.components
 
+import me.avinas.tempo.ui.theme.TempoDarkBackground
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.border
@@ -22,58 +24,93 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.R
-import me.avinas.tempo.data.stats.AlbumDetails
 import me.avinas.tempo.data.stats.ArtistDetails
-import me.avinas.tempo.data.stats.AudioFeaturesStats
 import me.avinas.tempo.data.stats.TrackDetails
-import kotlin.math.roundToInt
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.GraphicEq
-import me.avinas.tempo.ui.theme.BronzeLight
-import me.avinas.tempo.ui.theme.Divider
-import me.avinas.tempo.ui.theme.GoldPrimary
-import me.avinas.tempo.ui.theme.SilverLight
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoAccentBright
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoErrorAlt
-import me.avinas.tempo.ui.theme.TempoInfo
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoWarning
-import me.avinas.tempo.ui.theme.TempoWarningBright
-import me.avinas.tempo.ui.theme.TempoWarningDeep
-import me.avinas.tempo.ui.theme.TempoWarningSoft
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextTertiary
 
 /**
- * Common background for share cards to ensure brand consistency.
- * When [theme] is provided, the backdrop is rendered via [ShareBackdrop] so the card
- * picks up the theme's structural background (not just colors). Otherwise the classic
- * MIDNIGHT look is used.
+ * Common background for share cards. Themed via [ShareThemePalette] so every
+ * share surface (stats, song, artist) offers the same theme set and keeps
+ * text readable on both dark and light backdrops.
  */
 @Composable
 fun ShareCardBackground(
     imageUrl: String? = null,
-    theme: ShareTheme = ShareTheme.MIDNIGHT,
+    palette: ShareThemePalette,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
-    ShareBackdrop(theme = theme, imageUrl = imageUrl, modifier = modifier) {
+    Box(
+        modifier = modifier
+            .background(brush = Brush.verticalGradient(palette.gradient))
+    ) {
+        // Blurred dynamic background image if available
+        if (!imageUrl.isNullOrBlank()) {
+            CachedAsyncImage(
+                imageUrl = imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                allowHardware = false,
+                blurRadius = 48.dp
+            )
+            // Overlay gradient to ensure high readability and contrast
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(brush = Brush.verticalGradient(palette.overlay))
+            )
+        }
+
+        // Decorative ambient glow
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 50.dp, y = (-50).dp)
+                .size(300.dp)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            palette.glowTop.copy(alpha = palette.glowAlpha),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .offset(x = (-50).dp, y = 50.dp)
+                .size(300.dp)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            palette.glowBottom.copy(alpha = palette.glowAlpha),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                )
+        )
+
         content()
+
         // Minimal Branding at Bottom
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 40.dp),
+                .padding(bottom = 40.dp), // Moved upward (increased from 32dp)
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = stringResource(R.string.share_brand),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Black,
-                color = Color.White.copy(alpha = 0.7f),
+                color = palette.branding,
                 letterSpacing = 4.sp
             )
         }
@@ -90,9 +127,10 @@ fun ArtistShareCard(
     theme: ShareTheme = ShareTheme.MIDNIGHT,
     modifier: Modifier = Modifier
 ) {
+    val palette = theme.palette
     ShareCardBackground(
         imageUrl = artistDetails.artist.imageUrl,
-        theme = theme,
+        palette = palette,
         modifier = modifier.aspectRatio(9f/16f)
     ) {
         FitToHeight(
@@ -110,7 +148,7 @@ fun ArtistShareCard(
                     modifier = Modifier
                         .size(160.dp)
                         .clip(CircleShape)
-                        .border(4.dp, Color.White.copy(alpha = 0.1f), CircleShape)
+                        .border(4.dp, palette.divider, CircleShape)
                 ) {
                     val imageUrl = artistDetails.artist.imageUrl
 
@@ -122,10 +160,10 @@ fun ArtistShareCard(
                         allowHardware = false,
                         placeholder = {
                             Box(
-                                modifier = Modifier.fillMaxSize().background(TextTertiary),
+                                modifier = Modifier.fillMaxSize().background(palette.cellPlaceholder),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White)
+                                Icon(Icons.Default.MusicNote, contentDescription = null, tint = palette.textSecondary)
                             }
                         }
                     )
@@ -135,7 +173,7 @@ fun ArtistShareCard(
                 Text(
                     text = artistDetails.artist.name,
                     style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black, fontSize = 32.sp),
-                    color = Color.White,
+                    color = palette.textPrimary,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     lineHeight = 36.sp,
                     maxLines = 2
@@ -150,13 +188,13 @@ fun ArtistShareCard(
                         if (artistDetails.country != null) {
                             GlassCard(
                                 shape = RoundedCornerShape(50),
-                                backgroundColor = Color.White.copy(alpha = 0.1f),
+                                backgroundColor = palette.surface,
                                 fillMaxWidth = false
                             ) {
                                 Text(
                                     text = stringResource(R.string.share_country_format, artistDetails.country),
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = Color.White,
+                                    color = palette.textPrimary,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
@@ -169,19 +207,19 @@ fun ArtistShareCard(
                         if (artistDetails.personalPlayCount > 50) {
                             val (badgeText, badgeEmoji, badgeColor) = if (percentile != null) {
                                 when {
-                                    percentile <= 1.0 -> Triple(stringResource(R.string.fan_status_top_1), "👑", GoldPrimary)
-                                    percentile <= 5.0 -> Triple(stringResource(R.string.fan_status_top_5), "🌟", TempoWarning)
-                                    percentile <= 10.0 -> Triple(stringResource(R.string.fan_status_top_10), "🔥", TempoError)
-                                    percentile <= 25.0 -> Triple(stringResource(R.string.fan_status_top_25), "🎧", TempoInfo)
-                                    percentile <= 50.0 -> Triple(stringResource(R.string.fan_status_top_50), "🎵", TempoPrimary)
-                                    else -> Triple(stringResource(R.string.fan_status_listener), "🎵", TextSecondary)
+                                    percentile <= 1.0 -> Triple(stringResource(R.string.fan_status_top_1), "👑", Color(0xFFFFD700))
+                                    percentile <= 5.0 -> Triple(stringResource(R.string.fan_status_top_5), "🌟", Color(0xFFF59E0B))
+                                    percentile <= 10.0 -> Triple(stringResource(R.string.fan_status_top_10), "🔥", Color(0xFFEF4444))
+                                    percentile <= 25.0 -> Triple(stringResource(R.string.fan_status_top_25), "🎧", Color(0xFF3B82F6))
+                                    percentile <= 50.0 -> Triple(stringResource(R.string.fan_status_top_50), "🎵", Color(0xFF8B5CF6))
+                                    else -> Triple(stringResource(R.string.fan_status_listener), "🎵", Color(0xFF94A3B8))
                                 }
                             } else {
                                 when {
-                                    artistDetails.personalPlayCount > 1000 -> Triple(stringResource(R.string.fan_status_ultimate), "👑", GoldPrimary)
-                                    artistDetails.personalPlayCount > 500 -> Triple(stringResource(R.string.fan_status_super), "🌟", TempoWarning)
-                                    artistDetails.personalPlayCount > 200 -> Triple(stringResource(R.string.fan_status_big), "🔥", TempoError)
-                                    else -> Triple(stringResource(R.string.fan_status_regular), "🎧", TempoInfo)
+                                    artistDetails.personalPlayCount > 1000 -> Triple(stringResource(R.string.fan_status_ultimate), "👑", Color(0xFFFFD700))
+                                    artistDetails.personalPlayCount > 500 -> Triple(stringResource(R.string.fan_status_super), "🌟", Color(0xFFF59E0B))
+                                    artistDetails.personalPlayCount > 200 -> Triple(stringResource(R.string.fan_status_big), "🔥", Color(0xFFEF4444))
+                                    else -> Triple(stringResource(R.string.fan_status_regular), "🎧", Color(0xFF3B82F6))
                                 }
                             }
                             GlassCard(
@@ -195,7 +233,10 @@ fun ArtistShareCard(
                                     text = "$badgeEmoji $badgeText",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = badgeColor,
+                                    // Semantic badge colors are tuned for dark
+                                    // backdrops; fall back to the theme's strong
+                                    // text on light themes to stay readable.
+                                    color = if (palette.isDark) badgeColor else palette.textStrong,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
@@ -206,8 +247,8 @@ fun ArtistShareCard(
                 // Stats Grid (GlassCard)
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(20.dp)
+                    backgroundColor = palette.surface,
+                    shape = palette.cardShape
                 ) {
                     Row(
                         modifier = Modifier
@@ -220,7 +261,7 @@ fun ArtistShareCard(
                             Text(
                                 text = stringResource(R.string.share_total_time),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = palette.textSecondary,
                                 letterSpacing = 1.5.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -228,7 +269,7 @@ fun ArtistShareCard(
                                 text = stringResource(R.string.share_min_format, artistDetails.personalTotalTimeMinutes),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = palette.textPrimary
                             )
                         }
 
@@ -236,14 +277,14 @@ fun ArtistShareCard(
                             modifier = Modifier
                                 .height(30.dp)
                                 .width(1.dp)
-                                .background(Color.White.copy(alpha = 0.15f))
+                                .background(palette.divider)
                         )
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = stringResource(R.string.share_unique_songs),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = palette.textSecondary,
                                 letterSpacing = 1.5.sp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -251,7 +292,7 @@ fun ArtistShareCard(
                                 text = artistDetails.uniqueTracksPlayed.toString(),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = palette.textPrimary
                             )
                         }
                     }
@@ -262,9 +303,9 @@ fun ArtistShareCard(
                     GlassCard(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(16.dp)),
-                        backgroundColor = Color.Black.copy(alpha = 0.4f),
-                        shape = RoundedCornerShape(16.dp)
+                            .border(1.dp, palette.divider, palette.cardShape),
+                        backgroundColor = palette.surfaceStrong,
+                        shape = palette.cardShape
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp)
@@ -272,7 +313,7 @@ fun ArtistShareCard(
                             Text(
                                 text = stringResource(R.string.share_top_songs),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.8f),
+                                color = palette.textPrimary,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
@@ -281,7 +322,7 @@ fun ArtistShareCard(
                                 if (index > 0) {
                                     HorizontalDivider(
                                         modifier = Modifier.padding(vertical = 4.dp),
-                                        color = Color.White.copy(alpha = 0.08f),
+                                        color = palette.divider,
                                         thickness = 0.5.dp
                                     )
                                 }
@@ -291,18 +332,17 @@ fun ArtistShareCard(
                                         .padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    val badgeColors = when (index) {
+                                        0 -> listOf(Color(0xFFFBBF24), Color(0xFFF59E0B))
+                                        1 -> listOf(Color(0xFFE2E8F0), Color(0xFF94A3B8))
+                                        else -> listOf(Color(0xFFCD7F32), Color(0xFFB45309))
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .size(20.dp)
                                             .background(
-                                                brush = Brush.linearGradient(
-                                                    colors = when (index) {
-                                                        0 -> listOf(TempoWarningBright, TempoWarning)
-                                                        1 -> listOf(SilverLight, TextSecondary)
-                                                        else -> listOf(BronzeLight, TempoWarningDeep)
-                                                    }
-                                                ),
-                                                shape = CircleShape
+                                                brush = Brush.linearGradient(colors = badgeColors),
+                                                shape = palette.badgeShape
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -310,7 +350,7 @@ fun ArtistShareCard(
                                             text = "${index + 1}",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.Black,
+                                            color = palette.contrastingText(badgeColors.first()),
                                             fontSize = 10.sp
                                         )
                                     }
@@ -318,7 +358,7 @@ fun ArtistShareCard(
                                     Text(
                                         text = song.title,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.White,
+                                        color = palette.textPrimary,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
@@ -328,7 +368,7 @@ fun ArtistShareCard(
                                         text = stringResource(R.string.share_plays_format, song.playCount),
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color.White.copy(alpha = 0.8f)
+                                        color = palette.textSecondary
                                     )
                                 }
                             }
@@ -349,9 +389,10 @@ fun SongShareCard(
     theme: ShareTheme = ShareTheme.MIDNIGHT,
     modifier: Modifier = Modifier
 ) {
+    val palette = theme.palette
     ShareCardBackground(
         imageUrl = trackDetails.track.albumArtUrl,
-        theme = theme,
+        palette = palette,
         modifier = modifier.aspectRatio(9f/16f)
     ) {
         FitToHeight(
@@ -374,7 +415,7 @@ fun SongShareCard(
                             .background(
                                 brush = Brush.radialGradient(
                                     colors = listOf(
-                                        Color.White.copy(alpha = 0.25f),
+                                        palette.heroGlow,
                                         Color.Transparent
                                     )
                                 ),
@@ -384,7 +425,7 @@ fun SongShareCard(
 
                     GlassCard(
                         modifier = Modifier.size(280.dp),
-                        shape = RoundedCornerShape(24.dp)
+                        shape = palette.cardShape
                     ) {
                         CachedAsyncImage(
                             imageUrl = trackDetails.track.albumArtUrl,
@@ -394,10 +435,10 @@ fun SongShareCard(
                             allowHardware = false,
                             placeholder = {
                                 Box(
-                                    modifier = Modifier.fillMaxSize().background(TextTertiary),
+                                    modifier = Modifier.fillMaxSize().background(palette.cellPlaceholder),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White)
+                                    Icon(Icons.Default.MusicNote, contentDescription = null, tint = palette.textSecondary)
                                 }
                             }
                         )
@@ -408,7 +449,7 @@ fun SongShareCard(
                 Text(
                     text = trackDetails.track.title,
                     style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Black, fontSize = 28.sp),
-                    color = Color.White,
+                    color = palette.textPrimary,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -417,7 +458,9 @@ fun SongShareCard(
                 Text(
                     text = trackDetails.track.artist,
                     style = MaterialTheme.typography.titleMedium,
-                    color = TempoAccent,
+                    // Lavender artist credit is tuned for dark backdrops; use the
+                    // theme accent on light themes to stay readable.
+                    color = if (palette.isDark) Color(0xFFE9D5FF) else palette.accent,
                     fontWeight = FontWeight.Bold,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
@@ -425,8 +468,8 @@ fun SongShareCard(
                 // Detailed Stats Grid
                 GlassCard(
                     modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(20.dp)
+                    backgroundColor = palette.surface,
+                    shape = palette.cardShape
                 ) {
                     Row(
                         modifier = Modifier
@@ -441,14 +484,14 @@ fun SongShareCard(
                                 Icon(
                                     imageVector = Icons.Default.GraphicEq,
                                     contentDescription = null,
-                                    tint = TempoErrorAlt,
+                                    tint = if (palette.isDark) Color(0xFFF472B6) else palette.accent,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = stringResource(R.string.share_plays_label),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = palette.textSecondary,
                                     letterSpacing = 2.sp
                                 )
                             }
@@ -457,7 +500,7 @@ fun SongShareCard(
                                 text = trackDetails.playCount.toString(),
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = palette.textPrimary
                             )
                         }
 
@@ -466,7 +509,7 @@ fun SongShareCard(
                             modifier = Modifier
                                 .height(40.dp)
                                 .width(1.dp)
-                                .background(Color.White.copy(alpha = 0.15f))
+                                .background(palette.divider)
                         )
 
                         // Total Time
@@ -475,14 +518,14 @@ fun SongShareCard(
                                 Icon(
                                     imageVector = Icons.Default.MusicNote,
                                     contentDescription = null,
-                                    tint = TempoAccentBright,
+                                    tint = if (palette.isDark) Color(0xFFC084FC) else palette.accent,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = stringResource(R.string.share_minutes),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = palette.textSecondary,
                                     letterSpacing = 2.sp
                                 )
                             }
@@ -491,399 +534,12 @@ fun SongShareCard(
                                 text = trackDetails.totalTimeMinutes.toString(),
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = palette.textPrimary
                             )
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-/**
- * Shareable card for an Album (shown via SharePreviewDialog on the album details screen).
- */
-@Composable
-fun AlbumShareCard(
-    albumDetails: AlbumDetails,
-    theme: ShareTheme = ShareTheme.MIDNIGHT,
-    modifier: Modifier = Modifier
-) {
-    ShareCardBackground(
-        imageUrl = albumDetails.album.artworkUrl,
-        theme = theme,
-        modifier = modifier.aspectRatio(9f / 16f)
-    ) {
-        FitToHeight {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Album Artwork
-                CachedAsyncImage(
-                    imageUrl = albumDetails.album.artworkUrl,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(200.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(24.dp)),
-                    contentScale = ContentScale.Crop
-                )
-
-                // Album Info
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = albumDetails.album.title,
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Black,
-                        color = Color.White,
-                        maxLines = 2
-                    )
-                    Text(
-                        text = albumDetails.artistName,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TempoAccent
-                    )
-                }
-
-                // Release year
-                albumDetails.album.releaseYear?.let { year ->
-                    GlassCard(
-                        modifier = Modifier.wrapContentSize(),
-                        shape = RoundedCornerShape(50.dp)
-                    ) {
-                        Text(
-                            text = year.toString(),
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            letterSpacing = 1.5.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Stats Grid: time / plays / completion
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = stringResource(R.string.share_total_time),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.6f),
-                                letterSpacing = 1.5.sp
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = stringResource(R.string.share_min_format, albumDetails.totalTimeMinutes),
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Black,
-                                color = Color.White
-                            )
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .height(40.dp)
-                                .width(1.dp)
-                                .background(Color.White.copy(alpha = 0.15f))
-                        )
-
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = stringResource(R.string.share_plays_label),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.6f),
-                                letterSpacing = 1.5.sp
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = albumDetails.totalPlayCount.toString(),
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Black,
-                                color = Color.White
-                            )
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .height(40.dp)
-                                .width(1.dp)
-                                .background(Color.White.copy(alpha = 0.15f))
-                        )
-
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = stringResource(R.string.share_completion),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.6f),
-                                letterSpacing = 1.5.sp
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "${(albumDetails.completionRate * 100).roundToInt()}%",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Black,
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
-
-                // Top tracks from the album
-                val topTracks = albumDetails.tracks.sortedByDescending { it.playCount }.take(3)
-                if (topTracks.isNotEmpty()) {
-                    GlassCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.share_top_tracks),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.6f),
-                                letterSpacing = 2.sp
-                            )
-
-                            topTracks.forEachIndexed { index, trackWithStats ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(24.dp)
-                                            .background(
-                                                brush = Brush.linearGradient(
-                                                    colors = when (index) {
-                                                        0 -> listOf(TempoWarningBright, TempoWarningDeep)
-                                                        1 -> listOf(SilverLight, TextSecondary)
-                                                        else -> listOf(TempoWarningSoft, Color(0xFFEA580C))
-                                                    },
-                                                    start = Offset(0f, 0f),
-                                                    end = Offset(100f, 100f)
-                                                ),
-                                                shape = CircleShape
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "${index + 1}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Black,
-                                            color = Color.Black
-                                        )
-                                    }
-
-                                    Text(
-                                        text = trackWithStats.track.title,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1
-                                    )
-
-                                    Text(
-                                        text = stringResource(R.string.share_plays_format, trackWithStats.playCount),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.White.copy(alpha = 0.6f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * "My Music DNA" — a personality-style share card derived from audio features.
- * Shown via SharePreviewDialog from the home screen.
- */
-@Composable
-fun VibeShareCard(
-    userName: String?,
-    periodLabel: String,
-    audioFeatures: AudioFeaturesStats,
-    backgroundImageUrl: String? = null,
-    theme: ShareTheme = ShareTheme.MIDNIGHT,
-    modifier: Modifier = Modifier
-) {
-    val persona = stringResource(
-        when {
-            audioFeatures.averageValence >= 0.6f && audioFeatures.averageEnergy >= 0.6f ->
-                R.string.share_dna_persona_firestarter
-            audioFeatures.averageValence >= 0.6f && audioFeatures.averageEnergy < 0.4f ->
-                R.string.share_dna_persona_dreamer
-            audioFeatures.averageValence < 0.4f && audioFeatures.averageEnergy >= 0.6f ->
-                R.string.share_dna_persona_storm
-            audioFeatures.averageValence < 0.4f && audioFeatures.averageEnergy < 0.4f ->
-                R.string.share_dna_persona_midnight
-            else -> R.string.share_dna_persona_alchemist
-        }
-    )
-
-    ShareCardBackground(
-        imageUrl = backgroundImageUrl,
-        theme = theme,
-        modifier = modifier.aspectRatio(9f / 16f)
-    ) {
-        FitToHeight {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Header
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = stringResource(R.string.share_dna_title),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.6f),
-                        letterSpacing = 3.sp
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = userName ?: stringResource(R.string.share_brand),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = periodLabel,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-                }
-
-                // Personality headline
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = persona,
-                            style = MaterialTheme.typography.displaySmall,
-                            fontWeight = FontWeight.Black,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(
-                                R.string.share_dna_avg_bpm,
-                                audioFeatures.averageTempo.roundToInt()
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TempoAccent,
-                            letterSpacing = 1.5.sp
-                        )
-                    }
-                }
-
-                // DNA gauges
-                GlassCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        DnaGauge(
-                            label = stringResource(R.string.share_dna_energy),
-                            value = audioFeatures.averageEnergy,
-                            color = TempoError
-                        )
-                        DnaGauge(
-                            label = stringResource(R.string.share_dna_happiness),
-                            value = audioFeatures.averageValence,
-                            color = TempoWarningBright
-                        )
-                        DnaGauge(
-                            label = stringResource(R.string.share_dna_dance),
-                            value = audioFeatures.averageDanceability,
-                            color = TempoPrimary
-                        )
-                        DnaGauge(
-                            label = stringResource(R.string.share_dna_acoustic),
-                            value = audioFeatures.averageAcousticness,
-                            color = Color(0xFF14B8A6)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DnaGauge(label: String, value: Float, color: Color) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.6f),
-                letterSpacing = 1.5.sp
-            )
-            Text(
-                text = "${(value.coerceIn(0f, 1f) * 100).roundToInt()}%",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-        }
-        Spacer(modifier = Modifier.height(6.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(10.dp)
-                .clip(RoundedCornerShape(50))
-                .background(Color.White.copy(alpha = 0.1f))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(value.coerceIn(0f, 1f))
-                    .clip(RoundedCornerShape(50))
-                    .background(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(color.copy(alpha = 0.6f), color)
-                        )
-                    )
-            )
         }
     }
 }

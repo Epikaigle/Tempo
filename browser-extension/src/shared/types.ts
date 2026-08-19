@@ -312,6 +312,19 @@ export interface SyncCheckpoint {
   retryCount: number;
 }
 
+/** Sync backoff state — survives service worker hibernation so rate-limit
+ *  cooldowns and exponential backoff aren't reset by a worker restart. */
+export interface SyncBackoffState {
+  lastErrorKind: string | null;
+  lastErrorStatus: number | null;
+  consecutiveFailures: number;
+  rateLimitedUntil: number | null;
+  nextRetryAt: number | null;
+  /** Last sync timestamp/result so the popup status line survives hibernation. */
+  lastSyncTime: string | null;
+  lastSyncResult: string | null;
+}
+
 /** WebSocket message types for phone ↔ extension communication. */
 export type PhoneSocketMessage =
   | { type: 'ping'; ts: number }

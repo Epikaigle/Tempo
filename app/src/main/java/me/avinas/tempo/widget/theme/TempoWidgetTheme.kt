@@ -5,8 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.glance.GlanceTheme
 import androidx.glance.material3.ColorProviders
-import me.avinas.tempo.ui.theme.TextQuaternary
-import me.avinas.tempo.ui.theme.TextSecondary
 
 object TempoWidgetColors {
     val Primary = Color(0xFF80DAB0) // Soft Teal from mockup
@@ -16,7 +14,7 @@ object TempoWidgetColors {
     
     val Secondary = Color(0xFFCCC2DC)
     val OnSecondary = Color(0xFF332D41)
-    val SecondaryContainer = TextQuaternary
+    val SecondaryContainer = Color(0xFF4A4458)
     val OnSecondaryContainer = Color(0xFFE8DEF8)
     
     val Tertiary = Color(0xFFEFB8C8)
@@ -29,7 +27,7 @@ object TempoWidgetColors {
     val Surface = Color(0xFF1C1B1F)
     val OnSurface = Color(0xFFE6E1E5)
     val SurfaceVariant = Color(0xFF49454F)
-    val OnSurfaceVariant = TextSecondary
+    val OnSurfaceVariant = Color(0xFFCAC4D0)
     val Outline = Color(0xFF938F99)
 
     // Specific Widget Gradients/Accents

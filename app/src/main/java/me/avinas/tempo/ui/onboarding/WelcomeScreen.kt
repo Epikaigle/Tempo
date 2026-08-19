@@ -1,6 +1,6 @@
 package me.avinas.tempo.ui.onboarding
 
-import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoDarkBackground
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -24,10 +24,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.ui.draw.scale
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.ui.utils.adaptiveSizeByCategory
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
 import me.avinas.tempo.ui.utils.isSmallScreen
@@ -92,7 +89,7 @@ fun WelcomeScreen(
                     modifier = Modifier
                         .size(heroSize)
                         .scale(scale),
-                    backgroundColor = TempoPrimary.copy(alpha = 0.1f),
+                    backgroundColor = TempoRed.copy(alpha = 0.1f),
                     contentPadding = PaddingValues(0.dp)
                 ) {
                     Box(
@@ -105,7 +102,7 @@ fun WelcomeScreen(
                                 .size(innerGlowSize)
                                 .background(
                                     brush = Brush.radialGradient(
-                                        colors = listOf(TempoPrimary.copy(alpha = 0.4f), Color.Transparent)
+                                        colors = listOf(TempoRed.copy(alpha = 0.4f), Color.Transparent)
                                     ),
                                     shape = CircleShape
                                 )
@@ -115,7 +112,7 @@ fun WelcomeScreen(
                             imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
                             modifier = Modifier.size(iconSize),
-                            tint = TextPrimary
+                            tint = Color.White
                         )
                     }
                 }
@@ -129,13 +126,13 @@ fun WelcomeScreen(
                     style = if (isSmall) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
-                    color = TextPrimary,
+                    color = Color.White,
                     fontSize = adaptiveTextUnitByCategory(34.sp, 28.sp, 24.sp)
                 )
                 
                 // "Love Your Stats" with Gradient
                 val gradientBrush = Brush.linearGradient(
-                    colors = listOf(TextPrimary, TempoPrimary)
+                    colors = listOf(Color.White, TempoRed)
                 )
                 
                 Text(
@@ -145,7 +142,7 @@ fun WelcomeScreen(
                     ),
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
-                    color = TextPrimary,
+                    color = Color.White,
                     fontSize = adaptiveTextUnitByCategory(34.sp, 28.sp, 24.sp)
                 )
 
@@ -156,7 +153,7 @@ fun WelcomeScreen(
                     text = stringResource(R.string.welcome_description),
                     style = MaterialTheme.typography.bodyLarge,
                     textAlign = TextAlign.Center,
-                    color = TextSecondary,
+                    color = Color.White.copy(alpha = 0.7f),
                     lineHeight = adaptiveTextUnitByCategory(24.sp, 22.sp, 20.sp),
                     fontSize = adaptiveTextUnitByCategory(16.sp, 15.sp, 14.sp)
                 )
@@ -171,7 +168,7 @@ fun WelcomeScreen(
                         .fillMaxWidth()
                         .height(scaledSize(54.dp, 0.85f, 1.1f)),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = TempoPrimary,
+                        containerColor = TempoRed,
                         contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(16.dp),
@@ -201,7 +198,7 @@ fun WelcomeScreen(
         ) {
             Text(
                 text = stringResource(R.string.welcome_skip),
-                color = TextTertiary,
+                color = Color.White.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.labelLarge
             )
         }

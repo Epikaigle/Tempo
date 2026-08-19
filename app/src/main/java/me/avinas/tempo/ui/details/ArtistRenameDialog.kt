@@ -11,21 +11,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import me.avinas.tempo.R
 import me.avinas.tempo.data.local.entities.Artist
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoSurfaceChip
-import me.avinas.tempo.ui.theme.TempoSurfaceDialog
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextTertiary
-import me.avinas.tempo.ui.theme.TempoWarningBright
+import me.avinas.tempo.ui.theme.TempoRed
 
 /**
  * Dialog for renaming an artist with smart auto-merge detection.
@@ -73,7 +64,7 @@ fun ArtistRenameDialog(
                 .padding(16.dp),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = TempoSurfaceDialog
+                containerColor = Color(0xFF1E293B)
             )
         ) {
             Column(
@@ -84,21 +75,21 @@ fun ArtistRenameDialog(
                 Icon(
                     imageVector = Icons.Default.Edit,
                     contentDescription = null,
-                    tint = TempoPrimary,
+                    tint = TempoRed,
                     modifier = Modifier.size(32.dp)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = stringResource(R.string.details_rename_artist),
+                    text = "Rename Artist",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+                    color = Color.White
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = stringResource(R.string.details_rename_info),
+                    text = "If this artist was incorrectly split, enter the full name and we'll merge the data.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
+                    color = Color(0xFF94A3B8),
                     textAlign = TextAlign.Center
                 )
 
@@ -109,15 +100,15 @@ fun ArtistRenameDialog(
                     OutlinedTextField(
                         value = newName,
                         onValueChange = { newName = it },
-                        label = { Text(stringResource(R.string.details_rename_artist_name_label), color = TextSecondary) },
+                        label = { Text("Artist Name", color = Color(0xFF94A3B8)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            focusedBorderColor = TempoPrimary,
-                            unfocusedBorderColor = TextTertiary,
-                            cursorColor = TempoPrimary
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = TempoRed,
+                            unfocusedBorderColor = Color(0xFF475569),
+                            cursorColor = TempoRed
                         ),
                         enabled = !isDetecting && !isRenaming
                     )
@@ -134,10 +125,10 @@ fun ArtistRenameDialog(
                             modifier = Modifier.weight(1f),
                             enabled = !isDetecting && !isRenaming,
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = TextSecondary
+                                contentColor = Color(0xFF94A3B8)
                             )
                         ) {
-                            Text(stringResource(R.string.common_cancel))
+                            Text("Cancel")
                         }
 
                         Button(
@@ -151,7 +142,7 @@ fun ArtistRenameDialog(
                             enabled = newName.trim().isNotBlank() &&
                                     newName.trim() != currentName &&
                                     !isDetecting && !isRenaming,
-                            colors = ButtonDefaults.buttonColors(containerColor = TempoPrimary)
+                            colors = ButtonDefaults.buttonColors(containerColor = TempoRed)
                         ) {
                             if (isDetecting) {
                                 CircularProgressIndicator(
@@ -160,7 +151,7 @@ fun ArtistRenameDialog(
                                     strokeWidth = 2.dp
                                 )
                             } else {
-                                Text(stringResource(R.string.details_rename_button), color = Color.White)
+                                Text("Rename", color = Color.White)
                             }
                         }
                     }
@@ -169,21 +160,21 @@ fun ArtistRenameDialog(
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
-                        tint = TempoWarningBright,
+                        tint = Color(0xFFFBBF24), // Amber
                         modifier = Modifier.size(28.dp)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.details_split_artists_detected),
+                        text = "Split Artists Detected!",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = TempoWarningBright
+                        color = Color(0xFFFBBF24)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.details_split_artists_detected_desc, newName),
+                        text = "It looks like these artists were incorrectly split from \"$newName\":",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
+                        color = Color(0xFFCBD5E1),
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(12.dp))
@@ -196,13 +187,13 @@ fun ArtistRenameDialog(
                                 .padding(vertical = 4.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = TempoSurfaceChip
+                                containerColor = Color(0xFF334155)
                             )
                         ) {
                             Text(
                                 text = "• ${artist.name}",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = TextPrimary,
+                                color = Color.White,
                                 modifier = Modifier.padding(12.dp)
                             )
                         }
@@ -210,9 +201,9 @@ fun ArtistRenameDialog(
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.details_merge_listening_data, newName),
+                        text = "Merge their listening data into \"$newName\"?",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
+                        color = Color(0xFF94A3B8),
                         textAlign = TextAlign.Center
                     )
 
@@ -229,10 +220,10 @@ fun ArtistRenameDialog(
                             modifier = Modifier.weight(1f),
                             enabled = !isRenaming,
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = TextSecondary
+                                contentColor = Color(0xFF94A3B8)
                             )
                         ) {
-                            Text(stringResource(R.string.details_just_rename), style = MaterialTheme.typography.labelSmall)
+                            Text("Just Rename", style = MaterialTheme.typography.labelSmall)
                         }
 
                         // Rename + merge
@@ -245,7 +236,7 @@ fun ArtistRenameDialog(
                             },
                             modifier = Modifier.weight(1f),
                             enabled = !isRenaming,
-                            colors = ButtonDefaults.buttonColors(containerColor = TempoPrimary)
+                            colors = ButtonDefaults.buttonColors(containerColor = TempoRed)
                         ) {
                             if (isRenaming) {
                                 CircularProgressIndicator(
@@ -254,7 +245,7 @@ fun ArtistRenameDialog(
                                     strokeWidth = 2.dp
                                 )
                             } else {
-                                Text(stringResource(R.string.details_merge_and_rename), color = Color.White, style = MaterialTheme.typography.labelSmall)
+                                Text("Merge & Rename", color = Color.White, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -267,7 +258,7 @@ fun ArtistRenameDialog(
                         },
                         enabled = !isRenaming
                     ) {
-                        Text(stringResource(R.string.common_back), color = TextTertiary)
+                        Text("Back", color = Color(0xFF64748B))
                     }
                 }
 
@@ -275,9 +266,9 @@ fun ArtistRenameDialog(
                 if (renameSuccess == false) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.details_rename_failed),
+                        text = "Rename failed. Please try again.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TempoError
+                        color = Color(0xFFEF4444)
                     )
                 }
             }

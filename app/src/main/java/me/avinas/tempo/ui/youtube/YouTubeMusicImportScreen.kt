@@ -60,10 +60,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import me.avinas.tempo.data.youtube.YouTubeMusicImportService
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoWarning
 
-private val YouTubeRed = TempoError
+private val YouTubeRed = Color(0xFFFF0000)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -221,7 +219,7 @@ private fun IdleContent(
                     ) {
                         append("takeout.google.com")
                     }
-                    append(", choosing \"YouTube and YouTube Music\" → only \"history\". Both JSON and HTML formats work. Select the downloaded ZIP file here (no need to extract).")
+                    append(", choosing \"YouTube and YouTube Music\" → only \"history\". Both JSON and HTML formats work. Select the downloaded ZIP here (no need to extract) — if Takeout split your export into several ZIPs, select all of them.")
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.7f),
@@ -275,8 +273,8 @@ private fun IdleContent(
                 buildAnnotatedString { append("3. Select only \"YouTube and YouTube Music\"") },
                 buildAnnotatedString { append("4. Click \"All YouTube data included\" → deselect all → select only \"history\"") },
                 buildAnnotatedString { append("5. Optionally click \"Multiple formats\" → set History to JSON for richer data (HTML also works)") },
-                buildAnnotatedString { append("6. Create export, download the ZIP") },
-                buildAnnotatedString { append("7. Select the ZIP file here directly — no need to extract") }
+                buildAnnotatedString { append("6. Create export and download the ZIP (large exports are split into several ZIPs — download all of them)") },
+                buildAnnotatedString { append("7. Select the ZIP file(s) here — no need to extract") }
             )
 
             steps.forEach { step ->
@@ -292,6 +290,20 @@ private fun IdleContent(
 
             Text(
                 text = "Only YouTube Music entries are imported; regular YouTube videos are filtered out.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.5f),
+                modifier = Modifier.padding(vertical = 2.dp)
+            )
+
+            Text(
+                text = "Takeout only includes plays recorded while Watch history was on, and exports sometimes cut off older data. If a play count looks too low, that's why.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.5f),
+                modifier = Modifier.padding(vertical = 2.dp)
+            )
+
+            Text(
+                text = "Albums, album art and genres aren't in the Takeout file. Tempo fills them in automatically in the background, which can take a few hours for large libraries.",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.5f),
                 modifier = Modifier.padding(vertical = 2.dp)
@@ -399,7 +411,7 @@ private fun CompletedContent(
                 Text(
                     text = "${result.errors.size} warnings",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TempoWarning
+                    color = Color(0xFFFFA500)
                 )
             }
 
@@ -452,7 +464,7 @@ private fun ErrorContent(
             Icon(
                 imageVector = Icons.Default.Error,
                 contentDescription = null,
-                tint = TempoError,
+                tint = Color(0xFFE74C3C),
                 modifier = Modifier.size(56.dp)
             )
 

@@ -19,12 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.GoldPrimary
-import me.avinas.tempo.ui.theme.TempoSurfaceSunken
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.*
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 
@@ -37,7 +32,7 @@ fun RateAppBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = TempoSurfaceSunken, // DeepOcean background
+        containerColor = TempoDarkSurfaceSunken,
         dragHandle = { BottomSheetDefaults.DragHandle() },
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
@@ -60,7 +55,7 @@ fun RateAppBottomSheet(
                     modifier = Modifier
                         .size(60.dp)
                         .clip(CircleShape)
-                        .background(GoldPrimary.copy(alpha = 0.2f)),
+                    .background(GoldPrimary.copy(alpha = 0.2f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -78,7 +73,7 @@ fun RateAppBottomSheet(
                 text = stringResource(R.string.rate_enjoying),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = Color.White
             )
             
             Spacer(modifier = Modifier.height(8.dp))
@@ -87,7 +82,7 @@ fun RateAppBottomSheet(
                 text = stringResource(R.string.rate_message),
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
-                color = TextSecondary,
+                color = Color.White.copy(alpha = 0.7f),
                 lineHeight = 24.sp
             )
             
@@ -100,7 +95,7 @@ fun RateAppBottomSheet(
                     .fillMaxWidth()
                     .height(56.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoPrimary,
+                    containerColor = TempoRed,
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(16.dp)
@@ -108,7 +103,7 @@ fun RateAppBottomSheet(
                 if (isSubmitting) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(20.dp),
-                        color = TextPrimary,
+                        color = Color.White,
                         strokeWidth = 2.dp
                     )
                 } else {
@@ -129,7 +124,7 @@ fun RateAppBottomSheet(
             ) {
                 Text(
                     text = stringResource(R.string.rate_not_now),
-                    color = TextTertiary,
+                    color = Color.White.copy(alpha = 0.5f),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium
                 )

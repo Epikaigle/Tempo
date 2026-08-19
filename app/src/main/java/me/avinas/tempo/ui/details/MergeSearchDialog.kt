@@ -14,20 +14,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import me.avinas.tempo.R
-import me.avinas.tempo.data.local.entities.Track
+import me.avinas.tempo.ui.theme.GlassFrostMedium
+import me.avinas.tempo.ui.theme.TempoDarkSurfaceElevated
+import me.avinas.tempo.ui.theme.TempoDarkSurfaceSunken
 import me.avinas.tempo.ui.theme.TempoError
 import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoSurfaceChip
-import me.avinas.tempo.ui.theme.TempoSurfaceDialog
-import me.avinas.tempo.ui.theme.TempoSurfaceSunken
+import me.avinas.tempo.ui.theme.TextOnAccent
 import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
 import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.data.local.entities.Track
 import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
@@ -38,7 +38,7 @@ fun MergeSearchDialog(
     viewModel: MergeTrackViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-
+    
     // Set source track ID once
     LaunchedEffect(sourceTrackId) {
         viewModel.setSourceTrackId(sourceTrackId)
@@ -57,8 +57,8 @@ fun MergeSearchDialog(
                 .fillMaxWidth()
                 .padding(16.dp)
                 .heightIn(max = 600.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = TempoSurfaceDialog)
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = TempoDarkSurfaceElevated)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 // Header
@@ -68,33 +68,33 @@ fun MergeSearchDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = stringResource(R.string.details_merge_with),
+                        text = "Merge with...",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary
                     )
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextPrimary)
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextSecondary)
                     }
                 }
-
+                
                 Spacer(modifier = Modifier.height(8.dp))
-
+                
                 // Info text
                 Text(
-                    text = stringResource(R.string.merge_track_search),
+                    text = "Search for the correct track to merge into. All listening history will be combined.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextTertiary
+                    color = TextSecondary
                 )
-
+                
                 Spacer(modifier = Modifier.height(16.dp))
-
+                
                 // Search Input
                 OutlinedTextField(
                     value = uiState.query,
                     onValueChange = viewModel::onQueryChange,
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(stringResource(R.string.details_merge_track_search_placeholder), color = TextTertiary) },
+                    placeholder = { Text("Search for the correct version...", color = TextTertiary) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextTertiary) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -105,25 +105,25 @@ fun MergeSearchDialog(
                         unfocusedBorderColor = TextTertiary
                     )
                 )
-
+                
                 Spacer(modifier = Modifier.height(16.dp))
-
+                
                 when {
                     uiState.isSearching -> {
                         Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = TempoPrimary)
+                            CircularProgressIndicator(color = TempoPrimary, trackColor = GlassFrostMedium)
                         }
                     }
                     uiState.searchResults.isEmpty() && uiState.query.length >= 2 -> {
                         Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            Text(stringResource(R.string.details_no_tracks_found), color = TextTertiary)
+                            Text("No tracks found", color = TextSecondary)
                         }
                     }
                     uiState.searchResults.isEmpty() -> {
                         Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Text(
-                                text = stringResource(R.string.merge_search_tracks),
-                                color = TextTertiary,
+                                text = "Type to search for tracks",
+                                color = TextSecondary,
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -137,32 +137,32 @@ fun MergeSearchDialog(
                                 items = uiState.searchResults,
                                 key = { track -> track.id }
                             ) { track ->
-                                TrackSearchItem(track = track, onClick = {
+                                TrackSearchItem(track = track, onClick = { 
                                     viewModel.selectTrackForMerge(track)
                                 })
                             }
                         }
                     }
                 }
-
+                
                 // Confirmation dialog for pending merge
                 if (uiState.pendingMergeTarget != null) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = TempoSurfaceSunken)
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = TempoDarkSurfaceSunken)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                text = stringResource(R.string.merge_confirm),
+                                text = "Confirm Merge",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = stringResource(R.string.merge_track_into, uiState.pendingMergeTarget!!.title, uiState.pendingMergeTarget!!.artist),
+                                text = "Merge into \"${uiState.pendingMergeTarget!!.title}\" by ${uiState.pendingMergeTarget!!.artist}?",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextPrimary,
                                 maxLines = 2,
@@ -170,7 +170,7 @@ fun MergeSearchDialog(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = stringResource(R.string.merge_cannot_undo),
+                                text = "This action cannot be undone. All listening history will be combined.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextTertiary
                             )
@@ -186,7 +186,7 @@ fun MergeSearchDialog(
                                         contentColor = TextPrimary
                                     )
                                 ) {
-                                    Text(stringResource(R.string.common_cancel))
+                                    Text("Cancel")
                                 }
                                 Button(
                                     onClick = { viewModel.confirmMerge() },
@@ -195,13 +195,13 @@ fun MergeSearchDialog(
                                         containerColor = TempoPrimary
                                     )
                                 ) {
-                                    Text(stringResource(R.string.details_merge_button), color = Color.White)
+                                    Text("Merge", color = TextOnAccent)
                                 }
                             }
                         }
                     }
                 }
-
+                
                 // Error message
                 if (uiState.mergeStatus is MergeStatus.Error) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -211,7 +211,7 @@ fun MergeSearchDialog(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
-
+                
                 if (uiState.mergeStatus is MergeStatus.Processing) {
                     Spacer(modifier = Modifier.height(16.dp))
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = TempoPrimary)
@@ -234,11 +234,11 @@ fun TrackSearchItem(track: Track, onClick: () -> Unit) {
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .background(TempoSurfaceChip, RoundedCornerShape(4.dp))
+                .background(GlassFrostMedium, RoundedCornerShape(10.dp))
         )
-
+        
         Spacer(modifier = Modifier.width(12.dp))
-
+        
         Column {
             Text(
                 text = track.title,
@@ -249,7 +249,7 @@ fun TrackSearchItem(track: Track, onClick: () -> Unit) {
             Text(
                 text = track.artist,
                 style = MaterialTheme.typography.bodySmall,
-                color = TextTertiary
+                color = TextSecondary
             )
         }
     }

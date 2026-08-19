@@ -38,11 +38,6 @@ data class UserPreferences(
     val lastMonthlyReminderShown: String? = null, // Last date monthly reminder was shown
     val lastYearlyReminderShown: String? = null,  // Last date yearly reminder was shown
     val lastAllTimeReminderShown: String? = null,  // Last date all-time reminder was shown (6-month milestone)
-
-    // Spotlight Story Ring: period key of the last story the user actually opened.
-    // Format: "<TimeRange>:<ISO period-start>". When it matches the current unlocked
-    // period the home ring renders gray (viewed); a new period clears the match.
-    val lastViewedSpotlightPeriod: String? = null,
     
     // =====================================================
     // Spotify Import Feature
@@ -134,6 +129,13 @@ data class UserPreferences(
      * When false: tracking continues at all battery levels (uses slightly more power on low
      * battery but ensures no listening sessions are missed).
      */
-    val pauseTrackingOnLowBattery: Boolean = true
+    val pauseTrackingOnLowBattery: Boolean = true,
+
+    /**
+     * Period key of the last Spotlight story the user viewed (e.g. "W2026-08-04", "M2026-08", "Y2026").
+     * When this matches the current story period key, the home-screen ring shows gray (viewed).
+     * When it differs, the ring shows the colored accent (new/unviewed story available).
+     */
+    val lastSpotlightStoryViewed: String? = null
 )
 

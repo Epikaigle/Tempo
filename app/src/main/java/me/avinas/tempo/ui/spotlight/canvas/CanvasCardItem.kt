@@ -9,20 +9,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoBackground
-import me.avinas.tempo.ui.theme.TempoCyan
-import me.avinas.tempo.ui.theme.TempoErrorDeep
-import me.avinas.tempo.ui.theme.TempoErrorSoft
-import me.avinas.tempo.ui.theme.TempoInfo
-import me.avinas.tempo.ui.theme.TempoInfoSoft
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoPrimaryMuted
-import me.avinas.tempo.ui.theme.TempoSuccessDeep
-import me.avinas.tempo.ui.theme.TempoSurfaceDialog
-import me.avinas.tempo.ui.theme.TempoSurfaceSunken
-import me.avinas.tempo.ui.theme.TempoWarning
-import me.avinas.tempo.ui.theme.TempoWarningSoft
 
 /**
  * Represents a card placed on the sharing canvas.
@@ -96,11 +82,11 @@ object TextColors {
             Color(0xFFF8FAFC), // Slate-50
             Color(0xFFFEF08A), // Yellow-200
             Color(0xFF86EFAC), // Green-300
-            TempoInfoSoft, // Blue-300
-            TempoAccent, // Violet-300
-            TempoErrorSoft, // Rose-300
-            TempoWarningSoft, // Orange-300
-            TempoCyan, // Cyan-300
+            Color(0xFF93C5FD), // Blue-300
+            Color(0xFFC4B5FD), // Violet-300
+            Color(0xFFFDA4AF), // Rose-300
+            Color(0xFFFDBA74), // Orange-300
+            Color(0xFF67E8F9), // Cyan-300
             Color(0xFFA5B4FC), // Indigo-300
             Color(0xFFF9A8D4), // Pink-300
             Color.Black
@@ -130,42 +116,42 @@ data class CanvasBackground(
             id = "holographic",
             name = "Holo",
             isGradient = true,
-            colors = listOf(Color(0xFFF9A8D4), TempoAccent, TempoCyan, Color(0xFFF0ABFC))
+            colors = listOf(Color(0xFFF9A8D4), Color(0xFFC4B5FD), Color(0xFF67E8F9), Color(0xFFF0ABFC))
         )
         
         val MidnightGrain = CanvasBackground(
             id = "midnight_grain",
             name = "Noise",
             isGradient = true,
-            colors = listOf(TempoSurfaceSunken, TempoSurfaceDialog, Color(0xFF020617))
+            colors = listOf(Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF020617))
         )
 
         val DeepOcean = CanvasBackground(
             id = "deep_ocean",
             name = "Ocean",
             isGradient = true,
-            colors = listOf(TempoSurfaceSunken, TempoSurfaceDialog, TempoBackground)
+            colors = listOf(Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF000000))
         )
         
         val SunsetBlur = CanvasBackground(
             id = "sunset_blur",
             name = "Dusk",
             isGradient = true,
-            colors = listOf(Color(0xFF0D5C4A), TempoErrorDeep, TempoWarning)
+            colors = listOf(Color(0xFF4C1D95), Color(0xFFBE185D), Color(0xFFFB923C))
         )
         
         val Aurora = CanvasBackground(
             id = "aurora",
             name = "Aurora",
             isGradient = true,
-            colors = listOf(TempoSuccessDeep, TempoInfo, TempoPrimary)
+            colors = listOf(Color(0xFF10B981), Color(0xFF3B82F6), Color(0xFF8B5CF6))
         )
         
         val ElectricVoid = CanvasBackground(
             id = "electric_void",
             name = "Void",
             isGradient = true,
-            colors = listOf(TempoBackground, Color(0xFF1D4ED8), TempoPrimaryMuted)
+            colors = listOf(Color(0xFF000000), Color(0xFF1D4ED8), Color(0xFF7C3AED))
         )
         
         val NeoMint = CanvasBackground(
@@ -179,7 +165,7 @@ data class CanvasBackground(
             id = "golden_hour",
             name = "Gold",
             isGradient = true,
-            colors = listOf(TempoWarning, Color(0xFFEA580C), TempoErrorDeep)
+            colors = listOf(Color(0xFFF59E0B), Color(0xFFEA580C), Color(0xFFBE123C))
         )
         
         // Solid backgrounds
@@ -187,7 +173,7 @@ data class CanvasBackground(
             id = "pure_black",
             name = "Black",
             isGradient = false,
-            solidColor = TempoBackground
+            solidColor = Color(0xFF000000)
         )
         
         val Charcoal = CanvasBackground(

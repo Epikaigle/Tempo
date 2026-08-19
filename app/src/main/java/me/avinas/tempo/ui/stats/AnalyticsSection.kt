@@ -19,15 +19,6 @@ import me.avinas.tempo.data.stats.InsightCardData
 import me.avinas.tempo.data.stats.InsightType
 import me.avinas.tempo.data.stats.ListeningOverview
 import me.avinas.tempo.ui.components.StatCard
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoErrorDeep
-import me.avinas.tempo.ui.theme.TempoPrimaryDeep
-import me.avinas.tempo.ui.theme.TempoPrimaryMuted
-import me.avinas.tempo.ui.theme.TempoSuccessDeep
-import me.avinas.tempo.ui.theme.TempoSurfaceDialog
-import me.avinas.tempo.ui.theme.TempoSurfaceElevated
-import me.avinas.tempo.ui.theme.TempoWarningDeep
-import me.avinas.tempo.ui.theme.TempoInfo
 
 @Composable
 fun AnalyticsContent(
@@ -65,7 +56,7 @@ fun OverviewSection(overview: ListeningOverview) {
         // Total Time Card
         StatCard(
             modifier = Modifier.weight(1f),
-            gradientColors = listOf(TempoPrimaryDeep.copy(alpha = 0.6f), TempoPrimaryDeep.copy(alpha = 0.2f))
+            gradientColors = listOf(Color(0xFF5B21B6).copy(alpha = 0.6f), Color(0xFF5B21B6).copy(alpha = 0.2f))
         ) {
             Column {
                 Text(
@@ -86,7 +77,7 @@ fun OverviewSection(overview: ListeningOverview) {
         // Play Count Card
         StatCard(
             modifier = Modifier.weight(1f),
-            gradientColors = listOf(TempoInfo.copy(alpha = 0.6f), TempoInfo.copy(alpha = 0.2f))
+            gradientColors = listOf(Color(0xFF1E3A8A).copy(alpha = 0.6f), Color(0xFF1E3A8A).copy(alpha = 0.2f))
         ) {
             Column {
                 Text(
@@ -171,7 +162,7 @@ fun HourlyChart(hourlyData: List<HourlyDistribution>) {
                             .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
                             .background(
                                 Brush.verticalGradient(
-                                    colors = listOf(TempoAccent, TempoAccent.copy(alpha = 0.3f))
+                                    colors = listOf(Color(0xFFA855F7), Color(0xFFA855F7).copy(alpha = 0.3f))
                                 )
                             )
                     )
@@ -194,11 +185,11 @@ fun HourlyChart(hourlyData: List<HourlyDistribution>) {
 @Composable
 fun InsightItem(insight: InsightCardData) {
     val gradient = when (insight.type) {
-        InsightType.MOOD -> listOf(TempoPrimaryMuted, TempoPrimaryDeep) // Violet
-        InsightType.BINGE -> listOf(TempoErrorDeep, TempoErrorDeep) // Rose
-        InsightType.DISCOVERY -> listOf(TempoSuccessDeep, TempoSuccessDeep) // Emerald
-        InsightType.PEAK_TIME -> listOf(TempoWarningDeep, TempoWarningDeep) // Yellow
-        else -> listOf(TempoSurfaceElevated, TempoSurfaceDialog) // Gray
+        InsightType.MOOD -> listOf(Color(0xFF7C3AED), Color(0xFF4C1D95)) // Violet
+        InsightType.BINGE -> listOf(Color(0xFFBE123C), Color(0xFF881337)) // Rose
+        InsightType.DISCOVERY -> listOf(Color(0xFF059669), Color(0xFF065F46)) // Emerald
+        InsightType.PEAK_TIME -> listOf(Color(0xFFCA8A04), Color(0xFF854D0E)) // Yellow
+        else -> listOf(Color(0xFF374151), Color(0xFF1F2937)) // Gray
     }
 
     StatCard(

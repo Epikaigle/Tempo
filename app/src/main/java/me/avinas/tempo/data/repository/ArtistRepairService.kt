@@ -114,7 +114,7 @@ class ArtistRepairService @Inject constructor(
      * @return number of artist rows whose key changed (or were merged)
      */
     private suspend fun recomputeArtistKeys(): Int {
-        val artists = artistDao.getAllSync()
+        val artists = artistDao.getAllArtistsSync()
         var changed = 0
         for (artist in artists) {
             // The artist may have been deleted by an earlier merge in this loop
@@ -183,7 +183,7 @@ class ArtistRepairService @Inject constructor(
      * one they are currently linked to. Returns the number of re-linked tracks.
      */
     private suspend fun relinkMismatchedTracks(): Int {
-        val artists = artistDao.getAllSync()
+        val artists = artistDao.getAllArtistsSync()
         val processedTrackIds = mutableSetOf<Long>()
         var relinked = 0
 

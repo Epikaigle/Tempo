@@ -6,6 +6,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import me.avinas.tempo.data.local.AppDatabase
+import me.avinas.tempo.data.local.MigrationSafetyNet
 import me.avinas.tempo.data.local.dao.*
 import dagger.Module
 import dagger.Provides
@@ -132,6 +133,12 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
+        // Pre-flight safety net: snapshot the raw DB files once, BEFORE Room opens
+        // or migrates them (v4.8.3 reconciles the divergent schema-51 lineages —
+        // see MigrationSafetyNet). Failures are swallowed inside; this must not
+        // affect startup.
+        MigrationSafetyNet.snapshotBeforeMigrationIfNeeded(context)
+
         return Room.databaseBuilder(context, AppDatabase::class.java, "tempo.db")
             .addMigrations(
                 MIGRATION_1_2, 

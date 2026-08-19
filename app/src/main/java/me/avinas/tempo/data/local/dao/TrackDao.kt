@@ -57,7 +57,7 @@ interface TrackDao {
         SELECT * FROM tracks
         WHERE artist = :artistName
         AND (album IS NULL OR album != :albumTitle)
-        AND (:query = '' OR LOWER(title) LIKE '%' || LOWER(:query) || '%')
+        AND (:query = '' OR INSTR(LOWER(title), LOWER(:query)) > 0)
         ORDER BY title ASC
         LIMIT 100
     """)
@@ -99,14 +99,16 @@ interface TrackDao {
     
     /**
      * Find track by title with fuzzy artist match.
+     * Uses INSTR instead of LIKE so '%'/'_' in artist names are matched
+     * literally, not as SQL wildcards.
      */
     @Query("""
         SELECT * FROM tracks 
         WHERE LOWER(title) = LOWER(:title) 
         AND (
             LOWER(artist) = LOWER(:artist) 
-            OR LOWER(artist) LIKE '%' || LOWER(:artist) || '%'
-            OR LOWER(:artist) LIKE '%' || LOWER(artist) || '%'
+            OR INSTR(LOWER(artist), LOWER(:artist)) > 0
+            OR INSTR(LOWER(:artist), LOWER(artist)) > 0
         )
         LIMIT 1
     """)
@@ -122,11 +124,12 @@ interface TrackDao {
     /**
      * Return a bounded set of tracks where artist name partially matches.
      * Used for fuzzy matching without loading the entire table into memory.
+     * INSTR keeps '%'/'_' in names literal (no wildcard surprises).
      */
     @Query("""
         SELECT * FROM tracks 
-        WHERE LOWER(artist) LIKE '%' || LOWER(:artist) || '%'
-        OR LOWER(:artist) LIKE '%' || LOWER(artist) || '%'
+        WHERE INSTR(LOWER(artist), LOWER(:artist)) > 0
+        OR INSTR(LOWER(:artist), LOWER(artist)) > 0
         LIMIT 200
     """)
     suspend fun findCandidatesByArtist(artist: String): List<Track>
@@ -134,11 +137,12 @@ interface TrackDao {
     /**
      * Return a bounded set of tracks for fuzzy matching.
      * Combines title and artist partial matches.
+     * INSTR keeps '%'/'_' in names literal (no wildcard surprises).
      */
     @Query("""
         SELECT * FROM tracks 
-        WHERE LOWER(title) LIKE '%' || LOWER(:title) || '%'
-        OR LOWER(artist) LIKE '%' || LOWER(:artist) || '%'
+        WHERE INSTR(LOWER(title), LOWER(:title)) > 0
+        OR INSTR(LOWER(artist), LOWER(:artist)) > 0
         LIMIT 200
     """)
     suspend fun findFuzzyCandidates(title: String, artist: String): List<Track>
@@ -198,15 +202,17 @@ interface TrackDao {
     /**
      * Search tracks by title.
      * Limited to 50 results to prevent memory issues with large libraries.
+     * INSTR keeps '%'/'_' in the query literal (no wildcard surprises).
      */
-    @Query("SELECT * FROM tracks WHERE LOWER(title) LIKE '%' || LOWER(:query) || '%' ORDER BY title ASC LIMIT 50")
+    @Query("SELECT * FROM tracks WHERE INSTR(LOWER(title), LOWER(:query)) > 0 ORDER BY title ASC LIMIT 50")
     suspend fun searchByTitle(query: String): List<Track>
     
     /**
      * Search tracks by artist name.
      * Limited to 50 results to prevent memory issues with large libraries.
+     * INSTR keeps '%'/'_' in the query literal (no wildcard surprises).
      */
-    @Query("SELECT * FROM tracks WHERE LOWER(artist) LIKE '%' || LOWER(:query) || '%' ORDER BY title ASC LIMIT 50")
+    @Query("SELECT * FROM tracks WHERE INSTR(LOWER(artist), LOWER(:query)) > 0 ORDER BY title ASC LIMIT 50")
     suspend fun searchByArtist(query: String): List<Track>
     
     // =====================
@@ -247,40 +253,20 @@ interface TrackDao {
     suspend fun replaceArtistName(oldArtistName: String, newArtistName: String): Int
     
     /**
-     * Replace old artist name within multi-artist strings.
-     * For example: "OldArtist, OtherArtist" -> "NewArtist, OtherArtist"
-     * 
-     * Uses word boundary matching to avoid partial replacements:
-     * - Matches ", OldArtist" or "OldArtist, " patterns
-     * - Avoids replacing "Art" inside "Artie Shaw"
+     * Tracks whose artist string contains the given name anywhere
+     * (case-insensitive). Uses INSTR instead of LIKE so names containing
+     * '%' or '_' are matched literally, not as wildcards. Used during
+     * artist merge to find multi-artist strings needing segment
+     * replacement; the actual replacement happens in Kotlin.
      */
-    @Query("""
-        UPDATE tracks SET artist =
-            CASE
-                WHEN LOWER(artist) LIKE LOWER(:oldArtistName) || ', %' THEN
-                    :newArtistName || SUBSTR(artist, LENGTH(:oldArtistName) + 1)
-                WHEN LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) THEN
-                    SUBSTR(artist, 1, LENGTH(artist) - LENGTH(:oldArtistName)) || :newArtistName
-                WHEN LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) || ', %' THEN
-                    REPLACE(
-                        REPLACE(artist, ', ' || :oldArtistName || ', ', ', ' || :newArtistName || ', '),
-                        ', ' || :oldArtistName || ',', ', ' || :newArtistName || ','
-                    )
-                ELSE artist
-            END
-        WHERE (
-            LOWER(artist) LIKE LOWER(:oldArtistName) || ', %'
-            OR LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName)
-            OR LOWER(artist) LIKE '%, ' || LOWER(:oldArtistName) || ', %'
-        )
-    """)
-    suspend fun replaceArtistNameInMultiArtist(oldArtistName: String, newArtistName: String): Int
+    @Query("SELECT * FROM tracks WHERE INSTR(LOWER(artist), LOWER(:name)) > 0")
+    suspend fun getTracksContainingArtistName(name: String): List<Track>
 
     /**
      * Update the raw artist string of a single track.
-     * Used by artist split to rewrite one track's credit without touching others.
+     * Used during artist merge after Kotlin-side segment replacement.
      */
-    @Query("UPDATE tracks SET artist = :newArtistName WHERE id = :trackId")
-    suspend fun updateArtistString(trackId: Long, newArtistName: String)
+    @Query("UPDATE tracks SET artist = :artist WHERE id = :trackId")
+    suspend fun updateArtistString(trackId: Long, artist: String): Int
 }
 

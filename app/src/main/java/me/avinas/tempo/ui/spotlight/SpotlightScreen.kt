@@ -21,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -33,14 +34,6 @@ import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.TimePeriodSelector
 import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.navigation.Screen
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoSurfaceCard
-import me.avinas.tempo.ui.theme.TempoSurfaceSunken
-import me.avinas.tempo.ui.theme.TempoWarningBright
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextTertiary
 
 @Composable
 fun SpotlightScreen(
@@ -95,19 +88,19 @@ fun SpotlightScreen(
                     IconButton(
                         onClick = { navController.popBackStack() },
                         modifier = Modifier
-                            .background(color = TempoSurfaceCard, shape = CircleShape)
+                            .background(color = Color.White.copy(alpha = 0.1f), shape = CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = TextPrimary
+                            tint = Color.White
                         )
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Text(
                         text = "Spotlight",
                         style = MaterialTheme.typography.headlineMedium,
-                        color = TextPrimary,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.weight(1f))
@@ -115,10 +108,10 @@ fun SpotlightScreen(
                         Text(
                             text = "TEST",
                             style = MaterialTheme.typography.labelSmall,
-                            color = TempoWarningBright,
+                            color = Color(0xFFFBBF24),
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier
-                                .background(TempoWarningBright.copy(alpha = 0.15f), CircleShape)
+                                .background(Color(0xFFFBBF24).copy(alpha = 0.15f), CircleShape)
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
@@ -136,13 +129,13 @@ fun SpotlightScreen(
                             modifier = Modifier
                                 .size(80.dp)
                                 .background(
-                                    color = TempoSurfaceCard,
+                                    color = Color.White.copy(alpha = 0.08f),
                                     shape = CircleShape
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             CircularProgressIndicator(
-                                color = TextPrimary,
+                                color = Color.White.copy(alpha = 0.8f),
                                 modifier = Modifier.size(36.dp),
                                 strokeWidth = 3.dp
                             )
@@ -151,14 +144,14 @@ fun SpotlightScreen(
                         Text(
                             text = "Crunching your data…",
                             style = MaterialTheme.typography.titleLarge,
-                            color = TextPrimary,
+                            color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "We're analysing your listening habits to build your personalised Spotlight.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = TextTertiary,
+                            color = Color.White.copy(alpha = 0.6f),
                             textAlign = TextAlign.Center
                         )
                     }
@@ -173,7 +166,7 @@ fun SpotlightScreen(
                             modifier = Modifier
                                 .size(80.dp)
                                 .background(
-                                    color = TempoSurfaceCard,
+                                    color = Color.White.copy(alpha = 0.08f),
                                     shape = CircleShape
                                 ),
                             contentAlignment = Alignment.Center
@@ -181,21 +174,21 @@ fun SpotlightScreen(
                             Icon(
                                 imageVector = Icons.Default.Headphones,
                                 contentDescription = null,
-                                tint = TextTertiary,
+                                tint = Color.White.copy(alpha = 0.6f),
                                 modifier = Modifier.size(40.dp)
                             )
                         }
                         Spacer(modifier = Modifier.height(20.dp))
                         Text(
                             text = "Not enough data yet",
-                            color = TextPrimary,
+                            color = Color.White,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Keep listening to your favourite tracks and come back soon — your Spotlight insights are on the way!",
-                            color = TextTertiary,
+                            color = Color.White.copy(alpha = 0.6f),
                             style = MaterialTheme.typography.bodyMedium,
                             textAlign = TextAlign.Center
                         )
@@ -310,11 +303,11 @@ fun SpotlightScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = TextPrimary)
+                        CircularProgressIndicator(color = Color.White)
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = "Preparing your story...",
-                            color = TextSecondary,
+                            color = Color.White.copy(alpha = 0.7f),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -340,10 +333,10 @@ fun SpotlightStoryButton(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = !isLocked, onClick = onClick),
-        backgroundColor = if (isLocked)
-            TextTertiary.copy(alpha = 0.1f)
-        else
-            TempoAccent.copy(alpha = 0.15f),
+        backgroundColor = if (isLocked) 
+            Color.Gray.copy(alpha = 0.1f) 
+        else 
+            Color(0xFFA855F7).copy(alpha = 0.15f), // Purple Tint
         contentPadding = PaddingValues(20.dp)
     ) {
         Row(
@@ -354,7 +347,15 @@ fun SpotlightStoryButton(
                 modifier = Modifier
                     .size(48.dp)
                     .background(
-                        color = if (isLocked) TempoSurfaceSunken else TempoPrimary,
+                        brush = if (isLocked) 
+                            Brush.linearGradient(colors = listOf(Color.Gray, Color.DarkGray))
+                        else 
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFFA855F7),
+                                    Color(0xFFEC4899)
+                                )
+                            ),
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
@@ -362,7 +363,7 @@ fun SpotlightStoryButton(
                 Icon(
                     imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.AutoAwesome,
                     contentDescription = null,
-                    tint = if (isLocked) TextTertiary else Color.White,
+                    tint = Color.White,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -373,13 +374,13 @@ fun SpotlightStoryButton(
                 Text(
                     text = if (isLocked) "Story Locked" else buttonText,
                     style = MaterialTheme.typography.titleLarge,
-                    color = if (isLocked) TextTertiary else TextPrimary,
+                    color = Color.White.copy(alpha = if (isLocked) 0.5f else 1f),
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = if (isLocked) lockMessage else "Open your spotlight story",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    color = Color.White.copy(alpha = 0.7f)
                 )
             }
         }

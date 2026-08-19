@@ -1,13 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tempo</string>
-
-    <!-- Google OAuth Web client ID.
-         Required by the Authorization API / Credential Manager so Google Play
-         services issues access tokens carrying the requested scopes
-         (https://www.googleapis.com/auth/drive.file). Keep in sync with
-         GOOGLE_WEB_CLIENT_ID in local.properties. -->
-    <string name="default_web_client_id" translatable="false">376452323026-ptcimeh1id8fh5mqjslu8e1vp2nej25u.apps.googleusercontent.com</string>
     
     <!-- Service notification -->
     <string name="tracking_notification_title">Tempo is tracking your music</string>
@@ -68,30 +61,6 @@
     <string name="rate_message">If you like using the app, please take a moment to rate it. It really helps us grow!</string>
     <string name="rate_now">Rate Now</string>
     <string name="rate_not_now">Not Now</string>
-
-    <!-- Share Nudge -->
-    <string name="share_nudge_weekly_title">Your weekly recap is ready</string>
-    <string name="share_nudge_monthly_title">Your monthly recap is ready</string>
-    <string name="share_nudge_stats_title">Did you know you can share your stats?</string>
-    <string name="share_nudge_story_message">Turn your listening into a beautiful story and share it with friends.</string>
-    <string name="share_nudge_stats_message">Create a shareable card of your top tracks and artists — perfect for your story or feed.</string>
-    <string name="share_nudge_cta_story">View Story</string>
-    <string name="share_nudge_cta_stats">Open Stats</string>
-
-    <!-- Share Cards -->
-    <string name="share_completion">COMPLETION</string>
-    <string name="share_top_tracks">TOP TRACKS</string>
-    <string name="share_dna_title">MY MUSIC DNA</string>
-    <string name="share_dna_energy">ENERGY</string>
-    <string name="share_dna_dance">DANCEABILITY</string>
-    <string name="share_dna_happiness">HAPPINESS</string>
-    <string name="share_dna_acoustic">ACOUSTIC</string>
-    <string name="share_dna_persona_firestarter">Euphoric Firestarter</string>
-    <string name="share_dna_persona_dreamer">Sunlit Dreamer</string>
-    <string name="share_dna_persona_storm">Storm Rider</string>
-    <string name="share_dna_persona_midnight">Midnight Romantic</string>
-    <string name="share_dna_persona_alchemist">Mood Alchemist</string>
-    <string name="share_dna_avg_bpm">%1$d BPM AVG</string>
     
     <!-- Gamification / Level -->
     <string name="level_label">LEVEL %1$d</string>
@@ -298,7 +267,6 @@
     <string name="details_share_preview">Share Preview</string>
     <string name="details_merge_artist">Merge Artist</string>
     <string name="details_merge_with">Merge with…</string>
-    <string name="details_split_artist">Split artist…</string>
     <string name="details_block_artist">BLOCK ENTIRE ARTIST</string>
     <string name="details_block_track">BLOCK THIS TRACK</string>
     <string name="details_unique_tracks">Unique Songs</string>
@@ -318,6 +286,18 @@
     <string name="album_remove_title">Remove from album?</string>
     <string name="album_remove_msg">\"%1$s\" will no longer be associated with this album.</string>
     <string name="album_remove_note">Your listening history is kept.</string>
+    <string name="album_remove_track_cd">Remove from album</string>
+    <string name="album_close_cd">Close</string>
+    <string name="album_not_found">Album not found</string>
+    <string name="album_action_edit_cd">Edit album</string>
+    <string name="album_action_done_cd">Done editing</string>
+    <string name="album_no_tracks">No tracks yet</string>
+    <string name="album_no_tracks_hint">Use the edit button to add songs to this album</string>
+    <string name="album_one_song">1 song</string>
+    <string name="album_songs_count">%1$d songs</string>
+    <string name="album_track_one_play">1 play</string>
+    <string name="album_track_plays">%1$d plays</string>
+    <string name="album_footer">Tempo</string>
 
     <!-- Merge dialogs -->
     <string name="merge_confirm">Confirm Merge</string>
@@ -331,29 +311,6 @@
     <string name="merge_search_artists">Type to search for artists</string>
     <string name="merge_search_tracks">Type to search for tracks</string>
     <string name="merge_merging">Merging: %1$s</string>
-    <string name="details_merge_search_target">Search for target artist…</string>
-    <string name="details_no_artists_found">No artists found</string>
-    <string name="details_merge_button">Merge</string>
-    <string name="details_rename_info">If this artist was incorrectly split, enter the full name and we\'ll merge the data.</string>
-    <string name="details_rename_artist_name_label">Artist Name</string>
-    <string name="details_rename_button">Rename</string>
-    <string name="details_split_artists_detected">Split Artists Detected!</string>
-    <string name="details_split_artists_detected_desc">It looks like these artists were incorrectly split from \"%1$s\":</string>
-    <string name="details_merge_listening_data">Merge their listening data into \"%1$s\"?</string>
-    <string name="details_just_rename">Just Rename</string>
-    <string name="details_merge_and_rename">Merge &amp; Rename</string>
-    <string name="details_rename_failed">Rename failed. Please try again.</string>
-    <string name="details_split_artist_title">Split Artist</string>
-    <string name="details_split_grouped_under">Separate tracks grouped under: %1$s</string>
-    <string name="details_no_tracks_found_artist">No tracks found for this artist.</string>
-    <string name="details_split_group_info">Tracks are grouped by the artist name stored on each track. Selected tracks move to the artist named below each group.</string>
-    <string name="details_splitting_artist">Splitting artist…</string>
-    <string name="details_split_button">Split (%1$d)</string>
-    <string name="details_move_to_artist">Move to artist</string>
-    <string name="details_merge_track_search_placeholder">Search for the correct version…</string>
-    <string name="details_no_tracks_found">No tracks found</string>
-    <string name="details_album_not_found">Album not found</string>
-    <string name="details_your_journey">Your Journey</string>
 
     <!-- Engagement -->
     <string name="engagement_score">Engagement Score</string>
@@ -441,6 +398,11 @@
     <string name="share_failed">Failed to share image</string>
     <string name="share_content_description">Share</string>
     <string name="share_brand">TEMPO</string>
+    <string name="share_theme_label">Theme</string>
+    <!-- Subtle share nudge (opens the artist share preview directly; kept understated) -->
+    <string name="share_nudge_caption_weekly">Your week in music</string>
+    <string name="share_nudge_caption_monthly">Your month in music</string>
+    <string name="share_nudge_hint">SHARE YOUR STATS</string>
     <string name="share_total_time">TOTAL TIME</string>
     <string name="share_unique_songs">UNIQUE SONGS</string>
     <string name="share_top_songs">TOP SONGS</string>
@@ -565,8 +527,8 @@
     <string name="settings_language_french">Français</string>
     <string name="settings_language_german">Deutsch</string>
     <string name="settings_language_hungarian">Magyar</string>
+    <string name="settings_language_russian">Русский</string>
     <string name="settings_language_portuguese">Português</string>
-    <string name="settings_language_russian">Russian</string>
     <string name="settings_select_language">Select Language</string>
     <string name="settings_daily_summary">Daily Summary</string>
     <string name="settings_daily_summary_desc">Get a summary of your listening each day at 8 PM</string>
@@ -664,6 +626,7 @@
     <string name="enrichment_report_failed">Failed</string>
     <string name="enrichment_report_skipped">Deferred (low play count)</string>
     <string name="enrichment_report_not_found">Not found online</string>
+    <string name="enrichment_report_not_queued">Not yet queued</string>
     <string name="enrichment_report_coverage">Metadata coverage</string>
     <string name="enrichment_report_art_coverage">Cover art coverage</string>
     <string name="enrichment_report_enrich_all">Enrich all songs</string>
@@ -671,6 +634,7 @@
     <string name="enrichment_report_enrich_all_button">Enrich %1$d songs</string>
     <string name="enrichment_report_cancel">Cancel</string>
     <string name="enrichment_report_progress">Enriching… %1$d / %2$d</string>
+    <string name="enrichment_report_waiting">Waiting for network and battery conditions…</string>
     <string name="enrichment_report_starting">Starting enrichment…</string>
     <string name="enrichment_report_complete">Enrichment sweep complete.</string>
     <string name="enrichment_report_nothing_to_do">Everything is already enriched. \u2713</string>
@@ -801,6 +765,11 @@
     <string name="stats_rank_1_track">#1 Track</string>
     <string name="stats_rank_1_artist">#1 Artist</string>
     <string name="stats_rank_1_album">#1 Album</string>
+    <string name="stats_search_hint_songs">Search songs, artists, albums…</string>
+    <string name="stats_search_hint_artists">Search artists…</string>
+    <string name="stats_search_hint_albums">Search albums, artists…</string>
+    <string name="stats_search_clear">Clear search</string>
+    <string name="stats_search_no_results">No matches for \"%1$s\" in this ranking</string>
 
     <!-- Stats Share -->
     <string name="stats_share">Share</string>
@@ -811,9 +780,11 @@
     <string name="stats_share_theme_label">Theme</string>
     <string name="stats_share_layout_label">Layout</string>
     <string name="stats_share_theme_midnight">Midnight</string>
-    <string name="stats_share_theme_sunset">Sunset</string>
+    <string name="stats_share_theme_rose">Rose</string>
     <string name="stats_share_theme_aurora">Aurora</string>
     <string name="stats_share_theme_mono">Mono</string>
+    <string name="stats_share_theme_daylight">Daylight</string>
+    <string name="stats_share_theme_ocean">Ocean</string>
     <string name="stats_share_layout_list">List</string>
     <string name="stats_share_layout_podium">Podium</string>
     <string name="stats_share_layout_grid">Grid</string>
@@ -946,15 +917,15 @@
     <string name="details_unknown_album">Unknown Album</string>
 
     <!-- Fan Status Percentiles -->
-    <string name="fan_status_top_1">Top 1%% Artist</string>
+    <string name="fan_status_top_1">Top 1% Artist</string>
     <string name="fan_status_top_1_desc">This is one of your absolute favorites!</string>
-    <string name="fan_status_top_5">Top 5%% Artist</string>
+    <string name="fan_status_top_5">Top 5% Artist</string>
     <string name="fan_status_top_5_desc">You listen to them more than most.</string>
-    <string name="fan_status_top_10">Top 10%% Artist</string>
+    <string name="fan_status_top_10">Top 10% Artist</string>
     <string name="fan_status_top_10_desc">Definitely one of your top picks.</string>
-    <string name="fan_status_top_25">Top 25%% Artist</string>
+    <string name="fan_status_top_25">Top 25% Artist</string>
     <string name="fan_status_top_25_desc">A solid part of your rotation.</string>
-    <string name="fan_status_top_50">Top 50%% Artist</string>
+    <string name="fan_status_top_50">Top 50% Artist</string>
     <string name="fan_status_top_50_desc">You listen to them occasionally.</string>
     <!-- Fan Status Counts -->
     <string name="fan_status_ultimate">Ultimate Stan</string>
@@ -1187,6 +1158,132 @@
     <string name="details_track_not_found">Track not found</string>
     <string name="details_song_details_title">Song Details</string>
 
+    <!-- Song details · editorial pass (all user-visible screen copy) -->
+    <string name="details_action_back">Back</string>
+    <string name="details_action_share_card">Share song card</string>
+    <string name="details_action_song_options">Song options</string>
+    <string name="details_action_close">Close</string>
+    <string name="details_cover_artwork_cd">Cover for %1$s</string>
+    <string name="details_favorite_track_cd">Favorite track</string>
+    <string name="details_preview_play_cd">Play preview</string>
+    <string name="details_preview_pause_cd">Pause preview</string>
+    <string name="details_preview_label">Preview 30s</string>
+    <string name="details_preview_timecode">0:%1$02d / 0:30</string>
+    <string name="details_spotify_not_found">Spotify app not found</string>
+    <string name="details_apple_not_found">Apple Music app not found</string>
+    <string name="details_stat_recorded_library">Recorded in library</string>
+    <string name="details_stat_total_recorded">Total recorded time</string>
+    <string name="details_rank_most_played">Most played track</string>
+    <string name="details_rank_top_5">Top 5 in library</string>
+    <string name="details_rank_top_20">Top 20 in library</string>
+    <string name="details_rank_library">Library rank</string>
+    <string name="details_awaiting_playback">Awaiting playback data</string>
+    <string name="details_completion_to_end">Listened to the end</string>
+    <string name="details_completion_high">High completion</string>
+    <string name="details_completion_moderate">Moderate skips</string>
+    <string name="details_completion_skipped">Frequently skipped</string>
+    <string name="details_trends_peak">Peak %1$d · %2$s</string>
+    <string name="details_trends_empty">No listening activity recorded yet</string>
+    <string name="details_trends_active_days">Active days</string>
+    <string name="details_trends_daily_avg">Daily average</string>
+    <string name="details_trends_peak_day">Peak single day</string>
+    <string name="details_trends_days">%1$d days</string>
+    <string name="details_trends_per_day">%1$s / day</string>
+    <string name="details_trends_hud_one">%1$d play (%2$s)</string>
+    <string name="details_trends_hud_many">%1$d plays (%2$s)</string>
+    <string name="details_trends_scrub_hint">Drag timeline to inspect</string>
+    <string name="details_trends_day_summary">%1$s: %2$d plays, %3$s</string>
+    <string name="details_audio_features_title">Audio Features</string>
+    <string name="details_af_verified">Verified analysis</string>
+    <string name="details_af_tag_estimate">Estimated from tags</string>
+    <string name="details_af_awaiting">Awaiting data</string>
+    <string name="details_af_tempo">Tempo</string>
+    <string name="details_af_key">Harmonic Key</string>
+    <string name="details_af_pending_tempo">Pending tempo</string>
+    <string name="details_af_fast">Fast tempo</string>
+    <string name="details_af_upbeat">Upbeat pace</string>
+    <string name="details_af_moderate">Moderate pace</string>
+    <string name="details_af_laidback">Laid-back tempo</string>
+    <string name="details_af_awaiting_profile">Awaiting profile</string>
+    <string name="details_danceability_label">Danceability</string>
+    <string name="details_acoustic_label">Acoustic</string>
+    <string name="details_energy_high">High energy</string>
+    <string name="details_energy_mid">Moderate energy</string>
+    <string name="details_energy_low">Low energy</string>
+    <string name="details_valence_high">Upbeat</string>
+    <string name="details_valence_mid">Balanced</string>
+    <string name="details_valence_low">Melancholic</string>
+    <string name="details_dance_high">Heavy beat</string>
+    <string name="details_dance_mid">Moderate groove</string>
+    <string name="details_dance_low">Ambient</string>
+    <string name="details_acoustic_high">Acoustic instruments</string>
+    <string name="details_acoustic_mid">Mixed production</string>
+    <string name="details_acoustic_low">Electronic / Synthesized</string>
+    <string name="details_badge_intensity">High intensity</string>
+    <string name="details_badge_club">Club groove</string>
+    <string name="details_badge_nocturnal">Nocturnal vibe</string>
+    <string name="details_badge_organic">Organic acoustic</string>
+    <string name="details_badge_fast">Fast pace</string>
+    <string name="details_af_empty_title">Audio features pending analysis</string>
+    <string name="details_af_empty_body">Acoustic DNA will appear when Spotify/MusicBrainz enrichment completes.</string>
+    <string name="details_standing_title">Listening Standing</string>
+    <string name="details_standing_score">Score %1$d / 100</string>
+    <string name="details_tier_top_status">Top Rotation</string>
+    <string name="details_tier_top_name">All-Time Favorite</string>
+    <string name="details_tier_top_desc" formatted="false">One of your most-played tracks. 90%+ completion with zero skips.</string>
+    <string name="details_tier_heavy_status">Heavy Rotation</string>
+    <string name="details_tier_heavy_name">Frequent Listen</string>
+    <string name="details_tier_heavy_desc">Played often across multiple sessions with frequent replays.</string>
+    <string name="details_tier_regular_status">Regular Rotation</string>
+    <string name="details_tier_regular_name">Steady Favorite</string>
+    <string name="details_tier_regular_desc">A consistent part of your listening sessions.</string>
+    <string name="details_tier_moderate_status">Moderate Rotation</string>
+    <string name="details_tier_moderate_name">Regular Spin</string>
+    <string name="details_tier_moderate_desc">Played regularly as part of your library.</string>
+    <string name="details_tier_occasional_status">Occasional Spin</string>
+    <string name="details_tier_occasional_name">Casual Listen</string>
+    <string name="details_tier_occasional_desc">Played occasionally during shuffle or mixed sessions.</string>
+    <string name="details_tier_background_status">Background Spin</string>
+    <string name="details_tier_background_name">Infrequent Listen</string>
+    <string name="details_tier_background_desc">Plays occasionally in longer sessions.</string>
+    <string name="details_tier_rare_status">Infrequent</string>
+    <string name="details_tier_rare_name">Low Completion</string>
+    <string name="details_tier_rare_desc">Often skipped early during playback.</string>
+    <string name="details_tier_played_prefix">Played in</string>
+    <string name="details_tier_sessions">%1$d sessions</string>
+    <string name="details_tier_with">with</string>
+    <string name="details_tier_replays">%1$d replays.</string>
+    <string name="details_timeline_title">Listening Timeline</string>
+    <string name="details_streak_days">Listening streak</string>
+    <string name="details_streak_desc">consecutive days</string>
+    <string name="details_streak_day_window">during the day</string>
+    <string name="details_streak_night_window">at night</string>
+    <string name="details_journey_discovered_prefix">You discovered</string>
+    <string name="details_journey_discovered_since">and have since listened to</string>
+    <string name="details_journey_across">across</string>
+    <string name="details_journey_songs">different songs</string>
+    <string name="details_days_ago">%1$d days ago</string>
+    <string name="details_timeline_peak_day">Most played in a day</string>
+    <string name="details_timeline_peak_window">Peak listening window</string>
+    <string name="details_timeline_recent">Most recent play</string>
+    <string name="details_timeline_latest">Latest spin</string>
+    <string name="details_playback_title">Playback Breakdown</string>
+    <string name="details_playback_full_pct">%1$d%% full plays</string>
+    <string name="details_playback_full_label" formatted="false">Full (≥ 80%)</string>
+    <string name="details_playback_partial_label" formatted="false">Partial (30–80%)</string>
+    <string name="details_playback_skipped_label" formatted="false">Skipped (&lt; 30%)</string>
+    <string name="details_playback_legend_fmt">%1$s: %2$d</string>
+    <string name="details_playback_narrative_full" formatted="false">You almost never skip this track. 80%+ of plays were listened to the end.</string>
+    <string name="details_playback_narrative_mixed">Played regularly in full, occasionally paused or skipped.</string>
+    <string name="details_playback_narrative_skipped">Often skipped early during playback or shuffle.</string>
+    <string name="details_telemetry_pauses">Pauses</string>
+    <string name="details_telemetry_sessions">Sessions</string>
+    <string name="details_telemetry_replays_sub">Repeated in session</string>
+    <string name="details_telemetry_pauses_sub">Avg per play</string>
+    <string name="details_telemetry_sessions_sub">Listening sessions</string>
+    <string name="details_streaming_title">Streaming &amp; Actions</string>
+    <string name="details_footer">Tempo</string>
+
     <!-- Welcome to Tempo / Onboarding Final -->
     <string name="welcome_ready">All Set!</string>
     <string name="welcome_go">Let\'s Go</string>
@@ -1245,45 +1342,12 @@
     <string name="period_all_time">all time</string>
     <string name="quick_stats_artist_placeholder">Artist</string>
     <string name="quick_stats_track_placeholder">Track</string>
-    <!-- Artist merge/rename/split dialogs -->
-    <string name="details_merge_artist_title">Merge Artist</string>
-    <string name="details_merge_artist_merging">Merging: %1$s</string>
-    <string name="details_merge_artist_search_hint">Search for the correct artist to merge into. All listening history will be combined.</string>
-    <string name="details_merge_confirm">Confirm Merge</string>
-    <string name="details_merge_confirm_question">Merge \"%1$s\" into \"%2$s\"?</string>
-    <string name="details_merge_cannot_undo">This action cannot be undone. All listening history will be combined.</string>
-    <string name="details_merge_in_progress">Merging artists…</string>
-    <string name="details_rename_artist_title">Rename Artist</string>
-    <string name="details_rename_artist_hint">If this artist was incorrectly split, enter the full name and we\'ll merge the data.</string>
-    <string name="details_rename_split_detected">Split Artists Detected!</string>
-    <string name="details_rename_split_description">It looks like these artists were incorrectly split from \"%1$s\":</string>
-    <string name="details_rename_merge_question">Merge their listening data into \"%1$s\"?</string>
-    <string name="details_rename_just_rename">Just Rename</string>
-    <string name="details_rename_merge_and_rename">Merge &amp; Rename</string>
-    <string name="details_rename_back">Back</string>
-    <string name="details_split_artist_subtitle">Separate tracks grouped under: %1$s</string>
-    <string name="details_split_no_tracks">No tracks found to split.</string>
-    <string name="details_split_instructions">Selected tracks move to the artist named below each group.</string>
-    <string name="details_split_in_progress">Splitting artist…</string>
-    <string name="details_split_current">current</string>
-    <string name="details_split_tracks_count">%1$d tracks • %2$d selected</string>
-    <!-- Song engagement tiers -->
-    <string name="engagement_ultimate_obsession">Ultimate Obsession</string>
-    <string name="engagement_personal_favorite">Personal Favorite</string>
-    <string name="engagement_heavy_rotation">Heavy Rotation</string>
-    <string name="engagement_regular_jam">Regular Jam</string>
-    <string name="engagement_casual_favorite">Casual Favorite</string>
-    <string name="engagement_occasional_play">Occasional Play</string>
-    <string name="engagement_ambient_stream">Ambient Stream</string>
-    <string name="engagement_quick_skip">Quick Skip</string>
-    <string name="engagement_ultimate_obsession_desc">This song has completely dominated your listening sessions recently!</string>
-    <string name="engagement_personal_favorite_desc">One of your most-played and highest-engagement tracks.</string>
-    <string name="engagement_heavy_rotation_desc">You return to this track frequently. It\'s a staple in your rotation.</string>
-    <string name="engagement_regular_jam_desc">You consistently listen to this track and rarely skip it.</string>
-    <string name="engagement_casual_favorite_desc">A track you enjoy having in your queue from time to time.</string>
-    <string name="engagement_occasional_play_desc">You listen to this track casually when it comes up.</string>
-    <string name="engagement_ambient_stream_desc">This track mostly plays in the background of your sessions.</string>
-    <string name="engagement_quick_skip_desc">You tend to skip this track quickly when it starts playing.</string>
-    <string name="song_favorite_badge">FAVORITE</string>
-    <!-- Common dialog buttons -->
+    <string name="details_split_artist">Split artist…</string>
+    <string name="details_split_artist_title">Split Artist</string>
+    <string name="details_split_grouped_under">Separate tracks grouped under: %1$s</string>
+    <string name="details_no_tracks_found_artist">No tracks found for this artist.</string>
+    <string name="details_split_group_info">Tracks are grouped by the artist name stored on each track. Selected tracks move to the artist named below each group.</string>
+    <string name="details_splitting_artist">Splitting artist…</string>
+    <string name="details_split_button">Split (%1$d)</string>
+    <string name="details_move_to_artist">Move to artist</string>
 </resources>

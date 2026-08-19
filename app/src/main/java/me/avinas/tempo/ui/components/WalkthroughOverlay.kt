@@ -35,9 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import me.avinas.tempo.data.local.dao.UserPreferencesDao
 import me.avinas.tempo.data.local.entities.UserPreferences
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TempoRed
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -274,7 +272,7 @@ fun SpotlightLayer(
             val radius = maxOf(rect.width, rect.height) / 2f + 16.dp.toPx()
             
             drawCircle(
-                color = TempoPrimary,
+                color = TempoRed,
                 radius = radius * pulseScale,
                 center = center,
                 style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round),
@@ -301,7 +299,7 @@ fun SpotlightLayer(
             Text(
                 text = getInstructionText(step),
                 style = MaterialTheme.typography.titleLarge,
-                color = TextPrimary,
+                color = Color.White,
                 textAlign = TextAlign.Center,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -309,7 +307,7 @@ fun SpotlightLayer(
             Text(
                 text = getSubInstructionText(step),
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
+                color = Color.White.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center
             )
         }

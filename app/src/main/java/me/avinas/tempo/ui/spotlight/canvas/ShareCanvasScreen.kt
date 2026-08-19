@@ -497,7 +497,7 @@ fun ShareCanvasScreen(
                                 .clip(RoundedCornerShape(28.dp))
                                 .background(
                                     Brush.linearGradient(
-                                        listOf(TempoPrimary, TempoAccent, TempoAccent)
+                                        listOf(Color(0xFF8B5CF6), Color(0xFFA855F7), Color(0xFFD946EF))
                                     )
                                 )
                                 .clickable(
@@ -611,8 +611,8 @@ private fun getBackgroundModifier(background: CanvasBackground): Modifier {
                 Brush.sweepGradient(
                     listOf(
                         Color(0xFFF9A8D4), // Pink
-                        TempoAccent, // Violet
-                        TempoCyan, // Cyan
+                        Color(0xFFC4B5FD), // Violet
+                        Color(0xFF67E8F9), // Cyan
                         Color(0xFFF0ABFC), // Fuschia
                         Color(0xFFF9A8D4)  // Pink (loop)
                     )
@@ -626,7 +626,7 @@ private fun getBackgroundModifier(background: CanvasBackground): Modifier {
         "midnight_grain" -> {
              Modifier.background(
                 Brush.radialGradient(
-                    colors = listOf(TempoSurfaceDialog, Color(0xFF020617)),
+                    colors = listOf(Color(0xFF1E293B), Color(0xFF020617)),
                     center = Offset.Unspecified,
                     radius = 2000f
                 )
@@ -636,7 +636,7 @@ private fun getBackgroundModifier(background: CanvasBackground): Modifier {
         "sunset_blur" -> {
              Modifier.background(
                 Brush.linearGradient(
-                    colors = listOf(Color(0xFF0D5C4A), TempoErrorDeep, TempoWarning),
+                    colors = listOf(Color(0xFF4C1D95), Color(0xFFBE185D), Color(0xFFFB923C)),
                     start = Offset(0f, 0f),
                     end = Offset(1000f, 2000f)
                 )
@@ -645,7 +645,7 @@ private fun getBackgroundModifier(background: CanvasBackground): Modifier {
         "electric_void" -> {
             Modifier.background(
                 Brush.radialGradient(
-                    colors = listOf(TempoPrimaryMuted, Color(0xFF1D4ED8), TempoBackground),
+                    colors = listOf(Color(0xFF7C3AED), Color(0xFF1D4ED8), Color(0xFF000000)),
                     center = Offset(500f, 500f),
                     radius = 1500f
                 )
@@ -661,7 +661,7 @@ private fun getBackgroundModifier(background: CanvasBackground): Modifier {
         "deep_ocean" -> {
              Modifier.background(
                 Brush.radialGradient(
-                    colors = listOf(TempoSurfaceDialog, Color(0xFF020617), Color.Black),
+                    colors = listOf(Color(0xFF1E293B), Color(0xFF020617), Color.Black),
                     center = Offset.Unspecified,
                     radius = 2500f
                 )
@@ -670,7 +670,7 @@ private fun getBackgroundModifier(background: CanvasBackground): Modifier {
         "aurora" -> {
              Modifier.background(
                 Brush.linearGradient(
-                    colors = listOf(TempoSuccessDeep, TempoInfo, TempoPrimary),
+                    colors = listOf(Color(0xFF10B981), Color(0xFF3B82F6), Color(0xFF8B5CF6)),
                     start = Offset(0f, 0f),
                     end = Offset(1000f, 1000f) // Diagonal
                 )
@@ -679,7 +679,7 @@ private fun getBackgroundModifier(background: CanvasBackground): Modifier {
         "golden_hour" -> {
              Modifier.background(
                 Brush.linearGradient(
-                    colors = listOf(TempoWarning, Color(0xFFEA580C), TempoErrorDeep),
+                    colors = listOf(Color(0xFFF59E0B), Color(0xFFEA580C), Color(0xFFBE123C)),
                     start = Offset(0f, 0f),
                     end = Offset(0f, 2000f) // Vertical but smoother
                 )

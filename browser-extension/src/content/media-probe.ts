@@ -93,6 +93,18 @@
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
+  // YTMusic (and some other players) can report Infinity/NaN/garbage from
+  // <video>.duration — e.g. while the stream is still buffering. Letting those
+  // values through breaks listen-time math downstream (a 3-minute song can show
+  // up as 15+ minutes). Keep only finite, sane values; everything else → NaN
+  // ("unknown"), which the tracker treats conservatively.
+  const MAX_SANE_MEDIA_SECONDS = 6 * 60 * 60; // longer than any song/podcast episode
+  function saneTimeValue(v: number | undefined): number {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return NaN;
+    if (v < 0 || v > MAX_SANE_MEDIA_SECONDS) return NaN;
+    return v;
+  }
+
   // ponytail: used only when the <audio> lives in a closed shadow root and
   // MediaSession.playbackState is silent. A visible button labelled "Pause"
   // means audio is currently playing (toggle-button convention). Covers Spotify
@@ -282,7 +294,7 @@
           backdrop-filter: blur(12px);
         }
         .tempo-kicker {
-          color: #2FDBB8;
+          color: #a78bfa;
           font-size: 11px;
           font-weight: 700;
           letter-spacing: 0.04em;
@@ -333,7 +345,7 @@
         }
         .tempo-allow {
           color: white;
-          background: linear-gradient(135deg, #2FDBB8, #1FA88C);
+          background: linear-gradient(135deg, #7c5cff, #651dad);
         }
       </style>
       <div class="tempo-card" role="dialog" aria-live="polite">
@@ -884,9 +896,14 @@
       refreshMediaElements();
     }
     const mediaElements = cachedMediaElements;
+    // Prefer an element that is actively playing AND has sane time data.
+    // YTMusic can keep multiple <video> nodes alive (buffering/next-up); picking
+    // one with Infinity/NaN duration corrupts listen-time math downstream.
+    const connected = mediaElements.filter(el => el.isConnected);
     const bestMedia =
-      mediaElements.find(el => el.isConnected && !el.paused && !el.ended) ??
-      mediaElements.find(el => el.isConnected && ((el.currentTime || 0) > 0 || Number.isFinite(el.duration))) ??
+      connected.find(el => !el.paused && !el.ended && Number.isFinite(el.duration) && el.duration > 0) ??
+      connected.find(el => !el.paused && !el.ended) ??
+      connected.find(el => (el.currentTime || 0) > 0 || (Number.isFinite(el.duration) && el.duration > 0)) ??
       null;
 
     // 4. Determine playback state
@@ -902,12 +919,14 @@
       isPlaying = isPauseButtonVisible();
     }
 
-    // 5. Extract playback data from the media element
-    const duration = bestMedia?.duration ?? NaN;
-    const position = bestMedia?.currentTime ?? NaN;
-    const volume = bestMedia?.volume ?? -1;
+    // 5. Extract playback data from the media element (sanitized — see saneTimeValue)
+    const duration = saneTimeValue(bestMedia?.duration);
+    const position = saneTimeValue(bestMedia?.currentTime);
+    const volume = typeof bestMedia?.volume === 'number' && Number.isFinite(bestMedia.volume) ? bestMedia.volume : -1;
     const isMuted = bestMedia?.muted ?? false;
-    const playbackRate = bestMedia?.playbackRate ?? 1.0;
+    const playbackRate = typeof bestMedia?.playbackRate === 'number' && Number.isFinite(bestMedia.playbackRate) && bestMedia.playbackRate > 0
+      ? bestMedia.playbackRate
+      : 1.0;
 
     // 6. Fallback title from page title if empty
     if (!title) {

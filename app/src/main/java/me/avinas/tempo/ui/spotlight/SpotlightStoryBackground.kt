@@ -1,6 +1,6 @@
 package me.avinas.tempo.ui.spotlight
 
-import me.avinas.tempo.ui.theme.TempoBackground
+import me.avinas.tempo.ui.theme.TempoDarkBackground
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
@@ -82,7 +82,7 @@ fun SpotlightStoryBackground(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(TempoBackground) // Base background (Slate 900)
+            .background(TempoDarkBackground) // Base background (Slate 900)
     ) {
         // Ambient Background Blobs
         Canvas(modifier = Modifier.fillMaxSize()) {

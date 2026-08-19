@@ -71,6 +71,16 @@ class RoomEnrichedMetadataRepository @Inject constructor(
 
     override suspend fun requeueAllForEnrichment(): Int = dao.requeueAllForEnrichment()
 
+    override suspend fun countTracksWithoutEnrichedMetadata(): Int =
+        dao.countTracksWithoutEnrichedMetadata()
+
+    override suspend fun ensurePendingForAllTracks(): Int {
+        val missing = dao.countTracksWithoutEnrichedMetadata()
+        if (missing == 0) return 0
+        dao.insertPendingForUnqueuedTracks(System.currentTimeMillis())
+        return missing
+    }
+
     override suspend fun markLowPlayPendingAsSkipped(minPlayCount: Int): Int =
         dao.markLowPlayPendingAsSkipped(minPlayCount)
     

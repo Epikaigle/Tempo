@@ -80,9 +80,12 @@ function buildFirefoxManifest(baseManifest) {
   // Remove "type": "module" from background — Firefox IIFE doesn't need it
   if (m.background) delete m.background.type;
 
-  // Firefox requires background.scripts as fallback for service_worker
+  // Firefox uses background.scripts (event page), not service_worker.
+  // Having BOTH keys present makes Firefox reject the manifest, so convert
+  // service_worker → scripts and drop the service_worker key entirely.
   if (m.background?.service_worker) {
     m.background.scripts = [m.background.service_worker];
+    delete m.background.service_worker;
   }
 
   // Firefox doesn't support wildcard ports in optional_host_permissions

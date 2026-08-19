@@ -183,6 +183,7 @@ class ProfileViewModel @Inject constructor(
     }
     
     fun claimChallenge(challengeId: Long) {
+        _uiState.update { it.copy(claimedChallengeIds = it.claimedChallengeIds + challengeId) }
         viewModelScope.launch {
             try {
                 challengeRepository.claimChallengeXp(challengeId)
@@ -232,7 +233,8 @@ data class ProfileUiState(
     val filteredBadges: List<Badge> = emptyList(),
     val earnedCount: Int = 0,
     val totalCount: Int = 0,
-    val categories: List<String> = emptyList()
+    val categories: List<String> = emptyList(),
+    val claimedChallengeIds: Set<Long> = emptySet()
 ) {
     val streakAtRisk: Boolean
         get() = userLevel.currentStreak > 0 && try {

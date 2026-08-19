@@ -31,15 +31,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.theme.TempoBackground
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoInfo
-import me.avinas.tempo.ui.theme.TempoSuccess
-import me.avinas.tempo.ui.theme.TempoWarning
-import me.avinas.tempo.ui.theme.TextPrimary
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.TempoDarkBackground
+import me.avinas.tempo.ui.theme.TempoRed
 import me.avinas.tempo.ui.utils.adaptiveSize
 import me.avinas.tempo.ui.utils.adaptiveTextUnit
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
@@ -106,7 +99,7 @@ fun PrivacyExplainerScreen(
                         .background(
                             brush = Brush.radialGradient(
                                 colors = listOf(
-                                    TempoSuccess.copy(alpha = 0.3f),
+                                    Color(0xFF22C55E).copy(alpha = 0.3f),
                                     Color.Transparent
                                 )
                             ),
@@ -117,7 +110,7 @@ fun PrivacyExplainerScreen(
                     imageVector = Icons.Default.Shield,
                     contentDescription = null,
                     modifier = Modifier.size(shieldIconSize),
-                    tint = TempoSuccess
+                    tint = Color(0xFF22C55E)
                 )
             }
 
@@ -129,7 +122,7 @@ fun PrivacyExplainerScreen(
                 style = if (isSmallScreen()) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
-                color = TextPrimary,
+                color = Color.White,
                 fontSize = adaptiveTextUnitByCategory(30.sp, 26.sp, 22.sp)
             )
 
@@ -139,7 +132,7 @@ fun PrivacyExplainerScreen(
                 text = stringResource(R.string.privacy_subtitle),
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
-                color = TextSecondary,
+                color = Color.White.copy(alpha = 0.7f),
                 fontSize = adaptiveTextUnitByCategory(17.sp, 15.sp, 13.sp)
             )
 
@@ -156,7 +149,7 @@ fun PrivacyExplainerScreen(
                 AnimatedOpacity(delay = 200, visible = listVisible.value) {
                     PrivacyPoint(
                         icon = Icons.Default.PhoneAndroid,
-                        iconColor = TempoInfo,
+                        iconColor = Color(0xFF3B82F6),
                         title = stringResource(R.string.privacy_local_title),
                         description = stringResource(R.string.privacy_local_desc)
                     )
@@ -166,7 +159,7 @@ fun PrivacyExplainerScreen(
                 AnimatedOpacity(delay = 400, visible = listVisible.value) {
                     PrivacyPoint(
                         icon = Icons.Default.CloudOff,
-                        iconColor = TempoWarning,
+                        iconColor = Color(0xFFF59E0B),
                         title = stringResource(R.string.privacy_no_cloud_title),
                         description = stringResource(R.string.privacy_no_cloud_desc)
                     )
@@ -176,7 +169,7 @@ fun PrivacyExplainerScreen(
                 AnimatedOpacity(delay = 600, visible = listVisible.value) {
                     PrivacyPoint(
                         icon = Icons.Default.Visibility,
-                        iconColor = TempoAccent,
+                        iconColor = Color(0xFFA855F7),
                         title = stringResource(R.string.privacy_notif_title),
                         description = stringResource(R.string.privacy_notif_desc)
                     )
@@ -186,7 +179,7 @@ fun PrivacyExplainerScreen(
                 AnimatedOpacity(delay = 800, visible = listVisible.value) {
                     PrivacyPoint(
                         icon = Icons.Default.Code,
-                        iconColor = TempoSuccess,
+                        iconColor = Color(0xFF22C55E),
                         title = stringResource(R.string.privacy_open_source_title),
                         description = stringResource(R.string.privacy_open_source_desc)
                     )
@@ -198,7 +191,7 @@ fun PrivacyExplainerScreen(
             // Bottom quote
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                backgroundColor = TempoSuccess.copy(alpha = 0.08f),
+                backgroundColor = Color(0xFF22C55E).copy(alpha = 0.08f),
                 contentPadding = PaddingValues(adaptiveSizeByCategory(16.dp, 12.dp, 10.dp))
             ) {
                 Text(
@@ -206,7 +199,7 @@ fun PrivacyExplainerScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
-                    color = TextPrimary,
+                    color = Color.White.copy(alpha = 0.9f),
                     modifier = Modifier.fillMaxWidth(),
                     fontSize = adaptiveTextUnitByCategory(15.sp, 13.sp, 12.sp)
                 )
@@ -222,7 +215,7 @@ fun PrivacyExplainerScreen(
                     .fillMaxWidth()
                     .height(scaledSize(54.dp, 0.85f, 1.1f)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoPrimary,
+                    containerColor = TempoRed,
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(16.dp),
@@ -251,7 +244,7 @@ fun PrivacyExplainerScreen(
         ) {
             Text(
                 text = stringResource(R.string.welcome_skip),
-                color = TextTertiary,
+                color = Color.White.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.labelLarge
             )
         }
@@ -303,13 +296,13 @@ private fun PrivacyPoint(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
+                    color = Color.White,
                     fontSize = adaptiveTextUnitByCategory(17.sp, 15.sp, 14.sp)
                 )
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextTertiary,
+                    color = Color.White.copy(alpha = 0.6f),
                     fontSize = adaptiveTextUnitByCategory(14.sp, 12.sp, 11.sp),
                     lineHeight = adaptiveTextUnitByCategory(20.sp, 17.sp, 15.sp)
                 )

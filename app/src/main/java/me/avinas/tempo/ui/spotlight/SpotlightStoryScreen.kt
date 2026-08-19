@@ -39,6 +39,7 @@ import me.avinas.tempo.ui.components.CaptureWrapper
 import me.avinas.tempo.ui.components.rememberCaptureController
 import me.avinas.tempo.utils.ShareUtils
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -48,27 +49,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.DisposableEffect
 import me.avinas.tempo.R
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoAccentBright
-import me.avinas.tempo.ui.theme.TempoCyan
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoErrorAlt
-import me.avinas.tempo.ui.theme.TempoErrorDeep
-import me.avinas.tempo.ui.theme.TempoInfo
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoPrimaryDeep
-import me.avinas.tempo.ui.theme.TempoPrimaryDim
-import me.avinas.tempo.ui.theme.TempoPrimaryMuted
-import me.avinas.tempo.ui.theme.TempoSky
-import me.avinas.tempo.ui.theme.TempoSuccessDeep
-import me.avinas.tempo.ui.theme.TempoSurfaceDialog
-import me.avinas.tempo.ui.theme.TempoWarning
-import me.avinas.tempo.ui.theme.TempoWarningBright
-import me.avinas.tempo.ui.theme.TempoWarningDeep
-import me.avinas.tempo.ui.theme.TempoWarningSoft
-import me.avinas.tempo.ui.theme.TextQuaternary
-import me.avinas.tempo.ui.theme.TextSecondary
-import me.avinas.tempo.ui.theme.TextTertiary
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -76,6 +56,11 @@ fun SpotlightStoryScreen(
     storyPages: List<SpotlightStoryPage>,
     onClose: () -> Unit
 ) {
+    // Freeze the page list for the whole playback session. The ViewModel regenerates
+    // story pages reactively on every new listening event; if the live list were used,
+    // a scrobble landing mid-story could change the page count (optional slides vary),
+    // clamping the pager's current page and restarting the timer mid-playback.
+    val storyPages = remember { storyPages }
     val pagerState = rememberPagerState(pageCount = { storyPages.size })
     val coroutineScope = rememberCoroutineScope()
     val currentProgress = remember { Animatable(0f) }
@@ -133,102 +118,102 @@ fun SpotlightStoryScreen(
     val (primaryColor, secondaryColor, tertiaryColor) = when (currentPage) {
         // ACT 1: SETUP - Cool, introspective blues/purples
         is SpotlightStoryPage.ListeningMinutes -> Triple(
-            TempoPrimaryMuted, // Indigo - curiosity
-            TempoAccent, // Light Indigo
-            TempoInfo  // Deep Indigo
+            Color(0xFF6366F1), // Indigo - curiosity
+            Color(0xFF818CF8), // Light Indigo
+            Color(0xFF4F46E5)  // Deep Indigo
         )
         is SpotlightStoryPage.ListeningStreak -> Triple(
-            TempoPrimaryMuted, // Violet - building momentum
-            TempoPrimary, // Light Violet
-            TempoPrimaryDim  // Deep Violet
+            Color(0xFF7C3AED), // Violet - building momentum
+            Color(0xFF8B5CF6), // Light Violet
+            Color(0xFF6D28D9)  // Deep Violet
         )
         is SpotlightStoryPage.ListeningClock -> Triple(
-            TempoSurfaceDialog, // Deep Indigo (night)
-            TempoInfo, // Indigo
-            TempoInfo  // Bright Indigo
+            Color(0xFF1E1B4B), // Deep Indigo (night)
+            Color(0xFF3730A3), // Indigo
+            Color(0xFF4338CA)  // Bright Indigo
         )
         
         // ACT 2: DISCOVERIES - Warm, exciting ambers/pinks
         is SpotlightStoryPage.TopArtist -> Triple(
-            TempoPrimary, // Pink - passion
-            TempoErrorAlt, // Light Pink
-            TempoErrorDeep  // Dark Pink
+            Color(0xFFEC4899), // Pink - passion
+            Color(0xFFF472B6), // Light Pink
+            Color(0xFFBE185D)  // Dark Pink
         )
         is SpotlightStoryPage.TopAlbum -> Triple(
-            TempoWarningDeep, // Amber - warmth
-            TempoWarning, // Light Amber
-            TempoWarningDeep  // Dark Amber
+            Color(0xFFD97706), // Amber - warmth
+            Color(0xFFF59E0B), // Light Amber
+            Color(0xFFB45309)  // Dark Amber
         )
         is SpotlightStoryPage.TopSongs -> Triple(
-            TempoWarning, // Amber - energy
-            TempoWarningBright, // Light Amber
-            TempoWarningDeep  // Dark Amber
+            Color(0xFFF59E0B), // Amber - energy
+            Color(0xFFFBBF24), // Light Amber
+            Color(0xFFD97706)  // Dark Amber
         )
         is SpotlightStoryPage.TopTrackSetup -> Triple(
-            TempoWarning, // Orange - anticipation
-            TempoWarningSoft, // Light Orange
-            TempoWarningDeep  // Dark Orange
+            Color(0xFFFB923C), // Orange - anticipation
+            Color(0xFFFDBA74), // Light Orange
+            Color(0xFFEA580C)  // Dark Orange
         )
         is SpotlightStoryPage.TopGenres -> Triple(
-            TempoSuccessDeep, // Emerald - exploration
-            TempoSuccessDeep, // Light Emerald
-            TempoSuccessDeep  // Dark Emerald
+            Color(0xFF10B981), // Emerald - exploration
+            Color(0xFF34D399), // Light Emerald
+            Color(0xFF059669)  // Dark Emerald
         )
         is SpotlightStoryPage.DiscoveryCount -> Triple(
-            TempoCyan, // Cyan - discovery
-            TempoCyan, // Light Cyan
-            TempoCyan  // Dark Cyan
+            Color(0xFF06B6D4), // Cyan - discovery
+            Color(0xFF22D3EE), // Light Cyan
+            Color(0xFF0891B2)  // Dark Cyan
         )
         is SpotlightStoryPage.WeekdayVsWeekend -> Triple(
-            TempoSky, // Sky blue - patterns
-            TempoSky, // Light Sky
-            TempoSky  // Dark Sky
+            Color(0xFF0284C7), // Sky blue - patterns
+            Color(0xFF38BDF8), // Light Sky
+            Color(0xFF0369A1)  // Dark Sky
         )
         is SpotlightStoryPage.BingeSession -> Triple(
-            TempoErrorAlt, // Rose - intensity
-            TempoErrorAlt, // Light Rose
-            TempoErrorDeep  // Dark Rose
+            Color(0xFFE11D48), // Rose - intensity
+            Color(0xFFFB7185), // Light Rose
+            Color(0xFFBE123C)  // Dark Rose
         )
         is SpotlightStoryPage.TimeOfDayVibes -> Triple(
-            TempoPrimary, // Violet - moods
-            TempoAccentBright, // Light Violet
-            TempoPrimaryMuted  // Dark Violet
+            Color(0xFF8B5CF6), // Violet - moods
+            Color(0xFFA78BFA), // Light Violet
+            Color(0xFF7C3AED)  // Dark Violet
         )
         
         // ACT 3: CLIMAX - Bold, celebratory reds/golds
         is SpotlightStoryPage.AudioMood -> Triple(
-            TempoError, // Red - emotional peak
-            TempoError, // Light Red
-            TempoErrorDeep  // Dark Red
+            Color(0xFFDC2626), // Red - emotional peak
+            Color(0xFFEF4444), // Light Red
+            Color(0xFFB91C1C)  // Dark Red
         )
         is SpotlightStoryPage.Personality -> Triple(
-            TempoWarningDeep, // Gold - REVELATION
-            TempoWarningBright, // Light Gold
-            TempoWarningDeep  // Dark Gold
+            Color(0xFFEAB308), // Gold - REVELATION
+            Color(0xFFFDE047), // Light Gold
+            Color(0xFFCA8A04)  // Dark Gold
         )
         is SpotlightStoryPage.BadgesEarned -> Triple(
-            TempoWarningDeep, // Amber - achievement
-            TempoWarning, // Light Amber
-            TempoWarningDeep  // Dark Amber
+            Color(0xFFD97706), // Amber - achievement
+            Color(0xFFF59E0B), // Light Amber
+            Color(0xFFB45309)  // Dark Amber
         )
         
         // ACT 4: RESOLUTION - Serene, reflective teals/whites
         is SpotlightStoryPage.LevelUp -> Triple(
-            TempoPrimary, // Teal - growth
-            TempoAccent, // Light Teal
-            TempoPrimaryDeep  // Dark Teal
+            Color(0xFF14B8A6), // Teal - growth
+            Color(0xFF2DD4BF), // Light Teal
+            Color(0xFF0F766E)  // Dark Teal
         )
         is SpotlightStoryPage.TitleEarned -> Triple(
-            TempoPrimaryDeep, // Dark Teal - identity
-            TempoAccent, // Light Teal
-            TempoPrimaryDeep  // Deep Teal
+            Color(0xFF0D9488), // Dark Teal - identity
+            Color(0xFF5EEAD4), // Light Teal
+            Color(0xFF115E59)  // Deep Teal
         )
         is SpotlightStoryPage.Conclusion -> Triple(
-            TextTertiary, // Slate - reflection
-            TextSecondary, // Light Slate
-            TextQuaternary  // Dark Slate
+            Color(0xFF64748B), // Slate - reflection
+            Color(0xFF94A3B8), // Light Slate
+            Color(0xFF475569)  // Dark Slate
         )
-        null -> Triple(TempoPrimaryMuted, TempoAccent, TempoInfo)
+        null -> Triple(Color(0xFF6366F1), Color(0xFF818CF8), Color(0xFF4F46E5))
     }
 
     val captureController = rememberCaptureController()
@@ -254,14 +239,20 @@ fun SpotlightStoryScreen(
         }
     }
 
-    // Reset progress when page changes
-    LaunchedEffect(pagerState.currentPage) {
-        currentProgress.snapTo(0f)
-    }
+    // Tracks which page the current progress bar value belongs to. Progress must be
+    // reset inside the auto-advance coroutine itself, not in a separate LaunchedEffect:
+    // a sibling reset effect races this one over the Animatable's mutex, and if the
+    // timer reads the previous page's near-1f progress before the snap lands, the
+    // remaining duration collapses to ~0ms and the story skips pages instantly.
+    val timerPageIndex = remember { mutableIntStateOf(-1) }
 
     // Auto-advance logic with pause support
     LaunchedEffect(pagerState.currentPage, isPaused) {
         if (!isPaused) {
+             if (timerPageIndex.value != pagerState.currentPage) {
+                 currentProgress.snapTo(0f)
+                 timerPageIndex.value = pagerState.currentPage
+             }
              val remainingTime = (1f - currentProgress.value) * 15000
              if (remainingTime > 0) {
                  currentProgress.animateTo(

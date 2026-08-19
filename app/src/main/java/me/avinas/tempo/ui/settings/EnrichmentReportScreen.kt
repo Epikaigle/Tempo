@@ -21,7 +21,6 @@ import me.avinas.tempo.R
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.theme.Divider
 
 /**
  * Enrichment Report screen.
@@ -46,6 +45,14 @@ fun EnrichmentReportScreen(
                 delay(3000)
                 viewModel.refresh()
             }
+        }
+    }
+
+    // When a sweep finishes (or is cancelled), do one final refresh so the numbers
+    // reflect the end state immediately instead of staying stale.
+    LaunchedEffect(progress.isRunning, progress.isDone) {
+        if (!progress.isRunning && (progress.isDone || progress.total > 0)) {
+            viewModel.refresh()
         }
     }
 
@@ -114,6 +121,9 @@ fun EnrichmentReportScreen(
                         BreakdownRow(stringResource(R.string.enrichment_report_failed), stats.failed)
                         BreakdownRow(stringResource(R.string.enrichment_report_skipped), stats.skipped)
                         BreakdownRow(stringResource(R.string.enrichment_report_not_found), stats.notFound)
+                        if (stats.notQueued > 0) {
+                            BreakdownRow(stringResource(R.string.enrichment_report_not_queued), stats.notQueued)
+                        }
                     }
                 }
 
@@ -122,9 +132,13 @@ fun EnrichmentReportScreen(
                     GlassCard(variant = GlassCardVariant.LowProminence) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text(
-                                text = if (progress.total > 0)
-                                    stringResource(R.string.enrichment_report_progress, progress.processed, progress.total)
-                                else stringResource(R.string.enrichment_report_starting),
+                                text = when {
+                                    progress.total > 0 ->
+                                        stringResource(R.string.enrichment_report_progress, progress.processed, progress.total)
+                                    progress.isWaiting ->
+                                        stringResource(R.string.enrichment_report_waiting)
+                                    else -> stringResource(R.string.enrichment_report_starting)
+                                },
                                 color = Color.White,
                                 style = MaterialTheme.typography.titleSmall
                             )

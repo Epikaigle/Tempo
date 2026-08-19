@@ -7,9 +7,10 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
+import me.avinas.tempo.data.drive.BackupSettingsManager
+import me.avinas.tempo.data.drive.BackupStatus
 import me.avinas.tempo.data.local.dao.UserKnownArtistDao
 import me.avinas.tempo.data.local.dao.UserPreferencesDao
-import me.avinas.tempo.data.repository.ArtistRepairService
 import me.avinas.tempo.utils.ArtistParser
 import me.avinas.tempo.worker.EnrichmentWorker
 import me.avinas.tempo.worker.ServiceHealthWorker
@@ -21,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.Executors
 import javax.inject.Inject
 
@@ -49,8 +51,11 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     lateinit var userKnownArtistDao: UserKnownArtistDao
 
     @Inject
-    lateinit var artistRepairService: ArtistRepairService
+    lateinit var artistRepairService: me.avinas.tempo.data.repository.ArtistRepairService
 
+    @Inject
+    lateinit var backupSettingsManager: BackupSettingsManager
+    
     // Background executor for non-critical initialization
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     
@@ -86,25 +91,23 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     /**
      * Load user-defined known artist names from the database into ArtistParser.
      * This runs on a background coroutine and doesn't block startup.
-     *
-     * Also triggers the one-time artist data repair (e.g. Japanese artist
-     * collapse from the old ASCII-only normalization). The repair runs AFTER
-     * the parser is populated so re-linking respects user-known band names.
      */
     private fun loadUserKnownArtists() {
         applicationScope.launch {
             try {
                 val names = userKnownArtistDao.getAllNormalizedNames().toSet()
                 ArtistParser.loadUserKnownBands(names)
+
+                // One-time data repair; no-ops once applied (versioned flag).
+                // For users coming from public 4.8.2 the flag is already set,
+                // so this never re-runs on their devices.
+                try {
+                    artistRepairService.runRepairIfNeeded()
+                } catch (e: Exception) {
+                    android.util.Log.w("TempoApplication", "Artist repair invocation failed", e)
+                }
             } catch (e: Exception) {
                 android.util.Log.w("TempoApplication", "Failed to load user known artists", e)
-            }
-
-            // One-time data repair; no-ops once applied (versioned flag)
-            try {
-                artistRepairService.runRepairIfNeeded()
-            } catch (e: Exception) {
-                android.util.Log.w("TempoApplication", "Artist repair invocation failed", e)
             }
         }
     }
@@ -128,6 +131,11 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     }
 
     private fun scheduleBackgroundWork() {
+        // Self-heal: if a previous listener-restart attempt left the tracking
+        // component DISABLED (process died mid-toggle), re-enable it now so
+        // tracking recovers without a reinstall.
+        me.avinas.tempo.service.MusicTrackingService.ensureComponentEnabled(this)
+
         ServiceHealthWorker.schedule(this)
         
         EnrichmentWorker.schedulePeriodic(this)
@@ -138,6 +146,21 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
         me.avinas.tempo.worker.GamificationWorker.enqueueImmediateRefresh(this)
         
         scheduleSpotifyPollingIfEnabled()
+
+        // A backup status of IN_PROGRESS can only mean the app was killed while
+        // a backup was running (crash, force-stop, OS kill). No worker survives
+        // that, so the status would stay stuck forever. Reset it to FAILED so
+        // the UI reflects reality and the user can retry.
+        applicationScope.launch {
+            try {
+                val settings = backupSettingsManager.settings.first()
+                if (settings.lastBackupStatus == BackupStatus.IN_PROGRESS) {
+                    backupSettingsManager.updateLastBackup(BackupStatus.FAILED)
+                }
+            } catch (e: Exception) {
+                // Non-critical — ignore
+            }
+        }
 
         Handler(Looper.getMainLooper()).postDelayed({
             SpotlightUnlockWorker.scheduleWeekly(this)

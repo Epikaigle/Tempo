@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.drawable.Icon
@@ -96,6 +97,42 @@ class MusicTrackingService : NotificationListenerService() {
 
         /** Sent by [BatteryStateReceiver] to trigger a re-scan of active media sessions. */
         const val ACTION_BATTERY_RECOVERED = "me.avinas.tempo.ACTION_BATTERY_RECOVERED"
+
+        /**
+         * Self-heal the listener component on any process start.
+         *
+         * [me.avinas.tempo.worker.ServiceHealthWorker] restarts a dead listener by
+         * toggling this component DISABLED → ENABLED. If the process dies in that
+         * window (or the re-enable throws), the component is left DISABLED and
+         * tracking stays dead until the user reinstalls — the exact failure users
+         * report as "it stopped tracking and never came back".
+         *
+         * This runs on every app process start: if the component is stuck disabled,
+         * re-enable it and ask the system to rebind the listener. Cheap (two
+         * PackageManager calls), no battery impact, and it makes the kill window
+         * self-recovering instead of permanent.
+         */
+        fun ensureComponentEnabled(context: Context) {
+            try {
+                val componentName = ComponentName(context, MusicTrackingService::class.java)
+                val state = context.packageManager.getComponentEnabledSetting(componentName)
+                if (state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
+                    Log.w(TAG, "Listener component found DISABLED — re-enabling (self-heal)")
+                    context.packageManager.setComponentEnabledSetting(
+                        componentName,
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                    try {
+                        requestRebind(componentName)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "requestRebind after self-heal failed", e)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "ensureComponentEnabled failed", e)
+            }
+        }
 
         // Music app package names to monitor (ONLY music apps, no video)
         private val MUSIC_APPS = setOf(
@@ -394,6 +431,14 @@ class MusicTrackingService : NotificationListenerService() {
         
         // Session auto-save interval
         private const val SESSION_AUTOSAVE_INTERVAL_MS = 30_000L
+
+        // Maximum time to block in onDestroy while flushing pending listening events.
+        // A normal Room batch write is well under 100ms, so 5s is generous headroom.
+        // Bounded so we never hold the main thread long enough to risk an ANR, but
+        // long enough to land the final batch of events in the database before the
+        // process goes away. If it does time out, the sessions were already persisted
+        // to SharedPreferences at the top of the flush, so recovery picks them up.
+        private const val SHUTDOWN_FLUSH_TIMEOUT_MS = 5_000L
         
         // Track matching threshold for deduplication
         private const val TRACK_MATCH_THRESHOLD = 0.85
@@ -847,8 +892,10 @@ class MusicTrackingService : NotificationListenerService() {
     // Recent plays cache for replay detection (trackId -> lastPlayTimestamp)
     private val recentPlaysCache = java.util.concurrent.ConcurrentHashMap<Long, Long>()
     
-    // Estimated durations cache (title+artist hash -> duration) for when MediaSession doesn't provide duration
-    private val durationEstimateCache = mutableMapOf<String, Long>()
+    // Estimated durations cache (title+artist hash -> duration) for when MediaSession doesn't provide duration.
+    // LruCache is both thread-safe (read on the notification thread, written from IO
+    // coroutines) and bounded, so a long-lived listener can't accumulate entries forever.
+    private val durationEstimateCache = android.util.LruCache<String, Long>(512)
     
     // Smart Metadata: Cached user preference for matching strictness
     // This avoids database call on every track match (preferences rarely change)
@@ -868,17 +915,13 @@ class MusicTrackingService : NotificationListenerService() {
     private var lastNotificationUpdate = 0L
     private var lastNotificationContent = ""
     
-    // Pending metadata debounce - waits briefly for complete metadata before inserting tracks
-    // Key: packageName, Value: pending job that will insert the track
-    private val pendingTrackInserts = mutableMapOf<String, Job>()
-    
-    // How long to wait for complete metadata (artist) before inserting track
-    private val METADATA_DEBOUNCE_MS = 500L
-    
     // Cache for local MediaSession metadata by trackId
     // Used as ultimate fallback for genre when external sources fail
-    // Music players often send metadata in stages, so we keep updating this
-    private val localMetadataCache = mutableMapOf<Long, LocalMediaMetadata>()
+    // Music players often send metadata in stages, so we keep updating this.
+    // Bounded, thread-safe LRU: entries can hold album-art bitmaps, so an unbounded
+    // map would retain one bitmap per unique track played for the service's lifetime
+    // (the listener can stay alive for weeks).
+    private val localMetadataCache = android.util.LruCache<Long, LocalMediaMetadata>(64)
     
     // =====================
     // Log Spam Prevention
@@ -1020,12 +1063,17 @@ class MusicTrackingService : NotificationListenerService() {
                     }
                     accumulatedPositionMs += safeDelta
                     
-                    // Cap total accumulation at 1.5x estimated duration per continuous session
-                    // This allows for loop detection while preventing runaway accumulation
+                    // Cap total accumulation to prevent runaway values. Use the same
+                    // 3x bound as the save-time sanity cap (insertListeningEvent) so the
+                    // two limits agree. The old 1.5x cap truncated looped playback early:
+                    // a track that loops without triggering replay-splitting was saved at
+                    // 1.5x instead of its true (up to 3x) play time, under-counting
+                    // heavily-repeated listens. 3x still bounds runaway accumulation but
+                    // matches what the save path would permit anyway.
                     estimatedDurationMs?.let { estimated ->
-                        val maxAccumulation = (estimated * 1.5).toLong()
+                        val maxAccumulation = estimated * 3
                         if (accumulatedPositionMs > maxAccumulation && estimated > 60_000) { // Only for >1min tracks
-                            Log.w("PlaybackSession", "ANOMALY: Capping accumulated ${accumulatedPositionMs}ms to $maxAccumulation (1.5x duration) for '$title'")
+                            Log.w("PlaybackSession", "ANOMALY: Capping accumulated ${accumulatedPositionMs}ms to $maxAccumulation (3x duration) for '$title'")
                             accumulatedPositionMs = maxAccumulation
                         }
                     }
@@ -1465,22 +1513,31 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     private fun initializeTrackingComponents() {
+        // Durable store for events that failed to reach the database — survives
+        // OEM kills, crashes and reboots.
+        val offlineStore = try {
+            OfflineEventStore(applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "OfflineEventStore unavailable, events will not survive process death", e)
+            null
+        }
+
         try {
             // Initialize tracking manager for batched event saving
-            trackingManager = MusicTrackingManager(listeningRepository, serviceScope)
-            
+            trackingManager = MusicTrackingManager(listeningRepository, serviceScope, offlineStore)
+
             // Initialize session persistence for recovery
             sessionPersistence = SessionPersistence(applicationContext)
             sessionPersistence.markServiceActive()
-            
+
             // Initialize smart duration estimator
             durationEstimator = SmartDurationEstimator()
-            
+
             Log.d(TAG, "Enhanced tracking components initialized")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize tracking components", e)
             // Create fallback instances
-            trackingManager = MusicTrackingManager(listeningRepository, serviceScope)
+            trackingManager = MusicTrackingManager(listeningRepository, serviceScope, offlineStore)
             sessionPersistence = SessionPersistence(applicationContext)
             durationEstimator = SmartDurationEstimator()
         }
@@ -1492,59 +1549,88 @@ class MusicTrackingService : NotificationListenerService() {
                 if (sessionPersistence.wasUncleanShutdown()) {
                     Log.i(TAG, "Detected unclean shutdown, attempting session recovery")
                     val recoveredSessions = sessionPersistence.loadSessions()
-                    
+
                     if (recoveredSessions.isNotEmpty()) {
                         Log.i(TAG, "Recovered ${recoveredSessions.size} sessions from persistence")
-                        
+
                         // Process recovered sessions - they were interrupted
                         for (state in recoveredSessions) {
+                            // Dedup guard: if an event with this sessionId already
+                            // reached the database (session ended normally but the
+                            // persisted copy was stale when we were killed), do NOT
+                            // re-queue it — that would double-count the play.
+                            val alreadySaved = try {
+                                listeningRepository.getEventsBySessionId(state.sessionId).isNotEmpty()
+                            } catch (e: Exception) {
+                                false
+                            }
+                            if (alreadySaved) {
+                                Log.i(TAG, "Skipping recovery of '${state.trackTitle}' — event already saved (session ${state.sessionId})")
+                                continue
+                            }
+
                             // FIX: Don't add time since last save - the session was interrupted
                             // and we can't know if playback actually continued after last save.
                             // Using only the persisted play time prevents inflation from device sleep.
                             val estimatedPlayTime = state.totalPlayedMs
-                            
+
                             // Cap recovered sessions at reasonable maximum
                             val cappedPlayTime = estimatedPlayTime.coerceAtMost(MAX_PLAY_DURATION_MS)
                             if (estimatedPlayTime != cappedPlayTime) {
                                 Log.w(TAG, "ANOMALY: Recovered session '${state.trackTitle}' had ${estimatedPlayTime}ms, capped to ${cappedPlayTime}ms")
                             }
-                            
-                            if (cappedPlayTime > MIN_PLAY_DURATION_MS && state.trackId != null) {
-                                // Also cap at 3x estimated duration for sanity
-                                val finalPlayTime = if (state.estimatedDurationMs != null && state.estimatedDurationMs > 0) {
-                                    val maxReasonable = state.estimatedDurationMs * 3
-                                    cappedPlayTime.coerceAtMost(maxReasonable)
-                                } else {
-                                    cappedPlayTime
-                                }
-                                
-                                // Create a listening event for the recovered session
-                                val event = ListeningEvent(
-                                    track_id = state.trackId,
-                                    timestamp = state.startTimestamp,
-                                    playDuration = finalPlayTime,
-                                    completionPercentage = durationEstimator.calculateCompletionPercent(
-                                        finalPlayTime, 
-                                        state.estimatedDurationMs,
-                                        false
-                                    ),
-                                    source = state.packageName,
-                                    wasSkipped = false,
-                                    isReplay = false,
-                                    estimatedDurationMs = state.estimatedDurationMs,
-                                    pauseCount = state.pauseCount,
-                                    sessionId = state.sessionId,
-                                    endTimestamp = System.currentTimeMillis(),
-                                    wasInterrupted = true  // Mark as recovered/interrupted session
-                                )
-                                
-                                trackingManager.queueEvent(event, state.sessionId)
-                                Log.i(TAG, "Queued recovered event for '${state.trackTitle}': ${finalPlayTime}ms (was ${estimatedPlayTime}ms)")
+
+                            if (cappedPlayTime <= MIN_PLAY_DURATION_MS) continue
+
+                            // Resolve the track. Sessions persisted before their
+                            // trackId was assigned (track insert still in flight when
+                            // we were killed) used to be dropped here — losing the play
+                            // entirely. Resolve by title/artist instead.
+                            val trackId = state.trackId ?: try {
+                                getOrInsertTrack(state.trackTitle, state.trackArtist, state.trackAlbum).id
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Could not resolve track for recovered session '${state.trackTitle}'", e)
+                                null
                             }
+                            if (trackId == null) {
+                                Log.w(TAG, "Dropping unrecoverable session '${state.trackTitle}' (no trackId, resolution failed)")
+                                continue
+                            }
+
+                            // Also cap at 3x estimated duration for sanity
+                            val finalPlayTime = if (state.estimatedDurationMs != null && state.estimatedDurationMs > 0) {
+                                val maxReasonable = state.estimatedDurationMs * 3
+                                cappedPlayTime.coerceAtMost(maxReasonable)
+                            } else {
+                                cappedPlayTime
+                            }
+
+                            // Create a listening event for the recovered session
+                            val event = ListeningEvent(
+                                track_id = trackId,
+                                timestamp = state.startTimestamp,
+                                playDuration = finalPlayTime,
+                                completionPercentage = durationEstimator.calculateCompletionPercent(
+                                    finalPlayTime,
+                                    state.estimatedDurationMs,
+                                    false
+                                ),
+                                source = state.packageName,
+                                wasSkipped = false,
+                                isReplay = false,
+                                estimatedDurationMs = state.estimatedDurationMs,
+                                pauseCount = state.pauseCount,
+                                sessionId = state.sessionId,
+                                endTimestamp = System.currentTimeMillis(),
+                                wasInterrupted = true  // Mark as recovered/interrupted session
+                            )
+
+                            trackingManager.queueEvent(event, state.sessionId)
+                            Log.i(TAG, "Queued recovered event for '${state.trackTitle}': ${finalPlayTime}ms (was ${estimatedPlayTime}ms)")
                         }
                     }
                 }
-                
+
                 // Clear persisted sessions after recovery
                 sessionPersistence.clearSessions()
             } catch (e: Exception) {
@@ -1729,31 +1815,32 @@ class MusicTrackingService : NotificationListenerService() {
         try {
             // Create a snapshot to avoid ConcurrentModificationException
             val statesSnapshot = playbackStates.toMap()
-            val currentSessions = statesSnapshot.mapNotNull { (pkg, session) ->
-                session.trackId?.let { trackId ->
-                    SessionState(
-                        sessionId = session.sessionId,
-                        packageName = session.packageName,
-                        trackId = trackId,
-                        trackTitle = session.title,
-                        trackArtist = session.artist,
-                        trackAlbum = session.album,
-                        startTimestamp = session.startTimestamp,
-                        lastResumeTimestamp = session.lastPositionUpdateTime,
-                        totalPlayedMs = session.accumulatedPositionMs,
-                        isPlaying = session.isPlaying,
-                        pauseCount = session.pauseCount,
-                        estimatedDurationMs = session.estimatedDurationMs
-                    )
-                }
+            // Persist sessions even before their trackId is resolved — title/artist
+            // are enough to recover the play after a kill, and recovery resolves the
+            // track lazily. Dropping these sessions used to lose plays entirely.
+            val currentSessions = statesSnapshot.map { (_, session) ->
+                SessionState(
+                    sessionId = session.sessionId,
+                    packageName = session.packageName,
+                    trackId = session.trackId,
+                    trackTitle = session.title,
+                    trackArtist = session.artist,
+                    trackAlbum = session.album,
+                    startTimestamp = session.startTimestamp,
+                    lastResumeTimestamp = session.lastPositionUpdateTime,
+                    totalPlayedMs = session.accumulatedPositionMs,
+                    isPlaying = session.isPlaying,
+                    pauseCount = session.pauseCount,
+                    estimatedDurationMs = session.estimatedDurationMs
+                )
             }.associateBy { it.sessionId }
-            
-            // Only persist if there are active sessions (optimization)
+
             if (currentSessions.isNotEmpty()) {
                 sessionPersistence.saveSessions(currentSessions)
             } else {
-                // No active sessions - skip persistence to reduce I/O
-                Log.v(TAG, "Skipping session persistence - no active sessions")
+                // No active sessions — clear any stale persisted sessions so a
+                // later kill cannot resurrect (and double-count) finished plays.
+                sessionPersistence.clearSessions()
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to auto-save sessions", e)
@@ -1767,7 +1854,7 @@ class MusicTrackingService : NotificationListenerService() {
         // to deliver an intent (e.g. ACTION_BATTERY_RECOVERED via startForegroundService) and
         // onCreate's startForeground didn't land within the ANR/low-memory restart window,
         // the system throws BadForegroundServiceNotificationException. Asserting here makes
-        // the foreground promotion idempotent and deadline-safe on Android 14+ (targetSdk 36).
+        // the foreground promotion idempotent and deadline-safe on Android 14+.
         startForegroundServiceWithNotification()
 
         when (intent?.action) {
@@ -2048,7 +2135,7 @@ class MusicTrackingService : NotificationListenerService() {
 
                 // Try to get cached duration estimate for this track
                 val cachedDurationKey = generateHash("$title|$artist")
-                val cachedDuration = durationEstimateCache[cachedDurationKey]
+                val cachedDuration = durationEstimateCache.get(cachedDurationKey)
 
                 // Clear log debounce caches for fresh logging on new track
                 loggedArtistExtractionFailures.clear()
@@ -2084,7 +2171,7 @@ class MusicTrackingService : NotificationListenerService() {
                         if (duration != null && duration > 0) {
                             newSession.estimatedDurationMs = duration
                             // Also cache it for future use
-                            durationEstimateCache[cachedDurationKey] = duration
+                            durationEstimateCache.put(cachedDurationKey, duration)
                         }
                         
                         Log.d(TAG, "Track ID ${track.id} assigned for '${title}' (duration: ${newSession.estimatedDurationMs?.let { "${it/1000}s" } ?: "unknown"})")
@@ -2325,12 +2412,17 @@ class MusicTrackingService : NotificationListenerService() {
      * Key insight: Even if external enrichment succeeded, it might not have found genres.
      * In that case, we should still use local genre if available.
      */
-    private val loggedEnrichedTracks = mutableSetOf<Long>() // Track IDs we've already logged as enriched
+    // Track IDs we've already logged as enriched (gates a log message only).
+    // Bounded LRU + lock: written from IO coroutines on multiple threads, and an
+    // unbounded set would grow for the lifetime of the listener service.
+    private val loggedEnrichedTracks = object : LinkedHashMap<Long, Boolean>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Boolean>): Boolean = size > 256
+    }
     
     private suspend fun saveLocalMetadataFallback(trackId: Long, localMetadata: LocalMediaMetadata) {
         try {
             // Always update the local metadata cache (music players send metadata in stages)
-            val cachedMetadata = localMetadataCache[trackId]
+            val cachedMetadata = localMetadataCache.get(trackId)
             val updatedLocalMetadata = if (cachedMetadata != null) {
                 // Merge: prefer non-null values from latest metadata
                 cachedMetadata.copy(
@@ -2344,7 +2436,7 @@ class MusicTrackingService : NotificationListenerService() {
             } else {
                 localMetadata
             }
-            localMetadataCache[trackId] = updatedLocalMetadata
+            localMetadataCache.put(trackId, updatedLocalMetadata)
             
             // IMPORTANT: Always save local bitmap to storage immediately if we have one
             // This ensures we have a local backup even if enriched URL exists but fails to load
@@ -2391,7 +2483,15 @@ class MusicTrackingService : NotificationListenerService() {
                 }
                 
                 // Only log once per track to reduce spam
-                if (loggedEnrichedTracks.add(trackId)) {
+                val shouldLogEnriched = synchronized(loggedEnrichedTracks) {
+                    if (loggedEnrichedTracks.containsKey(trackId)) {
+                        false
+                    } else {
+                        loggedEnrichedTracks[trackId] = true
+                        true
+                    }
+                }
+                if (shouldLogEnriched) {
                      val hasGenres = !existingMetadata?.genres.isNullOrEmpty()
                      val localHasGenre = updatedLocalMetadata.genre != null
                      if (!hasGenres && !localHasGenre) {
@@ -2606,7 +2706,8 @@ class MusicTrackingService : NotificationListenerService() {
                 return "file://${file.absolutePath}"
             }
             
-            // Save bitmap to file
+            // Save bitmap to file (downsampled — huge cover art bitmaps previously
+            // caused OOM/TransactionTooLarge-style failures when saved + reloaded)
             val toSave = downsampleBitmap(bitmap, 512)
             FileOutputStream(file).use { out ->
                 toSave.compress(Bitmap.CompressFormat.JPEG, 85, out)
@@ -2621,7 +2722,7 @@ class MusicTrackingService : NotificationListenerService() {
             return null
         }
     }
-    
+
     private fun downsampleBitmap(bitmap: Bitmap, maxDimension: Int): Bitmap {
         val w = bitmap.width.toFloat()
         val h = bitmap.height.toFloat()
@@ -2629,7 +2730,7 @@ class MusicTrackingService : NotificationListenerService() {
         val ratio = (maxDimension / maxOf(w, h)).coerceAtMost(1f)
         return Bitmap.createScaledBitmap(bitmap, (w * ratio).toInt(), (h * ratio).toInt(), true)
     }
-
+    
     /**
      * Generate MD5 hash for filename.
      */
@@ -2661,47 +2762,53 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     private fun saveListeningEvent(session: PlaybackSession) {
+        serviceScope.launch { saveListeningEventSuspend(session) }
+    }
+
+    /**
+     * Suspend variant that performs the save inline (no internal coroutine launch).
+     *
+     * The normal hot path calls it via [saveListeningEvent] on [serviceScope].
+     * onDestroy calls it directly inside a bounded runBlocking so the final events
+     * are guaranteed to reach the database before the service scope is cancelled.
+     */
+    private suspend fun saveListeningEventSuspend(session: PlaybackSession) {
         val playDuration = session.calculateCurrentPlayDuration()
-        
+
         // Don't save very short plays (less than MIN_PLAY_DURATION_MS)
         if (playDuration < MIN_PLAY_DURATION_MS) {
             Log.d(TAG, "Skipping short play: ${playDuration}ms for '${session.title}'")
             return
         }
 
-        val trackId = session.trackId
+        var trackId = session.trackId
         if (trackId == null) {
             Log.w(TAG, "No trackId for session '${session.title}', deferring save for ${playDuration}ms play")
-            // Queue for later when track ID is available - retry multiple times
-            serviceScope.launch {
-                var retries = 0
-                val maxRetries = 5
-                while (session.trackId == null && retries < maxRetries) {
-                    delay(500) // Wait for track insertion
-                    retries++
-                }
-                
-                val resolvedTrackId = session.trackId
-                if (resolvedTrackId != null) {
-                    Log.d(TAG, "TrackId resolved after ${retries * 500}ms, saving event for '${session.title}'")
-                    insertListeningEvent(resolvedTrackId, session)
-                } else {
-                    // Try to find the track by title/artist as last resort
-                    try {
-                        val track = getOrInsertTrack(session.title, session.artist, session.album)
-                        Log.d(TAG, "Found/created track ${track.id} for deferred save of '${session.title}'")
-                        insertListeningEvent(track.id, session)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to save deferred listening event for '${session.title}'", e)
-                    }
-                }
+            // Wait briefly for the async track insertion to resolve the ID
+            var retries = 0
+            val maxRetries = 5
+            while (session.trackId == null && retries < maxRetries) {
+                delay(500) // Wait for track insertion
+                retries++
             }
-            return
+
+            trackId = session.trackId
+            if (trackId == null) {
+                // Try to find the track by title/artist as a last resort
+                try {
+                    val track = getOrInsertTrack(session.title, session.artist, session.album)
+                    Log.d(TAG, "Found/created track ${track.id} for deferred save of '${session.title}'")
+                    trackId = track.id
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to save deferred listening event for '${session.title}'", e)
+                    return
+                }
+            } else {
+                Log.d(TAG, "TrackId resolved after ${retries * 500}ms, saving event for '${session.title}'")
+            }
         }
 
-        serviceScope.launch {
-            insertListeningEvent(trackId, session)
-        }
+        insertListeningEvent(trackId, session)
     }
 
     private suspend fun insertListeningEvent(trackId: Long, session: PlaybackSession) {
@@ -2778,7 +2885,7 @@ class MusicTrackingService : NotificationListenerService() {
         session.estimatedDurationMs?.let { duration ->
             if (duration > 0) {
                 val key = generateHash("${session.title}|${session.artist}")
-                durationEstimateCache[key] = duration
+                durationEstimateCache.put(key, duration)
             }
         }
 
@@ -3201,7 +3308,7 @@ class MusicTrackingService : NotificationListenerService() {
                 serviceScope.launch {
                     try {
                         // Update cache with latest metadata
-                        val cached = localMetadataCache[trackId]
+                        val cached = localMetadataCache.get(trackId)
                         val hasNewData = cached == null || 
                             (localMetadata.genre != null && cached.genre == null) ||
                             (localMetadata.year != null && cached.year == null) ||
@@ -3210,7 +3317,7 @@ class MusicTrackingService : NotificationListenerService() {
                         
                         if (hasNewData) {
                             // Always update the cache with latest data
-                            localMetadataCache[trackId] = if (cached != null) {
+                            localMetadataCache.put(trackId, if (cached != null) {
                                 cached.copy(
                                     genre = localMetadata.genre ?: cached.genre,
                                     album = localMetadata.album ?: cached.album,
@@ -3221,7 +3328,7 @@ class MusicTrackingService : NotificationListenerService() {
                                 )
                             } else {
                                 localMetadata
-                            }
+                            })
                             Log.d(TAG, "Updated local metadata cache for track $trackId (genre: ${localMetadata.genre}, album: ${localMetadata.album})")
                         }
                     } catch (e: Exception) {
@@ -3242,7 +3349,7 @@ class MusicTrackingService : NotificationListenerService() {
                         
                         if (stillSameSession) {
                             Log.d(TAG, "Performing delayed metadata retry for track $trackId after 1 minute")
-                            val latestCachedMetadata = localMetadataCache[trackId]
+                            val latestCachedMetadata = localMetadataCache.get(trackId)
                             if (latestCachedMetadata != null) {
                                 saveLocalMetadataFallback(trackId, latestCachedMetadata)
                             }
@@ -3363,24 +3470,24 @@ class MusicTrackingService : NotificationListenerService() {
                         
                         // Ensure locally extracted art URI is available to the fallback logic
                         if (localArtUrl != null) {
-                            val currentCache = localMetadataCache[track.id] ?: localMetadata
+                            val currentCache = localMetadataCache.get(track.id) ?: localMetadata
                             if (currentCache != null) {
-                                localMetadataCache[track.id] = currentCache.copy(albumArtUri = localArtUrl)
+                                localMetadataCache.put(track.id, currentCache.copy(albumArtUri = localArtUrl))
                                 Log.d(TAG, "Updated local metadata cache with art URI: $localArtUrl")
                             } else if (localMetadata == null) {
-                                localMetadataCache[track.id] = LocalMediaMetadata(
+                                localMetadataCache.put(track.id, LocalMediaMetadata(
                                     title = title,
                                     artist = artist,
                                     album = album,
                                     albumArtUri = localArtUrl
-                                )
+                                ))
                             }
                         }
                         
                         // Save local metadata as fallback (delayed to let external enrichment run first)
                         if (localMetadata != null && localMetadata.hasRichMetadata()) {
                             delay(30_000)
-                            val latestMetadata = localMetadataCache[track.id] ?: localMetadata
+                            val latestMetadata = localMetadataCache.get(track.id) ?: localMetadata
                             saveLocalMetadataFallback(track.id, latestMetadata)
                         } else if (localArtUrl != null) {
                             delay(20_000)
@@ -3477,7 +3584,7 @@ class MusicTrackingService : NotificationListenerService() {
         // exactly what raises BadForegroundServiceNotificationException.
         createNotificationChannel()
         val notification = buildTrackingNotification(null, null)
-        
+
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
@@ -3615,15 +3722,11 @@ class MusicTrackingService : NotificationListenerService() {
 
     override fun onDestroy() {
         Log.i(TAG, "MusicTrackingService destroyed - saving active sessions")
-        
-        // Mark clean shutdown BEFORE any async operations
-        // This prevents false positive "unclean shutdown" detection on next start
-        sessionPersistence.markServiceInactive()
-        
-        // Cancel auto-save job and position polling
+
+        // Cancel auto-save job and position polling so no further state changes arrive
         autoSaveJob?.cancel()
         positionPollingJob?.cancel()
-        
+
         // Unregister battery state receiver
         batteryStateReceiver?.let {
             try {
@@ -3634,47 +3737,74 @@ class MusicTrackingService : NotificationListenerService() {
             }
             batteryStateReceiver = null
         }
-        
+
         // Reset connection state
         synchronized(connectionLock) {
             isListenerConnected = false
         }
         isMediaSessionManagerInitialized = false
-        
-        // Save all active sessions before shutdown
-        // Create snapshot to avoid ConcurrentModificationException
-        val playbackSnapshot = playbackStates.values.toList()
-        playbackSnapshot.forEach { session ->
-            session.pause()
-            saveListeningEvent(session)
-        }
-        playbackStates.clear()
 
-        // Cleanup MediaSession callbacks
-        // Create a snapshot to avoid ConcurrentModificationException during cleanup
+        // Cleanup MediaSession callbacks so no new position updates land mid-flush
         val controllerSnapshot: List<Pair<String, MediaController>>
         synchronized(activeControllers) {
             controllerSnapshot = activeControllers.toList()
         }
-        
         controllerSnapshot.forEach { (packageName, controller) ->
             val callback = packageSpecificCallbacks[packageName] ?: sharedCallback
-            controller.unregisterCallback(callback)
+            try {
+                controller.unregisterCallback(callback)
+            } catch (e: Exception) {
+                Log.w(TAG, "Error unregistering callback for $packageName", e)
+            }
         }
         activeControllers.clear()
         packageSpecificCallbacks.clear()
-        
-        // Flush tracking manager (async, but we've already marked shutdown)
-        serviceScope.launch {
-            try {
-                trackingManager.flushAll()
-                sessionPersistence.clearSessions()
-                Log.i(TAG, "Tracking manager flushed, metrics: ${trackingManager.getMetrics()}")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error during shutdown cleanup", e)
+
+        // CRITICAL: flush everything synchronously BEFORE cancelling serviceScope.
+        //
+        // The previous implementation launched the final session saves and
+        // trackingManager.flushAll() on serviceScope and then immediately called
+        // serviceScope.cancel() — cancelling those very coroutines and silently
+        // dropping the last batch of listening events on EVERY clean destroy
+        // (reboot, app update, service restart). That directly under-counts plays.
+        // We block here (bounded) so accrued listening time always reaches the DB.
+        val playbackSnapshot = playbackStates.values.toList()
+        val flushed = try {
+            runBlocking(Dispatchers.IO) {
+                withTimeoutOrNull(SHUTDOWN_FLUSH_TIMEOUT_MS) {
+                    // Persist the freshest session state first so an interrupted
+                    // flush can still be recovered on the next start.
+                    saveSessionsToPersistence()
+                    playbackSnapshot.forEach { session ->
+                        session.pause()
+                        saveListeningEventSuspend(session)
+                    }
+                    trackingManager.flushAll()
+                    true
+                } ?: false
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during shutdown flush", e)
+            false
         }
-        
+        playbackStates.clear()
+
+        if (flushed) {
+            // Events are safely in the DB — clear recovery sessions and record a
+            // clean shutdown. Doing this only AFTER a successful flush means a
+            // crash/timeout mid-flush still reports wasUncleanShutdown()==true, so
+            // the next start recovers the sessions instead of dropping them.
+            try {
+                sessionPersistence.clearSessions()
+                sessionPersistence.markServiceInactive()
+                Log.i(TAG, "Shutdown flush complete, metrics: ${trackingManager.getMetrics()}")
+            } catch (e: Exception) {
+                Log.w(TAG, "Error clearing persisted sessions on shutdown", e)
+            }
+        } else {
+            Log.w(TAG, "Shutdown flush incomplete — persisted sessions left for recovery")
+        }
+
         // Log service uptime
         val uptime = System.currentTimeMillis() - serviceStartTime.get()
         Log.i(TAG, "Service uptime: ${uptime / 1000}s, Duration estimator stats: ${durationEstimator.getStats()}")

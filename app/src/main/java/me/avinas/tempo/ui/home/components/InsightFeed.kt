@@ -46,9 +46,6 @@ import me.avinas.tempo.data.stats.DiscoveryTrend
 import me.avinas.tempo.data.stats.HourlyDistribution
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.theme.TempoPrimary
-import me.avinas.tempo.ui.theme.TempoPrimaryDeep
-import me.avinas.tempo.ui.theme.TempoAccent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Celebration
@@ -68,16 +65,7 @@ import me.avinas.tempo.R
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.layout.ContentScale
 import me.avinas.tempo.ui.components.CachedAsyncImage
-import me.avinas.tempo.ui.theme.GoldPrimary
-import me.avinas.tempo.ui.theme.SilverLight
-import me.avinas.tempo.ui.theme.TempoCyan
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoErrorAlt
-import me.avinas.tempo.ui.theme.TempoSuccess
-import me.avinas.tempo.ui.theme.TempoSuccessDeep
-import me.avinas.tempo.ui.theme.TempoWarning
-import me.avinas.tempo.ui.theme.TempoWarningBright
-import me.avinas.tempo.ui.theme.TextTertiary
+import me.avinas.tempo.ui.theme.*
 
 
 @Composable
@@ -94,41 +82,9 @@ fun ConstellationWeb(
     
     if (categories.isEmpty()) return
 
-    // Gentle rotation of the outer nodes
-    val infiniteTransition = rememberInfiniteTransition(label = "constellation_orbit")
-    val orbitAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2f * Math.PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(40000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "orbit"
-    )
-
-    // Pulsing central Vibe Core throb cycle matching average tempo (BPM)
-    val cycleBpmMs = (60_000 / tempoBpm).toInt().coerceIn(300, 2000)
-    val pulseAnim by infiniteTransition.animateFloat(
-        initialValue = 0.94f,
-        targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(cycleBpmMs / 2, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
-
-    // Packet pulse animation along connection
-    val pulsePacketTransition = rememberInfiniteTransition(label = "pulse_packet")
-    val packetFraction by pulsePacketTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "packet_fraction"
-    )
+    val orbitAngle = 0f
+    val pulseAnim = 1f
+    val packetFraction = 0f
 
     // Snap offsets for interactive drag snapping
     val nodeOffsets = remember(categories) {
@@ -179,7 +135,7 @@ fun ConstellationWeb(
                 // Draw central throb Vibe Core
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(TempoPrimary.copy(alpha = 0.35f), Color.Transparent),
+                        colors = listOf(AccentPurple.copy(alpha = 0.35f), Color.Transparent),
                         center = Offset(cxPx, cyPx),
                         radius = 32.dp.toPx() * pulseAnim
                     ),
@@ -192,7 +148,7 @@ fun ConstellationWeb(
                     center = Offset(cxPx, cyPx)
                 )
                 drawCircle(
-                    color = TempoPrimary,
+                    color = AccentPurple,
                     radius = 5.dp.toPx(),
                     center = Offset(cxPx, cyPx)
                 )
@@ -216,7 +172,7 @@ fun ConstellationWeb(
                     val p2 = resolvedPositions[(i + 1) % resolvedPositions.size]
                     
                     drawLine(
-                        color = TempoPrimary.copy(alpha = 0.18f),
+                        color = AccentPurple.copy(alpha = 0.18f),
                         start = p1,
                         end = p2,
                         strokeWidth = 1.5.dp.toPx()
@@ -226,18 +182,18 @@ fun ConstellationWeb(
                     val isSelectedNode = selectedType == categories[i]
                     val connectorColor = if (isSelectedNode) {
                         val nodeColor = when(categories[i]) {
-                            InsightType.MOOD -> TempoPrimary
-                            InsightType.PEAK_TIME -> TempoWarning
-                            InsightType.BINGE -> TempoPrimary
-                            InsightType.DISCOVERY -> TempoSuccessDeep
-                            InsightType.ENERGY -> TempoError
-                            InsightType.DANCEABILITY -> TempoAccent
-                            InsightType.TEMPO -> TempoCyan
-                            InsightType.ACOUSTICNESS -> TempoSuccess
-                            InsightType.STREAK -> TempoWarning
-                            InsightType.GENRE -> TempoErrorAlt
-                            InsightType.ENGAGEMENT -> TempoErrorAlt
-                            else -> TextTertiary
+                            InsightType.MOOD -> me.avinas.tempo.ui.theme.InsightMood
+                            InsightType.PEAK_TIME -> me.avinas.tempo.ui.theme.InsightPeakTime
+                            InsightType.BINGE -> me.avinas.tempo.ui.theme.InsightBinge
+                            InsightType.DISCOVERY -> me.avinas.tempo.ui.theme.InsightDiscovery
+                            InsightType.ENERGY -> me.avinas.tempo.ui.theme.InsightEnergy
+                            InsightType.DANCEABILITY -> me.avinas.tempo.ui.theme.InsightDanceability
+                            InsightType.TEMPO -> me.avinas.tempo.ui.theme.InsightTempo
+                            InsightType.ACOUSTICNESS -> me.avinas.tempo.ui.theme.InsightAcousticness
+                            InsightType.STREAK -> me.avinas.tempo.ui.theme.InsightStreak
+                            InsightType.GENRE -> me.avinas.tempo.ui.theme.InsightGenre
+                            InsightType.ENGAGEMENT -> me.avinas.tempo.ui.theme.InsightEngagement
+                            else -> Color.Gray
                         }
                         nodeColor.copy(alpha = 0.4f)
                     } else {
@@ -264,18 +220,18 @@ fun ConstellationWeb(
                         val packetPos = Offset(packetX, packetY)
 
                         val nodeColor = when(type) {
-                            InsightType.MOOD -> TempoPrimary
-                            InsightType.PEAK_TIME -> TempoWarning
-                            InsightType.BINGE -> TempoPrimary
-                            InsightType.DISCOVERY -> TempoSuccessDeep
-                            InsightType.ENERGY -> TempoError
-                            InsightType.DANCEABILITY -> TempoAccent
-                            InsightType.TEMPO -> TempoCyan
-                            InsightType.ACOUSTICNESS -> TempoSuccess
-                            InsightType.STREAK -> TempoWarning
-                            InsightType.GENRE -> TempoErrorAlt
-                            InsightType.ENGAGEMENT -> TempoErrorAlt
-                            else -> TextTertiary
+                            InsightType.MOOD -> me.avinas.tempo.ui.theme.InsightMood
+                            InsightType.PEAK_TIME -> me.avinas.tempo.ui.theme.InsightPeakTime
+                            InsightType.BINGE -> me.avinas.tempo.ui.theme.InsightBinge
+                            InsightType.DISCOVERY -> me.avinas.tempo.ui.theme.InsightDiscovery
+                            InsightType.ENERGY -> me.avinas.tempo.ui.theme.InsightEnergy
+                            InsightType.DANCEABILITY -> me.avinas.tempo.ui.theme.InsightDanceability
+                            InsightType.TEMPO -> me.avinas.tempo.ui.theme.InsightTempo
+                            InsightType.ACOUSTICNESS -> me.avinas.tempo.ui.theme.InsightAcousticness
+                            InsightType.STREAK -> me.avinas.tempo.ui.theme.InsightStreak
+                            InsightType.GENRE -> me.avinas.tempo.ui.theme.InsightGenre
+                            InsightType.ENGAGEMENT -> me.avinas.tempo.ui.theme.InsightEngagement
+                            else -> Color.Gray
                         }
 
                         drawCircle(
@@ -306,18 +262,18 @@ fun ConstellationWeb(
                 val isSelected = selectedType == type
 
                 val nodeColor = when(type) {
-                    InsightType.MOOD -> TempoPrimary
-                    InsightType.PEAK_TIME -> TempoWarning
-                    InsightType.BINGE -> TempoPrimary
-                    InsightType.DISCOVERY -> TempoSuccessDeep
-                    InsightType.ENERGY -> TempoError
-                    InsightType.DANCEABILITY -> TempoAccent
-                    InsightType.TEMPO -> TempoCyan
-                    InsightType.ACOUSTICNESS -> TempoSuccess
-                    InsightType.STREAK -> TempoWarning
-                    InsightType.GENRE -> TempoErrorAlt
-                    InsightType.ENGAGEMENT -> TempoErrorAlt
-                    else -> TextTertiary
+                    InsightType.MOOD -> me.avinas.tempo.ui.theme.InsightMood
+                    InsightType.PEAK_TIME -> me.avinas.tempo.ui.theme.InsightPeakTime
+                    InsightType.BINGE -> me.avinas.tempo.ui.theme.InsightBinge
+                    InsightType.DISCOVERY -> me.avinas.tempo.ui.theme.InsightDiscovery
+                    InsightType.ENERGY -> me.avinas.tempo.ui.theme.InsightEnergy
+                    InsightType.DANCEABILITY -> me.avinas.tempo.ui.theme.InsightDanceability
+                    InsightType.TEMPO -> me.avinas.tempo.ui.theme.InsightTempo
+                    InsightType.ACOUSTICNESS -> me.avinas.tempo.ui.theme.InsightAcousticness
+                    InsightType.STREAK -> me.avinas.tempo.ui.theme.InsightStreak
+                    InsightType.GENRE -> me.avinas.tempo.ui.theme.InsightGenre
+                    InsightType.ENGAGEMENT -> me.avinas.tempo.ui.theme.InsightEngagement
+                    else -> Color.Gray
                 }
 
                 Column(
@@ -374,8 +330,8 @@ fun ConstellationWeb(
                                             nodeOffsets[type]?.animateTo(
                                                 targetValue = Offset.Zero,
                                                 animationSpec = spring(
-                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                    stiffness = Spring.StiffnessLow
+                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                    stiffness = Spring.StiffnessMedium
                                                 )
                                             )
                                         }
@@ -385,8 +341,8 @@ fun ConstellationWeb(
                                             nodeOffsets[type]?.animateTo(
                                                 targetValue = Offset.Zero,
                                                 animationSpec = spring(
-                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                    stiffness = Spring.StiffnessLow
+                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                    stiffness = Spring.StiffnessMedium
                                                 )
                                             )
                                         }
@@ -502,89 +458,79 @@ fun VibeHeader(
     modifier: Modifier = Modifier
 ) {
     val energyColor = androidx.compose.ui.graphics.lerp(
-        TempoPrimaryDeep,
-        TempoPrimary,
+        me.avinas.tempo.ui.theme.VibeEnergyLow,
+        me.avinas.tempo.ui.theme.VibeEnergyHigh,
         energy
     )
-
     val valenceColor = androidx.compose.ui.graphics.lerp(
-        TempoPrimaryDeep,
-        TempoAccent,
+        me.avinas.tempo.ui.theme.VibeValenceLow,
+        me.avinas.tempo.ui.theme.VibeValenceHigh,
         valence
     )
-
     
-    BoxWithConstraints(
+    val breatheAlpha = 0.55f
+    val scaleAnim = 1f
+    val wavePhase = 0f
+    
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 132.dp)
+            .heightIn(min = 112.dp)
     ) {
-        val outerHorizontalPadding = 16.dp
-        val trailingActionInset = if (maxWidth < 360.dp) 72.dp else 88.dp
-        val availableHeaderWidth = (maxWidth - outerHorizontalPadding - trailingActionInset).coerceAtLeast(180.dp)
-        val compactLayout = availableHeaderWidth < 240.dp
-        val ultraCompactLayout = availableHeaderWidth < 205.dp
+        val avatarSize = 48.dp
+        val rowPaddingH = 14.dp
+        val rowPaddingV = 10.dp
+        val itemSpacing = 12.dp
+        val nameTextStyle = MaterialTheme.typography.titleMedium
+        val levelNumStyle = MaterialTheme.typography.titleSmall
+        val titleStyle = MaterialTheme.typography.labelMedium
 
-        val avatarSize: Dp = when {
-            ultraCompactLayout -> 44.dp
-            compactLayout -> 48.dp
-            else -> 56.dp
-        }
-        val rowPaddingH = when {
-            ultraCompactLayout -> 10.dp
-            compactLayout -> 12.dp
-            else -> 14.dp
-        }
-        val rowPaddingV = when {
-            ultraCompactLayout -> 8.dp
-            else -> 10.dp
-        }
-        val itemSpacing = when {
-            ultraCompactLayout -> 10.dp
-            compactLayout -> 12.dp
-            else -> 16.dp
-        }
-        val nameTextStyle = when {
-            ultraCompactLayout -> MaterialTheme.typography.titleSmall
-            compactLayout -> MaterialTheme.typography.titleMedium
-            else -> MaterialTheme.typography.titleLarge
-        }
-        val levelNumStyle = when {
-            ultraCompactLayout -> MaterialTheme.typography.bodyMedium
-            compactLayout -> MaterialTheme.typography.titleSmall
-            else -> MaterialTheme.typography.titleMedium
-        }
-        val titleStyle = if (compactLayout) {
-            MaterialTheme.typography.labelSmall
-        } else {
-            MaterialTheme.typography.labelMedium
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(energyColor.copy(alpha = 0.38f), Color.Transparent),
+                    center = Offset(width * 0.20f, height * 0.50f),
+                    radius = width * 0.60f
+                ),
+                center = Offset(width * 0.20f, height * 0.50f),
+                radius = width * 0.60f
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(valenceColor.copy(alpha = 0.24f), Color.Transparent),
+                    center = Offset(width * 0.80f, height * 0.50f),
+                    radius = width * 0.50f
+                ),
+                center = Offset(width * 0.80f, height * 0.50f),
+                radius = width * 0.50f
+            )
         }
 
-        
         Column(
             modifier = Modifier
                 .statusBarsPadding()
-                .align(Alignment.TopStart)
                 .fillMaxWidth()
-                .padding(start = outerHorizontalPadding, top = 8.dp, bottom = 12.dp, end = trailingActionInset)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             // Premium Opaque Card for Profile - Minimalist Pill Edition
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .wrapContentWidth(align = Alignment.Start, unbounded = false)
                     .clickable(
                         enabled = isGamificationEnabled,
                         onClick = onLevelClick
                     )
                     .defaultMinSize(minHeight = if (!levelTitle.isNullOrBlank()) 72.dp else 64.dp)
                     .shadow(
-                        elevation = 12.dp,
+                        elevation = 10.dp,
                         shape = RoundedCornerShape(100.dp),
-                        spotColor = Color(0x2B000000),
-                        ambientColor = Color(0x1A000000)
+                        spotColor = TempoDarkSurfaceSunken,
+                        ambientColor = TempoDarkSurfaceSunken.copy(alpha = 0.8f)
                     )
-                    .border(width = 1.dp, color = SilverLight, shape = RoundedCornerShape(100.dp)),
-                color = Color.White,
+                    .border(width = 1.dp, color = me.avinas.tempo.ui.theme.PillBorder, shape = RoundedCornerShape(100.dp)),
+                color = me.avinas.tempo.ui.theme.PillSurface,
                 shape = RoundedCornerShape(100.dp)
             ) {
                 Row(
@@ -607,9 +553,8 @@ fun VibeHeader(
                                 )
                                 val arcSize = Size(radius * 2, radius * 2)
                                 
-                                // Background ring (subtle gray)
                                 drawArc(
-                                    color = Color(0xFFF1F5F9),
+                                    color = me.avinas.tempo.ui.theme.PillInnerSurface,
                                     startAngle = -90f,
                                     sweepAngle = 360f,
                                     useCenter = false,
@@ -617,10 +562,15 @@ fun VibeHeader(
                                     size = arcSize,
                                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                                 )
-                                
-                                // Progress arc
                                 drawArc(
-                                    color = TempoPrimary,
+                                    brush = Brush.sweepGradient(
+                                        listOf(
+                                            me.avinas.tempo.ui.theme.LevelRingSweepStart,
+                                            me.avinas.tempo.ui.theme.LevelRingSweepMid,
+                                            me.avinas.tempo.ui.theme.LevelRingSweepEnd,
+                                            me.avinas.tempo.ui.theme.LevelRingSweepStart
+                                        )
+                                    ),
                                     startAngle = -90f,
                                     sweepAngle = 360f * levelProgress,
                                     useCenter = false,
@@ -637,8 +587,8 @@ fun VibeHeader(
                             modifier = Modifier
                                 .size(innerAvatarSize)
                                 .clip(CircleShape)
-                                .background(Color(0xFFF1F5F9))
-                                .border(1.dp, SilverLight, CircleShape),
+                                .background(me.avinas.tempo.ui.theme.PillInnerSurface)
+                                .border(1.dp, me.avinas.tempo.ui.theme.PillBorder, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             if (profileImagePath.isNullOrBlank()) {
@@ -646,7 +596,7 @@ fun VibeHeader(
                                     text = userName.firstOrNull()?.toString()?.uppercase() ?: "U",
                                     style = levelNumStyle.copy(lineHeight = levelNumStyle.fontSize * 1.1),
                                     fontWeight = FontWeight.Black,
-                                    color = Color(0xFF111827),
+                                    color = me.avinas.tempo.ui.theme.PillTextPrimary,
                                     maxLines = 1
                                 )
                             } else {
@@ -660,73 +610,56 @@ fun VibeHeader(
                         }
                     }
 
-                    // Right: User Info - weight(1f) ensures it fills remaining space
                     Column(
                         modifier = Modifier
-                            .weight(1f)
-                            .widthIn(min = 0.dp),
+                            .widthIn(min = 100.dp, max = 220.dp),
                         verticalArrangement = Arrangement.spacedBy(if (levelTitle.isNullOrBlank()) 0.dp else 2.dp)
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             ResponsiveText(
                                 text = userName,
-                                style = nameTextStyle.copy(
-                                    lineHeight = if (ultraCompactLayout) {
-                                        nameTextStyle.fontSize * 1.05f
-                                    } else {
-                                        nameTextStyle.fontSize * 1.1f
-                                    }
-                                ),
-                                modifier = Modifier.weight(1f),
+                                style = nameTextStyle.copy(lineHeight = nameTextStyle.fontSize * 1.1f),
+                                modifier = Modifier,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF111827),
-                                maxLines = if (ultraCompactLayout) 2 else 1,
-                                softWrap = ultraCompactLayout,
+                                color = me.avinas.tempo.ui.theme.PillTextPrimary,
+                                maxLines = 1,
+                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis
                             )
-
                             if (isGamificationEnabled) {
                                 Surface(
                                     shape = RoundedCornerShape(999.dp),
-                                    color = TempoPrimary.copy(alpha = 0.08f),
+                                    color = PrimaryPurple.copy(alpha = 0.08f),
                                     tonalElevation = 0.dp,
                                     shadowElevation = 0.dp
                                 ) {
                                     Text(
                                         text = "LVL ${userLevel ?: 0}",
-                                        modifier = Modifier.padding(
-                                            horizontal = if (compactLayout) 8.dp else 10.dp,
-                                            vertical = 5.dp
-                                        ),
-                                        style = if (compactLayout) {
-                                            MaterialTheme.typography.labelSmall
-                                        } else {
-                                            MaterialTheme.typography.labelMedium
-                                        },
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                        style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Black,
-                                        color = TempoPrimary,
+                                        color = PrimaryPurple,
                                         maxLines = 1
                                     )
                                 }
                             }
                         }
                         if (isGamificationEnabled && !levelTitle.isNullOrBlank()) {
-                            Text(
+                            ResponsiveText(
                                 text = levelTitle.uppercase(),
-                                style = titleStyle.copy(
-                                    letterSpacing = if (compactLayout) 0.6.sp else 0.9.sp,
-                                    lineHeight = titleStyle.fontSize * 1.15f
-                                ),
+                                style = titleStyle.copy(letterSpacing = 0.9.sp, lineHeight = titleStyle.fontSize * 1.15f),
+                                color = InsightBinge,
                                 fontWeight = FontWeight.Bold,
-                                color = TempoPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+                }
+            }
         }
     }
 }
@@ -1240,8 +1173,8 @@ private fun StreakVisualizer(days: Int) {
             label = "flameScale"
         )
 
-        val fireColor1 = TempoWarning
-        val fireColor2 = TempoError
+        val fireColor1 = InsightStreak
+        val fireColor2 = InsightEnergy
         val fireColor3 = TempoWarningBright
 
         Row(
@@ -1407,67 +1340,60 @@ fun InsightCard(
     modifier: Modifier = Modifier,
     selectedType: InsightType? = null
 ) {
-    // Determine color based on type
     val (icon, color) = when(insight.type) {
-        InsightType.MOOD -> Icons.Filled.Face to TempoPrimary
-        InsightType.PEAK_TIME -> Icons.Filled.DateRange to TempoWarning
-        InsightType.BINGE -> Icons.Filled.Bolt to TempoPrimary
-        InsightType.DISCOVERY -> Icons.Filled.Celebration to TempoSuccessDeep
-        InsightType.ENERGY -> Icons.Filled.Bolt to TempoError
-        InsightType.DANCEABILITY -> Icons.Filled.Celebration to TempoAccent
-        InsightType.TEMPO -> Icons.Filled.Speed to TempoCyan
-        InsightType.ACOUSTICNESS -> Icons.Filled.Piano to TempoSuccess
-        InsightType.STREAK -> Icons.Filled.LocalFireDepartment to TempoWarning
-        InsightType.GENRE -> Icons.AutoMirrored.Filled.QueueMusic to TempoErrorAlt
-        InsightType.ENGAGEMENT -> Icons.Filled.Favorite to TempoErrorAlt
+        InsightType.MOOD -> Icons.Filled.Face to me.avinas.tempo.ui.theme.InsightMood
+        InsightType.PEAK_TIME -> Icons.Filled.DateRange to me.avinas.tempo.ui.theme.InsightPeakTime
+        InsightType.BINGE -> Icons.Filled.Bolt to me.avinas.tempo.ui.theme.InsightBinge
+        InsightType.DISCOVERY -> Icons.Filled.Celebration to me.avinas.tempo.ui.theme.InsightDiscovery
+        InsightType.ENERGY -> Icons.Filled.Bolt to me.avinas.tempo.ui.theme.InsightEnergy
+        InsightType.DANCEABILITY -> Icons.Filled.Celebration to me.avinas.tempo.ui.theme.InsightDanceability
+        InsightType.TEMPO -> Icons.Filled.Speed to me.avinas.tempo.ui.theme.InsightTempo
+        InsightType.ACOUSTICNESS -> Icons.Filled.Piano to me.avinas.tempo.ui.theme.InsightAcousticness
+        InsightType.STREAK -> Icons.Filled.LocalFireDepartment to me.avinas.tempo.ui.theme.InsightStreak
+        InsightType.GENRE -> Icons.AutoMirrored.Filled.QueueMusic to me.avinas.tempo.ui.theme.InsightGenre
+        InsightType.ENGAGEMENT -> Icons.Filled.Favorite to me.avinas.tempo.ui.theme.InsightEngagement
         InsightType.RATE_APP -> Icons.Filled.Star to GoldPrimary
-        else -> Icons.Filled.Settings to TextTertiary
+        else -> Icons.Filled.Settings to Color.Gray
     }
-
-    // Gamification progress removed as per user request (moved to Vibe Header)
-
-    val isHighlighted = selectedType == insight.type
 
     GlassCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        backgroundColor = Color.White.copy(alpha = 0.04f),
-        borderColor = if (isHighlighted) color else null,
-        borderWidth = if (isHighlighted) 2.dp else null,
-        shadowElevation = 0.dp,
-        shadowSpotColor = Color.Transparent,
+        accentColor = color,
+        accentStrength = 0.05f,
         variant = GlassCardVariant.HighProminence,
-        contentPadding = PaddingValues(20.dp)
+        contentPadding = PaddingValues(0.dp)
     ) {
-        Column {
-            // Header
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(color.copy(alpha = 0.32f))
+            )
+            Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    val iconBgColor = (color as androidx.compose.ui.graphics.Color).copy(alpha = 0.2f)
                     Box(
                         modifier = Modifier
                             .size(40.dp)
-                            .clip(CircleShape)
-                            .background(iconBgColor),
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(color.copy(alpha = 0.13f))
+                            .border(1.dp, color.copy(alpha = 0.16f), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
                             tint = color,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         val categoryPrefix = when(insight.type) {
                             InsightType.MOOD -> stringResource(R.string.insight_category_mood)
                             InsightType.PEAK_TIME -> stringResource(R.string.insight_category_peak_time)
@@ -1483,13 +1409,11 @@ fun InsightCard(
                             else -> stringResource(R.string.insight_category_default)
                         }
                         Text(
-                            text = categoryPrefix,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            ),
-                            color = color.copy(alpha = 0.8f)
+                            text = categoryPrefix.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = color,
+                            letterSpacing = 1.0.sp
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
@@ -1501,77 +1425,82 @@ fun InsightCard(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                }
-                IconButton(
-                    onClick = onCloseClick,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .background(Color.White.copy(alpha = 0.05f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = stringResource(R.string.insight_close),
-                        tint = Color.White.copy(alpha = 0.6f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Description is always shown for non-gamification cards
-            Text(
-                text = insight.description,
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White.copy(alpha = 0.8f),
-                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.2
-            )
-
-            // Custom visual representation below text if data is present
-            when (val payload = insight.payload) {
-                is InsightPayload.MoodData -> {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    MoodVisualizer(valence = payload.valence, energy = payload.energy, color = color)
-                }
-                is InsightPayload.PeakTimeData -> {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    PeakTimeVisualizer(peakHour = payload.peakHour, hourlyDistribution = payload.hourlyDistribution, color = color)
-                }
-                is InsightPayload.BingeData -> {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    BingeVisualizer(color = color)
-                }
-                is InsightPayload.DiscoveryData -> {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    DiscoveryVisualizer(trends = payload.trends, color = color)
-                }
-                is InsightPayload.StreakData -> {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    StreakVisualizer(days = payload.days)
-                }
-                is InsightPayload.GenreData -> {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    GenreVisualizer(genre = payload.genre, color = color)
-                }
-                is InsightPayload.FeatureValue -> {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    if (payload.type == InsightType.ENGAGEMENT) {
-                        EngagementVisualizer(value = payload.value, color = color)
-                    } else {
-                        val label = when(payload.type) {
-                            InsightType.ENERGY -> "Energy"
-                            InsightType.DANCEABILITY -> "Danceability"
-                            InsightType.ACOUSTICNESS -> "Acousticness"
-                            else -> "Value"
-                        }
-                        FeatureGaugeVisualizer(value = payload.value, color = color, label = label)
+                    IconButton(
+                        onClick = onCloseClick,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.06f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.insight_close),
+                            tint = Color.White.copy(alpha = 0.55f),
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
-                is InsightPayload.TempoValue -> {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    TempoBPMVisualizer(bpm = payload.bpm, color = color)
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(Color.White.copy(alpha = 0.06f))
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = insight.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.72f),
+                    lineHeight = 20.sp
+                )
+
+                when (val payload = insight.payload) {
+                    is InsightPayload.MoodData -> {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        MoodVisualizer(valence = payload.valence, energy = payload.energy, color = color)
+                    }
+                    is InsightPayload.PeakTimeData -> {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        PeakTimeVisualizer(peakHour = payload.peakHour, hourlyDistribution = payload.hourlyDistribution, color = color)
+                    }
+                    is InsightPayload.BingeData -> {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        BingeVisualizer(color = color)
+                    }
+                    is InsightPayload.DiscoveryData -> {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        DiscoveryVisualizer(trends = payload.trends, color = color)
+                    }
+                    is InsightPayload.StreakData -> {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        StreakVisualizer(days = payload.days)
+                    }
+                    is InsightPayload.GenreData -> {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        GenreVisualizer(genre = payload.genre, color = color)
+                    }
+                    is InsightPayload.FeatureValue -> {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        if (payload.type == InsightType.ENGAGEMENT) {
+                            EngagementVisualizer(value = payload.value, color = color)
+                        } else {
+                            val label = when(payload.type) {
+                                InsightType.ENERGY -> "Energy"
+                                InsightType.DANCEABILITY -> "Danceability"
+                                InsightType.ACOUSTICNESS -> "Acousticness"
+                                else -> "Value"
+                            }
+                            FeatureGaugeVisualizer(value = payload.value, color = color, label = label)
+                        }
+                    }
+                    is InsightPayload.TempoValue -> {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        TempoBPMVisualizer(bpm = payload.bpm, color = color)
+                    }
+                    else -> {}
                 }
-                else -> {}
             }
         }
     }

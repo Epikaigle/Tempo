@@ -42,9 +42,6 @@ import me.avinas.tempo.ui.spotlight.*
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import me.avinas.tempo.ui.theme.TempoAccent
-import me.avinas.tempo.ui.theme.TempoError
-import me.avinas.tempo.ui.theme.TempoInfoSoft
 
 /**
  * A draggable, resizable card on the canvas.
@@ -205,7 +202,7 @@ fun CanvasCard(
                 if (isSelected) {
                     Modifier
                         .border(2.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(32.dp))
-                        .border(1.dp, TempoAccent, RoundedCornerShape(32.dp))
+                        .border(1.dp, Color(0xFFA855F7), RoundedCornerShape(32.dp))
                 } else Modifier
             )
     ) {
@@ -236,7 +233,7 @@ fun CanvasCard(
                     .offset(x = 12.dp, y = (-12).dp)
                     .size(28.dp)
                     .clip(CircleShape)
-                    .background(TempoError)
+                    .background(Color(0xFFEF4444))
                     .border(2.dp, Color.White, CircleShape)
                     .clickable(onClick = onDelete),
                 contentAlignment = Alignment.Center
@@ -300,7 +297,7 @@ fun CardPickerThumbnail(
                         .align(Alignment.TopEnd)
                         .padding(8.dp)
                         .size(24.dp)
-                        .background(TempoInfoSoft, CircleShape),
+                        .background(Color(0xFF60A5FA), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

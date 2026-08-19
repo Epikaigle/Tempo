@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 51,
-    "identityHash": "37ba3299171228bb9448dc7a994c38e0",
+    "identityHash": "0f6661333d6bb81d28af38b35bb89be0",
     "entities": [
       {
         "tableName": "tracks",
@@ -912,7 +912,7 @@
       },
       {
         "tableName": "user_preferences",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `theme` TEXT NOT NULL, `notifications` INTEGER NOT NULL, `spotifyLinked` INTEGER NOT NULL, `extendedAudioAnalysis` INTEGER NOT NULL, `mergeAlternateVersions` INTEGER NOT NULL, `filterPodcasts` INTEGER NOT NULL, `filterAudiobooks` INTEGER NOT NULL, `hasSeenHistoryCoachMark` INTEGER NOT NULL, `hasSeenSpotlightTutorial` INTEGER NOT NULL, `hasSeenStatsSortTutorial` INTEGER NOT NULL, `hasSeenStatsItemClickTutorial` INTEGER NOT NULL, `lastWeeklyReminderShown` TEXT, `lastMonthlyReminderShown` TEXT, `lastYearlyReminderShown` TEXT, `lastAllTimeReminderShown` TEXT, `lastViewedSpotlightPeriod` TEXT, `spotifyApiOnlyMode` INTEGER NOT NULL, `spotifyImportCursor` TEXT, `lastSpotifyImportTimestamp` INTEGER, `lastfmUsername` TEXT, `lastfmConnected` INTEGER NOT NULL, `lastfmSyncFrequency` TEXT NOT NULL, `smartChallengeNotifHour` INTEGER, `smartChallengeNotifCalcTime` INTEGER, `isGamificationEnabled` INTEGER NOT NULL, `pauseTrackingOnLowBattery` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `theme` TEXT NOT NULL, `notifications` INTEGER NOT NULL, `spotifyLinked` INTEGER NOT NULL, `extendedAudioAnalysis` INTEGER NOT NULL, `mergeAlternateVersions` INTEGER NOT NULL, `filterPodcasts` INTEGER NOT NULL, `filterAudiobooks` INTEGER NOT NULL, `hasSeenHistoryCoachMark` INTEGER NOT NULL, `hasSeenSpotlightTutorial` INTEGER NOT NULL, `hasSeenStatsSortTutorial` INTEGER NOT NULL, `hasSeenStatsItemClickTutorial` INTEGER NOT NULL, `lastWeeklyReminderShown` TEXT, `lastMonthlyReminderShown` TEXT, `lastYearlyReminderShown` TEXT, `lastAllTimeReminderShown` TEXT, `spotifyApiOnlyMode` INTEGER NOT NULL, `spotifyImportCursor` TEXT, `lastSpotifyImportTimestamp` INTEGER, `lastfmUsername` TEXT, `lastfmConnected` INTEGER NOT NULL, `lastfmSyncFrequency` TEXT NOT NULL, `smartChallengeNotifHour` INTEGER, `smartChallengeNotifCalcTime` INTEGER, `isGamificationEnabled` INTEGER NOT NULL, `pauseTrackingOnLowBattery` INTEGER NOT NULL, `lastSpotlightStoryViewed` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -1007,11 +1007,6 @@
             "affinity": "TEXT"
           },
           {
-            "fieldPath": "lastViewedSpotlightPeriod",
-            "columnName": "lastViewedSpotlightPeriod",
-            "affinity": "TEXT"
-          },
-          {
             "fieldPath": "spotifyApiOnlyMode",
             "columnName": "spotifyApiOnlyMode",
             "affinity": "INTEGER",
@@ -1065,6 +1060,11 @@
             "columnName": "pauseTrackingOnLowBattery",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "lastSpotlightStoryViewed",
+            "columnName": "lastSpotlightStoryViewed",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -2210,7 +2210,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '37ba3299171228bb9448dc7a994c38e0')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0f6661333d6bb81d28af38b35bb89be0')"
     ]
   }
 }

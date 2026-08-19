@@ -446,6 +446,29 @@ interface EnrichedMetadataDao {
     /** Tracks that currently have a non-empty album art URL. */
     @Query("SELECT COUNT(*) FROM tracks WHERE album_art_url IS NOT NULL AND album_art_url != ''")
     suspend fun countTracksWithAlbumArt(): Int
+
+    /** Tracks that have no enriched_metadata row at all (never queued for enrichment). */
+    @Query("SELECT COUNT(*) FROM tracks WHERE id NOT IN (SELECT track_id FROM enriched_metadata)")
+    suspend fun countTracksWithoutEnrichedMetadata(): Int
+
+    /**
+     * Create PENDING rows for every track that has no enriched_metadata row yet.
+     * Used by "Enrich All" so tracks that were never queued (e.g. inserted while an
+     * import was running, or created before metadata rows existed) are included in
+     * the sweep. Returns the rowid of the last inserted row (Room limitation:
+     * INSERT queries cannot return the affected-row count).
+     */
+    @Query("""
+        INSERT INTO enriched_metadata (
+            track_id, tags, genres, genre_source, audio_features_source,
+            spotify_enrichment_status, enrichment_status, retry_count,
+            album_art_source, cache_timestamp, cache_version
+        )
+        SELECT id, '', '', 'NONE', 'NONE', 'NOT_ATTEMPTED', 'PENDING', 0, 'NONE', :now, 1
+        FROM tracks
+        WHERE id NOT IN (SELECT track_id FROM enriched_metadata)
+    """)
+    suspend fun insertPendingForUnqueuedTracks(now: Long): Long
 }
 
 data class EnrichmentStatusCount(

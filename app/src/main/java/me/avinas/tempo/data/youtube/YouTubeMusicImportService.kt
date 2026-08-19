@@ -18,12 +18,14 @@ import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.repository.ArtistLinkingService
+import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.TrackResolver
 import me.avinas.tempo.worker.EnrichmentWorker
 import okio.buffer
 import okio.source
 import java.io.BufferedInputStream
 import java.io.InputStream
+import java.text.Normalizer
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -40,7 +42,8 @@ class YouTubeMusicImportService @Inject constructor(
     private val trackResolver: TrackResolver,
     private val listeningEventDao: ListeningEventDao,
     private val artistLinkingService: ArtistLinkingService,
-    private val enrichedMetadataDao: EnrichedMetadataDao
+    private val enrichedMetadataDao: EnrichedMetadataDao,
+    private val statsRepository: StatsRepository
 ) {
     companion object {
         private const val TAG = "YouTubeMusicImport"
@@ -53,6 +56,89 @@ class YouTubeMusicImportService @Inject constructor(
         private const val YOUTUBE_LAUNCH_EPOCH = 1112620800000L
         private const val MAX_FUTURE_MS = 365L * 24 * 60 * 60 * 1000
         const val IMPORT_SOURCE = "com.google.android.apps.youtube.music.import.json"
+
+        // Google Takeout localizes the watch-history file/folder names to the
+        // account's language (e.g. Portuguese "histórico de músicas ouvidas.json",
+        // French "historique des vidéos regardées.json"). Matching is done on a
+        // diacritics-stripped, lowercased form so "histórico" matches "historico".
+        private val HISTORY_ENTRY_KEYWORDS = listOf(
+            "watch-history", "watch_history", "watchhistory",
+            "myactivity", "my-activity",
+            "history", "historico", "historique", "historial",
+            "historia", "historie", "historiek", "istoric",
+            "история", "履歴", "历史", "기록"
+        )
+
+        // Entries with these names are never treated as watch history by the
+        // content-sniffing fallback, even if they mention "YouTube Music".
+        private val NON_HISTORY_ENTRY_KEYWORDS = listOf(
+            "playlist", "subscription", "comment", "likes", "favorite",
+            "message", "chat", "music-uploads", "album", "video-info"
+        )
+
+        // Localized equivalents of the "Watched " title prefix used by Takeout
+        // exports in non-English languages. The prefix is only stripped when it is
+        // followed by whitespace or a quote so real song titles are never mangled.
+        private val LOCALIZED_WATCHED_PREFIXES = listOf(
+            "watched",     // English
+            "assisti",     // Portuguese
+            "ví",          // Spanish
+            "visionné",    // French
+            "angesehen",   // German
+            "guardato",    // Italian
+            "bekeken",     // Dutch
+            "obejrzano",   // Polish
+            "просмотрен",  // Russian
+            "視聴"          // Japanese
+        )
+
+        /**
+         * True if a ZIP entry name looks like a watch-history / activity file.
+         * Accents are normalized so localized names (histórico, histórique) match.
+         */
+        internal fun isWatchHistoryEntryName(name: String): Boolean {
+            val normalized = normalizeEntryName(name)
+            return HISTORY_ENTRY_KEYWORDS.any { normalized.contains(it) }
+        }
+
+        internal fun normalizeEntryName(name: String): String {
+            val lower = name.lowercase(Locale.ROOT)
+            val decomposed = Normalizer.normalize(lower, Normalizer.Form.NFD)
+            return Normalizer.normalize(
+                decomposed.replace(Regex("\\p{Mn}+"), ""),
+                Normalizer.Form.NFC
+            )
+        }
+
+        /**
+         * Content sniff for a watch-history JSON file: Takeout watch-history files
+         * are a JSON array of objects carrying "header" plus "time"/"titleUrl"/
+         * "subtitles" keys. Works regardless of the export's language because the
+         * JSON keys themselves are never localized.
+         */
+        internal fun looksLikeWatchHistoryJson(head: String): Boolean {
+            if (!head.trimStart().startsWith("[")) return false
+            if (!head.contains("\"header\"")) return false
+            return head.contains("\"time\"") ||
+                head.contains("\"titleUrl\"") ||
+                head.contains("\"subtitles\"")
+        }
+
+        /**
+         * Content sniff for a watch-history HTML file: contains the "YouTube Music"
+         * product label and links to watched videos.
+         */
+        internal fun looksLikeWatchHistoryHtml(head: String): Boolean {
+            if (!head.contains("YouTube Music", ignoreCase = true)) return false
+            return head.contains("watch?v=") ||
+                head.contains("youtu.be/") ||
+                head.contains("music.youtube.com")
+        }
+
+        internal fun isBlockedNonHistoryEntryName(name: String): Boolean {
+            val normalized = normalizeEntryName(name)
+            return NON_HISTORY_ENTRY_KEYWORDS.any { normalized.contains(it) }
+        }
     }
 
     private val moshi = Moshi.Builder()
@@ -232,6 +318,10 @@ class YouTubeMusicImportService @Inject constructor(
             }
         }
 
+        if (eventsCreated > 0) {
+            statsRepository.invalidateCache()
+        }
+
         for ((trackId, entry) in pendingEnrichedMetadata) {
             createEnrichedMetadata(trackId, entry)
         }
@@ -264,7 +354,13 @@ class YouTubeMusicImportService @Inject constructor(
         result
     }
 
-    private data class ParseResult(
+    /** Decodes only the first bytes of a (potentially huge) entry for cheap sniffing. */
+    private fun decodeHead(bytes: ByteArray, maxBytes: Int = 64 * 1024): String {
+        val limit = minOf(bytes.size, maxBytes)
+        return String(bytes, 0, limit, Charsets.UTF_8)
+    }
+
+    internal data class ParseResult(
         val parsed: List<ParsedEntry> = emptyList(),
         val errors: List<String> = emptyList(),
         val htmlDetected: Boolean = false,
@@ -289,7 +385,7 @@ class YouTubeMusicImportService @Inject constructor(
         return parseJsonFromSource(source, fileName)
     }
 
-    private fun parseZipStream(inputStream: InputStream, fileName: String): ParseResult {
+    internal fun parseZipStream(inputStream: InputStream, fileName: String): ParseResult {
         val allEntries = mutableListOf<ParsedEntry>()
         val allErrors = mutableListOf<String>()
         var nonMusicSkipped = 0
@@ -303,18 +399,16 @@ class YouTubeMusicImportService @Inject constructor(
                 while (entry != null) {
                     val entryName = entry.name.lowercase()
                     allZipEntryNames.add(entry.name)
+                    val entryBytes = zis.readBytes()
 
-                    val isWatchHistory = entryName.contains("watch-history") ||
-                        entryName.contains("watch_history") ||
-                        entryName.contains("myactivity")
+                    val isWatchHistory = isWatchHistoryEntryName(entry.name)
                     val isHistoryJson = isWatchHistory && entryName.endsWith(".json")
                     val isHistoryHtml = isWatchHistory && entryName.endsWith(".html")
 
                     if (isHistoryJson) {
                         jsonFilesFound++
                         val entryLabel = "$fileName!/${entry.name}"
-                        val bytes = zis.readBytes()
-                        val source = okio.Buffer().write(bytes)
+                        val source = okio.Buffer().write(entryBytes)
                         val result = parseJsonFromSourceWithHtmlCheck(source, entryLabel)
                         allEntries.addAll(result.parsed)
                         allErrors.addAll(result.errors)
@@ -325,12 +419,40 @@ class YouTubeMusicImportService @Inject constructor(
                     } else if (isHistoryHtml) {
                         htmlFilesFound++
                         val entryLabel = "$fileName!/${entry.name}"
-                        val htmlContent = String(zis.readBytes(), Charsets.UTF_8)
+                        val htmlContent = String(entryBytes, Charsets.UTF_8)
                         val result = parseHtmlString(htmlContent, entryLabel)
                         allEntries.addAll(result.parsed)
                         allErrors.addAll(result.errors)
                         nonMusicSkipped += result.nonMusicSkipped
                         Log.i(TAG, "Parsed ${result.parsed.size} entries from HTML file ${entry.name} in ZIP")
+                    } else if ((entryName.endsWith(".json") || entryName.endsWith(".html")) &&
+                        !isBlockedNonHistoryEntryName(entry.name)
+                    ) {
+                        // Fallback for localized exports: Google Takeout names the
+                        // history files in the account's language (e.g. Portuguese
+                        // "histórico de músicas ouvidas.json"), so entries that did
+                        // not match by name are sniffed by content before skipping.
+                        val head = decodeHead(entryBytes)
+                        if (entryName.endsWith(".json") && looksLikeWatchHistoryJson(head)) {
+                            jsonFilesFound++
+                            val entryLabel = "$fileName!/${entry.name}"
+                            val result = parseJsonFromSourceWithHtmlCheck(okio.Buffer().write(entryBytes), entryLabel)
+                            allEntries.addAll(result.parsed)
+                            allErrors.addAll(result.errors)
+                            nonMusicSkipped += result.nonMusicSkipped
+                            if (result.htmlDetected) {
+                                allErrors.add("HTML format detected in ${entry.name} inside $fileName. Re-export from Takeout choosing JSON format.")
+                            }
+                            Log.i(TAG, "Detected watch-history JSON by content sniffing: ${entry.name} in ZIP $fileName")
+                        } else if (entryName.endsWith(".html") && looksLikeWatchHistoryHtml(head)) {
+                            htmlFilesFound++
+                            val entryLabel = "$fileName!/${entry.name}"
+                            val result = parseHtmlString(String(entryBytes, Charsets.UTF_8), entryLabel)
+                            allEntries.addAll(result.parsed)
+                            allErrors.addAll(result.errors)
+                            nonMusicSkipped += result.nonMusicSkipped
+                            Log.i(TAG, "Detected watch-history HTML by content sniffing: ${entry.name} in ZIP $fileName (parsed ${result.parsed.size} entries)")
+                        }
                     }
                     zis.closeEntry()
                     entry = zis.nextEntry
@@ -346,13 +468,13 @@ class YouTubeMusicImportService @Inject constructor(
             val error = when {
                 allZipEntryNames.isEmpty() -> {
                     "ZIP $fileName appears to be empty or is another part of a split archive. " +
-                        "Make sure you select the ZIP chunk that contains the 'history' folder."
+                        "Select the ZIP that contains the 'history' folder (watch-history.json), or select all ZIP parts at once."
                 }
                 else -> {
                     val sampleNames = allZipEntryNames.take(15).joinToString(", ")
-                    "No watch-history file found in ZIP $fileName. Found ${allZipEntryNames.size} files: $sampleNames" +
-                        if (allZipEntryNames.size > 15) "..." else "" +
-                        ". If your export was split into multiple ZIPs, try selecting a different one."
+                    val ellipsis = if (allZipEntryNames.size > 15) "..." else ""
+                    "No watch-history file found in ZIP $fileName. Found ${allZipEntryNames.size} files: $sampleNames$ellipsis " +
+                        "If your export was split into multiple ZIPs, select the one containing the 'history' folder — or select all of them at once."
                 }
             }
             return ParseResult(errors = listOf(error))
@@ -475,8 +597,8 @@ class YouTubeMusicImportService @Inject constructor(
 
         if (hasContentDetails && header == null && title == null) return null
 
-        val isYTM = header == "YouTube Music" ||
-            products.any { it.equals("YouTube Music", ignoreCase = true) } ||
+        val isYTM = header?.contains("YouTube Music", ignoreCase = true) == true ||
+            products.any { it.contains("YouTube Music", ignoreCase = true) } ||
             titleUrl?.contains("music.youtube.com") == true
 
         if (!isYTM) return null
@@ -532,12 +654,31 @@ class YouTubeMusicImportService @Inject constructor(
     }
 
     private fun stripWatchedPrefix(title: String): String {
-        val watched = "Watched "
-        return if (title.startsWith(watched, ignoreCase = true)) {
-            title.substring(watched.length).trim()
-        } else {
-            title.trim()
+        var cleaned = title.trim()
+        for (prefix in LOCALIZED_WATCHED_PREFIXES) {
+            if (cleaned.startsWith(prefix, ignoreCase = true)) {
+                val rest = cleaned.substring(prefix.length)
+                if (rest.isEmpty() || rest[0].isWhitespace() ||
+                    rest[0] == '"' || rest[0] == '“' || rest[0] == '«'
+                ) {
+                    cleaned = rest.trim()
+                    break
+                }
+            }
         }
+        // Localized exports often wrap the video title in quotes, e.g. the
+        // Portuguese title `Assisti "Song Name"`.
+        if (cleaned.length >= 2) {
+            val first = cleaned.first()
+            val last = cleaned.last()
+            if ((first == '"' && last == '"') ||
+                (first == '“' && last == '”') ||
+                (first == '«' && last == '»')
+            ) {
+                cleaned = cleaned.substring(1, cleaned.length - 1).trim()
+            }
+        }
+        return cleaned
     }
 
     private fun parseTitleAndArtist(title: String): Pair<String, String?> {

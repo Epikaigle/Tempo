@@ -19,7 +19,7 @@ import me.avinas.tempo.ui.components.GlassCard
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
-import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.InsightBinge
 
 
 @Composable
@@ -68,7 +68,7 @@ fun GamificationCard(
                     CircularProgressIndicator(
                         progress = { progress },
                         modifier = Modifier.size(48.dp),
-                        color = TempoPrimary, // Pink
+                        color = InsightBinge,
                         strokeWidth = 4.dp,
                         strokeCap = StrokeCap.Round
                     )
