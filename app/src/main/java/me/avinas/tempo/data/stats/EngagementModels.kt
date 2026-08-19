@@ -70,22 +70,22 @@ data class TrackEngagement(
      */
     val engagementScore: Int get() {
         if (playCount == 0) return 0
-        
+
         // 1. Completion rate (35% weight) - normalized to 0-35
         val completionScore = (averageCompletionPercent / 100f * EngagementThresholds.COMPLETION_WEIGHT).toInt()
-        
+
         // 2. Full plays ratio (25% weight) - normalized to 0-25
         val fullPlayRatio = fullPlaysCount.toFloat() / playCount
         val fullPlayScore = (fullPlayRatio * EngagementThresholds.FULL_PLAY_WEIGHT).toInt()
-        
+
         // 3. Replay behavior (20% weight) - diminishing returns after 4 replays
         // Each replay adds 5 points, capped at 20
         val replayScore = minOf(EngagementThresholds.REPLAY_WEIGHT, replayCount * 5)
-        
+
         // 4. Anti-skip bonus (15% weight) - inverse of skip rate
         val skipRatio = skipsCount.toFloat() / playCount
         val antiSkipScore = ((1 - skipRatio) * EngagementThresholds.ANTI_SKIP_WEIGHT).toInt()
-        
+
         // 5. Consistency bonus (5% weight) - low pause count indicates focused listening
         val avgPauses = if (playCount > 0) totalPauseCount.toFloat() / playCount else 0f
         val consistencyScore = when {
@@ -94,8 +94,23 @@ data class TrackEngagement(
             avgPauses <= 3f -> 1    // Distracted
             else -> 0               // Very distracted
         }
-        
-        return minOf(100, completionScore + fullPlayScore + replayScore + antiSkipScore + consistencyScore)
+
+        val qualityScore = completionScore + fullPlayScore + replayScore + antiSkipScore + consistencyScore
+
+        // Volume cap: high tiers require sustained repeated listening, not a few full plays.
+        // ponytail: imported scrobbles default completion to 80-100, so per-play quality
+        // alone made every 1-play track score ~80 ("Personal Favorite"). Cap by play count
+        // so each tag reflects genuine, repeated commitment to the track.
+        val volumeCap = when {
+            playCount >= 200 -> 100  // Ultimate Obsession reachable
+            playCount >= 100 -> 90   // Personal Favorite reachable
+            playCount >= 50 -> 80
+            playCount >= 30 -> 70    // Heavy Rotation reachable
+            playCount >= 15 -> 55    // Regular Jam reachable
+            playCount >= 5 -> 40     // Casual Favorite reachable
+            else -> 25               // 2-4 plays: Occasional Play at best
+        }
+        return minOf(volumeCap, qualityScore)
     }
     
     /**
@@ -111,7 +126,13 @@ data class TrackEngagement(
         engagementScore >= 10 -> "Background"
         else -> "Skipped"
     }
-    
+
+    /**
+     * Whether this track has enough listening history to warrant a tag at all.
+     * A single play is not a pattern — don't fill the gap with a label it didn't earn.
+     */
+    val deservesTag: Boolean get() = playCount >= 2
+
     val engagementEmoji: String get() = when {
         engagementScore >= 90 -> "💎"
         engagementScore >= 80 -> "❤️"
@@ -121,6 +142,26 @@ data class TrackEngagement(
         engagementScore >= 25 -> "🎵"
         engagementScore >= 10 -> "🎧"
         else -> "⏭️"
+    }
+
+    /**
+     * Human-readable "because..." reason explaining why this track earned its tag,
+     * referencing the dominant contributing signal. Drives the reason line on the
+     * Listener Identity card so the tag is self-explaining, not arbitrary.
+     */
+    val engagementReason: String get() {
+        if (playCount <= 0) return "because there's no listening data yet"
+        val skipRatio = skipsCount.toFloat() / playCount
+        val fullRatio = fullPlaysCount.toFloat() / playCount
+        return when {
+            playCount == 1 -> "because you've only played it once"
+            replayCount >= 4 -> "because you replayed it $replayCount times back-to-back"
+            skipRatio >= 0.5f -> "because you skip it $skipsCount of $playCount times"
+            fullRatio >= 0.8f -> "because you finish $fullPlaysCount of $playCount plays"
+            playCount >= 30 -> "because you've played it $playCount times"
+            playCount >= 8 -> "because you've returned to it $playCount times"
+            else -> "because you've played it $playCount times so far"
+        }
     }
     
     /**

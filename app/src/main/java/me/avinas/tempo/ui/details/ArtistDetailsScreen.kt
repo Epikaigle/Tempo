@@ -32,9 +32,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.rounded.CallMerge
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -126,7 +128,8 @@ fun ArtistDetailsScreen(
                 onNavigateBack = onNavigateBack,
                 onNavigateToSong = onNavigateToSong,
                 onRefreshImage = { viewModel.refreshArtistImage() },
-                onShowRenameDialog = { viewModel.showRenameDialog() }
+                onShowRenameDialog = { viewModel.showRenameDialog() },
+                onShowSplitDialog = { viewModel.showSplitDialog() }
             )
         } else {
             // Error state with retry
@@ -181,6 +184,26 @@ fun ArtistDetailsScreen(
             onDismiss = { viewModel.dismissRenameDialog() }
         )
     }
+
+    // Split-artist dialog (manual escape hatch for wrongly merged/collapsed artists)
+    if (details != null && uiState.showSplitDialog) {
+        val splitSourceId = details.artist.id
+        ArtistSplitDialog(
+            sourceArtistId = splitSourceId,
+            sourceArtistName = details.artist.name,
+            onDismiss = { viewModel.dismissSplitDialog() },
+            onSplitComplete = { sourceDeleted ->
+                viewModel.dismissSplitDialog()
+                if (sourceDeleted) {
+                    // The artist no longer exists — leave the details screen
+                    onNavigateBack()
+                } else {
+                    // Reload to reflect the tracks that were moved out
+                    viewModel.loadArtistById(splitSourceId)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -215,7 +238,8 @@ fun ArtistDetailsContent(
     onNavigateBack: () -> Unit,
     onNavigateToSong: (Long) -> Unit,
     onRefreshImage: () -> Unit,
-    onShowRenameDialog: () -> Unit = {}
+    onShowRenameDialog: () -> Unit = {},
+    onShowSplitDialog: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var showShareDialog by remember { mutableStateOf(false) }
@@ -411,6 +435,20 @@ fun ArtistDetailsContent(
                     onClick = {
                         showMenu = false
                         onShowRenameDialog()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.details_split_artist), color = TextPrimary) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.AutoMirrored.Filled.CallSplit,
+                            contentDescription = null,
+                            tint = TextPrimary,
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        onShowSplitDialog()
                     },
                 )
             }

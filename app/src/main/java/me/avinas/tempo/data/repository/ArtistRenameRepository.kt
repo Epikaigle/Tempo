@@ -3,9 +3,11 @@ package me.avinas.tempo.data.repository
 import android.util.Log
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.dao.ArtistDao
+import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.dao.UserKnownArtistDao
 import me.avinas.tempo.data.local.entities.Artist
 import me.avinas.tempo.data.local.entities.UserKnownArtist
+import me.avinas.tempo.utils.ArtistNameReplacer
 import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,6 +26,8 @@ class ArtistRenameRepository @Inject constructor(
     private val artistDao: ArtistDao,
     private val userKnownArtistDao: UserKnownArtistDao,
     private val artistMergeRepository: ArtistMergeRepository,
+    private val trackDao: TrackDao,
+    private val statsRepository: me.avinas.tempo.data.repository.StatsRepository,
     private val database: AppDatabase
 ) {
     companion object {
@@ -157,6 +161,32 @@ class ArtistRenameRepository @Inject constructor(
                 )
                 artistDao.update(updatedArtist)
                 Log.d(TAG, "Renamed artist to '$trimmedName'")
+
+                // CRITICAL: keep the denormalized tracks.artist strings in sync.
+                // The artist view reads the Artist entity, but track views and
+                // stats aggregation use tracks.artist — without this the track
+                // view keeps showing the OLD name after a rename.
+                // Exact replace runs always (also fixes casing-only renames);
+                // multi-artist strings go through the wildcard-safe Kotlin-side
+                // segment replacer (same as artist merge).
+                val exactReplaced = trackDao.replaceArtistName(artist.name, trimmedName)
+                var multiReplaced = 0
+                if (!artist.name.equals(trimmedName, ignoreCase = true)) {
+                    val candidates = trackDao.getTracksContainingArtistName(artist.name)
+                    for (track in candidates) {
+                        if (track.artist.equals(artist.name, ignoreCase = true)) continue
+                        val updated = ArtistNameReplacer.replaceSegment(
+                            track.artist, artist.name, trimmedName
+                        ) ?: continue
+                        trackDao.updateArtistString(track.id, updated)
+                        multiReplaced++
+                    }
+                }
+                Log.d(TAG, "Updated track artist strings: $exactReplaced exact, $multiReplaced multi-artist")
+
+                // Invalidate stats cache so all views pick up the new name
+                // (a pure rename without merges does not invalidate otherwise)
+                statsRepository.invalidateCache()
 
                 // Merge any split fragment artists into the renamed artist
                 for (mergeId in mergeArtistIds) {

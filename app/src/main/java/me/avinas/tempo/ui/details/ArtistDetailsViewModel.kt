@@ -269,6 +269,18 @@ class ArtistDetailsViewModel @Inject constructor(
         ) }
     }
 
+    // ===== Split Flow =====
+
+    /** Show the split-artist dialog. */
+    fun showSplitDialog() {
+        _uiState.update { it.copy(showSplitDialog = true) }
+    }
+
+    /** Hide the split-artist dialog. */
+    fun dismissSplitDialog() {
+        _uiState.update { it.copy(showSplitDialog = false) }
+    }
+
     /**
      * Detect if the new name matches split fragments of other artists in the DB.
      * If no splits found, immediately performs a simple rename.
@@ -343,5 +355,7 @@ data class ArtistDetailsUiState(
     val detectedSplitArtists: List<Artist> = emptyList(),
     val isDetectingSplits: Boolean = false,
     val isRenaming: Boolean = false,
-    val renameSuccess: Boolean? = null
+    val renameSuccess: Boolean? = null,
+    // Split state
+    val showSplitDialog: Boolean = false
 )

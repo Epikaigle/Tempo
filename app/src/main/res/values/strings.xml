@@ -526,6 +526,7 @@
     <string name="settings_language_french">Français</string>
     <string name="settings_language_german">Deutsch</string>
     <string name="settings_language_hungarian">Magyar</string>
+    <string name="settings_language_russian">Русский</string>
     <string name="settings_language_portuguese">Português</string>
     <string name="settings_select_language">Select Language</string>
     <string name="settings_daily_summary">Daily Summary</string>
@@ -1338,4 +1339,12 @@
     <string name="period_all_time">all time</string>
     <string name="quick_stats_artist_placeholder">Artist</string>
     <string name="quick_stats_track_placeholder">Track</string>
+    <string name="details_split_artist">Split artist…</string>
+    <string name="details_split_artist_title">Split Artist</string>
+    <string name="details_split_grouped_under">Separate tracks grouped under: %1$s</string>
+    <string name="details_no_tracks_found_artist">No tracks found for this artist.</string>
+    <string name="details_split_group_info">Tracks are grouped by the artist name stored on each track. Selected tracks move to the artist named below each group.</string>
+    <string name="details_splitting_artist">Splitting artist…</string>
+    <string name="details_split_button">Split (%1$d)</string>
+    <string name="details_move_to_artist">Move to artist</string>
 </resources>

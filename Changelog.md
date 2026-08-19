@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🎉 Released as v4.8.3
+
+> This release reconciles the app with the public v4.8.2 lineage. If you installed
+> the Play Store v4.8.2 build, this update is safe to install: your database is
+> migrated (schema 52) with a pre-migration backup snapshot taken on device, and
+> artist data repaired by 4.8.2's fix is preserved (the repair does not re-run).
+
+### 🚀 New Features (backported from the 4.8.2 lineage)
+- **Split Artist**: a new "Split artist…" action in the artist details menu lets
+    you move wrongly grouped tracks to the correct artist — the manual escape
+    hatch for artists that were collapsed together by the old name-matching.
+- **Rename now keeps track credits in sync**: renaming an artist also rewrites
+    the artist name stored on each track (exact and multi-artist credits), and
+    refreshes stats, so track views no longer show the old name after a rename.
+- **Russian localization** (plus the updated Hungarian translations) and a
+    per-app language entry for Русский.
+- **Engagement volume cap**: "Personal Favorite"-style tags now require real,
+    repeated listening — a single imported play can no longer earn a top tag,
+    and each tag shows a human-readable "because…" reason.
+
+### 🐛 Bug Fixes
+- **Japanese/Korean/Cyrillic artists no longer collapse into one entry**: artist
+    name normalization is now Unicode-aware (NFKC + letters/numbers of any
+    script). A one-time background repair re-separates previously collapsed
+    artists (it safely does nothing if 4.8.2 already repaired your data).
+- **Database migration safety (schema 52)**: devices upgrading from the public
+    4.8.2 build no longer hit a schema mismatch crash on first launch. Before
+    migrating, the app takes a one-time raw snapshot of the database files for
+    emergency recovery.
+- **Foreground-service crash fixes**: battery-state receiver registration now
+    uses RECEIVER_NOT_EXPORTED (Android 13+/14+), the foreground state is
+    re-asserted in onStartCommand, notification channel creation is guaranteed
+    before startForeground, and failures fall back to a clean stop instead of
+    crashing (BadForegroundServiceNotificationException).
+- **Album art memory**: cover art is downsampled before saving, preventing
+    OOM/TransactionTooLarge failures with very large artwork.
+- **Desktop Satellite**: battery broadcasts no longer block their receiver
+    thread (runBlocking removed), fixing "Broadcast already finished" crashes.
+- **Google Drive 403**: authorization now validates the drive.file scope and
+    never persists a broken token; a 403 surfaces the real Google reason and
+    forces a clean re-sign-in instead of a dead-end error.
+- **Spotify import**: legacy "StreamingHistory" timestamps without seconds
+    ("yyyy-MM-dd HH:mm") now parse correctly.
+
 ### 🚀 New Features
 - **Stats search**: the ranking screen now has a live search field — type an
     artist, song, or album name and the chart filters as you type, showing each

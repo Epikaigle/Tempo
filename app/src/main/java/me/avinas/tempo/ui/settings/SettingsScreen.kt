@@ -93,7 +93,8 @@ fun SettingsScreen(
         "fr" to stringResource(R.string.settings_language_french),
         "de" to stringResource(R.string.settings_language_german),
         "hu" to stringResource(R.string.settings_language_hungarian),
-        "pt" to stringResource(R.string.settings_language_portuguese)
+        "pt" to stringResource(R.string.settings_language_portuguese),
+        "ru" to stringResource(R.string.settings_language_russian)
     )
     val currentLanguageSubtitle = languages.firstOrNull { it.first == currentLocale }?.second
         ?: stringResource(R.string.settings_language_english)
