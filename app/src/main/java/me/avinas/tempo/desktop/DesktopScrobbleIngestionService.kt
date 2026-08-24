@@ -253,9 +253,7 @@ class DesktopPlayIngestionService @Inject constructor(
         return IngestionResult.Success(accepted, duplicates, nextToken = rotatedTokenStr)
     }
 
-    // --------------------------------------------------------------------------
     // Helpers
-    // --------------------------------------------------------------------------
 
     private suspend fun findOrCreateTrack(
         title: String,

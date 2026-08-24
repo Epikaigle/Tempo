@@ -1,10 +1,8 @@
-// ============================================================================
-// Tempo Stats — Content Script: Media Probe
-// Injected into music site tabs. Extracts media state and sends to background.
-// Event-driven: media events (play/pause/seek) push state instantly.
-// Throttled timeupdate tracks position every 5s. Adaptive heartbeat (15s
-// playback / 30s idle / 60s hidden) is a safety net only.
-// ============================================================================
+/**
+ * Content script media probe.
+ * Injected into music tabs to observe playback events and extract
+ * metadata from HTMLMediaElement, MediaSession, and DOM structures.
+ */
 
 (() => {
   let pollIntervalMs = 15_000;
@@ -12,10 +10,11 @@
   let activePollIntervalMs = 0;
   let lastSentKey = '';
   let isReconnecting = false;
+  let reconnectAttempts = 0;
   let lastObservedActive = false;
   let scheduledPollTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // ---- Cached references (avoid repeated DOM queries) -----------------------
+  // Cached references (avoid repeated DOM queries)
   let cachedMediaElements: HTMLMediaElement[] = [];
   let mediaElementsDirty = true;
   let cachedUrl = location.href;
@@ -31,6 +30,8 @@
   let cachedMusicSectionEl: HTMLElement | null = null;
   let musicSectionDirty = true;
   let ytMusicTagObserver: MutationObserver | null = null;
+  let ytMusicTagFruitlessBatches = 0;
+  let ytMusicTagLastExtractAt = 0;
   let forceMetadataUpdate = false;
 
   function resetYtMetadataCache(): void {
@@ -40,6 +41,8 @@
     musicSectionDirty = true;
     cachedMusicSectionEl = null;
     ytMusicTagRetryCount = 0;
+    ytMusicTagFruitlessBatches = 0;
+    ytMusicTagLastExtractAt = 0;
     if (ytMusicTagRetryTimer) {
       clearTimeout(ytMusicTagRetryTimer);
       ytMusicTagRetryTimer = null;
@@ -55,9 +58,17 @@
   const dismissedYouTubeChannels = new Set<string>();
   const DISMISSED_CHANNELS_KEY = 'tempo_dismissed_youtube_channels';
   const DISMISS_TTL_MS = 24 * 60 * 60 * 1000;
+  // Idle cadence escalates the longer a tab shows nothing playing (30s → 5min).
+  // Any media element event resets it instantly, so track starts are still
+  // caught by events — never by waiting for the next slow tick.
   const IDLE_POLL_INTERVAL_MS = 30_000;
+  const IDLE_POLL_MAX_INTERVAL_MS = 300_000;
+  let idlePollCount = 0;
   const PLAYBACK_HEARTBEAT_MS = 15_000;
   const HIDDEN_HEARTBEAT_MS = 60_000;
+  const MAX_RECONNECT_ATTEMPTS = 3;
+  const YT_MUSIC_TAG_EXTRACT_THROTTLE_MS = 1_000;
+  const YT_MUSIC_TAG_MAX_FRUITLESS_BATCHES = 20;
 
   // Pre-computed site suffixes for title cleaning (sorted longest-first)
   const TITLE_SUFFIXES = [
@@ -113,14 +124,20 @@
     const btns = document.querySelectorAll<HTMLButtonElement | HTMLElement>(
       'button[aria-label], [role="button"][aria-label]'
     );
+    // Pass 1: collect label matches without touching layout.
+    const candidates: HTMLElement[] = [];
     for (const b of btns) {
       const label = (b.getAttribute('aria-label') || '').trim().toLowerCase();
-      if (label === 'pause' && b.getClientRects().length > 0) return true;
+      if (label === 'pause') candidates.push(b);
+    }
+    // Pass 2: one batched geometry pass over the few candidates.
+    for (const b of candidates) {
+      if (b.getClientRects().length > 0) return true;
     }
     return false;
   }
 
-  // ---- Cached media element management ------------------------------------
+  // Cached media element management
 
   const observedMediaElements = new WeakSet<HTMLMediaElement>();
   const MEDIA_IMMEDIATE_EVENTS = [
@@ -144,8 +161,11 @@
 
   function onTimeUpdate(): void {
     const now = Date.now();
-    if (now - lastTimeupdatePoll < TIMEUPDATE_THROTTLE_MS) return;
+    // Background tabs don't need 5s granularity — fall back to the hidden heartbeat.
+    const effectiveThrottleMs = document.hidden ? HIDDEN_HEARTBEAT_MS : TIMEUPDATE_THROTTLE_MS;
+    if (now - lastTimeupdatePoll < effectiveThrottleMs) return;
     lastTimeupdatePoll = now;
+    idlePollCount = 0;
     schedulePollSoon(0);
   }
 
@@ -154,11 +174,23 @@
   // it. Only runs when light DOM has no media (the common sites pay nothing).
   // Closed roots are unreachable; isPlaying has a button fallback for that case.
   function collectShadowMedia(root: ParentNode, found: HTMLMediaElement[]): HTMLMediaElement[] {
-    for (const el of Array.from(root.querySelectorAll('*'))) {
-      const sr = (el as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot;
+    // Iterative pre-order walk over (shadow) roots using native TreeWalkers:
+    // avoids materializing every element via Array.from(querySelectorAll('*'))
+    // and the deep recursion of the previous implementation, while visiting
+    // shadow hosts in the exact same document order. Elements without an
+    // open shadowRoot are skipped without extra allocation.
+    const walkers: TreeWalker[] = [document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)];
+    while (walkers.length > 0) {
+      const walker = walkers[walkers.length - 1];
+      const node = walker.nextNode();
+      if (!node) {
+        walkers.pop();
+        continue;
+      }
+      const sr = (node as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot;
       if (!sr) continue;
       for (const m of sr.querySelectorAll<HTMLMediaElement>('audio, video')) found.push(m);
-      collectShadowMedia(sr, found);
+      walkers.push(document.createTreeWalker(sr, NodeFilter.SHOW_ELEMENT));
     }
     return found;
   }
@@ -173,7 +205,10 @@
       if (observedMediaElements.has(media)) continue;
       observedMediaElements.add(media);
       for (const eventName of MEDIA_IMMEDIATE_EVENTS) {
-        media.addEventListener(eventName, () => schedulePollSoon(0), { passive: true });
+        media.addEventListener(eventName, () => {
+          idlePollCount = 0;
+          schedulePollSoon(0);
+        }, { passive: true });
       }
       for (const eventName of MEDIA_THROTTLED_EVENTS) {
         media.addEventListener(eventName, onTimeUpdate, { passive: true });
@@ -182,18 +217,31 @@
     mediaElementsDirty = false;
   }
 
+  // Elements whose subtrees can never contain a rendered <audio>/<video>;
+  // skipped before paying for a subtree querySelector on large insertions.
+  const INERT_INSERTION_NODE_NAMES = new Set(['SCRIPT', 'STYLE', 'LINK', 'NOSCRIPT', 'TEMPLATE']);
+
+  function nodeTouchesMedia(node: Node): boolean {
+    // Cheap identity/name checks first; only fall back to a subtree query
+    // for container elements that could plausibly hold media.
+    if (node instanceof HTMLMediaElement) return true;
+    if (!(node instanceof HTMLElement) || INERT_INSERTION_NODE_NAMES.has(node.nodeName)) return false;
+    return node.querySelector('audio, video') !== null;
+  }
+
   // Watch for added/removed <audio>/<video> elements to invalidate cache
   const mediaElementObserver = new MutationObserver((mutations) => {
     for (const m of mutations) {
       for (const node of m.addedNodes) {
-        if (node instanceof HTMLMediaElement || (node instanceof HTMLElement && node.querySelector?.('audio, video'))) {
+        if (nodeTouchesMedia(node)) {
           mediaElementsDirty = true;
-          schedulePollSoon();
+          // Debounce: collapse bursts of player-DOM insertions into one delayed poll.
+          schedulePollSoon(500);
           return;
         }
       }
       for (const node of m.removedNodes) {
-        if (node instanceof HTMLMediaElement || (node instanceof HTMLElement && node.querySelector?.('audio, video'))) {
+        if (nodeTouchesMedia(node)) {
           mediaElementsDirty = true;
           return;
         }
@@ -208,7 +256,7 @@
     }
   }
 
-  // ---- Messaging -----------------------------------------------------------
+  // Messaging
 
   async function sendMessageSafely(message: any): Promise<any> {
     try {
@@ -401,6 +449,10 @@
 
   function attemptReconnect(): void {
     if (isReconnecting) return;
+    // Cap self-rescheduling: stop silently after a few failed attempts
+    // instead of retrying every 30s forever on an invalidated context.
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
+    reconnectAttempts++;
     isReconnecting = true;
     console.log('[Tempo] Extension context invalidated, attempting reconnect...');
     stopPolling();
@@ -408,6 +460,7 @@
       try {
         if (chrome.runtime?.id) {
           console.log('[Tempo] Reconnected successfully');
+          reconnectAttempts = 0;
           isReconnecting = false;
           startPolling();
         } else {
@@ -445,7 +498,7 @@
     }
   }
 
-  // ---- Media extraction (optimized) ----------------------------------------
+  // Media extraction (optimized)
 
   function isYouTubeUrl(url: string): boolean {
     if (url !== cachedUrl) {
@@ -516,55 +569,28 @@
     }
   }
 
-  function queryMainWorldYtMetadata(): { playerResponse?: any; initialData?: any } | null {
-    let responseData: any = null;
-    const listener = (event: any) => {
-      responseData = event.detail;
+  // Small projected payload produced by the MAIN-world helper, so the
+  // multi-megabyte ytInitialPlayerResponse/ytInitialData trees never cross
+  // the world boundary.
+  interface YtMainWorldProjection {
+    videoId?: string;
+    videoTitle?: string;
+    author?: string;
+    shortDescription: string;
+    carouselsPlayerResponse: Array<{ title?: string; artist?: string; album?: string; label?: string }>;
+    carouselsInitialData: Array<{ title?: string; artist?: string; album?: string; label?: string }>;
+    metadataRows: unknown[];
+  }
+
+  function queryMainWorldYtMetadata(): YtMainWorldProjection | null {
+    let responseData: YtMainWorldProjection | null = null;
+    const listener = (event: Event) => {
+      responseData = (event as CustomEvent<YtMainWorldProjection>).detail;
     };
     window.addEventListener('tempo-response-yt-metadata', listener, { once: true });
     window.dispatchEvent(new CustomEvent('tempo-request-yt-metadata'));
     window.removeEventListener('tempo-response-yt-metadata', listener);
     return responseData;
-  }
-
-  function findCarouselLockupRenderers(obj: any, results: any[] = []): any[] {
-    if (!obj || typeof obj !== 'object') return results;
-
-    if (obj.carouselLockupRenderer) {
-      results.push(obj.carouselLockupRenderer);
-    } else {
-      if (Array.isArray(obj)) {
-        for (const item of obj) {
-          findCarouselLockupRenderers(item, results);
-        }
-      } else {
-        for (const key of Object.keys(obj)) {
-          if (key === 'streamingData' || key === 'playerAds' || key === 'attestation') continue;
-          findCarouselLockupRenderers(obj[key], results);
-        }
-      }
-    }
-    return results;
-  }
-
-  function findMetadataRowRenderers(obj: any, results: any[] = []): any[] {
-    if (!obj || typeof obj !== 'object') return results;
-
-    if (obj.metadataRowRenderer) {
-      results.push(obj.metadataRowRenderer);
-    } else {
-      if (Array.isArray(obj)) {
-        for (const item of obj) {
-          findMetadataRowRenderers(item, results);
-        }
-      } else {
-        for (const key of Object.keys(obj)) {
-          if (key === 'streamingData' || key === 'playerAds' || key === 'attestation') continue;
-          findMetadataRowRenderers(obj[key], results);
-        }
-      }
-    }
-    return results;
   }
 
   function getTextFromRenderer(field: any): string {
@@ -577,41 +603,6 @@
       }
     }
     return '';
-  }
-
-  function parseCarouselLockup(renderer: any): { title?: string; artist?: string; album?: string; label?: string } | null {
-    const infoRows = renderer.infoRows;
-    if (!infoRows || !Array.isArray(infoRows)) return null;
-
-    let title: string | undefined;
-    let artist: string | undefined;
-    let album: string | undefined;
-    let label: string | undefined;
-
-    for (const row of infoRows) {
-      const infoRowRenderer = row.infoRowRenderer;
-      if (!infoRowRenderer) continue;
-
-      const label_text = getTextFromRenderer(infoRowRenderer.title).trim().toLowerCase();
-      const value = getTextFromRenderer(infoRowRenderer.defaultMetadata || infoRowRenderer.expandedMetadata).trim();
-
-      if (!label_text || !value) continue;
-
-      if (label_text.includes('song') || label_text.includes('track')) {
-        title = sanitize(value);
-      } else if (label_text.includes('artist') || label_text.includes('singer') || label_text.includes('performed by')) {
-        artist = sanitize(value);
-      } else if (label_text.includes('album')) {
-        album = sanitize(value);
-      } else if (label_text.includes('label') || label_text.includes('record label') || label_text.includes('licensed to')) {
-        label = sanitize(value);
-      }
-    }
-
-    if (title || artist || album || label) {
-      return { title, artist, album, label };
-    }
-    return null;
   }
 
   function parseMetadataRows(renderers: any[]): { title?: string; artist?: string; album?: string; label?: string } | null {
@@ -784,6 +775,11 @@
 
     ytMusicTagObserver = new MutationObserver(() => {
       musicSectionDirty = true;
+      ytMusicTagFruitlessBatches++;
+      // Throttle extraction passes — YouTube fires dense mutation bursts here.
+      const now = Date.now();
+      if (now - ytMusicTagLastExtractAt < YT_MUSIC_TAG_EXTRACT_THROTTLE_MS) return;
+      ytMusicTagLastExtractAt = now;
       const metadata = extractYoutubeMusicTag();
       if (metadata) {
         cachedYtMusicTagMetadata = metadata;
@@ -791,9 +787,16 @@
         ytMusicTagObserver?.disconnect();
         ytMusicTagObserver = null;
         schedulePollSoon(0);
+      } else if (ytMusicTagFruitlessBatches >= YT_MUSIC_TAG_MAX_FRUITLESS_BATCHES) {
+        // Give up on mutations; the timer-based retry chain keeps looking
+        // within its window.
+        ytMusicTagObserver?.disconnect();
+        ytMusicTagObserver = null;
       }
     });
 
+    ytMusicTagFruitlessBatches = 0;
+    ytMusicTagLastExtractAt = 0;
     ytMusicTagObserver.observe(descContainer, {
       childList: true,
       subtree: true,
@@ -943,7 +946,7 @@
     return { title, artist, album, isPlaying, duration, position, volume, isMuted, playbackRate };
   }
 
-  // ---- Polling --------------------------------------------------------------
+  // Polling
 
   function buildStateKey(state: ReturnType<typeof extractMediaState>): string {
     if (!state) return '';
@@ -963,11 +966,12 @@
       }
       hideYouTubePrompt();
       lastObservedActive = false;
+      idlePollCount = Math.min(idlePollCount + 1, 16);
       updatePollingCadence();
       return;
     }
-
     lastObservedActive = state.isPlaying;
+    if (state.isPlaying) idlePollCount = 0;
     updatePollingCadence();
 
     // If YouTube tab and metadata is dirty, attempt extraction once.
@@ -979,42 +983,33 @@
       if (!ytMusicTagObserver && !cachedYtMusicTagMetadata) {
         setupYtMusicTagObserver();
       }
-      
-      const currentVideoId = getYoutubeVideoId(location.href);
-      const mainWorldData = queryMainWorldYtMetadata();
 
-      const playerResponse = mainWorldData?.playerResponse;
-      const initialData = mainWorldData?.initialData;
-      const videoIdMatches = currentVideoId && playerResponse?.videoDetails?.videoId === currentVideoId;
+      const currentVideoId = getYoutubeVideoId(location.href);
+      const projection = queryMainWorldYtMetadata();
+      const videoIdMatches = currentVideoId && projection?.videoId === currentVideoId;
 
       let tagMetadata: { title?: string; artist?: string; album?: string } | null = null;
 
-      if (videoIdMatches) {
+      if (videoIdMatches && projection) {
         // Extract description and try all JSON methods
-        const descText = playerResponse!.videoDetails.shortDescription || '';
+        const descText = projection.shortDescription || '';
         cachedYtDescriptionMetadata = parseYoutubeDescription(descText) || null;
 
-        // Search carouselLockupRenderers in playerResponse first
-        const carouselsInPlayer = findCarouselLockupRenderers(playerResponse);
-        for (const c of carouselsInPlayer) {
-          const meta = parseCarouselLockup(c);
+        // Carousels in playerResponse (pre-parsed by the main-world helper)
+        for (const meta of projection.carouselsPlayerResponse) {
           if (meta && meta.title) { tagMetadata = meta; break; }
         }
 
-        // If not in playerResponse, search in initialData
-        if (!tagMetadata && initialData) {
-          const carouselsInInitial = findCarouselLockupRenderers(initialData);
-          for (const c of carouselsInInitial) {
-            const meta = parseCarouselLockup(c);
+        // If not in playerResponse, fall back to initialData carousels
+        if (!tagMetadata) {
+          for (const meta of projection.carouselsInitialData) {
             if (meta && meta.title) { tagMetadata = meta; break; }
           }
         }
 
         // If still not found, check flat metadataRowRenderers
         if (!tagMetadata) {
-          const rows = findMetadataRowRenderers(playerResponse)
-            .concat(initialData ? findMetadataRowRenderers(initialData) : []);
-          tagMetadata = parseMetadataRows(rows);
+          tagMetadata = parseMetadataRows(projection.metadataRows);
         }
       }
 
@@ -1081,7 +1076,8 @@
   function getDesiredPollIntervalMs(): number {
     if (document.hidden) return HIDDEN_HEARTBEAT_MS;
     if (lastObservedActive) return Math.max(pollIntervalMs, PLAYBACK_HEARTBEAT_MS);
-    return Math.max(pollIntervalMs * 2, IDLE_POLL_INTERVAL_MS);
+    const idleMs = Math.min(IDLE_POLL_INTERVAL_MS * Math.pow(2, idlePollCount), IDLE_POLL_MAX_INTERVAL_MS);
+    return Math.max(Math.max(pollIntervalMs * 2, IDLE_POLL_INTERVAL_MS), idleMs);
   }
 
   function updatePollingCadence(): void {
@@ -1120,7 +1116,7 @@
     }
   }
 
-  // ---- Lifecycle ------------------------------------------------------------
+  // Lifecycle
 
   loadDismissedYouTubeChannels().finally(startPolling);
   fetchPollingInterval();
@@ -1137,6 +1133,7 @@
       cachedMusicSectionEl = null;
       lastSentKey = '';
       lastTimeupdatePoll = 0;
+      idlePollCount = 0;
       stopPolling();
       startPolling();
     }
@@ -1174,8 +1171,8 @@
           youTubeChannelDirty = true;
           mediaElementsDirty = true;
           resetYtMetadataCache();
-          lastSentKey = '';
           lastTimeupdatePoll = 0;
+          idlePollCount = 0;
           schedulePollSoon(0);
         }
       }, 500);
@@ -1198,8 +1195,8 @@
         youTubeChannelDirty = true;
         mediaElementsDirty = true;
         resetYtMetadataCache();
-        lastSentKey = '';
         lastTimeupdatePoll = 0;
+        idlePollCount = 0;
         schedulePollSoon(0);
       }
     }, 500);

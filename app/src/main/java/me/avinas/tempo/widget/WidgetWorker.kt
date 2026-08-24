@@ -45,9 +45,7 @@ class WidgetWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         return try {
-            // =================================================================================
             // 1. Fetch Core Data
-            // =================================================================================
             val weeklyOverview = statsRepository.getListeningOverview(TimeRange.THIS_WEEK)
             val dailyStats = statsRepository.getDailyListening(TimeRange.THIS_WEEK, limit = 7)
             
@@ -77,9 +75,7 @@ class WidgetWorker @AssistedInject constructor(
                 else -> "${weeklyOverview.totalPlayCount} tracks played"
             }
 
-            // =================================================================================
             // 1b. Fetch Today's Data (for Dashboard)
-            // =================================================================================
             val todayOverview = statsRepository.getListeningOverview(TimeRange.TODAY)
             val hourlyStats = statsRepository.getHourlyDistribution(TimeRange.TODAY)
             
@@ -103,9 +99,7 @@ class WidgetWorker @AssistedInject constructor(
                 if (hour <= currentHour) hourlyMap[hour] ?: 0f else 0f 
             }.joinToString(",")
             
-            // =================================================================================
             // 2. Top Artist Data (for Artist Spotlight + Dashboard)
-            // =================================================================================
             val topArtists = statsRepository.getTopArtists(TimeRange.THIS_WEEK, pageSize = 1)
             val topArtist = topArtists.items.firstOrNull()
             var artistImagePath: String? = null
@@ -114,9 +108,7 @@ class WidgetWorker @AssistedInject constructor(
             }
             val artistHours = String.format("%.0f", (topArtist?.totalTimeMs ?: 0) / 3_600_000.0)
 
-            // =================================================================================
             // 3. Top Genres with Percentages (for Heatmap treemap)
-            // =================================================================================
             val topGenres = statsRepository.getTopGenres(TimeRange.THIS_WEEK, limit = 5)
             val totalGenrePlays = topGenres.sumOf { it.playCount }.coerceAtLeast(1)
             val genreJson = if (topGenres.isNotEmpty()) {
@@ -126,9 +118,7 @@ class WidgetWorker @AssistedInject constructor(
                 }
             } else "[]"
 
-            // =================================================================================
             // 4. Milestone Data (Top Track with real insights)
-            // =================================================================================
             val topTracks = statsRepository.getTopTracks(TimeRange.THIS_WEEK, pageSize = 1)
             val topTrack = topTracks.items.firstOrNull()
             
@@ -157,9 +147,7 @@ class WidgetWorker @AssistedInject constructor(
                 }
             }
             
-            // =================================================================================
             // 5. Discovery Data (Most-explored artist with real stats)
-            // =================================================================================
             val artistLoyalties = statsRepository.getArtistLoyalty(TimeRange.THIS_WEEK, minPlays = 3, limit = 5)
             val mostExploredArtist = artistLoyalties.maxByOrNull { it.uniqueTracksPlayed }
             
@@ -192,9 +180,7 @@ class WidgetWorker @AssistedInject constructor(
                 }
             }
 
-            // =================================================================================
             // 6. Mix Widget Data
-            // =================================================================================
             // Generate varying bar heights for audio visualization from daily stats
             val mixChartData = if (dailyStats.isNotEmpty()) {
                 dailyStats.reversed().map { it.totalTimeMs.toFloat() }.joinToString(",")
@@ -203,9 +189,7 @@ class WidgetWorker @AssistedInject constructor(
                 "0.3,0.6,1.0,0.7,0.4,0.2,0.5,0.9,0.5,0.3,0.2,0.4"
             }
 
-            // =================================================================================
             // 7. Update All Widget States
-            // =================================================================================
             val manager = GlanceAppWidgetManager(context)
             
             val allWidgetClasses: List<Class<out GlanceAppWidget>> = listOf(

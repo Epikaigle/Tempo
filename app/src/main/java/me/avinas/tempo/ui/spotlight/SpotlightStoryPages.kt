@@ -1265,9 +1265,7 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
     }
 }
 
-// =====================================================================
 // NEW SPOTLIGHT STORY PAGES
-// =====================================================================
 
 @Composable
 fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {

@@ -37,6 +37,7 @@ fun EnrichmentReportScreen(
 ) {
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val progress by viewModel.bulkProgress.collectAsStateWithLifecycle()
+    val blockedNotFound by viewModel.blockedNotFound.collectAsStateWithLifecycle()
 
     // Poll DB counts while the sweep is running so the breakdown stays current.
     LaunchedEffect(progress.isRunning) {
@@ -186,6 +187,16 @@ fun EnrichmentReportScreen(
                                 ) {
                                     Text(stringResource(R.string.enrichment_report_enrich_all_button, stats.unenriched))
                                 }
+                            }
+                            // Songs that failed every lookup recently are skipped by the
+                            // sweep for 7 days (rate-limit / abuse guard) — tell the user
+                            // instead of leaving them wondering why the count doesn't move.
+                            if (blockedNotFound > 0) {
+                                Text(
+                                    text = stringResource(R.string.enrichment_report_blocked, blockedNotFound),
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                         }
                     }

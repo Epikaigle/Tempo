@@ -1,16 +1,13 @@
-// ============================================================================
-// Tempo Stats — PlaybackTracker (Multi-Tab)
-// Supports tracking multiple tabs simultaneously. Each tab gets its own tracker
-// state, so switching music between tabs doesn't lose accumulated data.
-// State is serializable to survive service worker hibernation.
-// ============================================================================
+/**
+ * PlaybackTracker tracks media playback across browser tabs.
+ * Maintains isolated per-tab state to survive tab switching
+ * and service worker hibernation.
+ */
 
 import type { RawMediaState, NowPlaying, TrackEvent, TabTrackState } from '../shared/types';
 import { TrackEventType } from '../shared/types';
 
-// ---- Constants (match Android + desktop exactly) ----------------------------
-
-/** Minimum listen time (ms) before a track is eligible for scrobbling. */
+// Constants matching Android client tracking thresholds
 const MIN_LISTEN_TIME_MS = 15_000;
 
 /** Minimum play duration to even record (filters accidental plays). */
@@ -53,7 +50,7 @@ const MIN_COMPLETION_FRACTION = 0.50;
  */
 const FINALIZE_WALL_CLOCK_GRACE_MS = 15_000;
 
-// ---- Helper ----------------------------------------------------------------
+// Helper
 
 function generateSessionId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -71,7 +68,7 @@ function isMuted(raw: RawMediaState): boolean {
   return raw.isMuted || (raw.volume >= 0 && raw.volume < MUTE_VOLUME_THRESHOLD);
 }
 
-// ---- Single-tab tracker state -----------------------------------------------
+// Single-tab tracker state
 
 class TabTracker {
   currentTrackKey: string | null = null;
@@ -159,7 +156,7 @@ class TabTracker {
   }
 }
 
-// ---- Multi-Tab PlaybackTracker ----------------------------------------------
+// Multi-Tab PlaybackTracker
 
 export class PlaybackTracker {
   private trackers = new Map<number, TabTracker>();
@@ -233,7 +230,7 @@ export class PlaybackTracker {
     return count;
   }
 
-  // ---- Accessors for best tab ----
+  // Accessors for best tab
 
   get currentListenMs(): number {
     const bestId = this.getBestTabId();
@@ -245,7 +242,7 @@ export class PlaybackTracker {
     return bestId ? this.getTracker(bestId)._sessionId : '';
   }
 
-  // ---- Core logic ----
+  // Core logic
 
   /**
    * Process a raw media sample for a specific tab.
@@ -259,7 +256,7 @@ export class PlaybackTracker {
     const durationMs = isFinite(raw.duration) && raw.duration > 0 ? Math.round(raw.duration * 1000) : 0;
     const trackKey = `${raw.title}|${raw.artist}|${raw.album}`;
 
-    // --- Track change detection ---
+    // Track change detection
     if (tracker.currentTrackKey !== trackKey) {
       // Detect metadata updates vs real track changes.
       // When a YouTube music tag is found on a retry, the parsed title/artist
@@ -290,7 +287,7 @@ export class PlaybackTracker {
       return prevEvent;
     }
 
-    // --- Same track, update state ---
+    // Same track, update state
     const wallDelta = Math.max(now - tracker.lastPollTime, 0);
     const posDelta = positionMs - tracker.lastPositionMs;
 
@@ -515,7 +512,7 @@ export class PlaybackTracker {
     return this.buildNowPlaying(tracker, tracker.lastRaw, tracker.detectedSite, false);
   }
 
-  // ---- Private helpers -----------------------------------------------------
+  // Private helpers
 
   private applyDurationCap(tracker: TabTracker, increment: number): number {
     const newTotal = tracker.accumulatedListenMs + increment;

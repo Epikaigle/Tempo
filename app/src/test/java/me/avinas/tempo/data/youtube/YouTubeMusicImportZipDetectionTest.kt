@@ -122,9 +122,7 @@ class YouTubeMusicImportZipDetectionTest {
         assertFalse(YouTubeMusicImportService.looksLikeWatchHistoryHtml("""<html><body>nothing here</body></html>"""))
     }
 
-    // ------------------------------------------------------------------
     // End-to-end ZIP parsing
-    // ------------------------------------------------------------------
 
     private val portugueseHistoryJson = """
         [{"header": "YouTube Music",

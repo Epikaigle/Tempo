@@ -8,55 +8,11 @@ import kotlin.math.min
 import kotlin.random.Random
 
 /**
- * Listening Event Generator - Smart Data Recovery Approach.
- * 
- * =====================================================
- * PHILOSOPHY: RECOVER REAL DATA WHERE POSSIBLE, SMART ESTIMATION OTHERWISE
- * =====================================================
- * 
- * We prioritize REAL timing data, but don't leave users with empty stats
- * when we have strong signals about their listening patterns.
- * 
- * DATA HIERARCHY (in order of accuracy):
- * 
- * 1. RECENTLY PLAYED (Gold Standard - Exact Timestamps ★★★★★)
- *    - EXACT played_at timestamps from Spotify
- *    - Direct 1:1 mapping to listening events
- *    
- * 2. TIME MACHINE - Liked Tracks (Very Accurate ★★★★)
- *    - EXACT date when user liked a song
- *    - Strong signal they were listening around that time
- *    - Generate events clustered around the liked date
- *    
- * 3. YEARLY PLAYLISTS - "Your Top Songs 20XX" (Good Accuracy ★★★)
- *    - We KNOW they listened to these tracks during that year
- *    - Distribute events throughout that specific year
- *    
- * 4. TOP TRACKS (Estimated ★★)
- *    - Spotify's API returns tracks RANKED by actual play frequency
- *    - We DON'T have timestamps, BUT we have STRONG SIGNALS:
- *      a) Ranking indicates relative importance (higher = more played)
- *      b) Time range (short_term = recent, long_term = all-time favorites)
- *    - Use smart estimation algorithm to distribute events
- * 
- * =====================================================
- * SMART ESTIMATION ALGORITHM (For Top Tracks Without Dates)
- * =====================================================
- * 
- * Since top tracks represent REAL listening patterns (just without dates):
- * 1. Use affinity ranking to weight event count (rank #1 > rank #50)
- * 2. Use time range context:
- *    - short_term tracks → bias toward recent (last 4 weeks)
- *    - medium_term tracks → spread over last 6 months
- *    - long_term tracks → spread over longer history
- * 3. Apply natural distribution patterns (not uniform random)
- * 4. Clearly mark events as "estimated" via source tag
+ * Generates synthetic listening events for Spotify import sources when exact timestamps are unavailable.
  */
 object SmartListeningEventGenerator {
     
-    // =====================================================
     // Data Classes
-    // =====================================================
     
     /**
      * Represents a track with its known timing data.
@@ -107,9 +63,7 @@ object SmartListeningEventGenerator {
         val generateForTopTracksWithoutDates: Boolean = true  // Enable smart estimation
     )
     
-    // =====================================================
-    // Main Generation Method
-    // =====================================================
+
     
     /**
      * Generate listening events using smart data recovery.
@@ -183,9 +137,7 @@ object SmartListeningEventGenerator {
         return allEvents.sortedBy { it.timestamp }
     }
     
-    // =====================================================
     // Time Machine Events (Liked Tracks with Exact Dates)
-    // =====================================================
     
     /**
      * Generate events around when the track was liked.
@@ -234,9 +186,7 @@ object SmartListeningEventGenerator {
         return events
     }
     
-    // =====================================================
     // Yearly Playlist Events (Your Top Songs 20XX)
-    // =====================================================
     
     /**
      * Generate events distributed throughout a specific year.
@@ -293,9 +243,7 @@ object SmartListeningEventGenerator {
         return events
     }
     
-    // =====================================================
     // Smart Estimation Events (Top Tracks Without Dates)
-    // =====================================================
     
     /**
      * Generate events for top tracks using smart estimation.
@@ -475,9 +423,7 @@ object SmartListeningEventGenerator {
         )
     }
 
-    // =====================================================
     // Event Creation (Simple, No Fake Patterns)
-    // =====================================================
     
     /**
      * Create a simple ListeningEvent without fake patterns.

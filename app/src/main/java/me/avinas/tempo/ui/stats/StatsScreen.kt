@@ -350,7 +350,7 @@ fun StatsScreen(
     }
 }
 
-// --- Helper for Navigation ---
+// Helper for Navigation
 private fun resolveNavigation(
     item: Any,
     onTrack: (Long) -> Unit,
@@ -364,7 +364,7 @@ private fun resolveNavigation(
     }
 }
 
-// --- Components ---
+// Components
 
 
 

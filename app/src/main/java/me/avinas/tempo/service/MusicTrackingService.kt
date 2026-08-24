@@ -58,17 +58,10 @@ import java.util.concurrent.atomic.AtomicLong
  * 1. NotificationListenerService - detects music notifications (primary)
  * 2. MediaSessionManager - tracks playback state changes (fallback/supplement)
  *
- * Handles play, pause, skip, resume to calculate accurate listening duration.
- * 
- * Enhanced features (v2):
- * - Smart track matching with fuzzy deduplication
- * - Session persistence and recovery
- * - Event batching for efficient database writes
- * - Intelligent duration estimation
- * - Comprehensive error handling and retry logic
- * 
+ * Handles play, pause, skip, and resume to calculate accurate listening duration.
+ *
  * Note: Uses manual Hilt injection via EntryPoint because NotificationListenerService
- * is managed by the system and @AndroidEntryPoint doesn't work properly for it.
+ * is managed by the system lifecycle.
  */
 class MusicTrackingService : NotificationListenerService() {
 
@@ -464,9 +457,7 @@ class MusicTrackingService : NotificationListenerService() {
         private val REMASTER_PATTERN = Regex(".*\\d{4}.*remaster.*")  // Remaster with year
     }
     
-    // =====================
-    // Robust Metadata Extraction Helpers
-    // =====================
+    // Metadata extraction helpers
     
     /**
      * Extract artist from MediaMetadata using multiple fallback sources.
@@ -923,10 +914,7 @@ class MusicTrackingService : NotificationListenerService() {
     // (the listener can stay alive for weeks).
     private val localMetadataCache = android.util.LruCache<Long, LocalMediaMetadata>(64)
     
-    // =====================
-    // Log Spam Prevention
-    // =====================
-    // Track what we've already logged to avoid spamming the same messages
+    // Dedup sets to prevent log spam
     
     // LRU-style set of track titles for which we've already logged artist extraction failures
     // Uses LinkedHashMap with access order to limit memory (max 100 entries)
@@ -2014,7 +2002,6 @@ class MusicTrackingService : NotificationListenerService() {
         val notification = sbn.notification
         val extras = notification.extras
 
-        // Extract metadata from notification using robust extraction
         val rawTitle = extras.getCharSequence(EXTRA_TITLE)?.toString()?.trim()
         // Skip notifications with empty titles - metadata hasn't fully arrived yet
         if (rawTitle.isNullOrBlank()) {
@@ -2607,9 +2594,7 @@ class MusicTrackingService : NotificationListenerService() {
         }
     }
     
-    // =====================
-    // Album Art Extraction (Fallback for when MusicBrainz doesn't have cover art)
-    // =====================
+    // Album art extraction from notifications
     
     /**
      * Extract album art bitmap from a notification.
@@ -2959,9 +2944,7 @@ class MusicTrackingService : NotificationListenerService() {
         }
     }
 
-    // =====================
-    // MediaSessionManager Integration (Fallback)
-    // =====================
+    // MediaSessionManager fallback
 
     @Volatile
     private var isMediaSessionManagerInitialized = false
@@ -3204,7 +3187,6 @@ class MusicTrackingService : NotificationListenerService() {
         // Need metadata to process further
         if (metadata == null) return
 
-        // Use robust metadata extraction
         val rawTitle = metadata.getString(MediaMetadata.METADATA_KEY_TITLE) 
             ?: metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
         // Skip metadata with empty titles - metadata hasn't fully arrived yet
@@ -3542,9 +3524,7 @@ class MusicTrackingService : NotificationListenerService() {
 
 
 
-    // =====================
-    // Foreground Service & Notifications
-    // =====================
+    // Foreground service notification
 
     private fun createNotificationChannel() {
         // Main channel for when actively tracking music
@@ -3716,9 +3696,7 @@ class MusicTrackingService : NotificationListenerService() {
         return audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
     }
 
-    // =====================
-    // Lifecycle
-    // =====================
+
 
     override fun onDestroy() {
         Log.i(TAG, "MusicTrackingService destroyed - saving active sessions")

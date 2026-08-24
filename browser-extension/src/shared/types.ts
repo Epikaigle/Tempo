@@ -1,7 +1,6 @@
-// ============================================================================
-// Tempo Stats — Shared TypeScript interfaces
-// Mirrors the desktop Rust models (db/models.rs) and mobile Kotlin entities.
-// ============================================================================
+/**
+ * Shared data structures and message types for Tempo Stats extension.
+ */
 
 /** Raw media state extracted by the content script from a music tab. */
 export interface RawMediaState {
@@ -264,6 +263,8 @@ export enum MessageType {
   RetryFailedPlays = 'RETRY_FAILED_PLAYS',
   /** Popup → Background: get now-playing for a specific tab. */
   GetNowPlayingForTab = 'GET_NOW_PLAYING_FOR_TAB',
+  /** Popup → Background: single round-trip bootstrap state (pairing, now-playing, suggestion, queue count, sync status, connection health, socket state). */
+  GetPopupState = 'GET_POPUP_STATE',
   /** Popup → Background: export plays data. */
   ExportPlays = 'EXPORT_PLAYS',
   /** Content script → Background: request polling interval setting. */
@@ -357,6 +358,8 @@ export enum SocketState {
   Connecting = 'connecting',
   Connected = 'connected',
   Reconnecting = 'reconnecting',
+  /** Deliberately parked after inactivity — revived on the next media event. */
+  IdleSuspended = 'idle',
 }
 
 /** Per-tab tracking state persisted to session storage to survive hibernation. */

@@ -32,6 +32,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -54,6 +55,7 @@ import me.avinas.tempo.data.importexport.ImportExportResult
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
+import me.avinas.tempo.ui.components.TempoSnackbar
 import me.avinas.tempo.ui.settings.BackupRestoreViewModel
 import me.avinas.tempo.ui.settings.DriveOperationState
 import me.avinas.tempo.ui.spotify.SpotifyJsonImportViewModel
@@ -64,7 +66,7 @@ import me.avinas.tempo.ui.youtube.YouTubeMusicImportUiState
 import me.avinas.tempo.data.youtube.YouTubeMusicImportService
 import androidx.compose.material.icons.filled.VideoLibrary
 import me.avinas.tempo.ui.theme.TempoDarkBackground
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.*
 import me.avinas.tempo.ui.utils.adaptiveSizeByCategory
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
 import me.avinas.tempo.utils.FormatUtils.formatBytes
@@ -234,7 +236,7 @@ fun RestoreScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) { TempoSnackbar(it) } }
     ) { paddingValues ->
         me.avinas.tempo.ui.components.DeepOceanBackground(
             modifier = Modifier
@@ -594,22 +596,30 @@ fun RestoreScreen(
         }
     }
     
-    // --- Dialogs ---
+    // Dialogs
 
     // Progress Dialog
     importExportProgress?.let { progress ->
         AlertDialog(
             onDismissRequest = { },
-            title = { Text(if (progress.phase.contains("Import")) "Restoring..." else "Processing...") },
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text(if (progress.phase.contains("Import")) "Restoring..." else "Processing...", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
             text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(progress.phase)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(progress.phase, color = TextSecondary)
                     Spacer(modifier = Modifier.height(8.dp))
                     if (progress.isIndeterminate || progress.total <= 0) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = TempoPrimary, strokeWidth = 2.dp)
                     } else {
                         LinearProgressIndicator(
-                            progress = { (progress.current.toFloat() / progress.total.toFloat()).coerceIn(0f, 1f) }
+                            progress = { (progress.current.toFloat() / progress.total.toFloat()).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                            color = TempoPrimary,
+                            trackColor = GlassFrostSoft
                         )
                     }
                 }
@@ -622,15 +632,25 @@ fun RestoreScreen(
     if (driveOperation is DriveOperationState.Downloading || driveOperation is DriveOperationState.Restoring) {
          AlertDialog(
             onDismissRequest = { },
-            title = { Text("Restoring from Cloud...") },
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text("Restoring from Cloud...", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
             text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     val downloadingState = driveOperation as? DriveOperationState.Downloading
                     if (downloadingState != null) {
                         val currentProgress = downloadingState.progress
-                        LinearProgressIndicator(progress = { currentProgress })
+                        LinearProgressIndicator(
+                            progress = { currentProgress },
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                            color = TempoPrimary,
+                            trackColor = GlassFrostSoft
+                        )
                     } else {
-                         CircularProgressIndicator()
+                         CircularProgressIndicator(color = TempoPrimary, strokeWidth = 2.dp)
                     }
                 }
             },
@@ -642,20 +662,22 @@ fun RestoreScreen(
     conflictDialogUri?.let { uri ->
         AlertDialog(
             onDismissRequest = { viewModel.cancelImport() },
-            title = { Text("Restore Options") },
-            text = { Text("How should we handle data conflicts?") },
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text("Restore Options", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text = { Text("How should we handle data conflicts?", color = TextSecondary) },
             confirmButton = {
                 TextButton(onClick = { viewModel.importData(uri, ImportConflictStrategy.REPLACE) }) {
-                    Text("Replace Everything")
+                    Text("Replace Everything", color = TempoPrimary, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
                 Row {
                     TextButton(onClick = { viewModel.cancelImport() }) {
-                        Text("Cancel")
+                        Text("Cancel", color = TextTertiary)
                     }
                     TextButton(onClick = { viewModel.importData(uri, ImportConflictStrategy.SKIP) }) {
-                        Text("Skip Duplicates")
+                        Text("Skip Duplicates", color = TextSecondary)
                     }
                 }
             }
@@ -667,21 +689,24 @@ fun RestoreScreen(
     driveRestoreDialog?.let { backup ->
         AlertDialog(
             onDismissRequest = { viewModel.cancelDriveRestore() },
-            title = { Text("Restore this backup?") },
-            text = { 
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            icon = { Icon(Icons.Default.CloudDownload, contentDescription = null, tint = TempoPrimary) },
+            title = { Text("Restore this backup?", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
                 Column {
-                    Text("Date: ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(backup.createdAt))}")
-                    Text("Size: ${formatBytes(backup.sizeBytes)}")
+                    Text("Date: ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(backup.createdAt))}", color = TextSecondary)
+                    Text("Size: ${formatBytes(backup.sizeBytes)}", color = TextTertiary)
                 }
             },
             confirmButton = {
                 TextButton(onClick = { viewModel.restoreFromDrive(backup, ImportConflictStrategy.REPLACE) }) {
-                    Text("Restore")
+                    Text("Restore", color = TempoPrimary, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.cancelDriveRestore() }) {
-                    Text("Cancel")
+                    Text("Cancel", color = TextTertiary)
                 }
             }
         )

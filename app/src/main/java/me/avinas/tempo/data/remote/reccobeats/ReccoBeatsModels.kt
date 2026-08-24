@@ -16,9 +16,7 @@ import com.squareup.moshi.JsonClass
  * - Can analyze uploaded audio files (30s max)
  */
 
-// =====================
 // Track Search
-// =====================
 
 /**
  * Response from /v1/track/search endpoint
@@ -86,9 +84,7 @@ data class ReccoBeatsImage(
     val height: Int? = null
 )
 
-// =====================
 // Audio Features
-// =====================
 
 /**
  * Audio features response from /v1/track/:id/audio-features
@@ -222,9 +218,7 @@ data class ReccoBeatsAudioFeatures(
     }
 }
 
-// =====================
 // Artist Search
-// =====================
 
 /**
  * Response from /v1/artist/search endpoint
@@ -254,9 +248,7 @@ data class ReccoBeatsFullArtist(
         get() = images?.maxByOrNull { it.width ?: 0 }?.url
 }
 
-// =====================
 // Album Search
-// =====================
 
 /**
  * Response from /v1/album/search endpoint
@@ -281,9 +273,7 @@ data class ReccoBeatsFullAlbum(
     @field:Json(name = "spotify_id") val spotifyId: String? = null
 )
 
-// =====================
 // Multiple Tracks
-// =====================
 
 /**
  * Response from /v1/track?ids=... endpoint (multiple tracks)
@@ -293,9 +283,7 @@ data class ReccoBeatsMultipleTracksResponse(
     val tracks: List<ReccoBeatsTrack> = emptyList()
 )
 
-// =====================
 // Recommendations
-// =====================
 
 /**
  * Response from /v1/track/recommendation endpoint
@@ -305,9 +293,7 @@ data class ReccoBeatsRecommendationResponse(
     val tracks: List<ReccoBeatsTrack> = emptyList()
 )
 
-// =====================
 // Audio Analysis (File Upload)
-// =====================
 
 /**
  * Response from /v1/analysis/audio-features endpoint (file upload)

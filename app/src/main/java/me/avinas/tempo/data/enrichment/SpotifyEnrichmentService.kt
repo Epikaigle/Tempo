@@ -21,39 +21,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Service responsible for enriching track metadata with Spotify audio features.
- * 
- * =====================================================
- * DATA FLOW PATTERN: Enrichment → Database → UI
- * =====================================================
- * 
- * This service is called ONLY by EnrichmentWorker in background.
- * It should NEVER be called directly from ViewModels or UI components.
- * 
- * Flow:
- * 1. EnrichmentWorker calls this service to fetch data from Spotify API
- * 2. This service stores the fetched data in Room database via DAOs
- * 3. UI components read the cached data from database via Repositories
- * 
- * This pattern ensures:
- * - API calls are made in background, never blocking UI
- * - Rate limits are respected (Spotify has dynamic rate limiting)
- * - UI always has fast access to cached data
- * - App works offline with whatever is cached
- * - User never waits for API responses
- * 
- * =====================================================
- * 
- * This service is OPTIONAL - the app works fully without Spotify connection.
- * When connected, it adds advanced audio analysis (danceability, energy, mood, etc.)
- * that enables advanced statistics like "Your music was 65% energetic this month."
- * 
- * Features:
- * - Search Spotify by song title + artist to find matching track
- * - Fetch audio features (danceability, energy, valence, tempo, etc.)
- * - Store features as JSON in EnrichedMetadata
- * - Respects user's choice to not connect Spotify
- * - Graceful degradation when Spotify is unavailable
+ * Enriches track metadata, album art, and artist details via Spotify Web API.
  */
 @Singleton
 class SpotifyEnrichmentService @Inject constructor(
@@ -292,10 +260,6 @@ class SpotifyEnrichmentService @Inject constructor(
         return "track:\"$cleanTitle\" artist:\"$cleanArtist\""
     }
 
-    /**
-     * Clean track title for better search matching.
-     * Uses ArtistParser utility for robust cleaning.
-     */
     private fun cleanTrackTitle(title: String): String {
         return me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(title)
     }
@@ -1253,9 +1217,7 @@ class SpotifyEnrichmentService @Inject constructor(
         return metadata.spotifyArtistId
     }
     
-    // =====================
-    // Artist-Derived Audio Features (Fallback)
-    // =====================
+
     
     /**
      * Result of deriving audio features from an artist's tracks.

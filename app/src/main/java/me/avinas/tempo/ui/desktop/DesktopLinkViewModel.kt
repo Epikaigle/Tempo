@@ -132,9 +132,7 @@ class DesktopLinkViewModel @Inject constructor(
         }
     }
 
-    // ---------------------------------------------------------------------------
     // Actions
-    // ---------------------------------------------------------------------------
 
     /** Activate the camera scanner. */
     fun startScanning() {
@@ -212,9 +210,7 @@ class DesktopLinkViewModel @Inject constructor(
         }
     }
 
-    // ---------------------------------------------------------------------------
     // Internal
-    // ---------------------------------------------------------------------------
 
     private suspend fun completePairing(qrData: DesktopQrData) {
         // Show processing state so user knows something is happening
@@ -320,9 +316,7 @@ class DesktopLinkViewModel @Inject constructor(
         // background so the desktop can push plays even when the screen isn't open.
     }
 
-    // ---------------------------------------------------------------------------
     // Battery Monitoring
-    // ---------------------------------------------------------------------------
 
     /**
      * Polls battery state every 30 seconds to keep the UI accurate.

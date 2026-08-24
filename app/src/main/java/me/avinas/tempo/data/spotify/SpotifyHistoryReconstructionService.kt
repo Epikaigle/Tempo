@@ -33,69 +33,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Spotify History Reconstruction Service - Honest Data Only Approach.
- * 
- * =====================================================
- * PHILOSOPHY: REAL DATA ONLY, NO FABRICATION
- * =====================================================
- * 
- * We populate stats ONLY when we have real timing evidence.
- * Empty stats are better than fabricated stats.
- * 
- * =====================================================
- * DATA SOURCES & WHAT THEY PROVIDE
- * =====================================================
- * 
- * PHASE 0: THE "GOLDEN SOURCE" (EXACT Play Timestamps! ★)
- * ========================================================
- * Source: GET /me/player/recently-played
- * 
- * This is THE MOST ACCURATE data we can get from Spotify!
- * Returns the last 50 tracks with EXACT played_at timestamps.
- * Example: "2024-01-15T14:32:45.123Z" - we know EXACTLY when they played it.
- * 
- * ★ CREATES LISTENING EVENTS WITH EXACT TIMESTAMPS (100% real data!)
- * 
- * PHASE 1: THE "TIME MACHINE" (Exact Added-At Timestamps ✓)
- * ========================================================
- * Source: GET /me/tracks (Saved Tracks)
- * 
- * Spotify stores the EXACT added_at timestamp for every saved song.
- * If a user liked a song on June 12, 2023, we KNOW they were listening
- * to it around that time. We generate events around that date.
- * 
- * ✓ CREATES LISTENING EVENTS (we have real dates)
- * 
- * PHASE 2: THE "ARTIFACT HUNTER" (Year Context ✓)
- * =============================================================
- * Source: GET /me/playlists → "Your Top Songs 20XX"
- * 
- * If a track is in "Your Top Songs 2023", we know they listened
- * during 2023. We distribute plays throughout that year.
- * 
- * ✓ CREATES LISTENING EVENTS (we have year context)
- * 
- * PHASE 3: TOP TRACKS (Library Only, No Events)
- * =======================================================
- * Source: GET /me/top/tracks (Affinity Data)
- * 
- * We DON'T have timestamps - only ranking/affinity.
- * These tracks are added to the LIBRARY with metadata and genres,
- * but we DO NOT create listening events.
- * 
- * ✗ NO LISTENING EVENTS (we don't know WHEN they listened)
- * ✓ LIBRARY POPULATION (tracks + artists + genres)
- * 
- * =====================================================
- * WHAT WE DON'T DO
- * =====================================================
- * 
- * - NO circadian rhythm bias (we don't know what time they listened)
- * - NO session clustering (we don't know their session patterns)
- * - NO "realistic" fake patterns (that's still fabrication)
- * - NO events for tracks without real timing data
- * 
- * The Spotlight screen should show "Not enough data" rather than lies.
+ * Reconstructs listening history from Spotify API data sources.
  */
 @Singleton
 class SpotifyHistoryReconstructionService @Inject constructor(
@@ -113,10 +51,6 @@ class SpotifyHistoryReconstructionService @Inject constructor(
 
     companion object {
         private const val TAG = "SpotifyHistoryRecon"
-        
-        // =====================================================
-        // SMART FETCH CONFIGURATION
-        // =====================================================
         // No artificial limits - fetch ALL data from Spotify
         // Use smart batching and rate limiting instead
         
@@ -224,9 +158,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         TOP_TRACKS(1)         // Lower priority - affinity data only
     }
     
-    // =====================================================
     // Main Reconstruction Method
-    // =====================================================
     
     /**
      * Perform full listening history reconstruction.
@@ -281,9 +213,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         var yearlyPlaylistsFound = 0
         var topTracksUsed = 0
         
-        // =====================================================
         // PHASE 0: Fetch Artists First (for genres)
-        // =====================================================
         progressCallback?.onProgress(0, 100, "Preparation", "Fetching artist data...")
         
         try {
@@ -295,9 +225,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         }
         yield()
         
-        // =====================================================
         // PHASE 0.5: RECENTLY PLAYED - The Golden Source
-        // =====================================================
         // This is THE MOST ACCURATE data we can get from Spotify!
         // Returns the last 50 plays with EXACT timestamps.
         // We create events directly with real timestamps - no estimation.
@@ -346,9 +274,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         }
         yield()
         
-        // =====================================================
         // PHASE 1: TIME MACHINE - Liked Tracks
-        // =====================================================
         progressCallback?.onProgress(5, 100, "Time Machine", "Analyzing saved tracks...")
         
         try {
@@ -388,9 +314,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         }
         yield()
         
-        // =====================================================
         // PHASE 2: ARTIFACT HUNTER - Yearly Playlists
-        // =====================================================
         // SMART: Process only the most recent 3 years immediately
         // Queue older playlists for background processing
         progressCallback?.onProgress(30, 100, "Artifact Hunter", "Searching for yearly playlists...")
@@ -468,9 +392,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         }
         yield()
         
-        // =====================================================
         // PHASE 3: SMART MIXER - Top Tracks with Affinity
-        // =====================================================
         progressCallback?.onProgress(55, 100, "Smart Mixer", "Fetching top tracks...")
         
         try {
@@ -516,9 +438,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         }
         yield()
         
-        // =====================================================
         // PHASE 4: Process & Store All Tracks
-        // =====================================================
         progressCallback?.onProgress(75, 100, "Processing", "Creating tracks and metadata...")
         
         var tracksCreated = 0
@@ -571,9 +491,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         Log.i(TAG, "Created $tracksCreated tracks, prepared ${trackAffinities.size} for event generation")
         yield()
         
-        // =====================================================
         // PHASE 5: Generate Listening Events
-        // =====================================================
         progressCallback?.onProgress(85, 100, "Generating History", "Creating listening events...")
         
         var eventsCreated = 0
@@ -626,9 +544,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
             errors.add("Event generation: ${e.message}")
         }
         
-        // =====================================================
         // PHASE 5b: Insert Recently Played Events (EXACT timestamps)
-        // =====================================================
         // These are the golden events - real play times from Spotify!
         var recentlyPlayedEventsInserted = 0
         var recentlyPlayedDuplicatesSkipped = 0
@@ -713,9 +629,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         }
     }
     
-    // =====================================================
     // Background Processing for Pending Playlists
-    // =====================================================
     
     /**
      * Process pending yearly playlists in the background.
@@ -840,9 +754,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         val isSuccess: Boolean get() = errors.isEmpty()
     }
     
-    // =====================================================
     // Data Fetching Methods
-    // =====================================================
     
     /**
      * Fetch recently played tracks with EXACT timestamps.
@@ -1075,14 +987,12 @@ class SpotifyHistoryReconstructionService @Inject constructor(
     }
 
     /**
-     * Fetch artists and collect their genres.
-     * SMART: Fetches from all time ranges to get comprehensive genre data.
+     * Fetch artists and collect their genres across all time ranges.
      */
     private suspend fun fetchArtistsWithGenres(
         authHeader: String,
         genreMap: MutableMap<String, List<String>>
     ) {
-        // Fetch from all time ranges for comprehensive genre coverage
         for (timeRange in listOf(
             SpotifyTopItemsService.TIME_RANGE_LONG,
             SpotifyTopItemsService.TIME_RANGE_MEDIUM,
@@ -1110,9 +1020,7 @@ class SpotifyHistoryReconstructionService @Inject constructor(
         Log.i(TAG, "Collected genres for ${genreMap.size} artists")
     }
     
-    // =====================================================
     // Track Processing
-    // =====================================================
     
     /**
      * Ensure a local track exists. Returns (wasCreated, trackId).

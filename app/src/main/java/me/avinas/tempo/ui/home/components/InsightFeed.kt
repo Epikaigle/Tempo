@@ -457,21 +457,6 @@ fun VibeHeader(
     onLevelClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val energyColor = androidx.compose.ui.graphics.lerp(
-        me.avinas.tempo.ui.theme.VibeEnergyLow,
-        me.avinas.tempo.ui.theme.VibeEnergyHigh,
-        energy
-    )
-    val valenceColor = androidx.compose.ui.graphics.lerp(
-        me.avinas.tempo.ui.theme.VibeValenceLow,
-        me.avinas.tempo.ui.theme.VibeValenceHigh,
-        valence
-    )
-    
-    val breatheAlpha = 0.55f
-    val scaleAnim = 1f
-    val wavePhase = 0f
-    
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -484,29 +469,6 @@ fun VibeHeader(
         val nameTextStyle = MaterialTheme.typography.titleMedium
         val levelNumStyle = MaterialTheme.typography.titleSmall
         val titleStyle = MaterialTheme.typography.labelMedium
-
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(energyColor.copy(alpha = 0.38f), Color.Transparent),
-                    center = Offset(width * 0.20f, height * 0.50f),
-                    radius = width * 0.60f
-                ),
-                center = Offset(width * 0.20f, height * 0.50f),
-                radius = width * 0.60f
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(valenceColor.copy(alpha = 0.24f), Color.Transparent),
-                    center = Offset(width * 0.80f, height * 0.50f),
-                    radius = width * 0.50f
-                ),
-                center = Offset(width * 0.80f, height * 0.50f),
-                radius = width * 0.50f
-            )
-        }
 
         Column(
             modifier = Modifier

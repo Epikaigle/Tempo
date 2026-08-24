@@ -34,79 +34,6 @@ import java.util.concurrent.TimeUnit
 
 /**
  * WorkManager worker that enriches unenriched tracks with metadata from external APIs.
- * 
- * =====================================================
- * DATA FLOW PATTERN: Enrichment → Database → UI
- * =====================================================
- * 
- * This worker is the ONLY component that makes external API calls for enrichment.
- * It follows a strict data flow pattern to minimize API requests and ensure
- * consistent data management:
- * 
- * 1. ENRICHMENT (This Worker)
- *    - Makes API calls to Spotify, ReccoBeats, MusicBrainz, and Last.fm
- *    - Processes tracks in background batches
- *    - Respects rate limits and retries with backoff
- *    
- * 2. DATABASE (Room via DAOs)
- *    - All enriched data is stored locally
- *    - Acts as the single source of truth
- *    - Caches data indefinitely (songs don't change)
- *    
- * 3. UI (ViewModels via Repositories)
- *    - NEVER makes direct API calls
- *    - Always reads from database cache
- *    - Gets fast, offline-first experience
- * 
- * Benefits:
- * - API requests are batched and scheduled efficiently
- * - UI is never blocked waiting for API responses
- * - Works offline with cached data
- * - Rate limits are respected in background
- * - User gets instant access to whatever data is cached
- * 
- * =====================================================
- * MODULAR Enrichment Strategy (Fallback Chain):
- * 
- * AUDIO FEATURES FALLBACK (since Spotify deprecated audio-features API for indie devs):
- * Spotify History → MusicBrainz/Last.fm → ReccoBeats DB → ReccoBeats Analysis → Local Media → Spotify Artist Features
- * 
- * Data sources are combined to get the best possible metadata:
- * 1. Spotify (if user connected) - Most accurate: album, artist, artwork, ISRC
- *    - Audio features from user's listening history (if track was played before with OAuth)
- * 2. MusicBrainz - Community curated: genres, tags, record labels, release info  
- * 3. Last.fm - Excellent tag/genre data, similar artists
- * 4. ReccoBeats DB - FREE audio features lookup (if track exists in their database)
- * 5. ReccoBeats Analysis - Analyze Spotify's 30s preview audio (slower, requires preview URL)
- * 6. Local MediaSession - Fallback from music player metadata
- * 7. Spotify Artist Features - Derive approximate audio features from artist's top tracks (last resort)
- * 
- * The key insight: Sources are NOT mutually exclusive. If one source provides
- * partial data, we SUPPLEMENT with other sources rather than skipping entirely.
- * 
- * Flow:
- * - If Spotify connected → Use Spotify for album, artist, artwork, ISRC
- *   - Check if we have cached audio features from user's history
- *   - If no audio features → Supplement with MusicBrainz/Last.fm for genres/tags
- *   - If still no audio features → Try ReccoBeats DB lookup
- *   - If ReccoBeats DB fails → Try ReccoBeats Analysis (30s preview)
- *   - If still nothing → Try deriving from Spotify Artist's top tracks features
- * - If Spotify not connected → Use MusicBrainz as primary source
- *   - If MusicBrainz fails → Try Last.fm
- *   - If still no audio features → Try ReccoBeats DB/Analysis
- * - If no external source finds track → Fall back to MediaSession data
- * 
- * This multi-source approach ensures best coverage especially for:
- * - Regional/indie music (Indian hip-hop, etc.)
- * - Recently released tracks
- * - Non-Western music catalogs
- * 
- * Features:
- * - Prioritizes frequently played tracks
- * - Respects API rate limits
- * - Retries failed enrichments with backoff
- * - Refreshes stale cache (>6 months old)
- * - Runs periodically in background
  */
 @HiltWorker
 class EnrichmentWorker @AssistedInject constructor(
@@ -325,9 +252,12 @@ class EnrichmentWorker @AssistedInject constructor(
          * appear to do nothing.
          */
         fun enqueueEnrichAll(context: Context, total: Int) {
+            // NOTE: Expedited work only supports network/storage constraints, so
+            // setRequiresBatteryNotLow() must NOT be used here — it throws
+            // IllegalArgumentException at build() time. This is user-initiated
+            // work, so running regardless of battery level is acceptable.
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
-                .setRequiresBatteryNotLow(true)
                 .build()
             val inputData = workDataOf(
                 "is_enrich_all" to true,
@@ -541,31 +471,17 @@ class EnrichmentWorker @AssistedInject constructor(
                 Log.d(TAG, "Track $trackId: No genres from external sources, attempting inference from artist's other tracks")
                 
                 val primaryArtist = ArtistParser.getPrimaryArtist(track.artist)
-                val artistGenreJsonList = enrichedMetadataDao.getGenresFromArtistOtherTracks(
+                val rawGenreColumns = enrichedMetadataDao.getGenresFromArtistOtherTracks(
                     artistName = primaryArtist,
                     excludeTrackId = trackId,
                     limit = 5
                 )
                 
-                // Parse genre JSON strings and find the most common ones
-                val allGenres = mutableListOf<String>()
-                for (genreJson in artistGenreJsonList) {
-                    try {
-                        // Genres are stored as JSON arrays like ["pop", "rock"]
-                        val cleanJson = genreJson.trim()
-                        if (cleanJson.startsWith("[") && cleanJson.endsWith("]")) {
-                            val genreList = cleanJson
-                                .removePrefix("[").removeSuffix("]")
-                                .split(",")
-                                .map { it.trim().removeSurrounding("\"") }
-                                .filter { it.isNotBlank() }
-                            allGenres.addAll(genreList)
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to parse genre JSON: $genreJson", e)
-                    }
-                }
-                
+                // Columns historically stored genres as JSON-array text; current
+                // format is "|||"-delimited. Converters.repairListColumnValue
+                // handles both, so inference works across both generations of rows.
+                val allGenres = rawGenreColumns
+                    .flatMap { me.avinas.tempo.data.local.Converters.repairListColumnValue(it) }
                 if (allGenres.isNotEmpty()) {
                     // Find the most common genre
                     val genreCounts = allGenres.groupingBy { it.lowercase() }.eachCount()

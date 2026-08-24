@@ -7,10 +7,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ArtistDao {
     
-    // =====================
     // Basic CRUD Operations
-    // =====================
-    
     @Query("SELECT * FROM artists WHERE id = :id")
     fun getById(id: Long): Flow<Artist?>
 
@@ -41,64 +38,33 @@ interface ArtistDao {
     @Query("DELETE FROM artists WHERE id = :id")
     suspend fun deleteById(id: Long)
     
-    // =====================
     // Lookup by Name
-    // =====================
-    
-    /**
-     * Find artist by exact name match (case-insensitive).
-     */
     @Query("SELECT * FROM artists WHERE LOWER(name) = LOWER(:name) LIMIT 1")
     suspend fun getArtistByName(name: String): Artist?
     
-    /**
-     * Find artist by normalized name (for deduplication).
-     */
     @Query("SELECT * FROM artists WHERE normalized_name = :normalizedName LIMIT 1")
     suspend fun getArtistByNormalizedName(normalizedName: String): Artist?
     
-    /**
-     * Find artists by normalized names in a single batch query.
-     */
     @Query("SELECT * FROM artists WHERE normalized_name IN (:normalizedNames)")
     suspend fun getArtistsByNormalizedNames(normalizedNames: List<String>): List<Artist>
     
-    /**
-     * Find artist by partial name match (case-insensitive).
-     */
     @Query("SELECT * FROM artists WHERE LOWER(name) LIKE '%' || LOWER(:name) || '%' LIMIT 1")
     suspend fun getArtistByNamePartial(name: String): Artist?
     
-    /**
-     * Search artists by name pattern.
-     */
     @Query("SELECT * FROM artists WHERE name LIKE :query ORDER BY name ASC")
     fun search(query: String): Flow<List<Artist>>
     
-    /**
-     * Search artists by name pattern (sync).
-     */
     @Query("SELECT * FROM artists WHERE LOWER(name) LIKE '%' || LOWER(:query) || '%' ORDER BY name ASC LIMIT 50")
     suspend fun searchSync(query: String): List<Artist>
     
-    // =====================
     // Lookup by External IDs
-    // =====================
-    
     @Query("SELECT * FROM artists WHERE spotify_id = :spotifyId LIMIT 1")
     suspend fun getArtistBySpotifyId(spotifyId: String): Artist?
     
     @Query("SELECT * FROM artists WHERE musicbrainz_id = :musicbrainzId LIMIT 1")
     suspend fun getArtistByMusicBrainzId(musicbrainzId: String): Artist?
     
-    // =====================
     // Get or Create Operations
-    // =====================
-    
-    /**
-     * Insert artist if not exists, return existing or new ID.
-     * Uses normalized name for deduplication.
-     */
     @Transaction
     suspend fun getOrCreate(name: String, imageUrl: String? = null): Artist {
         val normalizedName = Artist.normalizeName(name)
@@ -125,31 +91,17 @@ interface ArtistDao {
         }
     }
     
-    // =====================
     // Batch Operations
-    // =====================
-    
-    /**
-     * Get multiple artists by IDs.
-     */
     @Query("SELECT * FROM artists WHERE id IN (:ids)")
     suspend fun getArtistsByIds(ids: List<Long>): List<Artist>
     
-    /**
-     * Get artists with images.
-     */
     @Query("SELECT * FROM artists WHERE image_url IS NOT NULL AND image_url != '' ORDER BY name ASC")
     suspend fun getArtistsWithImages(): List<Artist>
     
-    /**
-     * Get artists without images (for enrichment).
-     */
     @Query("SELECT * FROM artists WHERE image_url IS NULL OR image_url = '' LIMIT :limit")
     suspend fun getArtistsWithoutImages(limit: Int = 50): List<Artist>
     
-    // =====================
     // Update Operations
-    // =====================
     
     /**
      * Update artist image URL.
@@ -180,6 +132,14 @@ interface ArtistDao {
      */
     @Query("UPDATE artists SET genres = :genres WHERE id = :artistId")
     suspend fun updateGenres(artistId: Long, genres: List<String>)
+
+    /**
+     * IDs of artist rows whose genres column still holds the legacy JSON-array
+     * format (e.g. `["jazz", "cool jazz"]`) instead of the `|||`-delimited format.
+     * Used by the one-time list column repair.
+     */
+    @Query("SELECT id FROM artists WHERE genres LIKE '[%' AND genres LIKE '%]'")
+    suspend fun getArtistIdsWithLegacyGenreFormat(): List<Long>
 
     /**
      * Update artist image URL by Spotify ID.

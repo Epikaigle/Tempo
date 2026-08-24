@@ -35,8 +35,8 @@ android {
         applicationId = "me.avinas.tempo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 483
-        versionName = "4.8.3"
+        versionCode = 485
+        versionName = "4.8.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -46,17 +46,13 @@ android {
         testOptions {
             unitTests.isReturnDefaultValues = true
         }
-        
-        // API Configuration via BuildConfig
+
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"${localProperties.getProperty("SPOTIFY_CLIENT_ID", "")}\"")
         buildConfigField("String", "SPOTIFY_REDIRECT_URI", "\"tempo://spotify-callback\"")
         buildConfigField("String", "MUSICBRAINZ_USER_AGENT", "\"Tempo/${versionName} (https://github.com/avinaxhroy/Tempo; avinashroy.bh@gmail.com)\"")
         buildConfigField("Long", "MUSICBRAINZ_RATE_LIMIT_MS", "1000L")
         buildConfigField("String", "LASTFM_API_KEY", "\"${localProperties.getProperty("LASTFM_API_KEY", "")}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "")}\"")
-        
-        // Ensure only supported languages are kept in the APK
-        // Use androidResources.localeFilters instead of deprecated resConfigs
     }
     
     buildTypes {
@@ -65,7 +61,6 @@ android {
             isShrinkResources = false
         }
         release {
-            // Enable R8 for code shrinking and obfuscation
             isMinifyEnabled = true
             isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")
@@ -78,15 +73,12 @@ android {
     
     bundle {
         language {
-            // Enable split for languages to reduce APK size
             enableSplit = true
         }
         density {
-            // Enable split for screen densities to reduce APK size
             enableSplit = true
         }
         abi {
-            // Enable split for ABIs to reduce APK size
             enableSplit = true
         }
     }
@@ -126,7 +118,6 @@ android {
     }
 }
 
-// Configure Hilt to use KSP
 ksp {
     arg("dagger.formatGeneratedSource", "disabled")
     arg("dagger.fastInit", "enabled")
@@ -142,87 +133,66 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.androidx.core.ktx)
 
-    // Material Components
     implementation("com.google.android.material:material:1.12.0") 
-
-    // AppCompat (for per-app language support)
     implementation("androidx.appcompat:appcompat:1.7.0")
 
-    // Compose
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
-    implementation(libs.compose.material) // Material 2
+    implementation(libs.compose.material)
     implementation(libs.compose.material.icons)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling)
     implementation(libs.compose.activity)
     
-    // Glance (Widgets)
     implementation(libs.glance.appwidget)
     implementation(libs.glance.material3)
 
-    // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
-    // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
-    // Coroutines
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
 
-    // Retrofit & OkHttp
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.moshi)
     implementation(libs.okhttp.logging)
 
-    // Coil
     implementation(libs.coil)
     implementation(libs.coil.core)
     implementation(libs.coil.network.okhttp)
 
-    // WorkManager
     implementation(libs.work.runtime.ktx)
 
-    // Charts (MPAndroidChart) and Vico
     implementation(libs.mpandroidchart)
     implementation(libs.vico.compose)
 
-    // Palette
     implementation(libs.palette.ktx)
 
-    // Hilt WorkManager integration
     implementation(libs.hilt.work)
     ksp("androidx.hilt:hilt-compiler:1.2.0") 
 
-    // Lifecycle
     implementation(libs.lifecycle.runtime.ktx)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
 
-    // Navigation
     implementation(libs.navigation.compose)
     implementation(libs.hilt.navigation.compose)
 
-    // DataStore Preferences
     implementation(libs.datastore.preferences)
 
-    // Security - EncryptedSharedPreferences
     implementation(libs.security.crypto)
 
-    // Moshi Kotlin adapter
     implementation(libs.moshi.kotlin)
     ksp(libs.moshi.codegen)
 
-    // Credential Manager for Google Sign-In
     implementation(libs.credentials)
     implementation(libs.credentials.play.services.auth)
     implementation(libs.googleid)
 
-    // Google Drive REST API
     implementation(libs.google.api.client) {
         exclude(group = "org.apache.httpcomponents")
     }
@@ -231,13 +201,9 @@ dependencies {
     }
     implementation(libs.google.http.client)
 
-    // Play Services Auth
     implementation(libs.play.services.auth)
-
-    // Coroutines extension for Play Services
     implementation(libs.play.services.coroutines)
 
-    // Google Play In-App Review
     implementation(libs.play.review)
     implementation(libs.play.review.ktx)
 
@@ -248,14 +214,12 @@ dependencies {
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
 
-    // Testing
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.sqlite.jdbc)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.espresso.core)
     
-    // Baseline Profiles
     implementation(libs.profileinstaller)
 }
 

@@ -16,19 +16,12 @@ import javax.inject.Named
 import javax.inject.Singleton
 
 /**
- * Hilt module providing iTunes Search API client.
- * 
- * iTunes Search API is completely free with no authentication required.
- * Rate limit: ~20 requests per minute.
+ * Provides iTunes Search API client.
  */
 @Module
 @InstallIn(SingletonComponent::class)
 object iTunesModule {
 
-    /**
-     * OkHttpClient configured for iTunes Search API.
-     * No special interceptors needed - API is very simple.
-     */
     @Provides
     @Singleton
     @Named("itunes")

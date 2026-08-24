@@ -42,9 +42,6 @@ import me.avinas.tempo.ui.theme.TempoInfo
 import me.avinas.tempo.ui.theme.TempoPrimary
 import me.avinas.tempo.ui.theme.TempoSuccessBright
 
-/* Hallmark · component: TodaysListenWidget · genre: atmospheric
- * tinted glass — teal anchor, single accent, restrained LIVE pulse
- */
 
 @Composable
 fun TodaysListenWidget(

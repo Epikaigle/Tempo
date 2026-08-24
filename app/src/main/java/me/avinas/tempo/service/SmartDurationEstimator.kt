@@ -6,13 +6,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Smart duration estimator for tracks when duration is not available from metadata.
- * 
- * Uses multiple strategies to estimate track duration:
- * 1. Learning from previous plays of the same track
- * 2. Learning from similar tracks (same artist/album)
- * 3. Genre-based averages
- * 4. Statistical fallbacks based on observed patterns
+ * Estimates track duration using historical play samples, artist averages,
+ * genre averages, or global heuristics when metadata does not provide duration.
  */
 class SmartDurationEstimator {
     
@@ -229,9 +224,7 @@ class SmartDurationEstimator {
         genreStats.clear()
     }
     
-    // =====================
-    // Internal Helpers
-    // =====================
+
     
     private fun generateTrackKey(title: String, artist: String): String {
         val normalizedTitle = title.trim().lowercase()

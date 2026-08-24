@@ -3,7 +3,7 @@ package me.avinas.tempo.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ──────────────────────────────────────────────────────────────
-// Hallmark palette — anchor hue 168 (teal). Neutrals tinted
+// App color palette — anchor hue 168 (teal). Neutrals tinted
 // toward anchor; no pure black/white; one accent.
 // ──────────────────────────────────────────────────────────────
 

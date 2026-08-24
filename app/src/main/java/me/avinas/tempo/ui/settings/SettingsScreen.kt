@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
@@ -38,7 +40,8 @@ import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.SettingsOption
 import me.avinas.tempo.ui.components.SettingsSectionHeader
 import me.avinas.tempo.ui.components.SettingsSwitch
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.components.TempoSnackbar
+import me.avinas.tempo.ui.theme.*
 import me.avinas.tempo.utils.OemBackgroundHelper
 import me.avinas.tempo.utils.ReviewUtils
 import me.avinas.tempo.utils.BatteryUtils
@@ -199,7 +202,7 @@ fun SettingsScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) { TempoSnackbar(it) } }
     ) { padding ->
         DeepOceanBackground {
             Column(
@@ -724,17 +727,23 @@ fun SettingsScreen(
     if (showNameDialog) {
         AlertDialog(
             onDismissRequest = { showNameDialog = false },
-            title = { Text(stringResource(R.string.settings_update_name)) },
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text(stringResource(R.string.settings_update_name), color = TextPrimary, fontWeight = FontWeight.SemiBold) },
             text = {
                 OutlinedTextField(
                     value = tempName,
                     onValueChange = { tempName = it },
-                    label = { Text(stringResource(R.string.settings_display_name)) },
+                    label = { Text(stringResource(R.string.settings_display_name), color = TextTertiary) },
                     singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                         focusedBorderColor = TempoRed,
-                         focusedLabelColor = TempoRed,
-                         cursorColor = TempoRed
+                         focusedBorderColor = TempoPrimary,
+                         focusedLabelColor = TempoPrimary,
+                         cursorColor = TempoPrimary,
+                         focusedTextColor = TextPrimary,
+                         unfocusedTextColor = TextPrimary,
+                         unfocusedBorderColor = TextQuaternary
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -747,14 +756,15 @@ fun SettingsScreen(
                             showNameDialog = false
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = TempoRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = TempoPrimary, contentColor = TextOnAccent),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(stringResource(R.string.settings_save))
+                    Text(stringResource(R.string.settings_save), fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showNameDialog = false }) {
-                    Text(stringResource(R.string.settings_cancel), color = MaterialTheme.colorScheme.onSurface)
+                    Text(stringResource(R.string.settings_cancel), color = TextTertiary)
                 }
             }
         )
@@ -764,13 +774,16 @@ fun SettingsScreen(
     if (showLanguageDialog) {
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
-            title = { Text(stringResource(R.string.settings_select_language)) },
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text(stringResource(R.string.settings_select_language), color = TextPrimary, fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
                     languages.forEach { (langTag, langName) ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
                                 .clickable {
                                     val localeList = LocaleListCompat.forLanguageTags(langTag)
                                     AppCompatDelegate.setApplicationLocales(localeList)
@@ -789,13 +802,14 @@ fun SettingsScreen(
                                     (context as? Activity)?.recreate()
                                 },
                                 colors = RadioButtonDefaults.colors(
-                                    selectedColor = TempoRed
+                                    selectedColor = TempoPrimary
                                 )
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
                                 text = langName,
-                                style = MaterialTheme.typography.bodyLarge
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = TextPrimary
                             )
                         }
                     }
@@ -804,7 +818,7 @@ fun SettingsScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showLanguageDialog = false }) {
-                    Text(stringResource(R.string.settings_cancel), color = MaterialTheme.colorScheme.onSurface)
+                    Text(stringResource(R.string.settings_cancel), color = TextTertiary)
                 }
             }
         )
@@ -814,7 +828,9 @@ fun SettingsScreen(
     importExportProgress?.let { progress ->
         AlertDialog(
             onDismissRequest = { /* Cannot dismiss while in progress */ },
-            title = { Text(stringResource(R.string.settings_processing)) },
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text(stringResource(R.string.settings_processing), color = TextPrimary, fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -823,20 +839,24 @@ fun SettingsScreen(
                     Text(
                         text = progress.phase,
                         style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     if (progress.isIndeterminate) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = TempoPrimary, strokeWidth = 2.dp)
                     } else {
                         LinearProgressIndicator(
                             progress = { progress.percentage },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                            color = TempoPrimary,
+                            trackColor = GlassFrostSoft
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "${progress.current}%",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextTertiary
                         )
                     }
                 }
@@ -849,26 +869,28 @@ fun SettingsScreen(
     conflictDialogUri?.let { uri ->
         AlertDialog(
             onDismissRequest = { viewModel.cancelImport() },
-            title = { Text(stringResource(R.string.settings_import_options)) },
-            text = { 
-                Text(stringResource(R.string.settings_import_conflict_msg)) 
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text(stringResource(R.string.settings_import_options), color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Text(stringResource(R.string.settings_import_conflict_msg), color = TextSecondary)
             },
             confirmButton = {
                 TextButton(
                     onClick = { viewModel.importData(uri, ImportConflictStrategy.REPLACE) }
                 ) {
-                    Text(stringResource(R.string.settings_replace_existing))
+                    Text(stringResource(R.string.settings_replace_existing), color = TempoPrimary, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
                 Row {
                     TextButton(onClick = { viewModel.cancelImport() }) {
-                        Text(stringResource(R.string.settings_cancel))
+                        Text(stringResource(R.string.settings_cancel), color = TextTertiary)
                     }
                     TextButton(
                         onClick = { viewModel.importData(uri, ImportConflictStrategy.SKIP) }
                     ) {
-                        Text(stringResource(R.string.settings_skip_duplicates))
+                        Text(stringResource(R.string.settings_skip_duplicates), color = TextSecondary)
                     }
                 }
             }
@@ -878,8 +900,10 @@ fun SettingsScreen(
     if (showClearDataDialog) {
         AlertDialog(
             onDismissRequest = { showClearDataDialog = false },
-            title = { Text(stringResource(R.string.settings_clear_data_title)) },
-            text = { Text(stringResource(R.string.settings_clear_data_msg)) },
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text(stringResource(R.string.settings_clear_data_title), color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text = { Text(stringResource(R.string.settings_clear_data_msg), color = TextSecondary) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -887,14 +911,14 @@ fun SettingsScreen(
                         showClearDataDialog = false
                         onNavigateToOnboarding?.invoke()
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.textButtonColors(contentColor = TempoError)
                 ) {
-                    Text(stringResource(R.string.settings_clear_everything))
+                    Text(stringResource(R.string.settings_clear_everything), fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDataDialog = false }) {
-                    Text(stringResource(R.string.settings_cancel))
+                    Text(stringResource(R.string.settings_cancel), color = TextTertiary)
                 }
             }
         )

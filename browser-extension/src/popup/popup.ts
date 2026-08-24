@@ -1,22 +1,17 @@
-// ============================================================================
-// Tempo Stats — Popup Logic
-// QR-based pairing that mirrors the desktop app experience:
-//   1. Extension generates QR (same format as Tempo Desktop)
-//   2. User scans with Tempo app → phone stores token, starts server
-//   3. Extension auto-discovers phone (same hotspot/subnet IPs as sync.ts)
-//   4. Done — no manual IP/port entry required
-//
-// Fallback: if auto-discovery fails within 30s, show a one-field IP input.
-// ============================================================================
+/**
+ * Popup UI logic for Tempo Stats extension.
+ * Manages QR-based pairing, network auto-discovery, live playback state,
+ * play queue inspection, and artist filtering.
+ */
 
 
 import { MessageType } from '../shared/types';
-import type { NowPlaying, Play, Settings, PairingInfo, YoutubeChannelSuggestion } from '../shared/types';
-import { generateQrDataUrl } from './qr';
+import type { NowPlaying, Play, Settings, PairingInfo, YoutubeChannelSuggestion, ConnectionHealth } from '../shared/types';
+import type { SocketState } from '../shared/types';
 import { signRequest, validatePingResponse, pairingAgeDays } from '../shared/security';
 import type { SyncStatus } from '../background/sync';
 
-// ---- Constants -------------------------------------------------------------
+// Constants
 
 const QR_TOKEN_KEY    = 'tempo_pairing_token';
 const QR_EXPIRY_KEY   = 'tempo_pairing_token_expiry';
@@ -38,7 +33,7 @@ const HOTSPOT_SEEDS = [
  */
 const MDNS_HOSTNAME = 'tempo-phone.local';
 
-// ---- WebRTC local IP discovery ---------------------------------------------
+// WebRTC local IP discovery
 //
 // RTCPeerConnection exposes the machine's actual LAN IP via ICE candidates.
 // This works in Chrome extensions with no extra permissions and takes ~200ms.
@@ -92,7 +87,7 @@ async function getLocalIPsViaWebRTC(): Promise<string[]> {
   });
 }
 
-// ---- Direct discovery ping -------------------------------------------------
+// Direct discovery ping
 //
 // For DISCOVERY we fetch directly from the popup (not via service worker IPC)
 // with an 800ms abort timeout. Non-existent hosts fail in <10ms (TCP RST or
@@ -125,15 +120,17 @@ async function discoveryPing(ip: string, token: string): Promise<string | null> 
   }
 }
 
-// ---- State -----------------------------------------------------------------
+// State
 
 type DiscoveryState = 'qr' | 'scanning' | 'manual' | 'success';
 
 let currentNowPlaying: NowPlaying | null = null;
+let lastNpIdentity = '';     // identity gate for now-playing DOM writes
 let currentYoutubeSuggestion: YoutubeChannelSuggestion | null = null;
 let currentPairing: PairingInfo | null = null;
 let currentQueueCount = 0;
 let currentPairingToken: string | null = null;
+let qrExpiryCache = 0;       // mirror of the stored QR expiry so the countdown tick needs no storage reads
 const dismissedPopupYoutubeChannels = new Set<string>();
 
 // Tracks the current discovery UI screen so tab switches don't reset it.
@@ -145,7 +142,7 @@ let qrCountdownTimer: ReturnType<typeof setInterval> | null = null;
 let discoveryTimer: ReturnType<typeof setInterval> | null = null;
 let discoveryAborted = false;
 
-// ---- Tab Switching ---------------------------------------------------------
+// Tab Switching
 
 const tabBtns   = document.querySelectorAll<HTMLButtonElement>('.tab-btn');
 const tabPanels = document.querySelectorAll<HTMLElement>('.tab-panel');
@@ -191,13 +188,13 @@ document.querySelector('.tab-nav')?.addEventListener('keydown', (e) => {
   next.focus();
 });
 
-// ---- Utility ---------------------------------------------------------------
+// Utility
 
 function send(type: string, data?: any): Promise<any> {
   return chrome.runtime.sendMessage({ type, ...data });
 }
 
-// ---- Toast feedback --------------------------------------------------------
+// Toast feedback
 
 let toastTimer: number | undefined;
 
@@ -252,9 +249,12 @@ function timeAgo(dateStr: string): string {
 }
 
 function escapeHtml(text: string): string {
-  const d = document.createElement('div');
-  d.textContent = text;
-  return d.innerHTML;
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 const VALID_STATUSES = new Set(['queued', 'synced', 'failed']);
@@ -262,7 +262,7 @@ function sanitizeStatus(s: string): string {
   return VALID_STATUSES.has(s) && /^[a-z]+$/.test(s) ? s : 'unknown';
 }
 
-// ---- Home State ------------------------------------------------------------
+// Home State
 
 function refreshHomeState() {
   const pill    = document.getElementById('home-status-pill')!;
@@ -327,68 +327,85 @@ function refreshHomeState() {
   emCopy.textContent  = 'Play on YouTube Music, Spotify Web, SoundCloud, Apple Music, or Tidal.';
 }
 
-// ---- Now Playing -----------------------------------------------------------
+// Now Playing
 
 async function refreshNowPlaying() {
   try {
-    const [resp, youtubeResp] = await Promise.all([
-      send(MessageType.GetNowPlaying),
-      send(MessageType.GetYoutubeChannelSuggestion),
-    ]);
+    // GetNowPlaying now carries `suggestion` too — one message instead of two.
+    const resp = await send(MessageType.GetNowPlaying);
     const np: NowPlaying | null = resp?.nowPlaying ?? null;
+    const suggestion: YoutubeChannelSuggestion | null = resp?.suggestion ?? null;
     currentNowPlaying = np;
-    const suggestion: YoutubeChannelSuggestion | null = youtubeResp?.suggestion ?? null;
     currentYoutubeSuggestion = suggestion &&
       !dismissedPopupYoutubeChannels.has(suggestion.channel.toLowerCase().trim())
         ? suggestion
         : null;
+    renderNowPlaying(np, currentYoutubeSuggestion);
+  } catch (err) {
+    console.warn('[Tempo] refreshNowPlaying failed:', err);
+  }
+}
 
-    const emptyEl   = document.getElementById('np-empty')!;
-    const contentEl = document.getElementById('np-content')!;
-    const youtubeEl = document.getElementById('youtube-suggestion')!;
+/**
+ * Apply now-playing + suggestion state to the DOM. Identity-gated: the heavy
+ * card writes (class, title/artist/album/source, playing-state classes) run
+ * only when `${title}|${artist}|${album}|${isPlaying}|${site}` changes; cheap
+ * scalars that move continuously (progress, counts, mute badge) update every
+ * tick regardless.
+ */
+function renderNowPlaying(np: NowPlaying | null, suggestion: YoutubeChannelSuggestion | null) {
+  const emptyEl   = document.getElementById('np-empty')!;
+  const contentEl = document.getElementById('np-content')!;
+  const youtubeEl = document.getElementById('youtube-suggestion')!;
 
-    if (!np?.title) {
-      if (currentYoutubeSuggestion) {
-        emptyEl.style.display = 'none';
-        youtubeEl.style.display = '';
-        document.getElementById('youtube-suggestion-channel')!.textContent = currentYoutubeSuggestion.channel;
-        document.getElementById('youtube-suggestion-track')!.textContent = currentYoutubeSuggestion.title
-          ? currentYoutubeSuggestion.title
-          : 'Allow this channel to track YouTube.com plays.';
-      } else {
-        emptyEl.style.display = currentPairing ? '' : 'none';
-        youtubeEl.style.display = 'none';
-      }
-      contentEl.style.display = 'none';
-      refreshHomeState();
-      return;
+  if (!np?.title) {
+    lastNpIdentity = '';
+    if (suggestion) {
+      emptyEl.style.display = 'none';
+      youtubeEl.style.display = '';
+      document.getElementById('youtube-suggestion-channel')!.textContent = suggestion.channel;
+      document.getElementById('youtube-suggestion-track')!.textContent = suggestion.title
+        ? suggestion.title
+        : 'Allow this channel to track YouTube.com plays.';
+    } else {
+      emptyEl.style.display = currentPairing ? '' : 'none';
+      youtubeEl.style.display = 'none';
     }
+    contentEl.style.display = 'none';
+    refreshHomeState();
+    return;
+  }
+
+  const sourceName = np.site ?? np.sourceApp ?? '';
+  const identity = `${np.title}|${np.artist}|${np.album}|${np.isPlaying}|${sourceName}`;
+
+  // Always-on scalars — these change every tick even for the same track
+  document.getElementById('np-listened')!.textContent    = formatDuration(np.listenedMs);
+  document.getElementById('np-duration')!.textContent    = np.durationMs > 0 ? `/ ${formatDuration(np.durationMs)}` : '';
+  document.getElementById('np-completion')!.textContent  = `${Math.round(np.completionPercentage)}%`;
+  (document.getElementById('np-progress') as HTMLElement).style.width = `${Math.min(np.completionPercentage, 100)}%`;
+  const pauseSpan = document.querySelector('#np-pause-count span');
+  const seekSpan = document.querySelector('#np-seek-count span');
+  const replaySpan = document.querySelector('#np-replay-count span');
+  if (pauseSpan) pauseSpan.textContent = String(np.pauseCount);
+  if (seekSpan) seekSpan.textContent = String(np.seekCount);
+  if (replaySpan) replaySpan.textContent = String(np.replayCount);
+  document.getElementById('np-mute-badge')!.style.display  = np.isMuted ? '' : 'none';
+
+  if (identity !== lastNpIdentity) {
+    lastNpIdentity = identity;
 
     emptyEl.style.display   = 'none';
     youtubeEl.style.display = 'none';
     contentEl.style.display = '';
 
-    const sourceName = np.site ?? np.sourceApp ?? '';
     const sourceClass = sourceName.toLowerCase().replace(/[^a-z0-9]/g, '-');
     contentEl.className = `np-card src-${sourceClass}`;
 
     document.getElementById('np-title')!.textContent       = np.title;
     document.getElementById('np-artist')!.textContent      = np.artist || 'Unknown Artist';
     document.getElementById('np-album')!.textContent       = np.album || '';
-    document.getElementById('np-listened')!.textContent    = formatDuration(np.listenedMs);
-    document.getElementById('np-duration')!.textContent    = np.durationMs > 0 ? `/ ${formatDuration(np.durationMs)}` : '';
-    document.getElementById('np-completion')!.textContent  = `${Math.round(np.completionPercentage)}%`;
     document.getElementById('np-source')!.textContent      = sourceName;
-    (document.getElementById('np-progress') as HTMLElement).style.width = `${Math.min(np.completionPercentage, 100)}%`;
-    
-    const pauseSpan = document.querySelector('#np-pause-count span');
-    const seekSpan = document.querySelector('#np-seek-count span');
-    const replaySpan = document.querySelector('#np-replay-count span');
-    if (pauseSpan) pauseSpan.textContent = String(np.pauseCount);
-    if (seekSpan) seekSpan.textContent = String(np.seekCount);
-    if (replaySpan) replaySpan.textContent = String(np.replayCount);
-
-    document.getElementById('np-mute-badge')!.style.display  = np.isMuted ? '' : 'none';
 
     // Toggle disk rotation & audio visualizer bar bouncing based on playback state
     const diskEl = document.getElementById('np-disk');
@@ -415,20 +432,19 @@ async function refreshNowPlaying() {
         artistEl.classList.remove('np-artist-glowing');
       }
     }
-
-    refreshHomeState();
-  } catch (err) {
-    console.warn('[Tempo] refreshNowPlaying failed:', err);
   }
+
+  refreshHomeState();
 }
 
 function startNpPolling() {
   if (npPollTimer) return;
-  refreshNowPlaying();
+  // First paint comes from the bootstrap payload (see init()); the poll then
+  // keeps state fresh every 2 s as before.
   npPollTimer = setInterval(refreshNowPlaying, 2000);
 }
 
-// ---- Queue -----------------------------------------------------------------
+// Queue
 
 const MAX_INPUT_LEN = 100;
 
@@ -490,6 +506,39 @@ function renderSyncStatus(el: HTMLElement, status: SyncStatus | null | undefined
   el.className = 'sync-status';
 }
 
+function applyQueueCount(count: number) {
+  currentQueueCount = count;
+  document.getElementById('queue-count')!.textContent = String(currentQueueCount);
+}
+
+function renderQueueItems(plays: Play[]) {
+  const listEl = document.getElementById('queue-list')!;
+
+  listEl.innerHTML = plays.length === 0
+    ? '<div class="empty-state"><p class="text-muted">No plays in queue</p></div>'
+    : plays.map(p => `
+        <div class="queue-item" data-id="${p.id ?? ''}">
+          <div class="queue-item-info">
+            <div class="queue-item-title">${escapeHtml(p.title)}</div>
+            <div class="queue-item-artist">${escapeHtml(p.artist || 'Unknown')} · ${formatDuration(p.listenedMs)}</div>
+          </div>
+          <span class="queue-item-status ${sanitizeStatus(p.status)}">${sanitizeStatus(p.status)}</span>
+          <button class="queue-item-delete" data-id="${p.id ?? ''}" title="Remove this track" aria-label="Delete track">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>`).join('');
+}
+
+/** Full list fetch — only needed when the Queue tab is actually open. */
+async function refreshQueueItems() {
+  try {
+    const itemsR = await send(MessageType.GetQueueItems);
+    renderQueueItems(itemsR?.plays ?? []);
+  } catch (err) {
+    console.warn('[Tempo] refreshQueueItems failed:', err);
+  }
+}
+
 async function refreshQueue() {
   try {
     const [countR, itemsR, statusR] = await Promise.all([
@@ -498,45 +547,35 @@ async function refreshQueue() {
       send(MessageType.GetSyncStatus),
     ]);
 
-    currentQueueCount = countR?.count ?? 0;
-    document.getElementById('queue-count')!.textContent = String(currentQueueCount);
+    applyQueueCount(countR?.count ?? 0);
 
     const statusEl = document.getElementById('sync-status')!;
     renderSyncStatus(statusEl, statusR);
 
-    const listEl = document.getElementById('queue-list')!;
-    const plays: Play[] = itemsR?.plays ?? [];
-
-    listEl.innerHTML = plays.length === 0
-      ? '<div class="empty-state"><p class="text-muted">No plays in queue</p></div>'
-      : plays.map(p => `
-          <div class="queue-item" data-id="${p.id ?? ''}">
-            <div class="queue-item-info">
-              <div class="queue-item-title">${escapeHtml(p.title)}</div>
-              <div class="queue-item-artist">${escapeHtml(p.artist || 'Unknown')} · ${formatDuration(p.listenedMs)}</div>
-            </div>
-            <span class="queue-item-status ${sanitizeStatus(p.status)}">${sanitizeStatus(p.status)}</span>
-            <button class="queue-item-delete" data-id="${p.id ?? ''}" title="Remove this track" aria-label="Delete track">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-            </button>
-          </div>`).join('');
-
-    // Event delegation — one listener per render handles all delete buttons
-    listEl.querySelectorAll<HTMLButtonElement>('.queue-item-delete').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const id = parseInt(btn.dataset.id ?? '', 10);
-        if (!id) return;
-        btn.disabled = true;
-        await send(MessageType.DeletePlay, { id });
-        refreshQueue();
-      });
-    });
+    renderQueueItems(itemsR?.plays ?? []);
 
     refreshHomeState();
   } catch (err) {
     console.warn('[Tempo] refreshQueue failed:', err);
   }
+}
+
+// Event delegation — ONE listener on the list handles every delete button,
+// no matter how many times the list re-renders.
+let queueListDelegationBound = false;
+const queueListEl = document.getElementById('queue-list');
+if (queueListEl && !queueListDelegationBound) {
+  queueListDelegationBound = true;
+  queueListEl.addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest('.queue-item-delete') as HTMLButtonElement | null;
+    if (!btn) return;
+    e.stopPropagation();
+    const id = parseInt(btn.dataset.id ?? '', 10);
+    if (!id) return;
+    btn.disabled = true;
+    await send(MessageType.DeletePlay, { id });
+    refreshQueue();
+  });
 }
 
 document.getElementById('btn-retry-failed')?.addEventListener('click', async () => {
@@ -579,19 +618,7 @@ document.getElementById('btn-clear-queue')?.addEventListener('click', (e) => {
 });
 
 
-// ============================================================================
-//  PAIRING — WhatsApp Web-style: zero extra steps, auto-discovers on QR show
-// ============================================================================
-//
-//  Flow:
-//    1. User clicks Pair tab → permission requested (user gesture ✓)
-//    2. QR renders → auto-discovery starts immediately in background
-//    3. Status bar below QR updates live: "Looking for phone… attempt N"
-//    4. Phone scans QR → phone starts HTTP server → extension pings and finds it
-//    5. Automatically transitions to connected state — zero extra clicks
-//    6. If not found after 30 s → manual IP fallback slides in below QR
-//    7. QR expiry → auto-refreshes and restarts discovery
-// ============================================================================
+// Pairing flow: generates QR token, starts discovery, falls back to manual IP if needed.
 
 /** Generate a 32-byte cryptographically random hex token. */
 function generateToken(): string {
@@ -606,15 +633,19 @@ async function ensureToken(): Promise<string> {
     await chrome.storage.local.get([QR_TOKEN_KEY, QR_EXPIRY_KEY]);
 
   const expiry = typeof exp === 'number' ? exp : 0;
-  if (tok && expiry > 0 && Date.now() < expiry && !currentPairing) return tok as string;
+  if (tok && expiry > 0 && Date.now() < expiry && !currentPairing) {
+    qrExpiryCache = expiry;
+    return tok as string;
+  }
 
   const token    = generateToken();
   const newExpiry = Date.now() + QR_TOKEN_TTL_MS;
+  qrExpiryCache = newExpiry;
   await chrome.storage.local.set({ [QR_TOKEN_KEY]: token, [QR_EXPIRY_KEY]: newExpiry });
   return token;
 }
 
-// ---- Status bar helpers ----------------------------------------------------
+// Status bar helpers
 
 function setQrStatus(
   mode: 'idle' | 'searching' | 'found' | 'error',
@@ -644,7 +675,7 @@ function setQrStatus(
   }
 }
 
-// ---- QR rendering ----------------------------------------------------------
+// QR rendering
 
 async function renderQr() {
   const loading = document.getElementById('qr-loading')!;
@@ -658,6 +689,10 @@ async function renderQr() {
   try {
     const token = await ensureToken();
     currentPairingToken = token;
+    // Static import intentionally avoided: ./qr is code-split into its own lazy
+    // chunk so it never lands in the popup's critical path (build.mjs enables
+    // esbuild splitting for this exact dynamic import).
+    const { generateQrDataUrl } = await import('./qr');
 
     const payload = JSON.stringify({ token, device_name: 'Tempo Stats (Browser)', v: 2 });
     img.src = generateQrDataUrl(payload, 180);
@@ -711,14 +746,23 @@ function startQrCountdown() {
   if (qrCountdownTimer) clearInterval(qrCountdownTimer);
   const expiryEl = document.getElementById('qr-expiry')!;
 
-  const tick = async () => {
+  // Storage is read at most once per countdown; every subsequent tick derives
+  // the remaining time purely from the in-memory mirror + Date.now().
+  const loadExpiry = async () => {
+    if (qrExpiryCache > 0) return;
     const { [QR_EXPIRY_KEY]: exp } = await chrome.storage.local.get(QR_EXPIRY_KEY);
-    const remaining = Math.max(0, (exp as number ?? 0) - Date.now());
+    qrExpiryCache = typeof exp === 'number' ? exp : 0;
+  };
+
+  const tick = async () => {
+    await loadExpiry();
+    const remaining = Math.max(0, qrExpiryCache - Date.now());
     const m = Math.floor(remaining / 60000);
     const s = Math.floor((remaining % 60000) / 1000);
 
     if (remaining <= 0) {
       clearInterval(qrCountdownTimer!); qrCountdownTimer = null;
+      qrExpiryCache = 0;
       if (expiryEl) {
         expiryEl.textContent = 'QR expired — ';
         expiryEl.style.color = 'var(--danger)';
@@ -748,6 +792,7 @@ document.getElementById('btn-refresh-qr')?.addEventListener('click', async () =>
   discoveryUIState = 'qr';
   hideManualSection();
   await chrome.storage.local.remove([QR_TOKEN_KEY, QR_EXPIRY_KEY]);
+  qrExpiryCache = 0;
   currentPairingToken = null;
   await renderQr();
 });
@@ -765,7 +810,7 @@ document.getElementById('btn-start-scan')?.addEventListener('click', async () =>
   }
 });
 
-// ---- Discovery state helpers -----------------------------------------------
+// Discovery state helpers
 
 function setDiscoveryState(state: DiscoveryState, _detail?: string) {
   discoveryUIState = state;
@@ -786,7 +831,7 @@ function hideManualSection() {
   if (manWrapper) manWrapper.open = false;
 }
 
-// ---- Auto-discovery --------------------------------------------------------
+// Auto-discovery
 
 /** Try to authenticate-ping a single IP. Returns { device, latencyMs } on success. */
 async function tryPing(ip: string, token: string): Promise<{ device: string; latencyMs: number } | null> {
@@ -816,7 +861,7 @@ function stopDiscovery() {
   if ((window as any)._tempoStopElapsed) (window as any)._tempoStopElapsed();
 }
 
-// ---- mDNS fast-path probe --------------------------------------------------
+// mDNS fast-path probe
 //
 // mDNS (.local) resolution requires an OS multicast DNS lookup which takes
 // 500-2000ms — far longer than the 800ms abort used for subnet scanning.
@@ -1046,6 +1091,7 @@ async function completePairing(ip: string, port: number, token: string, deviceNa
   try {
     await send(MessageType.SetPairing, { pairing });
     await chrome.storage.local.remove([QR_TOKEN_KEY, QR_EXPIRY_KEY]);
+    qrExpiryCache = 0;
     currentPairingToken = null;
     discoveryUIState = 'success';
     await refreshPairing();
@@ -1090,16 +1136,19 @@ document.getElementById('btn-back-to-qr')?.addEventListener('click', async () =>
   discoveryUIState = 'qr';
   hideManualSection();
   await chrome.storage.local.remove([QR_TOKEN_KEY, QR_EXPIRY_KEY]);
+  qrExpiryCache = 0;
   currentPairingToken = null;
   await renderQr();
 });
 
-// ---- Pairing refresh -------------------------------------------------------
+// Pairing refresh
 
-async function refreshPairing() {
+async function refreshPairing(prefetched?: PairingInfo | null) {
   try {
-    const resp = await send(MessageType.GetPairing);
-    const pairing: PairingInfo | null = resp?.pairing ?? null;
+    // Bootstrap passes the already-fetched pairing; other callers still fetch.
+    const pairing: PairingInfo | null = prefetched !== undefined
+      ? prefetched
+      : (await send(MessageType.GetPairing))?.pairing ?? null;
     currentPairing = pairing;
 
     const connectedEl = document.getElementById('pairing-connected')!;
@@ -1195,7 +1244,7 @@ document.getElementById('btn-test-connected')?.addEventListener('click', async (
   </svg> Test Connection`;
 });
 
-// ---- Rebuild Connection -------------------------------------------------------
+// Rebuild Connection
 //
 // Runs a fresh, step-by-step discovery flow without requiring unpair:
 //   Step 1 — mDNS  (tempo-phone.local)   ~1-2 s  — heals IP changes instantly
@@ -1203,7 +1252,7 @@ document.getElementById('btn-test-connected')?.addEventListener('click', async (
 //   Step 3 — Subnet scan via WebRTC      up to ~15 s — full /24 sweep
 //
 // On success, the stored phoneIp is updated so future auto-syncs use the new address.
-// ------------------------------------------------------------------------------
+
 
 /** Helper: render a step row into the rebuild-steps container. */
 function addRebuildStep(icon: string, text: string, state: 'active' | 'success' | 'failed' | 'pending'): HTMLElement {
@@ -1362,13 +1411,14 @@ document.getElementById('btn-unpair')?.addEventListener('click', (e) => {
   armToConfirm(btn, 'Confirm unpair?', async () => {
     await send(MessageType.RemovePairing);
     await chrome.storage.local.remove([QR_TOKEN_KEY, QR_EXPIRY_KEY]);
+    qrExpiryCache = 0;
     currentPairingToken = null;
     toast('Unpaired from device', 'success');
     refreshPairing();
   });
 });
 
-// ---- Nav helpers -----------------------------------------------------------
+// Nav helpers
 
 document.getElementById('home-primary-action')?.addEventListener('click', () => {
   if (currentYoutubeSuggestion) { allowCurrentYoutubeChannel(); return; }
@@ -1415,7 +1465,7 @@ document.getElementById('btn-youtube-allow')?.addEventListener('click', allowCur
 document.getElementById('btn-youtube-not-now')?.addEventListener('click', dismissCurrentYoutubeSuggestion);
 document.getElementById('btn-youtube-never')?.addEventListener('click', blockCurrentYoutubeChannel);
 
-// ---- Known Artists ---------------------------------------------------------
+// Known Artists
 
 async function refreshArtists() {
   try {
@@ -1442,7 +1492,26 @@ async function refreshArtists() {
   } catch (err) { console.warn('[Tempo] refreshArtists failed:', err); }
 }
 
+// One delegated click listener per tag-list container, bound once; renderTagList
+// swaps the active onRemove handler per container instead of rebinding every row.
+const tagRemoveHandlers = new Map<string, (item: string) => void>();
+
+function bindTagListDelegation(cid: string) {
+  const c = document.getElementById(cid);
+  if (!c || tagRemoveHandlers.has(cid)) return;
+  tagRemoveHandlers.set(cid, () => {});
+  c.addEventListener('click', (e) => {
+    const target = (e.target as HTMLElement).closest('.tag-remove') as HTMLElement | null;
+    if (!target) return;
+    const item = target.dataset.item;
+    if (item == null) return;
+    tagRemoveHandlers.get(cid)?.(item);
+  });
+}
+
 function renderTagList(cid: string, items: string[], onRemove: (item: string) => void) {
+  bindTagListDelegation(cid);
+  tagRemoveHandlers.set(cid, onRemove);
   const c = document.getElementById(cid)!;
   if (items.length === 0) {
     c.innerHTML = '<span class="text-muted">None added yet</span>';
@@ -1451,9 +1520,6 @@ function renderTagList(cid: string, items: string[], onRemove: (item: string) =>
   c.innerHTML = items.map(item =>
     `<span class="tag">${escapeHtml(item)}<button type="button" class="tag-remove" data-item="${escapeHtml(item)}" aria-label="Remove ${escapeHtml(item)}">×</button></span>`
   ).join('');
-  c.querySelectorAll('.tag-remove').forEach(el =>
-    el.addEventListener('click', () => onRemove((el as HTMLElement).dataset.item!))
-  );
 }
 
 ['btn-add-artist', 'btn-add-channel'].forEach(btnId => {
@@ -1486,7 +1552,7 @@ function renderTagList(cid: string, items: string[], onRemove: (item: string) =>
   });
 });
 
-// ---- Settings --------------------------------------------------------------
+// Settings
 
 const DEFAULT_SETTINGS: Settings = {
   trackingEnabled: true,
@@ -1550,7 +1616,7 @@ document.getElementById('btn-export')?.addEventListener('click', async () => {
   } catch { toast('Export failed', 'error'); }
 });
 
-// ---- Background message listener ------------------------------------------
+// Background message listener
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === MessageType.PairingInvalidated) {
@@ -1574,11 +1640,34 @@ function updateSocketIndicator(state: string): void {
     connecting: 'Connecting…',
     reconnecting: 'Reconnecting…',
     disconnected: 'Offline',
+    idle: 'Idle · connects on play',
   };
 
   el.textContent = labels[state] ?? state;
   el.className = `socket-indicator socket-${state}`;
   el.style.display = state === 'disconnected' ? 'none' : '';
+}
+
+/**
+ * Paint connection health + socket state. Split from refreshConnectionHealth so
+ * the bootstrap payload can feed the same renderer without extra messages.
+ */
+function applyConnectionHealth(health: ConnectionHealth | null | undefined, socketState: SocketState | string | null | undefined): void {
+  const statusEl = document.getElementById('paired-status');
+  if (!statusEl || !currentPairing) return;
+
+  if (socketState === 'connected') {
+    statusEl.textContent = '✓ Live connection';
+    statusEl.style.color = 'var(--success)';
+  } else if (health?.healthy) {
+    statusEl.textContent = '✓ Reachable';
+    statusEl.style.color = 'var(--success)';
+  } else if ((health?.consecutiveFailures ?? 0) > 0) {
+    statusEl.textContent = `⚠ ${health!.consecutiveFailures} failed pings`;
+    statusEl.style.color = 'var(--warning)';
+  }
+
+  updateSocketIndicator(socketState ?? 'disconnected');
 }
 
 async function refreshConnectionHealth(): Promise<void> {
@@ -1587,60 +1676,61 @@ async function refreshConnectionHealth(): Promise<void> {
       send(MessageType.GetConnectionHealth),
       send(MessageType.GetSocketState),
     ]);
-
-    const health = healthResp?.health;
-    const statusEl = document.getElementById('paired-status');
-    if (!statusEl || !currentPairing) return;
-
-    if (socketResp?.state === 'connected') {
-      statusEl.textContent = '✓ Live connection';
-      statusEl.style.color = 'var(--success)';
-    } else if (health?.healthy) {
-      statusEl.textContent = '✓ Reachable';
-      statusEl.style.color = 'var(--success)';
-    } else if (health?.consecutiveFailures > 0) {
-      statusEl.textContent = `⚠ ${health.consecutiveFailures} failed pings`;
-      statusEl.style.color = 'var(--warning)';
-    }
-
-    updateSocketIndicator(socketResp?.state ?? 'disconnected');
+    applyConnectionHealth(healthResp?.health, socketResp?.state);
   } catch {}
 }
 
-// ---- Init ------------------------------------------------------------------
+// Init
 
-let _autoConnectRunning = false;
+/** Shape of the GET_POPUP_STATE bootstrap response (see background/service-worker). */
+interface PopupBootstrapState {
+  pairing: PairingInfo | null;
+  nowPlaying: NowPlaying | null;
+  ytSuggestion: YoutubeChannelSuggestion | null;
+  queueCount: number;
+  syncStatus: SyncStatus | null;
+  connectionHealth: ConnectionHealth | null;
+  socketState: SocketState | null;
+}
 
-async function autoConnectIfPaired() {
-  if (_autoConnectRunning) return;
-  _autoConnectRunning = true;
-
+/**
+ * Single-round-trip bootstrap: one GET_POPUP_STATE message returns everything
+ * the popup needs for its first paint. Per-tab detail (queue items, settings,
+ * artists) stays lazy until its tab is actually opened.
+ */
+async function init(): Promise<void> {
+  let state: PopupBootstrapState | null = null;
   try {
-    const resp = await send(MessageType.GetPairing);
-    const pairing: PairingInfo | null = resp?.pairing ?? null;
-    if (!pairing || !pairing.phoneIp || !pairing.authToken) return;
-
-    const dev = await discoveryPing(pairing.phoneIp, pairing.authToken);
-    if (dev !== null) {
-      console.log('[Tempo] Auto-connect: phone found at', pairing.phoneIp);
-    } else {
-      console.log('[Tempo] Auto-connect: phone not found at', pairing.phoneIp);
-    }
+    state = await send(MessageType.GetPopupState);
   } catch (err) {
-    console.warn('[Tempo] Auto-connect failed:', err);
-  } finally {
-    _autoConnectRunning = false;
+    console.warn('[Tempo] popup bootstrap failed:', err);
+  }
+
+  applyQueueCount(state?.queueCount ?? 0);
+  renderSyncStatus(document.getElementById('sync-status')!, state?.syncStatus ?? null);
+
+  // Seed now-playing so the first paint needs no extra round trip; the 2 s poll
+  // takes over from here.
+  currentNowPlaying = state?.nowPlaying ?? null;
+  const suggestion: YoutubeChannelSuggestion | null = state?.ytSuggestion ?? null;
+  currentYoutubeSuggestion = suggestion &&
+    !dismissedPopupYoutubeChannels.has(suggestion.channel.toLowerCase().trim())
+      ? suggestion
+      : null;
+
+  // On bootstrap failure pass undefined so refreshPairing still fetches
+  // (null would wrongly render the unpaired state).
+  await refreshPairing(state ? state.pairing : undefined);
+  applyConnectionHealth(state?.connectionHealth, state?.socketState);
+  renderNowPlaying(currentNowPlaying, currentYoutubeSuggestion);
+  startNpPolling();
+
+  if (!state) await refreshNowPlaying(); // bootstrap failed — fall back to the per-message path
+  // Show the real manifest version instead of a hardcoded string.
+  const versionEl = document.getElementById('version-info');
+  if (versionEl) {
+    versionEl.textContent = `Tempo Stats v${chrome.runtime.getManifest().version}`;
   }
 }
 
-// Show the real manifest version instead of a hardcoded string.
-const versionEl = document.getElementById('version-info');
-if (versionEl) {
-  versionEl.textContent = `Tempo Stats v${chrome.runtime.getManifest().version}`;
-}
-
-startNpPolling();
-refreshPairing();
-refreshQueue();
-refreshConnectionHealth();
-autoConnectIfPaired();
+void init();

@@ -30,8 +30,6 @@ import kotlin.math.roundToInt
 
 /**
  * A draggable, editable text element on the canvas.
- * 
- * Uses the same robust gesture pattern as CanvasCard.
  */
 @Composable
 fun CanvasText(

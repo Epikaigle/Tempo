@@ -38,9 +38,7 @@ interface ReccoBeatsApi {
         const val BASE_URL = "https://api.reccobeats.com/"
     }
 
-    // =====================
     // Track Search
-    // =====================
 
     /**
      * Search for tracks by artist/song name.
@@ -55,9 +53,7 @@ interface ReccoBeatsApi {
         @Query("q") query: String
     ): Response<ReccoBeatsSearchResponse>
 
-    // =====================
     // Track Details
-    // =====================
 
     /**
      * Get complete track information by ReccoBeats ID.
@@ -75,9 +71,7 @@ interface ReccoBeatsApi {
         @Path("id") id: String
     ): Response<ReccoBeatsTrack>
 
-    // =====================
     // Audio Features (MOST IMPORTANT!)
-    // =====================
 
     /**
      * Get audio features for a track.
@@ -99,9 +93,7 @@ interface ReccoBeatsApi {
         @Path("id") id: String
     ): Response<ReccoBeatsAudioFeatures>
 
-    // =====================
     // Multiple Tracks
-    // =====================
 
     /**
      * Get multiple tracks at once.
@@ -118,9 +110,7 @@ interface ReccoBeatsApi {
         @Query("ids") ids: List<String>
     ): Response<ReccoBeatsMultipleTracksResponse>
 
-    // =====================
     // Recommendations
-    // =====================
 
     /**
      * Get track recommendations based on seed tracks.
@@ -137,9 +127,7 @@ interface ReccoBeatsApi {
         @Query("size") size: Int = 10
     ): Response<ReccoBeatsRecommendationResponse>
 
-    // =====================
     // Artist Search
-    // =====================
 
     /**
      * Search for artists by name.
@@ -154,9 +142,7 @@ interface ReccoBeatsApi {
         @Query("q") query: String
     ): Response<ReccoBeatsArtistSearchResponse>
 
-    // =====================
     // Album Search
-    // =====================
 
     /**
      * Search for albums by name.
@@ -171,9 +157,7 @@ interface ReccoBeatsApi {
         @Query("q") query: String
     ): Response<ReccoBeatsAlbumSearchResponse>
 
-    // =====================
     // Audio Analysis (File Upload)
-    // =====================
 
     /**
      * Extract audio features from an uploaded audio file.

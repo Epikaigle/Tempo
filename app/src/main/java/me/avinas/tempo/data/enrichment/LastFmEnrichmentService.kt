@@ -12,30 +12,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Service responsible for enriching track metadata with Last.fm ARTIST-LEVEL tags/genres.
- * 
- * =====================================================
- * DATA FLOW PATTERN: Enrichment → Database → UI
- * =====================================================
- * 
- * This service is called ONLY by EnrichmentWorker in background.
- * It should NEVER be called directly from ViewModels or UI components.
- * 
- * IMPORTANT: Last.fm is used for ARTIST-BASED genre data only.
- * Track-level genre lookup is unreliable across most music APIs.
- * For track-level genre, use iTunes (the only reliable source).
- * For track-level genre with artist fallback, use MusicBrainz.
- * 
- * Last.fm is excellent for:
- * - Artist genre/tag data (community-curated, very accurate)
- * - Artist images (when other sources fail)
- * 
- * Last.fm is used as a SUPPLEMENT to iTunes/MusicBrainz, not a primary source.
- * It fills in artist-level genres/tags when:
- * - iTunes couldn't provide track-level genre
- * - MusicBrainz couldn't find the recording
- * 
- * =====================================================
+ * Enriches track metadata with Last.fm artist tags, genres, and artist image fallbacks.
  */
 @Singleton
 class LastFmEnrichmentService @Inject constructor(
@@ -426,9 +403,7 @@ class LastFmEnrichmentService @Inject constructor(
         return null
     }
     
-    // =====================================================
-    // MBID LOOKUP FOR MUSICBRAINZ OPTIMIZATION
-    // =====================================================
+
     
     /**
      * Result of MBID lookup from Last.fm.

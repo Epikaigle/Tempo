@@ -3,6 +3,7 @@ package me.avinas.tempo.ui.settings
 import android.app.Activity
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -44,7 +45,8 @@ import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.ui.components.SettingsSwitch
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.components.TempoSnackbar
+import me.avinas.tempo.ui.theme.*
 import me.avinas.tempo.utils.FormatUtils.formatBytes
 import java.text.SimpleDateFormat
 import java.util.*
@@ -83,7 +85,15 @@ fun BackupRestoreScreen(
     
     // Track if we've shown the activity error to avoid spamming
     var activityErrorShown by remember { mutableStateOf(false) }
-    
+
+    // A backup/restore runs on an application scope and survives this screen,
+    // but blocking back while one is active prevents the user from accidentally
+    // leaving in the middle of a long operation with no visible progress.
+    val isOperationActive = driveOperation is DriveOperationState.Downloading ||
+        driveOperation is DriveOperationState.Restoring ||
+        driveOperation is DriveOperationState.Uploading ||
+        importExportProgress != null
+    BackHandler(enabled = isOperationActive) { }
     // Handle sign-in request from ViewModel
     val signInRequested by viewModel.signInRequested.collectAsState()
     val sessionRestoreRequested by viewModel.sessionRestoreRequested.collectAsState()
@@ -206,7 +216,7 @@ fun BackupRestoreScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) { TempoSnackbar(it) } }
     ) { padding ->
         DeepOceanBackground {
             Column(
@@ -273,11 +283,15 @@ fun BackupRestoreScreen(
     importExportProgress?.let { progress ->
         AlertDialog(
             onDismissRequest = { /* Cannot dismiss while in progress */ },
-            title = { 
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = {
                 Text(
-                    if (progress.phase.contains("Import", ignoreCase = true)) "Importing..." 
-                    else "Exporting..."
-                ) 
+                    if (progress.phase.contains("Import", ignoreCase = true)) "Importing..."
+                    else "Exporting...",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
             },
             text = {
                 Column(
@@ -287,20 +301,24 @@ fun BackupRestoreScreen(
                     Text(
                         text = progress.phase,
                         style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     if (progress.isIndeterminate || progress.total <= 0) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = TempoPrimary, strokeWidth = 2.dp)
                     } else {
                         LinearProgressIndicator(
                             progress = { (progress.current.toFloat() / progress.total.toFloat()).coerceIn(0f, 1f) },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                            color = TempoPrimary,
+                            trackColor = GlassFrostSoft
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "${progress.current}/${progress.total}",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextTertiary
                         )
                     }
                 }
@@ -313,26 +331,28 @@ fun BackupRestoreScreen(
     conflictDialogUri?.let { uri ->
         AlertDialog(
             onDismissRequest = { viewModel.cancelImport() },
-            title = { Text("Import Options") },
-            text = { 
-                Text("What should happen when importing data that already exists in the app?") 
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text("Import Options", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Text("What should happen when importing data that already exists in the app?", color = TextSecondary)
             },
             confirmButton = {
                 TextButton(
                     onClick = { viewModel.importData(uri, ImportConflictStrategy.REPLACE) }
                 ) {
-                    Text("Replace Existing")
+                    Text("Replace Existing", color = TempoPrimary, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
                 Row {
                     TextButton(onClick = { viewModel.cancelImport() }) {
-                        Text("Cancel")
+                        Text("Cancel", color = TextTertiary)
                     }
                     TextButton(
                         onClick = { viewModel.importData(uri, ImportConflictStrategy.SKIP) }
                     ) {
-                        Text("Skip Duplicates")
+                        Text("Skip Duplicates", color = TextSecondary)
                     }
                 }
             }
@@ -343,28 +363,31 @@ fun BackupRestoreScreen(
     driveRestoreDialog?.let { backup ->
         AlertDialog(
             onDismissRequest = { viewModel.cancelDriveRestore() },
-            icon = { Icon(Icons.Default.CloudDownload, contentDescription = null) },
-            title = { Text("Restore from Cloud") },
-            text = { 
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp),
+            icon = { Icon(Icons.Default.CloudDownload, contentDescription = null, tint = TempoPrimary) },
+            title = { Text("Restore from Cloud", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
+            text = {
                 Column {
-                    Text("Restore backup from ${formatDate(backup.createdAt)}?")
+                    Text("Restore backup from ${formatDate(backup.createdAt)}?", color = TextSecondary)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Size: ${formatBytes(backup.sizeBytes)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = TextTertiary
                     )
                     if (backup.appVersion != null) {
                         Text(
                             text = "App version: ${backup.appVersion}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = TextTertiary
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "How should duplicates be handled?",
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
                     )
                 }
             },
@@ -372,18 +395,18 @@ fun BackupRestoreScreen(
                 TextButton(
                     onClick = { viewModel.restoreFromDrive(backup, ImportConflictStrategy.REPLACE) }
                 ) {
-                    Text("Replace Existing")
+                    Text("Replace Existing", color = TempoPrimary, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
                 Row {
                     TextButton(onClick = { viewModel.cancelDriveRestore() }) {
-                        Text("Cancel")
+                        Text("Cancel", color = TextTertiary)
                     }
                     TextButton(
                         onClick = { viewModel.restoreFromDrive(backup, ImportConflictStrategy.SKIP) }
                     ) {
-                        Text("Skip Duplicates")
+                        Text("Skip Duplicates", color = TextSecondary)
                     }
                 }
             }
@@ -397,14 +420,18 @@ fun BackupRestoreScreen(
         is DriveOperationState.Restoring -> {
             AlertDialog(
                 onDismissRequest = { },
-                title = { 
+                containerColor = TempoSurfaceDialog,
+                shape = RoundedCornerShape(24.dp),
+                title = {
                     Text(
                         when (op) {
                             DriveOperationState.SigningIn -> "Signing in..."
                             DriveOperationState.Loading -> "Loading..."
                             DriveOperationState.Restoring -> "Restoring..."
                             else -> ""
-                        }
+                        },
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold
                     )
                 },
                 text = {
@@ -412,7 +439,7 @@ fun BackupRestoreScreen(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = TempoPrimary, strokeWidth = 2.dp)
                     }
                 },
                 confirmButton = { }
@@ -421,7 +448,9 @@ fun BackupRestoreScreen(
         is DriveOperationState.Uploading -> {
             AlertDialog(
                 onDismissRequest = { },
-                title = { Text("Uploading to Google Drive...") },
+                containerColor = TempoSurfaceDialog,
+                shape = RoundedCornerShape(24.dp),
+                title = { Text("Uploading to Google Drive...", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
                 text = {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -429,10 +458,12 @@ fun BackupRestoreScreen(
                     ) {
                         LinearProgressIndicator(
                             progress = { op.progress },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                            color = TempoPrimary,
+                            trackColor = GlassFrostSoft
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("${(op.progress * 100).toInt()}%")
+                        Text("${(op.progress * 100).toInt()}%", color = TextTertiary)
                     }
                 },
                 confirmButton = { }
@@ -441,7 +472,9 @@ fun BackupRestoreScreen(
         is DriveOperationState.Downloading -> {
             AlertDialog(
                 onDismissRequest = { },
-                title = { Text("Downloading from Google Drive...") },
+                containerColor = TempoSurfaceDialog,
+                shape = RoundedCornerShape(24.dp),
+                title = { Text("Downloading from Google Drive...", color = TextPrimary, fontWeight = FontWeight.SemiBold) },
                 text = {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -449,10 +482,12 @@ fun BackupRestoreScreen(
                     ) {
                         LinearProgressIndicator(
                             progress = { op.progress },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                            color = TempoPrimary,
+                            trackColor = GlassFrostSoft
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("${(op.progress * 100).toInt()}%")
+                        Text("${(op.progress * 100).toInt()}%", color = TextTertiary)
                     }
                 },
                 confirmButton = { }

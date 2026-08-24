@@ -33,9 +33,7 @@ interface MusicBrainzApi {
         val RATE_LIMIT_MS: Long = me.avinas.tempo.BuildConfig.MUSICBRAINZ_RATE_LIMIT_MS
     }
 
-    // =====================
     // Recording (Track) Search & Lookup
-    // =====================
 
     /**
      * Search for recordings (tracks) by query.
@@ -71,9 +69,7 @@ interface MusicBrainzApi {
         @Query("fmt") format: String = "json"
     ): Response<RecordingLookupResponse>
 
-    // =====================
     // Artist Search & Lookup
-    // =====================
 
     /**
      * Lookup a specific artist by MusicBrainz ID.
@@ -89,9 +85,7 @@ interface MusicBrainzApi {
         @Query("fmt") format: String = "json"
     ): Response<ArtistLookupResponse>
 
-    // =====================
     // Release (Album) Search & Lookup
-    // =====================
 
     /**
      * Lookup a specific release by MusicBrainz ID.

@@ -22,31 +22,7 @@ import javax.inject.Named
 import javax.inject.Singleton
 
 /**
- * Service responsible for enriching track metadata with ReccoBeats audio features.
- * 
- * =====================================================
- * DATA FLOW PATTERN: Enrichment → Database → UI
- * =====================================================
- * 
- * This service is called by EnrichmentWorker as a FALLBACK when:
- * 1. Spotify is not connected, OR
- * 2. Spotify's audio features API is unavailable (deprecated for third-party apps)
- * 
- * ReccoBeats provides FREE audio features API with:
- * - No authentication required
- * - Same features as Spotify (danceability, energy, valence, tempo, etc.)
- * - Support for Spotify IDs (can use existing spotifyId from metadata)
- * - Audio file analysis fallback (upload 30s preview)
- * 
- * =====================================================
- * ENRICHMENT FALLBACK CHAIN:
- * 
- * 1. Try ReccoBeats with Spotify ID (if available)
- * 2. Try ReccoBeats with track search
- * 3. Try ReccoBeats audio file analysis (if preview URL available)
- * 4. Fall back to Genius for lyrics-based mood (last resort)
- * 
- * =====================================================
+ * Enriches track metadata with ReccoBeats audio features, acoustic attributes, and mood heuristics.
  */
 @Singleton
 class ReccoBeatsEnrichmentService @Inject constructor(
@@ -109,9 +85,7 @@ class ReccoBeatsEnrichmentService @Inject constructor(
         existingMetadata: EnrichedMetadata?,
         previewUrl: String? = null
     ): ReccoBeatsResult {
-        // CRITICAL: Wrap entire enrichment logic to ensure errors don't affect music tracking
         return try {
-            // Skip if artist is unknown - waiting for metadata to settle
             if (ArtistParser.isUnknownArtist(track.artist)) {
                 Log.d(TAG, "Skipping ReccoBeats enrichment for track ${track.id}: artist is unknown")
                 return ReccoBeatsResult.TrackNotFound
@@ -174,7 +148,7 @@ class ReccoBeatsEnrichmentService @Inject constructor(
 
             return searchResult // Return the search result (likely NotFound or Error)
         } catch (e: Exception) {
-            // Top-level safety net - should never reach here but ensures robustness
+            // Safety net for unexpected errors
             Log.e(TAG, "Critical error in ReccoBeats enrichTrack for track ${track.id}", e)
             ReccoBeatsResult.Error("Critical error: ${e.message}", retryable = false)
         }

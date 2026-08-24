@@ -849,17 +849,13 @@ data class HistoryUiState(
     val isMarking: Boolean = false, // True when marking content in progress
     val error: String? = null,
     
-    // =====================================================
     // Recent Activity Section (non-Last.fm events)
-    // =====================================================
     val rawItems: List<HistoryItem> = emptyList(),
     val groupedItems: Map<String, List<HistoryItem>> = emptyMap(),
     val page: Int = 0,
     val hasMore: Boolean = true,
     
-    // =====================================================
     // Last.fm History Section (imported events)
-    // =====================================================
     val lastFmItems: List<HistoryItem> = emptyList(),
     val lastFmGroupedItems: Map<String, List<HistoryItem>> = emptyMap(),
     val lastFmPage: Int = 0,
@@ -875,9 +871,7 @@ data class HistoryUiState(
     // User feedback
     val feedbackMessage: String? = null,
     
-    // =====================================================
     // View Mode & Archive Integration
-    // =====================================================
     
     /**
      * Current view mode:

@@ -215,7 +215,7 @@ class SpotifyViewModel @Inject constructor(
         _importState.value = SpotifyImportState.Idle
     }
     
-    // ==================== SPOTIFY TOP ITEMS (Library Population) ====================
+    // SPOTIFY TOP ITEMS (Library Population)
     
     // Top items import state
     private val _topItemsImportState = MutableStateFlow<TopItemsImportState>(TopItemsImportState.Idle)
@@ -267,7 +267,7 @@ class SpotifyViewModel @Inject constructor(
         _topItemsImportState.value = TopItemsImportState.Idle
     }
     
-    // ==================== HISTORY RECONSTRUCTION (Enhanced Import) ====================
+    // HISTORY RECONSTRUCTION (Enhanced Import)
     
     // History reconstruction state
     private val _reconstructionState = MutableStateFlow<HistoryReconstructionState>(HistoryReconstructionState.Idle)

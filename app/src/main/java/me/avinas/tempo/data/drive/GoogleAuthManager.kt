@@ -495,27 +495,8 @@ class GoogleAuthManager @Inject constructor(
     }
     
     /**
-     * Attempt silent session restore without showing UI.
-     * For background operations like WorkManager.
-     * 
-     * This method now attempts to restore from encrypted token storage first,
-     * then tries to re-authorize with Google Play Services if needed.
-     * 
-     * ## Session Restoration Flow:
-     * 1. Check if session is already active in memory -> return true
-     * 2. Check for persisted tokens in encrypted storage
-     * 3. If tokens exist and account info available, attempt silent re-authorization
-     * 4. If re-authorization succeeds, session is restored
-     * 5. If all else fails, UI sign-in is required
-     * 
-     * ## When this will SUCCEED:
-     * - App is actively running (memory cache)
-     * - Tokens are persisted and user has authorized Drive access before
-     * 
-     * ## When this will FAIL:
-     * - User has never signed in
-     * - User revoked app access from Google Account settings
-     * - Google requires re-consent (rare)
+     * Attempt silent session restore without showing UI for background operations (e.g. WorkManager).
+     * Restores account info from encrypted storage and attempts silent re-authorization with Play Services.
      */
     suspend fun restoreSessionSilently(): Boolean = withContext(Dispatchers.IO) {
         // Step 1: Check if session is already active in memory

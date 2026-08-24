@@ -691,7 +691,7 @@ class HomeViewModel @Inject constructor(
             
             // Get user preferences to check if reminder already shown
             val preferences = preferencesRepository.preferences().first() ?: return@launch
-            
+
             // Check for monthly reminder (last day of month)
             val isLastDayOfMonth = today.dayOfMonth == today.lengthOfMonth()
             if (isLastDayOfMonth && preferences.lastMonthlyReminderShown != todayString) {

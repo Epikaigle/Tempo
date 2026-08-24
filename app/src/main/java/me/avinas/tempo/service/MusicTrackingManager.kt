@@ -15,15 +15,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Centralized manager for robust music tracking with enhanced reliability features.
- * 
- * Key features:
- * - Event batching for efficient database writes
- * - Offline queue for events when database is unavailable
- * - Automatic retry with exponential backoff
- * - Session persistence and recovery
- * - Deduplication to prevent double counting
- * - Comprehensive metrics and debugging
+ * Manages event batching, offline queueing with retries, deduplication,
+ * and playback session persistence for music tracking.
  */
 class MusicTrackingManager(
     private val listeningRepository: ListeningRepository,
@@ -212,9 +205,7 @@ class MusicTrackingManager(
         _metrics.value = TrackingMetrics()
     }
     
-    // =====================
-    // Internal Processing
-    // =====================
+
     
     private fun startBatchProcessor() {
         batchJob = scope.launch {

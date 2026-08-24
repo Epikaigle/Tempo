@@ -1,7 +1,6 @@
-// ============================================================================
-// QR Code generator wrapper for Tempo Stats browser extension.
-// Uses the `qrcode-generator` npm package — battle-tested, ZXing-compatible.
-// ============================================================================
+/**
+ * QR Code SVG data-URL generator using qrcode-generator.
+ */
 
 import qrcodegen from 'qrcode-generator';
 

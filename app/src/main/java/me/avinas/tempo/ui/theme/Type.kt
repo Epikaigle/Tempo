@@ -8,7 +8,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.R
 
-// --- Local Font Setup (bundled to avoid async GoogleFont SIGSEGV in libminikin) ---
+// Local Font Setup (bundled to avoid async GoogleFont SIGSEGV in libminikin)
 val AppFontFamily = FontFamily(
     Font(R.font.plus_jakarta_sans_regular, FontWeight.Normal),
     Font(R.font.plus_jakarta_sans_medium,  FontWeight.Medium),

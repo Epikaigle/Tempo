@@ -79,7 +79,8 @@ import me.avinas.tempo.ui.components.CoachMark
 import me.avinas.tempo.ui.components.CoachMarkArrow
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.components.TempoSnackbar
+import me.avinas.tempo.ui.theme.*
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -135,7 +136,8 @@ fun HistoryScreen(
         ModalBottomSheet(
             onDismissRequest = { showFilterSheet = false },
             sheetState = sheetState,
-            containerColor = Color(0xFF1E1B24) // Charcoal Surface
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
             HistoryFilterSheetContent(
                 currentShowSkips = uiState.showSkips,
@@ -196,12 +198,7 @@ fun HistoryScreen(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 100.dp), // Above nav bar
                 snackbar = { snackbarData ->
-                    Snackbar(
-                        snackbarData = snackbarData,
-                        containerColor = Color(0xFF2D2A32),
-                        contentColor = Color.White,
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                    TempoSnackbar(snackbarData)
                 }
             )
             
@@ -331,7 +328,7 @@ fun HistoryFilterSheetContent(
             text = stringResource(R.string.history_filter_title),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
         
         Spacer(modifier = Modifier.height(24.dp))
@@ -339,7 +336,7 @@ fun HistoryFilterSheetContent(
         Text(
             stringResource(R.string.history_time_range), 
             style = MaterialTheme.typography.labelLarge, 
-            color = Color(0xFFCAC4D0)
+            color = TextSecondary
         )
         Spacer(modifier = Modifier.height(12.dp))
         
@@ -352,10 +349,10 @@ fun HistoryFilterSheetContent(
                 onClick = { selectedRange = "All Time" },
                 label = { Text(stringResource(R.string.history_all_time)) },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = TempoRed,
-                    selectedLabelColor = Color.White,
-                    containerColor = Color(0xFF2D2A32),
-                    labelColor = Color(0xFFCAC4D0)
+                    selectedContainerColor = TempoPrimary,
+                    selectedLabelColor = TextOnAccent,
+                    containerColor = GlassFrostSoft,
+                    labelColor = TextSecondary
                 ),
                 border = null
             )
@@ -364,10 +361,10 @@ fun HistoryFilterSheetContent(
                 onClick = { selectedRange = "Last 7 Days" },
                 label = { Text(stringResource(R.string.history_7_days_abbr)) },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = TempoRed,
-                    selectedLabelColor = Color.White,
-                    containerColor = Color(0xFF2D2A32),
-                    labelColor = Color(0xFFCAC4D0)
+                    selectedContainerColor = TempoPrimary,
+                    selectedLabelColor = TextOnAccent,
+                    containerColor = GlassFrostSoft,
+                    labelColor = TextSecondary
                 ),
                 border = null
             )
@@ -376,10 +373,10 @@ fun HistoryFilterSheetContent(
                 onClick = { selectedRange = "Last 30 Days" },
                 label = { Text(stringResource(R.string.history_30_days_abbr)) },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = TempoRed,
-                    selectedLabelColor = Color.White,
-                    containerColor = Color(0xFF2D2A32),
-                    labelColor = Color(0xFFCAC4D0)
+                    selectedContainerColor = TempoPrimary,
+                    selectedLabelColor = TextOnAccent,
+                    containerColor = GlassFrostSoft,
+                    labelColor = TextSecondary
                 ),
                 border = null
             )
@@ -390,23 +387,24 @@ fun HistoryFilterSheetContent(
         Text(
             stringResource(R.string.history_playback), 
             style = MaterialTheme.typography.labelLarge, 
-            color = Color(0xFFCAC4D0)
+            color = TextSecondary
         )
         Spacer(modifier = Modifier.height(12.dp))
         
-        GlassCard(
-            modifier = Modifier.fillMaxWidth().clickable { showSkips = !showSkips },
-            backgroundColor = Color(0xFF2D2A32).copy(alpha = 0.5f),
-            shape = RoundedCornerShape(12.dp),
-            contentPadding = PaddingValues(16.dp),
-            variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(GlassFrostSoft)
+                .clickable { showSkips = !showSkips }
+                .padding(16.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     stringResource(R.string.history_show_skipped), 
-                    color = Color.White,
+                    color = TextPrimary,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f)
                 )
@@ -414,8 +412,8 @@ fun HistoryFilterSheetContent(
                     checked = showSkips,
                     onCheckedChange = { showSkips = it },
                     colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = TempoRed
+                        checkedThumbColor = TextOnAccent,
+                        checkedTrackColor = TempoPrimary
                     )
                 )
             }
@@ -500,14 +498,21 @@ fun SwipeToDeleteHistoryItem(
                 Icon(
                     imageVector = Icons.Default.Delete,
                     contentDescription = null,
-                    tint = TempoRed
+                    tint = TempoError
                 )
             },
             title = {
-                Text(stringResource(R.string.history_delete_dialog_title))
+                Text(
+                    stringResource(R.string.history_delete_dialog_title),
+                    color = TextPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
             },
             text = {
-                Text(stringResource(R.string.history_delete_dialog_message, item.title))
+                Text(
+                    stringResource(R.string.history_delete_dialog_message, item.title),
+                    color = TextSecondary
+                )
             },
             confirmButton = {
                 TextButton(
@@ -515,22 +520,21 @@ fun SwipeToDeleteHistoryItem(
                         showDeleteDialog = false
                         onDelete()
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = TempoRed)
+                    colors = ButtonDefaults.textButtonColors(contentColor = TempoError)
                 ) {
-                    Text(stringResource(R.string.history_delete_button))
+                    Text(stringResource(R.string.history_delete_button), fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { 
-                    showDeleteDialog = false 
+                TextButton(onClick = {
+                    showDeleteDialog = false
                     scope.launch { dismissState.snapTo(SwipeToDismissBoxValue.Settled) }
                 }) {
-                    Text(stringResource(R.string.common_cancel))
+                    Text(stringResource(R.string.common_cancel), color = TextTertiary)
                 }
             },
-            containerColor = Color(0xFF1E1B24), // Charcoal Surface
-            titleContentColor = Color.White,
-            textContentColor = Color(0xFFCAC4D0) // Warm Gray
+            containerColor = TempoSurfaceDialog,
+            shape = RoundedCornerShape(24.dp)
         )
     }
 
@@ -688,7 +692,7 @@ fun HistoryListContent(
                 }
             }
 
-            // === SECTION 1: Recent Activity (Live Tracking) ===
+            // SECTION 1: Recent Activity (Live Tracking)
             // In SEPARATED mode, show section header
             if (viewMode == HistoryViewMode.SEPARATED && groupedItems.isNotEmpty()) {
                 item(key = "recent_activity_header") {
@@ -764,7 +768,7 @@ fun HistoryListContent(
                 }
             }
             
-            // === SECTION 2: Last.fm History (only in SEPARATED mode) ===
+            // SECTION 2: Last.fm History (only in SEPARATED mode)
             if (viewMode == HistoryViewMode.SEPARATED && (lastFmGroupedItems.isNotEmpty() || archiveItems.isNotEmpty())) {
                 // Section header for Last.fm History
                 item(key = "lastfm_history_header") {
@@ -835,7 +839,7 @@ fun HistoryListContent(
                 }
             }
             
-            // === UNIFIED MODE: Archive section at bottom ===
+            // UNIFIED MODE: Archive section at bottom
             if (viewMode == HistoryViewMode.UNIFIED && archiveItems.isNotEmpty()) {
                 item(key = "archive_header") {
                     ArchiveSectionHeader(

@@ -21,9 +21,7 @@ interface TrackArtistDao {
         const val BATCH_SIZE = 200
     }
     
-    // =====================
     // Insert Operations
-    // =====================
     
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(trackArtist: TrackArtist): Long
@@ -55,9 +53,7 @@ interface TrackArtistDao {
         insertAllBatched(links)
     }
     
-    // =====================
     // Delete Operations
-    // =====================
     
     @Delete
     suspend fun delete(trackArtist: TrackArtist)
@@ -68,9 +64,7 @@ interface TrackArtistDao {
     @Query("DELETE FROM track_artists WHERE track_id = :trackId AND role = :role")
     suspend fun deleteByTrackAndRole(trackId: Long, role: ArtistRole)
     
-    // =====================
     // Query Operations - Get Artists for Track
-    // =====================
     
     /**
      * Get all artists for a track, ordered by credit order.
@@ -128,9 +122,7 @@ interface TrackArtistDao {
     """)
     suspend fun getMainArtistForTrack(trackId: Long): Artist?
     
-    // =====================
     // Query Operations - Get Tracks for Artist
-    // =====================
     
     /**
      * Get all tracks for an artist.
@@ -176,9 +168,7 @@ interface TrackArtistDao {
     """)
     suspend fun getTracksWhereArtistIsFeatured(artistId: Long): List<Track>
     
-    // =====================
     // Query Operations - Statistics
-    // =====================
     
     /**
      * Get track count for an artist.

@@ -64,7 +64,7 @@ class GoogleDriveTokenStorage @Inject constructor(
         }
     }
     
-    // ==================== TOKEN OPERATIONS ====================
+
     
     /**
      * Save the access token with timestamp.
@@ -140,8 +140,6 @@ class GoogleDriveTokenStorage @Inject constructor(
         Log.d(TAG, "Access token cleared")
     }
     
-    // ==================== ACCOUNT INFO OPERATIONS ====================
-    
     /**
      * Save the Google account information.
      */
@@ -209,8 +207,6 @@ class GoogleDriveTokenStorage @Inject constructor(
         Log.d(TAG, "Account info cleared")
     }
     
-    // ==================== COMPLETE CLEAR ====================
-    
     /**
      * Clear all stored data (tokens and account info).
      * Call this on sign out.
@@ -219,8 +215,6 @@ class GoogleDriveTokenStorage @Inject constructor(
         encryptedPrefs.edit().clear().apply()
         Log.d(TAG, "All stored data cleared")
     }
-    
-    // ==================== DEBUG/STATUS ====================
     
     /**
      * Get token storage status for debugging.

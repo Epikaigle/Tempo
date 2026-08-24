@@ -1,9 +1,8 @@
-// ============================================================================
-// Tempo Stats — IndexedDB + chrome.storage wrapper
-// Provides persistent storage for plays queue, pairing, settings, sync history,
-// known artists, and YouTube channels.
-// Uses a cached DB connection to avoid expensive open/close per operation.
-// ============================================================================
+/**
+ * Storage layer combining IndexedDB (for play queues and sync history)
+ * with chrome.storage (for pairing, settings, and session state).
+ * Keeps an open IndexedDB connection cached to minimize disk I/O overhead.
+ */
 
 import type { Play, PairingInfo, Settings, SyncRecord, TabTrackState, ConnectionHistoryEntry, ConnectionHealth, SyncCheckpoint, SyncBackoffState } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/types';
@@ -19,6 +18,12 @@ const SYNC_HISTORY_STORE = 'syncHistory';
 const MAX_RECORD_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 // Maximum number of play records to keep
 const MAX_PLAY_RECORDS = 5000;
+
+// Cheap in-memory lower-bound-ish estimate of total plays, used by
+// enforceMaxRecords() to skip the store.count() + cursor scan entirely while
+// the collection is far below the cap. Starts unknown (+Inf) so the first
+// run measures the real value.
+let _playCountEstimate = Number.POSITIVE_INFINITY;
 
 interface SettingsStorageResult {
   settings?: Settings;
@@ -44,7 +49,7 @@ interface TrackerStateStorageResult {
   trackerStates?: TabTrackState[];
 }
 
-// ---- Cached IndexedDB Connection -------------------------------------------
+// Cached IndexedDB Connection
 //
 // Opening IndexedDB is expensive (disk I/O). We keep a single connection alive
 // and reuse it. If the connection is closed (e.g., after quota eviction), we
@@ -110,7 +115,7 @@ function openDb(): Promise<IDBDatabase> {
   return _dbPromise;
 }
 
-// ---- In-memory queue count cache (avoids DB read on every badge update) ----
+// In-memory queue count cache (avoids DB read on every badge update)
 
 let _cachedQueueCount: number | null = null;
 let _queueCountCacheTime = 0;
@@ -120,7 +125,17 @@ function invalidateQueueCountCache(): void {
   _cachedQueueCount = null;
 }
 
-// ---- Play Queue ------------------------------------------------------------
+// In-memory stats cache — getStats() scans up to 5000 plays; the popup only
+// needs fresh-ish numbers, so we memoize the result briefly and clear it on
+// every mutation of the underlying stores.
+
+let _statsCache: ExtensionStats | null = null;
+let _statsCacheTime = 0;
+const STATS_CACHE_TTL_MS = 30_000;
+
+function invalidateStatsCache(): void {
+  _statsCache = null;
+}
 
 export async function insertPlay(play: Omit<Play, 'id'>): Promise<number> {
   const db = await openDb();
@@ -130,6 +145,8 @@ export async function insertPlay(play: Omit<Play, 'id'>): Promise<number> {
     const request = store.add(play);
     request.onsuccess = () => {
       invalidateQueueCountCache();
+      invalidateStatsCache();
+      _playCountEstimate++;
       resolve(request.result as number);
     };
     request.onerror = () => reject(request.error);
@@ -151,6 +168,8 @@ export async function insertPlaysBatch(plays: Array<Omit<Play, 'id'>>): Promise<
     }
     tx.oncomplete = () => {
       invalidateQueueCountCache();
+      invalidateStatsCache();
+      _playCountEstimate += ids.length;
       resolve(ids);
     };
     tx.onerror = () => reject(tx.error);
@@ -224,78 +243,71 @@ export async function getQueueCount(): Promise<number> {
   });
 }
 
-export async function markPlaysSynced(ids: number[]): Promise<void> {
+/**
+ * Flip the status of a set of play records in ONE readwrite cursor pass over
+ * the [min(ids), max(ids)] key range instead of N individual get+put pairs.
+ */
+async function setPlaysStatus(ids: number[], status: Play['status']): Promise<void> {
   if (ids.length === 0) return;
+
+  let minId = Infinity;
+  let maxId = -Infinity;
+  for (const id of ids) {
+    if (id < minId) minId = id;
+    if (id > maxId) maxId = id;
+  }
+  const idSet = new Set(ids);
 
   const db = await openDb();
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
     const store = tx.objectStore(PLAYS_STORE);
+    const request = store.openCursor(IDBKeyRange.bound(minId, maxId));
 
-    for (const id of ids) {
-      const getReq = store.get(id);
-      getReq.onsuccess = () => {
-        const play = getReq.result as Play | undefined;
-        if (play) {
-          play.status = 'synced';
-          store.put(play);
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (cursor) {
+        if (idSet.has(cursor.key as number)) {
+          const play = cursor.value as Play;
+          play.status = status;
+          cursor.update(play);
         }
-      };
-    }
+        cursor.continue();
+      }
+    };
 
-    tx.oncomplete = () => { invalidateQueueCountCache(); resolve(); };
+    tx.oncomplete = () => { invalidateQueueCountCache(); invalidateStatsCache(); resolve(); };
     tx.onerror = () => reject(tx.error);
   });
 }
 
-export async function markPlaysFailed(ids: number[]): Promise<void> {
-  if (ids.length === 0) return;
+export function markPlaysSynced(ids: number[]): Promise<void> {
+  return setPlaysStatus(ids, 'synced');
+}
 
-  const db = await openDb();
-  return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readwrite');
-    const store = tx.objectStore(PLAYS_STORE);
-
-    for (const id of ids) {
-      const getReq = store.get(id);
-      getReq.onsuccess = () => {
-        const play = getReq.result as Play | undefined;
-        if (play) {
-          play.status = 'failed';
-          store.put(play);
-        }
-      };
-    }
-
-    tx.oncomplete = () => { invalidateQueueCountCache(); resolve(); };
-    tx.onerror = () => reject(tx.error);
-  });
+export function markPlaysFailed(ids: number[]): Promise<void> {
+  return setPlaysStatus(ids, 'failed');
 }
 
 /** Reset failed plays back to queued so they can be retried on next sync. */
 export async function retryFailedPlays(): Promise<number> {
+  // Reuse the full records from getFailedPlays() — flip the status field in
+  // place and put the SAME objects back; no second read inside the transaction.
   const failed = await getFailedPlays();
-  if (failed.length === 0) return 0;
-
-  const ids = failed.filter(p => p.id != null).map(p => p.id!);
+  const toRetry = failed.filter(p => p.id != null);
+  if (toRetry.length === 0) return 0;
 
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
     const store = tx.objectStore(PLAYS_STORE);
 
-    for (const id of ids) {
-      const getReq = store.get(id);
-      getReq.onsuccess = () => {
-        const play = getReq.result as Play | undefined;
-        if (play) {
-          play.status = 'queued';
-          store.put(play);
-        }
-      };
+    for (const play of toRetry) {
+      play.status = 'queued';
+      store.put(play);
     }
 
-    tx.oncomplete = () => { invalidateQueueCountCache(); resolve(ids.length); };
+    tx.oncomplete = () => { invalidateQueueCountCache(); invalidateStatsCache(); resolve(toRetry.length); };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -312,7 +324,7 @@ export async function clearQueue(): Promise<number> {
       if (play.id) store.delete(play.id);
     }
 
-    tx.oncomplete = () => { invalidateQueueCountCache(); resolve(queued.length); };
+    tx.oncomplete = () => { invalidateQueueCountCache(); invalidateStatsCache(); _playCountEstimate -= queued.length; resolve(queued.length); };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -324,7 +336,7 @@ export async function deletePlay(id: number): Promise<void> {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
     const store = tx.objectStore(PLAYS_STORE);
     store.delete(id);
-    tx.oncomplete = () => { invalidateQueueCountCache(); resolve(); };
+    tx.oncomplete = () => { invalidateQueueCountCache(); invalidateStatsCache(); _playCountEstimate--; resolve(); };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -372,7 +384,7 @@ export async function cleanupOldRecords(): Promise<number> {
   let deleted = 0;
 
   const db = await openDb();
-  return new Promise((resolve, reject) => {
+  deleted = await new Promise((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
     const store = tx.objectStore(PLAYS_STORE);
     const index = store.index('timestampUtc');
@@ -397,10 +409,16 @@ export async function cleanupOldRecords(): Promise<number> {
         console.log(`[Tempo] Cleaned up ${deleted} old play records`);
       }
       invalidateQueueCountCache();
+      invalidateStatsCache();
+      _playCountEstimate -= deleted;
       resolve(deleted);
     };
     tx.onerror = () => reject(tx.error);
   });
+
+  // Same housekeeping pass also prunes sync history (age + hard cap).
+  await pruneSyncHistory();
+  return deleted;
 }
 
 /**
@@ -409,6 +427,10 @@ export async function cleanupOldRecords(): Promise<number> {
  * instead of loading all records into memory.
  */
 export async function enforceMaxRecords(): Promise<void> {
+  // Skip the store.count() + cursor scan entirely while our estimate says the
+  // collection is comfortably below the cap.
+  if (_playCountEstimate < MAX_PLAY_RECORDS) return;
+
   const db = await openDb();
 
   // First, count total records
@@ -419,6 +441,9 @@ export async function enforceMaxRecords(): Promise<void> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+
+  // Refresh the estimate with the measured value on every actual run.
+  _playCountEstimate = totalCount;
 
   if (totalCount <= MAX_PLAY_RECORDS) return;
 
@@ -458,15 +483,16 @@ export async function enforceMaxRecords(): Promise<void> {
     for (const id of toDelete) {
       store.delete(id);
     }
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => { _playCountEstimate = totalCount - toDelete.length; resolve(); };
     tx.onerror = () => reject(tx.error);
   });
 
   invalidateQueueCountCache();
+  invalidateStatsCache();
   console.log(`[Tempo] Pruned ${toDelete.length} excess play records`);
 }
 
-// ---- Sync History ----------------------------------------------------------
+// Sync History
 
 export async function recordSync(count: number, status: string, errorMessage: string | null): Promise<void> {
   const db = await openDb();
@@ -481,7 +507,7 @@ export async function recordSync(count: number, status: string, errorMessage: st
     const tx = db.transaction(SYNC_HISTORY_STORE, 'readwrite');
     const store = tx.objectStore(SYNC_HISTORY_STORE);
     store.add(record);
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => { invalidateStatsCache(); resolve(); };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -508,7 +534,72 @@ export async function getSyncHistory(limit = 10): Promise<SyncRecord[]> {
   });
 }
 
-// ---- Settings (chrome.storage.local) ---------------------------------------
+// Sync-history pruning bounds: drop records older than 30 days and keep at
+// most 500 records regardless of age.
+
+const MAX_SYNC_RECORD_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_SYNC_HISTORY_RECORDS = 500;
+
+/**
+ * Prune sync history: delete records older than 30 days via a syncedAt-index
+ * cursor, then enforce the hard cap with a reverse cursor (newest kept).
+ * Runs in the same housekeeping pass as cleanupOldRecords().
+ */
+export async function pruneSyncHistory(): Promise<void> {
+  const db = await openDb();
+  const cutoffIso = new Date(Date.now() - MAX_SYNC_RECORD_AGE_MS).toISOString();
+
+  // Age-based deletion — only scans records older than the cutoff.
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(SYNC_HISTORY_STORE, 'readwrite');
+    const index = tx.objectStore(SYNC_HISTORY_STORE).index('syncedAt');
+    const request = index.openCursor(IDBKeyRange.upperBound(cutoffIso));
+
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
+
+    tx.oncomplete = () => { invalidateStatsCache(); resolve(); };
+    tx.onerror = () => reject(tx.error);
+  });
+
+  // Hard cap — walk newest-first and delete everything past record 500.
+  let pruned = 0;
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(SYNC_HISTORY_STORE, 'readwrite');
+    const index = tx.objectStore(SYNC_HISTORY_STORE).index('syncedAt');
+    const request = index.openCursor(null, 'prev');
+    let kept = 0;
+
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (cursor) {
+        if (kept < MAX_SYNC_HISTORY_RECORDS) {
+          kept++;
+        } else {
+          cursor.delete();
+          pruned++;
+        }
+        cursor.continue();
+      }
+    };
+
+    tx.oncomplete = () => {
+      if (pruned > 0) {
+        console.log(`[Tempo] Pruned ${pruned} excess sync history records`);
+      }
+      invalidateStatsCache();
+      resolve();
+    };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Settings (chrome.storage.local)
 
 // In-memory settings cache — chrome.storage.local reads are async and relatively
 // slow (~1-5ms). Most hot paths only need the settings object, so we cache it
@@ -551,10 +642,13 @@ export async function saveSettings(settings: Settings): Promise<void> {
   });
 }
 
-// ---- Pairing (chrome.storage.local with session mirroring for compatibility) ---
+// Pairing (chrome.storage.local with session mirroring for compatibility)
 
 export async function getPairing(): Promise<PairingInfo | null> {
-  return new Promise<PairingInfo | null>((resolve) => {
+  ensurePairingInvalidationListeners();
+  if (_pairingCache !== undefined) return _pairingCache;
+
+  const resolved = await new Promise<PairingInfo | null>((resolve) => {
     chrome.storage.local.get('pairing', async (localResult) => {
       const localPairing = (localResult as PairingStorageResult).pairing;
       if (!localPairing) {
@@ -582,24 +676,52 @@ export async function getPairing(): Promise<PairingInfo | null> {
       });
     });
   });
+
+  _pairingCache = resolved;
+  return resolved;
 }
 
 export async function savePairing(pairing: PairingInfo): Promise<void> {
   const { authToken, ...localData } = pairing;
   await chrome.storage.session.set({ authToken });
-  return new Promise<void>((resolve) => {
+  await new Promise<void>((resolve) => {
     chrome.storage.local.set({ pairing: { ...localData, authToken } }, resolve);
   });
+  _pairingCache = pairing;
 }
 
 export async function removePairing(): Promise<void> {
+  _pairingCache = null;
   await chrome.storage.session.remove('authToken');
-  return new Promise<void>((resolve) => {
+  await new Promise<void>((resolve) => {
     chrome.storage.local.remove('pairing', resolve);
   });
 }
 
-// ---- Session State (chrome.storage.session — survives hibernation) --------
+// In-memory pairing cache — getPairing() is on the hot path (every socket
+// send, heartbeat, and sync) and normally costs a chrome.storage.local read
+// plus a chrome.storage.session read. We cache the resolved value and
+// invalidate on every write path plus chrome.storage.onChanged, so external
+// writers (other extension contexts) never see stale pairing.
+
+let _pairingCache: PairingInfo | null | undefined; // undefined = uncached
+let _pairingListenersRegistered = false;
+
+function ensurePairingInvalidationListeners(): void {
+  if (_pairingListenersRegistered) return;
+  _pairingListenersRegistered = true;
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes['pairing']) {
+        _pairingCache = undefined;
+      } else if (area === 'session' && changes['authToken']) {
+        _pairingCache = undefined;
+      }
+    });
+  } catch { /* non-critical */ }
+}
+
+// Session State (chrome.storage.session — survives hibernation)
 
 export async function saveSessionState(states: TabTrackState[]): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -616,7 +738,7 @@ export async function loadSessionState(): Promise<TabTrackState[]> {
   });
 }
 
-// ---- Connection History (chrome.storage.local) -----------------------------
+// Connection History (chrome.storage.local)
 
 interface ConnectionHistoryStorageResult {
   connectionHistory?: ConnectionHistoryEntry[];
@@ -666,13 +788,43 @@ export async function recordConnectionSuccess(ip: string, port: number, networkF
 export async function recordConnectionFailure(ip: string, port: number): Promise<void> {
   const entries = await getConnectionHistory();
   const existing = entries.find(e => e.ip === ip && e.port === port);
-  if (existing) {
+  if (!existing) return; // Nothing to increment — skip the chrome.storage write entirely.
+
+  existing.failCount++;
+  if (existing.failCount > 10 && existing.successCount === 0) {
+    entries.splice(entries.indexOf(existing), 1);
+  }
+
+  return new Promise<void>((resolve) => {
+    chrome.storage.local.set({ connectionHistory: entries }, resolve);
+  });
+}
+
+/**
+ * Batch variant of recordConnectionFailure(): applies the same failCount
+ * increments (and eviction of dead never-succeeded entries) for many IPs but
+ * performs exactly ONE connectionHistory array rewrite. Entries that do not
+ * exist are skipped, matching the single-IP semantics.
+ */
+export async function recordConnectionFailures(failures: Array<{ ip: string; port: number }>): Promise<void> {
+  const pending = failures.filter(f => f.ip);
+  if (pending.length === 0) return;
+
+  const entries = await getConnectionHistory();
+  let changed = false;
+
+  for (const failure of pending) {
+    const existing = entries.find(e => e.ip === failure.ip && e.port === failure.port);
+    if (!existing) continue;
+
     existing.failCount++;
     if (existing.failCount > 10 && existing.successCount === 0) {
-      const idx = entries.indexOf(existing);
-      entries.splice(idx, 1);
+      entries.splice(entries.indexOf(existing), 1);
     }
+    changed = true;
   }
+
+  if (!changed) return;
 
   return new Promise<void>((resolve) => {
     chrome.storage.local.set({ connectionHistory: entries }, resolve);
@@ -685,7 +837,7 @@ export async function clearConnectionHistory(): Promise<void> {
   });
 }
 
-// ---- Connection Health (chrome.storage.local) ------------------------------
+// Connection Health (chrome.storage.local)
 
 const DEFAULT_CONNECTION_HEALTH: ConnectionHealth = {
   lastPing: 0,
@@ -738,7 +890,7 @@ export async function recordAuthFailure(): Promise<ConnectionHealth> {
   return health;
 }
 
-// ---- Sync Checkpoint (chrome.storage.session — survives hibernation) --------
+// Sync Checkpoint (chrome.storage.session — survives hibernation)
 
 export async function getSyncCheckpoint(): Promise<SyncCheckpoint | null> {
   return new Promise<SyncCheckpoint | null>((resolve) => {
@@ -761,7 +913,7 @@ export async function clearSyncCheckpoint(): Promise<void> {
   });
 }
 
-// ---- Sync Backoff State (chrome.storage.session — survives hibernation) ----
+// Sync Backoff State (chrome.storage.session — survives hibernation)
 
 interface SyncBackoffStorageResult {
   syncBackoff?: SyncBackoffState;
@@ -788,7 +940,7 @@ export async function clearSyncBackoff(): Promise<void> {
   });
 }
 
-// ---- Stats -----------------------------------------------------------------
+// Stats
 
 export interface ExtensionStats {
   totalPlays: number;
@@ -804,46 +956,75 @@ export interface ExtensionStats {
  * Optimized: uses index-based counting where possible instead of loading all records.
  */
 export async function getStats(): Promise<ExtensionStats> {
+  // Brief TTL cache — the popup polls stats; recomputing on every tick means
+  // a 5000-record cursor walk each time. Cleared by every store mutation.
+  if (_statsCache && (Date.now() - (_statsCacheTime ?? 0)) < STATS_CACHE_TTL_MS) {
+    return _statsCache;
+  }
+
   const db = await openDb();
 
-  // Count by status using index (fast, no full scan)
-  const [queuedCount, syncedCount, totalPlays] = await Promise.all([
+  // Counts via index/store counters; totalSyncs via count() instead of
+  // materializing getSyncHistory(1000).
+  const [queuedCount, syncedCount, totalPlays, totalSyncs] = await Promise.all([
     new Promise<number>((resolve, reject) => {
       const tx = db.transaction(PLAYS_STORE, 'readonly');
-      const store = tx.objectStore(PLAYS_STORE);
-      const req = store.index('status').count('queued');
+      const req = tx.objectStore(PLAYS_STORE).index('status').count('queued');
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     }),
     new Promise<number>((resolve, reject) => {
       const tx = db.transaction(PLAYS_STORE, 'readonly');
-      const store = tx.objectStore(PLAYS_STORE);
-      const req = store.index('status').count('synced');
+      const req = tx.objectStore(PLAYS_STORE).index('status').count('synced');
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     }),
     new Promise<number>((resolve, reject) => {
       const tx = db.transaction(PLAYS_STORE, 'readonly');
-      const store = tx.objectStore(PLAYS_STORE);
-      const req = store.count();
+      const req = tx.objectStore(PLAYS_STORE).count();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    }),
+    new Promise<number>((resolve, reject) => {
+      const tx = db.transaction(SYNC_HISTORY_STORE, 'readonly');
+      const req = tx.objectStore(SYNC_HISTORY_STORE).count();
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     }),
   ]);
 
-  // For top artist/track, load up to 5000 most recent plays
-  const allPlays = await getAllPlays(5000);
-  const syncHistory = await getSyncHistory(1000);
+  // For top artist/track, stream the up-to-5000 most recent plays through
+  // readonly cursors and build the frequency maps incrementally instead of
+  // materializing a getAllPlays(5000) array.
+  const STATS_PLAY_SCAN_LIMIT = 5000;
+  const { artistCounts, trackCounts } = await new Promise<{
+    artistCounts: Map<string, number>;
+    trackCounts: Map<string, number>;
+  }>((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readonly');
+    const index = tx.objectStore(PLAYS_STORE).index('timestampUtc');
+    const artistCounts = new Map<string, number>();
+    const trackCounts = new Map<string, number>();
+    let seen = 0;
+    const request = index.openCursor(null, 'prev');
 
-  const artistCounts = new Map<string, number>();
-  const trackCounts = new Map<string, number>();
-  for (const play of allPlays) {
-    if (play.artist) {
-      artistCounts.set(play.artist, (artistCounts.get(play.artist) ?? 0) + 1);
-    }
-    const key = `${play.title} - ${play.artist}`;
-    trackCounts.set(key, (trackCounts.get(key) ?? 0) + 1);
-  }
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (cursor && seen < STATS_PLAY_SCAN_LIMIT) {
+        const play = cursor.value as Play;
+        if (play.artist) {
+          artistCounts.set(play.artist, (artistCounts.get(play.artist) ?? 0) + 1);
+        }
+        const key = `${play.title} - ${play.artist}`;
+        trackCounts.set(key, (trackCounts.get(key) ?? 0) + 1);
+        seen++;
+        cursor.continue();
+      } else {
+        resolve({ artistCounts, trackCounts });
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
 
   let topArtist: string | null = null;
   let topArtistCount = 0;
@@ -863,12 +1044,14 @@ export async function getStats(): Promise<ExtensionStats> {
     }
   }
 
-  return {
+  _statsCache = {
     totalPlays,
     queuedCount,
     syncedCount,
-    totalSyncs: syncHistory.length,
+    totalSyncs,
     topArtist,
     topTrack,
   };
+  _statsCacheTime = Date.now();
+  return _statsCache;
 }

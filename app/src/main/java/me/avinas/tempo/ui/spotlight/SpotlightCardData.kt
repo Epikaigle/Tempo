@@ -67,7 +67,7 @@ sealed class SpotlightCardData {
         val confidence: String = "MEDIUM" // Phase 3: HIGH/MEDIUM/LOW data quality
     ) : SpotlightCardData()
     
-    // --- Enhanced Existing Cards ---
+    // Enhanced Existing Cards
 
     @Immutable
     data class EarlyAdopter(

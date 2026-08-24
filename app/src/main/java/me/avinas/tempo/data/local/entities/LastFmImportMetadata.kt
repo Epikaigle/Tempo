@@ -17,9 +17,7 @@ import androidx.room.PrimaryKey
 data class LastFmImportMetadata(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     
-    // =====================
     // User Configuration
-    // =====================
     
     /**
      * Last.fm username for the import.
@@ -46,9 +44,7 @@ data class LastFmImportMetadata(
     @ColumnInfo(name = "recent_months_included")
     val recentMonthsIncluded: Int,
     
-    // =====================
     // Discovery Results
-    // =====================
     
     /**
      * Total scrobbles found on the user's Last.fm account.
@@ -68,9 +64,7 @@ data class LastFmImportMetadata(
     @ColumnInfo(name = "latest_scrobble")
     val latestScrobble: Long? = null,
     
-    // =====================
     // Import Progress
-    // =====================
     
     /**
      * Import status.
@@ -97,9 +91,7 @@ data class LastFmImportMetadata(
     @ColumnInfo(name = "scrobbles_processed")
     val scrobblesProcessed: Long = 0,
     
-    // =====================
     // Import Results
-    // =====================
     
     /**
      * Number of listening events created in active table.
@@ -131,9 +123,7 @@ data class LastFmImportMetadata(
     @ColumnInfo(name = "duplicates_skipped")
     val duplicatesSkipped: Long = 0,
     
-    // =====================
     // Incremental Sync
-    // =====================
     
     /**
      * Timestamp of last scrobble imported (for incremental sync).
@@ -148,9 +138,7 @@ data class LastFmImportMetadata(
     @ColumnInfo(name = "last_sync_timestamp")
     val lastSyncTimestamp: Long? = null,
     
-    // =====================
     // Timestamps
-    // =====================
     
     /**
      * When the import was started.

@@ -1,9 +1,7 @@
 package me.avinas.tempo.ui.home.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
@@ -12,16 +10,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.theme.*
-import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
+import me.avinas.tempo.ui.components.TempoDialogIcon
+import me.avinas.tempo.ui.components.TempoDialogPrimaryButton
+import me.avinas.tempo.ui.components.TempoDialogSecondaryButton
+import me.avinas.tempo.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,103 +29,83 @@ fun RateAppBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = TempoDarkSurfaceSunken,
-        dragHandle = { BottomSheetDefaults.DragHandle() },
+        containerColor = TempoSurfaceDialog,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(TextQuaternary)
+            )
+        },
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 48.dp), // Check navigation bar insets normally, but adding padding here
+                .padding(bottom = 48.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Gold Star Icon with Glow
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(GoldPrimary.copy(alpha = 0.1f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(60.dp)
-                        .clip(CircleShape)
-                    .background(GoldPrimary.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = null,
-                        tint = GoldPrimary,
-                        modifier = Modifier.size(40.dp)
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
+            Spacer(modifier = Modifier.height(8.dp))
+
+            TempoDialogIcon(
+                icon = Icons.Default.Star,
+                tint = GoldPrimary,
+                size = 56
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
             Text(
                 text = stringResource(R.string.rate_enjoying),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                textAlign = TextAlign.Center
             )
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
+
             Text(
                 text = stringResource(R.string.rate_message),
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
-                color = Color.White.copy(alpha = 0.7f),
-                lineHeight = 24.sp
+                color = TextSecondary,
+                lineHeight = MaterialTheme.typography.bodyMedium.fontSize * 1.5
             )
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            Button(
-                onClick = onRate,
-                enabled = !isSubmitting,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                if (isSubmitting) {
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            if (isSubmitting) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.White,
+                        modifier = Modifier.size(22.dp),
+                        color = TempoPrimary,
                         strokeWidth = 2.dp
                     )
-                } else {
-                    Text(
-                        text = stringResource(R.string.rate_now),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isSubmitting,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = stringResource(R.string.rate_not_now),
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium
+            } else {
+                TempoDialogPrimaryButton(
+                    text = stringResource(R.string.rate_now),
+                    onClick = onRate
                 )
             }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            TempoDialogSecondaryButton(
+                text = stringResource(R.string.rate_not_now),
+                onClick = onDismiss,
+                enabled = !isSubmitting
+            )
         }
     }
 }

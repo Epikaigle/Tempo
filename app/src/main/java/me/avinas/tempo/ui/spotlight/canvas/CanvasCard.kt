@@ -348,10 +348,8 @@ private fun getCardDisplayName(cardData: SpotlightCardData): String {
 }
 
 /**
- * Robust transform gesture detector with start/end callbacks.
- * Based on Jetpack Compose's official detectTransformGestures implementation.
- * 
- * This is the proven pattern from the Android framework.
+ * Transform gesture detector with start/end callbacks.
+ * Extends Jetpack Compose's detectTransformGestures with lifecycle hooks.
  */
 suspend fun PointerInputScope.detectTransformGesturesWithCallbacks(
     panZoomLock: Boolean = false,

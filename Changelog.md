@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Minimum playback threshold for Personal Favorite tags with human-readable reason tags.
 
 ### Fixed
+- Google Drive backup crash (`Export failed: java.lang.String cannot be cast to java.util.List`) by making the export JSON codec tolerate malformed `List<String>` data (`Artist.genres`, `EnrichedMetadata.tags/.genres`) and recover `|||`-delimited raw strings instead of aborting the whole export; restore likewise recovers bare-string values where a JSON array is expected instead of failing with `Expected BEGIN_ARRAY but was STRING`.
+- Legacy list-column corruption at its source: rows written by older builds stored `artists.genres` and `enriched_metadata.tags/.genres` as JSON-array text (e.g. `["jazz", "cool jazz"]`), which read back as a single garbage element. The Room converter now repairs such values on read and canonicalizes on write, a one-time `ListColumnRepairService` rewrites the affected rows in place on first launch, and genre inference in the enrichment worker understands both storage generations.
 - Profile screen crash caused by measuring intrinsic constraints on `SubcomposeLayout`.
 - Artist name collapse for Japanese, Korean, Cyrillic, Indic, and Thai scripts by applying Unicode NFKC normalization, script-aware diacritic folding, and an automated background repair.
 - Schema 52 migration crash when upgrading from the public 4.8.2 build, supported by an automated pre-migration database file snapshot.

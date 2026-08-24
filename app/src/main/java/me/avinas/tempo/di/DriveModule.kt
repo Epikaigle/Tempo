@@ -10,6 +10,9 @@ import me.avinas.tempo.data.drive.BackupSettingsManager
 import me.avinas.tempo.data.drive.GoogleAuthManager
 import me.avinas.tempo.data.drive.GoogleDriveService
 import me.avinas.tempo.data.drive.GoogleDriveTokenStorage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import javax.inject.Singleton
 
 /**
@@ -44,4 +47,15 @@ object DriveModule {
     fun provideBackupSettingsManager(
         @ApplicationContext context: Context
     ): BackupSettingsManager = BackupSettingsManager(context)
+
+    /**
+     * Application-lifetime scope for long-running backup/restore work that must
+     * survive ViewModel destruction (e.g. the user navigating away mid-restore).
+     * Never cancelled; operations observe their own errors and clean up in
+     * finally blocks.
+     */
+    @Provides
+    @Singleton
+    fun provideApplicationScope(): CoroutineScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO)
 }

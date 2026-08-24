@@ -37,9 +37,7 @@ class MainActivity : AppCompatActivity() {
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        // Handle POST_NOTIFICATIONS permission result
-    }
+    ) { _ -> }
 
     @javax.inject.Inject
     lateinit var walkthroughController: me.avinas.tempo.ui.components.WalkthroughController

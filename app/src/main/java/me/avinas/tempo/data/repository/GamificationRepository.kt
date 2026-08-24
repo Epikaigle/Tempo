@@ -23,9 +23,7 @@ class GamificationRepository @Inject constructor(
         private const val TAG = "GamificationRepo"
     }
     
-    // =====================
     // Level & XP
-    // =====================
     
     fun observeUserLevel(): Flow<UserLevel?> = gamificationDao.observeUserLevel()
     
@@ -96,9 +94,7 @@ class GamificationRepository @Inject constructor(
         )
     }
     
-    // =====================
     // Badges
-    // =====================
     
     fun observeAllBadges(): Flow<List<Badge>> = gamificationDao.observeAllBadges()
     

@@ -18,10 +18,7 @@ interface ScrobbleArchiveDao {
         const val BATCH_SIZE = 100
     }
     
-    // =====================
     // Basic CRUD Operations
-    // =====================
-    
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(archive: ScrobbleArchive): Long
     
@@ -46,10 +43,7 @@ interface ScrobbleArchiveDao {
     @Query("DELETE FROM scrobbles_archive WHERE import_id = :importId")
     suspend fun deleteByImportId(importId: Long): Int
     
-    // =====================
     // Query Operations
-    // =====================
-    
     @Query("SELECT * FROM scrobbles_archive WHERE id = :id")
     suspend fun getById(id: Long): ScrobbleArchive?
     
@@ -67,9 +61,17 @@ interface ScrobbleArchiveDao {
      * Rows are fetched in id order, page after page, so the full archive
      * (200K+ rows for large Last.fm histories) is never materialized in
      * memory at once. Pass the last seen id as [afterId], starting at 0.
+     *
+     * [maxId] caps the scan at the snapshot boundary captured before the export
+     * began, so rows inserted by a concurrent import/tracking during the backup
+     * are excluded from the archive.
      */
-    @Query("SELECT * FROM scrobbles_archive WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
-    suspend fun getArchivePage(afterId: Long, limit: Int): List<ScrobbleArchive>
+    @Query("SELECT * FROM scrobbles_archive WHERE id > :afterId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
+    suspend fun getArchivePage(afterId: Long, maxId: Long, limit: Int): List<ScrobbleArchive>
+
+    /** Highest archive row id at the moment of the call — export snapshot boundary. */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM scrobbles_archive")
+    suspend fun getMaxArchiveId(): Long
     
     /**
      * Get total count of archived tracks.
@@ -83,13 +85,7 @@ interface ScrobbleArchiveDao {
     @Query("SELECT COALESCE(SUM(play_count), 0) FROM scrobbles_archive")
     suspend fun getTotalPlayCount(): Long
     
-    // =====================
     // Search Operations
-    // =====================
-    
-    /**
-     * Search archives by track title.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         WHERE track_title LIKE '%' || :query || '%' COLLATE NOCASE
@@ -98,9 +94,6 @@ interface ScrobbleArchiveDao {
     """)
     suspend fun searchByTitle(query: String, limit: Int = 50): List<ScrobbleArchive>
     
-    /**
-     * Search archives by artist name.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         WHERE artist_name LIKE '%' || :query || '%' COLLATE NOCASE
@@ -109,9 +102,6 @@ interface ScrobbleArchiveDao {
     """)
     suspend fun searchByArtist(query: String, limit: Int = 50): List<ScrobbleArchive>
     
-    /**
-     * Search archives by title and artist.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         WHERE (track_title LIKE '%' || :query || '%' COLLATE NOCASE
@@ -121,9 +111,6 @@ interface ScrobbleArchiveDao {
     """)
     suspend fun search(query: String, limit: Int = 50): List<ScrobbleArchive>
     
-    /**
-     * Find archive by exact artist and title match.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         WHERE LOWER(artist_name) = LOWER(:artist) 
@@ -140,13 +127,7 @@ interface ScrobbleArchiveDao {
     @Query("SELECT * FROM scrobbles_archive WHERE artist_name_normalized = :artistNormalized")
     suspend fun getByArtistNormalized(artistNormalized: String): List<ScrobbleArchive>
     
-    // =====================
     // Date Range Queries
-    // =====================
-    
-    /**
-     * Get archives with scrobbles in a date range.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         WHERE first_scrobble <= :endTime AND last_scrobble >= :startTime
@@ -155,9 +136,6 @@ interface ScrobbleArchiveDao {
     """)
     suspend fun getInDateRange(startTime: Long, endTime: Long, limit: Int = 100): List<ScrobbleArchive>
     
-    /**
-     * Get archives by artist in a date range.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         WHERE artist_name_normalized = :artistNormalized
@@ -170,14 +148,7 @@ interface ScrobbleArchiveDao {
         endTime: Long
     ): List<ScrobbleArchive>
     
-    // =====================
     // Paginated Queries (for History Screen)
-    // =====================
-    
-    /**
-     * Get archived tracks paginated by last scrobble time (most recent first).
-     * Used for showing archive in chronological order in History screen.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         WHERE 
@@ -198,9 +169,6 @@ interface ScrobbleArchiveDao {
         offset: Int
     ): List<ScrobbleArchive>
     
-    /**
-     * Count total archive items matching filters (for pagination info).
-     */
     @Query("""
         SELECT COUNT(*) FROM scrobbles_archive 
         WHERE 
@@ -217,13 +185,7 @@ interface ScrobbleArchiveDao {
         endTime: Long? = null
     ): Int
     
-    // =====================
     // Top Tracks Queries
-    // =====================
-    
-    /**
-     * Get top archived tracks by play count.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         ORDER BY play_count DESC
@@ -231,9 +193,6 @@ interface ScrobbleArchiveDao {
     """)
     suspend fun getTopByPlayCount(limit: Int = 100): List<ScrobbleArchive>
     
-    /**
-     * Get top archived tracks by a specific artist.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         WHERE artist_name_normalized = :artistNormalized
@@ -242,55 +201,29 @@ interface ScrobbleArchiveDao {
     """)
     suspend fun getTopByArtist(artistNormalized: String, limit: Int = 50): List<ScrobbleArchive>
     
-    // =====================
     // Statistics Queries
-    // =====================
-    
-    /**
-     * Get total scrobbles in date range from archive.
-     */
     @Query("""
         SELECT COALESCE(SUM(play_count), 0) FROM scrobbles_archive 
         WHERE first_scrobble <= :endTime AND last_scrobble >= :startTime
     """)
     suspend fun getTotalScrobblesInRange(startTime: Long, endTime: Long): Long
     
-    /**
-     * Get unique track count in date range from archive.
-     */
     @Query("""
         SELECT COUNT(*) FROM scrobbles_archive 
         WHERE first_scrobble <= :endTime AND last_scrobble >= :startTime
     """)
     suspend fun getUniqueTracksInRange(startTime: Long, endTime: Long): Int
     
-    /**
-     * Get unique artist count in archive.
-     */
     @Query("SELECT COUNT(DISTINCT artist_name_normalized) FROM scrobbles_archive")
     suspend fun getUniqueArtistCount(): Int
     
-    /**
-     * Get storage size estimate (bytes).
-     * Note: This is an approximation based on blob sizes.
-     */
     @Query("SELECT COALESCE(SUM(LENGTH(timestamps_blob)), 0) FROM scrobbles_archive")
     suspend fun getStorageSizeBytes(): Long
     
-    // =====================
     // Promotion Operations
-    // =====================
-    
-    /**
-     * Check if a track hash exists in the archive.
-     */
     @Query("SELECT EXISTS(SELECT 1 FROM scrobbles_archive WHERE track_hash = :trackHash)")
     suspend fun exists(trackHash: String): Boolean
     
-    /**
-     * Get archives that could be promoted (high play count in archive).
-     * These are tracks that were initially archived but got many plays.
-     */
     @Query("""
         SELECT * FROM scrobbles_archive 
         WHERE play_count >= :minPlayCount
@@ -299,9 +232,7 @@ interface ScrobbleArchiveDao {
     """)
     suspend fun getCandidatesForPromotion(minPlayCount: Int = 10, limit: Int = 50): List<ScrobbleArchive>
     
-    // =====================
     // Batch Operations
-    // =====================
     
     /**
      * Batch insert with chunking for large imports.

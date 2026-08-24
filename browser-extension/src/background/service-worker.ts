@@ -1,21 +1,20 @@
-// ============================================================================
-// Tempo Stats — Background Service Worker
-// Central orchestrator: receives media state from content scripts, feeds into
-// PlaybackTracker (multi-tab), queues plays, manages sync alarms, handles
-// popup messages. Persists state to survive service worker hibernation.
-// ============================================================================
+/**
+ * Background Service Worker for Tempo Stats.
+ * Receives media state from content scripts, drives PlaybackTracker,
+ * manages sync alarms, handles popup requests, and persists state across hibernation.
+ */
 
 import type { RawMediaState, NowPlaying, Play, Settings, TabTrackState, YoutubeChannelSuggestion, PhoneSocketMessage } from '../shared/types';
 import { MessageType, TrackEventType, DEFAULT_SETTINGS, SocketState } from '../shared/types';
 import { PlaybackTracker } from './tracker';
-import { shouldTrack, extractSite, getSourceApp, isPlainYouTube } from './site-detect';
+import { shouldTrack, extractSiteHost, getSourceAppHost, isPlainYouTubeHost } from './site-detect';
 import { normalize, cleanTitle, cleanArtist, parseYoutubeVideo } from './normalize';
 import * as storage from './storage';
 import { syncToPhone, getSyncStatus, initAutoSync, adjustSyncInterval, initHeartbeat, initTokenRefresh, executeHeartbeat, refreshToken, restoreBackoffState, SYNC_ALARM_NAME, RETRY_ALARM_NAME, HEARTBEAT_ALARM_NAME, TOKEN_REFRESH_ALARM_NAME, removeHostPermission } from './sync';
 import { signRequest, validatePingResponse } from '../shared/security';
-import { PhoneSocket, RECONNECT_ALARM_NAME, KEEPALIVE_ALARM_NAME } from './websocket';
+import { PhoneSocket, RECONNECT_ALARM_NAME, KEEPALIVE_ALARM_NAME, clearStaleAlarms } from './websocket';
 
-// ---- State -----------------------------------------------------------------
+// State
 
 const tracker = new PlaybackTracker();
 
@@ -30,11 +29,66 @@ const phoneSocket = new PhoneSocket(
   (state: SocketState) => {
     chrome.runtime.sendMessage({ type: MessageType.SocketStateChanged, state }).catch(() => {});
   },
+  // Policy: phone contact requires pairing AND offline mode being off.
+  async () => !!(await storage.getPairing()) && !_settings.offlineMode,
 );
 
 // Dedup: recent play keys (title|artist → timestamp_utc)
 const recentPlayKeys = new Map<string, number>();
 const DEDUP_WINDOW_MS = 60_000;
+
+// Now-playing push dedup: push to the phone immediately when the track key
+// changes; position-only updates of an unchanged track are throttled so a
+// 1s polling cadence does not flood the WebSocket.
+const NOW_PLAYING_PUSH_MIN_INTERVAL_MS = 15_000;
+let lastPushedNowPlayingKey = '';
+let lastPushedNowPlayingAt = 0;
+
+// Memoization for parseYoutubeVideo (pure function of its inputs plus the
+// settings epoch — knownArtists can change the parsed result). LRU-capped.
+const PARSE_YT_CACHE_CAP = 50;
+const parseYtCache = new Map<string, { title: string; artist: string; album?: string; label?: string }>();
+
+
+/**
+ * Memoized call into normalize's parseYoutubeVideo. The parser is a pure
+ * function of title/channel/metadata plus knownArtists; knownArtists changes
+ * are covered by bumping _settingsEpoch whenever _settings is replaced.
+ */
+function parseYoutubeVideoCached(
+  videoTitle: string,
+  channelName: string,
+  originalChannel: string,
+  ytMusicTagMetadata: RawMediaState['ytMusicTagMetadata'],
+  ytDescriptionMetadata: RawMediaState['ytDescriptionMetadata']
+): { title: string; artist: string; album?: string; label?: string } {
+  const key = `${videoTitle}|${originalChannel}|${channelName}|${!!ytMusicTagMetadata}|${!!ytDescriptionMetadata}|${_settingsEpoch}`;
+  const hit = parseYtCache.get(key);
+  if (hit) {
+    // Refresh insertion order so the Map acts as an LRU.
+    parseYtCache.delete(key);
+    parseYtCache.set(key, hit);
+    return hit;
+  }
+
+  const parsed = parseYoutubeVideo(videoTitle, channelName, _settings.knownArtists, ytMusicTagMetadata, ytDescriptionMetadata);
+  parseYtCache.set(key, parsed);
+  while (parseYtCache.size > PARSE_YT_CACHE_CAP) {
+    const oldest = parseYtCache.keys().next().value;
+    if (oldest === undefined) break;
+    parseYtCache.delete(oldest);
+  }
+  return parsed;
+}
+
+// Startup maintenance marker (session storage): cleared on browser restart.
+const LAST_MAINTENANCE_DAY_KEY = 'lastMaintenanceDay';
+
+// Whether the periodic stale-session sweep alarm currently exists. The alarm
+// is created lazily (only while sessions may need sweeping) and cleared by
+// runStaleSweep once nothing needs sweeping anymore.
+let _sweepAlarmActive = false;
+let _settingsEpoch = 0;
 
 // Cached tracking-enabled flag — avoids reading chrome.storage on every poll
 let _trackingEnabled = true;
@@ -72,7 +126,7 @@ function markTrackerRestored(): void {
 // Badge debounce timer
 let _badgeTimer: ReturnType<typeof setTimeout> | null = null;
 
-// ---- Valid message types for validation --------------------------------------
+// Valid message types for validation
 
 const VALID_MESSAGE_TYPES = new Set<string>([
   MessageType.MediaStateUpdate,
@@ -101,9 +155,10 @@ const VALID_MESSAGE_TYPES = new Set<string>([
   MessageType.GetConnectionHealth,
   MessageType.GetConnectionHistory,
   MessageType.GetSocketState,
+  MessageType.GetPopupState,
 ]);
 
-// ---- Init ------------------------------------------------------------------
+// Init
 
 console.log('[Tempo Stats] Service worker starting...');
 
@@ -116,6 +171,7 @@ async function handleSocketMessage(msg: PhoneSocketMessage): Promise<void> {
         await syncToPhone();
         scheduleBadgeUpdate();
         await adjustSyncInterval();
+        phoneSocket.ensureConnected();
       } catch (err) {
         console.warn('[Tempo] Socket-triggered sync failed:', err);
       }
@@ -152,6 +208,9 @@ async function handleSocketMessage(msg: PhoneSocketMessage): Promise<void> {
 }
 
 async function initServiceWorker() {
+  // Clear the legacy 'tempo-ws-keepalive' alarm from pre-1.0.8 installs —
+  // no longer scheduled; its firing is recovery-only until it dies here.
+  void clearStaleAlarms();
   // Restore tracker state from session storage
   try {
     const savedStates = await storage.loadSessionState();
@@ -171,6 +230,26 @@ async function initServiceWorker() {
         }
       }
     }
+
+    // Reconcile stale maps against live tabs: a service worker can be
+    // hibernated while tabs are closed elsewhere, leaving orphaned
+    // now-playing snapshots, channel suggestions, and tracker sessions.
+    try {
+      const tabs = await chrome.tabs.query({});
+      const aliveTabIds = new Set<number>();
+      for (const tab of tabs) {
+        if (typeof tab.id === 'number') aliveTabIds.add(tab.id);
+      }
+      for (const tabId of tabNowPlaying.keys()) {
+        if (!aliveTabIds.has(tabId)) tabNowPlaying.delete(tabId);
+      }
+      for (const tabId of tabYoutubeSuggestions.keys()) {
+        if (!aliveTabIds.has(tabId)) tabYoutubeSuggestions.delete(tabId);
+      }
+      for (const state of tracker.serializeAll()) {
+        if (!aliveTabIds.has(state.tabId)) tracker.removeTab(state.tabId);
+      }
+    } catch { /* Non-critical — tabs query unavailable */ }
   } catch (err) {
     console.warn('[Tempo] Could not restore tracker state:', err);
   } finally {
@@ -178,6 +257,14 @@ async function initServiceWorker() {
     // forever if restore throws or finds nothing.
     markTrackerRestored();
   }
+
+  // Sweep-alarm lifecycle (lazy one-shot): arm only when a restored session
+  // could still need sweeping; otherwise retire any leftover registration.
+  // The legacy 'tempo-dedup-cleanup' alarm is folded into runStaleSweep, so
+  // clear it on every boot to clean up upgraded installs.
+  await chrome.alarms.clear('tempo-dedup-cleanup');
+  _sweepAlarmActive = false;
+  await armSweepAlarm();
 
   // Restore sync backoff state (rate-limit cooldown, failure count) so a
   // worker restart doesn't reset it and immediately hammer the phone.
@@ -197,9 +284,10 @@ async function initServiceWorker() {
   // Set up token refresh
   await initTokenRefresh();
 
-  // Connect WebSocket if paired
+  // Connect WebSocket only when paired AND not in offline mode — an unpaired
+  // or offline install must never open sockets or arm phone-contacting work.
   const pairing = await storage.getPairing();
-  if (pairing) {
+  if (pairing && !_settings.offlineMode) {
     phoneSocket.connect().catch(err => {
       console.warn('[Tempo] WebSocket connect failed:', err);
     });
@@ -208,17 +296,26 @@ async function initServiceWorker() {
   // Initial badge update
   scheduleBadgeUpdate();
 
-  // Clean up old records on startup
+  // Clean up old records / enforce caps / retry failed plays at most once per
+  // calendar day. The marker lives in session storage, so it is cleared when
+  // the browser restarts — the first boot of a browser session still retries
+  // failed plays from the previous one.
   try {
-    await storage.cleanupOldRecords();
-    await storage.enforceMaxRecords();
-  } catch { /* Non-critical */ }
+    const today = new Date().toISOString().slice(0, 10);
+    const stored = await chrome.storage.session.get(LAST_MAINTENANCE_DAY_KEY);
+    const lastDay = stored[LAST_MAINTENANCE_DAY_KEY] as string | undefined;
+    if (lastDay !== today) {
+      await storage.cleanupOldRecords();
+      await storage.enforceMaxRecords();
 
-  // Retry any failed plays from previous session
-  try {
-    const retried = await storage.retryFailedPlays();
-    if (retried > 0) {
-      console.log(`[Tempo] Retried ${retried} failed plays from previous session`);
+      try {
+        const retried = await storage.retryFailedPlays();
+        if (retried > 0) {
+          console.log(`[Tempo] Retried ${retried} failed plays from previous session`);
+        }
+      } catch { /* Non-critical */ }
+
+      await chrome.storage.session.set({ [LAST_MAINTENANCE_DAY_KEY]: today });
     }
   } catch { /* Non-critical */ }
 }
@@ -229,10 +326,12 @@ async function ensureSettingsLoaded(): Promise<void> {
 
   _settingsLoadPromise = storage.getSettings().then(settings => {
     _settings = settings;
+    _settingsEpoch++;
     _trackingEnabled = settings.trackingEnabled;
     _settingsLoaded = true;
   }).catch(() => {
     _settings = { ...DEFAULT_SETTINGS };
+    _settingsEpoch++;
     _trackingEnabled = _settings.trackingEnabled;
     _settingsLoaded = true;
   }).finally(() => {
@@ -242,13 +341,14 @@ async function ensureSettingsLoaded(): Promise<void> {
   return _settingsLoadPromise;
 }
 
-// ---- First Install / Update ------------------------------------------------
+// First Install / Update
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
     console.log('[Tempo] First install — setting defaults');
     await storage.saveSettings({ ...DEFAULT_SETTINGS });
     _settings = { ...DEFAULT_SETTINGS };
+    _settingsEpoch++;
     _settingsLoaded = true;
     _trackingEnabled = true;
 
@@ -262,6 +362,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     console.log(`[Tempo] Updated from ${details.previousVersion}`);
     const existing = await storage.getSettings();
     _settings = { ...DEFAULT_SETTINGS, ...existing };
+    _settingsEpoch++;
     await storage.saveSettings(_settings);
     _trackingEnabled = _settings.trackingEnabled;
     _settingsLoaded = true;
@@ -282,11 +383,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     youtubeChannels: sanitizeArray(raw.youtubeChannels),
     blockedYoutubeChannels: sanitizeArray(raw.blockedYoutubeChannels),
   };
+  _settingsEpoch++;
   _trackingEnabled = _settings.trackingEnabled;
   _settingsLoaded = true;
 });
 
-// ---- Message Handling ------------------------------------------------------
+// Message Handling
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) {
@@ -379,10 +481,37 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender)
 
     case MessageType.GetNowPlaying: {
       const bestTabId = tracker.getBestTabId();
-      if (bestTabId !== null) {
-        return { nowPlaying: tabNowPlaying.get(bestTabId) ?? null };
+      return {
+        nowPlaying: bestTabId !== null ? (tabNowPlaying.get(bestTabId) ?? null) : null,
+        suggestion: getBestYoutubeSuggestion(),
+      };
+    }
+
+    case MessageType.GetPopupState: {
+      // Single round-trip bootstrap for the popup. Independent reads run in
+      // parallel; syncStatus derives from queueCount so it waits on that.
+      const bestTabId = tracker.getBestTabId();
+      const [pairing, queueCount, connectionHealth] = await Promise.all([
+        storage.getPairing(),
+        storage.getQueueCount(),
+        storage.getConnectionHealth(),
+      ]);
+      // A popup open is an explicit user presence check: never answer with a
+      // stale parked/reconnecting state while the phone may be reachable.
+      // Kick a revival first, then report the CURRENT (likely Connecting) state;
+      // the SocketStateChanged broadcast flips the chip to Live on success.
+      if (pairing && !_settings.offlineMode && phoneSocket.state !== SocketState.Connected) {
+        phoneSocket.ensureConnected();
       }
-      return { nowPlaying: null };
+      return {
+        pairing,
+        nowPlaying: bestTabId !== null ? (tabNowPlaying.get(bestTabId) ?? null) : null,
+        ytSuggestion: getBestYoutubeSuggestion(),
+        queueCount,
+        syncStatus: getSyncStatus(queueCount),
+        connectionHealth,
+        socketState: phoneSocket.state,
+      };
     }
 
     case MessageType.GetYoutubeChannelSuggestion:
@@ -422,9 +551,14 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender)
       await removePreviousPairingPermission(message.pairing);
       await storage.savePairing(message.pairing);
       await chrome.alarms.clear(RETRY_ALARM_NAME);
+      // All three initializers self-gate on pairing + offline mode, so this
+      // is safe for both states.
+      await initAutoSync();
       await initHeartbeat();
       await initTokenRefresh();
-      await phoneSocket.reconnect();
+      if (!_settings.offlineMode) {
+        await phoneSocket.reconnect();
+      }
       return { ok: true };
 
     case MessageType.RemovePairing: {
@@ -459,10 +593,23 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender)
         youtubeChannels: sanitizeArray(raw.youtubeChannels),
         blockedYoutubeChannels: sanitizeArray(raw.blockedYoutubeChannels),
       };
+      _settingsEpoch++;
       await storage.saveSettings(_settings);
       _trackingEnabled = _settings.trackingEnabled;
       _settingsLoaded = true;
+      // Re-evaluate every phone-contacting alarm + socket against the new
+      // settings (offline toggle, sync interval). Each init self-gates.
       await initAutoSync();
+      await initHeartbeat();
+      await initTokenRefresh();
+      if (_settings.offlineMode) {
+        // Kill any pending network work from the online era — a stale retry
+        // alarm must not wake the worker just to no-op (or pre-fix, dial).
+        await chrome.alarms.clear(RETRY_ALARM_NAME);
+        phoneSocket.disconnect();
+      } else if (await storage.getPairing()) {
+        phoneSocket.ensureConnected();
+      }
       return { ok: true };
     }
 
@@ -485,6 +632,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender)
             c => c.toLowerCase().trim() !== channel.toLowerCase()
           ),
         };
+        _settingsEpoch++;
         _trackingEnabled = _settings.trackingEnabled;
         await storage.saveSettings(_settings);
       }
@@ -515,6 +663,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender)
           ),
           blockedYoutubeChannels: [..._settings.blockedYoutubeChannels, channel],
         };
+        _settingsEpoch++;
         _trackingEnabled = _settings.trackingEnabled;
         await storage.saveSettings(_settings);
       }
@@ -612,7 +761,7 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender)
   }
 }
 
-// ---- Media Update Processing -----------------------------------------------
+// Media Update Processing
 
 async function handleMediaUpdate(data: any, sender: chrome.runtime.MessageSender): Promise<any> {
   const tabId = sender.tab?.id ?? -1;
@@ -641,15 +790,23 @@ async function handleMediaUpdate(data: any, sender: chrome.runtime.MessageSender
     ytMusicTagMetadata: data?.ytMusicTagMetadata,
   };
 
-  if (isPlainYouTube(raw.url)) {
+  // Parse the URL once per update; the hostname is threaded through every
+  // classification call below instead of re-running `new URL()` per check.
+  let host: string | null = null;
+  try {
+    host = new URL(raw.url).hostname.toLowerCase();
+  } catch { /* invalid URL — treated as unknown site */ }
+
+  const plainYouTube = isPlainYouTubeHost(host);
+  if (plainYouTube) {
     // Cache the original channel name for authorization checks and suggestions
     (raw as any).channelName = raw.artist;
 
     try {
-      const parsed = parseYoutubeVideo(
+      const parsed = parseYoutubeVideoCached(
         raw.title,
         raw.artist,
-        _settings.knownArtists,
+        (raw as any).channelName,
         raw.ytMusicTagMetadata,
         raw.ytDescriptionMetadata
       );
@@ -664,8 +821,8 @@ async function handleMediaUpdate(data: any, sender: chrome.runtime.MessageSender
     }
   }
 
-  if (!shouldTrack(raw, _settings.youtubeChannels, _settings.knownArtists, _settings.blockedYoutubeChannels)) {
-    if (isPlainYouTube(raw.url) && raw.isPlaying) {
+  if (!shouldTrack(raw, _settings.youtubeChannels, _settings.knownArtists, _settings.blockedYoutubeChannels, host ?? undefined)) {
+    if (plainYouTube && raw.isPlaying) {
       const channel = (raw as any).channelName || raw.artist;
       if (channel && typeof channel === 'string' && channel.trim()) {
         const cleanChan = channel.trim();
@@ -699,15 +856,35 @@ async function handleMediaUpdate(data: any, sender: chrome.runtime.MessageSender
 
   tabYoutubeSuggestions.delete(tabId);
 
-  const site = extractSite(raw.url);
+  const site = extractSiteHost(host);
   const event = tracker.process(raw, site);
 
   const snapshot = tracker.buildLiveSnapshotForTab(tabId);
   if (snapshot) {
-    snapshot.sourceApp = getSourceApp(raw.url);
+    snapshot.sourceApp = getSourceAppHost(host);
     snapshot.site = site;
     tabNowPlaying.set(tabId, snapshot);
-    phoneSocket.sendNowPlaying(snapshot);
+
+    // Push dedup: immediate on track change, throttled for position-only
+    // updates. Paused/unchanged ticks skip the WebSocket send but the tab
+    // snapshot above is still refreshed for the popup.
+    const pushKey = `${snapshot.title}|${snapshot.artist}|${snapshot.album}|${snapshot.site ?? snapshot.sourceApp}|${snapshot.isPlaying}`;
+    const nowMs = Date.now();
+    // Offline mode: snapshots still refresh for the popup, but nothing is
+    // sent and no socket is opened.
+    if (!_settings.offlineMode) {
+      if (pushKey !== lastPushedNowPlayingKey) {
+        phoneSocket.sendNowPlaying(snapshot);
+        lastPushedNowPlayingKey = pushKey;
+        lastPushedNowPlayingAt = nowMs;
+      } else if (snapshot.isPlaying && (nowMs - lastPushedNowPlayingAt) >= NOW_PLAYING_PUSH_MIN_INTERVAL_MS) {
+        phoneSocket.sendNowPlaying(snapshot);
+        lastPushedNowPlayingAt = nowMs;
+      }
+      // Real traffic exists again — revive the socket if idle-suspended.
+      phoneSocket.ensureConnected();
+    }
+    void ensureSweepAlarm();
   }
 
   persistTrackerState();
@@ -715,7 +892,7 @@ async function handleMediaUpdate(data: any, sender: chrome.runtime.MessageSender
   switch (event.type) {
     case TrackEventType.ReadyToLog: {
       const np = event.nowPlaying;
-      np.sourceApp = getSourceApp(raw.url);
+      np.sourceApp = getSourceAppHost(host);
 
       const normalized = normalize(np);
       if (!normalized) {
@@ -784,6 +961,7 @@ async function handleManualSync(): Promise<{ ok: boolean; synced?: number; error
     const synced = await syncToPhone({ forceDiscovery: true });
     scheduleBadgeUpdate();
     await adjustSyncInterval();
+    phoneSocket.ensureConnected();
     return { ok: true, synced };
   } catch (error) {
     return {
@@ -803,7 +981,7 @@ function getBestYoutubeSuggestion(): YoutubeChannelSuggestion | null {
   return best;
 }
 
-// ---- Queue a play ----------------------------------------------------------
+// Queue a play
 
 async function queuePlay(np: NowPlaying): Promise<void> {
   const play: Omit<Play, 'id'> = {
@@ -840,7 +1018,7 @@ async function queuePlay(np: NowPlaying): Promise<void> {
   scheduleBadgeUpdate();
 }
 
-// ---- Badge update (debounced) ----------------------------------------------
+// Badge update (debounced)
 
 function scheduleBadgeUpdate(): void {
   if (_badgeTimer) return; // Already scheduled
@@ -873,7 +1051,7 @@ async function removePreviousPairingPermission(nextPairing: { phoneIp?: string; 
   }
 }
 
-// ---- Persist tracker state (debounced) ------------------------------------
+// Persist tracker state (debounced)
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let lastPersistSignature = '';
@@ -898,7 +1076,8 @@ function buildPersistSignature(states: TabTrackState[]): string {
 
 function writeTrackerStateNow(): void {
   const states = tracker.serializeAll();
-  const signature = buildPersistSignature(states);
+  // Micro-opt: skip signature string building entirely when nothing to persist.
+  const signature = states.length > 0 ? buildPersistSignature(states) : '';
   lastPersistSignature = signature;
   lastPersistAt = Date.now();
   storage.saveSessionState(states).catch(err => {
@@ -911,7 +1090,7 @@ function persistTrackerState(): void {
   persistTimer = setTimeout(() => {
     persistTimer = null;
     const states = tracker.serializeAll();
-    const signature = buildPersistSignature(states);
+    const signature = states.length > 0 ? buildPersistSignature(states) : '';
     if (signature === lastPersistSignature && (Date.now() - lastPersistAt) < TRACKER_PERSIST_MAX_DELAY_MS) {
       return;
     }
@@ -933,7 +1112,7 @@ function persistTrackerStateNow(): void {
   writeTrackerStateNow();
 }
 
-// ---- Clean up dedup map ----------------------------------------------------
+// Clean up dedup map
 
 function cleanupDedupMap(): void {
   const now = Date.now();
@@ -944,7 +1123,7 @@ function cleanupDedupMap(): void {
   }
 }
 
-// ---- Stale-session sweep ----------------------------------------------------
+// Stale-session sweep
 //
 // Finalizes tracking sessions that went silent while marked as playing. This is
 // the safety net that makes plays register WITHOUT the popup being open: when a
@@ -959,8 +1138,15 @@ const SWEEP_STALE_ALARM_NAME = 'tempo-sweep-stale';
 const SWEEP_STALE_AFTER_MS = 150_000;
 
 async function runStaleSweep(): Promise<void> {
+  // Dedup-map cleanup was previously the 'tempo-dedup-cleanup' alarm job;
+  // it now rides along with the sweep cadence.
+  cleanupDedupMap();
+
   const candidates = tracker.listStaleSessionTabIds(SWEEP_STALE_AFTER_MS);
-  if (candidates.length === 0) return;
+  if (candidates.length === 0) {
+    await armSweepAlarm();
+    return;
+  }
 
   // A session being silent does NOT prove the tab is dead: Firefox/Zen can
   // clamp background timers hard enough that a live playing tab misses the
@@ -977,7 +1163,6 @@ async function runStaleSweep(): Promise<void> {
   }));
 
   const swept = tracker.sweepStaleSessions(SWEEP_STALE_AFTER_MS, alive);
-  if (swept.length === 0) return;
 
   for (const { tabId, event } of swept) {
     if (event.type === TrackEventType.ReadyToLog) {
@@ -991,11 +1176,59 @@ async function runStaleSweep(): Promise<void> {
     tabYoutubeSuggestions.delete(tabId);
   }
 
-  persistTrackerStateNow();
-  scheduleBadgeUpdate();
+  if (swept.length > 0) {
+    persistTrackerStateNow();
+    scheduleBadgeUpdate();
+  }
+  await armSweepAlarm();
 }
 
-// ---- Alarm handlers (consolidated) -----------------------------------------
+/**
+ * Earliest moment a PLAYING session could need sweeping, or null when none
+ * exists. Drives the one-shot sweep alarm. Paused / already-finalizable
+ * sessions deliberately yield no deadline: sweepStaleSessions skips them, so
+ * keeping an alarm alive for them only burns wakeups.
+ */
+function nextSweepDeadlineMs(): number | null {
+  let deadline: number | null = null;
+  for (const state of tracker.serializeAll()) {
+    if (!state.trackKey || !state.wasPlaying) continue;
+    const due = state.lastPollTime + SWEEP_STALE_AFTER_MS;
+    if (deadline === null || due < deadline) deadline = due;
+  }
+  return deadline;
+}
+
+/**
+ * Re-arm the stale-session sweep alarm from current tracker state.
+ *
+ * One-shot instead of periodic: it fires exactly when the oldest
+ * silent-but-marked-playing session crosses SWEEP_STALE_AFTER_MS, then
+ * re-arms from fresh state. An early fire (session resumed ticking meanwhile)
+ * is a cheap no-op that reschedules — self-correcting. Between listens the
+ * alarm retires entirely instead of waking the worker every minute.
+ */
+async function armSweepAlarm(): Promise<void> {
+  const deadline = nextSweepDeadlineMs();
+  if (deadline === null) {
+    if (_sweepAlarmActive) {
+      await chrome.alarms.clear(SWEEP_STALE_ALARM_NAME);
+      _sweepAlarmActive = false;
+    }
+    return;
+  }
+  const delayMin = Math.max((deadline - Date.now()) / 60_000, 0.5);
+  chrome.alarms.create(SWEEP_STALE_ALARM_NAME, { delayInMinutes: delayMin });
+  _sweepAlarmActive = true;
+}
+
+/** Lazily arm the sweep alarm; no-op while already armed. */
+async function ensureSweepAlarm(): Promise<void> {
+  if (_sweepAlarmActive) return;
+  await armSweepAlarm();
+}
+
+// Alarm handlers (consolidated)
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   switch (alarm.name) {
@@ -1011,6 +1244,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         await syncToPhone();
         scheduleBadgeUpdate();
         await adjustSyncInterval();
+        phoneSocket.ensureConnected();
       } catch (err) {
         console.warn('[Tempo] Auto-sync failed:', err);
       }
@@ -1023,6 +1257,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         await syncToPhone();
         scheduleBadgeUpdate();
         await adjustSyncInterval();
+        phoneSocket.ensureConnected();
       } catch (err) {
         // syncToPhone's catch already classified the error and scheduled the
         // next retry with exponential backoff — do NOT override it here.
@@ -1032,7 +1267,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }
 
     case HEARTBEAT_ALARM_NAME: {
-      const result = await executeHeartbeat();
+      // An established WebSocket already proves reachability+auth via its 25s
+      // signed pings — skip the redundant HTTP round-trip in that state.
+      const result = await executeHeartbeat(phoneSocket.state === SocketState.Connected);
       if (result.invalidated) {
         phoneSocket.disconnect();
         chrome.runtime.sendMessage({ type: MessageType.PairingInvalidated }).catch(() => {});
@@ -1052,7 +1289,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }
 
     case 'tempo-dedup-cleanup': {
-      cleanupDedupMap();
+      // Legacy alarm — dedup cleanup now runs inside runStaleSweep. Clear any
+      // leftover registration from upgraded installs.
+      chrome.alarms.clear('tempo-dedup-cleanup').catch(() => {});
       break;
     }
 
@@ -1063,7 +1302,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-// ---- Tab lifecycle ---------------------------------------------------------
+// Tab lifecycle
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   const event = tracker.onPlaybackStopped(tabId);
@@ -1079,10 +1318,3 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   persistTrackerStateNow();
 });
 
-// ---- Periodic dedup cleanup alarm ------------------------------------------
-
-chrome.alarms.create('tempo-dedup-cleanup', { periodInMinutes: 5 });
-
-// ---- Periodic stale-session sweep alarm ------------------------------------
-// Runs every minute so plays finalize even when the popup is never opened.
-chrome.alarms.create(SWEEP_STALE_ALARM_NAME, { periodInMinutes: 1 });

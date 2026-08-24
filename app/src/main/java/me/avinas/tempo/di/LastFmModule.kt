@@ -17,20 +17,12 @@ import javax.inject.Named
 import javax.inject.Singleton
 
 /**
- * Hilt module providing Last.fm API client.
- * 
- * Last.fm provides excellent tag/genre data for tracks and artists.
- * Used as a fallback when Spotify audio features are unavailable.
+ * Provides Last.fm API client for track and artist tags/genres fallback.
  */
 @Module
 @InstallIn(SingletonComponent::class)
 object LastFmModule {
 
-    /**
-     * OkHttpClient configured for Last.fm API:
-     * - Light rate limiting (~5 req/sec is fine)
-     * - Retry with backoff
-     */
     @Provides
     @Singleton
     @Named("lastfm")

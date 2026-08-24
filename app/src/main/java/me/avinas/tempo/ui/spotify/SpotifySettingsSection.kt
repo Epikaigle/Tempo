@@ -14,6 +14,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import me.avinas.tempo.ui.theme.*
 
 /**
  * Spotify settings section for managing Spotify connection.
@@ -256,34 +257,43 @@ fun SpotifyDisconnectDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = TempoSurfaceDialog,
+        shape = RoundedCornerShape(24.dp),
+        icon = {
+            Icon(
+                Icons.Default.LinkOff,
+                contentDescription = null,
+                tint = TempoError
+            )
+        },
         title = {
             Text(
                 text = "Disconnect Spotify?",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
             )
         },
         text = {
             Text(
                 text = "This will remove all audio feature data. Your listening history will remain, but advanced stats like mood and energy analysis will no longer be available.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
             )
         },
         confirmButton = {
             TextButton(
                 onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
+                colors = ButtonDefaults.textButtonColors(contentColor = TempoError)
             ) {
-                Text("Disconnect")
+                Text("Disconnect", fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text("Cancel", color = TextTertiary)
             }
-        },
-        shape = RoundedCornerShape(16.dp)
+        }
     )
 }
 

@@ -9,10 +9,7 @@ import me.avinas.tempo.data.local.entities.UserLevel
 @Dao
 interface GamificationDao {
 
-    // =====================
     // UserLevel
-    // =====================
-    
     @Query("SELECT * FROM user_level WHERE id = 1")
     suspend fun getUserLevel(): UserLevel?
     
@@ -22,10 +19,7 @@ interface GamificationDao {
     @Upsert
     suspend fun upsertUserLevel(userLevel: UserLevel)
 
-    // =====================
     // Badges
-    // =====================
-    
     @Query("SELECT * FROM badges ORDER BY earned_at DESC")
     suspend fun getAllBadges(): List<Badge>
     
@@ -62,9 +56,7 @@ interface GamificationDao {
     @Query("SELECT COUNT(*) FROM badges")
     suspend fun getTotalBadgeCount(): Int
     
-    // =====================
     // XP Calculation helpers (queries against listening_events)
-    // =====================
     
     /**
      * Count XP-eligible full plays (≥80% completion).
@@ -173,10 +165,7 @@ interface GamificationDao {
     """)
     suspend fun getMarathonSessionCount(): Int
 
-    // =====================
     // Daily Challenges
-    // =====================
-    
     @Query("SELECT * FROM daily_challenges WHERE date = :date ORDER BY difficulty ASC")
     fun observeChallengesForDate(date: String): Flow<List<DailyChallenge>>
     
@@ -195,9 +184,7 @@ interface GamificationDao {
     @Query("SELECT * FROM daily_challenges WHERE is_completed = 1")
     suspend fun getAllCompletedChallenges(): List<DailyChallenge>
     
-    // =====================
     // Challenge Progress Trackers (since start of day)
-    // =====================
     
         @Query("""
                 SELECT COUNT(*) FROM listening_events

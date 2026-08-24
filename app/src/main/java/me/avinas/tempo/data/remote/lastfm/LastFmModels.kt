@@ -10,9 +10,7 @@ import com.squareup.moshi.JsonClass
  * from most modern APIs. These models handle the quirks of the Last.fm API.
  */
 
-// =====================
 // Track Info Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmScrobbleResponse(
@@ -107,9 +105,7 @@ data class LastFmWiki(
     val content: String? = null
 )
 
-// =====================
 // Artist Info Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmArtistResponse(
@@ -176,9 +172,7 @@ data class LastFmSimilarArtist(
     val image: List<LastFmImage>? = null
 )
 
-// =====================
 // Tags Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmTopTagsResponse(
@@ -206,9 +200,7 @@ data class LastFmAttr(
     val track: String? = null
 )
 
-// =====================
 // Error Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmError(
@@ -233,14 +225,10 @@ data class LastFmError(
     }
 }
 
-// =====================================================================
 // USER HISTORY IMPORT MODELS
-// =====================================================================
 // These models support Last.fm scrobble history import functionality.
 
-// =====================
 // User Info Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmUserInfoResponse(
@@ -294,9 +282,7 @@ data class LastFmRegistered(
     @field:Json(name = "#text") val text: String? = null // Formatted date string
 )
 
-// =====================
 // Recent Tracks Response (Scrobble History)
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmRecentTracksResponse(
@@ -409,9 +395,7 @@ data class LastFmNowPlayingAttr(
     val nowplaying: String? = null // "true" if currently playing
 )
 
-// =====================
 // Pagination Attributes
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmPaginationAttr(
@@ -427,9 +411,7 @@ data class LastFmPaginationAttr(
     fun getTotal(): Int = total?.toIntOrNull() ?: 0
 }
 
-// =====================
 // Top Tracks Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmTopTracksResponse(
@@ -485,9 +467,7 @@ data class LastFmRankAttr(
     val rank: String? = null
 )
 
-// =====================
 // Loved Tracks Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmLovedTracksResponse(
@@ -521,9 +501,7 @@ data class LastFmLovedTrack(
     }
 }
 
-// =====================
 // Top Artists Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class LastFmTopArtistsResponse(

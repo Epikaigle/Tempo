@@ -10,13 +10,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import me.avinas.tempo.data.local.entities.Artist
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.components.*
+import me.avinas.tempo.ui.theme.*
 
 /**
  * Dialog for renaming an artist with smart auto-merge detection.
@@ -58,219 +59,162 @@ fun ArtistRenameDialog(
     }
 
     Dialog(onDismissRequest = { if (!isRenaming) onDismiss() }) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF1E293B)
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Title
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = null,
-                    tint = TempoRed,
-                    modifier = Modifier.size(32.dp)
+        TempoDialogSurface {
+            if (!showMergeConfirmation) {
+                // Step 1: Name input
+                TempoDialogIcon(
+                    icon = Icons.Default.Edit,
+                    tint = TempoPrimary,
+                    size = 48
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "Rename Artist",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                TempoDialogTitle(text = "Rename Artist")
+
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "If this artist was incorrectly split, enter the full name and we'll merge the data.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF94A3B8),
-                    textAlign = TextAlign.Center
+
+                TempoDialogBody(
+                    text = "If this artist was incorrectly split, enter the full name and we'll merge the data."
                 )
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                if (!showMergeConfirmation) {
-                    // Step 1: Name input
-                    OutlinedTextField(
-                        value = newName,
-                        onValueChange = { newName = it },
-                        label = { Text("Artist Name", color = Color(0xFF94A3B8)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = TempoRed,
-                            unfocusedBorderColor = Color(0xFF475569),
-                            cursorColor = TempoRed
-                        ),
-                        enabled = !isDetecting && !isRenaming
-                    )
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Artist Name", color = TextTertiary) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = TempoPrimary,
+                        unfocusedBorderColor = TextQuaternary,
+                        cursorColor = TempoPrimary,
+                        focusedLabelColor = TempoPrimary
+                    ),
+                    enabled = !isDetecting && !isRenaming,
+                    shape = RoundedCornerShape(12.dp)
+                )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                    // Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                if (isDetecting) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f),
-                            enabled = !isDetecting && !isRenaming,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = Color(0xFF94A3B8)
-                            )
-                        ) {
-                            Text("Cancel")
-                        }
-
-                        Button(
-                            onClick = {
-                                val trimmed = newName.trim()
-                                if (trimmed.isNotBlank() && trimmed != currentName) {
-                                    onDetectSplits(trimmed)
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            enabled = newName.trim().isNotBlank() &&
-                                    newName.trim() != currentName &&
-                                    !isDetecting && !isRenaming,
-                            colors = ButtonDefaults.buttonColors(containerColor = TempoRed)
-                        ) {
-                            if (isDetecting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text("Rename", color = Color.White)
-                            }
-                        }
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = TempoPrimary,
+                            strokeWidth = 2.dp
+                        )
                     }
                 } else {
-                    // Step 2: Merge confirmation
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = Color(0xFFFBBF24), // Amber
-                        modifier = Modifier.size(28.dp)
+                    TempoDialogButtonRow(
+                        primaryText = "Rename",
+                        onPrimary = {
+                            val trimmed = newName.trim()
+                            if (trimmed.isNotBlank() && trimmed != currentName) {
+                                onDetectSplits(trimmed)
+                            }
+                        },
+                        secondaryText = "Cancel",
+                        onSecondary = onDismiss,
+                        primaryEnabled = newName.trim().isNotBlank() && newName.trim() != currentName
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Split Artists Detected!",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFBBF24)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "It looks like these artists were incorrectly split from \"$newName\":",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFCBD5E1),
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            } else {
+                // Step 2: Merge confirmation
+                TempoDialogIcon(
+                    icon = Icons.Default.Warning,
+                    tint = TempoWarning,
+                    size = 48
+                )
 
-                    // List of split artists
+                Spacer(modifier = Modifier.height(16.dp))
+
+                TempoDialogTitle(text = "Split Artists Detected")
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                TempoDialogBody(
+                    text = "It looks like these artists were incorrectly split from \"$newName\":"
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // List of split artists
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     splitArtists.forEach { artist ->
-                        Card(
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = Color(0xFF334155)
-                            )
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(TempoDarkSurfaceSunken)
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
                         ) {
                             Text(
-                                text = "• ${artist.name}",
+                                text = artist.name,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White,
-                                modifier = Modifier.padding(12.dp)
+                                fontWeight = FontWeight.Medium,
+                                color = TextPrimary
                             )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Merge their listening data into \"$newName\"?",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF94A3B8),
-                        textAlign = TextAlign.Center
-                    )
+                Spacer(modifier = Modifier.height(12.dp))
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                TempoDialogBody(
+                    text = "Merge their listening data into \"$newName\"?"
+                )
 
-                    // Merge buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Spacer(modifier = Modifier.height(20.dp))
+
+                if (isRenaming) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        // Rename only (no merge)
-                        OutlinedButton(
-                            onClick = { onConfirmRenameOnly(newName.trim()) },
-                            modifier = Modifier.weight(1f),
-                            enabled = !isRenaming,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = Color(0xFF94A3B8)
-                            )
-                        ) {
-                            Text("Just Rename", style = MaterialTheme.typography.labelSmall)
-                        }
-
-                        // Rename + merge
-                        Button(
-                            onClick = {
-                                onConfirmRenameAndMerge(
-                                    newName.trim(),
-                                    splitArtists.map { it.id }
-                                )
-                            },
-                            modifier = Modifier.weight(1f),
-                            enabled = !isRenaming,
-                            colors = ButtonDefaults.buttonColors(containerColor = TempoRed)
-                        ) {
-                            if (isRenaming) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Text("Merge & Rename", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = TempoPrimary,
+                            strokeWidth = 2.dp
+                        )
                     }
-
-                    // Cancel button
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(
-                        onClick = {
-                            showMergeConfirmation = false
+                } else {
+                    TempoDialogButtonRow(
+                        primaryText = "Merge & Rename",
+                        onPrimary = {
+                            onConfirmRenameAndMerge(
+                                newName.trim(),
+                                splitArtists.map { it.id }
+                            )
                         },
-                        enabled = !isRenaming
-                    ) {
-                        Text("Back", color = Color(0xFF64748B))
-                    }
-                }
+                        secondaryText = "Just Rename",
+                        onSecondary = { onConfirmRenameOnly(newName.trim()) }
+                    )
 
-                // Error state
-                if (renameSuccess == false) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Rename failed. Please try again.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFEF4444)
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    TempoDialogSecondaryButton(
+                        text = "Back",
+                        onClick = { showMergeConfirmation = false }
                     )
                 }
+            }
+
+            // Error state
+            if (renameSuccess == false) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Rename failed. Please try again.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TempoError,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

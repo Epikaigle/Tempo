@@ -16,10 +16,7 @@ import kotlin.math.pow
  */
 object GamificationEngine {
 
-    // =====================
     // XP Constants
-    // =====================
-    
     const val XP_FULL_PLAY = 10L    // ≥80% completion
     const val XP_PARTIAL_PLAY = 3L  // 30-79% completion
     const val XP_SKIPPED = 0L       // <30% completion
@@ -31,9 +28,7 @@ object GamificationEngine {
     // Discovery
     const val XP_NEW_ARTIST = 20L
     
-    // =====================
     // Level Computation
-    // =====================
     
     /**
      * Cumulative XP required to reach a given level.
@@ -140,14 +135,7 @@ object GamificationEngine {
         )
     }
     
-    // =====================
     // Titles
-    // =====================
-    
-    /**
-     * Compute User Title based on BOTH level and listening diversity (unique artists).
-     * This decouples the title from pure volume/farming.
-     */
     fun computeTitle(level: Int, uniqueArtists: Int): String {
         return when {
             level >= 150 && uniqueArtists >= 2000 -> "Sound God"
@@ -162,17 +150,7 @@ object GamificationEngine {
         }
     }
 
-    // =====================
     // Badge Rarity
-    // =====================
-
-    /**
-     * Rarity tier for a badge. Rarer badges are worth more XP per star and are
-     * visually distinguished in the UI (glow, accent, label).
-     *
-     * @param xpPerStar  XP awarded per earned star (deterministic, recomputed from stars).
-     * @param sortWeight Higher = shown first within a category (rarer on top).
-     */
     enum class BadgeRarity(val label: String, val xpPerStar: Int, val sortWeight: Int) {
         COMMON("Common", 25, 0),
         RARE("Rare", 75, 1),
@@ -181,10 +159,6 @@ object GamificationEngine {
         MYTHIC("Mythic", 1500, 4)
     }
 
-    /**
-     * Static rarity assignment per badge. Rarity is a property of the *definition*,
-     * not the earned row, so it lives here (no DB column / migration needed).
-     */
     val BADGE_RARITY: Map<String, BadgeRarity> = mapOf(
         // Milestones
         "first_play"     to BadgeRarity.COMMON,
@@ -222,19 +196,14 @@ object GamificationEngine {
         "level_100"      to BadgeRarity.MYTHIC
     )
 
-    /** Rarity for a badge id (COMMON if unknown). */
     fun getRarity(badgeId: String): BadgeRarity = BADGE_RARITY[badgeId] ?: BadgeRarity.COMMON
 
-    /** Total XP a badge contributes given its current star count. */
     fun getBadgeXpContribution(badgeId: String, stars: Int): Long =
         getRarity(badgeId).xpPerStar.toLong() * stars.coerceAtLeast(0)
 
-    // =====================
     // Badge Definitions
-    // =====================
-
     val ALL_BADGE_DEFINITIONS: List<BadgeDefinition> = listOf(
-        // === Milestones ===
+        // Milestones
         BadgeDefinition("first_play", "First Note", "Your musical journey begins", "music_note", "MILESTONE", 1, BadgeRarity.COMMON),
         BadgeDefinition("plays_100", "Century", "Play 100 songs", "century", "MILESTONE", 100, BadgeRarity.COMMON),
         BadgeDefinition("plays_500", "Sound Pilgrim", "Journey through 500 tracks", "star_half", "MILESTONE", 500, BadgeRarity.RARE),
@@ -242,31 +211,31 @@ object GamificationEngine {
         BadgeDefinition("plays_5000", "Virtuoso", "Conquer 5,000 tracks", "diamond", "MILESTONE", 5_000, BadgeRarity.EPIC),
         BadgeDefinition("plays_10000", "Legendary", "Transcend 10,000 tracks", "emoji_events", "MILESTONE", 10_000, BadgeRarity.LEGENDARY),
 
-        // === Time ===
+        // Time
         BadgeDefinition("time_1h", "First Hour", "Your first hour of music", "timer", "TIME", 1, BadgeRarity.COMMON),
         BadgeDefinition("time_24h", "Day Tripper", "A full day's worth of music", "schedule", "TIME", 24, BadgeRarity.COMMON),
         BadgeDefinition("time_100h", "Centurion", "100 hours of listening", "hourglass_full", "TIME", 100, BadgeRarity.RARE),
         BadgeDefinition("time_500h", "Sound Sage", "500 hours of listening", "headphones", "TIME", 500, BadgeRarity.EPIC),
 
-        // === Streaks ===
+        // Streaks
         BadgeDefinition("streak_7", "Week Warrior", "7-day listening streak", "local_fire_department", "STREAK", 7, BadgeRarity.COMMON),
         BadgeDefinition("streak_30", "Monthly Maven", "30-day listening streak", "whatshot", "STREAK", 30, BadgeRarity.RARE),
         BadgeDefinition("streak_100", "Ironclad", "100-day listening streak", "military_tech", "STREAK", 100, BadgeRarity.EPIC),
         BadgeDefinition("streak_365", "Year-Round", "365-day listening streak", "auto_awesome", "STREAK", 365, BadgeRarity.MYTHIC),
 
-        // === Discovery ===
+        // Discovery
         BadgeDefinition("artists_10", "Explorer", "Discover unique artists", "explore", "DISCOVERY", 10, BadgeRarity.COMMON),
         BadgeDefinition("artists_50", "Curator", "Discover 50 unique artists", "collections", "DISCOVERY", 50, BadgeRarity.RARE),
         BadgeDefinition("artists_100", "Connoisseur", "Discover 100 unique artists", "public", "DISCOVERY", 100, BadgeRarity.RARE),
         BadgeDefinition("genres_10", "Genre Hopper", "Explore different genres", "category", "DISCOVERY", 10, BadgeRarity.COMMON),
         BadgeDefinition("genres_25", "Eclectic", "Explore 25+ genres", "palette", "DISCOVERY", 25, BadgeRarity.RARE),
 
-        // === Engagement ===
+        // Engagement
         BadgeDefinition("night_owl", "Night Owl", "Late-night plays (12–5 AM)", "nightlight", "ENGAGEMENT", 100, BadgeRarity.RARE),
         BadgeDefinition("early_bird", "Early Bird", "Early morning plays (5–8 AM)", "wb_sunny", "ENGAGEMENT", 100, BadgeRarity.RARE),
         BadgeDefinition("marathon", "Marathon", "Complete marathon listening sessions (3+ hours each)", "directions_run", "ENGAGEMENT", 5, BadgeRarity.EPIC),
 
-        // === Level Milestones ===
+        // Level Milestones
         BadgeDefinition("level_5", "Rising Star", "Reach Level 5", "grade", "LEVEL", 5, BadgeRarity.COMMON),
         BadgeDefinition("level_10", "Double Digits", "Reach Level 10", "looks_one", "LEVEL", 10, BadgeRarity.COMMON),
         BadgeDefinition("level_25", "Quarter Century", "Reach Level 25", "military_tech", "LEVEL", 25, BadgeRarity.RARE),
@@ -285,9 +254,7 @@ object GamificationEngine {
         val rarity: BadgeRarity = BadgeRarity.COMMON
     )
 
-    // =====================
     // Star Tiers
-    // =====================
 
     /**
      * Multipliers for each star tier (1-5). Threshold for star N = base * STAR_MULTIPLIERS[N-1].

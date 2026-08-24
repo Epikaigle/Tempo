@@ -39,9 +39,7 @@ interface SpotifyApi {
         const val REDIRECT_URI = "tempo://spotify-callback"
     }
 
-    // =====================
     // Track Search
-    // =====================
 
     /**
      * Search for tracks on Spotify.
@@ -64,9 +62,7 @@ interface SpotifyApi {
         @Query("market") market: String? = null
     ): Response<SpotifySearchResponse>
 
-    // =====================
     // Artist Search
-    // =====================
 
     /**
      * Search for artists on Spotify.
@@ -91,15 +87,11 @@ interface SpotifyApi {
         @Query("market") market: String? = null
     ): Response<SpotifyArtistSearchResponse>
 
-    // =====================
     // Audio Features (DEPRECATED BY SPOTIFY)
-    // =====================
     
     // Audio features endpoints removed as they are deprecated for third-party apps since Nov 2024.
 
-    // =====================
     // Track Details
-    // =====================
 
     /**
      * Get detailed information for a track.
@@ -132,9 +124,7 @@ interface SpotifyApi {
         @Query("market") market: String? = null
     ): Response<SpotifyMultipleTracksResponse>
 
-    // =====================
     // User Profile (for validating connection)
-    // =====================
 
     /**
      * Get current user's profile.
@@ -148,9 +138,7 @@ interface SpotifyApi {
         @Header("Authorization") authorization: String
     ): Response<SpotifyUser>
 
-    // =====================
     // Artist Details
-    // =====================
 
     /**
      * Get full details for an artist including images.
@@ -199,9 +187,7 @@ interface SpotifyApi {
         @Query("market") market: String = "US"
     ): Response<SpotifyArtistTopTracksResponse>
 
-    // =====================
     // Recently Played (Import Feature)
-    // =====================
 
     /**
      * Get the current user's recently played tracks.
@@ -229,9 +215,7 @@ interface SpotifyApi {
         @Query("before") before: Long? = null
     ): Response<SpotifyRecentlyPlayedResponse>
 
-    // =====================
     // User's Top Items (Stats.fm style!)
-    // =====================
 
     /**
      * Get the current user's top tracks based on affinity calculated by Spotify.
@@ -281,9 +265,7 @@ interface SpotifyApi {
         @Query("offset") offset: Int = 0
     ): Response<SpotifyUserTopArtistsResponse>
 
-    // =====================
     // User's Saved Tracks (Time Machine - Exact Timestamps!)
-    // =====================
 
     /**
      * Get the current user's saved (liked) tracks.
@@ -310,9 +292,7 @@ interface SpotifyApi {
         @Query("market") market: String? = null
     ): Response<SpotifySavedTracksResponse>
 
-    // =====================
     // User's Playlists (Artifact Hunter)
-    // =====================
 
     /**
      * Get the current user's playlists.

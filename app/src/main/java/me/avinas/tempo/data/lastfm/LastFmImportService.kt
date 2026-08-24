@@ -33,33 +33,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Service for importing listening history from Last.fm.
- * 
- * =====================================================
- * TWO-TIER ARCHITECTURE
- * =====================================================
- * 
- * Last.fm users can have massive histories (200K-300K+ scrobbles spanning 20 years).
- * To preserve query performance while importing complete history, we use two tiers:
- * 
- * 1. ACTIVE SET: Top tracks + recent history → Full ListeningEvent records
- *    - These affect leaderboard rankings
- *    - Stored in normal listening_events table
- *    - Query performance preserved
- * 
- * 2. ARCHIVE: Long-tail tracks (played 1-5 times) → Compressed storage
- *    - Never affect rankings (too few plays)
- *    - Stored in scrobbles_archive table with compressed timestamps
- *    - Accessible via explicit search/browsing
- * 
- * =====================================================
- * IMPORT TIERS
- * =====================================================
- * 
- * - LIGHTWEIGHT: Loved + Top 500 + 3 months (~75% coverage)
- * - BALANCED: Top 1000 + 6 months (~85% coverage) [Recommended]
- * - COMPREHENSIVE: Top 2000 + 12 months (~92% coverage)
- * - EVERYTHING: All tracks (100% but slower)
+ * Service for importing listening history from Last.fm using tiered active/archive storage.
  */
 @Singleton
 class LastFmImportService @Inject constructor(
@@ -217,7 +191,7 @@ class LastFmImportService @Inject constructor(
     private val activeSetKeys = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private val lovedTrackKeys = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
-    // ==================== Performance Optimization Caches ====================
+    // Performance Optimization Caches
 
     // In-memory track cache to avoid N+1 queries during import
     // Key: "title|artist" normalized, Value: Track
@@ -227,7 +201,7 @@ class LastFmImportService @Inject constructor(
     // Batch pending EnrichedMetadata for bulk insert
     private val pendingMetadata = mutableListOf<EnrichedMetadata>()
     
-    // ==================== API Error Handling ====================
+    // API Error Handling
     
     /**
      * Check Last.fm API response for errors.
@@ -345,7 +319,6 @@ class LastFmImportService @Inject constructor(
         try {
             _progress.value = ImportProgress.Discovering("Connecting to Last.fm...")
             
-            // Fetch user info with robust error handling
             val userInfoResult = executeWithRetry("getUserInfo") {
                 lastFmApi.getUserInfo(user = username, apiKey = API_KEY)
             }
@@ -881,7 +854,6 @@ class LastFmImportService @Inject constructor(
         val maxConsecutiveErrors = 5
         
         while (hasMore) {
-            // Fetch page with robust error handling
             val result = executeWithRetry("getRecentTracks page $page") {
                 lastFmApi.getRecentTracks(
                     user = username,
@@ -979,16 +951,7 @@ class LastFmImportService @Inject constructor(
                         activeEventsBatch.clear()
                     }
                 } else {
-                    // =====================================================
-                    // ARCHIVE PATH: NO ENRICHMENT
-                    // =====================================================
-                    // Archived tracks are stored with Last.fm album art only.
-                    // NO Track entity is created → NO EnrichedMetadata is created
-                    // → EnrichmentWorker will NEVER see these tracks.
-                    // This is intentional: archived tracks are rarely viewed,
-                    // so enriching them would waste API quota.
-                    // The album art from Last.fm (stored below) is sufficient.
-                    // =====================================================
+                    // Archived tracks store Last.fm album art without creating Track/EnrichedMetadata entities.
                     val pending = archiveBatch.getOrPut(normalizedKey) {
                         ArchivePendingTrack(
                             trackTitle = scrobble.name ?: "",
@@ -1096,7 +1059,7 @@ class LastFmImportService @Inject constructor(
         val artistName = scrobble.artist?.getArtistName() 
             ?: return ScrobblePrepareResult.Error("No artist name")
         
-        // === PERFORMANCE OPTIMIZATION: Use in-memory cache ===
+        // PERFORMANCE OPTIMIZATION: Use in-memory cache
         val cacheKey = "${trackTitle.lowercase().trim()}|${artistName.lowercase().trim()}"
         var track = trackCache[cacheKey]
         var isNewTrack = false
@@ -1273,7 +1236,7 @@ class LastFmImportService @Inject constructor(
         return importMetadataDao.getLatestCompletedForUsername(username)
     }
     
-    // ==================== Archive Query Methods ====================
+    // Archive Query Methods
     
     /**
      * Search result that can come from either active tracks or archive.
@@ -1468,9 +1431,7 @@ class LastFmImportService @Inject constructor(
         val uniqueArtists: Int
     )
     
-    // =====================
     // History Timeline Integration
-    // =====================
     
     /**
      * Represents a listening event from the archive for history display.
@@ -1617,9 +1578,7 @@ class LastFmImportService @Inject constructor(
         return scrobbleArchiveDao.getTotalCount() > 0
     }
     
-    // =====================
-    // Phase 6: Post-Import Optimization
-    // =====================
+
     
     /**
      * Run database optimization after import completes.

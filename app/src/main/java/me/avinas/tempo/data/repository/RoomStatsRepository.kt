@@ -113,9 +113,7 @@ class RoomStatsRepository @Inject constructor(
     @Volatile
     private var cacheMisses: Long = 0
 
-    // =====================
     // Cache Management
-    // =====================
 
     private data class CachedValue<T>(
         val value: T,
@@ -289,9 +287,7 @@ class RoomStatsRepository @Inject constructor(
         Log.d(TAG, "Cache invalidated for new event at $timestamp: cleared ${artistCacheKeys.size} artist cache entries, cache size=${cache.size()}")
     }
 
-    // =====================
     // Overview Stats
-    // =====================
 
     override suspend fun getListeningOverview(timeRange: TimeRange, withLeeway: Boolean): ListeningOverview {
         // Get user content filtering preferences for cache key
@@ -519,9 +515,7 @@ class RoomStatsRepository @Inject constructor(
         return maxDuration
     }
 
-    // =====================
     // Top Charts
-    // =====================
 
     override suspend fun getTopTracks(
         timeRange: TimeRange,
@@ -942,9 +936,7 @@ class RoomStatsRepository @Inject constructor(
         val uniqueArtists: MutableSet<String> = mutableSetOf()
     }
 
-    // =====================
     // Ranking Search
-    // =====================
 
     /**
      * Search the track ranking. The DAO computes the full ranking once (CTE) and
@@ -1099,9 +1091,7 @@ class RoomStatsRepository @Inject constructor(
         }
     }
 
-    // =====================
     // Temporal Analysis
-    // =====================
 
     override suspend fun getHourlyDistribution(timeRange: TimeRange): List<HourlyDistribution> {
         val key = "hourly_dist_${timeRange.name}"
@@ -1258,9 +1248,7 @@ class RoomStatsRepository @Inject constructor(
         }
     }
 
-    // =====================
     // Discovery Metrics
-    // =====================
 
     override suspend fun getDiscoveryStats(timeRange: TimeRange, withLeeway: Boolean): DiscoveryStats {
         val key = "discovery_${timeRange.name}_leeway${if (withLeeway) 1 else 0}"
@@ -1359,9 +1347,7 @@ class RoomStatsRepository @Inject constructor(
         return if (maxEntropy > 0) (entropy / maxEntropy) * 100 else 0.0
     }
 
-    // =====================
     // Engagement Metrics
-    // =====================
 
     override suspend fun getEngagementStats(timeRange: TimeRange): EngagementStats {
         val key = "engagement_${timeRange.name}"
@@ -1601,9 +1587,7 @@ class RoomStatsRepository @Inject constructor(
         }
     }
 
-    // =====================
     // Spotify Audio Features (Deprecated - Nov 2024)
-    // =====================
 
     /**
      * @deprecated Spotify's audio-features API was deprecated in November 2024.
@@ -1717,9 +1701,7 @@ class RoomStatsRepository @Inject constructor(
         }
     }
 
-    // =====================
     // Comparisons
-    // =====================
 
     override suspend fun getYearOverYearComparison(currentYear: Int): YearOverYearComparison {
         val key = "yoy_$currentYear"
@@ -1782,9 +1764,7 @@ class RoomStatsRepository @Inject constructor(
         }
     }
 
-    // =====================
     // Detail Screens
-    // =====================
 
     override suspend fun getTrackDetails(trackId: Long): TrackDetails {
         val key = "track_details_$trackId"
@@ -2189,9 +2169,7 @@ class RoomStatsRepository @Inject constructor(
         return ((curr - prev) / prev) * 100.0
     }
 
-    // =====================
     // History
-    // =====================
 
     override suspend fun getHistory(
         timeRange: TimeRange?,
@@ -2327,9 +2305,7 @@ class RoomStatsRepository @Inject constructor(
         }
     }
 
-    // =====================
     // Lookup Methods
-    // =====================
 
     override suspend fun getArtistIdByName(artistName: String): Long? {
         return artistDao.getArtistByName(artistName)?.id
@@ -2343,9 +2319,7 @@ class RoomStatsRepository @Inject constructor(
         return artistDao.getArtistByName(artistName)?.imageUrl
     }
 
-    // =====================
     // Track Audio Features
-    // =====================
 
     override suspend fun getTrackAudioFeatures(trackId: Long): TrackAudioFeatures? {
         val key = "track_audio_features_$trackId"
@@ -2421,9 +2395,7 @@ class RoomStatsRepository @Inject constructor(
         }
     }
     
-    // =====================
     // Batch Operations (Spotlight Performance)
-    // =====================
     
     override suspend fun getArtistPlayCountsBatch(artistNames: List<String>): Map<String, Int> {
         if (artistNames.isEmpty()) return emptyMap()

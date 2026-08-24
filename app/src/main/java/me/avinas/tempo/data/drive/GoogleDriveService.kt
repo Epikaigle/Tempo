@@ -52,6 +52,7 @@ class GoogleDriveService @Inject constructor(
     companion object {
         private const val TAG = "GoogleDriveService"
         const val BACKUP_FOLDER_NAME = "Tempo Backups"
+        const val BACKUP_FILE_PREFIX = "tempo_backup_"
         const val MAX_BACKUPS = 5
         private const val MIME_TYPE_FOLDER = "application/vnd.google-apps.folder"
         private const val MIME_TYPE_ZIP = "application/zip"
@@ -282,7 +283,7 @@ class GoogleDriveService @Inject constructor(
                 // Generate backup filename with timestamp
                 val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
                 val deviceName = "${Build.MANUFACTURER}_${Build.MODEL}".replace(" ", "_")
-                val fileName = "tempo_backup_${timestamp}_${deviceName}.tempo"
+                val fileName = "${BACKUP_FILE_PREFIX}${timestamp}_${deviceName}.tempo"
                 
                 // Create file metadata with custom properties
                 val fileMetadata = DriveFile().apply {
@@ -305,11 +306,24 @@ class GoogleDriveService @Inject constructor(
                 val uploadedFile = service.files().create(fileMetadata, mediaContent)
                     .setFields("id, name, size, createdTime")
                     .execute()
-                
+
                 progressCallback?.invoke(0.85f)
-                
+
+                // Verify Drive stored every byte. A mismatch means the upload was
+                // silently truncated: delete the bad copy so it can never be
+                // restored or occupy one of the MAX_BACKUPS retention slots, then
+                // fail (executeWithRetry re-uploads from scratch on transient IO
+                // errors).
+                val uploadedSize = uploadedFile.getSize()?.toLong()
+                if (uploadedSize != null && uploadedSize != localFile.length()) {
+                    runCatching { service.files().delete(uploadedFile.id).execute() }
+                    throw IOException(
+                        "Upload verification failed: sent ${localFile.length()} bytes, Drive stored $uploadedSize"
+                    )
+                }
+
                 Log.i(TAG, "Uploaded backup: ${uploadedFile.name} (${uploadedFile.id})")
-                
+
                 // Return success immediately, cleanup happens after
                 DriveBackupResult.Success(uploadedFile.id, uploadedFile.name)
             }.also {
@@ -336,10 +350,8 @@ class GoogleDriveService @Inject constructor(
             val folderId = getOrCreateBackupFolder()
             
             val backups = executeWithRetry { service ->
-                val query = "'$folderId' in parents and trashed = false"
                 val result = service.files().list()
-                    .setQ(query)
-                    .setSpaces("drive")
+                    .setQ("'$folderId' in parents and name contains '$BACKUP_FILE_PREFIX' and trashed = false")
                     .setFields("files(id, name, size, createdTime, appProperties)")
                     .setOrderBy("createdTime desc")
                     .execute()

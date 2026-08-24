@@ -105,9 +105,7 @@ interface LastFmApi {
         @Query("autocorrect") autocorrect: Int = 1
     ): Response<LastFmTopTagsResponse>
 
-    // =====================================================================
     // USER HISTORY IMPORT ENDPOINTS
-    // =====================================================================
     // These endpoints are used for Last.fm scrobble history import.
     // They require only an API key (no user authentication needed for public profiles).
 

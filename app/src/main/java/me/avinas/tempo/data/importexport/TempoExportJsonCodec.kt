@@ -130,7 +130,10 @@ internal class TempoExportJsonCodec(private val moshi: Moshi) {
 
         writeArray(writer, "lastFmImportMetadata", lastFmImportMetadataAdapter, shell.lastFmImportMetadata)
         writer.name("localImageManifest").also { _ -> stringMapAdapter.toJson(writer, shell.localImageManifest) }
-        writeArray(writer, "hotlinkedUrls", moshi.adapter(Types.newParameterizedType(List::class.java, String::class.java)), shell.hotlinkedUrls)
+        // Per-element String adapter — passing a List<String> adapter here would
+        // double-wrap the array ([["url"]]), producing backups the app itself
+        // cannot restore (read side expects flat strings).
+        writeArray(writer, "hotlinkedUrls", moshi.adapter(String::class.java), shell.hotlinkedUrls)
         writer.name("imageManifest").also { _ -> stringMapAdapter.toJson(writer, shell.imageManifest) }
 
         writer.endObject()

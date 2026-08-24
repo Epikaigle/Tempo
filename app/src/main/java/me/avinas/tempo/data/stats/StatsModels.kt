@@ -91,14 +91,7 @@ enum class TimeRange {
     }
 }
 
-// =====================
 // Combined Stats Models (for optimized single-query fetches)
-// =====================
-
-/**
- * Combined basic stats from a single query.
- * Reduces database round trips for overview stats.
- */
 data class CombinedBasicStats(
     @ColumnInfo(name = "total_time_ms") val totalTimeMs: Long,
     @ColumnInfo(name = "play_count") val playCount: Int,
@@ -107,22 +100,12 @@ data class CombinedBasicStats(
     @ColumnInfo(name = "unique_albums") val uniqueAlbums: Int
 )
 
-/**
- * Lightweight class for session calculation to avoid loading full entities.
- */
 data class SessionPoint(
     val timestamp: Long,
     val playDuration: Long
 )
 
-
-// =====================
 // Basic Stats Models
-// =====================
-
-/**
- * Overview statistics for a time period.
- */
 data class ListeningOverview(
     val totalListeningTimeMs: Long,
     val totalPlayCount: Int,
@@ -152,13 +135,7 @@ private fun TimeRange.getDaysInRange(withLeeway: Boolean = true): Int {
     }
 }
 
-// =====================
 // Top Charts Models
-// =====================
-
-/**
- * Top track with play statistics.
- */
 data class TopTrack(
     @ColumnInfo(name = "track_id") val trackId: Long,
     val title: String,
@@ -179,9 +156,6 @@ data class TopTrack(
     val averagePlayDurationMs: Long get() = if (playCount > 0) totalTimeMs / playCount else 0
 }
 
-/**
- * Raw artist stats from database before splitting multi-artist entries.
- */
 data class RawArtistStats(
     val artist: String,
     @ColumnInfo(name = "play_count") val playCount: Int,
@@ -191,9 +165,6 @@ data class RawArtistStats(
     @ColumnInfo(name = "last_played") val lastPlayed: Long
 )
 
-/**
- * Top artist with play statistics.
- */
 data class TopArtist(
     @ColumnInfo(name = "artist_id") val artistId: Long? = null,
     val artist: String,
@@ -212,9 +183,6 @@ data class TopArtist(
     val totalTimeHours: Double get() = totalTimeMs / 3_600_000.0
 }
 
-/**
- * Top album with play statistics.
- */
 data class TopAlbum(
     val album: String,
     val artist: String,
@@ -229,9 +197,6 @@ data class TopAlbum(
     val totalTimeMinutes: Long get() = totalTimeMs / 60_000
 }
 
-/**
- * Top genre with play statistics.
- */
 data class TopGenre(
     val genre: String,
     @ColumnInfo(name = "play_count") val playCount: Int,
@@ -239,9 +204,7 @@ data class TopGenre(
     @ColumnInfo(name = "unique_artists") val uniqueArtists: Int
 )
 
-// =====================
 // Temporal Analysis Models
-// =====================
 
 /**
  * Hourly listening distribution.
@@ -317,13 +280,7 @@ data class ListeningStreak(
     val totalActiveDays: Int
 )
 
-// =====================
 // Discovery Metrics Models
-// =====================
-
-/**
- * Discovery statistics for a period.
- */
 data class DiscoveryStats(
     val newArtistsCount: Int,
     val newTracksCount: Int,
@@ -334,9 +291,6 @@ data class DiscoveryStats(
     val topNewTrack: String?
 )
 
-/**
- * Artist loyalty metrics.
- */
 data class ArtistLoyalty(
     val artist: String,
     @ColumnInfo(name = "total_plays") val totalPlays: Int,
@@ -348,9 +302,6 @@ data class ArtistLoyalty(
     val loyaltyScore: Double get() = if (totalPlays > 0) repeatPlays.toDouble() / totalPlays else 0.0
 }
 
-/**
- * First listen record for an artist or track.
- */
 data class FirstListen(
     val name: String,
     @ColumnInfo(name = "first_listen_timestamp") val firstListenTimestamp: Long,
@@ -361,13 +312,7 @@ data class FirstListen(
     ).toLocalDate()
 }
 
-// =====================
 // Engagement Metrics Models
-// =====================
-
-/**
- * Engagement statistics.
- */
 data class EngagementStats(
     val averageCompletionRate: Double,
     val fullListensCount: Int, // >90% completion
@@ -379,9 +324,6 @@ data class EngagementStats(
     val longestBingeCount: Int
 )
 
-/**
- * Track completion statistics.
- */
 data class TrackCompletion(
     @ColumnInfo(name = "track_id") val trackId: Long,
     val title: String,
@@ -395,9 +337,6 @@ data class TrackCompletion(
     val skipRate: Double get() = if (totalPlays > 0) skips.toDouble() / totalPlays else 0.0
 }
 
-/**
- * Replayed track statistics.
- */
 data class ReplayedTrackStats(
     @ColumnInfo(name = "track_id") val trackId: Long,
     val title: String,
@@ -409,10 +348,6 @@ data class ReplayedTrackStats(
     val replayRate: Double get() = if (totalPlays > 0) replayCount.toDouble() / totalPlays else 0.0
 }
 
-/**
- * Track engagement statistics from optimized single database query.
- * Uses indexed columns (was_skipped, is_replay, pause_count) for efficiency.
- */
 data class TrackEngagementStats(
     @ColumnInfo(name = "track_id") val trackId: Long,
     @ColumnInfo(name = "play_count") val playCount: Int,
@@ -429,13 +364,7 @@ data class TrackEngagementStats(
     @ColumnInfo(name = "unique_sessions_count") val uniqueSessionsCount: Int
 )
 
-// =====================
 // Spotify Audio Features Stats
-// =====================
-
-/**
- * Aggregated audio features statistics (requires Spotify connection).
- */
 data class AudioFeaturesStats(
     val averageEnergy: Float,
     val averageDanceability: Float,
@@ -464,9 +393,6 @@ data class AudioFeaturesStats(
     }
 }
 
-/**
- * Mood trend over time.
- */
 data class MoodTrend(
     val date: String,
     @ColumnInfo(name = "avg_valence") val avgValence: Float,
@@ -475,9 +401,6 @@ data class MoodTrend(
     @ColumnInfo(name = "track_count") val trackCount: Int
 )
 
-/**
- * Tempo distribution bucket.
- */
 data class TempoBucket(
     val bucketLabel: String, // e.g., "60-80 BPM", "80-100 BPM"
     val minTempo: Int,
@@ -486,13 +409,7 @@ data class TempoBucket(
     @ColumnInfo(name = "total_plays") val totalPlays: Int
 )
 
-// =====================
 // Comparison Models
-// =====================
-
-/**
- * Year-over-year comparison.
- */
 data class YearOverYearComparison(
     val currentYear: Int,
     val previousYear: Int,
@@ -512,9 +429,6 @@ data class YearOverYearComparison(
     } else 0.0
 }
 
-/**
- * Period comparison (this week vs last week, etc.)
- */
 data class PeriodComparison(
     val currentPeriodPlayCount: Int,
     val previousPeriodPlayCount: Int,
@@ -525,13 +439,7 @@ data class PeriodComparison(
     val trending: String // "up", "down", "stable"
 )
 
-// =====================
 // Paginated Results
-// =====================
-
-/**
- * Paginated result wrapper.
- */
 data class PaginatedResult<T>(
     val items: List<T>,
     val totalCount: Int,
@@ -542,9 +450,7 @@ data class PaginatedResult<T>(
     val totalPages: Int get() = (totalCount + pageSize - 1) / pageSize
 }
 
-// =====================
 // Detail Screen Models
-// =====================
 
 /**
  * Detailed statistics for a track.

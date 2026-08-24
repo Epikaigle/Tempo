@@ -43,9 +43,7 @@ interface EnrichmentSource {
     suspend fun enrich(track: Track, currentMetadata: EnrichedMetadata?): EnrichedMetadata?
 }
 
-// ============================================================================
-// CONCRETE STRATEGIES
-// ============================================================================
+
 
 @Singleton
 class SpotifyEnrichmentSource @Inject constructor(
@@ -406,7 +404,6 @@ class ReccoBeatsEnrichmentSource @Inject constructor(
     }
 
     override suspend fun enrich(track: Track, currentMetadata: EnrichedMetadata?): EnrichedMetadata? {
-        // CRITICAL: Wrap entire ReccoBeats logic in try-catch to ensure failures don't affect music tracking
         return try {
             Log.d("EnrichmentSource", "ReccoBeats: Starting enrichment for track ${track.id}")
             
@@ -448,8 +445,7 @@ class ReccoBeatsEnrichmentSource @Inject constructor(
                 }
             }
         } catch (e: Exception) {
-            // CRITICAL: Catch all exceptions to prevent ReccoBeats failures from affecting music tracking
-            Log.e("EnrichmentSource", "ReccoBeats: Critical error enriching track ${track.id}, but music tracking will continue", e)
+            Log.e("EnrichmentSource", "ReccoBeats: Error enriching track ${track.id}", e)
             null
         }
     }

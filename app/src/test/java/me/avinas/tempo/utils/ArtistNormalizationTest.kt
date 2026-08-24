@@ -17,9 +17,7 @@ import org.junit.Test
  */
 class ArtistNormalizationTest {
 
-    // =====================
     // Artist.normalizeName
-    // =====================
 
     @Test
     fun `japanese names are preserved and distinct`() {
@@ -93,9 +91,7 @@ class ArtistNormalizationTest {
         assertNotEquals(stars, bangs)
     }
 
-    // =====================
     // ArtistParser.normalizeForSearch
-    // =====================
 
     @Test
     fun `normalizeForSearch preserves japanese and keeps existing mappings`() {
@@ -121,9 +117,7 @@ class ArtistNormalizationTest {
         assertEquals("عمرو دياب", ArtistParser.normalizeForSearch("عمرو دياب"))
     }
 
-    // =====================
     // ArtistParser.isSameArtist
-    // =====================
 
     @Test
     fun `isSameArtist rejects short cjk names contained in longer ones`() {
@@ -160,9 +154,7 @@ class ArtistNormalizationTest {
         assertFalse(ArtistParser.isSameArtist("Kendrick Lamar", "Kanye West"))
     }
 
-    // =====================
     // ArtistParser.isStrictSameArtist
-    // =====================
 
     @Test
     fun `isStrictSameArtist guards blanks and matches japanese`() {

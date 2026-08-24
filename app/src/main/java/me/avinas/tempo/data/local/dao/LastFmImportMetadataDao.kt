@@ -10,10 +10,7 @@ import me.avinas.tempo.data.local.entities.LastFmImportMetadata
 @Dao
 interface LastFmImportMetadataDao {
     
-    // =====================
     // Basic CRUD Operations
-    // =====================
-    
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(metadata: LastFmImportMetadata): Long
     
@@ -26,10 +23,7 @@ interface LastFmImportMetadataDao {
     @Query("DELETE FROM lastfm_import_metadata WHERE id = :id")
     suspend fun deleteById(id: Long): Int
     
-    // =====================
     // Query Operations
-    // =====================
-    
     @Query("SELECT * FROM lastfm_import_metadata WHERE id = :id")
     suspend fun getById(id: Long): LastFmImportMetadata?
     
@@ -107,9 +101,7 @@ interface LastFmImportMetadataDao {
     """)
     suspend fun hasCompletedImport(username: String): Boolean
     
-    // =====================
     // Progress Updates
-    // =====================
     
     /**
      * Update import status.

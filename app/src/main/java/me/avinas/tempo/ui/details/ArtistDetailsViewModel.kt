@@ -245,7 +245,7 @@ class ArtistDetailsViewModel @Inject constructor(
         }
     }
 
-    // ===== Rename Flow =====
+    // Rename Flow
 
     /** Show the rename dialog. */
     fun showRenameDialog() {
@@ -269,7 +269,7 @@ class ArtistDetailsViewModel @Inject constructor(
         ) }
     }
 
-    // ===== Split Flow =====
+    // Split Flow
 
     /** Show the split-artist dialog. */
     fun showSplitDialog() {

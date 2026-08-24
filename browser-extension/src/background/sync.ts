@@ -1,10 +1,8 @@
-// ============================================================================
-// Tempo Stats — Sync Engine
-// Sends batched plays to the Tempo Android app over local WiFi / hotspot.
-// Uses HMAC-SHA256 exactly like the desktop Rust implementation.
-// Includes retry for failed plays and alarm-based retry scheduling
-// to survive service worker hibernation.
-// ============================================================================
+/**
+ * Sync engine for transmitting queued plays to the Tempo Android app.
+ * Handles HMAC signing, payload encryption, exponential backoff,
+ * rate-limit cooldowns, and alarm-based retries across worker hibernations.
+ */
 
 import type { Play, SyncPayload, SyncPlay, SyncResponse, PairingInfo, ConnectionHistoryEntry } from '../shared/types';
 import * as storage from './storage';
@@ -12,7 +10,7 @@ import { signRequest, buildJsonHeaders, encryptBody, decryptBody } from '../shar
 
 const IS_FIREFOX = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox');
 
-// ---- Constants (match desktop/src-tauri/src/network/mod.rs) ----------------
+// Constants (match desktop/src-tauri/src/network/mod.rs)
 
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1_000;
@@ -21,6 +19,8 @@ const MAX_BATCH_SIZE = 50;
 const DISCOVERY_PING_TIMEOUT_MS = 900;
 const SUBNET_SCAN_BATCH_SIZE = 48;
 const SUBNET_RESCAN_COOLDOWN_MS = 30 * 60 * 1000;
+/** Minimum spacing between full phone-address recovery attempts. */
+const FULL_RECOVERY_COOLDOWN_MS = 5 * 60 * 1000;
 
 const SYNC_ALARM_NAME = 'tempo-stats-auto-sync';
 const RETRY_ALARM_NAME = 'tempo-stats-retry-sync';
@@ -37,7 +37,7 @@ const MIN_RATE_LIMIT_COOLDOWN_MS = 30_000;
 /** Exponential retry-alarm cap. */
 const MAX_RETRY_DELAY_MINUTES = 60;
 
-// ---- Error taxonomy ---------------------------------------------------------
+// Error taxonomy
 //
 // User-reported failure modes (401, 502, "Phone Unreachable", RateLimited)
 // need different reactions:
@@ -90,7 +90,7 @@ function parseRetryAfterMs(headerValue: string | null): number | undefined {
   return undefined;
 }
 
-// ---- Adaptive sync --------------------------------------------------------
+// Adaptive sync
 
 function getAdaptiveSyncInterval(queueSize: number, baseIntervalMinutes: number): number {
   if (queueSize === 0) return baseIntervalMinutes;
@@ -116,7 +116,7 @@ function getNetworkFingerprint(): string {
 }
 
 
-// ---- Token lock (prevents concurrent token read/write races) ---------------
+// Token lock (prevents concurrent token read/write races)
 
 let _tokenLockPromise: Promise<void> | null = null;
 
@@ -134,7 +134,7 @@ async function withTokenLock<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-// ---- Sync Status -----------------------------------------------------------
+// Sync Status
 
 export interface SyncStatus {
   lastSyncTime: string | null;
@@ -157,6 +157,8 @@ let _isSyncing = false;
 let _lastSyncTime: string | null = null;
 let _lastSyncResult: string | null = null;
 let _lastSubnetScanAt = 0;
+/** Epoch ms of the last full multi-path recovery attempt (history/gateway/subnet/mDNS). */
+let _lastFullRecoveryAt = 0;
 let _lastErrorKind: SyncErrorKind | null = null;
 let _lastErrorStatus: number | null = null;
 let _consecutiveFailures = 0;
@@ -219,7 +221,7 @@ export function getSyncStatus(queueCount: number): SyncStatus {
   };
 }
 
-// ---- Host permission helpers -----------------------------------------------
+// Host permission helpers
 //
 // IMPORTANT: chrome.permissions.request() MUST be called from a foreground
 // context (popup / options page) in direct response to a user gesture.
@@ -273,7 +275,7 @@ export async function requestHostPermission(_origin: string): Promise<boolean> {
   return false;
 }
 
-// ---- Phone discovery helpers -----------------------------------------------
+// Phone discovery helpers
 
 async function pingPhone(
   ip: string,
@@ -368,26 +370,6 @@ async function findPhoneOnStoredSubnet(pairing: PairingInfo, forceDiscovery = fa
   return null;
 }
 
-async function findPhoneViaConnectionHistory(pairing: PairingInfo): Promise<string | null> {
-  const history = await storage.getConnectionHistory();
-  if (history.length === 0) return null;
-
-  const sorted = [...history].sort((a, b) => b.successCount - a.successCount || b.lastSeen - a.lastSeen);
-
-  console.log(`[Tempo] Trying ${sorted.length} IPs from connection history`);
-
-  for (const entry of sorted.slice(0, 5)) {
-    if (entry.ip === pairing.phoneIp) continue;
-    const reachable = (await pingPhone(entry.ip, entry.port || pairing.phonePort, pairing.authToken, 2_000)).ok;
-    if (reachable) {
-      console.log(`[Tempo] Found phone via connection history: ${entry.ip}`);
-      return entry.ip;
-    }
-    await storage.recordConnectionFailure(entry.ip, entry.port || pairing.phonePort);
-  }
-
-  return null;
-}
 
 async function checkPhoneBattery(ip: string, port: number, authToken?: string): Promise<boolean> {
   try {
@@ -456,9 +438,58 @@ async function pingPhoneViaMdns(port: number, authToken?: string): Promise<strin
   }
 }
 
+/**
+ * Probe the top connection-history IPs concurrently (≤5 pings in parallel).
+ * Returns the highest-priority reachable IP plus every miss entry so the
+ * failure bookkeeping can be coalesced into a single batched history rewrite.
+ */
+async function probeConnectionHistory(pairing: PairingInfo): Promise<{ winner: string | null; misses: Array<{ ip: string; port: number }> }> {
+  const history = await storage.getConnectionHistory();
+  if (history.length === 0) return { winner: null, misses: [] };
+
+  const sorted = [...history].sort((a, b) => b.successCount - a.successCount || b.lastSeen - a.lastSeen);
+  const candidates = sorted.slice(0, 5).filter(entry => entry.ip !== pairing.phoneIp);
+  if (candidates.length === 0) return { winner: null, misses: [] };
+
+  console.log(`[Tempo] Trying ${candidates.length} IPs from connection history`);
+
+  const results = await Promise.all(
+    candidates.map(async entry => ({
+      ip: entry.ip,
+      port: entry.port || pairing.phonePort,
+      reachable: (await pingPhone(entry.ip, entry.port || pairing.phonePort, pairing.authToken, 2_000)).ok,
+    })),
+  );
+
+  const winner = results.find(result => result.reachable) ?? null;
+  if (winner) {
+    console.log(`[Tempo] Found phone via connection history: ${winner.ip}`);
+  }
+  return { winner: winner ? winner.ip : null, misses: results.filter(r => !r.reachable) };
+}
+
+/** Probe the well-known hotspot gateway IPs concurrently, priority order preserved. */
+async function findPhoneViaHotspotGateway(pairing: PairingInfo): Promise<string | null> {
+  const candidates = HOTSPOT_GATEWAY_IPS.filter(ip => ip !== pairing.phoneIp);
+
+  const results = await Promise.all(
+    candidates.map(async ip => ({
+      ip,
+      reachable: (await pingPhone(ip, pairing.phonePort, pairing.authToken)).ok,
+    })),
+  );
+
+  const found = results.find(result => result.reachable);
+  if (found) {
+    console.log(`[Tempo] Found phone at hotspot gateway ${found.ip}`);
+  }
+  return found ? found.ip : null;
+}
+
 async function resolvePhoneAddress(pairing: PairingInfo, options: SyncOptions = {}): Promise<{ ip: string; port: number } | null> {
   const fingerprint = getNetworkFingerprint();
 
+  // Fast path — stored address stays first and unchanged.
   if (pairing.phoneIp) {
     const reachable = (await pingPhone(pairing.phoneIp, pairing.phonePort, pairing.authToken)).ok;
     if (reachable) {
@@ -469,33 +500,50 @@ async function resolvePhoneAddress(pairing: PairingInfo, options: SyncOptions = 
     console.log(`[Tempo] Stored address ${pairing.phoneIp} unreachable, trying recovery paths...`);
   }
 
-  const historyIp = await findPhoneViaConnectionHistory(pairing);
-  if (historyIp) {
-    await storage.savePairing({ ...pairing, phoneIp: historyIp });
-    await storage.recordConnectionSuccess(historyIp, pairing.phonePort, fingerprint);
-    return { ip: historyIp, port: pairing.phonePort };
+  // Gate full recovery to once per cooldown window; manual sync paths pass
+  // forceDiscovery:true to bypass it. The subnet scan keeps its own separate
+  // cooldown inside findPhoneOnStoredSubnet().
+  const forceDiscovery = options.forceDiscovery === true;
+  if (!forceDiscovery && Date.now() - _lastFullRecoveryAt < FULL_RECOVERY_COOLDOWN_MS) {
+    console.log('[Tempo] Skipping full address recovery; recent attempt already ran');
+    return null;
+  }
+  _lastFullRecoveryAt = Date.now();
+
+  // Run every recovery path concurrently, then pick the winner AFTER all
+  // settle, in the existing priority order:
+  //   connection history > hotspot gateway > same-subnet scan > mDNS.
+  const [historyProbe, gatewayIp, subnetIp, mdnsResult] = await Promise.all([
+    probeConnectionHistory(pairing),
+    findPhoneViaHotspotGateway(pairing),
+    findPhoneOnStoredSubnet(pairing, forceDiscovery),
+    pingPhoneViaMdns(pairing.phonePort, pairing.authToken),
+  ]);
+
+  // Coalesce miss-side history bookkeeping into ONE array rewrite.
+  if (historyProbe.misses.length > 0) {
+    await storage.recordConnectionFailures(historyProbe.misses);
   }
 
-  for (const gatewayIp of HOTSPOT_GATEWAY_IPS) {
-    if (gatewayIp === pairing.phoneIp) continue;
-    const reachable = (await pingPhone(gatewayIp, pairing.phonePort, pairing.authToken)).ok;
-    if (reachable) {
-      console.log(`[Tempo] Found phone at hotspot gateway ${gatewayIp}`);
-      await storage.savePairing({ ...pairing, phoneIp: gatewayIp });
-      await storage.recordConnectionSuccess(gatewayIp, pairing.phonePort, fingerprint);
-      return { ip: gatewayIp, port: pairing.phonePort };
-    }
+  if (historyProbe.winner) {
+    await storage.savePairing({ ...pairing, phoneIp: historyProbe.winner });
+    await storage.recordConnectionSuccess(historyProbe.winner, pairing.phonePort, fingerprint);
+    return { ip: historyProbe.winner, port: pairing.phonePort };
   }
 
-  const sameSubnetIp = await findPhoneOnStoredSubnet(pairing, options.forceDiscovery === true);
-  if (sameSubnetIp) {
-    console.log(`[Tempo] Found phone at new same-subnet address ${sameSubnetIp}`);
-    await storage.savePairing({ ...pairing, phoneIp: sameSubnetIp });
-    await storage.recordConnectionSuccess(sameSubnetIp, pairing.phonePort, fingerprint);
-    return { ip: sameSubnetIp, port: pairing.phonePort };
+  if (gatewayIp) {
+    await storage.savePairing({ ...pairing, phoneIp: gatewayIp });
+    await storage.recordConnectionSuccess(gatewayIp, pairing.phonePort, fingerprint);
+    return { ip: gatewayIp, port: pairing.phonePort };
   }
 
-  const mdnsResult = await pingPhoneViaMdns(pairing.phonePort, pairing.authToken);
+  if (subnetIp) {
+    console.log(`[Tempo] Found phone at new same-subnet address ${subnetIp}`);
+    await storage.savePairing({ ...pairing, phoneIp: subnetIp });
+    await storage.recordConnectionSuccess(subnetIp, pairing.phonePort, fingerprint);
+    return { ip: subnetIp, port: pairing.phonePort };
+  }
+
   if (mdnsResult) {
     console.log(`[Tempo] Found phone via mDNS (${MDNS_HOSTNAME}) — updating stored address`);
     await storage.savePairing({ ...pairing, phoneIp: MDNS_HOSTNAME });
@@ -508,7 +556,7 @@ async function resolvePhoneAddress(pairing: PairingInfo, options: SyncOptions = 
 }
 
 
-// ---- Sync engine -----------------------------------------------------------
+// Sync engine
 
 /**
  * Sync queued plays to the paired phone.
@@ -523,22 +571,38 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
 
   _isSyncing = true;
 
+  // Snapshot of queued play ids taken right after the initial fetch. Reused by
+  // the fatal-error path so a third full getQueuedPlays() collection read is
+  // not needed; ids of batches that complete successfully are removed as we
+  // go so already-synced plays are never marked failed.
+  let queuedIdsForFailure: number[] = [];
+
   try {
-    // 0. Rate-limit cooldown — if the phone recently told us to slow down,
-    //    don't even try. Hammering during cooldown is what causes repeated
-    //    RateLimited errors.
+    // 0. Hard gates — offline mode or no pairing means ZERO phone traffic.
+    //    One choke point covers every entry path (auto-sync/retry alarms,
+    //    socket requests, manual sync) so callers can't leak network work.
+    const gateSettings = await storage.getSettings();
+    if (gateSettings.offlineMode) {
+      console.log('[Tempo] Sync skipped — offline mode');
+      _lastSyncResult = 'Offline mode';
+      _lastSyncTime = new Date().toISOString();
+      return 0;
+    }
+
+    let pairing = await storage.getPairing();
+    if (!pairing) {
+      throw new SyncError('Not paired with any device', 'unknown');
+    }
+
+    // Rate-limit cooldown — if the phone recently told us to slow down,
+    // don't even try. Hammering during cooldown is what causes repeated
+    // RateLimited errors.
     if (_rateLimitedUntil && Date.now() < _rateLimitedUntil) {
       const waitS = Math.ceil((_rateLimitedUntil - Date.now()) / 1000);
       console.log(`[Tempo] Sync skipped — rate-limit cooldown active (${waitS}s remaining)`);
       _lastSyncResult = `Waiting ${waitS}s before retrying (phone rate limit)`;
       _lastSyncTime = new Date().toISOString();
       return 0;
-    }
-
-    // 1. Get pairing info
-    let pairing = await storage.getPairing();
-    if (!pairing) {
-      throw new SyncError('Not paired with any device', 'unknown');
     }
 
     if (!pairing.authToken) {
@@ -553,6 +617,7 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
 
     // 3. Get queued plays (includes retried ones)
     const allPlays = await storage.getQueuedPlays();
+    queuedIdsForFailure = allPlays.filter(p => p.id != null).map(p => p.id!);
     if (allPlays.length === 0) {
       _lastSyncResult = 'No plays to sync';
       _lastSyncTime = new Date().toISOString();
@@ -668,6 +733,8 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
       if (response && response.ok !== false) {
         await storage.clearSyncCheckpoint();
         await storage.markPlaysSynced(batchIds);
+        const syncedSet = new Set(batchIds);
+        queuedIdsForFailure = queuedIdsForFailure.filter(id => !syncedSet.has(id));
         totalSynced += batch.length;
       } else {
         throw new SyncError(`Phone rejected batch ${i + 1}: server returned ok=false`, 'rejected');
@@ -731,8 +798,11 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
         console.warn(`[Tempo] Transient sync failure (${kind}) — retry in ${delayMin} min, plays stay queued`);
       } else {
         // Fatal (rejected/unknown): mark plays failed so the user can act.
-        const plays = await storage.getQueuedPlays();
-        const ids = plays.filter(p => p.id != null).map(p => p.id!);
+        // Reuse the pre-batch id snapshot (already-synced ids removed); only
+        // fall back to a fresh collection read when the snapshot is empty.
+        const ids = queuedIdsForFailure.length > 0
+          ? queuedIdsForFailure
+          : (await storage.getQueuedPlays()).filter(p => p.id != null).map(p => p.id!);
         await storage.markPlaysFailed(ids);
         await scheduleRetryAlarm(10);
       }
@@ -795,7 +865,7 @@ async function sendWithRetry(url: string, payload: SyncPayload, authToken: strin
       const body = await response.text();
       const bodyLower = body.toLowerCase();
 
-      // ---- Classify the failure -------------------------------------------
+      // Classify the failure
 
       if (bodyLower.includes('battery_critical')) {
         throw new SyncError('Phone battery is critically low', 'battery', response.status);
@@ -861,7 +931,7 @@ async function sendWithRetry(url: string, payload: SyncPayload, authToken: strin
   );
 }
 
-// ---- Alarm-based retry scheduling (hibernation-safe) -----------------------
+// Alarm-based retry scheduling (hibernation-safe)
 
 /**
  * Schedule a retry sync alarm. Uses chrome.alarms which survive
@@ -880,24 +950,49 @@ export async function scheduleRetryAlarm(delayMinutes: number): Promise<void> {
 }
 
 /**
- * Set up the auto-sync alarm with adaptive interval.
+ * Recreate a periodic alarm only when its period actually changed. The old
+ * clear+create churn reset the alarm on every sync; an unchanged period is a
+ * no-op.
+ */
+async function ensurePeriodicAlarm(alarmName: string, intervalMinutes: number): Promise<void> {
+  const existing = await chrome.alarms.get(alarmName);
+  if (
+    existing &&
+    typeof existing.periodInMinutes === 'number' &&
+    Math.abs(existing.periodInMinutes - intervalMinutes) < 0.01
+  ) {
+    return;
+  }
+
+  await chrome.alarms.clear(alarmName);
+  chrome.alarms.create(alarmName, { periodInMinutes: intervalMinutes });
+}
+
+/**
+ * Set up the auto-sync alarm with adaptive interval. Skipped entirely when
+ * offline or unpaired — an unpaired install must never arm phone-contacting
+ * alarms that wake the service worker just to no-op.
  */
 export async function initAutoSync(): Promise<void> {
   const settings = await storage.getSettings();
 
-  await chrome.alarms.clear(SYNC_ALARM_NAME);
-
   if (settings.offlineMode) {
+    await chrome.alarms.clear(SYNC_ALARM_NAME);
     console.log('[Tempo] Offline mode enabled, auto-sync disabled');
     return;
   }
 
+  if (!(await storage.getPairing())) {
+    await chrome.alarms.clear(SYNC_ALARM_NAME);
+    console.log('[Tempo] Auto-sync disabled — no paired device');
+    return;
+  }
+
+
   const queueCount = await storage.getQueueCount();
   const interval = getAdaptiveSyncInterval(queueCount, settings.syncIntervalMinutes);
 
-  chrome.alarms.create(SYNC_ALARM_NAME, {
-    periodInMinutes: interval,
-  });
+  await ensurePeriodicAlarm(SYNC_ALARM_NAME, interval);
 
   console.log(`[Tempo] Auto-sync alarm set: every ${interval} minutes (queue=${queueCount}, base=${settings.syncIntervalMinutes})`);
 }
@@ -908,15 +1003,11 @@ export async function initAutoSync(): Promise<void> {
  */
 export async function adjustSyncInterval(): Promise<void> {
   const settings = await storage.getSettings();
-  if (settings.offlineMode) return;
-
+  if (settings.offlineMode || !(await storage.getPairing())) return;
   const queueCount = await storage.getQueueCount();
   const interval = getAdaptiveSyncInterval(queueCount, settings.syncIntervalMinutes);
 
-  await chrome.alarms.clear(SYNC_ALARM_NAME);
-  chrome.alarms.create(SYNC_ALARM_NAME, {
-    periodInMinutes: interval,
-  });
+  await ensurePeriodicAlarm(SYNC_ALARM_NAME, interval);
 }
 
 /**
@@ -925,12 +1016,14 @@ export async function adjustSyncInterval(): Promise<void> {
 export async function initHeartbeat(): Promise<void> {
   await chrome.alarms.clear(HEARTBEAT_ALARM_NAME);
 
+  const settings = await storage.getSettings();
+  if (settings.offlineMode) {
+    console.log('[Tempo] Pairing heartbeat disabled — offline mode');
+    return;
+  }
+
   const pairing = await storage.getPairing();
   if (!pairing) return;
-
-  chrome.alarms.create(HEARTBEAT_ALARM_NAME, {
-    periodInMinutes: HEARTBEAT_INTERVAL_MINUTES,
-  });
 
   console.log(`[Tempo] Pairing heartbeat alarm set: every ${HEARTBEAT_INTERVAL_MINUTES} minutes`);
 }
@@ -940,6 +1033,12 @@ export async function initHeartbeat(): Promise<void> {
  */
 export async function initTokenRefresh(): Promise<void> {
   await chrome.alarms.clear(TOKEN_REFRESH_ALARM_NAME);
+
+  const settings = await storage.getSettings();
+  if (settings.offlineMode) {
+    console.log('[Tempo] Token refresh disabled — offline mode');
+    return;
+  }
 
   const pairing = await storage.getPairing();
   if (!pairing) return;
@@ -953,10 +1052,24 @@ export async function initTokenRefresh(): Promise<void> {
 
 /**
  * Execute a pairing heartbeat — lightweight ping independent of sync.
+ *
+ * When the WebSocket is Connected, its 25s signed pings already prove both
+ * reachability and auth (the phone rejects bad tokens at the handshake), so
+ * the HTTP round-trip — a full service-worker radio wakeup, 288/day — is
+ * skipped and only health bookkeeping runs. Disconnected states (Firefox,
+ * suspended idle socket) keep the classic HTTP ping. Offline mode is a hard
+ * no-op — zero phone traffic, period.
  */
-export async function executeHeartbeat(): Promise<{ invalidated: boolean }> {
+export async function executeHeartbeat(socketConnected = false): Promise<{ invalidated: boolean }> {
   const pairing = await storage.getPairing();
   if (!pairing || !pairing.phoneIp) return { invalidated: false };
+
+  if ((await storage.getSettings()).offlineMode) return { invalidated: false };
+
+  if (socketConnected) {
+    await storage.recordHealthPing(true);
+    return { invalidated: false };
+  }
 
   const result = await pingPhone(pairing.phoneIp, pairing.phonePort, pairing.authToken, 3_000);
 
@@ -990,6 +1103,7 @@ export async function refreshToken(): Promise<void> {
   return withTokenLock(async () => {
     const pairing = await storage.getPairing();
     if (!pairing || !pairing.phoneIp || !pairing.authToken) return;
+    if ((await storage.getSettings()).offlineMode) return;
 
     try {
       const controller = new AbortController();
@@ -1016,6 +1130,6 @@ export async function refreshToken(): Promise<void> {
   });
 }
 
-// ---- Export alarm names for service worker listener setup -------------------
+// Export alarm names for service worker listener setup
 
 export { SYNC_ALARM_NAME, RETRY_ALARM_NAME, HEARTBEAT_ALARM_NAME, TOKEN_REFRESH_ALARM_NAME };

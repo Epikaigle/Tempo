@@ -28,9 +28,7 @@ object OemBackgroundHelper {
     
     private const val TAG = "OemBackgroundHelper"
     
-    // ============================
     // Device Detection
-    // ============================
     
     /**
      * Check if device is manufactured by Xiaomi (includes Redmi, POCO, Black Shark).
@@ -92,9 +90,7 @@ object OemBackgroundHelper {
         return brand // e.g. "Redmi", "Poco", "Xiaomi"
     }
     
-    // ============================
     // Autostart State Detection
-    // ============================
     
     enum class AutostartState {
         ENABLED,
@@ -182,9 +178,7 @@ object OemBackgroundHelper {
         }
     }
     
-    // ============================
     // Settings Launchers
-    // ============================
     
     /**
      * Open MIUI Autostart settings.
@@ -316,9 +310,7 @@ object OemBackgroundHelper {
         }
     }
     
-    // ============================
     // Utilities
-    // ============================
     
     private fun tryLaunchIntents(context: Context, intents: List<Intent>): Boolean {
         for (intent in intents) {

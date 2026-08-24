@@ -10,16 +10,8 @@ import android.util.Log
 import me.avinas.tempo.service.MusicTrackingService
 
 /**
- * BootReceiver restarts the MusicTrackingService after device reboot.
- * 
- * Handles:
- * - BOOT_COMPLETED: Standard boot complete (preferred, wait for this)
- * - QUICKBOOT_POWERON: Quick boot (some manufacturers)
- * - LOCKED_BOOT_COMPLETED: Direct boot mode (ignored, wait for full boot)
- * 
- * Note: The NotificationListenerService is automatically started by the system
- * when notification access is granted. We only need to ensure the component
- * is enabled, not force rebinds which can cause duplicate listener connections.
+ * Ensures MusicTrackingService component is enabled after device reboot.
+ * Ignores LOCKED_BOOT_COMPLETED to avoid duplicate bindings before user unlock.
  */
 class BootReceiver : BroadcastReceiver() {
 

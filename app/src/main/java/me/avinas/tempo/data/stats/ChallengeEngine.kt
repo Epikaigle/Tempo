@@ -25,10 +25,7 @@ object ChallengeEngine {
         const val HARD = "HARD"
     }
 
-    // =============================================
     // Smart Limits (Safety Caps)
-    // =============================================
-    
     // Even if a user listens to 500 songs a day, we won't ask them to listen to 750.
     private const val MAX_SONGS_PER_DAY = 50
     private const val MAX_MINUTES_PER_DAY = 180
@@ -37,9 +34,7 @@ object ChallengeEngine {
     private const val MAX_NEW_GENRES = 2
     private const val MAX_EXPLORATION_SONGS = 10
 
-    // =============================================
     // Fallback Defaults (New Users)
-    // =============================================
     
     private const val DEFAULT_SONGS_EASY = 5
     private const val DEFAULT_SONGS_MEDIUM = 15
@@ -86,7 +81,7 @@ object ChallengeEngine {
 
         // Generate 1 EASY, 2 MEDIUM, 1 HARD (4 challenges total)
         
-        // --- EASY Challenge ---
+        // EASY Challenge
         // Alternate between songs and minutes based on day of year
         val dayOfYear = getDayOfYear(dateString)
         if (dayOfYear % 2 == 0) {
@@ -95,7 +90,7 @@ object ChallengeEngine {
             challenges.add(createVolumeMinsChallenge(dateString, Difficulty.EASY, easyMinsTarget))
         }
 
-        // --- MEDIUM Challenge 1 (Variety/Time) ---
+        // MEDIUM Challenge 1 (Variety/Time)
         if (dayOfYear % 3 == 0) {
             challenges.add(createTimeEarlyBirdChallenge(dateString))
         } else if (dayOfYear % 3 == 1) {
@@ -109,7 +104,7 @@ object ChallengeEngine {
             }
         }
 
-        // --- MEDIUM Challenge 2 (Exploration - Dynamic) ---
+        // MEDIUM Challenge 2 (Exploration - Dynamic)
         // Dynamically pick a top artist or genre
         if (metrics != null && metrics.topArtists.isNotEmpty() && dayOfYear % 2 == 0) {
             val idx = dayOfYear % metrics.topArtists.size
@@ -126,7 +121,7 @@ object ChallengeEngine {
             challenges.add(createDiscoveryGenresChallenge(dateString, Difficulty.MEDIUM, 2.coerceAtMost(MAX_NEW_GENRES)))
         }
 
-        // --- HARD Challenge ---
+        // HARD Challenge
         if (dayOfYear % 3 == 0) {
             challenges.add(createVolumeSongsChallenge(dateString, Difficulty.HARD, hardSongsTarget))
         } else if (dayOfYear % 3 == 1) {
@@ -156,9 +151,7 @@ object ChallengeEngine {
         } catch (e: Exception) { 1 }
     }
 
-    // =============================================
     // Challenge Factories
-    // =============================================
 
     private fun getReward(difficulty: String): Int = when (difficulty) {
         Difficulty.EASY -> listOf(15, 20, 25).random()

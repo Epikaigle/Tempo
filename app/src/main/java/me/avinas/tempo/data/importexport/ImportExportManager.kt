@@ -75,12 +75,58 @@ class ImportExportManager @Inject constructor(
     
     /**
      * Export all data to a ZIP file at the given URI.
-     * 
+     *
+     * The archive is fully written and validated into a private cache file
+     * FIRST; only then is it copied to [uri]. A failed or interrupted export
+     * can therefore never truncate an existing backup file the user picked as
+     * the overwrite target.
+     *
      * @param uri The URI to write the ZIP file to
      * @param includeLocalImages If true, bundle local album art files in the ZIP
      */
     suspend fun exportData(
-        uri: Uri, 
+        uri: Uri,
+        includeLocalImages: Boolean = true
+    ): ImportExportResult = withContext(Dispatchers.IO) {
+        if (!operationInProgress.compareAndSet(false, true)) {
+            return@withContext ImportExportResult.Error(
+                "Another backup/restore is already in progress. Please wait for it to finish."
+            )
+        }
+
+        val stagingFile = File(context.cacheDir, "export_staging_${System.currentTimeMillis()}.tempo")
+        try {
+            val result = writeBackupArchive(stagingFile, includeLocalImages)
+            if (result is ImportExportResult.Error) return@withContext result
+
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    stagingFile.inputStream().use { it.copyTo(outputStream) }
+                } ?: return@withContext ImportExportResult.Error("Could not open file for writing")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to copy staged backup to destination", e)
+                return@withContext ImportExportResult.Error(
+                    "Could not write backup file: ${e.message}",
+                    e
+                )
+            }
+
+            result
+        } finally {
+            operationInProgress.set(false)
+            stagingFile.delete()
+            delay(1000)
+            _progress.value = null
+        }
+    }
+
+    /**
+     * Export directly into a caller-owned local file (Google Drive upload path).
+     * The target must be a fresh/throwaway cache file — unlike [exportData]
+     * there is no pre-existing user content to protect, so no staging copy.
+     */
+    suspend fun exportToFile(
+        target: File,
         includeLocalImages: Boolean = true
     ): ImportExportResult = withContext(Dispatchers.IO) {
         if (!operationInProgress.compareAndSet(false, true)) {
@@ -89,7 +135,31 @@ class ImportExportManager @Inject constructor(
             )
         }
         try {
+            writeBackupArchive(target, includeLocalImages)
+        } finally {
+            operationInProgress.set(false)
+            delay(1000)
+            _progress.value = null
+        }
+    }
+
+    /**
+     * Write the full backup ZIP into [target] and verify its integrity before
+     * reporting success. Reads run against a point-in-time snapshot: id bounds
+     * are captured up front and keyset paging stops at them, so rows inserted
+     * by live tracking mid-export are excluded rather than exported without
+     * their track rows (which would get silently dropped on restore).
+     */
+    private suspend fun writeBackupArchive(
+        target: File,
+        includeLocalImages: Boolean
+    ): ImportExportResult = withContext(Dispatchers.IO) {
+        try {
             _progress.value = ImportExportProgress("Collecting data...", 0, 100, true)
+
+            // Snapshot boundary — MUST be captured before any table read below.
+            val maxEventId = database.listeningEventDao().getMaxEventId()
+            val maxArchiveId = database.scrobbleArchiveDao().getMaxArchiveId()
             
             // Collect all bounded tables. The two unbounded tables (listening events,
             // scrobble archive) are NOT loaded here — they are streamed page by page
@@ -137,7 +207,7 @@ class ImportExportManager @Inject constructor(
             
             _progress.value = ImportExportProgress("Creating backup...", 40, 100)
             
-            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+            val result = target.outputStream().use { outputStream ->
                 ZipOutputStream(BufferedOutputStream(outputStream)).use { zipOut ->
                     
                     // Bundle local images if enabled
@@ -210,7 +280,7 @@ class ImportExportManager @Inject constructor(
                         shell = exportData,
                         eventPages = {
                             val page = database.listeningEventDao()
-                                .getEventsPage(lastEventId, EXPORT_PAGE_SIZE)
+                                .getEventsPage(lastEventId, maxEventId, EXPORT_PAGE_SIZE)
                             if (page.isNotEmpty()) {
                                 lastEventId = page.last().id
                                 eventsWritten += page.size
@@ -219,7 +289,7 @@ class ImportExportManager @Inject constructor(
                         },
                         archivePages = {
                             val page = database.scrobbleArchiveDao()
-                                .getArchivePage(lastArchiveId, EXPORT_PAGE_SIZE)
+                                .getArchivePage(lastArchiveId, maxArchiveId, EXPORT_PAGE_SIZE)
                             if (page.isNotEmpty()) lastArchiveId = page.last().id
                             page
                         }
@@ -227,8 +297,8 @@ class ImportExportManager @Inject constructor(
                     dataSink.flush()
                     zipOut.closeEntry()
                     
-                    _progress.value = ImportExportProgress("Export complete!", 100, 100)
-                    
+                    _progress.value = ImportExportProgress("Validating archive...", 95, 100)
+
                     ImportExportResult.Success(
                         tracksCount = tracks.size,
                         artistsCount = artists.size,
@@ -237,11 +307,28 @@ class ImportExportManager @Inject constructor(
                         imagesCount = bundledCount
                     )
                 }
-            } ?: ImportExportResult.Error("Could not open file for writing")
+            }
+
+
+
+            // Post-write integrity check: the archive must be a readable ZIP that
+            // actually contains data.json. Catches disk-full truncation BEFORE the
+            // file is uploaded to Drive or copied over a user's existing backup.
+            validateBackupArchive(target)?.let { message ->
+                Log.e(TAG, "Backup validation failed: $message")
+                target.delete()
+                return@withContext ImportExportResult.Error(message)
+            }
+
+            _progress.value = ImportExportProgress("Export complete!", 100, 100)
+            result
             
         } catch (e: Exception) {
             Log.e(TAG, "Export failed", e)
-            ImportExportResult.Error("Export failed: ${e.message}", e)
+            ImportExportResult.Error(
+                "Export failed: ${e::class.java.simpleName}: ${e.message}",
+                e
+            )
         } finally {
             operationInProgress.set(false)
             delay(1000)
@@ -549,21 +636,24 @@ class ImportExportManager @Inject constructor(
             
             _progress.value = ImportExportProgress("Importing preferences...", 90, 100)
             
-            // Import UserPreferences.
+            // Import UserPreferences — REPLACE strategy only. SKIP means "keep
+            // what this device has", so restoring must not clobber local settings.
             // Sanitize device-specific / auth-bound fields before upserting so that a backup
             // restored on a *different* (or freshly reinstalled) device does not carry over
             // Spotify polling state that has no valid tokens on the new device.  Leaving
             // spotifyApiOnlyMode=true would (a) permanently suppress Spotify notification
             // tracking and (b) schedule SpotifyPollingWorker in a perpetual failure loop.
-            data.userPreferences?.let { prefs ->
-                database.userPreferencesDao().upsert(
-                    prefs.copy(
-                        spotifyLinked = false,
-                        spotifyApiOnlyMode = false,
-                        spotifyImportCursor = null,
-                        lastSpotifyImportTimestamp = null
+            if (conflictStrategy == ImportConflictStrategy.REPLACE) {
+                data.userPreferences?.let { prefs ->
+                    database.userPreferencesDao().upsert(
+                        prefs.copy(
+                            spotifyLinked = false,
+                            spotifyApiOnlyMode = false,
+                            spotifyImportCursor = null,
+                            lastSpotifyImportTimestamp = null
+                        )
                     )
-                )
+                }
             }
 
             // v6: Import UserLevel (gamification data)
@@ -662,10 +752,22 @@ class ImportExportManager @Inject constructor(
             val archiveStats = replayStagedArchive(stagedArchiveFile, conflictStrategy)
             Log.i(TAG, "Imported scrobble archive: ${archiveStats.first} new, ${archiveStats.second} merged/skipped")
             
-            // v5: Import Last.fm Import Metadata
+            // v5: Import Last.fm Import Metadata.
+            // The table has no unique index; it is keyed by username in practice.
+            // REPLACE updates the local session row in place (keeps local id, no
+            // duplicate accumulation on repeated restores). SKIP leaves an existing
+            // session's state (sync cursors, resume points) untouched and only adds
+            // usernames this device has never imported.
             if (data.lastFmImportMetadata.isNotEmpty()) {
                 for (metadata in data.lastFmImportMetadata) {
-                    database.lastFmImportMetadataDao().insert(metadata.copy(id = 0))
+                    val incoming = metadata.copy(id = 0)
+                    val existing = database.lastFmImportMetadataDao()
+                        .getLatestForUsername(incoming.lastfmUsername)
+                    if (existing == null) {
+                        database.lastFmImportMetadataDao().insert(incoming)
+                    } else if (conflictStrategy == ImportConflictStrategy.REPLACE) {
+                        database.lastFmImportMetadataDao().update(incoming.copy(id = existing.id))
+                    }
                 }
                 Log.i(TAG, "Imported ${data.lastFmImportMetadata.size} Last.fm import metadata records")
             }
@@ -965,6 +1067,21 @@ class ImportExportManager @Inject constructor(
             albumArtUrlLarge = meta.albumArtUrlLarge?.let { pathMapping[it] ?: it }
         )
     }
+    /**
+     * Post-write integrity check: the archive must be a readable ZIP that
+     * actually contains data.json. Returns null when valid, otherwise a
+     * human-readable failure reason.
+     */
+    private fun validateBackupArchive(file: File): String? = try {
+        java.util.zip.ZipFile(file).use { zip ->
+            if (zip.getEntry(TempoExportData.DATA_FILENAME) == null)
+                "Backup archive is missing its data payload"
+            else null
+        }
+    } catch (e: Exception) {
+        "Backup archive failed validation: ${e.message}"
+    }
+
 }
 
 private data class ExtractedImage(

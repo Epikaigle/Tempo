@@ -346,9 +346,7 @@ class DatabaseOptimization @Inject constructor(
         result
     }
     
-    // =====================
     // Private Helpers
-    // =====================
     
     private suspend fun countEvents(): Int = withContext(Dispatchers.IO) {
         try {

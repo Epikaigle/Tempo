@@ -9,9 +9,7 @@ import com.squareup.moshi.JsonClass
  * Documentation: https://developer.spotify.com/documentation/web-api/reference
  */
 
-// =====================
 // Search Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class SpotifySearchResponse(
@@ -60,9 +58,7 @@ data class SpotifyMultipleTracksResponse(
     val tracks: List<SpotifyTrack?>
 )
 
-// =====================
 // Track
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class SpotifyTrack(
@@ -201,9 +197,7 @@ data class SpotifyExternalUrls(
     val spotify: String?
 )
 
-// =====================
 // Audio Features
-// =====================
 
 /**
  * Audio features for a track.
@@ -410,9 +404,7 @@ data class SpotifyAudioFeaturesResponse(
     @param:Json(name = "audio_features") val audioFeatures: List<SpotifyAudioFeatures?>
 )
 
-// =====================
 // User Profile
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class SpotifyUser(
@@ -439,9 +431,7 @@ data class SpotifyUser(
         get() = product == "premium"
 }
 
-// =====================
 // Token Response
-// =====================
 
 /**
  * OAuth token response from Spotify.
@@ -455,9 +445,7 @@ data class SpotifyTokenResponse(
     @param:Json(name = "refresh_token") val refreshToken: String?
 )
 
-// =====================
 // Error Response
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class SpotifyErrorResponse(
@@ -470,9 +458,7 @@ data class SpotifyError(
     val message: String
 )
 
-// =====================
 // Artist Top Tracks Response
-// =====================
 
 /**
  * Response from the artist top tracks endpoint.
@@ -492,9 +478,7 @@ data class SpotifyMultipleArtistsResponse(
     val artists: List<SpotifyFullArtist?>
 )
 
-// =====================
 // Recently Played (Import Feature)
-// =====================
 
 /**
  * Response from GET /me/player/recently-played endpoint.
@@ -576,9 +560,7 @@ data class SpotifyCursors(
     val before: String? // Unix timestamp in ms - use as "before" param to get older
 )
 
-// =====================================================
 // User Top Items (Stats.fm style endpoints)
-// =====================================================
 
 /**
  * Response from GET /me/top/tracks endpoint.
@@ -618,9 +600,7 @@ data class SpotifyUserTopArtistsResponse(
     val previous: String?
 )
 
-// =====================================================
 // User's Saved Tracks (Time Machine - Exact Timestamps!)
-// =====================================================
 
 /**
  * Response from GET /me/tracks endpoint.
@@ -671,9 +651,7 @@ data class SavedTrackObject(
         }
 }
 
-// =====================================================
 // User's Playlists (Artifact Hunter)
-// =====================================================
 
 /**
  * Response from GET /me/playlists endpoint.

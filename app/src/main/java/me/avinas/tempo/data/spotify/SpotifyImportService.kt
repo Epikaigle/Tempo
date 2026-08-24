@@ -22,43 +22,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Service for importing listening history from Spotify's recently-played API.
- * 
- * =====================================================
- * PURPOSE: Onboarding Import
- * =====================================================
- * 
- * This service is designed for NEW USERS with zero data in Tempo.
- * It bootstraps their library with recent Spotify activity so they
- * have something to see immediately.
- * 
- * The Spotify API only provides the last ~50 plays (~24 hours of history).
- * This is intentionally limited and NOT a full historical import.
- * 
- * =====================================================
- * USAGE MODES
- * =====================================================
- * 
- * 1. ONE-TIME IMPORT (Onboarding)
- *    - Called during onboarding after Spotify connection
- *    - Imports available recent plays
- *    - User proceeds with notification-based tracking from then on
- * 
- * 2. SPOTIFY-API-ONLY MODE (Optional)
- *    - User chooses to rely on Spotify API instead of notifications
- *    - SpotifyPollingWorker periodically calls this service
- *    - Uses cursor-based pagination to only fetch new plays
- *    - Disables Spotify notification tracking to avoid duplicates
- * 
- * =====================================================
- * DATA FLOW
- * =====================================================
- * 
- * Spotify API → SpotifyImportService → Track + ListeningEvent → Room DB
- * 
- * Each PlayHistoryObject becomes:
- * - 1 Track (if not already exists by spotify_id)
- * - 1 ListeningEvent (always created, with played_at as timestamp)
+ * Service for importing recently played tracks from Spotify Web API.
  */
 @Singleton
 class SpotifyImportService @Inject constructor(

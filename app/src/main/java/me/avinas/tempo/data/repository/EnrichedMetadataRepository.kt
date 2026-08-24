@@ -21,9 +21,7 @@ import kotlinx.coroutines.flow.Flow
  */
 interface EnrichedMetadataRepository {
     
-    // =====================
     // Core Read Operations (for UI)
-    // =====================
     
     /**
      * Get enriched metadata for a track as a Flow (reactive updates).
@@ -37,9 +35,7 @@ interface EnrichedMetadataRepository {
      */
     suspend fun forTrackSync(trackId: Long): EnrichedMetadata?
     
-    // =====================
     // Write Operations (for Enrichment Services)
-    // =====================
     
     /**
      * Insert or update enriched metadata.
@@ -58,9 +54,7 @@ interface EnrichedMetadataRepository {
      */
     suspend fun markForReEnrichment(trackId: Long)
     
-    // =====================
     // Stats Operations (for UI)
-    // =====================
     
     /**
      * Get count of tracks by enrichment status.
@@ -76,8 +70,21 @@ interface EnrichedMetadataRepository {
     /** Tracks that currently have album art. */
     suspend fun countTracksWithAlbumArt(): Int
 
-    /** Re-queue all non-enriched tracks to PENDING (for "Enrich All"). Returns rows updated. */
+    /**
+     * Re-queue all non-enriched tracks to PENDING (for "Enrich All"). Returns rows updated.
+     *
+     * Tracks that came back NOT_FOUND are blocked for
+     * [EnrichedMetadata.NOT_FOUND_RETRY_BLOCK_MS] (7 days) after their last attempt:
+     * they were already searched across every source, so re-running the sweep must
+     * not re-query the external APIs for them.
+     */
     suspend fun requeueAllForEnrichment(): Int
+
+    /**
+     * Count NOT_FOUND tracks still inside the 7-day re-enrichment block — i.e. songs
+     * that "Enrich All" will deliberately skip this time. For UI feedback.
+     */
+    suspend fun countNotFoundBlockedFromRequeue(): Int
 
     /** Tracks that have no enriched_metadata row at all (never queued for enrichment). */
     suspend fun countTracksWithoutEnrichedMetadata(): Int
@@ -102,9 +109,7 @@ interface EnrichedMetadataRepository {
      */
     suspend fun countTracksPendingSpotifyEnrichment(): Int
     
-    // =====================
     // Spotify Integration (for Enrichment & UI)
-    // =====================
     
     /**
      * Queue all enriched tracks for Spotify enrichment.
@@ -127,9 +132,7 @@ interface EnrichedMetadataRepository {
         error: String? = null
     )
     
-    // =====================
     // Lookup Operations
-    // =====================
     
     /**
      * Find metadata by MusicBrainz recording ID.

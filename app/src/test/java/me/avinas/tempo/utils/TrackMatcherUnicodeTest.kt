@@ -23,9 +23,7 @@ import org.junit.Test
  */
 class TrackMatcherUnicodeTest {
 
-    // =====================
     // normalizeTitle / normalizeArtist
-    // =====================
 
     @Test
     fun `korean artist names survive normalization`() {
@@ -112,9 +110,7 @@ class TrackMatcherUnicodeTest {
         )
     }
 
-    // =====================
     // matchTracks
-    // =====================
 
     @Test
     fun `identical japanese tracks match exactly`() {
@@ -141,9 +137,7 @@ class TrackMatcherUnicodeTest {
         assertTrue(result.isMatch)
     }
 
-    // =====================
     // findBestMatch
-    // =====================
 
     @Test
     fun `findBestMatch finds korean candidate`() {
@@ -193,9 +187,7 @@ class TrackMatcherUnicodeTest {
         assertEquals(1L, result!!.first.id)
     }
 
-    // =====================
     // UnicodeUtils
-    // =====================
 
     @Test
     fun `foldForMatching keeps korean intact`() {

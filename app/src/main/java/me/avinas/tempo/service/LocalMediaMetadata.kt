@@ -320,7 +320,6 @@ data class LocalMediaMetadata(
 
         /**
          * Extract all available metadata from Android MediaMetadata.
-         * Uses comprehensive fallback chain for artist extraction.
          */
         fun fromMediaMetadata(
             metadata: MediaMetadata,
@@ -330,7 +329,6 @@ data class LocalMediaMetadata(
                 ?: metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
                 ?: return null
             
-            // Robust artist extraction with multiple fallbacks
             val artist = sequenceOf(
                 metadata.getString(MediaMetadata.METADATA_KEY_ARTIST),
                 metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST),

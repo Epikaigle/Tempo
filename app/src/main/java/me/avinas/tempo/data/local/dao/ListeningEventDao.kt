@@ -360,19 +360,25 @@ interface ListeningEventDao {
      */
     @Query("DELETE FROM listening_events WHERE track_id = :trackId")
     suspend fun deleteEventsForTrack(trackId: Long): Int
-
     /**
-     * Keyset page of listening events for backup export.
-     * Rows are fetched in id order, page after page, so the full history
-     * (potentially hundreds of thousands of rows) is never materialized
-     * in memory at once. Pass the last seen id as [afterId], starting at 0.
+     * Keyset page of events for backup export. Rows are fetched in id order,
+     * page after page, so the full history is never materialized in memory at
+     * once. Pass the last seen id as [afterId], starting at 0.
+     *
+     * [maxId] caps the scan at the snapshot boundary captured before the export
+     * began. Live tracking keeps inserting rows during a backup; rows above the
+     * boundary are excluded so the archive never contains events whose track row
+     * is missing from the same snapshot (those would be silently dropped on
+     * restore).
      */
-    @Query("SELECT * FROM listening_events WHERE id > :afterId ORDER BY id ASC LIMIT :limit")
-    suspend fun getEventsPage(afterId: Long, limit: Int): List<ListeningEvent>
+    @Query("SELECT * FROM listening_events WHERE id > :afterId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
+    suspend fun getEventsPage(afterId: Long, maxId: Long, limit: Int): List<ListeningEvent>
+
+    /** Highest event id at the moment of the call — export snapshot boundary. */
+    @Query("SELECT COALESCE(MAX(id), 0) FROM listening_events")
+    suspend fun getMaxEventId(): Long
     
-    // =====================
     // Enhanced Engagement Queries
-    // =====================
     
     /**
      * Get total skip count for a track.

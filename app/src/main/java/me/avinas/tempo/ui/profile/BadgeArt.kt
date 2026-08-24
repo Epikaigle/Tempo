@@ -99,9 +99,7 @@ object BadgeArt {
         }
     }
 
-    // =====================
     // Milestones — plays
-    // =====================
 
     /** First Note — a single eighth note; the journey begins. */
     private fun firstNote() = coin("BadgeFirstNote") {
@@ -195,9 +193,7 @@ object BadgeArt {
         }
     }
 
-    // =====================
     // Time
-    // =====================
 
     /** First Hour — a clock face at one past twelve. */
     private fun firstHour() = coin("BadgeFirstHour") {
@@ -277,9 +273,7 @@ object BadgeArt {
         }
     }
 
-    // =====================
     // Streaks
-    // =====================
 
     /** Week Warrior — a single flame, one week alive. */
     private fun weekWarrior() = coin("BadgeWeekWarrior") {
@@ -341,9 +335,7 @@ object BadgeArt {
         }
     }
 
-    // =====================
     // Discovery
-    // =====================
 
     /** Explorer — a compass: needle, ring and hub. */
     private fun explorer() = coin("BadgeExplorer") {
@@ -412,9 +404,7 @@ object BadgeArt {
         }
     }
 
-    // =====================
     // Engagement
-    // =====================
 
     /** Night Owl — an owl's face: tufts, ringed eyes, beak. */
     private fun nightOwl() = coin("BadgeNightOwl") {
@@ -475,9 +465,7 @@ object BadgeArt {
         }
     }
 
-    // =====================
     // Level milestones
-    // =====================
 
     /** Rising Star — a star lifting off on a swoosh. */
     private fun risingStar() = coin("BadgeRisingStar") {

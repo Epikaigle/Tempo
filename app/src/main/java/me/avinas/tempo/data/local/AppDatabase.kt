@@ -921,10 +921,8 @@ abstract class AppDatabase : RoomDatabase() {
 
                 val currentTime = System.currentTimeMillis()
                 
-                // =====================================================================
                 // MUSIC APPS - ALL apps from the original MUSIC_APPS set (enabled)
                 // This ensures existing users can continue tracking all apps they used
-                // =====================================================================
                 val musicApps = listOf(
                     // Major Streaming Services
                     Pair("com.spotify.music", "Spotify"),
@@ -1014,9 +1012,7 @@ abstract class AppDatabase : RoomDatabase() {
                     """)
                 }
                 
-                // =====================================================================
                 // PODCAST APPS - Seed as enabled (user can disable if they don't want)
-                // =====================================================================
                 val podcastApps = listOf(
                     Pair("com.google.android.apps.podcasts", "Google Podcasts"),
                     Pair("fm.player", "Player FM"),
@@ -1038,9 +1034,7 @@ abstract class AppDatabase : RoomDatabase() {
                     """)
                 }
                 
-                // =====================================================================
                 // AUDIOBOOK APPS - Seed as enabled 
-                // =====================================================================
                 val audiobookApps = listOf(
                     Pair("com.audible.application", "Audible"),
                     Pair("com.google.android.apps.books", "Google Play Books"),
@@ -1059,10 +1053,8 @@ abstract class AppDatabase : RoomDatabase() {
                     """)
                 }
                 
-                // =====================================================================
                 // BLOCKED APPS - Video apps, social media, browsers (blocked by default)
                 // These were always blocked and should remain blocked
-                // =====================================================================
                 val blockedApps = listOf(
                     // Video Streaming
                     Triple("com.google.android.youtube", "YouTube", "VIDEO"),
@@ -1194,11 +1186,9 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "Starting migration from version 27 to 28 - Adding Last.fm import support")
                 
-                // =====================================================
                 // Step 1: Create lastfm_import_metadata table
                 // NOTE: Do NOT use DEFAULT clauses - the entity class doesn't declare
                 // @ColumnInfo(defaultValue=...) so Room expects no defaults in schema
-                // =====================================================
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS lastfm_import_metadata (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -1229,9 +1219,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // NOTE: Do NOT create indices here - the entity class doesn't declare
                 // @Index annotations, so Room expects no indices in schema validation
                 
-                // =====================================================
                 // Step 2: Create scrobbles_archive table
-                // =====================================================
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS scrobbles_archive (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -1260,11 +1248,9 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_last_scrobble ON scrobbles_archive(last_scrobble)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_play_count ON scrobbles_archive(play_count)")
                 
-                // =====================================================
                 // Step 3: Add Last.fm columns to user_preferences
                 // NOTE: These use DEFAULT because the entity has default values in Kotlin
                 // and Room handles this differently for ALTER TABLE vs CREATE TABLE
-                // =====================================================
                 
                 // Last.fm username for syncing
                 db.execSQL("""
@@ -1781,7 +1767,7 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "Starting migration from version 40 to 41 - Fixing schema mismatches")
 
-                // --- Fix 1: artists.normalized_name → UNIQUE index ---
+                // Fix 1: artists.normalized_name → UNIQUE index
                 // Before recreating the unique index, collapse any duplicate normalized names
                 // by keeping the artist with the lowest id and deleting the rest.
                 db.execSQL("""
@@ -1793,7 +1779,7 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP INDEX IF EXISTS index_artists_normalized_name")
                 db.execSQL("CREATE UNIQUE INDEX index_artists_normalized_name ON artists(normalized_name)")
 
-                // --- Fix 2: albums.musicbrainz_id → UNIQUE index ---
+                // Fix 2: albums.musicbrainz_id → UNIQUE index
                 // Keep the album with the lowest id for each musicbrainz_id duplicate.
                 db.execSQL("""
                     DELETE FROM albums
@@ -1807,7 +1793,7 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP INDEX IF EXISTS index_albums_musicbrainz_id")
                 db.execSQL("CREATE UNIQUE INDEX index_albums_musicbrainz_id ON albums(musicbrainz_id)")
 
-                // --- Fix 3: enriched_metadata.tags / .genres → NOT NULL via table rebuild ---
+                // Fix 3: enriched_metadata.tags / .genres → NOT NULL via table rebuild
                 db.execSQL("PRAGMA foreign_keys = OFF")
                 db.execSQL("""
                     CREATE TABLE enriched_metadata_v41 (
@@ -1964,13 +1950,13 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "Starting migration from version 43 to 44")
 
-                // --- 1. user_preferences: add pauseTrackingOnLowBattery ---
+                // 1. user_preferences: add pauseTrackingOnLowBattery
                 db.execSQL("""
                     ALTER TABLE user_preferences
                     ADD COLUMN pauseTrackingOnLowBattery INTEGER NOT NULL DEFAULT 1
                 """)
 
-                // --- 2. desktop_pairing_sessions: add ECDH key columns ---
+                // 2. desktop_pairing_sessions: add ECDH key columns
                 db.execSQL("""
                     ALTER TABLE desktop_pairing_sessions
                     ADD COLUMN phone_public_key TEXT DEFAULT NULL

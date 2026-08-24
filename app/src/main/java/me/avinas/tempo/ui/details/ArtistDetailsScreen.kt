@@ -665,32 +665,32 @@ fun ArtistHeroSection(
                     )
                 }
 
-                // Refresh image control (bottom-right overlay)
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(8.dp)
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(TempoDarkSurface.copy(alpha = 0.85f))
-                        .border(0.8.dp, GlassBorderSoft, CircleShape)
-                        .premiumClickable(onClick = onRefreshImage),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (isRefreshingImage) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = accent,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = stringResource(R.string.details_refresh_artist_image),
-                            tint = TextPrimary,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    }
+            }
+            // Refresh image control (bottom-right overlay)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(TempoDarkSurface.copy(alpha = 0.85f))
+                    .border(0.8.dp, GlassBorderSoft, CircleShape)
+                    .premiumClickable(onClick = onRefreshImage),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isRefreshingImage) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = accent,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.details_refresh_artist_image),
+                        tint = TextPrimary,
+                        modifier = Modifier.size(16.dp),
+                    )
                 }
             }
         }

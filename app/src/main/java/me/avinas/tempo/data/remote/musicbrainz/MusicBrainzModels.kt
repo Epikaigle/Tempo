@@ -11,9 +11,7 @@ import com.squareup.moshi.JsonClass
  * These models represent the JSON responses from MusicBrainz search and lookup endpoints.
  */
 
-// =====================
 // Search Response Models
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class RecordingSearchResponse(
@@ -87,9 +85,7 @@ data class MBAlias(
     val primary: Boolean? = null
 )
 
-// =====================
 // Release (Album) Models
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class MBRelease(
@@ -175,9 +171,7 @@ data class MBReleaseEvent(
     val area: MBArea? = null
 )
 
-// =====================
 // Tags & Genres
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class MBTag(
@@ -193,9 +187,7 @@ data class MBGenre(
     val disambiguation: String? = null
 )
 
-// =====================
 // Relations (for URLs, etc.)
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class MBRelation(
@@ -213,9 +205,7 @@ data class MBUrl(
     val resource: String? = null
 )
 
-// =====================
 // Cover Art Archive Models
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class CoverArtResponse(
@@ -244,9 +234,7 @@ data class CoverArtThumbnails(
     val large2: String? = null
 )
 
-// =====================
 // Lookup Response Models (for detailed fetch)
-// =====================
 
 @JsonClass(generateAdapter = true)
 data class RecordingLookupResponse(

@@ -20,35 +20,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Service responsible for enriching track metadata using MusicBrainz API.
- * 
- * =====================================================
- * DATA FLOW PATTERN: Enrichment → Database → UI
- * =====================================================
- * 
- * This service is called ONLY by EnrichmentWorker in background.
- * It should NEVER be called directly from ViewModels or UI components.
- * 
- * Flow:
- * 1. EnrichmentWorker calls this service to fetch data from MusicBrainz API
- * 2. This service stores the fetched data in Room database via DAOs
- * 3. UI components read the cached data from database via Repositories
- * 
- * This pattern ensures:
- * - API calls are made in background, never blocking UI
- * - Rate limits are respected (1 request/second for MusicBrainz)
- * - UI always has fast access to cached data
- * - App works offline with whatever is cached
- * 
- * =====================================================
- * 
- * Features:
- * - Search MusicBrainz for track by title + artist
- * - Fetch complete metadata including album art from Cover Art Archive
- * - Smart album detection: creates Artist and Album entities when album info is found
- * - Cache all results locally
- * - Handle deduplication (same MusicBrainz ID = reuse cached data)
- * - Graceful error handling with retry logic
+ * Enriches track metadata and cover art via MusicBrainz and Cover Art Archive APIs.
  */
 @Singleton
 class MusicBrainzEnrichmentService @Inject constructor(

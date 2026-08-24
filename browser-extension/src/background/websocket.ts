@@ -1,38 +1,66 @@
-// ============================================================================
-// Tempo Stats — WebSocket Connection
-// Persistent connection to the paired phone for real-time communication.
-// Solves: discovery (phone announces on connect), heartbeat (built-in),
-// immediate sync (phone pushes "sync now"), now-playing push, and instant
-// connection health detection (WS close = immediate detection).
-//
-// Security:
-//   • Token is NOT sent in the URL — authenticated via post-connect message
-//   • All outgoing messages are HMAC-signed with timestamp (replay protection)
-//   • All incoming messages are HMAC-verified before processing
-//   • Messages older than ±120s are rejected
-//
-// Service worker hibernation: WebSocket connections die when the SW hibernates.
-// The module uses chrome.alarms to periodically wake and reconnect. The phone
-// side should also attempt reconnection when it detects the WS dropped.
-//
-// Firefox: WebSocket is NOT supported in Manifest V3 service workers.
-// The connect() method will early-return on Firefox. HTTP polling is used instead.
-// ============================================================================
-
+/**
+ * Persistent WebSocket connection to the paired phone.
+ * Handles heartbeats, immediate sync requests, now-playing push,
+ * and HMAC authentication with replay protection.
+ *
+ * Power management (no functional loss):
+ * - The 25s heartbeat stays under Chrome's 30s WebSocket-liveness window,
+ *   so an established socket keeps the service worker alive.
+ * - Once no real traffic (now-playing pushes, phone messages) has flowed for
+ *   SOCKET_IDLE_SUSPEND_MS, the socket is intentionally suspended instead of
+ *   pinging an idle link forever. Any media update or successful sync calls
+ *   ensureConnected() to revive it within milliseconds on LAN.
+ * - Reconnect backoff escalates past the 60s fast-retry cap after repeated
+ *   failures (phone away from home network), instead of probing every minute
+ *   all day.
+ *
+ * Firefox note: WebSocket is not supported in MV3 background workers,
+ * so HTTP polling is used as a fallback.
+ */
 import type { PairingInfo, NowPlaying, PhoneSocketMessage, SignedWsMessage, WsAuthMessage } from '../shared/types';
 import { SocketState } from '../shared/types';
 import * as storage from './storage';
 import { signWsMessage, verifyWsMessage } from '../shared/security';
-
-const IS_FIREFOX = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox');
-
-const HEARTBEAT_INTERVAL_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 25_000;
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 60_000;
+/**
+ * Fast-retry phase (1s → 60s doubling) covers transient blips and phone
+ * reboots. After this many consecutive failures the cap itself escalates
+ * (60s → 2m → 4m → … → 5m), so a phone that is simply off-network does not
+ * absorb a WebSocket handshake + radio wakeup every minute all day. Any
+ * successful connect resets attempts; ensureConnected() also resets them so
+ * a successful HTTP sync immediately restores fast retries.
+ */
+const RECONNECT_ESCALATE_AFTER_ATTEMPTS = 10;
+const RECONNECT_SUSTAINED_MAX_DELAY_MS = 5 * 60_000;
+/**
+ * Suspend an established socket after this long without REAL traffic (signed
+ * now-playing pushes, phone-initiated messages — pings/pongs don't count).
+ * Five minutes halves handshake churn against a dozing phone vs. a shorter
+ * window while still cutting idle radio wakeups ~95% overnight. Revival is
+ * instant on the next media update or successful sync (ensureConnected).
+ */
+const SOCKET_IDLE_SUSPEND_MS = 300_000;
 const RECONNECT_ALARM_NAME = 'tempo-ws-reconnect';
 const KEEPALIVE_ALARM_NAME = 'tempo-ws-keepalive';
-const KEEPALIVE_INTERVAL_MINUTES = 4;
 const SEND_QUEUE_MAX = 10;
+const IS_FIREFOX = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox');
+
+let _staleKeepaliveCleared = false;
+
+/**
+ * Clear the legacy periodic keepalive alarm left over from older builds.
+ * The single-heartbeat design pings over the open WebSocket only; the
+ * KEEPALIVE alarm is no longer scheduled by this class. Safe to call
+ * repeatedly; intended to run once at service-worker boot.
+ */
+export async function clearStaleAlarms(): Promise<void> {
+  _staleKeepaliveCleared = true;
+  try {
+    await chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
+  } catch { /* best-effort */ }
+}
 
 export type SocketMessageHandler = (msg: PhoneSocketMessage) => void;
 export type SocketStateHandler = (state: SocketState) => void;
@@ -45,11 +73,22 @@ export class PhoneSocket {
   private intentionalClose = false;
   private authenticated = false;
   private sendQueue: string[] = [];
+  /** Last time REAL traffic (non-ping send, non-pong receive) flowed. */
+  private _lastRealTrafficAt = Date.now();
+  /** True while the socket is parked by suspendForIdle() awaiting revival. */
+  private _idleSuspended = false;
 
   constructor(
     private getPairing: () => Promise<PairingInfo | null>,
     private onMessage: SocketMessageHandler,
     private onStateChange: SocketStateHandler,
+    /**
+     * Policy gate consulted by connect()/ensureConnected(): true only when
+     * phone contact is allowed (paired AND not offline mode). One choke point
+     * so no caller — including stale reconnect alarms from previous sessions
+     * or builds — can open a socket against the user's wishes.
+     */
+    private canConnect: () => Promise<boolean>,
   ) {}
 
   get state(): SocketState {
@@ -63,6 +102,13 @@ export class PhoneSocket {
   }
 
   async connect(): Promise<void> {
+    // Defensive: clear the legacy keepalive alarm on first connect in case
+    // clearStaleAlarms() was not invoked at boot (e.g. older SW still cached).
+    if (!_staleKeepaliveCleared) {
+      _staleKeepaliveCleared = true;
+      chrome.alarms.clear(KEEPALIVE_ALARM_NAME).catch(() => {});
+    }
+
     if (IS_FIREFOX) {
       console.log('[Tempo WS] WebSocket not supported in Firefox service workers — using HTTP polling');
       this.setState(SocketState.Disconnected);
@@ -78,6 +124,12 @@ export class PhoneSocket {
 
     if (this._state === SocketState.Connected || this._state === SocketState.Connecting) return;
 
+    // Policy gate — offline mode / unpaired must never open a socket, no
+    // matter which caller (alarm revival, popup, media tick) asked for it.
+    if (!(await this.canConnect())) {
+      this.setState(SocketState.Disconnected);
+      return;
+    }
     if (this.ws) {
       this.ws.onopen = null;
       this.ws.onclose = null;
@@ -108,10 +160,11 @@ export class PhoneSocket {
         try {
           await this.sendAuth(pairing);
           this.reconnectAttempts = 0;
+          this._lastRealTrafficAt = Date.now();
+          this._idleSuspended = false;
           this.authenticated = true;
           this.setState(SocketState.Connected);
           this.startHeartbeat();
-          this.startKeepaliveAlarm();
           this.flushSendQueue();
           storage.recordHealthPing(true).catch(() => {});
           chrome.alarms.clear(RECONNECT_ALARM_NAME);
@@ -154,6 +207,7 @@ export class PhoneSocket {
           }
 
           if (msg.type === 'pong') return;
+          this._lastRealTrafficAt = Date.now();
           this.onMessage(msg);
         } catch (err) {
           console.warn('[Tempo WS] Failed to parse message:', err);
@@ -207,6 +261,7 @@ export class PhoneSocket {
       const { sig, ts } = await signWsMessage(pairing.authToken, payload);
       const signed: SignedWsMessage = { payload, sig, ts };
       this.ws.send(JSON.stringify(signed));
+      this._lastRealTrafficAt = Date.now();
       return true;
     } catch {
       return false;
@@ -214,10 +269,16 @@ export class PhoneSocket {
   }
 
   private scheduleReconnect(): void {
-    const delay = Math.min(
+    let delay = Math.min(
       RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts),
       RECONNECT_MAX_DELAY_MS
     );
+    if (this.reconnectAttempts >= RECONNECT_ESCALATE_AFTER_ATTEMPTS) {
+      delay = Math.min(
+        delay * Math.pow(2, this.reconnectAttempts - RECONNECT_ESCALATE_AFTER_ATTEMPTS + 1),
+        RECONNECT_SUSTAINED_MAX_DELAY_MS
+      );
+    }
     this.reconnectAttempts++;
 
     console.log(`[Tempo WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
@@ -231,9 +292,13 @@ export class PhoneSocket {
   private startHeartbeat(): void {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN && this.authenticated) {
-        this.sendSigned({ type: 'ping', ts: Date.now() }).catch(() => {});
+      if (this.ws?.readyState !== WebSocket.OPEN || !this.authenticated) return;
+      if (Date.now() - this._lastRealTrafficAt >= SOCKET_IDLE_SUSPEND_MS) {
+        console.log('[Tempo WS] No real traffic for 3m — suspending socket until next media update');
+        this.suspendForIdle();
+        return;
       }
+      this.sendSigned({ type: 'ping', ts: Date.now() }).catch(() => {});
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -244,12 +309,44 @@ export class PhoneSocket {
     }
   }
 
-  private startKeepaliveAlarm(): void {
-    chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
-    chrome.alarms.create(KEEPALIVE_ALARM_NAME, {
-      periodInMinutes: KEEPALIVE_INTERVAL_MINUTES,
-    });
+  /**
+   * Park an idle socket: close it WITHOUT triggering the reconnect alarm
+   * cascade. Nothing is lost — plays keep queuing in IndexedDB, and the next
+   * media update / successful sync calls ensureConnected() to revive instantly.
+   * The service worker then becomes idle-eligible ~30s later (Chrome's WS
+   * liveness window), freeing its memory and ending radio wakeups.
+   */
+  private suspendForIdle(): void {
+    this.stopHeartbeat();
+    this._idleSuspended = true;
+    this.intentionalClose = true; // suppress onclose auto-reconnect
+    this.authenticated = false;
+    try { this.ws?.close(1000, 'idle'); } catch {}
+    this.ws = null;
+    this.setState(SocketState.IdleSuspended);
   }
+
+  /**
+   * Revive a suspended socket, or fast-retry a disconnected one, when there
+   * is something to do again (media tick, successful HTTP sync). Explicitly
+   * disconnected sockets (unpair, pairing_invalidated) stay down, and the
+   * canConnect policy gate keeps offline mode closed no matter who asks.
+   */
+  ensureConnected(): void {
+    if (this._state === SocketState.Connected || this._state === SocketState.Connecting) return;
+    if (this.intentionalClose && !this._idleSuspended) return;
+    void this.canConnect().then(allowed => {
+      if (!allowed) {
+        this.setState(SocketState.Disconnected);
+        return;
+      }
+      this.intentionalClose = false;
+      this._idleSuspended = false;
+      this.reconnectAttempts = 0;
+      return this.connect();
+    }).catch(() => {});
+  }
+
 
   private flushSendQueue(): void {
     while (this.sendQueue.length > 0) {
@@ -267,6 +364,7 @@ export class PhoneSocket {
     if (this.ws?.readyState === WebSocket.OPEN && this.authenticated) {
       try {
         this.ws.send(raw);
+        this._lastRealTrafficAt = Date.now();
         return;
       } catch {}
     }
@@ -281,17 +379,17 @@ export class PhoneSocket {
         this.connect();
       }
     } else if (alarmName === KEEPALIVE_ALARM_NAME) {
-      if (this.intentionalClose) {
-        chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
-        return;
-      }
-      if (this._state === SocketState.Connected && this.ws?.readyState === WebSocket.OPEN && this.authenticated) {
-        this.sendSigned({ type: 'ping', ts: Date.now() }).catch(() => {
-          this.setState(SocketState.Reconnecting);
-          this.scheduleReconnect();
-        });
-      } else if (this._state !== SocketState.Connected && this._state !== SocketState.Connecting) {
-        this.connect();
+      // Legacy keepalive alarm — no longer scheduled by this class and cleared
+      // via clearStaleAlarms(). Until it is cleared, repurpose any firing as a
+      // recovery trigger ONLY (never as a heartbeat; the open WebSocket's
+      // 25s ping interval is the single heartbeat mechanism).
+      if (this.intentionalClose) return;
+      if (this._state !== SocketState.Connected && this._state !== SocketState.Connecting) {
+        void this.getPairing()
+          .then(pairing => {
+            if (pairing) void this.connect();
+          })
+          .catch(() => {});
       }
     }
   }
@@ -301,20 +399,12 @@ export class PhoneSocket {
     const pairing = await this.getPairing();
     if (!pairing?.authToken) return;
 
-    if (this.ws?.readyState === WebSocket.OPEN && this.authenticated) {
-      try {
-        const { sig, ts } = await signWsMessage(pairing.authToken, payload);
-        const signed: SignedWsMessage = { payload, sig, ts };
-        this.ws.send(JSON.stringify(signed));
-      } catch {
-        this.enqueueOrSend(JSON.stringify({ payload, sig: '', ts: 0 }));
-      }
-    } else {
-      try {
-        const { sig, ts } = await signWsMessage(pairing.authToken, payload);
-        const signed: SignedWsMessage = { payload, sig, ts };
-        this.enqueueOrSend(JSON.stringify(signed));
-      } catch {}
+    try {
+      const { sig, ts } = await signWsMessage(pairing.authToken, payload);
+      const signed: SignedWsMessage = { payload, sig, ts };
+      this.enqueueOrSend(JSON.stringify(signed));
+    } catch {
+      // Signing failed — drop rather than enqueue an unverifiable message.
     }
   }
 
@@ -328,9 +418,9 @@ export class PhoneSocket {
     this.sendQueue = [];
     this.stopHeartbeat();
     chrome.alarms.clear(RECONNECT_ALARM_NAME);
-    chrome.alarms.clear(KEEPALIVE_ALARM_NAME);
     try { this.ws?.close(1000, 'Extension closing'); } catch {}
     this.ws = null;
+    this._idleSuspended = false;
     this.setState(SocketState.Disconnected);
   }
 

@@ -5,6 +5,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,7 +36,8 @@ import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.ui.components.SettingsSectionHeader
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.*
+import me.avinas.tempo.ui.components.TempoDialogShape
 
 
 /**
@@ -502,28 +504,31 @@ private fun AddAppDialog(
     }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        GlassCard(
-            variant = GlassCardVariant.HighProminence,
-            backgroundColor = Color(0xFF1E1E1E).copy(alpha = 0.9f),
-            contentPadding = PaddingValues(24.dp),
-            modifier = Modifier.fillMaxWidth()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(TempoDialogShape.shape)
+                .background(TempoSurfaceDialog)
+                .border(1.dp, GlassBorderSoft, TempoDialogShape.shape)
+                .padding(20.dp)
         ) {
             Column(
                 modifier = Modifier.animateContentSize()
             ) {
                 Text(
                     text = "Add App",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = TextPrimary
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                GlassCard(
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                    variant = GlassCardVariant.LowProminence,
-                    shape = RoundedCornerShape(12.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(GlassFrostSoft)
                 ) {
                     TextField(
                         value = searchQuery,
@@ -534,12 +539,12 @@ private fun AddAppDialog(
                         placeholder = {
                             Text(
                                 "Search installed apps...",
-                                color = Color.White.copy(alpha = 0.5f),
+                                color = TextTertiary,
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         },
                         leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
+                            Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary)
                         },
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
@@ -547,9 +552,9 @@ private fun AddAppDialog(
                             disabledContainerColor = Color.Transparent,
                             focusedIndicatorColor = Color.Transparent,
                             unfocusedIndicatorColor = Color.Transparent,
-                            cursorColor = Color.White,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            cursorColor = TempoPrimary,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
                         ),
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodyMedium
@@ -585,14 +590,14 @@ private fun AddAppDialog(
                                 Text(
                                     text = displayName,
                                     style = MaterialTheme.typography.bodyLarge,
-                                    color = Color.White,
+                                    color = TextPrimary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
                                     text = packageName,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.5f),
+                                    color = TextTertiary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -601,7 +606,7 @@ private fun AddAppDialog(
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "Add",
-                                tint = Color.White.copy(alpha = 0.6f),
+                                tint = TempoPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -616,7 +621,7 @@ private fun AddAppDialog(
                                 Text(
                                     "No apps found",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Color.White.copy(alpha = 0.5f)
+                                    color = TextTertiary
                                 )
                             }
                         }
@@ -630,7 +635,7 @@ private fun AddAppDialog(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel", color = Color.White)
+                        Text("Cancel", color = TextTertiary)
                     }
                 }
             }

@@ -2,6 +2,7 @@ package me.avinas.tempo.ui.stats
 
 import me.avinas.tempo.ui.components.ShareTheme
 import me.avinas.tempo.ui.components.ShareThemePalette
+import me.avinas.tempo.ui.components.ShareThemeDecorations
 import me.avinas.tempo.ui.components.contrastingText
 
 import androidx.compose.foundation.background
@@ -125,8 +126,14 @@ fun StatsShareCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp)
-                .padding(bottom = 28.dp)
+                .padding(horizontal = 20.dp)
+                // Top safe-zone: clears the Instagram/story username + avatar
+                // overlay on the upper-left. Bottom padding reserves the TEMPO
+                // watermark footer (16dp inset + ~20dp text) so the last list
+                // row never crowds it. FitToHeight below scales the whole
+                // column uniformly into the remaining height, so every layout
+                // (list/podium/grid) and count (3/5/10) keeps its structure.
+                .padding(top = 52.dp, bottom = 56.dp)
         ) {
             FitToHeight(modifier = Modifier.fillMaxWidth()) {                Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -191,7 +198,7 @@ private fun StatsShareBackground(
     content: @Composable BoxScope.() -> Unit
 ) {
     Box(modifier = modifier.background(brush = Brush.verticalGradient(palette.gradient))) {
-        if (!imageUrl.isNullOrBlank()) {
+        if (palette.usesArtwork && !imageUrl.isNullOrBlank()) {
             CachedAsyncImage(
                 imageUrl = imageUrl,
                 contentDescription = null,
@@ -206,31 +213,8 @@ private fun StatsShareBackground(
                     .background(brush = Brush.verticalGradient(palette.overlay))
             )
         }
-        // Ambient glows
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 50.dp, y = (-50).dp)
-                .size(300.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(palette.glowTop.copy(alpha = 0.15f), Color.Transparent)
-                    ),
-                    shape = CircleShape
-                )
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .offset(x = (-50).dp, y = 50.dp)
-                .size(300.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(palette.glowBottom.copy(alpha = 0.15f), Color.Transparent)
-                    ),
-                    shape = CircleShape
-                )
-        )
+        // Theme-specific backdrop decoration (glow orbs, aurora bands, rays…)
+        ShareThemeDecorations(palette = palette)
         content()
         // Branding footer
         Column(

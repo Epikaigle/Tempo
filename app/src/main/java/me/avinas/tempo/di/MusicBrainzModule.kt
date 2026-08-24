@@ -19,19 +19,10 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
 
-/**
- * Hilt module providing MusicBrainz and Cover Art Archive API clients.
- */
 @Module
 @InstallIn(SingletonComponent::class)
 object MusicBrainzModule {
 
-    /**
-     * OkHttpClient configured for MusicBrainz API:
-     * - Rate limiting (1 req/sec)
-     * - Retry with exponential backoff
-     * - Custom User-Agent header
-     */
     @Provides
     @Singleton
     @Named("musicbrainz")

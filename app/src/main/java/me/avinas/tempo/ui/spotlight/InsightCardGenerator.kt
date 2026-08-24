@@ -181,9 +181,7 @@ class InsightCardGenerator @Inject constructor(
     }
 
 
-    // =====================
     // Individual Card Generators with Validation
-    // =====================
 
     private fun generateCosmicClock(timeRange: TimeRange, data: PrefetchedData): CardGenerationResult {
         return try {
@@ -725,9 +723,7 @@ class InsightCardGenerator @Inject constructor(
         }
     }
     
-    // =====================
     // Story Generation (Optimized with parallel data fetching)
-    // =====================
     
     suspend fun generateStory(timeRange: TimeRange, debugShowAll: Boolean = false): List<SpotlightStoryPage> = kotlinx.coroutines.coroutineScope {
         val storyPages = mutableListOf<SpotlightStoryPage>()
@@ -1330,7 +1326,7 @@ class InsightCardGenerator @Inject constructor(
             )
         )
 
-        // ===== DYNAMIC OPTIONAL SLIDE SELECTION =====
+        // DYNAMIC OPTIONAL SLIDE SELECTION
         // Seed is deterministic per story period: same month/week/year always shows the same
         // optional subset. Re-opening the story within the same period is fully consistent;
         // the subset only changes when the next period begins (new month, new week, etc.).
@@ -1352,7 +1348,7 @@ class InsightCardGenerator @Inject constructor(
         // Merge selected slides into storyPages at their natural narrative positions
         mergeOptionalIntoStory(storyPages, selectedOptional)
 
-        // ===== SMART SONG ASSIGNMENT PASS =====
+        // SMART SONG ASSIGNMENT PASS
         // Assign preview URLs dynamically:
         // - Special slides get contextually relevant songs
         // - Remaining slides pair 2-per-song from the pool, cycling through

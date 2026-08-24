@@ -1,16 +1,7 @@
-// ============================================================================
-// Tempo Stats — Shared Request Signing
-//
-// Provides HMAC-SHA256 signing with replay protection:
-//   • X-Tempo-Timestamp — unix seconds, lets server reject stale requests
-//   • X-Tempo-Nonce     — UUID per request, prevents identical-second replays
-//   • X-Tempo-Signature — HMAC(token, body + "\n" + ts + "\n" + nonce)
-//
-// Android server SHOULD validate:
-//   1. Timestamp within ±60 s of server clock
-//   2. Nonce not seen in the last 2 minutes (in-memory cache)
-//   3. HMAC matches recomputed value
-// ============================================================================
+/**
+ * HMAC-SHA256 request signing and AES-256-GCM body encryption
+ * for communication with the Tempo Android app.
+ */
 
 export interface TempoHeaders extends Record<string, string> {
   'Authorization': string;
@@ -161,16 +152,11 @@ export function pairingAgeDays(pairedAt: string | null | undefined): number | nu
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
-// ============================================================================
 // AES-256-GCM Body Encryption
 //
-// Mirrors the desktop Rust implementation:
-//   Key = HMAC-SHA256("tempo-body-encrypt-v1", token)
-//   IV  = 12 random bytes
-//   Body = base64url(IV || AES-256-GCM(gzip(plaintext), key, IV))
-//
-// The Android server already supports decryption with this format.
-// ============================================================================
+// Key = HMAC-SHA256("tempo-body-encrypt-v1", token)
+// IV  = 12 random bytes
+// Body = base64url(IV || AES-256-GCM(gzip(plaintext), key, IV))
 
 const _aesKeyCache = new Map<string, CryptoKey>();
 

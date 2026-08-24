@@ -17,33 +17,13 @@ import javax.inject.Named
 import javax.inject.Singleton
 
 /**
- * Hilt module providing ReccoBeats API client.
- * 
- * ReccoBeats is a FREE API that provides audio features similar to Spotify's deprecated endpoint.
- * No authentication required - just make API calls!
- * 
- * Used as a fallback when:
- * 1. Spotify is not connected
- * 2. Spotify's audio features API returns 403 (deprecated for third-party apps)
- * 
- * Key benefits:
- * - FREE, no API key required
- * - Same audio features format as Spotify
- * - Supports Spotify IDs directly
- * - Can analyze uploaded audio files
- * 
- * Rate limiting: HTTP 429 if exceeded, handled with retry + backoff
+ * Provides ReccoBeats API client for audio features when Spotify audio features
+ * endpoint is unavailable.
  */
 @Module
 @InstallIn(SingletonComponent::class)
 object ReccoBeatsModule {
 
-    /**
-     * OkHttpClient configured for ReccoBeats API:
-     * - No authentication interceptor needed
-     * - Retry with backoff for rate limits
-     * - Reasonable timeouts
-     */
     @Provides
     @Singleton
     @Named("reccobeats")

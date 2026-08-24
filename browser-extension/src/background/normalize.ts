@@ -1,13 +1,12 @@
-// ============================================================================
-// Tempo Stats — Metadata Normalization
-// Port of desktop/src-tauri/src/media/normalize.rs to TypeScript.
-// All functions create copies — never mutate input objects.
-// Optimized: pre-lowercased constants, single-pass title cleaning.
-// ============================================================================
+/**
+ * Metadata normalization for song titles, artist names, and albums.
+ * Strips video-related suffixes, cleans noise, extracts featuring artists,
+ * and classifies content types without mutating inputs.
+ */
 
 import type { NowPlaying } from '../shared/types';
 
-// ---- Constants (pre-lowercased for fast matching) --------------------------
+// Constants (pre-lowercased for fast matching)
 
 const MIN_DURATION_MS = 30_000;
 
@@ -77,6 +76,17 @@ const LABEL_NOISE_PATTERNS: readonly string[] = [
   'label', 'distributed by', 'released by', 'under exclusive license',
 ];
 
+// Precompiled label-noise regex pairs (suffix stripper, parens stripper),
+// built once at module scope instead of per cleanTitle call.
+const LABEL_NOISE_REGEXPS: ReadonlyArray<readonly [RegExp, RegExp]> =
+  LABEL_NOISE_PATTERNS.map((pattern) => {
+    const escaped = escapeRegExp(pattern);
+    return [
+      new RegExp(`\\s*[\\(\\[\\|\\-\\–\\—~:\\/]\\s*${escaped}\\b[\\)\\]]?\\s*$`, 'i'),
+      new RegExp(`[\\(\\[]\\s*${escaped}\\s*[\\)\\]]`, 'gi'),
+    ] as const;
+  });
+
 /**
  * Check if a name is likely a record label rather than an artist.
  */
@@ -92,7 +102,7 @@ function isLikelyLabel(name: string): boolean {
 const PODCAST_SOURCES: readonly string[] = ['podcast', 'overcast', 'pocket casts', 'castbox', 'stitcher'];
 const AUDIOBOOK_SOURCES: readonly string[] = ['audible', 'libby', 'librivox'];
 
-// ---- Public API ------------------------------------------------------------
+// Public API
 
 export function normalize(np: NowPlaying): NowPlaying | null {
   const copy: NowPlaying = { ...np };
@@ -145,7 +155,7 @@ export function normalize(np: NowPlaying): NowPlaying | null {
   return copy;
 }
 
-// ---- Helpers ---------------------------------------------------------------
+// Helpers
 
 function isAdContent(title: string, artist: string, site: string | null): boolean {
   const lowerTitle = title.toLowerCase();
@@ -313,16 +323,17 @@ export function cleanTitle(title: string): string {
   let cleaned = title;
 
   let changed = true;
-
+  // Lowercase once and splice removals out of the lowercase copy in lockstep,
+  // so repeated single-pattern removals never re-run toLowerCase().
+  let lower = cleaned.toLowerCase();
   while (changed) {
     changed = false;
-    const lower = cleaned.toLowerCase();
-
     for (let i = 0; i < TITLE_STRIP_PATTERNS.length; i++) {
       const pattern = TITLE_STRIP_PATTERNS[i];
       const idx = lower.indexOf(pattern);
       if (idx !== -1) {
         cleaned = cleaned.substring(0, idx) + cleaned.substring(idx + pattern.length);
+        lower = lower.substring(0, idx) + lower.substring(idx + pattern.length);
         changed = true;
         break;
       }
@@ -338,18 +349,10 @@ export function cleanTitle(title: string): string {
   cleaned = cleaned.replace(prodRegex, '').trim();
 
   // Remove record label noise at the end of titles
-  for (const labelPattern of LABEL_NOISE_PATTERNS) {
-    const labelRegex = new RegExp(
-      `\\s*[\\(\\[\\|\\-\\–\\—~:\\/]\\s*${escapeRegExp(labelPattern)}\\b[\\)\\]]?\\s*$`,
-      'i'
-    );
+  for (const [labelRegex, labelParensRegex] of LABEL_NOISE_REGEXPS) {
     cleaned = cleaned.replace(labelRegex, '').trim();
-    
+
     // Also check for label in parentheses/brackets anywhere in the title
-    const labelParensRegex = new RegExp(
-      `[\\(\\[]\\s*${escapeRegExp(labelPattern)}\\s*[\\)\\]]`,
-      'gi'
-    );
     cleaned = cleaned.replace(labelParensRegex, '').trim();
   }
 
@@ -622,7 +625,7 @@ export function parseYoutubeVideo(
     const rawChannel = typeof channelName === 'string' ? channelName.trim() : '';
     const cleanedChannel = cleanChannelName(rawChannel);
 
-    // ---- Precedence 1: YouTube Music Tag ----
+    // Precedence 1: YouTube Music Tag
     if (ytMusicTagMetadata && (ytMusicTagMetadata.title || ytMusicTagMetadata.artist)) {
       const tagTitle = ytMusicTagMetadata.title ? cleanTitle(ytMusicTagMetadata.title) : cleanTitle(rawTitle);
       const tagArtist = ytMusicTagMetadata.artist ? cleanFeatArtists(ytMusicTagMetadata.artist) : cleanArtist(rawChannel);
@@ -638,7 +641,7 @@ export function parseYoutubeVideo(
       }
     }
 
-    // ---- Precedence 2: Structured Description Metadata ----
+    // Precedence 2: Structured Description Metadata
     if (ytDescriptionMetadata && (ytDescriptionMetadata.title || ytDescriptionMetadata.artist)) {
       const descTitle = ytDescriptionMetadata.title ? cleanTitle(ytDescriptionMetadata.title) : cleanTitle(rawTitle);
       const descArtist = ytDescriptionMetadata.artist ? cleanFeatArtists(ytDescriptionMetadata.artist) : cleanArtist(rawChannel);
@@ -654,7 +657,7 @@ export function parseYoutubeVideo(
       }
     }
 
-    // ---- Precedence 3: Fallback Title/Channel parsing ----
+    // Precedence 3: Fallback Title/Channel parsing
     
     // Step 1: Split by pipe (|) to separate main title from label/metadata noise
     // YouTube titles often follow "Artist - Song | Label" pattern

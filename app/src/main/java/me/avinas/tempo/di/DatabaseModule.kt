@@ -133,10 +133,6 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
-        // Pre-flight safety net: snapshot the raw DB files once, BEFORE Room opens
-        // or migrates them (v4.8.3 reconciles the divergent schema-51 lineages —
-        // see MigrationSafetyNet). Failures are swallowed inside; this must not
-        // affect startup.
         MigrationSafetyNet.snapshotBeforeMigrationIfNeeded(context)
 
         return Room.databaseBuilder(context, AppDatabase::class.java, "tempo.db")
@@ -148,28 +144,20 @@ object DatabaseModule {
                 MIGRATION_5_6,
                 *AppDatabase.ALL_MIGRATIONS
             )
-            // Enable Write-Ahead Logging for better concurrent read/write performance
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-            // Enable multi-instance invalidation for better reactivity
             .enableMultiInstanceInvalidation()
-            // Add callback for database optimization on open
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onOpen(db: SupportSQLiteDatabase) {
                     super.onOpen(db)
-                    // Optimize SQLite settings for better performance
-                    // Use query() for PRAGMA statements as execSQL may fail on some Android versions
+                    // Use query() for PRAGMA statements as execSQL fails on some Android SQLite drivers
                     try {
-                        db.query("PRAGMA synchronous = NORMAL").close()  // Balance safety vs speed
-                        db.query("PRAGMA cache_size = -8000").close()    // 8MB cache
-                        db.query("PRAGMA temp_store = MEMORY").close()   // Keep temp tables in memory
-                        db.query("PRAGMA mmap_size = 268435456").close() // 256MB memory-mapped I/O
-                        // Add busy timeout to prevent "Too many inflation attempts" crashes
-                        // This gives SQLite 30 seconds to retry on lock contention instead of failing immediately
-                        db.query("PRAGMA busy_timeout = 30000").close()  // 30 second timeout
-                        // Enable WAL2 mode checkpoint for better performance
-                        db.query("PRAGMA wal_autocheckpoint = 1000").close() // Checkpoint every 1000 pages
+                        db.query("PRAGMA synchronous = NORMAL").close()
+                        db.query("PRAGMA cache_size = -8000").close()
+                        db.query("PRAGMA temp_store = MEMORY").close()
+                        db.query("PRAGMA mmap_size = 268435456").close()
+                        db.query("PRAGMA busy_timeout = 30000").close()
+                        db.query("PRAGMA wal_autocheckpoint = 1000").close()
                     } catch (e: Exception) {
-                        // Log but don't crash - these are optimizations, not requirements
                         android.util.Log.w("DatabaseModule", "Failed to apply PRAGMA optimizations", e)
                     }
                 }

@@ -620,6 +620,7 @@
     <string name="enrichment_report_starting">Запуск обогащения данных…</string>
     <string name="enrichment_report_complete">Обогащение успешно завершено.</string>
     <string name="enrichment_report_nothing_to_do">Все песни уже обогащены. \u2713</string>
+    <string name="enrichment_report_blocked">%1$d песен недавно не были найдены ни на одном онлайн-источнике и будут пропущены на 7 дней до повторной попытки.</string>
     <string name="settings_clear_all">Удалить все данные</string>
     <string name="settings_reddit">Сообщество на Reddit</string>
     <string name="settings_reddit_sub">r/TempoStats</string>

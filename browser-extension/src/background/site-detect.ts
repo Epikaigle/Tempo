@@ -1,12 +1,11 @@
-// ============================================================================
-// Tempo Stats — Site Detection & Classification
-// Port of desktop/src-tauri/src/media/site_detect.rs to TypeScript.
-// Uses Map-based hostname matching for O(1) lookup instead of linear scan.
-// ============================================================================
+/**
+ * Site detection and classification for media tracking.
+ * Uses Map-based hostname matching for O(1) domain lookup.
+ */
 
 import type { RawMediaState } from '../shared/types';
 
-// ---- Site Rules (pre-indexed into Maps) ------------------------------------
+// Site Rules (pre-indexed into Maps)
 
 interface SiteRule {
   siteName: string;
@@ -80,7 +79,7 @@ const BLOCKED_SITE_MAP = new Map<string, string>([
   ['discord.gg', 'discord.gg'],
 ]);
 
-// ---- Classification --------------------------------------------------------
+// Classification
 
 export interface SiteClassification {
   siteName: string;
@@ -123,30 +122,45 @@ function getHostname(url: string): string | null {
 export function extractSite(url: string): string | null {
   const hostname = getHostname(url);
   if (!hostname) return null;
+  return extractSiteHost(hostname);
+}
 
-  const rule = lookupWithSubdomain(hostname, MUSIC_SITE_MAP) as SiteRule | undefined;
+/**
+ * Hostname-based variant of {@link extractSite}. Lets hot paths parse the URL
+ * once and thread the hostname through instead of re-running `new URL()`.
+ */
+export function extractSiteHost(host: string | null): string | null {
+  if (!host) return null;
+
+  const rule = lookupWithSubdomain(host, MUSIC_SITE_MAP) as SiteRule | undefined;
   if (rule) return rule.siteName;
 
-  return hostname;
+  return host;
 }
 
 /**
  * Classify a URL into music / not-music / blocked using Map-based matching.
  */
 export function classifySite(url: string): SiteClassification {
-  const hostname = getHostname(url);
-  if (!hostname) {
+  return classifySiteHost(getHostname(url));
+}
+
+/**
+ * Hostname-based variant of {@link classifySite}.
+ */
+export function classifySiteHost(host: string | null): SiteClassification {
+  if (!host) {
     return { siteName: 'Unknown', isMusicSite: false, isBlocked: false };
   }
 
   // Check blocked list first
-  const blockedName = lookupWithSubdomain(hostname, BLOCKED_SITE_MAP) as string | undefined;
+  const blockedName = lookupWithSubdomain(host, BLOCKED_SITE_MAP) as string | undefined;
   if (blockedName) {
     return { siteName: blockedName, isMusicSite: false, isBlocked: true };
   }
 
   // Check against whitelist
-  const rule = lookupWithSubdomain(hostname, MUSIC_SITE_MAP) as SiteRule | undefined;
+  const rule = lookupWithSubdomain(host, MUSIC_SITE_MAP) as SiteRule | undefined;
   if (rule) {
     return { siteName: rule.siteName, isMusicSite: rule.isMusic, isBlocked: false };
   }
@@ -160,11 +174,17 @@ export function isYouTubeMusic(url: string): boolean {
 }
 
 export function isPlainYouTube(url: string): boolean {
-  const hostname = getHostname(url);
-  if (!hostname) return false;
-  return (hostname === 'youtube.com' || hostname === 'www.youtube.com' ||
-          hostname === 'm.youtube.com' || hostname === 'youtu.be' ||
-          hostname.endsWith('.youtube.com')) && hostname !== 'music.youtube.com';
+  return isPlainYouTubeHost(getHostname(url));
+}
+
+/**
+ * Hostname-based variant of {@link isPlainYouTube}.
+ */
+export function isPlainYouTubeHost(host: string | null): boolean {
+  if (!host) return false;
+  return (host === 'youtube.com' || host === 'www.youtube.com' ||
+          host === 'm.youtube.com' || host === 'youtu.be' ||
+          host.endsWith('.youtube.com')) && host !== 'music.youtube.com';
 }
 
 const UNKNOWN_ARTIST_STRINGS: Set<string> = new Set([
@@ -177,10 +197,14 @@ export function shouldTrack(
   raw: RawMediaState,
   youtubeChannels: string[],
   knownArtists: string[],
-  blockedYoutubeChannels: string[] = []
+  blockedYoutubeChannels: string[] = [],
+  host?: string
 ): boolean {
   try {
-    const classification = classifySite(raw.url);
+    // When the caller already parsed the URL, reuse its hostname instead of
+    // re-running `new URL()` for every classification check.
+    const hostname = host !== undefined ? host : getHostname(raw.url);
+    const classification = classifySiteHost(hostname);
 
     if (classification.isBlocked) return false;
     if (classification.isMusicSite) return true;
@@ -195,7 +219,7 @@ export function shouldTrack(
       ? blockedYoutubeChannels.filter((x): x is string => typeof x === 'string')
       : [];
 
-    if (isPlainYouTube(raw.url)) {
+    if (isPlainYouTubeHost(hostname)) {
       const channel = (raw as any).channelName || raw.artist;
       if (channel && typeof channel === 'string') {
         const lowerChannel = channel.toLowerCase().trim();
@@ -248,7 +272,14 @@ export function shouldTrack(
 }
 
 export function getSourceApp(url: string): string {
-  const site = extractSite(url);
+  return getSourceAppHost(getHostname(url));
+}
+
+/**
+ * Hostname-based variant of {@link getSourceApp}.
+ */
+export function getSourceAppHost(host: string | null): string {
+  const site = extractSiteHost(host);
   if (!site) return 'Web Browser';
 
   switch (site) {

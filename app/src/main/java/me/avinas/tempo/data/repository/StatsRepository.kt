@@ -68,9 +68,7 @@ import kotlinx.coroutines.flow.Flow
  */
 interface StatsRepository {
     
-    // =====================
     // Overview Stats
-    // =====================
     
     /**
      * Get listening overview for a time range.
@@ -94,9 +92,7 @@ interface StatsRepository {
      */
     fun notifyMetadataUpdate()
     
-    // =====================
     // Top Charts
-    // =====================
     
     /**
      * Get top tracks with pagination.
@@ -134,9 +130,7 @@ interface StatsRepository {
      */
     suspend fun getTopGenres(timeRange: TimeRange, limit: Int = 10): List<TopGenre>
 
-    // =====================
     // Ranking Search
-    // =====================
 
     /**
      * Search the track ranking by title/artist/album.
@@ -171,9 +165,7 @@ interface StatsRepository {
         limit: Int = 100
     ): List<TopAlbum>
     
-    // =====================
     // Temporal Analysis
-    // =====================
     
     /**
      * Get hourly listening distribution.
@@ -210,9 +202,7 @@ interface StatsRepository {
      */
     suspend fun getMostActiveDay(timeRange: TimeRange): DayOfWeekDistribution?
     
-    // =====================
     // Discovery Metrics
-    // =====================
     
     /**
      * Get discovery stats for a time range.
@@ -238,9 +228,7 @@ interface StatsRepository {
      */
     suspend fun getVarietyScore(timeRange: TimeRange): Double
     
-    // =====================
     // Engagement Metrics
-    // =====================
     
     /**
      * Get engagement stats.
@@ -277,9 +265,7 @@ interface StatsRepository {
      */
     suspend fun getMostSkippedTracks(timeRange: TimeRange, limit: Int = 10): List<TrackCompletion>
     
-    // =====================
     // Spotify Audio Features
-    // =====================
     
     /**
      * Get audio features stats (requires Spotify connection).
@@ -296,9 +282,7 @@ interface StatsRepository {
      */
     suspend fun getTempoDistribution(timeRange: TimeRange): List<TempoBucket>
     
-    // =====================
     // Comparisons
-    // =====================
     
     /**
      * Get year-over-year comparison.
@@ -310,9 +294,7 @@ interface StatsRepository {
      */
     suspend fun getPeriodComparison(timeRange: TimeRange, withLeeway: Boolean = true): PeriodComparison
     
-    // =====================
     // Cache Management
-    // =====================
     
     /**
      * Invalidate all cached stats.
@@ -331,9 +313,7 @@ interface StatsRepository {
      */
     fun invalidateCache(timeRange: TimeRange)
 
-    // =====================
     // History
-    // =====================
 
     /**
      * Get listening history with pagination.
@@ -382,9 +362,7 @@ interface StatsRepository {
         pageSize: Int = 20
     ): PaginatedResult<HistoryItem>
 
-    // =====================
     // Detail Screens
-    // =====================
 
     /**
      * Get detailed stats for a track.
@@ -474,9 +452,7 @@ interface StatsRepository {
      */
     suspend fun getArtistDiscoveryDate(artistId: Long): Long?
     
-    // =====================
     // Batch Operations (Spotlight Performance)
-    // =====================
     
     /**
      * Get play counts for multiple artists in a single batch query.

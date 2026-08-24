@@ -23,9 +23,7 @@ import androidx.core.graphics.ColorUtils
  */
 object BitmapGenerator {
 
-    // =========================================================================
     // Common Colors
-    // =========================================================================
     private val TEAL_PRIMARY = Color.parseColor("#13ECA4")
     private val DARK_BG_GREEN = Color.parseColor("#0F1815")
     private val DARK_BG_NEUTRAL = Color.parseColor("#151515")
@@ -49,10 +47,8 @@ object BitmapGenerator {
         intArrayOf(Color.parseColor("#A855F7"), Color.parseColor("#7C3AED")),  // Purple
     )
 
-    // =========================================================================
     // Widget 1: Artist Spotlight ("Top Pick")
     // Dark teal card, circular artist image, "TOP PICK" badge, hours listened
-    // =========================================================================
     fun generateArtistSpotlight(
         context: Context,
         width: Int,
@@ -217,10 +213,8 @@ object BitmapGenerator {
         return bitmap
     }
 
-    // =========================================================================
     // Widget 2: Weekly Mix
     // Dark card, colorful album art icon, "Weekly Mix / Made for you", audio bars
-    // =========================================================================
     fun generateMixPortal(
         context: Context,
         width: Int,
@@ -358,10 +352,8 @@ object BitmapGenerator {
         return bitmap
     }
 
-    // =========================================================================
     // Widget 3: Genre Heatmap (Treemap layout)
     // Blocks sized by percentage with gradient colors
-    // =========================================================================
     fun generateHeatmapSynth(
         context: Context,
         width: Int,
@@ -569,10 +561,8 @@ object BitmapGenerator {
         }
     }
 
-    // =========================================================================
     // Widget 4: Discovery Card
     // Purple glassmorphism, insight sentence, 3-column stats footer
-    // =========================================================================
     fun generateDiscoveryCard(
         context: Context,
         width: Int,
@@ -775,10 +765,8 @@ object BitmapGenerator {
         return generateDiscoveryCard(context, width, height, discoveryText, "", "--", "--", "--")
     }
 
-    // =========================================================================
     // Widget 5: Milestone Card
     // Purple card, album art, track/artist, "#1 Most Played" badge
-    // =========================================================================
     fun generateMilestoneCard(
         context: Context,
         width: Int,
@@ -1014,14 +1002,10 @@ object BitmapGenerator {
         return generateMilestoneCard(context, width, height, title, subtitle, "#1 Most Played This Week", imagePath)
     }
 
-    // =========================================================================
     // Widget 6: Dashboard Card
     // Split layout: hours+growth left, bar chart right, top artist pill bottom
-    // =========================================================================
-    // =========================================================================
     // Widget 6: Dashboard Card (Reimagined "Cinematic Daily" UI)
     // Layout: Big Typography Left, Floating Artist Right, Full Width Wave Bottom
-    // =========================================================================
     fun generateDashboardCard(
         context: Context,
         width: Int,

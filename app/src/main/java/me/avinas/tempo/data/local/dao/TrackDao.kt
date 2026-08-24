@@ -8,9 +8,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TrackDao {
     
-    // =====================
     // Basic CRUD Operations
-    // =====================
     
     @Query("SELECT * FROM tracks WHERE id = :id")
     fun getById(id: Long): Flow<Track?>
@@ -82,9 +80,7 @@ interface TrackDao {
     @Query("SELECT album_art_url FROM tracks WHERE album_art_url LIKE 'file://%'")
     suspend fun getLocalImageUrls(): List<String>
     
-    // =====================
     // Find by Title and Artist
-    // =====================
     
     /**
      * Find track by exact title and artist match.
@@ -147,9 +143,7 @@ interface TrackDao {
     """)
     suspend fun findFuzzyCandidates(title: String, artist: String): List<Track>
     
-    // =====================
     // Queries by Artist ID
-    // =====================
     
     /**
      * Get tracks by primary artist ID.
@@ -169,9 +163,7 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks WHERE primary_artist_id = :artistId")
     suspend fun getTrackCountByPrimaryArtist(artistId: Long): Int
     
-    // =====================
     // Queries for Linking
-    // =====================
     
     /**
      * Get tracks without primary artist ID (need migration).
@@ -195,9 +187,7 @@ interface TrackDao {
     """)
     suspend fun getPrimaryArtistForTrack(trackId: Long): Artist?
     
-    // =====================
     // Search Operations
-    // =====================
     
     /**
      * Search tracks by title.
@@ -215,9 +205,7 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE INSTR(LOWER(artist), LOWER(:query)) > 0 ORDER BY title ASC LIMIT 50")
     suspend fun searchByArtist(query: String): List<Track>
     
-    // =====================
     // Content Type Operations
-    // =====================
     
     /**
      * Update content type for all tracks from a specific artist.
@@ -240,9 +228,7 @@ interface TrackDao {
     @Query("DELETE FROM tracks WHERE LOWER(artist) = LOWER(:artistName)")
     suspend fun deleteByArtist(artistName: String): Int
     
-    // =====================
     // Artist Merge Operations
-    // =====================
     
     /**
      * Replace old artist name with new artist name in the artist column.

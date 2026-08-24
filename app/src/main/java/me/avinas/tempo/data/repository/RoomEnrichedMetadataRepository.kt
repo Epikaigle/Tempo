@@ -25,17 +25,13 @@ class RoomEnrichedMetadataRepository @Inject constructor(
     private val dao: EnrichedMetadataDao
 ) : EnrichedMetadataRepository {
     
-    // =====================
     // Core Read Operations (for UI)
-    // =====================
     
     override fun forTrack(trackId: Long): Flow<EnrichedMetadata?> = dao.forTrack(trackId)
     
     override suspend fun forTrackSync(trackId: Long): EnrichedMetadata? = dao.forTrackSync(trackId)
     
-    // =====================
     // Write Operations (for Enrichment Services)
-    // =====================
     
     override suspend fun upsert(metadata: EnrichedMetadata): Long = dao.upsert(metadata)
     
@@ -55,9 +51,7 @@ class RoomEnrichedMetadataRepository @Inject constructor(
         dao.markForReEnrichment(trackId)
     }
     
-    // =====================
     // Stats Operations (for UI)
-    // =====================
     
     override suspend fun getEnrichmentStats(): Map<EnrichmentStatus, Int> {
         return dao.getEnrichmentStats().associate { it.status to it.count }
@@ -69,7 +63,17 @@ class RoomEnrichedMetadataRepository @Inject constructor(
 
     override suspend fun countTracksWithAlbumArt(): Int = dao.countTracksWithAlbumArt()
 
-    override suspend fun requeueAllForEnrichment(): Int = dao.requeueAllForEnrichment()
+    override suspend fun requeueAllForEnrichment(): Int {
+        val notFoundAttemptedBefore =
+            System.currentTimeMillis() - EnrichedMetadata.NOT_FOUND_RETRY_BLOCK_MS
+        return dao.requeueAllForEnrichment(notFoundAttemptedBefore)
+    }
+
+    override suspend fun countNotFoundBlockedFromRequeue(): Int {
+        val notFoundAttemptedBefore =
+            System.currentTimeMillis() - EnrichedMetadata.NOT_FOUND_RETRY_BLOCK_MS
+        return dao.countNotFoundBlockedFromRequeue(notFoundAttemptedBefore)
+    }
 
     override suspend fun countTracksWithoutEnrichedMetadata(): Int =
         dao.countTracksWithoutEnrichedMetadata()
@@ -92,9 +96,7 @@ class RoomEnrichedMetadataRepository @Inject constructor(
         return dao.countTracksPendingSpotifyEnrichment()
     }
     
-    // =====================
     // Spotify Integration
-    // =====================
     
     override suspend fun queueAllForSpotifyEnrichment() {
         dao.queueAllForSpotifyEnrichment()
@@ -112,9 +114,7 @@ class RoomEnrichedMetadataRepository @Inject constructor(
         dao.updateSpotifyEnrichmentStatus(trackId, status, error)
     }
     
-    // =====================
     // Lookup Operations
-    // =====================
     
     override suspend fun findByMusicBrainzId(mbid: String): EnrichedMetadata? {
         return dao.findByMusicBrainzId(mbid)

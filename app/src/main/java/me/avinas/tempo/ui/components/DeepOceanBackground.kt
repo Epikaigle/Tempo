@@ -9,7 +9,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
-/* Hallmark · DeepOcean — neutral depth.
+/* DeepOcean — neutral depth.
  * Near-black matte with a single soft value vignette + top sheen.
  * No teal/mint blob. Teal lives in cards as accent, not in the sky.
  *
@@ -32,30 +32,11 @@ fun DeepOceanBackground(
                 drawRect(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF111616),
-                            Color(0xFF0A0E0E),
+                            Color(0xFF101414),
+                            Color(0xFF0C1010),
                             Color(0xFF080A0A)
                         ),
-                        endY = height,
-                    )
-                )
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.035f),
-                            Color.Transparent
-                        ),
                         startY = 0f,
-                        endY = 520f,
-                    )
-                )
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color(0xFF0F1414).copy(alpha = 0.55f)
-                        ),
-                        startY = 900f,
                         endY = height,
                     )
                 )

@@ -39,78 +39,21 @@ data class UserPreferences(
     val lastYearlyReminderShown: String? = null,  // Last date yearly reminder was shown
     val lastAllTimeReminderShown: String? = null,  // Last date all-time reminder was shown (6-month milestone)
     
-    // =====================================================
     // Spotify Import Feature
-    // =====================================================
-    
-    /**
-     * Spotify-API-Only Mode:
-     * When TRUE, Spotify listening data comes from API polling instead of notification tracking.
-     * - Spotify notifications are ignored (MusicTrackingService skips com.spotify.music)
-     * - SpotifyPollingWorker periodically fetches recently played via API
-     * - Other music apps still use notification tracking as normal
-     * 
-     * When FALSE (default), all apps including Spotify use notification tracking.
-     * This is the more accurate mode but relies on notification listener.
-     */
     val spotifyApiOnlyMode: Boolean = false,
-    
-    /**
-     * Cursor for incremental Spotify import polling.
-     * Stores the 'after' cursor from the last successful poll.
-     * Used to fetch only new plays since last poll, avoiding duplicates.
-     */
     val spotifyImportCursor: String? = null,
-    
-    /**
-     * Timestamp of the last successful Spotify import/poll.
-     * Used for:
-     * - Knowing when last sync occurred (display to user)
-     * - Fallback for polling if cursor is lost
-     */
     val lastSpotifyImportTimestamp: Long? = null,
     
-    // =====================================================
     // Last.fm Import Feature
-    // =====================================================
-    
-    /**
-     * Last.fm username for import/sync.
-     * Stored after successful import for incremental syncs.
-     */
     val lastfmUsername: String? = null,
-    
-    /**
-     * Whether Last.fm is connected (has completed at least one import).
-     */
     val lastfmConnected: Boolean = false,
-    
-    /**
-     * Auto-sync frequency for Last.fm scrobbles.
-     * Values: NONE, DAILY, WEEKLY
-     * Default: NONE (manual sync only)
-     */
     val lastfmSyncFrequency: String = "NONE",
     
-    // =====================================================
     // Smart Notification Timing
-    // =====================================================
-    
-    /**
-     * Stored smart hour for daily challenge notifications (0-23).
-     * Set by ChallengeWorker based on listening history.
-     */
     val smartChallengeNotifHour: Int? = null,
-    
-    /**
-     * Timestamp when the smart hour was last calculated.
-     * Used to refresh the calculation periodically (e.g., every 14 days).
-     */
     val smartChallengeNotifCalcTime: Long? = null,
     
-    // =====================================================
     // Feature Toggles
-    // =====================================================
     
     /**
      * Whether gamification features (levels, badges, XP, challenges) are enabled.

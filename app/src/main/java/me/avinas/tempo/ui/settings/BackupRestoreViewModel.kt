@@ -5,10 +5,13 @@ import android.content.Context
 import android.net.Uri
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -44,7 +47,8 @@ class BackupRestoreViewModel @Inject constructor(
     private val profileIdentityManager: ProfileIdentityManager,
     private val googleAuthManager: GoogleAuthManager,
     private val driveService: GoogleDriveService,
-    private val backupSettingsManager: BackupSettingsManager
+    private val backupSettingsManager: BackupSettingsManager,
+    private val applicationScope: CoroutineScope
 ) : ViewModel() {
     
     companion object {
@@ -95,8 +99,36 @@ class BackupRestoreViewModel @Inject constructor(
     init {
         loadSettings()
         calculateStats()
+        healStaleBackupStatus()
         // Request session restore - will be handled by the Composable with Activity context
         _sessionRestoreRequested.value = true
+    }
+
+    /**
+     * A process death mid-backup leaves lastBackupStatus stuck at IN_PROGRESS
+     * forever — the worker that would have flipped it is gone. If no backup
+     * work is actually running, mark the run failed so the UI stops showing a
+     * phantom "backup in progress".
+     */
+    private fun healStaleBackupStatus() {
+        viewModelScope.launch {
+            val settings = backupSettingsManager.settings.first()
+            if (settings.lastBackupStatus != BackupStatus.IN_PROGRESS) return@launch
+
+            val running = withContext(Dispatchers.Default) {
+                try {
+                    WorkManager.getInstance(context)
+                        .getWorkInfosForUniqueWork(DriveBackupWorker.WORK_NAME)
+                        .get()
+                        .any { it.state == WorkInfo.State.RUNNING }
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            if (!running) {
+                backupSettingsManager.updateLastBackup(BackupStatus.FAILED)
+            }
+        }
     }
     
     private fun loadSettings() {
@@ -206,13 +238,15 @@ class BackupRestoreViewModel @Inject constructor(
         }
     }
     
-    // ==================== LOCAL BACKUP ====================
+    // LOCAL BACKUP
     
     /**
      * Export all data to a ZIP file.
      */
     fun exportData(uri: Uri) {
-        viewModelScope.launch {
+        // Application scope: an export must survive the user navigating away
+        // mid-operation; progress is observed via the singleton manager's flow.
+        applicationScope.launch {
             val includeImages = _uiState.value.includeLocalImages
             val result = importExportManager.exportData(uri, includeImages)
             _importExportResult.value = result
@@ -238,14 +272,15 @@ class BackupRestoreViewModel @Inject constructor(
     private suspend fun hasExistingData(): Boolean =
         database.trackDao().getCount() > 0 ||
             database.artistDao().getCount() > 0 ||
-            database.listeningEventDao().getCount() > 0
+            database.listeningEventDao().getCount() > 0 ||
+            database.scrobbleArchiveDao().getTotalCount() > 0
     
     /**
      * Proceed with import after user selects conflict strategy.
      */
     fun importData(uri: Uri, strategy: ImportConflictStrategy) {
         _showConflictDialog.value = null
-        viewModelScope.launch {
+        applicationScope.launch {
             val result = importExportManager.importData(uri, strategy)
             _importExportResult.value = result
             // Refresh stats after import
@@ -275,7 +310,7 @@ class BackupRestoreViewModel @Inject constructor(
         calculateStats()
     }
     
-    // ==================== GOOGLE DRIVE BACKUP ====================
+    // GOOGLE DRIVE BACKUP
     
     /**
      * Request sign in - sets flag for Composable to handle with Activity context.
@@ -412,7 +447,7 @@ class BackupRestoreViewModel @Inject constructor(
             return
         }
         
-        viewModelScope.launch {
+        applicationScope.launch {
             _driveOperation.value = DriveOperationState.Uploading(0f)
             
             // Create temporary backup file
@@ -422,8 +457,8 @@ class BackupRestoreViewModel @Inject constructor(
                 if (tempFile.exists()) tempFile.delete()
                 
                 val settings = backupSettings.value
-                val exportResult = importExportManager.exportData(
-                    Uri.fromFile(tempFile),
+                val exportResult = importExportManager.exportToFile(
+                    tempFile,
                     settings.includeLocalImages
                 )
                 
@@ -484,7 +519,7 @@ class BackupRestoreViewModel @Inject constructor(
     fun restoreFromDrive(backup: DriveBackupInfo, strategy: ImportConflictStrategy) {
         _showDriveRestoreDialog.value = null
         
-        viewModelScope.launch {
+        applicationScope.launch {
             _driveOperation.value = DriveOperationState.Downloading(0f)
             
             try {

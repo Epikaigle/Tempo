@@ -3,7 +3,6 @@ package me.avinas.tempo.worker
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -41,7 +40,7 @@ class DriveBackupWorker @AssistedInject constructor(
     
     companion object {
         private const val TAG = "DriveBackupWorker"
-        private const val WORK_NAME = "drive_backup"
+        const val WORK_NAME = "drive_backup"
         private const val CHANNEL_ID = "backup_notifications"
         private const val NOTIFICATION_ID = 2001
         
@@ -159,9 +158,8 @@ class DriveBackupWorker @AssistedInject constructor(
                 // Create local backup using existing ImportExportManager
                 setProgress(workDataOf("phase" to "Creating backup..."))
                 
-                val backupUri = Uri.fromFile(tempFile)
-                val exportResult = importExportManager.exportData(
-                    backupUri, 
+                val exportResult = importExportManager.exportToFile(
+                    tempFile,
                     settings.includeLocalImages
                 )
                 
@@ -233,7 +231,6 @@ class DriveBackupWorker @AssistedInject constructor(
         notificationManager.createNotificationChannel(channel)
         
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(message)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

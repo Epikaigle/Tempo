@@ -12,13 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Comprehensive monitoring and health tracking for the music tracking system.
- * 
- * Provides:
- * - Real-time health status
- * - Performance metrics
- * - Error tracking and alerting
- * - Diagnostics for debugging
+ * Monitors music tracking service health, save latency, and drop/error rates.
  */
 class TrackingHealthMonitor(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -186,9 +180,7 @@ class TrackingHealthMonitor(
         scope.cancel()
     }
     
-    // =====================
-    // Internal
-    // =====================
+
     
     private fun startHealthChecks() {
         healthCheckJob = scope.launch {

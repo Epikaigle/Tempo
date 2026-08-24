@@ -67,6 +67,7 @@ import me.avinas.tempo.ui.components.ArtAtmosphereLayer
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
+import me.avinas.tempo.ui.components.TempoDialogShape
 import me.avinas.tempo.ui.theme.*
 import java.util.Locale
 
@@ -943,15 +944,15 @@ private fun AddTrackToAlbumDialog(
     onDismiss: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
-        Card(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
-                .heightIn(max = 600.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = TempoDarkSurfaceElevated),
+                .heightIn(max = 600.dp)
+                .clip(TempoDialogShape.shape)
+                .background(TempoSurfaceDialog)
+                .border(1.dp, GlassBorderSoft, TempoDialogShape.shape)
+                .padding(20.dp)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -963,11 +964,18 @@ private fun AddTrackToAlbumDialog(
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
                     )
-                    IconButton(onClick = onDismiss) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(GlassFrostSoft)
+                    ) {
                         Icon(
                             Icons.Rounded.Close,
                             contentDescription = stringResource(R.string.album_close_cd),
                             tint = TextSecondary,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
@@ -1006,7 +1014,7 @@ private fun AddTrackToAlbumDialog(
                         unfocusedTextColor = TextPrimary,
                         cursorColor = TempoPrimary,
                         focusedBorderColor = TempoPrimary,
-                        unfocusedBorderColor = TextPrimary.copy(alpha = 0.3f),
+                        unfocusedBorderColor = TextQuaternary,
                     ),
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1049,7 +1057,6 @@ private fun AddTrackToAlbumDialog(
                     }
                 }
             }
-        }
     }
 }
 
@@ -1061,12 +1068,13 @@ private fun RemoveFromAlbumDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = TempoDarkSurfaceElevated,
+        containerColor = TempoSurfaceDialog,
         shape = RoundedCornerShape(24.dp),
         title = {
             Text(
                 text = stringResource(R.string.album_remove_title),
                 color = TextPrimary,
+                fontWeight = FontWeight.SemiBold,
             )
         },
         text = {
@@ -1096,7 +1104,7 @@ private fun RemoveFromAlbumDialog(
             TextButton(onClick = onDismiss) {
                 Text(
                     text = stringResource(R.string.common_cancel),
-                    color = TextSecondary,
+                    color = TextTertiary,
                 )
             }
         },

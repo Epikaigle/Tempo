@@ -15,19 +15,10 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Named
 import javax.inject.Singleton
 
-/**
- * Hilt module providing Spotify API client and related dependencies.
- */
 @Module
 @InstallIn(SingletonComponent::class)
 object SpotifyModule {
 
-    /**
-     * OkHttpClient configured for Spotify API.
-     * 
-     * Note: Authentication header is added per-request, not via interceptor,
-     * because the token can change (refresh) during the app lifecycle.
-     */
     @Provides
     @Singleton
     @Named("spotify")

@@ -143,9 +143,7 @@ interface EnrichedMetadataDao {
     """)
     suspend fun getEnrichmentStats(): List<EnrichmentStatusCount>
     
-    // =====================
     // Spotify Enrichment Queries
-    // =====================
     
     /**
      * Get tracks that need Spotify enrichment, prioritized by play count.
@@ -352,6 +350,21 @@ interface EnrichedMetadataDao {
     @Query("SELECT * FROM enriched_metadata")
     suspend fun getAllSync(): List<EnrichedMetadata>
 
+    @Query("SELECT * FROM enriched_metadata WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): EnrichedMetadata?
+
+    /**
+     * IDs of enriched_metadata rows whose tags or genres column still holds the
+     * legacy JSON-array format (e.g. `["pop", "rock"]`) instead of the
+     * `|||`-delimited format. Used by the one-time list column repair.
+     */
+    @Query("""
+        SELECT id FROM enriched_metadata
+        WHERE (tags LIKE '[%' AND tags LIKE '%]')
+           OR (genres LIKE '[%' AND genres LIKE '%]')
+    """)
+    suspend fun getIdsWithLegacyListFormat(): List<Long>
+
     @Query("SELECT album_art_url FROM enriched_metadata WHERE album_art_url LIKE 'file://%' UNION SELECT spotify_artist_image_url FROM enriched_metadata WHERE spotify_artist_image_url LIKE 'file://%' UNION SELECT album_art_url_small FROM enriched_metadata WHERE album_art_url_small LIKE 'file://%' UNION SELECT album_art_url_large FROM enriched_metadata WHERE album_art_url_large LIKE 'file://%' UNION SELECT itunes_artist_image_url FROM enriched_metadata WHERE itunes_artist_image_url LIKE 'file://%' UNION SELECT deezer_artist_image_url FROM enriched_metadata WHERE deezer_artist_image_url LIKE 'file://%' UNION SELECT lastfm_artist_image_url FROM enriched_metadata WHERE lastfm_artist_image_url LIKE 'file://%'")
     suspend fun getLocalImageUrls(): List<String>
     
@@ -410,14 +423,36 @@ interface EnrichedMetadataDao {
     /**
      * Re-queue every non-enriched track (FAILED, SKIPPED, NOT_FOUND) back to PENDING.
      * Used by the "Enrich All" action so the bulk worker can sweep the full backlog.
+     *
+     * NOT_FOUND tracks are rate-limited: only those whose last enrichment attempt
+     * ([notFoundAttemptedBeforeMs] should be now - [EnrichedMetadata.NOT_FOUND_RETRY_BLOCK_MS])
+     * is older than the cutoff (or NULL for legacy rows) are requeued. Tracks searched
+     * everywhere recently stay NOT_FOUND so repeated taps on "Enrich All" cannot
+     * re-query every external API for lookups that already failed. FAILED (transient
+     * errors) and SKIPPED (deferred) tracks are always requeued.
      * Returns the number of rows updated.
      */
     @Query("""
         UPDATE enriched_metadata
         SET enrichment_status = 'PENDING', retry_count = 0
-        WHERE enrichment_status IN ('FAILED', 'SKIPPED', 'NOT_FOUND')
+        WHERE enrichment_status IN ('FAILED', 'SKIPPED')
+           OR (enrichment_status = 'NOT_FOUND'
+               AND (last_enrichment_attempt IS NULL OR last_enrichment_attempt <= :notFoundAttemptedBeforeMs))
     """)
-    suspend fun requeueAllForEnrichment(): Int
+    suspend fun requeueAllForEnrichment(notFoundAttemptedBeforeMs: Long): Int
+
+    /**
+     * Count NOT_FOUND tracks still inside the 7-day re-enrichment block
+     * (last_enrichment_attempt newer than [notFoundAttemptedBeforeMs]).
+     * Surfaced on the Enrichment Report screen so the user understands why
+     * those songs are not part of the current sweep.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM enriched_metadata
+        WHERE enrichment_status = 'NOT_FOUND'
+        AND last_enrichment_attempt > :notFoundAttemptedBeforeMs
+    """)
+    suspend fun countNotFoundBlockedFromRequeue(notFoundAttemptedBeforeMs: Long): Int
 
     /**
      * Defer low-play PENDING tracks (play count < minPlayCount, including never-played)

@@ -17,9 +17,7 @@ import androidx.room.ColumnInfo
  * because they reflect actual user preferences rather than song characteristics.
  */
 
-// =====================
 // Engagement Thresholds
-// =====================
 object EngagementThresholds {
     const val FULL_PLAY_PERCENT = 80       // >80% = full play
     const val PARTIAL_PLAY_MIN = 30        // 30-80% = partial play

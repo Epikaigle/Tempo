@@ -638,6 +638,7 @@
     <string name="enrichment_report_starting">Starting enrichment…</string>
     <string name="enrichment_report_complete">Enrichment sweep complete.</string>
     <string name="enrichment_report_nothing_to_do">Everything is already enriched. \u2713</string>
+    <string name="enrichment_report_blocked">%1$d songs were recently not found on any online source and will be skipped for 7 days before being retried.</string>
     <string name="settings_clear_all">Clear All Data</string>
     <string name="settings_reddit">Reddit Community</string>
     <string name="settings_reddit_sub">r/TempoStats</string>

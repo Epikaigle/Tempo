@@ -208,6 +208,15 @@ data class EnrichedMetadata(
         
         // Max retries before giving up
         const val MAX_RETRY_COUNT = 5
+
+        /**
+         * A track that was searched across every enrichment source and came back
+         * NOT_FOUND is blocked from bulk re-enrichment ("Enrich All") for 7 days.
+         * The lookup result won't change, so repeatedly tapping the sweep button
+         * must not be able to hammer the external APIs with the same queries.
+         * Measured from [lastEnrichmentAttempt].
+         */
+        const val NOT_FOUND_RETRY_BLOCK_MS = 7L * 24 * 60 * 60 * 1000
     }
     
     fun isCacheValid(): Boolean {

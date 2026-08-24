@@ -1,5 +1,6 @@
 import * as esbuild from 'esbuild';
-import { existsSync, cpSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, cpSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -15,25 +16,26 @@ if (target !== 'chrome' && target !== 'firefox') {
   process.exit(1);
 }
 
+// esbuild target follows the build target (Firefox 140 is the manifest strict_min_version)
+const esbuildTarget = target === 'firefox' ? 'firefox140' : 'chrome110';
+
 // Background service worker — IIFE for both browsers (Firefox doesn't fully support ESM in service workers)
 const bgOptions = {
   entryPoints: ['src/background/service-worker.ts'],
   bundle: true,
   outdir: 'dist/background',
-  format: 'iife',
-  target: 'chrome110',
+  target: esbuildTarget,
   minify: !isWatch,
   sourcemap: isWatch ? 'inline' : false,
   drop: isWatch ? [] : ['debugger'],
 };
 
-// Content script — IIFE (content scripts DON'T support ESM)
+// Content script — IIFE (content scripts don't support ESM)
 const contentOptions = {
   entryPoints: ['src/content/media-probe.ts', 'src/content/yt-main-world-helper.ts'],
   bundle: true,
   outdir: 'dist/content',
-  format: 'iife',
-  target: 'chrome110',
+  target: esbuildTarget,
   minify: !isWatch,
   sourcemap: isWatch ? 'inline' : false,
   drop: isWatch ? [] : ['debugger'],
@@ -44,10 +46,10 @@ const popupOptions = {
   entryPoints: ['src/popup/popup.ts'],
   bundle: true,
   outdir: 'dist/popup',
-  format: 'esm',
-  target: 'chrome110',
+  target: esbuildTarget,
   minify: !isWatch,
-  sourcemap: isWatch ? 'inline' : false,
+  format: 'esm',
+  splitting: true,
   drop: isWatch ? [] : ['debugger'],
 };
 
@@ -66,7 +68,7 @@ function stripDistPrefix(value) {
 
 function buildChromeManifest(baseManifest) {
   const m = stripDistPrefix(baseManifest);
-  // Remove "type": "module" since we bundle to IIFE
+  // Bundle uses IIFE, so remove module type
   if (m.background) delete m.background.type;
   return m;
 }
@@ -74,26 +76,19 @@ function buildChromeManifest(baseManifest) {
 function buildFirefoxManifest(baseManifest) {
   const m = stripDistPrefix(baseManifest);
 
-  // Remove Chrome-only fields
   delete m.minimum_chrome_version;
 
-  // Remove "type": "module" from background — Firefox IIFE doesn't need it
   if (m.background) delete m.background.type;
 
-  // Firefox uses background.scripts (event page), not service_worker.
-  // Having BOTH keys present makes Firefox reject the manifest, so convert
-  // service_worker → scripts and drop the service_worker key entirely.
+  // Firefox rejects manifests containing both service_worker and scripts
   if (m.background?.service_worker) {
     m.background.scripts = [m.background.service_worker];
     delete m.background.service_worker;
   }
 
   // Firefox doesn't support wildcard ports in optional_host_permissions
-  // Remove it entirely - the extension requests specific IP permissions at runtime
   delete m.optional_host_permissions;
 
-  // Add Firefox-specific settings
-  // Extension doesn't collect/transmit data - it only tracks local playback history
   m.browser_specific_settings = {
     gecko: {
       id: 'tempo-stats@extension',
@@ -110,8 +105,7 @@ function buildFirefoxManifest(baseManifest) {
   return m;
 }
 
-// Copy static assets to the target dist directory
-function copyStaticAssets(distDir) {
+async function copyStaticAssets(distDir) {
   if (!existsSync(distDir)) mkdirSync(distDir, { recursive: true });
 
   const sourceManifestPath = resolve(__dirname, 'manifest.json');
@@ -123,21 +117,52 @@ function copyStaticAssets(distDir) {
 
   writeFileSync(resolve(distDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
-  // icons
   const iconsDir = resolve(__dirname, 'icons');
   if (existsSync(iconsDir)) {
     cpSync(iconsDir, resolve(distDir, 'icons'), { recursive: true });
   }
 
-  // popup HTML and CSS
   const popupDir = resolve(distDir, 'popup');
   if (!existsSync(popupDir)) mkdirSync(popupDir, { recursive: true });
 
   const popupHtml = resolve(__dirname, 'src/popup/popup.html');
-  if (existsSync(popupHtml)) cpSync(popupHtml, resolve(popupDir, 'popup.html'));
+  if (existsSync(popupHtml)) {
+    // Conservative whitespace collapse: strip leading indentation and blank lines only.
+    // Tags, attributes, and comments are preserved verbatim — no structural parsing.
+    const html = readFileSync(popupHtml, 'utf8');
+    const collapsed = html
+      .split('\n')
+      .map(line => line.replace(/^[ \t]+/, ''))
+      .filter(line => line.length > 0)
+      .join('\n');
+    writeFileSync(resolve(popupDir, 'popup.html'), collapsed);
+  }
 
   const popupCss = resolve(__dirname, 'src/popup/popup.css');
-  if (existsSync(popupCss)) cpSync(popupCss, resolve(popupDir, 'popup.css'));
+  if (existsSync(popupCss)) {
+    await esbuild.build({
+      entryPoints: [popupCss],
+      outfile: resolve(popupDir, 'popup.css'),
+      minify: !isWatch,
+      bundle: false,
+      sourcemap: false,
+      logLevel: 'silent',
+    });
+  }
+
+  const fontsDir = resolve(__dirname, 'src/popup/fonts');
+  if (existsSync(fontsDir)) {
+    cpSync(fontsDir, resolve(popupDir, 'fonts'), { recursive: true });
+  }
+}
+
+function packageZip(distDir) {
+  const zipName = `tempo-stats-${target}.zip`;
+  const zipPath = resolve(__dirname, 'dist', zipName);
+  rmSync(zipPath, { force: true });
+  execFileSync('zip', ['-r', '-X', `../${zipName}`, '.'], { cwd: distDir, stdio: 'inherit' });
+  const { size } = statSync(zipPath);
+  console.log(`📦 Packaged → dist/${zipName} (${(size / 1024).toFixed(1)} KB)`);
 }
 
 async function build() {
@@ -152,7 +177,7 @@ async function build() {
         esbuild.context({ ...popupOptions, outdir: resolve(distDir, 'popup') }),
       ]);
       await Promise.all([bgCtx.watch(), contentCtx.watch(), popupCtx.watch()]);
-      copyStaticAssets(distDir);
+      await copyStaticAssets(distDir);
       console.log(`👀 Watching for changes (${browserLabel})...`);
     } else {
       await Promise.all([
@@ -160,8 +185,9 @@ async function build() {
         esbuild.build({ ...contentOptions, outdir: resolve(distDir, 'content') }),
         esbuild.build({ ...popupOptions, outdir: resolve(distDir, 'popup') }),
       ]);
-      copyStaticAssets(distDir);
+      await copyStaticAssets(distDir);
       console.log(`✅ Build complete → dist/${target}/ (${browserLabel})`);
+      packageZip(distDir);
     }
   } catch (err) {
     console.error('Build failed:', err);

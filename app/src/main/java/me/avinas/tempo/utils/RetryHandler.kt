@@ -7,13 +7,7 @@ import kotlin.math.pow
 import kotlin.random.Random
 
 /**
- * Robust retry handler with exponential backoff and jitter.
- * 
- * Features:
- * - Exponential backoff to prevent thundering herd
- * - Jitter to distribute retries
- * - Configurable retry conditions
- * - Circuit breaker pattern support
+ * Retry handler with exponential backoff and jitter.
  */
 object RetryHandler {
     

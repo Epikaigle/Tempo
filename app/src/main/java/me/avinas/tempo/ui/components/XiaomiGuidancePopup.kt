@@ -3,33 +3,23 @@ package me.avinas.tempo.ui.components
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.avinas.tempo.R
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoWarning
 
 @Composable
 fun XiaomiGuidancePopup(
@@ -39,18 +29,18 @@ fun XiaomiGuidancePopup(
     var visible by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        visible = true
+    LaunchedEffect(Unit) { visible = true }
+
+    fun dismissAnimated(action: () -> Unit) {
+        visible = false
+        coroutineScope.launch {
+            delay(200)
+            action()
+        }
     }
 
     Dialog(
-        onDismissRequest = {
-            visible = false
-            coroutineScope.launch {
-                delay(200)
-                onDismiss()
-            }
-        },
+        onDismissRequest = { dismissAnimated(onDismiss) },
         properties = DialogProperties(
             dismissOnBackPress = true,
             dismissOnClickOutside = true,
@@ -59,188 +49,67 @@ fun XiaomiGuidancePopup(
     ) {
         AnimatedVisibility(
             visible = visible,
-            enter = fadeIn(animationSpec = tween(300)),
-            exit = fadeOut(animationSpec = tween(200))
+            enter = fadeIn(animationSpec = tween(250)),
+            exit = fadeOut(animationSpec = tween(180))
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.6f)),
+                    .background(Color.Black.copy(alpha = 0.65f)),
                 contentAlignment = Alignment.Center
             ) {
                 AnimatedVisibility(
                     visible = visible,
                     enter = scaleIn(
-                        initialScale = 0.8f,
+                        initialScale = 0.92f,
                         animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessLow
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMedium
                         )
-                    ) + fadeIn(animationSpec = tween(300)),
-                    exit = scaleOut(targetScale = 0.8f, animationSpec = tween(200)) +
-                            fadeOut(animationSpec = tween(200))
+                    ) + fadeIn(animationSpec = tween(250)),
+                    exit = scaleOut(targetScale = 0.92f, animationSpec = tween(180)) +
+                            fadeOut(animationSpec = tween(180))
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(0.85f)
                             .padding(horizontal = 24.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .shadow(
-                                    16.dp,
-                                    RoundedCornerShape(28.dp),
-                                    spotColor = Color.Black.copy(alpha = 0.5f)
-                                )
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(Color(0xFF1A1726))
-                                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(28.dp))
-                        ) {
-                            Box {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                                ) {
-                                    // Close button
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        IconButton(
-                                            onClick = {
-                                                visible = false
-                                                coroutineScope.launch {
-                                                    delay(200)
-                                                    onDismiss()
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .background(
-                                                    Color.White.copy(alpha = 0.1f),
-                                                    CircleShape
-                                                )
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "Close",
-                                                tint = Color.White.copy(alpha = 0.8f),
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
+                        TempoDialogSurface {
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                                    // Warning icon with gradient
-                                    Box(
-                                        modifier = Modifier
-                                            .size(72.dp)
-                                            .background(
-                                                brush = Brush.linearGradient(
-                                                    colors = listOf(TempoRed, Color(0xFFFF6B35))
-                                                ),
-                                                shape = CircleShape
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-                                        val scale by infiniteTransition.animateFloat(
-                                            initialValue = 1f,
-                                            targetValue = 1.1f,
-                                            animationSpec = infiniteRepeatable(
-                                                animation = tween(1000, easing = FastOutSlowInEasing),
-                                                repeatMode = RepeatMode.Reverse
-                                            ),
-                                            label = "iconPulse"
-                                        )
+                            TempoDialogIcon(
+                                icon = Icons.Default.Warning,
+                                tint = TempoWarning,
+                                size = 56
+                            )
 
-                                        Icon(
-                                            imageVector = Icons.Default.Warning,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .scale(scale)
-                                        )
-                                    }
+                            Spacer(modifier = Modifier.height(20.dp))
 
-                                    // Title
-                                    Text(
-                                        text = stringResource(R.string.xiaomi_guidance_title),
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center,
-                                        lineHeight = MaterialTheme.typography.headlineSmall.fontSize * 1.2
-                                    )
+                            TempoDialogTitle(
+                                text = stringResource(R.string.xiaomi_guidance_title)
+                            )
 
-                                    // Description
-                                    Text(
-                                        text = stringResource(R.string.xiaomi_guidance_desc),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.White.copy(alpha = 0.7f),
-                                        textAlign = TextAlign.Center
-                                    )
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                                    Spacer(modifier = Modifier.height(4.dp))
+                            TempoDialogBody(
+                                text = stringResource(R.string.xiaomi_guidance_desc)
+                            )
 
-                                    // Configure button
-                                    Button(
-                                        onClick = {
-                                            visible = false
-                                            coroutineScope.launch {
-                                                delay(200)
-                                                onConfigure()
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(52.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color.White,
-                                            contentColor = Color.Black
-                                        ),
-                                        shape = RoundedCornerShape(26.dp),
-                                        elevation = ButtonDefaults.buttonElevation(
-                                            defaultElevation = 4.dp,
-                                            pressedElevation = 8.dp
-                                        )
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Settings,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = stringResource(R.string.xiaomi_guidance_configure),
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
+                            Spacer(modifier = Modifier.height(24.dp))
 
-                                    // Maybe Later button
-                                    TextButton(
-                                        onClick = {
-                                            visible = false
-                                            coroutineScope.launch {
-                                                delay(200)
-                                                onDismiss()
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.xiaomi_guidance_later),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = Color.White.copy(alpha = 0.6f)
-                                        )
-                                    }
-                                }
-                            }
+                            TempoDialogPrimaryButton(
+                                text = stringResource(R.string.xiaomi_guidance_configure),
+                                onClick = { dismissAnimated(onConfigure) },
+                                icon = Icons.Default.Settings
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            TempoDialogSecondaryButton(
+                                text = stringResource(R.string.xiaomi_guidance_later),
+                                onClick = { dismissAnimated(onDismiss) }
+                            )
                         }
                     }
                 }

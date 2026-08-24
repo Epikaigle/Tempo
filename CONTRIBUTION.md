@@ -1,198 +1,134 @@
 # Contributing to Tempo
 
-**Thank you for your interest in making Tempo better!** 🎉
+Contributions to Tempo are welcome. This guide covers how to set up your development environment, build and test the app, follow codebase conventions, and submit pull requests.
 
-Your contributions (whether bug fixes, features, documentation, or testing) are genuinely valued. This guide will help you contribute effectively while understanding the project's goals and workflow.
+## Project principles
 
-## About the Project
+Tempo is a local-first music companion and scrobbler for Android. Every change must adhere to these core constraints:
 
-Tempo is an **AGPLv3-licensed project (with custom limitations)** with a clear vision: to be the best local-first music companion app that respects user privacy and data ownership. While I built it to solve a specific problem, community contributions help make it better for everyone.
+- **Local storage first:** Listening history, statistics, and metadata stay on device in local SQLite databases via Room. The app does not transmit user data to remote analytics servers or telemetry services.
+- **Offline operation:** Core tracking, stats generation, and library browsing must work without network access. External API calls (Last.fm, Spotify, MusicBrainz, Deezer) are strictly opt-in for metadata enrichment and imports.
+- **No commercial features:** The project is released under a modified AGPLv3 license that prohibits monetization, advertisements, paid subscriptions, and rebranding.
 
-The codebase is open for learning, auditing, and contribution, with a license that protects against commercial exploitation while enabling collaboration.
+## Development setup
 
-## Project Philosophy
+### Requirements
 
-Tempo is built on these principles:
-- **User-first**: Features serve real user needs, not trends
-- **Privacy-first**: Data stays on the device, no tracking
-- **Local-first**: No cloud dependency
-- **Intentional design**: Every feature has a purpose
+- Android Studio Ladybug (2024.2.1) or newer
+- JDK 17
+- Android SDK 36 (Minimum SDK: 26, Target SDK: 36, Compile SDK: 36)
+- Node.js 18+ (required only for the browser extension)
 
-**What this means for contributions:**
-- Quality and stability matter more than feature count
-- Changes should align with the core philosophy
-- Thoughtful, focused improvements are preferred over large rewrites
-- User experience consistency is important
+### Optional API configuration
 
-## How to Contribute
+The app builds and runs without external API keys. To test features that require third-party services, add the relevant keys to `local.properties` in the project root:
 
-### Contribution Workflow
-
-```
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a Pull Request
+```properties
+SPOTIFY_CLIENT_ID=your_spotify_client_id
+LASTFM_API_KEY=your_lastfm_api_key
+GOOGLE_WEB_CLIENT_ID=your_google_client_id
 ```
 
-**What to include in your PR:**
-- Clear explanation of what changed and why
-- Screenshots or videos for UI changes
-- Test cases for bug fixes (when applicable)
-- Reference to related issues (if any)
+## Building and testing
 
-All PRs are reviewed carefully. I may:
-- Merge as-is
-- Request changes or improvements
-- Ask questions for clarification
-- Suggest alternative approaches
+### Android application
 
-**Note:** Not all PRs will be merged, but that's okay! Sometimes it's about timing, fit, or project direction. A declined PR isn't a judgment of your skills.
+Clone the repository and build the debug APK:
 
-### Types of Contributions Welcome
+```bash
+git clone https://github.com/avinaxhroy/Tempo.git
+cd Tempo
+./gradlew assembleDebug
+```
 
-**🐛 Bug Fixes**
-- Crashes, UI glitches, data issues
-- Performance improvements
-- Edge case handling
+Run unit tests:
 
-**✨ Feature Enhancements**
-- Improvements to existing features
-- Better error handling
-- Accessibility improvements
+```bash
+./gradlew testDebugUnitTest
+```
 
-**📝 Documentation**
-- Code comments
-- README improvements
-- API documentation
-- User guides
+Run lint checks:
 
-**🌍 Localization**
-- Translations
-- RTL support
-- Regional improvements
+```bash
+./gradlew lintDebug
+```
 
-**🧪 Testing & QA**
-- Bug reports with reproduction steps
-- Edge case testing
-- Performance profiling
+### Room database schemas
 
-### Before Starting Major Work
+Room entity definitions export database schemas to `app/schemas/`. When adding or modifying entities and database migrations:
+1. Ensure the schema export succeeds during compilation.
+2. Add migration test cases in `app/src/test/java/me/avinas/tempo/data/local/` to verify forward compatibility.
+3. Commit the updated JSON schema files alongside the migration code.
 
-For significant changes, **please open an issue first** to discuss:
-- Large architectural changes
-- New major features
-- UI redesigns
-- Changes to core behavior
+### Browser companion extension
 
-This helps avoid wasted effort on changes that may not align with the project's direction.
+The browser companion lives in `browser-extension/`:
 
-## UI & Design Contributions
+```bash
+cd browser-extension
+npm install
+npm run build
+npm run typecheck
+```
 
-Tempo has an established visual language and interaction model built with Jetpack Compose and Material 3.
+Load the unpacked extension directory (`dist/chrome` or `dist/firefox`) into your browser:
+- Chrome: Open `chrome://extensions`, enable **Developer mode**, and select **Load unpacked**.
+- Firefox: Open `about:debugging#/runtime/this-firefox` and select **Load Temporary Add-on**.
 
-**UI improvements welcome:**
-- Usability enhancements (better spacing, alignment, hierarchy)
-- Accessibility improvements (contrast, screen readers, tap targets)
-- Consistency fixes across screens
-- Animation polish
+## Contribution workflow
 
-**Please discuss first:**
-- Complete UI redesigns
-- Changes to the visual identity (colors, typography, iconography)
-- Major navigation changes
-- Replacing existing design patterns
+### When to open an issue first
 
-> **Note:** Design work in Figma is appreciated, but implementation in code is what matters. Focus on working prototypes when possible.
+Open an issue to discuss your proposal before writing code for:
+- New major features or background services
+- Database schema changes or structural refactoring
+- UI navigation changes or visual redesigns
+- Adding new third-party dependencies
 
-## Feature Contributions
+You do not need to open an issue before submitting pull requests for:
+- Bug fixes and crash resolutions
+- Parser fixes or support for new media players in `DefaultMusicApps.kt`
+- Translation updates in `app/src/main/res/values-*/strings.xml`
+- Documentation fixes and test additions
 
-**Before building a new feature:**
-1. Check existing issues (it might already be planned)
-2. Open an issue to discuss the idea
-3. Describe the **problem** you're solving, not just the solution
-4. Wait for feedback before investing significant time
+### Pull request checklist
 
-Some feature requests may be deferred, scoped differently, or declined based on:
-- Alignment with project philosophy
-- Maintenance complexity
-- Impact on app size or performance
-- User experience consistency
+1. Fork the repository and create a branch from `main`.
+2. Keep each pull request focused on a single change or bug fix.
+3. Run `./gradlew testDebugUnitTest` and `./gradlew lintDebug` to verify tests pass and no lint regressions were introduced.
+4. Open the pull request against `main` and include:
+   - A summary of the problem and the implemented fix.
+   - Reproduction steps or test coverage for bug fixes.
+   - Before and after screenshots or screen recordings for UI changes.
+   - The issue number if one exists (for example, `Fixes #42`).
 
-## Decision Making
+## Code and architecture standards
 
-Tempo is maintained by a single owner with a clear vision for the product. This ensures:
-- **Consistency**: Clear direction and cohesive experience
-- **Quality**: Thoughtful review of all changes
-- **Sustainability**: Manageable scope and maintenance
+- **Architecture:** MVVM with Clean Architecture. Keep business logic in `domain/`, data persistence and network calls in `data/`, and Jetpack Compose screens and ViewModels in `ui/`.
+- **Dependency injection:** Use Hilt for dependency injection across ViewModels, repositories, workers, and background services.
+- **UI:** Write UI entirely in Jetpack Compose using Material 3 components. Support both light and dark themes. Ensure interactive touch targets meet the 48dp minimum size requirement.
+- **Background work:** Use `WorkManager` for periodic or deferrable background tasks (enrichment, daily stats). Use foreground services only where continuous playback listening requires Android service lifecycle management.
+- **Memory and performance:** Downsample large cover art bitmaps before writing to SQLite to prevent `TransactionTooLargeException` and memory pressure. Release broadcast receivers, database cursors, and coroutine scopes on component teardown.
+- **Dependencies:** Avoid adding new dependencies unless the functionality cannot be reasonably implemented with existing libraries or platform APIs.
 
-**This doesn't mean contributions are unwelcome**. It means they're reviewed carefully to ensure they benefit users and align with the project's goals.
+## Localization
 
-If a PR is declined, it's about fit with the project direction, not a judgment of your abilities. Feedback will be provided to help you understand the decision.
+Tempo supports multiple languages. String resources live in `app/src/main/res/`:
 
-## Attribution & Credit
+- Default English: `values/strings.xml`
+- German: `values-de/strings.xml`
+- French: `values-fr/strings.xml`
+- Hungarian: `values-hu/strings.xml`
+- Portuguese: `values-pt/strings.xml`
+- Russian: `values-ru/strings.xml`
 
-- All contributors are credited in git commit history
-- Significant contributions may be highlighted in documentation
-- The project remains authored and maintained by its original creator
+When adding user-facing UI text:
+1. Add the string to `values/strings.xml` using a descriptive key.
+2. Reference the string via `stringResource(R.string.your_key)` in Compose instead of hardcoding text.
+3. If providing translations for existing keys, update the corresponding `values-*/strings.xml` file.
 
-## Code Quality Guidelines
+## License terms for contributions
 
-To maintain a healthy codebase:
-- **Follow existing patterns**: Match the code style and architecture already in place
-- **Keep dependencies minimal**: Only add libraries when truly necessary
-- **Stay focused**: One PR should address one issue or feature
-- **Write for humans**: Code should be readable and maintainable
-- **Test your changes**: Verify the feature works and doesn't break existing functionality
+Tempo is licensed under the [GNU Affero General Public License v3 (AGPLv3) with Custom Limitations](LICENSE).
 
-## Development Environment
-
-- **Language**: Kotlin
-- **UI**: Jetpack Compose (Material 3)
-- **Architecture**: MVVM + Clean Architecture with Hilt
-- **Min SDK**: 26 (Android 8.0)
-- **Target SDK**: 34 (Android 14)
-
-Run `./gradlew build` to ensure your changes compile successfully.
-
-## Community Values
-
-**Welcome contributors who:**
-- Want to learn and grow
-- Care about user privacy and data ownership
-- Value quality over quantity
-- Respect the project's vision
-- Communicate thoughtfully
-
-**This might not be the right fit if you're looking to:**
-- Rush changes without review
-- Fundamentally alter the project's direction
-- Fork for commercial purposes (see LICENSE)
-- Ignore maintainer feedback
-
-## Contributor License
-
-By contributing to Tempo, you agree that your contributions will be licensed under the project's [custom modified AGPLv3 License](LICENSE).
-
-Your contributions remain attributed to you in the git history and may be acknowledged in documentation for significant work.
-
-## Getting Help
-
-- **Questions?** Open a discussion or issue
-- **Stuck?** Ask for help. Collaboration is encouraged
-- **Found a bug?** Report it with steps to reproduce
-- **Idea for improvement?** Share it in an issue first
-
-## Thank You
-
-Every contribution makes Tempo better, whether it's a one-line typo fix or a major feature. Your time and effort are valued.
-
-Tempo uses a **custom modified AGPLv3 License** to protect it from commercial exploitation while keeping it open for learning, auditing, and collaboration. This approach ensures the app stays free, privacy-focused, and user-first.
-
-Thank you for being part of this project. 🎵
-
----
-
-**Ready to contribute?** Fork the repo and submit your first PR!
-
-**Questions?** Open an issue or discussion. I'm happy to help.
+By submitting a pull request, you agree that your contributions are licensed under these same terms. Contributions are not accepted if they require commercial relicensing, closed-source distribution, or removal of project attribution.

@@ -19,9 +19,7 @@ import me.avinas.tempo.data.stats.*
 @Dao
 interface StatsDao {
 
-    // =====================
     // Combined Stats Query (Single Round Trip)
-    // =====================
     
     /**
      * Get all basic stats in a single query to reduce database round trips.
@@ -40,9 +38,7 @@ interface StatsDao {
     """)
     suspend fun getCombinedBasicStats(startTime: Long, endTime: Long): CombinedBasicStats
 
-    // =====================
     // Basic Stats Queries
-    // =====================
 
     /**
      * Get total listening time in milliseconds for a time range.
@@ -106,9 +102,7 @@ interface StatsDao {
     """)
     suspend fun getUniqueAlbumsCount(startTime: Long, endTime: Long): Int
 
-    // =====================
     // Top Charts - Tracks
-    // =====================
 
     /**
      * Get top tracks by play count with pagination.
@@ -237,9 +231,7 @@ interface StatsDao {
     """)
     suspend fun getUniqueTracksPlayedCount(startTime: Long, endTime: Long): Int
 
-    // =====================
     // Top Charts - Artists
-    // =====================
 
     /**
      * Get top artists by play count with image and country.
@@ -445,9 +437,7 @@ interface StatsDao {
     """)
     suspend fun getAlbumsByArtistId(artistId: Long, startTime: Long, endTime: Long, limit: Int): List<TopAlbum>
 
-    // =====================
     // Top Charts - Albums
-    // =====================
 
     /**
      * Get top albums by play count.
@@ -479,9 +469,7 @@ interface StatsDao {
         offset: Int
     ): List<TopAlbum>
 
-    // =====================
     // Top Charts - Genres (from MusicBrainz tags)
-    // =====================
 
     /**
      * Get top genres by play count.
@@ -516,9 +504,7 @@ interface StatsDao {
         limit: Int
     ): List<TopGenre>
 
-    // =====================
     // Temporal Analysis - Hour of Day
-    // =====================
 
     /**
      * Get listening distribution by hour of day.
@@ -573,9 +559,7 @@ interface StatsDao {
     """)
     suspend fun getTypicalStartHour(startTime: Long, endTime: Long): HourlyDistribution?
 
-    // =====================
     // Temporal Analysis - Day of Week
-    // =====================
 
     /**
      * Get listening distribution by day of week.
@@ -615,9 +599,7 @@ interface StatsDao {
     """)
     suspend fun getMostActiveDay(startTime: Long, endTime: Long): DayOfWeekDistribution?
 
-    // =====================
     // Temporal Analysis - Daily Aggregations
-    // =====================
 
     /**
      * Get daily listening aggregations.
@@ -638,9 +620,7 @@ interface StatsDao {
     """)
     suspend fun getDailyListening(startTime: Long, endTime: Long, limit: Int): List<DailyListening>
 
-    // =====================
     // Temporal Analysis - Monthly Aggregations
-    // =====================
 
     /**
      * Get monthly listening aggregations.
@@ -661,9 +641,7 @@ interface StatsDao {
     """)
     suspend fun getMonthlyListening(startTime: Long, endTime: Long): List<MonthlyListening>
 
-    // =====================
     // Listening Streaks
-    // =====================
 
     /**
      * Get all unique listening dates for streak calculation.
@@ -685,9 +663,7 @@ interface StatsDao {
     """)
     suspend fun getActiveDaysCount(startTime: Long, endTime: Long): Int
 
-    // =====================
     // Discovery Metrics
-    // =====================
 
     /**
      * Get first listen timestamp for each artist.
@@ -825,9 +801,7 @@ interface StatsDao {
     """)
     suspend fun getArtistDiscoveryDate(artistId: Long): Long?
 
-    // =====================
     // Engagement Metrics
-    // =====================
 
     /**
      * Get average completion rate for a time range.
@@ -873,9 +847,7 @@ interface StatsDao {
     """)
     suspend fun getReplayCount(startTime: Long, endTime: Long): Int
     
-    // =====================
     // Insights Queries
-    // =====================
 
     /**
      * Binge Listening: Find artists played repeatedly in a short session.
@@ -1083,9 +1055,7 @@ interface StatsDao {
     """)
     suspend fun getHourlyCompletionStats(startTime: Long, endTime: Long): List<HourlyCompletionStats>
 
-    // =====================
     // Year-over-Year Comparison
-    // =====================
 
     /**
      * Get stats for a specific year.
@@ -1101,9 +1071,7 @@ interface StatsDao {
     """)
     suspend fun getYearStats(year: String): YearStatsRaw
 
-    // =====================
     // Spotify Audio Features Stats
-    // =====================
 
     /**
      * Get average audio features for tracks in a time range.
@@ -1169,9 +1137,7 @@ interface StatsDao {
     suspend fun getTempoDistributionRaw(startTime: Long, endTime: Long): List<TempoDistributionRaw>
 
 
-    // =====================
     // History
-    // =====================
 
     /**
      * Get listening history with track metadata.
@@ -1354,9 +1320,7 @@ interface StatsDao {
         endTime: Long? = null
     ): Int
 
-    // =====================
     // Single Entity Stats
-    // =====================
 
     @Query("SELECT COUNT(*) FROM listening_events WHERE track_id = :trackId")
     suspend fun getTrackPlayCount(trackId: Long): Int
@@ -1370,9 +1334,7 @@ interface StatsDao {
     @Query("SELECT MAX(timestamp) FROM listening_events WHERE track_id = :trackId")
     suspend fun getTrackLastPlayed(trackId: Long): Long?
     
-    // =====================
     // Optimized Track Engagement Queries
-    // =====================
     
     /**
      * Get full engagement metrics for a track in a single optimized query.
@@ -1499,9 +1461,7 @@ interface StatsDao {
     """)
     suspend fun getArtistFirstListen(artistName: String): FirstListen?
 
-    // =====================
     // Extended Artist Stats
-    // =====================
 
     /**
      * Get unique albums played for an artist.
@@ -1807,9 +1767,7 @@ interface StatsDao {
     """)
     suspend fun getTrackAudioFeaturesRaw(trackId: Long): TrackAudioFeaturesRaw?
     
-    // =====================
     // Partial Match Artist Queries (for split multi-artist entries)
-    // =====================
     
     /**
      * Get play count for artist using partial match (LIKE).
@@ -1934,10 +1892,8 @@ interface StatsDao {
     """)
     suspend fun getTopAlbumsForArtistPartialMatch(artistName: String, limit: Int): List<TopAlbum>
     
-    // =====================================================
     // ARTIST ID-BASED QUERIES (using track_artists junction table)
     // These provide proper relational lookups using artist IDs
-    // =====================================================
 
     /**
      * Get play count for an artist by ID using track_artists junction table.
@@ -2097,10 +2053,8 @@ interface StatsDao {
     """)
     suspend fun getTopAlbumsForArtistById(artistId: Long, limit: Int): List<TopAlbum>
 
-    // =====================
     // Content-Type Filtered Stats Queries
     // These exclude podcasts/audiobooks from stats when user has marked them
-    // =====================
 
     /**
      * Get top tracks by play count with content type filtering.
@@ -2352,13 +2306,11 @@ interface StatsDao {
         filterAudiobooks: Boolean
     ): CombinedBasicStats
 
-    // =====================
     // Ranking Search Queries
     // Live-filter the full ranking by a text query and report each match's
     // GLOBAL rank. The stats CTE is materialized once; the correlated count
     // runs only for matching rows (matches × n, not n²). No window functions:
     // minSdk 26 devices (API 26-28) ship SQLite older than 3.25.
-    // =====================
 
     /**
      * Search the track ranking by play count, returning matches with their global rank.

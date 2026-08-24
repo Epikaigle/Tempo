@@ -30,10 +30,7 @@ import me.avinas.tempo.ui.theme.TempoDarkSurfaceElevated
 import me.avinas.tempo.ui.theme.TempoDarkSurfaceSunken
 import me.avinas.tempo.ui.theme.TempoPrimary
 
-/* Hallmark · component: GlassCard · genre: atmospheric — studio
- * value carries depth; accent ≤7%. Mature, not tinted-wash.
- *
- * Surface roles (one per job, never mixed):
+/* GlassCard surface roles (one per job, never mixed):
  *  - Obsidian     solid near-black anchor — structural stat blocks.
  *  - QuietGlass   ~90% opaque glass + ≤5% accent — analytic cards that must
  *                 stay legible over the art atmosphere.

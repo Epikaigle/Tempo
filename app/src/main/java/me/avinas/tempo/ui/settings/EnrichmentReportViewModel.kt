@@ -64,6 +64,13 @@ class EnrichmentReportViewModel @Inject constructor(
     private val _stats = MutableStateFlow(Stats())
     val stats: StateFlow<Stats> = _stats.asStateFlow()
 
+    /**
+     * Songs that are NOT_FOUND and still inside the 7-day re-enrichment block, so the
+     * current sweep deliberately skips them (they were already searched on every source).
+     */
+    private val _blockedNotFound = MutableStateFlow(0)
+    val blockedNotFound: StateFlow<Int> = _blockedNotFound.asStateFlow()
+
     val bulkProgress: StateFlow<BulkProgress> =
         WorkManager.getInstance(context)
             .getWorkInfosByTagFlow(EnrichmentWorker.TAG_ENRICH_ALL)
@@ -112,6 +119,7 @@ class EnrichmentReportViewModel @Inject constructor(
                 notQueued = enrichedMetadataRepository.countTracksWithoutEnrichedMetadata(),
                 withAlbumArt = enrichedMetadataRepository.countTracksWithAlbumArt(),
             )
+            _blockedNotFound.value = enrichedMetadataRepository.countNotFoundBlockedFromRequeue()
         }
     }
 
@@ -120,7 +128,9 @@ class EnrichmentReportViewModel @Inject constructor(
         viewModelScope.launch {
             // First queue tracks that never got a metadata row (invisible to the
             // status counts until now), then requeue every non-enriched track back
-            // to PENDING so the sweep covers the whole library.
+            // to PENDING so the sweep covers the whole library. Tracks that came back
+            // NOT_FOUND within the last 7 days are NOT requeued — re-querying every
+            // source for them would only burn API quota (exploit guard).
             enrichedMetadataRepository.ensurePendingForAllTracks()
             enrichedMetadataRepository.requeueAllForEnrichment()
             val pending = enrichedMetadataRepository.getEnrichmentStats()[EnrichmentStatus.PENDING] ?: 0

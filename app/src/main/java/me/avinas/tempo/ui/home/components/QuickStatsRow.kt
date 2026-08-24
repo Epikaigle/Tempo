@@ -26,7 +26,7 @@ import me.avinas.tempo.R
 import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.ui.theme.*
 
-/* Hallmark · QuickStatsRow — two figures, shared baseline */
+/* QuickStatsRow — two figures, shared baseline */
 @Composable
 fun QuickStatsRow(
     topArtistName: String?,

@@ -25,46 +25,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Service for importing user's top tracks and artists from Spotify's /me/top endpoints.
- * 
- * =====================================================
- * PURPOSE: Library Population & Listening History Seeding
- * =====================================================
- * 
- * This service fetches user's top tracks/artists from Spotify and uses them to:
- * 1. Populate the Track/Artist tables with high-quality metadata
- * 2. Get GENRES from top artists (Spotify only provides genres at artist level)
- * 3. Create LISTENING EVENTS that reflect actual Spotify usage patterns
- * 4. Pre-populate the library for new users
- * 
- * =====================================================
- * DESIGN PHILOSOPHY: Smart Data That Feels Authentic
- * =====================================================
- * 
- * The goal is NOT to avoid creating data - an empty stats page is terrible UX.
- * Instead, we CREATE DATA INTELLIGENTLY based on real signals:
- * 
- * - Spotify's "top tracks" API returns tracks RANKED by actual play frequency
- * - A #1 ranked track was genuinely listened to MORE than a #50 ranked track
- * - We use this ranking to generate proportional listening events
- * - Higher ranked = more events, lower ranked = fewer events
- * - Events are spread naturally over time (not clustered)
- * - All imported events are tagged with IMPORT_SOURCE for transparency
- * 
- * This approach:
- * ✓ Gives new users immediate value (populated stats)
- * ✓ Reflects their REAL listening preferences (based on Spotify's ranking)
- * ✓ Creates realistic-looking history (time distribution)
- * ✓ Maintains data integrity (clearly marked as imported)
- * 
- * =====================================================
- * PERFORMANCE CONSIDERATIONS
- * =====================================================
- * 
- * - Uses batched inserts with transactions
- * - Yields between batches to prevent ANR
- * - Reports progress for UI feedback
- * - Skips re-enrichment (data already has album art, etc.)
+ * Service for importing top tracks and artists from Spotify `/me/top` endpoints.
  */
 @Singleton
 class SpotifyTopItemsService @Inject constructor(

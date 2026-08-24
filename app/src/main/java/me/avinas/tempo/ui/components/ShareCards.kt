@@ -46,8 +46,8 @@ fun ShareCardBackground(
         modifier = modifier
             .background(brush = Brush.verticalGradient(palette.gradient))
     ) {
-        // Blurred dynamic background image if available
-        if (!imageUrl.isNullOrBlank()) {
+        // Blurred artwork backdrop — only for themes built on the photo
+        if (palette.usesArtwork && !imageUrl.isNullOrBlank()) {
             CachedAsyncImage(
                 imageUrl = imageUrl,
                 contentDescription = null,
@@ -64,38 +64,8 @@ fun ShareCardBackground(
             )
         }
 
-        // Decorative ambient glow
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 50.dp, y = (-50).dp)
-                .size(300.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            palette.glowTop.copy(alpha = palette.glowAlpha),
-                            Color.Transparent
-                        )
-                    ),
-                    shape = CircleShape
-                )
-        )
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .offset(x = (-50).dp, y = 50.dp)
-                .size(300.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            palette.glowBottom.copy(alpha = palette.glowAlpha),
-                            Color.Transparent
-                        )
-                    ),
-                    shape = CircleShape
-                )
-        )
+        // Theme-specific backdrop decoration (glow orbs, aurora bands, rays…)
+        ShareThemeDecorations(palette = palette)
 
         content()
 

@@ -36,7 +36,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
-/* Hallmark · ArtAtmosphere — "art as atmosphere" room layer.
+/* ArtAtmosphere — "art as atmosphere" room layer.
  * Full-viewport wash of the track's cover art behind all content.
  *
  * Performance contract: everything paints in ONE Canvas draw pass — art,

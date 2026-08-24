@@ -17,12 +17,7 @@ import javax.inject.Named
 import javax.inject.Singleton
 
 /**
- * Service for fetching metadata from iTunes Search API.
- * 
- * iTunes is excellent for mainstream commercial music with high-quality
- * album artwork. No authentication required!
- * 
- * Used as a fallback when MusicBrainz and Last.fm don't have cover art.
+ * Service for fetching album art, artist photos, and preview audio from iTunes / Apple Music.
  */
 @Singleton
 class ITunesEnrichmentService @Inject constructor(
@@ -34,7 +29,7 @@ class ITunesEnrichmentService @Inject constructor(
         private const val TAG = "iTunesEnrichment"
         private const val RATE_LIMIT_DELAY_MS = 500L // 500ms between requests (iTunes has relaxed rate limits)
         
-        // === Multiple regex strategies for extracting artist images from Apple Music HTML ===
+        // Multiple regex strategies for extracting artist images from Apple Music HTML
         
         // AMCArtistImages CDN URL - Apple's dedicated artist photo path (most reliable signal)
         // Note: Apple Music sometimes hosts actual artist images under /Features or /Music paths
@@ -104,20 +99,6 @@ class ITunesEnrichmentService @Inject constructor(
 
     /**
      * Search for album artwork using iTunes Search API.
-     * 
-     * @param artist Artist name
-     * @param album Album name (optional but recommended)
-     * @param track Track name (optional, for better matching)
-     * @return iTunesResult with artwork URLs and metadata
-     */
-    /**
-     * Search for album artwork using iTunes Search API.
-     * 
-     * Uses multiple search strategies to maximize match rate:
-     * 1. Primary Artist + Album (most precise)
-     * 2. Primary Artist + Track
-     * 3. Secondary Artists + Track (if applicable)
-     * 4. Track Name Only (fallback, filtered by artist)
      * 
      * @param artist Artist name
      * @param album Album name (optional but recommended)
@@ -817,19 +798,6 @@ class ITunesEnrichmentService @Inject constructor(
         return "$basePath/${size}x${size}cc.$ext"
     }
 
-    /**
-     * Build search query from artist, album, and track.
-     * iTunes search works best with "artist album" format.
-     */
-    /**
-     * Build list of search strategies for iTunes.
-     * 
-     * Generates multiple search queries to try in order of precision:
-     * 1. Primary Artist + Album (if album exists)
-     * 2. Primary Artist + Track (if track exists)
-     * 3. Secondary Artists + Track (iterates through other artists)
-     * 4. Track Name Only (filtered by artist in the main loop)
-     */
     private fun buildSearchStrategies(artist: String, album: String?, track: String?): List<String> {
         val strategies = mutableListOf<String>()
         val primaryArtist = ArtistParser.getPrimaryArtist(artist)

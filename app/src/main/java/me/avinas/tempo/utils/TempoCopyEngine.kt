@@ -123,7 +123,7 @@ object TempoCopyEngine {
         ).random()
     }
 
-    // --- Insight Copy ---
+    // Insight Copy
 
     fun getMoodTitle(valence: Float, energy: Float): String {
         return when {
