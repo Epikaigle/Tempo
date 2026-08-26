@@ -140,7 +140,11 @@ class GoogleAuthManager @Inject constructor(
         
         return when (credential) {
             is CustomCredential -> {
-                if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                val isGoogleIdCredential =
+                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL ||
+                        credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_SIWG_CREDENTIAL
+
+                if (isGoogleIdCredential) {
                     try {
                         val googleIdCredential = GoogleIdTokenCredential.createFrom(credential.data)
                         
@@ -292,12 +296,15 @@ class GoogleAuthManager @Inject constructor(
      * account the user signed in with, so Google Play services issues an access
      * token against the consent screen that lists the `drive.file` scope.
      *
-     * Without an explicit client binding (or the `default_web_client_id` string
-     * resource), Google Play services falls back to an implicit OAuth client and
-     * may return a token that does NOT include `drive.file`. The Drive API then
-     * answers HTTP 403 "Permission denied" (insufficientPermissions).
+     * A Drive authorization request must never fall back to an implicit OAuth
+     * client: that can mint a token without the required `drive.file` scope and
+     * later surface as a misleading Drive permission failure.
      */
     private fun buildDriveAuthRequest(): AuthorizationRequest {
+        val webClientId = requireNotNull(configuredWebClientId()) {
+            "GOOGLE_WEB_CLIENT_ID is required for Google Drive authorization"
+        }
+
         val builder = AuthorizationRequest.Builder()
             .setRequestedScopes(listOf(DRIVE_SCOPE))
 
@@ -306,14 +313,8 @@ class GoogleAuthManager @Inject constructor(
             builder.setAccount(Account(account.email, "com.google"))
         }
 
-        // requestOfflineAccess(webClientId) ties the request to the configured
-        // OAuth client AND keeps Google Play services able to mint fresh access
-        // tokens for background workers. Skipped when no client ID is baked in
-        // (e.g. CI builds without local.properties) - GMS then uses the
-        // default_web_client_id resource.
-        configuredWebClientId()?.let { webClientId ->
-            builder.requestOfflineAccess(webClientId)
-        }
+        // Bind every Drive token request to the configured OAuth Web client.
+        builder.requestOfflineAccess(webClientId)
 
         return builder.build()
     }
@@ -529,6 +530,14 @@ class GoogleAuthManager @Inject constructor(
         if (_isSignedIn.value && authorizationResult?.accessToken != null) {
             Log.d(TAG, "Session already active in memory")
             return@withContext true
+        }
+
+        // Never attempt background authorization against an implicit OAuth client.
+        // Builds without the configured Web client ID must require an interactive,
+        // correctly configured build instead of silently minting the wrong token.
+        if (configuredWebClientId() == null) {
+            Log.w(TAG, "Skipping silent session restore: GOOGLE_WEB_CLIENT_ID is blank")
+            return@withContext false
         }
         
         // Step 2: Try to restore from encrypted storage
