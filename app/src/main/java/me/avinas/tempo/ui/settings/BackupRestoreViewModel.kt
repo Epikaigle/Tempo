@@ -356,9 +356,6 @@ class BackupRestoreViewModel @Inject constructor(
                 GoogleSignInResult.Cancelled -> {
                     _driveOperation.value = DriveOperationState.Idle
                 }
-                GoogleSignInResult.NoCredentials -> {
-                    _driveOperation.value = DriveOperationState.Error("No Google accounts found on device")
-                }
             }
         }
     }

@@ -18,6 +18,7 @@ import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -70,29 +71,39 @@ class GoogleAuthManager @Inject constructor(
     
     // Cached authorization result for Drive API access
     private var authorizationResult: AuthorizationResult? = null
+
+    private fun configuredWebClientId(): String? =
+        BuildConfig.GOOGLE_WEB_CLIENT_ID.trim().takeIf { it.isNotEmpty() }
     
     /**
      * Sign in with Google using Credential Manager.
-     * Shows a bottom sheet with available Google accounts.
+     * Shows the explicit Sign in with Google account chooser.
      * 
      * @param activity The Activity context REQUIRED for Credential Manager UI
      */
     suspend fun signIn(activity: Activity): GoogleSignInResult = withContext(Dispatchers.Main) {
+        val webClientId = configuredWebClientId()
+            ?: return@withContext GoogleSignInResult.Error(
+                "Google Sign-In is not configured in this build (missing GOOGLE_WEB_CLIENT_ID)."
+            ).also {
+                Log.e(TAG, "Cannot start Google Sign-In: GOOGLE_WEB_CLIENT_ID is blank")
+            }
+
         try {
-            Log.d(TAG, "Starting Google Sign-In with Credential Manager")
+            Log.d(TAG, "Starting explicit Google Sign-In with Credential Manager")
             
             // Create CredentialManager with Activity context
             val credentialManager = CredentialManager.create(activity)
             
-            // Build Google ID request
-            val googleIdOption = GetGoogleIdOption.Builder()
-                .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-                .setFilterByAuthorizedAccounts(false) // Show all accounts
-                .setAutoSelectEnabled(false) // Let user choose
+            // A user tapping a dedicated "Sign in with Google" button should use
+            // GetSignInWithGoogleOption. GetGoogleIdOption is intended for the
+            // general credential selector / session-restore path and can return
+            // NoCredentialException even when a Google account exists on-device.
+            val googleSignInOption = GetSignInWithGoogleOption.Builder(webClientId)
                 .build()
             
             val request = GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
+                .addCredentialOption(googleSignInOption)
                 .build()
             
             // CRITICAL: Must use Activity context here, not Application context
@@ -103,8 +114,15 @@ class GoogleAuthManager @Inject constructor(
             Log.d(TAG, "Sign-in cancelled by user")
             GoogleSignInResult.Cancelled
         } catch (e: NoCredentialException) {
-            Log.w(TAG, "No credentials available", e)
-            GoogleSignInResult.NoCredentials
+            // NoCredentialException does not mean there is no Google account on
+            // the device. It means Credential Manager could not return a usable
+            // credential for this request, so surface an actionable error instead
+            // of the misleading "No Google accounts found" message.
+            Log.w(TAG, "No Google credential available for explicit sign-in", e)
+            GoogleSignInResult.Error(
+                "Google Sign-In is unavailable. Check Google Play services and your Google account settings, then try again.",
+                e
+            )
         } catch (e: GetCredentialException) {
             Log.e(TAG, "Sign-in failed", e)
             GoogleSignInResult.Error("Sign-in failed: ${e.message}", e)
@@ -122,12 +140,20 @@ class GoogleAuthManager @Inject constructor(
         
         return when (credential) {
             is CustomCredential -> {
-                if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                val isGoogleIdCredential =
+                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL ||
+                        credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_SIWG_CREDENTIAL
+
+                if (isGoogleIdCredential) {
                     try {
                         val googleIdCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                        val email = googleIdCredential.email?.takeIf { it.isNotBlank() }
+                            ?: return GoogleSignInResult.Error(
+                                "Google Sign-In did not return an email address for the selected account."
+                            )
                         
                         val account = GoogleAccount(
-                            email = googleIdCredential.id,
+                            email = email,
                             displayName = googleIdCredential.displayName,
                             photoUrl = googleIdCredential.profilePictureUri?.toString()
                         )
@@ -274,12 +300,15 @@ class GoogleAuthManager @Inject constructor(
      * account the user signed in with, so Google Play services issues an access
      * token against the consent screen that lists the `drive.file` scope.
      *
-     * Without an explicit client binding (or the `default_web_client_id` string
-     * resource), Google Play services falls back to an implicit OAuth client and
-     * may return a token that does NOT include `drive.file`. The Drive API then
-     * answers HTTP 403 "Permission denied" (insufficientPermissions).
+     * A Drive authorization request must never fall back to an implicit OAuth
+     * client: that can mint a token without the required `drive.file` scope and
+     * later surface as a misleading Drive permission failure.
      */
     private fun buildDriveAuthRequest(): AuthorizationRequest {
+        val webClientId = requireNotNull(configuredWebClientId()) {
+            "GOOGLE_WEB_CLIENT_ID is required for Google Drive authorization"
+        }
+
         val builder = AuthorizationRequest.Builder()
             .setRequestedScopes(listOf(DRIVE_SCOPE))
 
@@ -288,14 +317,8 @@ class GoogleAuthManager @Inject constructor(
             builder.setAccount(Account(account.email, "com.google"))
         }
 
-        // requestOfflineAccess(webClientId) ties the request to the configured
-        // OAuth client AND keeps Google Play services able to mint fresh access
-        // tokens for background workers. Skipped when no client ID is baked in
-        // (e.g. CI builds without local.properties) - GMS then uses the
-        // default_web_client_id resource.
-        if (!BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
-            builder.requestOfflineAccess(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-        }
+        // Bind every Drive token request to the configured OAuth Web client.
+        builder.requestOfflineAccess(webClientId)
 
         return builder.build()
     }
@@ -463,13 +486,21 @@ class GoogleAuthManager @Inject constructor(
      * @param activity The Activity context REQUIRED for Credential Manager UI
      */
     suspend fun restoreSession(activity: Activity): Boolean = withContext(Dispatchers.Main) {
+        val webClientId = configuredWebClientId()
+        if (webClientId == null) {
+            Log.w(TAG, "Skipping session restore: GOOGLE_WEB_CLIENT_ID is blank")
+            return@withContext false
+        }
+
         try {
             Log.d(TAG, "Attempting to restore session")
             
             val credentialManager = CredentialManager.create(activity)
             
+            // Session restore intentionally uses GetGoogleIdOption so Credential
+            // Manager can restrict the request to previously authorized accounts.
             val googleIdOption = GetGoogleIdOption.Builder()
-                .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                .setServerClientId(webClientId)
                 .setFilterByAuthorizedAccounts(true) // Only previously authorized accounts
                 .setAutoSelectEnabled(true) // Auto-select if only one account
                 .build()
@@ -503,6 +534,14 @@ class GoogleAuthManager @Inject constructor(
         if (_isSignedIn.value && authorizationResult?.accessToken != null) {
             Log.d(TAG, "Session already active in memory")
             return@withContext true
+        }
+
+        // Never attempt background authorization against an implicit OAuth client.
+        // Builds without the configured Web client ID must require an interactive,
+        // correctly configured build instead of silently minting the wrong token.
+        if (configuredWebClientId() == null) {
+            Log.w(TAG, "Skipping silent session restore: GOOGLE_WEB_CLIENT_ID is blank")
+            return@withContext false
         }
         
         // Step 2: Try to restore from encrypted storage

@@ -32,7 +32,6 @@ sealed class GoogleSignInResult {
     data class Success(val account: GoogleAccount) : GoogleSignInResult()
     data class Error(val message: String, val exception: Exception? = null) : GoogleSignInResult()
     data object Cancelled : GoogleSignInResult()
-    data object NoCredentials : GoogleSignInResult()
 }
 
 /**
