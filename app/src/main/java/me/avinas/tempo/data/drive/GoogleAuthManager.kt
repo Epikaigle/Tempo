@@ -147,9 +147,13 @@ class GoogleAuthManager @Inject constructor(
                 if (isGoogleIdCredential) {
                     try {
                         val googleIdCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                        val email = googleIdCredential.email?.takeIf { it.isNotBlank() }
+                            ?: return GoogleSignInResult.Error(
+                                "Google Sign-In did not return an email address for the selected account."
+                            )
                         
                         val account = GoogleAccount(
-                            email = googleIdCredential.id,
+                            email = email,
                             displayName = googleIdCredential.displayName,
                             photoUrl = googleIdCredential.profilePictureUri?.toString()
                         )
