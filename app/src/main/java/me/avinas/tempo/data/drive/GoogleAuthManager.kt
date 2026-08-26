@@ -18,6 +18,7 @@ import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -70,29 +71,39 @@ class GoogleAuthManager @Inject constructor(
     
     // Cached authorization result for Drive API access
     private var authorizationResult: AuthorizationResult? = null
+
+    private fun configuredWebClientId(): String? =
+        BuildConfig.GOOGLE_WEB_CLIENT_ID.trim().takeIf { it.isNotEmpty() }
     
     /**
      * Sign in with Google using Credential Manager.
-     * Shows a bottom sheet with available Google accounts.
+     * Shows the explicit Sign in with Google account chooser.
      * 
      * @param activity The Activity context REQUIRED for Credential Manager UI
      */
     suspend fun signIn(activity: Activity): GoogleSignInResult = withContext(Dispatchers.Main) {
+        val webClientId = configuredWebClientId()
+            ?: return@withContext GoogleSignInResult.Error(
+                "Google Sign-In is not configured in this build (missing GOOGLE_WEB_CLIENT_ID)."
+            ).also {
+                Log.e(TAG, "Cannot start Google Sign-In: GOOGLE_WEB_CLIENT_ID is blank")
+            }
+
         try {
-            Log.d(TAG, "Starting Google Sign-In with Credential Manager")
+            Log.d(TAG, "Starting explicit Google Sign-In with Credential Manager")
             
             // Create CredentialManager with Activity context
             val credentialManager = CredentialManager.create(activity)
             
-            // Build Google ID request
-            val googleIdOption = GetGoogleIdOption.Builder()
-                .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-                .setFilterByAuthorizedAccounts(false) // Show all accounts
-                .setAutoSelectEnabled(false) // Let user choose
+            // A user tapping a dedicated "Sign in with Google" button should use
+            // GetSignInWithGoogleOption. GetGoogleIdOption is intended for the
+            // general credential selector / session-restore path and can return
+            // NoCredentialException even when a Google account exists on-device.
+            val googleSignInOption = GetSignInWithGoogleOption.Builder(webClientId)
                 .build()
             
             val request = GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
+                .addCredentialOption(googleSignInOption)
                 .build()
             
             // CRITICAL: Must use Activity context here, not Application context
@@ -103,8 +114,15 @@ class GoogleAuthManager @Inject constructor(
             Log.d(TAG, "Sign-in cancelled by user")
             GoogleSignInResult.Cancelled
         } catch (e: NoCredentialException) {
-            Log.w(TAG, "No credentials available", e)
-            GoogleSignInResult.NoCredentials
+            // NoCredentialException does not mean there is no Google account on
+            // the device. It means Credential Manager could not return a usable
+            // credential for this request, so surface an actionable error instead
+            // of the misleading "No Google accounts found" message.
+            Log.w(TAG, "No Google credential available for explicit sign-in", e)
+            GoogleSignInResult.Error(
+                "Google Sign-In is unavailable. Check Google Play services and your Google account settings, then try again.",
+                e
+            )
         } catch (e: GetCredentialException) {
             Log.e(TAG, "Sign-in failed", e)
             GoogleSignInResult.Error("Sign-in failed: ${e.message}", e)
@@ -293,8 +311,8 @@ class GoogleAuthManager @Inject constructor(
         // tokens for background workers. Skipped when no client ID is baked in
         // (e.g. CI builds without local.properties) - GMS then uses the
         // default_web_client_id resource.
-        if (!BuildConfig.GOOGLE_WEB_CLIENT_ID.isBlank()) {
-            builder.requestOfflineAccess(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+        configuredWebClientId()?.let { webClientId ->
+            builder.requestOfflineAccess(webClientId)
         }
 
         return builder.build()
@@ -463,13 +481,21 @@ class GoogleAuthManager @Inject constructor(
      * @param activity The Activity context REQUIRED for Credential Manager UI
      */
     suspend fun restoreSession(activity: Activity): Boolean = withContext(Dispatchers.Main) {
+        val webClientId = configuredWebClientId()
+        if (webClientId == null) {
+            Log.w(TAG, "Skipping session restore: GOOGLE_WEB_CLIENT_ID is blank")
+            return@withContext false
+        }
+
         try {
             Log.d(TAG, "Attempting to restore session")
             
             val credentialManager = CredentialManager.create(activity)
             
+            // Session restore intentionally uses GetGoogleIdOption so Credential
+            // Manager can restrict the request to previously authorized accounts.
             val googleIdOption = GetGoogleIdOption.Builder()
-                .setServerClientId(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                .setServerClientId(webClientId)
                 .setFilterByAuthorizedAccounts(true) // Only previously authorized accounts
                 .setAutoSelectEnabled(true) // Auto-select if only one account
                 .build()
