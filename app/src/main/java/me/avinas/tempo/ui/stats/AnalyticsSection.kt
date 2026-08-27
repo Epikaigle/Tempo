@@ -162,7 +162,7 @@ fun HourlyChart(hourlyData: List<HourlyDistribution>) {
                             .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
                             .background(
                                 Brush.verticalGradient(
-                                    colors = listOf(Color(0xFFA855F7), Color(0xFFA855F7).copy(alpha = 0.3f))
+                                    colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                                 )
                             )
                     )

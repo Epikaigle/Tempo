@@ -99,6 +99,9 @@ sealed interface SpotlightStoryPage {
         override val id: String = "personality",
         override val conversationalText: String,
         val personalityType: String,
+        // Stable English key from the generator ("Hip Hop Head", ...) — never localized,
+        // so icon/color mapping survives locale changes. Display name is personalityType.
+        val personalityKey: String = "The Melophile",
         val description: String,
         override val previewUrl: String? = null
     ) : SpotlightStoryPage
@@ -248,6 +251,7 @@ sealed interface SpotlightStoryPage {
         override val conversationalText: String,
         val totalMinutes: Int,
         val personalityType: String,
+        val personalityKey: String = "The Melophile",
         val topArtists: List<ArtistEntry>,
         val topSongs: List<SongEntry>,
         val topGenres: List<String>,

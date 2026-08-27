@@ -3,24 +3,10 @@ package me.avinas.tempo.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ──────────────────────────────────────────────────────────────
-// App color palette — anchor hue 168 (teal). Neutrals tinted
-// toward anchor; no pure black/white; one accent.
+// App color palette: Teal anchor, neutral dark surfaces, accent tokens.
 // ──────────────────────────────────────────────────────────────
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
-
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
-
-val PrimaryPurple = Color(0xFF8B5CF6)
-val SecondaryPurple = Color(0xFF7C3AED)
-val TertiaryPurple = Color(0xFF5B21B6)
-val AccentPurple = Color(0xFFA78BFA)
-
-// ── Studio surfaces — neutral near-black, not teal-tinted ──
+// Studio surfaces
 val TempoDarkBackground = Color(0xFF0A0E0E)
 val TempoDarkSurface = Color(0xFF101414)
 val TempoDarkSurfaceElevated = Color(0xFF141818)
@@ -75,7 +61,7 @@ val MeshGradient1 = Color(0xFF141818)
 val MeshGradient2 = Color(0xFF0A0E0E)
 val MeshGradient3 = Color(0xFF111616)
 
-// Legacy support — keep symbol so older callsites compile
+// Legacy alias support
 val TempoRed = Color(0xFF2FDBB8)
 val TempoBackground = TempoDarkBackground
 val TempoSurface = TempoDarkSurface
@@ -96,15 +82,13 @@ val NeonRed = Color(0xFF2FDBB8)
 val ElectricBlue = Color(0xFF3B82F6)
 val GoldenAmber = Color(0xFFF59E0B)
 
-val SurfaceVariantDark = Color(0xFF49454F)
-val OnSurfaceVariantDark = Color(0xFFCAC4D0)
-val OutlineDark = Color(0xFF938F99)
+// Expressive accent tokens
+val TempoPop = Color(0xFFF472B6)
+val TempoPopBright = Color(0xFFF9A8D4)
+val TempoPopContainer = Color(0xFF4A1533)
+val OnTempoPopContainer = Color(0xFFFFD9E8)
 
-val SurfaceVariantLight = Color(0xFFE7E0EC)
-val OnSurfaceVariantLight = Color(0xFF49454F)
-val OutlineLight = Color(0xFF79747E)
-
-// ── Insight palette — token discipline (no mid-render hex) ──
+// Insight card metrics
 val InsightMood = Color(0xFF8B5CF6)
 val InsightPeakTime = Color(0xFFF59E0B)
 val InsightBinge = Color(0xFFEC4899)
@@ -125,14 +109,14 @@ val LevelRingSweepStart = Color(0xFFEC4899)
 val LevelRingSweepMid = Color(0xFFA855F7)
 val LevelRingSweepEnd = Color(0xFF6366F1)
 
-// Pill surface — warm frost, not pure white; tints toward paper
+// Pill tokens
 val PillSurface = Color(0xFFF6FAF8)
 val PillBorder = Color(0xFFE2E8F0)
 val PillInnerSurface = Color(0xFFF1F5F9)
 val PillTextPrimary = Color(0xFF111827)
 
 // ──────────────────────────────────────────────────────────────
-// Glass system — neutral studio (value = depth, teal = accent ≤7%)
+// Glass system tokens
 // ──────────────────────────────────────────────────────────────
 val GlassTintTeal = Color(0xFF101414)
 val GlassTintTealDeep = Color(0xFF0A0E0E)
@@ -143,9 +127,6 @@ val GlassBorderSoft = Color(0x0FE6EAEA)
 val GlassBorderMedium = Color(0x14E6EAEA)
 val GlassBorderStrong = Color(0x1FE6EAEA)
 val GlassBorderTint = Color(0x142FDBB8)
-// Frost for glass cards sitting on the blurred art canvas — over the darkened
-// canvas the standard 7% frost reads as invisible; ~18% keeps card boundaries
-// real (measured: card ~65 vs canvas ~30).
 val GlassCardOnArt = Color(0x2EE6EAEA)
 val GlassHighlightTop = Color(0x0CE6EAEA)
 val GlassShadowTeal = Color(0x4D080A0A)

@@ -340,6 +340,7 @@
     <string name="spotlight_loading">Loading your cards…</string>
     <string name="spotlight_no_cards">No cards available</string>
     <string name="spotlight_preparing">Preparing your story…</string>
+    <string name="spotlight_paused">Paused</string>
     <string name="spotlight_view_story">View Story</string>
     <string name="spotlight_view_story_for">View the story for %1$s</string>
     <string name="spotlight_your_music">Your Music %1$s</string>

@@ -351,8 +351,8 @@ private fun AppPreferenceItem(
                 checked = app.isEnabled,
                 onCheckedChange = onToggle,
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = Color(0xFF4CAF50),
+                    checkedThumbColor = TextOnAccent,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
                     uncheckedThumbColor = Color.White.copy(alpha = 0.8f),
                     uncheckedTrackColor = Color.White.copy(alpha = 0.2f),
                     checkedBorderColor = Color.Transparent,

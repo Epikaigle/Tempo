@@ -117,3 +117,7 @@ app/src/test/java/me/avinas/tempo/data/stats/TimeRangeTest.kt
 # Tool cache / generated analysis output
 /.hallmark/
 /graphify-out/
+/.agents
+/.claude
+/.kalakar
+skills-lock.json

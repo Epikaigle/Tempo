@@ -169,7 +169,7 @@ fun PrivacyExplainerScreen(
                 AnimatedOpacity(delay = 600, visible = listVisible.value) {
                     PrivacyPoint(
                         icon = Icons.Default.Visibility,
-                        iconColor = Color(0xFFA855F7),
+                        iconColor = MaterialTheme.colorScheme.primary,
                         title = stringResource(R.string.privacy_notif_title),
                         description = stringResource(R.string.privacy_notif_desc)
                     )

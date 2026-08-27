@@ -213,7 +213,7 @@ class SpotlightViewModel @Inject constructor(
         storyJob?.cancel()
         storyJob = viewModelScope.launch {
             try {
-                val storyPages = cardGenerator.generateStory(timeRange, debugShowAll = _uiState.value.isTestMode)
+                val storyPages = cardGenerator.generateStory(timeRange)
                 if (_uiState.value.selectedTimeRange != timeRange) return@launch
                 _uiState.value = _uiState.value.copy(
                     storyPages = storyPages,
@@ -223,12 +223,6 @@ class SpotlightViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(storyLoading = false)
             }
         }
-    }
-
-    fun toggleTestMode() {
-        val newMode = !_uiState.value.isTestMode
-        _uiState.value = _uiState.value.copy(isTestMode = newMode, storyLoading = true)
-        loadStory(_uiState.value.selectedTimeRange)
     }
 
     private fun checkIfStoryLocked(timeRange: TimeRange) {
@@ -305,6 +299,5 @@ data class SpotlightUiState(
     val storyLoading: Boolean = true,
     val selectedTimeRange: TimeRange = TimeRange.THIS_MONTH,
     val isStoryLocked: Boolean = false,
-    val storyLockMessage: String = "",
-    val isTestMode: Boolean = false
+    val storyLockMessage: String = ""
 )

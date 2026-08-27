@@ -611,7 +611,7 @@ fun DiscoverySection(
                 subtitle = stringResource(R.string.home_how_unique),
                 icon = Icons.Default.Fingerprint,
                 color = InsightMood,
-                backgroundColor = TertiaryPurple.copy(alpha = 0.2f)
+                backgroundColor = InsightMood.copy(alpha = 0.2f)
             )
         }
     }

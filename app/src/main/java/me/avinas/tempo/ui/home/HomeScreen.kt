@@ -71,6 +71,7 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     var isLaunchingReview by remember { mutableStateOf(false) }
+    var showTodaysOverview by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
     
@@ -264,6 +265,7 @@ fun HomeScreen(
                                     topTrack = uiState.todayTopTrack,
                                     topArtist = uiState.todayTopArtist,
                                     hourlyDistribution = uiState.todayHourlyDistribution,
+                                    periodComparison = uiState.todayPeriodComparison,
                                     onTrackClick = {
                                         uiState.todayTopTrack?.trackId?.let { trackId ->
                                             onNavigateToTrack(trackId)
@@ -279,7 +281,9 @@ fun HomeScreen(
                                                 onNavigateToArtist(artist.artist)
                                             }
                                         }
-                                    }
+                                    },
+                                    onMoreInsightsClick = { showTodaysOverview = true },
+                                    onOpenOverview = { showTodaysOverview = true }
                                 )
                             }
                         }
@@ -463,6 +467,25 @@ fun HomeScreen(
             )
         }
         
+        // Today Overview Overlay — opened by tapping the Today's Listening widget
+        // or its "More insights" link; slides over the home feed until dismissed.
+        if (showTodaysOverview && uiState.todayOverview != null) {
+            TodaysOverviewOverlay(
+                overview = uiState.todayOverview,
+                topTracks = uiState.todayTopTracks,
+                topArtists = uiState.todayTopArtists,
+                hourlyDistribution = uiState.todayHourlyDistribution,
+                periodComparison = uiState.todayPeriodComparison,
+                onDismiss = { showTodaysOverview = false },
+                onViewAllStats = {
+                    showTodaysOverview = false
+                    onNavigateToStats()
+                },
+                onNavigateToTrack = onNavigateToTrack,
+                onNavigateToArtist = onNavigateToArtist
+            )
+        }
+
         // Level Up Celebration Overlay
         if (uiState.isGamificationEnabled && showLevelUp) {
             LevelUpOverlay(

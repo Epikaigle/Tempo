@@ -896,23 +896,17 @@ private fun AudioPreviewPill(
 
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (isPlaying) TempoDarkSurfaceElevated else GlassFrostSoft)
-            .then(
-                if (isPlaying) {
-                    Modifier.border(0.8.dp, accentColor.copy(alpha = 0.28f), RoundedCornerShape(16.dp))
-                } else {
-                    Modifier
-                }
-            )
+            .clip(RoundedCornerShape(14.dp))
+            .background(PillSurface)
+            .border(1.dp, PillBorder, RoundedCornerShape(14.dp))
             .premiumClickable(onClick = onToggle, pressedScale = 0.96f),
     ) {
         Row(
             modifier = Modifier.padding(
-                start = 12.dp,
+                start = 14.dp,
                 end = 14.dp,
-                top = 6.dp,
-                bottom = if (isPlaying || progress > 0f) 8.dp else 7.dp,
+                top = 7.dp,
+                bottom = if (isPlaying || progress > 0f) 9.dp else 7.dp,
             ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -922,19 +916,19 @@ private fun AudioPreviewPill(
                 contentDescription = stringResource(
                     if (isPlaying) R.string.details_preview_pause_cd else R.string.details_preview_play_cd
                 ),
-                tint = if (isPlaying) accentColor else TextTertiary,
-                modifier = Modifier.size(14.dp),
+                tint = PillTextPrimary,
+                modifier = Modifier.size(15.dp),
             )
 
             Text(
                 text = if (isPlaying) timecode else stringResource(R.string.details_preview_label),
                 style = CaptionSmall,
-                fontWeight = if (isPlaying) FontWeight.SemiBold else FontWeight.Medium,
-                color = if (isPlaying) TextPrimary else TextSecondary,
+                fontWeight = FontWeight.Bold,
+                color = PillTextPrimary,
             )
 
             if (isPlaying) {
-                MiniEqualizer(color = accentColor)
+                MiniEqualizer(color = PillTextPrimary)
             }
         }
 
@@ -945,14 +939,14 @@ private fun AudioPreviewPill(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(2.dp)
-                    .background(accentColor.copy(alpha = 0.20f))
+                    .height(2.5.dp)
+                    .background(PillTextPrimary.copy(alpha = 0.14f))
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
                         .fillMaxWidth(animatedProgress)
-                        .background(accentColor)
+                        .background(PillTextPrimary)
                 )
             }
         }

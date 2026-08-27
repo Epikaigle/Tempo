@@ -5,6 +5,9 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -67,6 +70,7 @@ import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.ui.theme.CaptionSmall
 import me.avinas.tempo.ui.theme.Divider
 import me.avinas.tempo.ui.theme.GlassBorderMedium
+import me.avinas.tempo.ui.theme.GlassBorderSoft
 import me.avinas.tempo.ui.theme.GlassBorderStrong
 import me.avinas.tempo.ui.theme.InsightBinge
 import me.avinas.tempo.ui.theme.InsightDanceability
@@ -77,6 +81,7 @@ import me.avinas.tempo.ui.theme.LevelRingSweepStart
 import me.avinas.tempo.ui.theme.TempoAccent
 import me.avinas.tempo.ui.theme.TempoDarkSurface
 import me.avinas.tempo.ui.theme.TempoDarkSurfaceElevated
+import me.avinas.tempo.ui.theme.TempoDarkSurfaceSunken
 import me.avinas.tempo.ui.theme.TempoError
 import me.avinas.tempo.ui.theme.TempoErrorDeep
 import me.avinas.tempo.ui.theme.TempoErrorSoft
@@ -86,6 +91,7 @@ import me.avinas.tempo.ui.theme.TempoSuccessDeep
 import me.avinas.tempo.ui.theme.TempoWarning
 import me.avinas.tempo.ui.theme.TextOnAccent
 import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextQuaternary
 import me.avinas.tempo.ui.theme.TextSecondary
 import me.avinas.tempo.ui.theme.TextTertiary
 import kotlin.math.cos
@@ -280,6 +286,8 @@ fun ProfileScreen(
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedBadge by remember { mutableStateOf<Badge?>(null) }
+    var showBadgeDetails by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val heroScrolledPast by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
@@ -381,6 +389,10 @@ fun ProfileScreen(
                                 categories = uiState.categories,
                                 selectedCategory = uiState.selectedCategory,
                                 onCategorySelected = viewModel::onCategorySelected,
+                                onBadgeClick = { badge ->
+                                    selectedBadge = badge
+                                    showBadgeDetails = true
+                                },
                                 contentModifier = contentModifier,
                                 badgeColumns = badgeColumns
                             )
@@ -420,6 +432,25 @@ fun ProfileScreen(
                     badges = uiState.unacknowledgedBadges,
                     onDismiss = { viewModel.acknowledgeBadges(uiState.unacknowledgedBadges.map { it.badgeId }) }
                 )
+            }
+
+            AnimatedVisibility(
+                visible = showBadgeDetails,
+                enter = fadeIn(tween(220)) + scaleIn(
+                    initialScale = 0.88f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                ),
+                exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.92f, animationSpec = tween(180))
+            ) {
+                val badge = selectedBadge
+                if (badge != null) {
+                    // Re-resolve from the live list so progress stays current if a refresh lands
+                    val liveBadge = uiState.allBadges.firstOrNull { it.badgeId == badge.badgeId } ?: badge
+                    BadgeDetailsOverlay(badge = liveBadge, onDismiss = { showBadgeDetails = false })
+                }
             }
         }
     }
@@ -894,77 +925,162 @@ private fun ChallengeCard(
     val accent = if (isCompleted) TempoSuccessDeep else getDifficultyColor(challenge.difficulty)
     val animatedProgress by animateFloatAsState(
         targetValue = challenge.progressFraction,
-        animationSpec = tween(1200, easing = FastOutSlowInEasing),
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
         label = "challengeProgress"
     )
     val haptic = LocalHapticFeedback.current
 
-    GlassCard(
-        variant = GlassCardVariant.QuietGlass,
-        accentColor = accent,
-        borderColor = if (isCompleted) TempoSuccessDeep.copy(alpha = 0.35f) else null,
-        contentPadding = PaddingValues(18.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        accent.copy(alpha = if (isCompleted) 0.08f else 0.04f),
+                        TempoDarkSurfaceElevated,
+                        TempoDarkSurface
+                    ),
+                    start = Offset(0f, 0f),
+                    end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        if (isCompleted) TempoSuccessDeep.copy(alpha = 0.40f) else accent.copy(alpha = 0.22f),
+                        GlassBorderMedium,
+                        GlassBorderSoft
+                    )
+                ),
+                shape = RoundedCornerShape(20.dp)
+            )
+            .padding(18.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Top metadata row: Difficulty tag, category label, and XP reward pill
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(accent.copy(alpha = 0.12f))
+                            .border(1.dp, accent.copy(alpha = 0.25f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = challenge.difficulty.uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = accent,
+                            letterSpacing = 0.8.sp,
+                            fontSize = 10.sp
+                        )
+                    }
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextQuaternary
+                    )
+                    Text(
+                        text = challenge.category.replace("_", " ").uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = TextTertiary,
+                        letterSpacing = 0.6.sp,
+                        fontSize = 10.sp
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isCompleted) TempoSuccessDeep.copy(alpha = 0.12f) else TempoWarning.copy(alpha = 0.10f))
+                        .border(
+                            1.dp,
+                            if (isCompleted) TempoSuccessDeep.copy(alpha = 0.25f) else TempoWarning.copy(alpha = 0.22f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = if (isCompleted) TempoSuccessDeep else TempoWarning,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Text(
+                        text = "+${challenge.xpReward} XP",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isCompleted) TempoSuccessDeep else TempoWarning,
+                        letterSpacing = 0.4.sp
+                    )
+                }
+            }
+
+            // Core content row: Icon + Title & Description
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(accent.copy(alpha = if (isCompleted) 0.18f else 0.12f))
-                        .border(1.dp, accent.copy(alpha = if (isCompleted) 0.45f else 0.28f), RoundedCornerShape(14.dp)),
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(TempoDarkSurfaceSunken)
+                        .border(1.dp, accent.copy(alpha = if (isCompleted) 0.35f else 0.18f), RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = getChallengeCategoryIcon(challenge.category),
                         contentDescription = null,
                         tint = accent,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(accent))
-                        Text(
-                            text = challenge.difficulty,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = accent,
-                            letterSpacing = 1.sp
-                        )
-                        Text(
-                            text = "·  ${challenge.category.replace("_", " ")}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextTertiary
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(text = challenge.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Spacer(modifier = Modifier.height(4.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = challenge.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
                     Text(
                         text = challenge.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextTertiary,
-                        lineHeight = 20.sp
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        lineHeight = 18.sp
                     )
-                }
-                // Fixed floor keeps the reward column a stable width so the title
-                // line doesn't reflow between a 2-digit and 3-digit XP reward.
-                Column(horizontalAlignment = Alignment.End, modifier = Modifier.widthIn(min = 48.dp)) {
-                    Text(text = "+${challenge.xpReward}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = accent)
-                    Text(text = "XP", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = accent.copy(alpha = 0.7f), letterSpacing = 1.sp)
                 }
             }
 
-            ProgressTrack(progress = animatedProgress, modifier = Modifier.fillMaxWidth(), color = accent)
+            // Progress bar
+            ProgressTrack(
+                progress = animatedProgress,
+                modifier = Modifier.fillMaxWidth(),
+                color = accent,
+                height = 5.dp
+            )
 
+            // Bottom row: numeric progress & status/action
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -973,9 +1089,10 @@ private fun ChallengeCard(
                 Text(
                     text = "${challenge.currentProgress} / ${challenge.targetValue}",
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.SemiBold,
                     color = if (isCompleted) TempoSuccessDeep else TextSecondary
                 )
+
                 when {
                     isCompleted && !isClaimed -> {
                         Button(
@@ -987,27 +1104,50 @@ private fun ChallengeCard(
                                 containerColor = TempoPrimary,
                                 contentColor = TextOnAccent
                             ),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                            modifier = Modifier.height(34.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier.height(32.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.CardGiftcard, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "Claim +${challenge.xpReward} XP", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "Claim +${challenge.xpReward} XP",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                     isCompleted -> {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(TempoSuccessDeep.copy(alpha = 0.10f))
+                                .padding(horizontal = 9.dp, vertical = 4.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = TempoSuccessDeep, modifier = Modifier.size(16.dp))
-                            Text(text = "Claimed", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = TempoSuccessDeep)
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = TempoSuccessDeep,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = "Claimed",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = TempoSuccessDeep
+                            )
                         }
                     }
                     else -> {
                         Text(
-                            text = "In progress",
-                            style = MaterialTheme.typography.labelLarge,
+                            text = "${(animatedProgress * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = accent
                         )
@@ -1029,6 +1169,7 @@ private fun LazyListScope.badgeSection(
     categories: List<String>,
     selectedCategory: String?,
     onCategorySelected: (String?) -> Unit,
+    onBadgeClick: (Badge) -> Unit,
     contentModifier: Modifier,
     badgeColumns: Int = 2
 ) {
@@ -1148,6 +1289,13 @@ private fun LazyListScope.badgeSection(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
+                                    text = spotlightBadge.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
                                     text = if (isAlmostThere) "$remainingLabel to go — keep it up."
                                            else "Earned — push for the next tier.",
                                     style = MaterialTheme.typography.bodySmall,
@@ -1175,7 +1323,7 @@ private fun LazyListScope.badgeSection(
         Column(modifier = contentModifier) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 rowBadges.forEach { badge ->
-                    BadgeCard(badge = badge, modifier = Modifier.weight(1f))
+                    BadgeCard(badge = badge, onClick = { onBadgeClick(badge) }, modifier = Modifier.weight(1f))
                 }
                 repeat(badgeColumns - rowBadges.size) {
                     Spacer(modifier = Modifier.weight(1f))
@@ -1187,7 +1335,7 @@ private fun LazyListScope.badgeSection(
 }
 
 @Composable
-private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier) {
+private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val isEarned = badge.isEarned
     val intrinsicColor = getUniqueBadgeColor(badge.badgeId)
     val rarity = GamificationEngine.getRarity(badge.badgeId)
@@ -1206,7 +1354,7 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier) {
     }
 
     GlassCard(
-        modifier = modifier,
+        modifier = modifier.clickable(onClick = onClick),
         variant = if (isEarned) GlassCardVariant.TintedSolid else GlassCardVariant.Obsidian,
         accentColor = if (isEarned) intrinsicColor else null,
         borderColor = if (isEarned) intrinsicColor.copy(alpha = 0.30f) else null,
@@ -1227,6 +1375,15 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier) {
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.heightIn(min = 36.dp)
+            )
+            Text(
+                text = badge.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isEarned) TextSecondary else TextTertiary,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.heightIn(min = 32.dp)
             )
             Text(
                 text = rarity.label.uppercase(),
@@ -1311,10 +1468,7 @@ private fun BadgeCard(badge: Badge, modifier: Modifier = Modifier) {
     }
 }
 
-// Badge emblem — a struck collector's medallion. Rarity decides the metal
-// of the rim, the badge's intrinsic color becomes the enamel face. Locked
-// badges are unstruck blanks: dark graphite with a faint imprint. The
-// specular highlight is frozen — no infinite sweep, no per-badge timers.
+// Custom silhouette badge emblem with rarity metallic rim and enamel gradient face.
 @Composable
 private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier = Modifier) {
     val isEarned = badge.isEarned
@@ -1328,22 +1482,24 @@ private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier 
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val radius = size.minDimension / 2f
-            val faceRadius = radius * 0.79f
 
-            // Rarity aura — soft light bleeding off EPIC+ coins.
+            val outerPath = BadgeSilhouettes.getPath(badge.badgeId, size, insetScale = 0.96f)
+            val facePath = BadgeSilhouettes.getPath(badge.badgeId, size, insetScale = 0.81f)
+            val hairlinePath = BadgeSilhouettes.getPath(badge.badgeId, size, insetScale = 0.74f)
+
+            // Soft glow for EPIC+ rarity badges
             if (glowAlpha > 0f) {
-                drawCircle(
+                drawPath(
+                    path = outerPath,
                     brush = Brush.radialGradient(
                         colors = listOf(rarityColor.copy(alpha = glowAlpha), Color.Transparent),
                         center = center,
-                        radius = radius * 1.05f
-                    ),
-                    radius = radius * 1.05f,
-                    center = center
+                        radius = radius * 1.15f
+                    )
                 )
             }
 
-            // Rim — the coin is struck from its rarity metal.
+            // Metallic rim
             val rimBrush = if (rarity == GamificationEngine.BadgeRarity.MYTHIC && isEarned) {
                 Brush.sweepGradient(metal, center)
             } else {
@@ -1353,9 +1509,9 @@ private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier 
                     end = Offset(size.width * 0.85f, size.height)
                 )
             }
-            drawCircle(brush = rimBrush, radius = radius, center = center)
+            drawPath(path = outerPath, brush = rimBrush)
 
-            // Enamel face — the badge's own color, lit from the upper left.
+            // Badge face gradient fill
             val faceBrush = if (isEarned) {
                 Brush.radialGradient(
                     colors = listOf(
@@ -1373,20 +1529,18 @@ private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier 
                     radius = radius * 1.2f
                 )
             }
-            drawCircle(brush = faceBrush, radius = faceRadius, center = center)
+            drawPath(path = facePath, brush = faceBrush)
 
-            // Engraved hairline ring just inside the rim.
-            drawCircle(
+            // Inner hairline border
+            drawPath(
+                path = hairlinePath,
                 color = Color.White.copy(alpha = if (isEarned) 0.25f else 0.08f),
-                radius = faceRadius * 0.9f,
-                center = center,
                 style = Stroke(width = 1.dp.toPx())
             )
 
-            // Static specular — a frozen foil highlight, one diagonal stripe.
+            // Static diagonal sheen highlight
             if (isEarned) {
-                val coinPath = Path().apply { addOval(Rect(center, faceRadius)) }
-                clipPath(coinPath) {
+                clipPath(facePath) {
                     rotate(degrees = -24f, pivot = center) {
                         drawRect(
                             brush = Brush.horizontalGradient(
@@ -1396,8 +1550,8 @@ private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier 
                                     Color.Transparent
                                 )
                             ),
-                            topLeft = Offset(center.x - faceRadius * 0.9f, center.y - radius * 1.6f),
-                            size = Size(faceRadius * 0.7f, radius * 3.2f)
+                            topLeft = Offset(center.x - radius * 0.8f, center.y - radius * 1.6f),
+                            size = Size(radius * 0.65f, radius * 3.2f)
                         )
                     }
                 }
@@ -1413,8 +1567,7 @@ private fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier 
     }
 }
 
-// ── Badge identity — intrinsic enamel colors are a data colormap, one per
-// badge id; rarity decides the metal the medallion is struck from. ──
+// Maps badge IDs to their base theme colors
 private fun getUniqueBadgeColor(badgeId: String): Color = when (badgeId) {
     "first_play" -> Color(0xFF10B981)
     "plays_100" -> Color(0xFF3B82F6)
@@ -1657,6 +1810,234 @@ fun ConfettiEffect() {
             )
         }
     }
+}
+
+// Detail overlay for a selected badge, showing star tier progress and criteria.
+@Composable
+fun BadgeDetailsOverlay(badge: Badge, onDismiss: () -> Unit) {
+    val intrinsicColor = getUniqueBadgeColor(badge.badgeId)
+    val rarity = GamificationEngine.getRarity(badge.badgeId)
+    val rarityColor = getRarityColor(rarity)
+    val isBeginner = badge.badgeId in GamificationEngine.BEGINNER_BADGES
+    val def = remember(badge.badgeId) {
+        GamificationEngine.ALL_BADGE_DEFINITIONS.firstOrNull { it.badgeId == badge.badgeId }
+    }
+    val animatedProgress by animateFloatAsState(
+        targetValue = badge.progressFraction,
+        animationSpec = tween(1200, easing = FastOutSlowInEasing),
+        label = "badgeDetailProgress"
+    )
+    val earnedDate = remember(badge.earnedAt) {
+        if (badge.isEarned && badge.earnedAt > 0L) {
+            java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+                .format(java.util.Date(badge.earnedAt))
+        } else null
+    }
+    val xpEarned = GamificationEngine.getBadgeXpContribution(badge.badgeId, badge.stars)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.88f))
+            .clickable { onDismiss() }
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 32.dp)
+        ) {
+            BadgeEmblem(
+                badge = badge,
+                intrinsicColor = intrinsicColor,
+                modifier = Modifier.size(116.dp)
+            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = badge.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = badge.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DetailsChip(text = rarity.label.uppercase(), color = rarityColor)
+                    DetailsChip(
+                        text = getCategoryLabel(badge.category).uppercase(),
+                        color = getCategoryColor(badge.category)
+                    )
+                    if (badge.isMaxed) DetailsChip(text = "MAXED", color = TempoWarningBright)
+                }
+            }
+
+            GlassCard(
+                variant = GlassCardVariant.QuietGlass,
+                accentColor = intrinsicColor,
+                contentPadding = PaddingValues(20.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = "STAR TIERS",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TextTertiary,
+                        letterSpacing = 2.sp
+                    )
+
+                    if (isBeginner) {
+                        if (badge.isEarned) {
+                            Text(
+                                text = "UNLOCKED",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = intrinsicColor,
+                                letterSpacing = 1.sp
+                            )
+                            Text(
+                                text = "A participation badge — yours from the first moment.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextTertiary
+                            )
+                        } else {
+                            Text(
+                                text = "${badge.progress} / ${badge.maxProgress}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            ProgressTrack(
+                                progress = animatedProgress,
+                                modifier = Modifier.fillMaxWidth(),
+                                color = intrinsicColor
+                            )
+                        }
+                    } else if (def != null) {
+                        val unit = getBadgeUnit(badge.badgeId)
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            for (tier in 1..GamificationEngine.MAX_STARS) {
+                                val threshold = GamificationEngine.getStarThreshold(def.threshold, tier)
+                                val achieved = badge.stars >= tier
+                                val isNext = !achieved && badge.stars + 1 == tier
+                                val tierColor = when {
+                                    achieved -> intrinsicColor
+                                    isNext -> TempoWarningBright
+                                    else -> Color.White.copy(alpha = 0.15f)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (achieved) Icons.Default.Star else Icons.Default.StarOutline,
+                                        contentDescription = null,
+                                        tint = tierColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Star $tier",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (achieved || isNext) TextPrimary else TextSecondary
+                                        )
+                                        if (isNext) {
+                                            val remaining = (threshold - badge.progress).coerceAtLeast(0)
+                                            Text(
+                                                text = "%,d %s to go".format(remaining, unit),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = TempoWarningBright,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = "%,d".format(threshold),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (achieved) intrinsicColor else TextTertiary
+                                    )
+                                }
+                                if (isNext && !badge.isMaxed) {
+                                    ProgressTrack(
+                                        progress = animatedProgress,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = intrinsicColor,
+                                        height = 4.dp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (earnedDate != null) DetailsChip(text = "EARNED · $earnedDate", color = intrinsicColor)
+                if (xpEarned > 0) DetailsChip(text = "%,d XP".format(xpEarned), color = TempoWarning)
+            }
+        }
+        Text(
+            text = "Tap anywhere to close",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextTertiary,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 24.dp)
+        )
+    }
+}
+
+@Composable
+private fun DetailsChip(text: String, color: Color) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = color,
+        letterSpacing = 1.sp,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.14f))
+            .border(0.5.dp, color.copy(alpha = 0.35f), RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    )
+}
+
+// Unit for star-tier thresholds, derived from the badge id's domain prefix.
+private fun getBadgeUnit(badgeId: String): String = when {
+    badgeId.startsWith("plays_") || badgeId == "first_play" -> "plays"
+    badgeId.startsWith("time_") -> "hours"
+    badgeId.startsWith("streak_") -> "days"
+    badgeId.startsWith("artists_") -> "artists"
+    badgeId.startsWith("genres_") -> "genres"
+    badgeId == "night_owl" -> "late-night plays"
+    badgeId == "early_bird" -> "early plays"
+    badgeId == "marathon" -> "sessions"
+    badgeId.startsWith("level_") -> "level"
+    else -> ""
 }
 
 // Level ring — shared with HomeScreen's compact header ring

@@ -620,77 +620,88 @@ fun ArtistHeroSection(
                     .background(brush = glowBrush, shape = CircleShape)
             )
 
-            val imageUrl = artistDetails.artist.imageUrl
             Box(
-                modifier = Modifier
-                    .size(232.dp)
-                    .shadow(
-                        elevation = 22.dp,
-                        shape = CircleShape,
-                        ambientColor = GlassShadowTeal,
-                        spotColor = accent.copy(alpha = 0.22f),
-                    )
-                    .clip(CircleShape)
-                    .background(TempoDarkSurfaceSunken)
-                    .border(1.dp, GlassBorderStrong, CircleShape),
+                modifier = Modifier.size(232.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                if (imageUrl.isNullOrBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(accent.copy(alpha = 0.45f), accent.copy(alpha = 0.20f))
-                                )
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = artistDetails.artist.name.firstOrNull()?.uppercase() ?: "?",
-                            style = MaterialTheme.typography.displayMedium.copy(
-                                fontFamily = DisplayFontFamily,
-                            ),
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary,
+                val imageUrl = artistDetails.artist.imageUrl
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .shadow(
+                            elevation = 22.dp,
+                            shape = CircleShape,
+                            ambientColor = GlassShadowTeal,
+                            spotColor = accent.copy(alpha = 0.22f),
+                        )
+                        .clip(CircleShape)
+                        .background(TempoDarkSurfaceSunken)
+                        .border(1.dp, GlassBorderStrong, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (imageUrl.isNullOrBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(accent.copy(alpha = 0.45f), accent.copy(alpha = 0.20f))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = artistDetails.artist.name.firstOrNull()?.uppercase() ?: "?",
+                                style = MaterialTheme.typography.displayMedium.copy(
+                                    fontFamily = DisplayFontFamily,
+                                ),
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                            )
+                        }
+                    } else {
+                        CachedAsyncImage(
+                            imageUrl = imageUrl,
+                            contentDescription = artistDetails.artist.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                            targetSizeDp = 232,
                         )
                     }
-                } else {
-                    CachedAsyncImage(
-                        imageUrl = imageUrl,
-                        contentDescription = artistDetails.artist.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                        targetSizeDp = 232,
-                    )
                 }
 
-            }
-            // Refresh image control (bottom-right overlay)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(8.dp)
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(TempoDarkSurface.copy(alpha = 0.85f))
-                    .border(0.8.dp, GlassBorderSoft, CircleShape)
-                    .premiumClickable(onClick = onRefreshImage),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (isRefreshingImage) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        color = accent,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = stringResource(R.string.details_refresh_artist_image),
-                        tint = TextPrimary,
-                        modifier = Modifier.size(16.dp),
-                    )
+                // Refresh image control (bottom-right overlay on the image)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(14.dp)
+                        .size(36.dp)
+                        .shadow(
+                            elevation = 6.dp,
+                            shape = CircleShape,
+                            ambientColor = Color.Black.copy(alpha = 0.45f),
+                            spotColor = Color.Black.copy(alpha = 0.55f),
+                        )
+                        .clip(CircleShape)
+                        .background(TempoDarkSurfaceElevated.copy(alpha = 0.90f))
+                        .border(1.dp, GlassBorderStrong, CircleShape)
+                        .premiumClickable(onClick = onRefreshImage),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (isRefreshingImage) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = accent,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.details_refresh_artist_image),
+                            tint = TextPrimary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
                 }
             }
         }

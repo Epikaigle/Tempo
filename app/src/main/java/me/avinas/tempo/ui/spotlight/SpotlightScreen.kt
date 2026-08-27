@@ -104,18 +104,6 @@ fun SpotlightScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.weight(1f))
-                    if (uiState.isTestMode) {
-                        Text(
-                            text = "TEST",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFBBF24),
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .background(Color(0xFFFBBF24).copy(alpha = 0.15f), CircleShape)
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-
                 }
             }
         ) { paddingValues ->

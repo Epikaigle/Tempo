@@ -48,6 +48,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.material.icons.filled.Pause
 import me.avinas.tempo.R
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -246,6 +252,16 @@ fun SpotlightStoryScreen(
     // remaining duration collapses to ~0ms and the story skips pages instantly.
     val timerPageIndex = remember { mutableIntStateOf(-1) }
 
+    // Tracks viewed pages so re-visits skip entry animations
+    val seenPages = remember { SnapshotStateMap<String, Boolean>() }
+    var lastViewedIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != lastViewedIndex) {
+            storyPages.getOrNull(lastViewedIndex)?.let { seenPages[it.id] = true }
+            lastViewedIndex = pagerState.currentPage
+        }
+    }
+
     // Auto-advance logic with pause support
     LaunchedEffect(pagerState.currentPage, isPaused) {
         if (!isPaused) {
@@ -303,27 +319,34 @@ fun SpotlightStoryScreen(
                 ) { pageIndex ->
                     val page = storyPages[pageIndex]
                     Box(modifier = Modifier.fillMaxSize()) {
-                            when (page) {
-                                is SpotlightStoryPage.ListeningMinutes -> ListeningMinutesPage(page)
-                                is SpotlightStoryPage.ListeningStreak -> ListeningStreakPage(page)
-                                is SpotlightStoryPage.ListeningClock -> ListeningClockPage(page)
-                                is SpotlightStoryPage.TopArtist -> TopArtistPage(page)
-                                is SpotlightStoryPage.TopAlbum -> TopAlbumPage(page)
-                                is SpotlightStoryPage.TopTrackSetup -> TopTrackSetupPage(page)
-                                is SpotlightStoryPage.TopSongs -> TopSongsPage(page)
-                                is SpotlightStoryPage.DiscoveryCount -> DiscoveryCountPage(page)
-                                is SpotlightStoryPage.AudioMood -> AudioMoodPage(page)
-                                is SpotlightStoryPage.WeekdayVsWeekend -> WeekdayVsWeekendPage(page)
-                                is SpotlightStoryPage.BingeSession -> BingeSessionPage(page)
-                                is SpotlightStoryPage.TimeOfDayVibes -> TimeOfDayVibesPage(page)
-                                is SpotlightStoryPage.BadgesEarned -> BadgesEarnedPage(page)
-                                is SpotlightStoryPage.LevelUp -> LevelUpPage(page)
-                                is SpotlightStoryPage.TitleEarned -> TitleEarnedPage(page)
-                                is SpotlightStoryPage.TopGenres -> TopGenresPage(page)
-                                is SpotlightStoryPage.Personality -> PersonalityPage(page)
-                                is SpotlightStoryPage.Conclusion -> ConclusionPage(page)
+                        CompositionLocalProvider(
+                            LocalStorySeenPages provides seenPages,
+                            LocalStoryPageId provides page.id
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                when (page) {
+                                    is SpotlightStoryPage.ListeningMinutes -> ListeningMinutesPage(page)
+                                    is SpotlightStoryPage.ListeningStreak -> ListeningStreakPage(page)
+                                    is SpotlightStoryPage.ListeningClock -> ListeningClockPage(page)
+                                    is SpotlightStoryPage.TopArtist -> TopArtistPage(page)
+                                    is SpotlightStoryPage.TopAlbum -> TopAlbumPage(page)
+                                    is SpotlightStoryPage.TopTrackSetup -> TopTrackSetupPage(page)
+                                    is SpotlightStoryPage.TopSongs -> TopSongsPage(page)
+                                    is SpotlightStoryPage.DiscoveryCount -> DiscoveryCountPage(page)
+                                    is SpotlightStoryPage.AudioMood -> AudioMoodPage(page)
+                                    is SpotlightStoryPage.WeekdayVsWeekend -> WeekdayVsWeekendPage(page)
+                                    is SpotlightStoryPage.BingeSession -> BingeSessionPage(page)
+                                    is SpotlightStoryPage.TimeOfDayVibes -> TimeOfDayVibesPage(page)
+                                    is SpotlightStoryPage.BadgesEarned -> BadgesEarnedPage(page)
+                                    is SpotlightStoryPage.LevelUp -> LevelUpPage(page)
+                                    is SpotlightStoryPage.TitleEarned -> TitleEarnedPage(page)
+                                    is SpotlightStoryPage.TopGenres -> TopGenresPage(page)
+                                    is SpotlightStoryPage.Personality -> PersonalityPage(page)
+                                    is SpotlightStoryPage.Conclusion -> ConclusionPage(page)
+                                }
                             }
                         }
+                    }
                 }
                 
                 // Watermark (Visible on screen too, optional but keeps consistency)
@@ -383,6 +406,37 @@ fun SpotlightStoryScreen(
         )
 
         // 3. UI Overlays (Top Bar, Share Button, etc.)
+
+        // Visual indicator shown during hold-to-pause
+        AnimatedVisibility(
+            visible = isPaused,
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(200)),
+            modifier = Modifier
+                .align(Alignment.Center)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(50))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(50))
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Pause,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.spotlight_paused),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
+        }
         
         // Top Bar (Progress & Close)
         Column(
@@ -402,13 +456,19 @@ fun SpotlightStoryScreen(
                         index == pagerState.currentPage -> currentProgress.value
                         else -> 0f
                     }
-                    
+                    // Dim upcoming segments and brighten watched ones
+                    val trackAlpha = when {
+                        index < pagerState.currentPage -> 0.5f
+                        index == pagerState.currentPage -> 0.3f
+                        else -> 0.16f
+                    }
+
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .height(8.dp)
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color.White.copy(alpha = 0.3f))
+                            .background(Color.White.copy(alpha = trackAlpha))
                     ) {
                         Box(
                             modifier = Modifier

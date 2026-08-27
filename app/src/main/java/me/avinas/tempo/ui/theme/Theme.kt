@@ -17,22 +17,50 @@ import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
 
 
+// Dark color scheme mapping
 private val DarkColorScheme = darkColorScheme(
     primary = TempoPrimary,
-    onPrimary = Color.White,
+    onPrimary = TextOnAccent,
+    primaryContainer = TempoPrimaryDeep,
+    onPrimaryContainer = TempoAccent,
+
     secondary = TempoSecondary,
-    onSecondary = Color.Black,
-    tertiary = NeonRed, // Pop accent
+    onSecondary = TextOnAccent,
+    secondaryContainer = Color(0xFF123B32),
+    onSecondaryContainer = TempoAccentBright,
+
+    tertiary = TempoPop,
+    onTertiary = Color(0xFF28081A),
+    tertiaryContainer = TempoPopContainer,
+    onTertiaryContainer = OnTempoPopContainer,
+
+    error = TempoError,
+    onError = TextOnAccent,
+    errorContainer = TempoErrorDeep,
+    onErrorContainer = TempoErrorSoft,
+
     background = TempoDarkBackground,
-    onBackground = Color.White,
+    onBackground = TextPrimary,
     surface = TempoDarkSurface,
-    onSurface = Color.White,
-    surfaceVariant = TempoDarkSurface.copy(alpha = 0.8f),
-    onSurfaceVariant = Color.White.copy(alpha = 0.7f),
-    outline = Color.White.copy(alpha = 0.2f)
+    onSurface = TextPrimary,
+    surfaceVariant = TempoDarkSurfaceElevated,
+    onSurfaceVariant = TextSecondary,
+    surfaceContainerLowest = TempoDarkSurfaceSunken,
+    surfaceContainerLow = TempoSurfaceChip,
+    surfaceContainer = TempoSurfaceCard,
+    surfaceContainerHigh = TempoDarkSurfaceElevated,
+    surfaceContainerHighest = TempoSurfaceRaised,
+    surfaceDim = TempoDarkSurfaceSunken,
+    surfaceBright = TempoDarkSurfaceElevated,
+    inverseSurface = TextPrimary,
+    inverseOnSurface = TempoDarkBackground,
+    inversePrimary = TempoPrimaryDeep,
+    surfaceTint = TempoPrimary,
+
+    outline = GlassBorderMedium,
+    outlineVariant = GlassBorderSoft
 )
 
-// Light theme is deprecated for "Premium Dark" aesthetic, but keeping fallback mapped to dark
 private val LightColorScheme = DarkColorScheme
 
 @Composable

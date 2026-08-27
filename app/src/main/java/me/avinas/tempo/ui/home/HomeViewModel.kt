@@ -169,9 +169,10 @@ class HomeViewModel @Inject constructor(
                 
                 // Today's Listen Widget data
                 val todayOverviewDeferred = async { statsRepository.getListeningOverview(TimeRange.TODAY) }
-                val todayTopTracksDeferred = async { statsRepository.getTopTracks(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 1) }
-                val todayTopArtistsDeferred = async { statsRepository.getTopArtists(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 1) }
+                val todayTopTracksDeferred = async { statsRepository.getTopTracks(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 5) }
+                val todayTopArtistsDeferred = async { statsRepository.getTopArtists(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 5) }
                 val todayHourlyDeferred = async { statsRepository.getHourlyDistribution(TimeRange.TODAY) }
+                val todayPeriodComparisonDeferred = async { statsRepository.getPeriodComparison(TimeRange.TODAY, withLeeway = false) }
                 
                 // Read isGamificationEnabled setting
                 val isGamificationEnabledDeferred = async {
@@ -214,6 +215,7 @@ class HomeViewModel @Inject constructor(
                 val todayTopTracks = todayTopTracksDeferred.await()
                 val todayTopArtists = todayTopArtistsDeferred.await()
                 val todayHourly = todayHourlyDeferred.await()
+                val todayPeriodComparison = todayPeriodComparisonDeferred.await()
                 
                 // Fetch Gamification Data
                 val isGamificationEnabled = isGamificationEnabledDeferred.await()
@@ -270,11 +272,14 @@ class HomeViewModel @Inject constructor(
                         // written and returns false, silently dismissing the popup mid-interaction.
                         showRateAppPopup = it.showRateAppPopup || shouldShowRateApp(),
                         isGamificationEnabled = isGamificationEnabled,
-                        // Today's Listen Widget
+                        // Today's Listen Widget + Today Overview overlay lists
                         todayOverview = todayOverview,
                         todayTopTrack = todayTopTracks.items.firstOrNull(),
                         todayTopArtist = todayTopArtists.items.firstOrNull(),
-                        todayHourlyDistribution = todayHourly
+                        todayTopTracks = todayTopTracks.items.take(5),
+                        todayTopArtists = todayTopArtists.items.take(5),
+                        todayHourlyDistribution = todayHourly,
+                        todayPeriodComparison = todayPeriodComparison
                     )
                 }
 
@@ -856,6 +861,9 @@ data class HomeUiState(
     val todayOverview: me.avinas.tempo.data.stats.ListeningOverview? = null,
     val todayTopTrack: me.avinas.tempo.data.stats.TopTrack? = null,
     val todayTopArtist: me.avinas.tempo.data.stats.TopArtist? = null,
+    val todayTopTracks: List<me.avinas.tempo.data.stats.TopTrack> = emptyList(),
+    val todayTopArtists: List<me.avinas.tempo.data.stats.TopArtist> = emptyList(),
     val todayHourlyDistribution: List<me.avinas.tempo.data.stats.HourlyDistribution> = emptyList(),
+    val todayPeriodComparison: me.avinas.tempo.data.stats.PeriodComparison? = null,
     val spotlightStoryViewed: Boolean = false
 )

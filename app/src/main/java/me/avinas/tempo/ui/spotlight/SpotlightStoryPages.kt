@@ -105,6 +105,29 @@ import androidx.compose.animation.core.spring
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Piano
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.WbTwilight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.compose.ui.text.font.FontStyle
+
+// Set by SpotlightStoryScreen's pager so pages can skip entrance choreography on re-visit.
+val LocalStorySeenPages = compositionLocalOf<SnapshotStateMap<String, Boolean>?> { null }
+val LocalStoryPageId = compositionLocalOf<String?> { null }
+
+@Composable
+fun isStoryPageSeen(): Boolean {
+    val seenMap = LocalStorySeenPages.current ?: return false
+    val id = LocalStoryPageId.current ?: return false
+    return seenMap[id] == true
+}
 
 @Composable
 private fun SolidCard(
@@ -197,7 +220,7 @@ fun EnterAnimation(
     content: @Composable () -> Unit
 ) {
     val inCapture = LocalInCaptureContext.current
-    if (inCapture) {
+    if (inCapture || isStoryPageSeen()) {
         content()
     } else {
         var visible by remember { mutableStateOf(false) }
@@ -218,13 +241,57 @@ fun EnterAnimation(
     }
 }
 
+/**
+ * Text that steps its font size down (10% at a time) until it fits the given
+ * constraints, so long values / translations never wrap or clip. Falls back to
+ * ellipsis only below [minFontSize].
+ */
+@Composable
+private fun AutoFitText(
+    text: String,
+    maxFontSize: TextUnit,
+    modifier: Modifier = Modifier,
+    baseStyle: TextStyle = MaterialTheme.typography.displayLarge,
+    color: Color = Color.White,
+    fontWeight: FontWeight = FontWeight.Bold,
+    fontStyle: FontStyle? = null,
+    shadow: Shadow? = null,
+    textAlign: TextAlign = TextAlign.Center,
+    lineHeightFactor: Float = 1.15f,
+    minFontSize: TextUnit = 14.sp,
+    maxLines: Int = 3
+) {
+    var fontSize by remember(text) { mutableStateOf(maxFontSize) }
+    Text(
+        text = text,
+        modifier = modifier,
+        color = color,
+        fontSize = fontSize,
+        fontStyle = fontStyle,
+        fontWeight = fontWeight,
+        textAlign = textAlign,
+        lineHeight = (fontSize.value * lineHeightFactor).sp,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+        style = baseStyle.copy(
+            shadow = shadow ?: Shadow(Color.Transparent, Offset.Zero, 0f)
+        ),
+        onTextLayout = { result ->
+            if (result.hasVisualOverflow && fontSize > minFontSize) {
+                fontSize = (fontSize.value * 0.9f).sp
+            }
+        }
+    )
+}
+
     
 @Composable
 fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
     val inCapture = LocalInCaptureContext.current
+    val seen = isStoryPageSeen()
     val animatedMinutes = remember { Animatable(0f) }
     LaunchedEffect(page.totalMinutes) {
-        if (inCapture) {
+        if (inCapture || seen) {
             animatedMinutes.snapTo(page.totalMinutes.toFloat())
         } else {
             delay(500)
@@ -235,51 +302,12 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
         }
     }
     
-    // Pulsing animation for background
-    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.2f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = tween(2000),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
-        ),
-        label = "pulseScale"
-    )
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.1f,
-        targetValue = 0.0f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = tween(2000),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
-        ),
-        label = "pulseAlpha"
-    )
+    // Ambient pulse removed: the bare display number is this page's device —
+    // a breathing glow behind it just adds a second focal point.
     
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
-        
-        // Pulsing Background Effect
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(300.dp * dimens.scale)
-                    .scale(pulseScale)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = pulseAlpha),
-                                Color.Transparent
-                            )
-                        ),
-                        shape = CircleShape
-                    )
-            )
-        }
-        
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -322,10 +350,18 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
 
                     Spacer(modifier = Modifier.height(dimens.spacerSmall))
 
+                    // Scale down the display number by final digit count so 6-7 digit
+                    // values never wrap on 360dp-wide phones (content width ~312dp).
+                    val finalMinutesText = String.format(java.util.Locale.US, "%,d", page.totalMinutes)
+                    val numberFontSize = when {
+                        finalMinutesText.length >= 7 -> dimens.textDisplay * 0.66f
+                        finalMinutesText.length >= 6 -> dimens.textDisplay * 0.78f
+                        else -> dimens.textDisplay
+                    }
                     Text(
                         text = String.format(java.util.Locale.US, "%,d", animatedMinutes.value.toInt()),
                         style = MaterialTheme.typography.displayLarge.copy(
-                            fontSize = dimens.textDisplay,
+                            fontSize = numberFontSize,
                             fontWeight = FontWeight.Black,
                             shadow = Shadow(
                                 color = Color.Black.copy(alpha = 0.3f),
@@ -335,7 +371,8 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
                         ),
                         color = Color.White,
                         textAlign = TextAlign.Center,
-                        lineHeight = (dimens.textDisplay.value * 1.1f).sp
+                        maxLines = 1,
+                        lineHeight = (numberFontSize.value * 1.1f).sp
                     )
 
                     Text(
@@ -581,22 +618,24 @@ fun TopArtistPage(page: SpotlightStoryPage.TopArtist) {
                     contentAlignment = Alignment.Center
                 ) {
                     val lastArtist = page.topArtists.drop(1).drop(8).firstOrNull() // Rank 10
-                    if (lastArtist != null) {
-                          EnterAnimation(delay = 800) {
-                             SolidCard(
-                                 modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f),
-                                 shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
-                                 backgroundColor = Color.White.copy(alpha = 0.1f),
-                                 borderColor = Color.White.copy(alpha = 0.2f),
-                                 contentPadding = PaddingValues(12.dp * dimens.scale)
-                             ) {
-                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                     Text(
-                                         text = "#${lastArtist.rank}",
-                                         style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
-                                         color = Color.White.copy(alpha = 0.6f),
-                                         modifier = Modifier.width((20.dp * dimens.scale))
-                                     )
+                     if (lastArtist != null) {
+                           EnterAnimation(delay = 800) {
+                              // Flat finale: the #10 card drops the glass tint + border the
+                              // grid uses — solid fill marks the list's ending beat.
+                              SolidCard(
+                                  modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f),
+                                  shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
+                                  backgroundColor = Color.White.copy(alpha = 0.16f),
+                                  borderColor = Color.Transparent,
+                                  contentPadding = PaddingValues(12.dp * dimens.scale)
+                              ) {
+                              Row(verticalAlignment = Alignment.CenterVertically) {
+                                      Text(
+                                          text = "#${lastArtist.rank}",
+                                          style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                          color = Color.White.copy(alpha = 0.6f),
+                                          modifier = Modifier.width(32.dp * dimens.scale)
+                                      )
                                      CachedAsyncImage(
                                          imageUrl = lastArtist.imageUrl,
                                          contentDescription = null,
@@ -653,12 +692,13 @@ fun TopTrackSetupPage(page: SpotlightStoryPage.TopTrackSetup) {
             Spacer(modifier = Modifier.height(dimens.spacerMedium))
 
             EnterAnimation(delay = 200) {
-                Text(
+                AutoFitText(
                     text = page.conversationalText,
-                    style = MaterialTheme.typography.headlineMedium.copy(fontSize = dimens.textHeadline),
+                    maxFontSize = dimens.textHeadline,
+                    baseStyle = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
+                    maxLines = 3,
+                    minFontSize = dimens.textBody
                 )
             }
             
@@ -757,17 +797,20 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                                 val playtimeText = if (hours > 0) stringResource(R.string.spotlight_playtime_hours, hours, minutes)
                                                    else stringResource(R.string.spotlight_playtime_minutes, minutes)
                                 Spacer(modifier = Modifier.height(dimens.spacerSmall))
-                                GlassCard(
+                                // Playtime highlight chip for #1 song
+                                SolidCard(
                                     modifier = Modifier.wrapContentSize(),
                                     shape = RoundedCornerShape(50),
-                                    backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.25f),
+                                    backgroundColor = Color(0xFFFBBF24),
+                                    borderColor = Color.Transparent,
                                     contentPadding = PaddingValues(horizontal = 14.dp * dimens.scale, vertical = 5.dp * dimens.scale)
                                 ) {
                                     Text(
                                         text = playtimeText,
-                                        style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
-                                        color = Color.White.copy(alpha = 0.95f),
-                                        fontWeight = FontWeight.SemiBold
+                                        style = MaterialTheme.typography.labelLarge.copy(fontSize = (dimens.textBody.value * 0.85f).sp),
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF220F08),
+                                        maxLines = 1
                                     )
                                 }
                             }
@@ -776,60 +819,61 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                 }
 
                 // 2. GRID SECTION (~40% weight) - 4 Rows - Further Reduced
-                Column(
+                Box(
                     modifier = Modifier.weight(0.40f).fillMaxWidth(),
-                    verticalArrangement = Arrangement.SpaceEvenly 
+                    contentAlignment = Alignment.Center
                 ) {
                      val gridItems = page.topSongs.drop(1).take(8) // Rank 2 to 9
-                     val chunkedItems = gridItems.chunked(2)
-                     
-                     chunkedItems.forEachIndexed { rowIndex, rowItems ->
-                         Row(
-                             modifier = Modifier.fillMaxWidth().weight(1f), // Each row gets equal height
-                             horizontalArrangement = Arrangement.spacedBy(dimens.gridSpacing),
-                             verticalAlignment = Alignment.CenterVertically
-                         ) {
-                             rowItems.forEachIndexed { colIndex, song ->
-                                 // Inner Item
-                                 Box(
-                                     modifier = Modifier.weight(1f),
-                                     contentAlignment = Alignment.Center
-                                 ) {
-                                     EnterAnimation(delay = 400 + (rowIndex * 100) + (colIndex * 50)) {
+                     Column(
+                         modifier = Modifier.fillMaxSize(),
+                         verticalArrangement = Arrangement.spacedBy(8.dp * dimens.scale)
+                     ) {
+                         gridItems.chunked(2).forEachIndexed { rowIndex, rowItems ->
+                             Row(
+                                 modifier = Modifier.fillMaxWidth().weight(1f), // Each row gets equal height
+                                 horizontalArrangement = Arrangement.spacedBy(8.dp * dimens.scale)
+                             ) {
+                                 rowItems.forEachIndexed { colIndex, item ->
+                                     EnterAnimation(delay = 400 + (rowIndex * 2 + colIndex) * 50) {
+                                         // Inner Item
                                          SolidCard(
-                                             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f),
+                                             modifier = Modifier.weight(1f).fillMaxHeight(),
                                              shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
                                              backgroundColor = Color.White.copy(alpha = 0.08f),
                                              borderColor = Color.White.copy(alpha = 0.15f),
-                                             contentPadding = PaddingValues(horizontal = 8.dp * dimens.scale, vertical = 4.dp * dimens.scale)
+                                             contentPadding = PaddingValues(8.dp * dimens.scale)
                                          ) {
-                                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                             Row(
+                                                 verticalAlignment = Alignment.CenterVertically,
+                                                 modifier = Modifier.fillMaxSize()
+                                             ) {
                                                  Text(
-                                                     text = "#${song.rank}",
+                                                     text = "#${item.rank}",
                                                      style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                                     fontWeight = FontWeight.Bold,
                                                      color = Color.White.copy(alpha = 0.6f),
-                                                     modifier = Modifier.width((20.dp * dimens.scale))
+                                                     modifier = Modifier.width(20.dp * dimens.scale)
                                                  )
                                                  CachedAsyncImage(
-                                                     imageUrl = song.imageUrl,
+                                                     imageUrl = item.imageUrl,
                                                      contentDescription = null,
-                                                     modifier = Modifier.size(dimens.imageGrid).clip(RoundedCornerShape(4.dp)),
+                                                     modifier = Modifier.size(dimens.imageList * 0.8f).clip(RoundedCornerShape(6.dp * dimens.scale)),
                                                      contentScale = ContentScale.Crop,
                                                      allowHardware = false
                                                  )
-                                                 Spacer(modifier = Modifier.width(8.dp * dimens.scale))
-                                                 Column {
+                                                 Spacer(modifier = Modifier.width(6.dp * dimens.scale))
+                                                 Column(modifier = Modifier.weight(1f)) {
                                                      Text(
-                                                         text = song.title,
-                                                         style = MaterialTheme.typography.bodySmall,
+                                                         text = item.title,
+                                                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = (dimens.textBody.value * 0.85f).sp),
                                                          fontWeight = FontWeight.Bold,
                                                          color = Color.White,
                                                          maxLines = 1,
                                                          overflow = TextOverflow.Ellipsis
                                                      )
                                                      Text(
-                                                         text = song.artist,
-                                                         style = MaterialTheme.typography.labelSmall,
+                                                         text = item.artist,
+                                                         style = MaterialTheme.typography.labelSmall.copy(fontSize = (dimens.textLabel.value * 0.8f).sp),
                                                          color = Color.White.copy(alpha = 0.7f),
                                                          maxLines = 1,
                                                          overflow = TextOverflow.Ellipsis
@@ -839,10 +883,10 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                                          }
                                      }
                                  }
-                             }
-                             // If row has only 1 item (shouldn't happen with logic but safe-guard), add spacer
-                             if (rowItems.size == 1) {
-                                 Spacer(modifier = Modifier.weight(1f))
+                                 // If row has only 1 item (shouldn't happen with logic but safe-guard), add spacer
+                                 if (rowItems.size == 1) {
+                                     Spacer(modifier = Modifier.weight(1f))
+                                 }
                              }
                          }
                      }
@@ -854,15 +898,16 @@ fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
                     contentAlignment = Alignment.Center
                 ) {
                     val lastItem = page.topSongs.drop(1).drop(8).firstOrNull() // Rank 10
-                    if (lastItem != null) {
-                        EnterAnimation(delay = 800) {
-                            SolidCard(
-                                modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f),
-                                shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
-                                backgroundColor = Color.White.copy(alpha = 0.1f),
-                                borderColor = Color.White.copy(alpha = 0.2f),
-                                contentPadding = PaddingValues(12.dp * dimens.scale)
-                            ) {
+                     if (lastItem != null) {
+                         EnterAnimation(delay = 800) {
+                             // #10 song item
+                             SolidCard(
+                                 modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f),
+                                 shape = RoundedCornerShape(dimens.cardCornerRadius * 0.6f),
+                                 backgroundColor = Color.White.copy(alpha = 0.16f),
+                                 borderColor = Color.Transparent,
+                                 contentPadding = PaddingValues(12.dp * dimens.scale)
+                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                      Text(
                                         text = "#${lastItem.rank}",
@@ -945,28 +990,20 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
                     initialValue = -10f,
                     targetValue = 10f,
                     animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                        animation = tween(2000, easing = androidx.compose.animation.core.LinearEasing),
+                        animation = tween(2000, easing = FastOutSlowInEasing),
                         repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
                     ),
                     label = "floatOffset"
                 )
 
-                // Main Bubble
+                // Top genre center bubble
                 EnterAnimation(delay = 200) {
                     val bubbleSize = dimens.bubbleMain
                     Box(
                         modifier = Modifier
                             .offset(y = floatOffset.dp)
                             .size(bubbleSize)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        Color(0xFF10B981).copy(alpha = 0.6f),
-                                        Color(0xFF10B981).copy(alpha = 0.2f)
-                                    )
-                                ),
-                                shape = CircleShape
-                            )
+                            .background(Color(0xFF10B981), CircleShape)
                             .border(1.dp * dimens.scale, Color.White.copy(alpha = 0.3f), CircleShape)
                             .padding(24.dp * dimens.scale),
                         contentAlignment = Alignment.Center
@@ -994,7 +1031,7 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
                             Text(
                                 text = "${page.topGenrePercentage}%",
                                 style = MaterialTheme.typography.headlineSmall.copy(fontSize = dimens.textTitle),
-                                color = Color(0xFF6EE7B7),
+                                color = Color.White.copy(alpha = 0.95f),
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -1017,7 +1054,7 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
                             initialValue = if (index % 2 == 0) 5f else -5f,
                             targetValue = if (index % 2 == 0) -5f else 5f,
                             animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                                animation = tween(2500 + (index * 200), easing = androidx.compose.animation.core.LinearEasing),
+                                animation = tween(2500 + (index * 200), easing = FastOutSlowInEasing),
                                 repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
                             ),
                             label = "otherFloatOffset"
@@ -1077,7 +1114,7 @@ fun TopGenresPage(page: SpotlightStoryPage.TopGenres) {
 
 @Composable
 fun PersonalityPage(page: SpotlightStoryPage.Personality) {
-    val (icon, color) = getPersonalityAssets(page.personalityType)
+    val (icon, color) = getPersonalityAssets(page.personalityKey)
     
     val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "personality")
     val rotationAngle by infiniteTransition.animateFloat(
@@ -1089,18 +1126,10 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
         ),
         label = "rotation"
     )
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.05f,
-        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-            animation = tween(2500, easing = FastOutSlowInEasing),
-            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse
-        ),
-        label = "pulse"
-    )
     
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
+        val isShortScreen = maxHeight < 650.dp
         
         // Full-screen color wash
         Box(
@@ -1144,8 +1173,14 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
             
             // CINEMATIC ICON - Huge, rotating, dramatic
             EnterAnimation(delay = 300) {
+                // Reduce ring size on short screens to avoid clipping
+                val ringSize = if (isShortScreen) {
+                    (220.dp * dimens.scale).coerceIn(170.dp, 240.dp)
+                } else {
+                    (300.dp * dimens.scale).coerceIn(240.dp, 360.dp)
+                }
                 Box(
-                    modifier = Modifier.size((300.dp * dimens.scale).coerceIn(240.dp, 360.dp)),
+                    modifier = Modifier.size(ringSize),
                     contentAlignment = Alignment.Center
                 ) {
                     // Outer rotating ring
@@ -1171,38 +1206,18 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
                         )
                     }
                     
-                    // Pulsing glow
-                    Box(
-                        modifier = Modifier
-                            .size(200.dp * dimens.scale)
-                            .scale(pulseScale)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        color.copy(alpha = 0.8f),
-                                        color.copy(alpha = 0.3f),
-                                        Color.Transparent
-                                    )
-                                ),
-                                shape = CircleShape
-                            )
-                    )
-                    
-                    // Core icon
+                    // Personality icon badge
                     Box(
                         modifier = Modifier
                             .size(140.dp * dimens.scale)
-                            .background(
-                                color = color.copy(alpha = 0.3f),
-                                shape = CircleShape
-                            )
-                            .border(3.dp * dimens.scale, color.copy(alpha = 0.8f), CircleShape),
+                            .background(color, CircleShape)
+                            .border(3.dp * dimens.scale, Color.White.copy(alpha = 0.9f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = Color(0xFF1B120E),
                             modifier = Modifier.size(80.dp * dimens.scale)
                         )
                     }
@@ -1212,40 +1227,42 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
             Spacer(modifier = Modifier.weight(1f))
             
             // REVEAL - Personality type with dramatic typography
+            // Auto-fitting title for smaller screens
             EnterAnimation(delay = 600) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
+                    AutoFitText(
                         text = page.personalityType,
-                        style = MaterialTheme.typography.displayLarge.copy(
-                            fontSize = (dimens.textDisplay.value * 1.2f).coerceAtMost(56f).sp,
+                        maxFontSize = (dimens.textDisplay.value * 1.2f).coerceAtMost(56f).sp,
+                        baseStyle = MaterialTheme.typography.displayLarge.copy(
                             fontWeight = FontWeight.Black,
                             letterSpacing = (2f * dimens.scale).sp
                         ),
-                        color = Color.White,
+                        fontWeight = FontWeight.Black,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth()
+                        minFontSize = dimens.textTitle,
+                        modifier = Modifier.fillMaxWidth(),
+                        lineHeightFactor = 1.05f
                     )
-                    
-                    Spacer(modifier = Modifier.height(dimens.spacerLarge))
-                    
+
+                    Spacer(modifier = Modifier.height(if (isShortScreen) dimens.spacerMedium else dimens.spacerLarge))
+
                     // Description - intimate, left-aligned
                     Text(
                         text = page.description,
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = dimens.textBody,
-                            lineHeight = (dimens.textBody.value * 1.6f).sp
+                            lineHeight = (dimens.textBody.value * (if (isShortScreen) 1.45f else 1.6f)).sp
                         ),
                         color = Color.White.copy(alpha = 0.9f),
-                        textAlign = TextAlign.Left,
-                        maxLines = 4,
+                        textAlign = TextAlign.Start,
+                        maxLines = if (isShortScreen) 3 else 4,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    
+
                     Spacer(modifier = Modifier.height(dimens.spacerMedium))
-                    
+
                     // Conversational - whispered, italic
                     Text(
                         text = page.conversationalText,
@@ -1255,7 +1272,7 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
                         ),
                         color = Color.White.copy(alpha = 0.7f),
                         textAlign = TextAlign.Center,
-                        maxLines = 3,
+                        maxLines = if (isShortScreen) 2 else 3,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1270,9 +1287,10 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
 @Composable
 fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
     val inCapture = LocalInCaptureContext.current
+    val seen = isStoryPageSeen()
     val animatedStreak = remember { Animatable(0f) }
     LaunchedEffect(page.currentStreakDays) {
-        if (inCapture) {
+        if (inCapture || seen) {
             animatedStreak.snapTo(page.currentStreakDays.toFloat())
         } else {
             delay(400)
@@ -1283,42 +1301,8 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
         }
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "fire")
-    val fireScale by infiniteTransition.animateFloat(
-        initialValue = 0.92f, targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "fireScale"
-    )
-    val fireAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.7f, targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-        label = "fireAlpha"
-    )
-
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
-
-        // Warm radial glow background
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(350.dp * dimens.scale)
-                    .scale(fireScale)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFFFF6B00).copy(alpha = 0.35f * fireAlpha),
-                                Color(0xFFFF9900).copy(alpha = 0.15f * fireAlpha),
-                                Color.Transparent
-                            )
-                        ),
-                        shape = CircleShape
-                    )
-            )
-        }
 
         Column(
             modifier = Modifier
@@ -1345,28 +1329,20 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Fire icon with glow
+            // Streak icon badge
             EnterAnimation(delay = 200) {
-                Box(contentAlignment = Alignment.Center) {
-                    Box(
-                        modifier = Modifier
-                            .size(120.dp * dimens.scale)
-                            .scale(fireScale)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        Color(0xFFFF6B00).copy(alpha = 0.5f),
-                                        Color.Transparent
-                                    )
-                                ),
-                                shape = CircleShape
-                            )
-                    )
+                Box(
+                    modifier = Modifier
+                        .size(96.dp * dimens.scale)
+                        .background(Color(0xFFFF9900), CircleShape)
+                        .border(2.dp * dimens.scale, Color.White.copy(alpha = 0.25f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = Icons.Default.LocalFireDepartment,
                         contentDescription = null,
-                        tint = Color(0xFFFF9900).copy(alpha = fireAlpha),
-                        modifier = Modifier.size(72.dp * dimens.scale)
+                        tint = Color(0xFF220F08),
+                        modifier = Modifier.size(52.dp * dimens.scale)
                     )
                 }
             }
@@ -1380,12 +1356,7 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
                         text = animatedStreak.value.toInt().toString(),
                         style = MaterialTheme.typography.displayLarge.copy(
                             fontSize = dimens.textDisplay,
-                            fontWeight = FontWeight.Black,
-                            shadow = Shadow(
-                                color = Color(0xFFFF6B00).copy(alpha = 0.5f),
-                                offset = Offset(0f, 4f),
-                                blurRadius = 20f
-                            )
+                            fontWeight = FontWeight.Black
                         ),
                         color = Color(0xFFFFD060),
                         textAlign = TextAlign.Center
@@ -1416,11 +1387,12 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp * dimens.scale)
                 ) {
+                    // Best streak highlight card
                     SolidCard(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(dimens.cardCornerRadius),
-                        backgroundColor = Color.White.copy(alpha = 0.06f),
-                        borderColor = Color(0xFFFFD060).copy(alpha = 0.25f),
+                        backgroundColor = Color(0xFF7C3A00),
+                        borderColor = Color.Transparent,
                         contentPadding = PaddingValues(dimens.spacerSmall)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -1485,7 +1457,9 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
                                 fontWeight = FontWeight.Bold
                             ),
                             color = Color(0xFFFFD060),
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -1497,9 +1471,10 @@ fun ListeningStreakPage(page: SpotlightStoryPage.ListeningStreak) {
 @Composable
 fun ListeningClockPage(page: SpotlightStoryPage.ListeningClock) {
     val inCapture = LocalInCaptureContext.current
+    val seen = isStoryPageSeen()
     val animatedProgress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        if (inCapture) {
+        if (inCapture || seen) {
             animatedProgress.snapTo(1f)
         } else {
             delay(300)
@@ -1874,11 +1849,12 @@ fun TopAlbumPage(page: SpotlightStoryPage.TopAlbum) {
 @Composable
 fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
     val inCapture = LocalInCaptureContext.current
+    val seen = isStoryPageSeen()
     val artistsAnim = remember { Animatable(0f) }
     val tracksAnim  = remember { Animatable(0f) }
 
     LaunchedEffect(page.uniqueArtists) {
-        if (inCapture) {
+        if (inCapture || seen) {
             artistsAnim.snapTo(page.uniqueArtists.toFloat())
         } else {
             delay(500)
@@ -1886,7 +1862,7 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
         }
     }
     LaunchedEffect(page.uniqueTracks) {
-        if (inCapture) {
+        if (inCapture || seen) {
             tracksAnim.snapTo(page.uniqueTracks.toFloat())
         } else {
             delay(650)
@@ -1894,42 +1870,8 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
         }
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "orb")
-    val orbScale by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = 1.12f,
-        animationSpec = infiniteRepeatable(tween(2400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "orbScale"
-    )
-    val orbAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.18f, targetValue = 0.32f,
-        animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse),
-        label = "orbAlpha"
-    )
-
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
-
-        // Background ambient orb
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(280.dp * dimens.scale)
-                    .scale(orbScale)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFF06B6D4).copy(alpha = orbAlpha),
-                                Color(0xFF8B5CF6).copy(alpha = orbAlpha * 0.5f),
-                                Color.Transparent
-                            )
-                        ),
-                        shape = CircleShape
-                    )
-            )
-        }
 
         Column(
             modifier = Modifier
@@ -1999,12 +1941,7 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
                                 text = artistsText,
                                 style = MaterialTheme.typography.displaySmall.copy(
                                     fontSize = sharedFontSize,
-                                    fontWeight = FontWeight.Black,
-                                    shadow = Shadow(
-                                        color = Color(0xFF8B5CF6).copy(alpha = 0.7f),
-                                        offset = Offset(0f, 3f),
-                                        blurRadius = 12f
-                                    )
+                                    fontWeight = FontWeight.Black
                                 ),
                                 color = Color(0xFFC4B5FD),
                                 maxLines = 1,
@@ -2037,12 +1974,7 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
                                 text = tracksText,
                                 style = MaterialTheme.typography.displaySmall.copy(
                                     fontSize = sharedFontSize,
-                                    fontWeight = FontWeight.Black,
-                                    shadow = Shadow(
-                                        color = Color(0xFF06B6D4).copy(alpha = 0.7f),
-                                        offset = Offset(0f, 3f),
-                                        blurRadius = 12f
-                                    )
+                                    fontWeight = FontWeight.Black
                                 ),
                                 color = Color(0xFF67E8F9),
                                 maxLines = 1,
@@ -2122,7 +2054,9 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
                                 fontWeight = FontWeight.Bold
                             ),
                             color = Color(0xFF67E8F9),
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -2134,9 +2068,10 @@ fun DiscoveryCountPage(page: SpotlightStoryPage.DiscoveryCount) {
 @Composable
 fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
     val inCapture = LocalInCaptureContext.current
+    val seen = isStoryPageSeen()
     val barAnims = remember { List(7) { Animatable(0f) } }
     LaunchedEffect(Unit) {
-        if (inCapture) {
+        if (inCapture || seen) {
             barAnims.forEachIndexed { index, anim ->
                 anim.snapTo((page.dailyIntensity.getOrNull(index) ?: 0) / 100f)
             }
@@ -2216,7 +2151,7 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
                                     fontSize = dimens.textHeadline,
                                     fontWeight = FontWeight.Black
                                 ),
-                                color = if (!isWeekendDominant) Color(0xFF93C5FD) else Color.White.copy(alpha = 0.55f),
+                                color = if (!isWeekendDominant) Color(0xFF93C5FD) else Color.White.copy(alpha = 0.65f),
                                 maxLines = 1
                             )
                             Text(
@@ -2261,7 +2196,7 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
                                     fontSize = dimens.textHeadline,
                                     fontWeight = FontWeight.Black
                                 ),
-                                color = if (isWeekendDominant) Color(0xFFFCD34D) else Color.White.copy(alpha = 0.55f),
+                                color = if (isWeekendDominant) Color(0xFFFCD34D) else Color.White.copy(alpha = 0.65f),
                                 maxLines = 1
                             )
                             Text(
@@ -2288,47 +2223,55 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
                 }
             }
 
-            // 7-bar chart
-            val barMaxHeight = remember(dimens.scale) { 120.dp * dimens.scale }
+            // 7-bar chart on a flat white card
+            val barMaxHeight = remember(dimens.scale) { 100.dp * dimens.scale }
             EnterAnimation(delay = 400) {
-                Row(
+                SolidCard(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.Bottom
+                    shape = RoundedCornerShape(dimens.cardCornerRadius),
+                    backgroundColor = Color.White,
+                    borderColor = Color.Transparent,
+                    contentPadding = PaddingValues(
+                        horizontal = 12.dp * dimens.scale,
+                        vertical = 14.dp * dimens.scale
+                    )
                 ) {
-                    dayNamesRes.forEachIndexed { i, dayRes ->
-                        val isWknd = isWeekend[i]
-                        val barColor = when {
-                            isWknd && isWeekendDominant -> Color(0xFFF59E0B)
-                            !isWknd && !isWeekendDominant -> Color(0xFF60A5FA)
-                            isWknd -> Color(0xFFF59E0B).copy(alpha = 0.5f)
-                            else -> Color(0xFF60A5FA).copy(alpha = 0.5f)
-                        }
-                        val intensity = barAnims[i].value.coerceAtLeast(0.04f)
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Bottom,
-                            modifier = Modifier.weight(1f)
-                        ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        dayNamesRes.forEachIndexed { i, dayRes ->
+                            val isWknd = isWeekend[i]
+                            val barColor = when {
+                                isWknd && isWeekendDominant -> Color(0xFFF59E0B)
+                                !isWknd && !isWeekendDominant -> Color(0xFF3B82F6)
+                                isWknd -> Color(0xFFF59E0B).copy(alpha = 0.45f)
+                                else -> Color(0xFF3B82F6).copy(alpha = 0.45f)
+                            }
+                            val intensity = barAnims[i].value.coerceAtLeast(0.04f)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Bottom,
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.7f)
-                                    .height(barMaxHeight * intensity)
-                                    .clip(RoundedCornerShape(topStart = 6.dp * dimens.scale, topEnd = 6.dp * dimens.scale))
-                                    .background(
-                                        brush = Brush.verticalGradient(
-                                            colors = listOf(barColor, barColor.copy(alpha = 0.5f))
-                                        )
-                                    )
-                            )
-                            Spacer(modifier = Modifier.height(6.dp * dimens.scale))
-                            Text(
-                                text = stringResource(dayRes),
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
-                                color = if (isWknd) Color(0xFFFCD34D).copy(alpha = 0.9f)
-                                        else Color.White.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center
-                            )
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.7f)
+                                        .height(barMaxHeight * intensity)
+                                        .clip(RoundedCornerShape(topStart = 6.dp * dimens.scale, topEnd = 6.dp * dimens.scale))
+                                        .background(barColor)
+                                )
+                                Spacer(modifier = Modifier.height(6.dp * dimens.scale))
+                                Text(
+                                    text = stringResource(dayRes),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = dimens.textLabel),
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (isWknd) Color(0xFFB45309)
+                                            else Color(0xFF64748B),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 }
@@ -2351,11 +2294,12 @@ fun WeekdayVsWeekendPage(page: SpotlightStoryPage.WeekdayVsWeekend) {
 @Composable
 fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
     val inCapture = LocalInCaptureContext.current
+    val seen = isStoryPageSeen()
     val countAnim = remember { Animatable(0f) }
     val timeAnim  = remember { Animatable(0f) }
 
     LaunchedEffect(page.bingeCount) {
-        if (inCapture) {
+        if (inCapture || seen) {
             countAnim.snapTo(page.bingeCount.toFloat())
         } else {
             delay(600)
@@ -2363,7 +2307,7 @@ fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
         }
     }
     LaunchedEffect(page.totalBingeMinutes) {
-        if (inCapture) {
+        if (inCapture || seen) {
             timeAnim.snapTo(page.totalBingeMinutes.toFloat())
         } else {
             delay(800)
@@ -2371,37 +2315,8 @@ fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
         }
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
-        label = "pulse"
-    )
-
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
-
-        // Warm glow background
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(320.dp * dimens.scale)
-                    .scale(pulseScale)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFFEC4899).copy(alpha = 0.22f),
-                                Color(0xFF8B5CF6).copy(alpha = 0.1f),
-                                Color.Transparent
-                            )
-                        ),
-                        shape = CircleShape
-                    )
-            )
-        }
 
         Column(
             modifier = Modifier
@@ -2565,21 +2480,24 @@ fun BingeSessionPage(page: SpotlightStoryPage.BingeSession) {
 
 @Composable
 fun TimeOfDayVibesPage(page: SpotlightStoryPage.TimeOfDayVibes) {
-    data class Period(val labelRes: Int, val emoji: String, val percent: Int, val color: Color, val bg: Color)
+    // Vector icons instead of emoji: emoji render per-OEM and rasterize soft
+    // in the shared image; vectors match the icon language used on every other page.
+    data class Period(val labelRes: Int, val icon: ImageVector, val percent: Int, val color: Color, val bg: Color)
     val periods = listOf(
-        Period(R.string.spotlight_period_morning,   "🌅", page.morningPercent,   Color(0xFFFBBF24), Color(0xFFF59E0B)),
-        Period(R.string.spotlight_period_afternoon, "☀️", page.afternoonPercent,  Color(0xFF34D399), Color(0xFF10B981)),
-        Period(R.string.spotlight_period_evening,   "🌆", page.eveningPercent,   Color(0xFF60A5FA), Color(0xFF3B82F6)),
-        Period(R.string.spotlight_period_night,     "🌙", page.nightPercent,     Color(0xFFA78BFA), Color(0xFF8B5CF6))
+        Period(R.string.spotlight_period_morning,   Icons.Default.WbSunny,   page.morningPercent,   Color(0xFFFBBF24), Color(0xFFF59E0B)),
+        Period(R.string.spotlight_period_afternoon, Icons.Default.LightMode, page.afternoonPercent, Color(0xFF34D399), Color(0xFF10B981)),
+        Period(R.string.spotlight_period_evening,   Icons.Default.WbTwilight, page.eveningPercent,   Color(0xFF60A5FA), Color(0xFF3B82F6)),
+        Period(R.string.spotlight_period_night,     Icons.Default.DarkMode,  page.nightPercent,     Color(0xFFA78BFA), Color(0xFF8B5CF6))
     )
 
     val totalPct = periods.sumOf { it.percent }.coerceAtLeast(1)
 
     val inCapture = LocalInCaptureContext.current
+    val seen = isStoryPageSeen()
     // Each bar animates independently
     val anims = remember { periods.map { Animatable(0f) } }
     LaunchedEffect(Unit) {
-        if (inCapture) {
+        if (inCapture || seen) {
             anims.forEachIndexed { index, anim ->
                 anim.snapTo(periods[index].percent / totalPct.toFloat())
             }
@@ -2624,13 +2542,23 @@ fun TimeOfDayVibesPage(page: SpotlightStoryPage.TimeOfDayVibes) {
 
             // Dominant period big label
             EnterAnimation(delay = 150) {
-                val dominant = periods.firstOrNull { stringResource(it.labelRes).lowercase() == page.dominantPeriod }
-                    ?: periods.maxByOrNull { it.percent }!!
+                // dominantPeriod is a stable English key from the generator — match by
+                // index, never against localized labels (broke in non-English locales).
+                val dominantIndex = when (page.dominantPeriod.lowercase()) {
+                    "morning" -> 0
+                    "afternoon" -> 1
+                    "evening" -> 2
+                    "night" -> 3
+                    else -> -1
+                }
+                val dominant = if (dominantIndex >= 0) periods[dominantIndex]
+                    else periods.maxByOrNull { it.percent }!!
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = dominant.emoji,
-                        style = MaterialTheme.typography.displayLarge.copy(fontSize = (dimens.textDisplay.value * 0.7f).sp),
-                        textAlign = TextAlign.Center
+                    Icon(
+                        imageVector = dominant.icon,
+                        contentDescription = null,
+                        tint = dominant.color,
+                        modifier = Modifier.size((dimens.textDisplay.value * 0.42f).dp)
                     )
                     Spacer(modifier = Modifier.height(4.dp * dimens.scale))
                     Text(
@@ -2650,62 +2578,65 @@ fun TimeOfDayVibesPage(page: SpotlightStoryPage.TimeOfDayVibes) {
                     Text(
                         text = stringResource(R.string.spotlight_listener),
                         style = MaterialTheme.typography.titleMedium.copy(fontSize = dimens.textBody),
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = Color.White.copy(alpha = 0.7f)
                     )
                 }
             }
 
-            // Horizontal share bars
+            // Horizontal share bars on a flat white card
             EnterAnimation(delay = 400) {
-                Column(
+                SolidCard(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp * dimens.scale)
+                    shape = RoundedCornerShape(dimens.cardCornerRadius),
+                    backgroundColor = Color.White,
+                    borderColor = Color.Transparent,
+                    contentPadding = PaddingValues(
+                        horizontal = 14.dp * dimens.scale,
+                        vertical = 16.dp * dimens.scale
+                    )
                 ) {
-                    periods.forEachIndexed { i, period ->
-                        val targetFraction = anims[i].value
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Emoji label
-                            Text(
-                                text = period.emoji,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontSize = (dimens.textBody.value * 1.1f).sp
-                                ),
-                                modifier = Modifier.width(32.dp * dimens.scale)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            // Bar
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(10.dp * dimens.scale)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(Color.White.copy(alpha = 0.1f))
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp * dimens.scale)
+                    ) {
+                        periods.forEachIndexed { i, period ->
+                            val targetFraction = anims[i].value
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Icon(
+                                    imageVector = period.icon,
+                                    contentDescription = null,
+                                    tint = period.bg,
+                                    modifier = Modifier.size((dimens.textBody.value * 1.15f).dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
                                 Box(
                                     modifier = Modifier
-                                        .fillMaxWidth(targetFraction)
-                                        .fillMaxHeight()
+                                        .weight(1f)
+                                        .height(10.dp * dimens.scale)
                                         .clip(RoundedCornerShape(50))
-                                        .background(
-                                            brush = Brush.horizontalGradient(
-                                                colors = listOf(period.bg.copy(alpha = 0.7f), period.color)
-                                            )
-                                        )
+                                        .background(Color(0xFFE2E8F0))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(targetFraction)
+                                            .fillMaxHeight()
+                                            .clip(RoundedCornerShape(50))
+                                            .background(period.bg)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "${period.percent}%",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textLabel),
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0F172A),
+                                    modifier = Modifier.width(36.dp * dimens.scale),
+                                    textAlign = TextAlign.End
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            // Percent
-                            Text(
-                                text = "${period.percent}%",
-                                style = MaterialTheme.typography.labelLarge.copy(fontSize = dimens.textLabel),
-                                fontWeight = FontWeight.Bold,
-                                color = period.color,
-                                modifier = Modifier.width(36.dp * dimens.scale),
-                                textAlign = TextAlign.End
-                            )
                         }
                     }
                 }
@@ -2727,6 +2658,7 @@ fun TimeOfDayVibesPage(page: SpotlightStoryPage.TimeOfDayVibes) {
 @Composable
 fun AudioMoodPage(page: SpotlightStoryPage.AudioMood) {
     val inCapture = LocalInCaptureContext.current
+    val seen = isStoryPageSeen()
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
 
@@ -2769,7 +2701,9 @@ fun AudioMoodPage(page: SpotlightStoryPage.AudioMood) {
                         )
                     ),
                     color = Color.White,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -2798,7 +2732,7 @@ fun AudioMoodPage(page: SpotlightStoryPage.AudioMood) {
             moodBars.forEachIndexed { index, (label, percent, color) ->
                 val animatedWidth = remember { Animatable(0f) }
                 LaunchedEffect(percent) {
-                    if (inCapture) {
+                    if (inCapture || seen) {
                         animatedWidth.snapTo(percent / 100f)
                     } else {
                         delay((300 + index * 150).toLong())
@@ -2959,23 +2893,24 @@ fun ConclusionPage(page: SpotlightStoryPage.Conclusion) {
             
             Spacer(modifier = Modifier.height(20.dp * dimens.scale))
             
-            // Personality - Compact inline
+            // Personality recap card
             EnterAnimation(delay = 400) {
                 SolidCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(dimens.cardCornerRadius),
-                    backgroundColor = Color(0xFF8B5CF6).copy(alpha = 0.1f),
-                    borderColor = Color(0xFF8B5CF6).copy(alpha = 0.25f),
+                    backgroundColor = Color(0xFF6D28D9),
+                    borderColor = Color.Transparent,
                     contentPadding = PaddingValues(16.dp * dimens.scale)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        val (pIcon, pColor) = getPersonalityAssets(page.personalityKey)
                         Icon(
-                            imageVector = getPersonalityAssets(page.personalityType).first,
+                            imageVector = pIcon,
                             contentDescription = null,
-                            tint = getPersonalityAssets(page.personalityType).second,
+                            tint = Color.White,
                             modifier = Modifier.size(36.dp * dimens.scale)
                         )
                         Spacer(modifier = Modifier.width(12.dp * dimens.scale))
@@ -3137,16 +3072,27 @@ fun ConclusionPage(page: SpotlightStoryPage.Conclusion) {
 }
 
 
-@Composable
-private fun getPersonalityAssets(type: String): Pair<ImageVector, Color> {
-    return when (type) {
-        stringResource(R.string.personality_party_starter_name) -> Icons.Default.Celebration to Color(0xFFF472B6)
-        stringResource(R.string.personality_intense_soul_name) -> Icons.Default.Bolt to Color(0xFFEF4444)
-        stringResource(R.string.personality_peaceful_optimist_name) -> Icons.Default.Spa to Color(0xFF34D399)
-        stringResource(R.string.personality_deep_thinker_name) -> Icons.Default.SelfImprovement to Color(0xFF60A5FA)
-        stringResource(R.string.personality_dance_floor_regular_name) -> Icons.Default.MusicNote to Color(0xFFF59E0B)
-        stringResource(R.string.personality_balanced_enthusiast_name) -> Icons.Default.Balance to Color(0xFFA78BFA)
-        else -> Icons.Default.Psychology to Color(0xFFC4B5FD)
+// Maps stable English personality keys to icons and colors across locales
+private fun getPersonalityAssets(key: String): Pair<ImageVector, Color> {
+    return when (key) {
+        "Hip Hop Head"        -> Icons.Default.Mic to Color(0xFFF472B6)
+        "Pop Icon"            -> Icons.Default.Star to Color(0xFFFBBF24)
+        "Rock Star"           -> Icons.Default.Album to Color(0xFFEF4444)
+        "Metalhead"           -> Icons.Default.FlashOn to Color(0xFFDC2626)
+        "R&B Soul"            -> Icons.Default.Favorite to Color(0xFFEC4899)
+        "Electronic Voyager"  -> Icons.Default.GraphicEq to Color(0xFF22D3EE)
+        "Jazz Cat"            -> Icons.Default.QueueMusic to Color(0xFFF59E0B)
+        "Maestro"             -> Icons.Default.Piano to Color(0xFFA78BFA)
+        "Indie Spirit"        -> Icons.Default.Explore to Color(0xFF34D399)
+        "Party Starter"       -> Icons.Default.Celebration to Color(0xFFF472B6)
+        "Intense Soul"        -> Icons.Default.Bolt to Color(0xFFEF4444)
+        "Peaceful Optimist"   -> Icons.Default.Spa to Color(0xFF34D399)
+        "Deep Thinker"        -> Icons.Default.SelfImprovement to Color(0xFF60A5FA)
+        "Dance Floor Regular" -> Icons.Default.MusicNote to Color(0xFFF59E0B)
+        "Balanced Enthusiast" -> Icons.Default.Balance to Color(0xFFA78BFA)
+        "The Explorer"        -> Icons.Default.Explore to Color(0xFF22D3EE)
+        "The Melophile"       -> Icons.Default.Psychology to Color(0xFFC4B5FD)
+        else                  -> Icons.Default.Psychology to Color(0xFFC4B5FD)
     }
 }
 
@@ -3333,13 +3279,14 @@ fun BadgesEarnedPage(page: SpotlightStoryPage.BadgesEarned) {
 @Composable
 fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
     val inCapture = LocalInCaptureContext.current
+    val seen = isStoryPageSeen()
     // Energy/power-up design — orange theme, horizontal glow streak, counter animation
     val levelAnim = remember { Animatable(0f) }
     val xpAnim   = remember { Animatable(0f) }
     val barAnim  = remember { Animatable(0f) }
 
     LaunchedEffect(page.currentLevel) {
-        if (inCapture) {
+        if (inCapture || seen) {
             levelAnim.snapTo(page.currentLevel.toFloat())
         } else {
             delay(300)
@@ -3347,7 +3294,7 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
         }
     }
     LaunchedEffect(page.xpEarnedThisPeriod) {
-        if (inCapture) {
+        if (inCapture || seen) {
             xpAnim.snapTo(page.xpEarnedThisPeriod.toFloat())
         } else {
             delay(500)
@@ -3355,7 +3302,7 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
         }
     }
     LaunchedEffect(page.levelProgress) {
-        if (inCapture) {
+        if (inCapture || seen) {
             barAnim.snapTo(page.levelProgress.coerceIn(0f, 1f))
         } else {
             delay(800)
@@ -3403,19 +3350,20 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // "LEVEL UP" pill chip header
+            // Level up ribbon pill
             EnterAnimation(delay = 0) {
-                GlassCard(
+                SolidCard(
                     modifier = Modifier.wrapContentSize(),
                     shape = RoundedCornerShape(50),
-                    backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.2f),
+                    backgroundColor = Color(0xFFFBBF24),
+                    borderColor = Color.Transparent,
                     contentPadding = PaddingValues(horizontal = 16.dp * dimens.scale, vertical = 6.dp * dimens.scale)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.FlashOn,
                             contentDescription = null,
-                            tint = Color(0xFFFBBF24),
+                            tint = Color(0xFF220F08),
                             modifier = Modifier.size(18.dp * dimens.scale)
                         )
                         Spacer(Modifier.width(6.dp * dimens.scale))
@@ -3426,7 +3374,7 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
                                 fontWeight = FontWeight.Black,
                                 letterSpacing = (3f * dimens.scale).sp
                             ),
-                            color = Color(0xFFFBBF24)
+                            color = Color(0xFF220F08)
                         )
                     }
                 }
@@ -3442,7 +3390,7 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
                             fontWeight = FontWeight.Bold,
                             letterSpacing = (4f * dimens.scale).sp
                         ),
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = Color.White.copy(alpha = 0.7f)
                     )
                     Text(
                         text = levelAnim.value.toInt().toString(),
@@ -3478,7 +3426,7 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
                         Text(
                             text = stringResource(R.string.spotlight_lv_format, page.currentLevel + 1),
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = (dimens.textLabel.value * 0.85f).sp),
-                            color = Color.White.copy(alpha = 0.45f)
+                            color = Color.White.copy(alpha = 0.7f)
                         )
                     }
                     Spacer(Modifier.height(4.dp * dimens.scale))
@@ -3520,9 +3468,10 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
                             ) {
                                 Column {
                                     val xpDisplayed = xpAnim.value.toLong()
+                                    // String resource already includes the "+" prefix and "XP" suffix.
                                     val xpText = if (xpDisplayed >= 1000) stringResource(R.string.spotlight_xp_format_k, xpDisplayed / 1000f) else stringResource(R.string.spotlight_xp_format, xpDisplayed)
                                     Text(
-                                        text = "+$xpText XP",
+                                        text = xpText,
                                         style = MaterialTheme.typography.headlineSmall.copy(
                                             fontSize = dimens.textTitle,
                                             fontWeight = FontWeight.Black
@@ -3532,7 +3481,7 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
                                     Text(
                                         text = stringResource(R.string.spotlight_earned_this_period),
                                         style = MaterialTheme.typography.labelMedium.copy(fontSize = dimens.textLabel),
-                                        color = Color.White.copy(alpha = 0.55f)
+                                        color = Color.White.copy(alpha = 0.7f)
                                     )
                                 }
                                 Text(
@@ -3563,15 +3512,15 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
 @Composable
 fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
     val inCapture = LocalInCaptureContext.current
-    // Completely distinct design: ceremonial scroll/achievement unveil
-    // Centered jewel, old title fades above, new title rises from below
+    val seen = isStoryPageSeen()
+    // Title unlock transition: previous title fades out, new title animates in
     val oldTitleAlpha = remember { Animatable(0f) }
     val newTitleOffset = remember { Animatable(80f) }
     val newTitleAlpha  = remember { Animatable(0f) }
     val ringAlpha      = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
-        if (inCapture) {
+        if (inCapture || seen) {
             oldTitleAlpha.snapTo(0f)
             newTitleOffset.snapTo(0f)
             newTitleAlpha.snapTo(1f)
@@ -3586,7 +3535,7 @@ fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
         }
     }
     LaunchedEffect(Unit) {
-        if (inCapture) {
+        if (inCapture || seen) {
             ringAlpha.snapTo(1f)
         } else {
             delay(300)
@@ -3750,7 +3699,7 @@ fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
                                 Text(
                                     text = label,
                                     style = MaterialTheme.typography.labelSmall.copy(fontSize = (dimens.textLabel.value * 0.85f).sp),
-                                    color = Color.White.copy(alpha = 0.55f),
+                                    color = Color.White.copy(alpha = 0.7f),
                                     textAlign = TextAlign.Center,
                                     maxLines = 1
                                 )

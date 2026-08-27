@@ -47,8 +47,6 @@ fun TempoDialogSurface(
                 spotColor = Color.Black.copy(alpha = 0.55f)
             )
             .clip(TempoDialogShape.shape)
-            // Top-lit solid: faint lift toward TempoSurfaceRaised at the top
-            // edge — depth without glass.
             .background(
                 Brush.verticalGradient(
                     listOf(TempoSurfaceRaised, TempoSurfaceDialog)
@@ -65,8 +63,7 @@ fun TempoDialogSurface(
     )
 }
 /**
- * Icon badge for dialog headers — tinted squircle with a colored halo,
- * no animation.
+ * Header icon badge for dialogs.
  */
 @Composable
 fun TempoDialogIcon(
@@ -79,13 +76,6 @@ fun TempoDialogIcon(
     Box(
         modifier = modifier
             .size(size.dp)
-            // Colored halo: soft tinted shadow reads as a glow behind the badge.
-            .shadow(
-                elevation = 10.dp,
-                shape = badgeShape,
-                ambientColor = Color.Black.copy(alpha = 0.3f),
-                spotColor = tint.copy(alpha = 0.4f)
-            )
             .clip(badgeShape)
             .background(tint.copy(alpha = 0.14f))
             .border(

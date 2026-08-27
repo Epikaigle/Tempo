@@ -148,7 +148,7 @@ fun LevelUpOverlay(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFFA855F7),
+                color = MaterialTheme.colorScheme.tertiary,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.alpha(textAlpha.value)
             )

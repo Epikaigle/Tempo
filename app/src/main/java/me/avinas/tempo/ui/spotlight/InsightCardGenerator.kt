@@ -725,7 +725,7 @@ class InsightCardGenerator @Inject constructor(
     
     // Story Generation (Optimized with parallel data fetching)
     
-    suspend fun generateStory(timeRange: TimeRange, debugShowAll: Boolean = false): List<SpotlightStoryPage> = kotlinx.coroutines.coroutineScope {
+    suspend fun generateStory(timeRange: TimeRange): List<SpotlightStoryPage> = kotlinx.coroutines.coroutineScope {
         val storyPages = mutableListOf<SpotlightStoryPage>()
         // Collects eligible optional slides; 2–4 are selected per session via seeded random.
         // LevelUp / TitleEarned are inserted directly into storyPages (milestone-triggered permanent).
@@ -1132,7 +1132,8 @@ class InsightCardGenerator @Inject constructor(
         val varietyScore = discoveryStats?.varietyScore ?: 0.0
         val topGenreNames = topGenres.map { it.genre }
         
-        val personalityType = if (audioFeatures != null) {
+        // Pair<stable English key, localized (name, description, tag)>
+        val personalityResult = if (audioFeatures != null) {
             determineMusicalPersonality(
                 energy = audioFeatures.averageEnergy,
                 valence = audioFeatures.averageValence,
@@ -1145,7 +1146,7 @@ class InsightCardGenerator @Inject constructor(
             if (topGenreNames.isNotEmpty()) {
                  determineMusicalPersonality(0.5f, 0.5f, 0.5f, topGenreNames, discoveryStats?.newArtistsCount ?: 0, varietyScore)
             } else {
-                 Triple("The Melophile", "You simply love music in all its forms.", "Good music is good music, period.")
+                 "The Melophile" to Triple("The Melophile", "You simply love music in all its forms.", "Good music is good music, period.")
             }
         }
 
@@ -1187,9 +1188,10 @@ class InsightCardGenerator @Inject constructor(
         
         storyPages.add(
             SpotlightStoryPage.Personality(
-                conversationalText = personalityType.third,
-                personalityType = personalityType.first,
-                description = personalityType.second,
+                conversationalText = personalityResult.second.third,
+                personalityType = personalityResult.second.first,
+                personalityKey = personalityResult.first,
+                description = personalityResult.second.second,
                 previewUrl = null
             )
         )
@@ -1313,7 +1315,8 @@ class InsightCardGenerator @Inject constructor(
             SpotlightStoryPage.Conclusion(
                 conversationalText = "See you next time.", 
                 totalMinutes = totalMinutes,
-                personalityType = personalityType.first,
+                personalityType = personalityResult.second.first,
+                personalityKey = personalityResult.first,
                 topArtists = topArtistsList.take(5).map { 
                     SpotlightStoryPage.Conclusion.ArtistEntry(it.artist, it.imageUrl) 
                 },
@@ -1339,12 +1342,8 @@ class InsightCardGenerator @Inject constructor(
         }
         val seed = timeRange.ordinal * 10_000L + periodKey
         val rng = kotlin.random.Random(seed)
-        val selectedOptional = if (debugShowAll) {
-            optionalPool.toList()
-        } else {
-            val maxOptionalCount = rng.nextInt(3) + 2
-            optionalPool.shuffled(rng).take(maxOptionalCount)
-        }
+        val maxOptionalCount = rng.nextInt(3) + 2
+        val selectedOptional = optionalPool.shuffled(rng).take(maxOptionalCount)
         // Merge selected slides into storyPages at their natural narrative positions
         mergeOptionalIntoStory(storyPages, selectedOptional)
 
@@ -1401,6 +1400,7 @@ class InsightCardGenerator @Inject constructor(
         }
     }
 
+    // Returns Pair<stable English key, localized (name, description, tag)>
     private fun determineMusicalPersonality(
         energy: Float,
         valence: Float,
@@ -1408,7 +1408,7 @@ class InsightCardGenerator @Inject constructor(
         topGenres: List<String> = emptyList(),
         newArtistCount: Int = 0,
         varietyScore: Double = 0.0
-    ): Triple<String, String, String> {
+    ): Pair<String, Triple<String, String, String>> {
         // 1. Genre-Based Personalities (Prioritize strong genre affinity)
         val mainGenre = topGenres.firstOrNull()?.lowercase() ?: ""
         
@@ -1427,45 +1427,31 @@ class InsightCardGenerator @Inject constructor(
             }
             
             if (genrePersonality != null) {
-                return getDynamicPersonalityText(genrePersonality)
+                return genrePersonality to getDynamicPersonalityText(genrePersonality)
             }
         }
 
         // 2. Audio-Feature Personalities (If no strong genre match)
-        return when {
+        val key = when {
             // High Energy + Happy
-            energy >= 0.7f && valence >= 0.6f && danceability >= 0.6f -> 
-                getDynamicPersonalityText("Party Starter")
-            
+            energy >= 0.7f && valence >= 0.6f && danceability >= 0.6f -> "Party Starter"
             // High Energy + Dark/Intense
-            energy >= 0.7f && valence < 0.4f -> 
-                getDynamicPersonalityText("Intense Soul")
-            
+            energy >= 0.7f && valence < 0.4f -> "Intense Soul"
             // Low Energy + Happy/Calm
-            energy < 0.4f && valence >= 0.6f -> 
-               getDynamicPersonalityText("Peaceful Optimist")
-            
+            energy < 0.4f && valence >= 0.6f -> "Peaceful Optimist"
             // Low Energy + Dark/Sad
-            energy < 0.4f && valence < 0.4f -> 
-                getDynamicPersonalityText("Deep Thinker")
-            
+            energy < 0.4f && valence < 0.4f -> "Deep Thinker"
             // High Danceability
-            danceability >= 0.7f -> 
-                getDynamicPersonalityText("Dance Floor Regular")
-            
+            danceability >= 0.7f -> "Dance Floor Regular"
             // Balanced
-            energy >= 0.4f && energy <= 0.7f && valence >= 0.4f && valence <= 0.7f -> 
-                getDynamicPersonalityText("Balanced Enthusiast")
-            
+            energy >= 0.4f && energy <= 0.7f && valence >= 0.4f && valence <= 0.7f -> "Balanced Enthusiast"
             // 3. Discovery/Explorer (Requires High Variety + Discovery)
             // Variety Score (Entropy): typically 0.0 to 3.0+. > 2.0 implies listening to many artists evenly.
-            varietyScore > 2.0 && newArtistCount > 25 -> 
-                getDynamicPersonalityText("The Explorer")
-            
+            varietyScore > 2.0 && newArtistCount > 25 -> "The Explorer"
             // 4. Default Fallback
-            else -> 
-                getDynamicPersonalityText("The Melophile")
+            else -> "The Melophile"
         }
+        return key to getDynamicPersonalityText(key)
     }
 
     private fun getDynamicPersonalityText(type: String): Triple<String, String, String> {

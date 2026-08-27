@@ -135,7 +135,7 @@ fun ConstellationWeb(
                 // Draw central throb Vibe Core
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(AccentPurple.copy(alpha = 0.35f), Color.Transparent),
+                        colors = listOf(InsightDanceability.copy(alpha = 0.35f), Color.Transparent),
                         center = Offset(cxPx, cyPx),
                         radius = 32.dp.toPx() * pulseAnim
                     ),
@@ -148,7 +148,7 @@ fun ConstellationWeb(
                     center = Offset(cxPx, cyPx)
                 )
                 drawCircle(
-                    color = AccentPurple,
+                    color = InsightDanceability,
                     radius = 5.dp.toPx(),
                     center = Offset(cxPx, cyPx)
                 )
@@ -172,7 +172,7 @@ fun ConstellationWeb(
                     val p2 = resolvedPositions[(i + 1) % resolvedPositions.size]
                     
                     drawLine(
-                        color = AccentPurple.copy(alpha = 0.18f),
+                        color = InsightDanceability.copy(alpha = 0.18f),
                         start = p1,
                         end = p2,
                         strokeWidth = 1.5.dp.toPx()
@@ -594,7 +594,7 @@ fun VibeHeader(
                             if (isGamificationEnabled) {
                                 Surface(
                                     shape = RoundedCornerShape(999.dp),
-                                    color = PrimaryPurple.copy(alpha = 0.08f),
+                                    color = TempoPop.copy(alpha = 0.08f),
                                     tonalElevation = 0.dp,
                                     shadowElevation = 0.dp
                                 ) {
@@ -603,7 +603,7 @@ fun VibeHeader(
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Black,
-                                        color = PrimaryPurple,
+                                        color = TempoPop,
                                         maxLines = 1
                                     )
                                 }
