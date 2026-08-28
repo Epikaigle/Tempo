@@ -5,6 +5,7 @@ import type {
   PairingStatus,
   QrCodeData,
   Settings,
+  DriveSyncAction,
   SyncStatus,
   SyncRecord,
   PlayCount,
@@ -98,8 +99,33 @@ export async function getSettings(): Promise<Settings> {
   return invoke("get_settings");
 }
 
-export async function updateSettings(settings: Settings): Promise<void> {
-  return invoke("update_settings", { settings });
+/**
+ * Persist ordinary Desktop settings and optionally run one explicit Google
+ * Drive action. Drive status fields are read-only snapshots returned by
+ * getSettings(). When drive_sync_action is supplied, the Rust backend deliberately
+ * does not persist the accompanying ordinary settings; the object is carried only
+ * because Drive commands are dispatched through the existing update_settings
+ * Tauri command. Settings.tsx then merges only the returned Drive status so any
+ * unsaved ordinary form edits remain local until the user presses Save.
+ */
+export async function updateSettings(
+  settings: Settings,
+  driveSyncAction?: DriveSyncAction
+): Promise<void> {
+  return invoke("update_settings", {
+    settings: {
+      ...settings,
+      drive_sync_action: driveSyncAction ?? null,
+    },
+  });
+}
+
+export async function runDriveSyncAction(
+  settings: Settings,
+  action: DriveSyncAction
+): Promise<Settings> {
+  await updateSettings(settings, action);
+  return getSettings();
 }
 
 // --- Queue ---
