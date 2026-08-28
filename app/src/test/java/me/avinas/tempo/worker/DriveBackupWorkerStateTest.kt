@@ -48,6 +48,38 @@ class DriveBackupWorkerStateTest {
     }
 
     @Test
+    fun manualIntervalSkipsPeriodicDriveButNotExplicitOneTimeDrive() {
+        assertTrue(
+            DriveBackupWorker.shouldSkipBackup(
+                backupInterval = me.avinas.tempo.data.drive.BackupInterval.MANUAL,
+                driveEnabled = true,
+                isManualRequest = false
+            )
+        )
+        assertFalse(
+            DriveBackupWorker.shouldSkipBackup(
+                backupInterval = me.avinas.tempo.data.drive.BackupInterval.MANUAL,
+                driveEnabled = true,
+                isManualRequest = true
+            )
+        )
+        assertFalse(
+            DriveBackupWorker.shouldSkipBackup(
+                backupInterval = me.avinas.tempo.data.drive.BackupInterval.WEEKLY,
+                driveEnabled = true,
+                isManualRequest = false
+            )
+        )
+        assertTrue(
+            DriveBackupWorker.shouldSkipBackup(
+                backupInterval = me.avinas.tempo.data.drive.BackupInterval.WEEKLY,
+                driveEnabled = false,
+                isManualRequest = true
+            )
+        )
+    }
+
+    @Test
     fun wifiOnlyMeansValidatedActualWifi() {
         assertTrue(
             DriveBackupWorker.networkSatisfiesDrivePolicy(

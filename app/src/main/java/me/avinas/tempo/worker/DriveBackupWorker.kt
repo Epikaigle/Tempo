@@ -80,6 +80,14 @@ class DriveBackupWorker @AssistedInject constructor(
             isWifiTransport: Boolean
         ): Boolean = hasValidatedInternet && (!wifiOnly || isWifiTransport)
 
+        internal fun shouldSkipBackup(
+            backupInterval: BackupInterval,
+            driveEnabled: Boolean,
+            isManualRequest: Boolean
+        ): Boolean =
+            !driveEnabled ||
+                (backupInterval == BackupInterval.MANUAL && !isManualRequest)
+
         fun schedule(
             context: Context,
             intervalHours: Long,
@@ -151,11 +159,15 @@ class DriveBackupWorker @AssistedInject constructor(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val settings = settingsManager.settings.first()
 
-        // A worker already running/retrying may observe Manual/sign-out before
-        // scheduler cancellation reaches it. Finish quietly instead of creating
-        // another automatic backup with stale settings.
-        if (settings.backupInterval == BackupInterval.MANUAL ||
-            !settings.isGoogleDriveEnabled
+        // A periodic worker already running/retrying may observe Manual/sign-out
+        // before scheduler cancellation reaches it. A one-time manual request uses
+        // this same worker class, so Manual must suppress only the periodic path.
+        val isManualRequest = tags.contains(MANUAL_WORK_NAME)
+        if (shouldSkipBackup(
+                backupInterval = settings.backupInterval,
+                driveEnabled = settings.isGoogleDriveEnabled,
+                isManualRequest = isManualRequest
+            )
         ) {
             cleanupRunState()
             return@withContext Result.success()
