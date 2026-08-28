@@ -243,7 +243,13 @@ fun BackupRestoreScreen(
                     onBackupNow = viewModel::backupToDrive,
                     onRestore = viewModel::startDriveRestore,
                     onDelete = viewModel::deleteDriveBackup,
-                    onRefreshBackups = viewModel::loadDriveBackups,
+                    onRefreshBackups = viewModel::loadDriveBackups
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                AutomaticBackupSection(
+                    backupSettings = backupSettings,
                     onSetInterval = viewModel::setBackupInterval,
                     onSetWifiOnly = viewModel::setWifiOnly
                 )
@@ -254,6 +260,7 @@ fun BackupRestoreScreen(
                 LocalBackupSection(
                     uiState = uiState,
                     onToggleLocalImages = viewModel::toggleIncludeLocalImages,
+                    onChooseAutoBackupFolder = viewModel::chooseLocalBackupFolder,
                     onExport = {
                         exportLauncher.launch("tempo_backup_${System.currentTimeMillis()}.zip")
                     },
@@ -553,9 +560,7 @@ private fun GoogleDriveSection(
     onBackupNow: () -> Unit,
     onRestore: (DriveBackupInfo) -> Unit,
     onDelete: (DriveBackupInfo) -> Unit,
-    onRefreshBackups: () -> Unit,
-    onSetInterval: (BackupInterval) -> Unit,
-    onSetWifiOnly: (Boolean) -> Unit
+    onRefreshBackups: () -> Unit
 ) {
     Text(
         text = "GOOGLE DRIVE",
@@ -699,7 +704,8 @@ private fun GoogleDriveSection(
                     
                     Button(
                         onClick = onBackupNow,
-                        enabled = driveOperation == DriveOperationState.Idle,
+                        enabled = driveOperation == DriveOperationState.Idle &&
+                            backupSettings.isGoogleDriveEnabled,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
                         shape = RoundedCornerShape(12.dp)
                     ) {
@@ -708,66 +714,6 @@ private fun GoogleDriveSection(
                         Text("Backup Now")
                     }
                 }
-                
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                
-                // Schedule dropdown
-                var intervalExpanded by remember { mutableStateOf(false) }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { intervalExpanded = true }
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Auto-backup",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = Color.White
-                        )
-                        Text(
-                            text = backupSettings.backupInterval.displayName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
-                    }
-                    
-                    Box {
-                        Icon(
-                            Icons.Default.Schedule,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.7f)
-                        )
-                        DropdownMenu(
-                            expanded = intervalExpanded,
-                            onDismissRequest = { intervalExpanded = false }
-                        ) {
-                            BackupInterval.entries.forEach { interval ->
-                                DropdownMenuItem(
-                                    text = { Text(interval.displayName) },
-                                    onClick = {
-                                        onSetInterval(interval)
-                                        intervalExpanded = false
-                                    },
-                                    leadingIcon = {
-                                        if (backupSettings.backupInterval == interval) {
-                                            Icon(Icons.Default.Check, contentDescription = null)
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                // Wi-Fi only toggle
-                SettingsSwitch(
-                    title = "Wi-Fi Only",
-                    subtitle = "Only backup when connected to Wi-Fi",
-                    checked = backupSettings.wifiOnly,
-                    onCheckedChange = onSetWifiOnly
-                )
                 
                 // Backup history
                 if (driveBackups.isNotEmpty()) {
@@ -805,6 +751,87 @@ private fun GoogleDriveSection(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AutomaticBackupSection(
+    backupSettings: BackupSettings,
+    onSetInterval: (BackupInterval) -> Unit,
+    onSetWifiOnly: (Boolean) -> Unit
+) {
+    Text(
+        text = "AUTOMATIC BACKUPS",
+        style = MaterialTheme.typography.titleSmall,
+        color = TempoRed,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+    )
+
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(0.dp),
+        variant = GlassCardVariant.LowProminence
+    ) {
+        Column {
+            var intervalExpanded by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { intervalExpanded = true }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Auto-backup",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White
+                    )
+                    Text(
+                        text = backupSettings.backupInterval.displayName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+
+                Box {
+                    Icon(
+                        Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f)
+                    )
+                    DropdownMenu(
+                        expanded = intervalExpanded,
+                        onDismissRequest = { intervalExpanded = false }
+                    ) {
+                        BackupInterval.entries.forEach { interval ->
+                            DropdownMenuItem(
+                                text = { Text(interval.displayName) },
+                                onClick = {
+                                    onSetInterval(interval)
+                                    intervalExpanded = false
+                                },
+                                leadingIcon = {
+                                    if (backupSettings.backupInterval == interval) {
+                                        Icon(Icons.Default.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+            SettingsSwitch(
+                title = "Drive on Wi-Fi only",
+                subtitle = "Device backups still run offline; only the Google Drive upload waits for Wi-Fi",
+                checked = backupSettings.wifiOnly,
+                onCheckedChange = onSetWifiOnly
+            )
         }
     }
 }
@@ -868,6 +895,7 @@ private fun DriveBackupItem(
 private fun LocalBackupSection(
     uiState: BackupRestoreUiState,
     onToggleLocalImages: (Boolean) -> Unit,
+    onChooseAutoBackupFolder: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit
 ) {
@@ -885,6 +913,35 @@ private fun LocalBackupSection(
         variant = GlassCardVariant.LowProminence
     ) {
         Column {
+            // Automatic local backup destination
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Automatic backup folder",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Choose or change where scheduled device backups are saved",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+                OutlinedButton(onClick = onChooseAutoBackupFolder) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Choose folder")
+                }
+            }
+
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
             // Local images toggle
             SettingsSwitch(
                 title = stringResource(R.string.backup_restore_include_local_images),

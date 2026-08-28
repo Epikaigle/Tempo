@@ -2,6 +2,7 @@ package me.avinas.tempo.data.drive
 
 import android.accounts.Account
 import android.app.Activity
+import android.app.PendingIntent
 import android.content.Context
 import android.util.Log
 import androidx.credentials.ClearCredentialStateRequest
@@ -69,8 +70,13 @@ class GoogleAuthManager @Inject constructor(
     private val _needsDriveConsent = MutableStateFlow(false)
     val needsDriveConsent: StateFlow<Boolean> = _needsDriveConsent.asStateFlow()
     
-    // Cached authorization result for Drive API access
+    // Cached authorization result for Drive API access.
     private var authorizationResult: AuthorizationResult? = null
+
+    // ApiException can carry a consent resolution even when no AuthorizationResult
+    // is returned. Keep that PendingIntent separately so the UI can always launch
+    // the required Drive consent flow.
+    private var authorizationResolution: PendingIntent? = null
 
     private fun configuredWebClientId(): String? =
         BuildConfig.GOOGLE_WEB_CLIENT_ID.trim().takeIf { it.isNotEmpty() }
@@ -169,6 +175,14 @@ class GoogleAuthManager @Inject constructor(
                         )
                         
                         Log.i(TAG, "Successfully signed in as ${account.email}")
+
+                        // An explicit account selection starts a fresh Drive authorization
+                        // lifecycle. Never allow a token from a previous account/session to
+                        // survive if the new authorization later needs consent or fails.
+                        authorizationResult = null
+                        authorizationResolution = null
+                        _needsDriveConsent.value = false
+                        tokenStorage.clearToken()
                         
                         // Authorize for Drive access
                         requestDriveAuthorization()
@@ -198,13 +212,16 @@ class GoogleAuthManager @Inject constructor(
         try {
             Log.d(TAG, "Requesting Drive authorization")
             
+            authorizationResolution = null
             authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
             
             if (authorizationResult?.hasResolution() == true) {
+                authorizationResolution = authorizationResult?.pendingIntent
                 Log.d(TAG, "Drive authorization requires user consent - pendingIntent available")
                 _needsDriveConsent.value = true
                 false
             } else {
+                authorizationResolution = null
                 val accessToken = authorizationResult?.accessToken
                 val grantedScopes = authorizationResult?.grantedScopes.orEmpty()
                 val hasDriveScope = grantedScopes.any { it.contains(DriveScopes.DRIVE_FILE) }
@@ -225,6 +242,8 @@ class GoogleAuthManager @Inject constructor(
                             "Ensure the OAuth consent screen for client ${BuildConfig.GOOGLE_WEB_CLIENT_ID} " +
                             "includes https://www.googleapis.com/auth/drive.file"
                     )
+                    authorizationResult = null
+                    authorizationResolution = null
                     tokenStorage.clearToken()
                     return@withContext false
                 }
@@ -239,14 +258,24 @@ class GoogleAuthManager @Inject constructor(
             // GMS may throw ApiException carrying the consent pendingIntent
             val resolution = e.status.resolution
             if (resolution != null) {
+                authorizationResult = null
+                authorizationResolution = resolution
                 Log.d(TAG, "Drive authorization requires user consent (ApiException) - pendingIntent available")
                 _needsDriveConsent.value = true
                 false
             } else {
+                authorizationResult = null
+                authorizationResolution = null
+                _needsDriveConsent.value = false
+                tokenStorage.clearToken()
                 Log.e(TAG, "Failed to request Drive authorization (${e.status.statusCode}: ${e.status.statusMessage})", e)
                 false
             }
         } catch (e: Exception) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            tokenStorage.clearToken()
             Log.e(TAG, "Failed to request Drive authorization", e)
             false
         }
@@ -260,8 +289,16 @@ class GoogleAuthManager @Inject constructor(
         try {
             Log.d(TAG, "Completing consent flow, re-requesting authorization")
             _needsDriveConsent.value = false
+            authorizationResolution = null
             
             authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
+
+            if (authorizationResult?.hasResolution() == true) {
+                authorizationResolution = authorizationResult?.pendingIntent
+                _needsDriveConsent.value = true
+                Log.w(TAG, "Drive consent still requires user resolution after consent flow")
+                return@withContext false
+            }
             
             val accessToken = authorizationResult?.accessToken
             val grantedScopes = authorizationResult?.grantedScopes.orEmpty()
@@ -274,14 +311,24 @@ class GoogleAuthManager @Inject constructor(
                 tokenStorage.saveAccessToken(accessToken)
                 Log.d(TAG, "Access token persisted to secure storage")
             } else {
+                authorizationResult = null
+                authorizationResolution = null
                 tokenStorage.clearToken()
             }
             
             hasToken
         } catch (e: ApiException) {
+            authorizationResult = null
+            authorizationResolution = e.status.resolution
+            _needsDriveConsent.value = authorizationResolution != null
+            tokenStorage.clearToken()
             Log.e(TAG, "Failed to complete consent flow (${e.status.statusCode}: ${e.status.statusMessage})", e)
             false
         } catch (e: Exception) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            tokenStorage.clearToken()
             Log.e(TAG, "Failed to complete consent flow", e)
             false
         }
@@ -327,19 +374,26 @@ class GoogleAuthManager @Inject constructor(
      * Check if Drive authorization requires user consent.
      * Returns the pending intent if consent is needed.
      */
-    fun getDriveAuthorizationPendingIntent() = authorizationResult?.pendingIntent
+    fun getDriveAuthorizationPendingIntent(): PendingIntent? =
+        authorizationResolution ?: authorizationResult?.pendingIntent
     
     /**
      * Update authorization result after user consent.
      */
     fun updateAuthorizationResult(result: AuthorizationResult) {
         authorizationResult = result
+        authorizationResolution = result.pendingIntent.takeIf { result.hasResolution() }
+        _needsDriveConsent.value = result.hasResolution()
         Log.i(TAG, "Authorization result updated, accessToken present: ${result.accessToken != null}")
-        
-        // Persist the token for background workers
-        result.accessToken?.let { token ->
-            tokenStorage.saveAccessToken(token)
+
+        val hasDriveScope = result.grantedScopes.orEmpty().any { it.contains(DriveScopes.DRIVE_FILE) }
+        if (!result.hasResolution() && result.accessToken != null && hasDriveScope) {
+            tokenStorage.saveAccessToken(result.accessToken!!)
             Log.d(TAG, "Authorization result token persisted to secure storage")
+        } else if (!result.hasResolution()) {
+            authorizationResult = null
+            authorizationResolution = null
+            tokenStorage.clearToken()
         }
     }
     
@@ -355,19 +409,27 @@ class GoogleAuthManager @Inject constructor(
             val result = authorizationResult
             if (result != null && !result.hasResolution()) {
                 val token = result.accessToken
-                if (token != null) {
+                val hasDriveScope = result.grantedScopes.orEmpty()
+                    .any { it.contains(DriveScopes.DRIVE_FILE) }
+                if (token != null && hasDriveScope) {
                     return@withContext token
+                }
+                if (token != null && !hasDriveScope) {
+                    Log.w(TAG, "Discarding in-memory token without drive.file scope")
+                    authorizationResult = null
+                    authorizationResolution = null
+                    tokenStorage.clearToken()
                 }
             }
             
             // Fallback to persisted token storage (for background workers)
             val persistedToken = tokenStorage.getAccessToken()
             if (persistedToken != null) {
-                // Proactively refresh expired tokens so background workers don't
-                // burn a guaranteed 401 round-trip (and so a stale / incorrectly
-                // scoped token is never reused).
-                if (tokenStorage.isTokenExpired()) {
-                    Log.w(TAG, "Persisted token is expired, attempting silent refresh")
+                // Refresh before the usual one-hour OAuth lifetime is reached.
+                // If Google says consent is required, or the token has crossed our
+                // hard-expiry threshold, never hand the old token to Drive.
+                if (tokenStorage.isTokenStale()) {
+                    Log.w(TAG, "Persisted token is stale, attempting silent refresh")
                     if (refreshAccessToken()) {
                         val freshToken = tokenStorage.getAccessToken()
                         if (freshToken != null) {
@@ -375,7 +437,18 @@ class GoogleAuthManager @Inject constructor(
                             return@withContext freshToken
                         }
                     }
-                    Log.w(TAG, "Silent refresh failed, falling back to stored token (Drive will retry via 401)")
+
+                    if (_needsDriveConsent.value || tokenStorage.isTokenExpired()) {
+                        Log.w(TAG, "Stale Drive token cannot be reused; authorization is required")
+                        tokenStorage.clearToken()
+                        return@withContext null
+                    }
+
+                    // A transient Play Services failure may happen slightly before
+                    // the token's normal expiry. Keep that previously scope-validated
+                    // token only while it remains below the hard-expiry threshold;
+                    // Drive will still reject/refresh it on a real 401.
+                    Log.w(TAG, "Silent refresh failed; temporarily using cached Drive token")
                     return@withContext persistedToken
                 }
                 Log.d(TAG, "Using persisted token from storage")
@@ -398,14 +471,21 @@ class GoogleAuthManager @Inject constructor(
         try {
             Log.d(TAG, "Refreshing access token")
             
-            // Re-authorize to get a fresh token
+            // Re-authorize to get a fresh token. Clear the old result before
+            // awaiting so an exception cannot leave a stale token readable.
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
             authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
             
             if (authorizationResult?.hasResolution() == true) {
+                authorizationResolution = authorizationResult?.pendingIntent
                 Log.d(TAG, "Refresh requires user consent")
                 _needsDriveConsent.value = true
                 false
             } else {
+                authorizationResolution = null
+                _needsDriveConsent.value = false
                 val accessToken = authorizationResult?.accessToken
                 val grantedScopes = authorizationResult?.grantedScopes.orEmpty()
                 val hasDriveScope = grantedScopes.any { it.contains(DriveScopes.DRIVE_FILE) }
@@ -417,6 +497,8 @@ class GoogleAuthManager @Inject constructor(
                     tokenStorage.saveAccessToken(accessToken)
                     Log.d(TAG, "Refreshed token persisted to secure storage")
                 } else {
+                    authorizationResult = null
+                    authorizationResolution = null
                     tokenStorage.clearToken()
                 }
                 
@@ -424,11 +506,14 @@ class GoogleAuthManager @Inject constructor(
             }
         } catch (e: ApiException) {
             Log.w(TAG, "Refresh failed (${e.status.statusCode}: ${e.status.statusMessage})", e)
-            if (e.status.resolution != null) {
-                _needsDriveConsent.value = true
-            }
+            authorizationResult = null
+            authorizationResolution = e.status.resolution
+            _needsDriveConsent.value = authorizationResolution != null
             false
         } catch (e: Exception) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
             Log.e(TAG, "Failed to refresh token", e)
             false
         }
@@ -440,6 +525,8 @@ class GoogleAuthManager @Inject constructor(
      */
     fun invalidateAuthorization() {
         authorizationResult = null
+        authorizationResolution = null
+        _needsDriveConsent.value = false
     }
     
     /**
@@ -454,29 +541,32 @@ class GoogleAuthManager @Inject constructor(
      * Sign out and clear all credentials.
      */
     suspend fun signOut() = withContext(Dispatchers.IO) {
+        Log.d(TAG, "Signing out")
+
+        // Credential Manager cleanup is best effort. It must not gate the local
+        // credential/token cleanup below, otherwise one provider exception can
+        // leave Tempo looking signed in with stale Drive credentials.
         try {
-            Log.d(TAG, "Signing out")
-            
-            // Create CredentialManager with application context for cleanup
             val credentialManager = CredentialManager.create(context)
-            
-            // Clear Credential Manager state
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
-            
-            // Clear persisted tokens and account info
+        } catch (e: Exception) {
+            Log.w(TAG, "Credential Manager cleanup failed during sign out", e)
+        }
+
+        try {
             tokenStorage.clearAll()
             Log.d(TAG, "Cleared persisted tokens from secure storage")
-            
-            // Clear local state
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear persisted Google credentials", e)
+        } finally {
             authorizationResult = null
+            authorizationResolution = null
             _currentAccount.value = null
             _isSignedIn.value = false
             _needsDriveConsent.value = false
-            
-            Log.i(TAG, "Successfully signed out")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during sign out", e)
         }
+
+        Log.i(TAG, "Finished Google sign out cleanup")
     }
     
     /**
@@ -530,8 +620,11 @@ class GoogleAuthManager @Inject constructor(
      * Restores account info from encrypted storage and attempts silent re-authorization with Play Services.
      */
     suspend fun restoreSessionSilently(): Boolean = withContext(Dispatchers.IO) {
-        // Step 1: Check if session is already active in memory
-        if (_isSignedIn.value && authorizationResult?.accessToken != null) {
+        // Step 1: Check if a drive.file-scoped session is already active in memory.
+        val activeAuthorization = authorizationResult
+        val activeHasDriveScope = activeAuthorization?.grantedScopes.orEmpty()
+            .any { it.contains(DriveScopes.DRIVE_FILE) }
+        if (_isSignedIn.value && activeAuthorization?.accessToken != null && activeHasDriveScope) {
             Log.d(TAG, "Session already active in memory")
             return@withContext true
         }
@@ -565,13 +658,19 @@ class GoogleAuthManager @Inject constructor(
         try {
             Log.d(TAG, "Attempting silent re-authorization with Google Play Services")
             
+            authorizationResult = null
+            authorizationResolution = null
             authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
             
             // Check if we got a token without needing user consent
             if (authorizationResult?.hasResolution() == true) {
+                authorizationResolution = authorizationResult?.pendingIntent
+                _needsDriveConsent.value = true
                 Log.d(TAG, "Re-authorization requires user consent - cannot complete silently")
                 return@withContext false
             }
+            authorizationResolution = null
+            _needsDriveConsent.value = false
             
             val accessToken = authorizationResult?.accessToken
             val grantedScopes = authorizationResult?.grantedScopes.orEmpty()
@@ -585,19 +684,51 @@ class GoogleAuthManager @Inject constructor(
             }
             
             Log.w(TAG, "Re-authorization completed but no drive.file-scoped access token received (scopes: $grantedScopes)")
+            authorizationResult = null
+            authorizationResolution = null
+            tokenStorage.clearToken()
             return@withContext false
             
-        } catch (e: Exception) {
-            Log.w(TAG, "Silent re-authorization failed: ${e.message}")
-            
-            // If we have a cached (possibly stale) token, we can try using it
-            // The Drive service will handle 401 errors and trigger refresh
+        } catch (e: ApiException) {
+            authorizationResult = null
+            authorizationResolution = e.status.resolution
+            _needsDriveConsent.value = authorizationResolution != null
+            Log.w(
+                TAG,
+                "Silent re-authorization failed (${e.status.statusCode}: ${e.status.statusMessage})",
+                e
+            )
+
+            // A resolution is an explicit instruction from Google that the user
+            // must consent again. Do not mask it with a cached token.
+            if (authorizationResolution != null) {
+                tokenStorage.clearToken()
+                return@withContext false
+            }
+
+            // For a non-consent Play Services failure, a still-valid token that
+            // Tempo previously persisted only after verifying drive.file scope may
+            // remain usable; Drive itself will reject it if Google invalidated it.
             if (tokenStorage.hasToken() && !tokenStorage.isTokenExpired()) {
-                Log.d(TAG, "Using cached token from storage (may be stale)")
+                Log.d(TAG, "Using previously validated cached Drive token")
                 _isSignedIn.value = true
                 return@withContext true
             }
-            
+            return@withContext false
+        } catch (e: Exception) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            Log.w(TAG, "Silent re-authorization failed: ${e.message}", e)
+
+            // Non-Google failures (for example a transient local Play Services
+            // issue) may still use a non-expired token that was previously saved
+            // only after verifying drive.file scope.
+            if (tokenStorage.hasToken() && !tokenStorage.isTokenExpired()) {
+                Log.d(TAG, "Using previously validated cached Drive token")
+                _isSignedIn.value = true
+                return@withContext true
+            }
             return@withContext false
         }
     }

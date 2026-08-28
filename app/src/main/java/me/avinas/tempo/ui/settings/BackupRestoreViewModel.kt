@@ -26,6 +26,7 @@ import me.avinas.tempo.data.profile.ProfileIdentityManager
 import me.avinas.tempo.ui.onboarding.dataStore
 import me.avinas.tempo.utils.formatBytes
 import me.avinas.tempo.worker.DriveBackupWorker
+import me.avinas.tempo.worker.LocalBackupWorker
 import java.io.File
 import javax.inject.Inject
 
@@ -88,7 +89,8 @@ class BackupRestoreViewModel @Inject constructor(
     private val _signInRequested = MutableStateFlow(false)
     val signInRequested: StateFlow<Boolean> = _signInRequested.asStateFlow()
     
-    // Flag to trigger session restore with Activity context
+    // Kept for UI compatibility. Automatic screen entry no longer toggles this;
+    // session restoration is performed silently from persisted account/token data.
     private val _sessionRestoreRequested = MutableStateFlow(false)
     val sessionRestoreRequested: StateFlow<Boolean> = _sessionRestoreRequested.asStateFlow()
     
@@ -100,8 +102,26 @@ class BackupRestoreViewModel @Inject constructor(
         loadSettings()
         calculateStats()
         healStaleBackupStatus()
-        // Request session restore - will be handled by the Composable with Activity context
-        _sessionRestoreRequested.value = true
+        initializeBackupState()
+    }
+
+    /**
+     * Restore an existing Google/Drive session without invoking Credential
+     * Manager UI. Also repairs a missing periodic WorkManager registration when
+     * an interval is already persisted from an older app version.
+     */
+    private fun initializeBackupState() {
+        viewModelScope.launch {
+            val settings = backupSettingsManager.settings.first()
+            ensureAutomaticBackupScheduled(settings)
+
+            if (!settings.isGoogleDriveEnabled) return@launch
+
+            val restored = googleAuthManager.restoreSessionSilently()
+            if (restored) {
+                loadDriveBackups()
+            }
+        }
     }
 
     /**
@@ -117,10 +137,22 @@ class BackupRestoreViewModel @Inject constructor(
 
             val running = withContext(Dispatchers.Default) {
                 try {
-                    WorkManager.getInstance(context)
-                        .getWorkInfosForUniqueWork(DriveBackupWorker.WORK_NAME)
-                        .get()
-                        .any { it.state == WorkInfo.State.RUNNING }
+                    val workManager = WorkManager.getInstance(context)
+                    listOf(
+                        DriveBackupWorker.WORK_NAME,
+                        DriveBackupWorker.MANUAL_WORK_NAME
+                    ).any { workName ->
+                        // A periodic WorkRequest is normally ENQUEUED between
+                        // executions, so ENQUEUED/BLOCKED do not mean a backup is
+                        // currently in progress. Only RUNNING can legitimately keep
+                        // lastBackupStatus at IN_PROGRESS. If a process died during
+                        // an attempt, marking that interrupted attempt FAILED here is
+                        // correct; a WorkManager retry will set IN_PROGRESS again
+                        // when it actually starts running.
+                        workManager.getWorkInfosForUniqueWork(workName)
+                            .get()
+                            .any { info -> info.state == WorkInfo.State.RUNNING }
+                    }
                 } catch (e: Exception) {
                     false
                 }
@@ -140,27 +172,101 @@ class BackupRestoreViewModel @Inject constructor(
             }
         }
     }
-    
+
     /**
-     * Called by the Composable when it has Activity context for session restore.
+     * UI bridge retained for compatibility with BackupRestoreScreen. If it is
+     * ever requested, keep the restore non-interactive so entering the screen
+     * cannot show the Google "Signing you in" sheet.
      */
+    @Suppress("UNUSED_PARAMETER")
     fun onSessionRestoreReady(activity: Activity) {
         if (!_sessionRestoreRequested.value) return
         _sessionRestoreRequested.value = false
-        
+
         viewModelScope.launch {
-            val restored = googleAuthManager.restoreSession(activity)
+            val restored = googleAuthManager.restoreSessionSilently()
             if (restored) {
-                // Check if Drive consent is needed after session restore
-                if (googleAuthManager.needsDriveConsent.value) {
-                    _consentRequested.value = true
-                } else {
-                    loadDriveBackups()
-                }
+                loadDriveBackups()
             }
         }
     }
-    
+
+    /**
+     * Schedule the persisted automatic interval without resetting a healthy
+     * existing periodic worker every time this screen is opened.
+     */
+    private suspend fun ensureAutomaticBackupScheduled(settings: BackupSettings) {
+        if (settings.backupInterval == BackupInterval.MANUAL) {
+            LocalBackupWorker.cancel(context)
+            DriveBackupWorker.cancel(context)
+            return
+        }
+
+        val workManager = WorkManager.getInstance(context)
+
+        suspend fun hasActiveUniqueWork(name: String): Boolean = withContext(Dispatchers.Default) {
+            try {
+                workManager.getWorkInfosForUniqueWork(name)
+                    .get()
+                    .any { info ->
+                        info.state == WorkInfo.State.ENQUEUED ||
+                            info.state == WorkInfo.State.RUNNING ||
+                            info.state == WorkInfo.State.BLOCKED
+                    }
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        if (LocalBackupStorage.hasSelectedDirectory(context)) {
+            if (!hasActiveUniqueWork(LocalBackupWorker.WORK_NAME)) {
+                LocalBackupWorker.schedule(context, settings.backupInterval.hours)
+            }
+        } else {
+            LocalBackupWorker.cancel(context)
+        }
+
+        if (settings.isGoogleDriveEnabled) {
+            if (!hasActiveUniqueWork(DriveBackupWorker.WORK_NAME)) {
+                DriveBackupWorker.schedule(
+                    context,
+                    settings.backupInterval.hours,
+                    settings.wifiOnly
+                )
+            }
+        } else {
+            DriveBackupWorker.cancel(context)
+        }
+    }
+
+    /**
+     * Apply the current automatic backup settings to two independent workers.
+     * Drive retries can therefore never postpone the next device backup period.
+     */
+    private fun scheduleAutomaticBackups(settings: BackupSettings) {
+        if (settings.backupInterval == BackupInterval.MANUAL) {
+            LocalBackupWorker.cancel(context)
+            DriveBackupWorker.cancel(context)
+            return
+        }
+
+        if (LocalBackupStorage.hasSelectedDirectory(context)) {
+            LocalBackupWorker.schedule(context, settings.backupInterval.hours)
+        } else {
+            LocalBackupWorker.cancel(context)
+        }
+
+        if (settings.isGoogleDriveEnabled) {
+            DriveBackupWorker.schedule(
+                context,
+                settings.backupInterval.hours,
+                settings.wifiOnly
+            )
+        } else {
+            DriveBackupWorker.cancel(context)
+        }
+    }
+
     private fun calculateStats() {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -233,12 +339,20 @@ class BackupRestoreViewModel @Inject constructor(
         viewModelScope.launch {
             context.dataStore.edit { it[INCLUDE_LOCAL_IMAGES_KEY] = include }
             backupSettingsManager.setIncludeLocalImages(include)
-            _uiState.update { it.copy(includeLocalImages = include) }
+            _uiState.update { it.copy(includeLocalImages = include)
+            }
             calculateStats()
         }
     }
     
     // LOCAL BACKUP
+
+    /**
+     * Open Android's folder picker for the automatic local-backup destination.
+     */
+    fun chooseLocalBackupFolder() {
+        LocalBackupFolderPickerActivity.launch(context)
+    }
     
     /**
      * Export all data to a ZIP file.
@@ -339,15 +453,27 @@ class BackupRestoreViewModel @Inject constructor(
             when (val result = googleAuthManager.signIn(activity)) {
                 is GoogleSignInResult.Success -> {
                     backupSettingsManager.setGoogleAccountEmail(result.account.email)
-                    backupSettingsManager.setGoogleDriveEnabled(true)
-                    
-                    // Check if Drive consent is needed after sign-in
+
+                    // Google identity sign-in and Drive authorization are separate.
+                    // Never mark Drive enabled until a drive.file-scoped access token
+                    // actually exists; otherwise a failed/denied consent can leave a
+                    // periodic Drive worker scheduled with unusable credentials.
                     if (googleAuthManager.needsDriveConsent.value) {
+                        backupSettingsManager.setGoogleDriveEnabled(false)
+                        scheduleAutomaticBackups(backupSettingsManager.settings.first())
                         _consentRequested.value = true
                         _driveOperation.value = DriveOperationState.SigningIn
-                    } else {
+                    } else if (googleAuthManager.getAccessToken() != null) {
+                        backupSettingsManager.setGoogleDriveEnabled(true)
+                        scheduleAutomaticBackups(backupSettingsManager.settings.first())
                         loadDriveBackups()
                         _driveOperation.value = DriveOperationState.Idle
+                    } else {
+                        backupSettingsManager.setGoogleDriveEnabled(false)
+                        scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                        _driveOperation.value = DriveOperationState.Error(
+                            "Google account connected, but Drive authorization did not complete. Please try signing in again."
+                        )
                     }
                 }
                 is GoogleSignInResult.Error -> {
@@ -379,28 +505,55 @@ class BackupRestoreViewModel @Inject constructor(
                     // Verify that we actually have an access token now
                     val hasToken = googleAuthManager.getAccessToken() != null
                     if (hasToken) {
-                        // Clear any cached Drive service to force re-initialization with new token
+                        // Drive becomes enabled only after consent produced a real token.
+                        backupSettingsManager.setGoogleDriveEnabled(true)
                         driveService.clearCache()
+                        scheduleAutomaticBackups(backupSettingsManager.settings.first())
                         loadDriveBackups()
                         _driveOperation.value = DriveOperationState.Idle
                     } else {
-                        _driveOperation.value = DriveOperationState.Error(
-                            "Authorization incomplete. Please try signing out and signing in again."
-                        )
+                        backupSettingsManager.setGoogleDriveEnabled(false)
+                        scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                        if (googleAuthManager.needsDriveConsent.value &&
+                            googleAuthManager.getDriveAuthorizationPendingIntent() != null
+                        ) {
+                            _consentRequested.value = true
+                            _driveOperation.value = DriveOperationState.SigningIn
+                        } else {
+                            _driveOperation.value = DriveOperationState.Error(
+                                "Authorization incomplete. Please try signing out and signing in again."
+                            )
+                        }
                     }
                 } else {
-                    _driveOperation.value = DriveOperationState.Error(
-                        "Failed to authorize Google Drive access. Please try again or sign out and sign in again."
-                    )
+                    backupSettingsManager.setGoogleDriveEnabled(false)
+                    scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                    if (googleAuthManager.needsDriveConsent.value &&
+                        googleAuthManager.getDriveAuthorizationPendingIntent() != null
+                    ) {
+                        _consentRequested.value = true
+                        _driveOperation.value = DriveOperationState.SigningIn
+                    } else {
+                        _driveOperation.value = DriveOperationState.Error(
+                            "Failed to authorize Google Drive access. Please try again or sign out and sign in again."
+                        )
+                    }
                 }
             }
         } else {
-            _driveOperation.value = DriveOperationState.Error("Google Drive access was denied. Please grant permissions to use backup features.")
+            viewModelScope.launch {
+                backupSettingsManager.setGoogleDriveEnabled(false)
+                scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                _driveOperation.value = DriveOperationState.Error(
+                    "Google Drive access was denied. Sign out and sign in again when you want to enable Drive backups."
+                )
+            }
         }
     }
     
     /**
-     * Sign out from Google.
+     * Sign out from Google. Automatic device backups keep running when an
+     * interval is configured; only the Drive portion is disabled.
      */
     fun signOut() {
         viewModelScope.launch {
@@ -410,7 +563,7 @@ class BackupRestoreViewModel @Inject constructor(
             backupSettingsManager.setGoogleAccountEmail(null)
             backupSettingsManager.setGoogleDriveEnabled(false)
             _driveBackups.value = emptyList()
-            DriveBackupWorker.cancel(context)
+            scheduleAutomaticBackups(backupSettingsManager.settings.first())
         }
     }
     
@@ -445,6 +598,14 @@ class BackupRestoreViewModel @Inject constructor(
         }
         
         applicationScope.launch {
+            val settings = backupSettingsManager.settings.first()
+            if (!settings.isGoogleDriveEnabled || googleAuthManager.getAccessToken() == null) {
+                _driveOperation.value = DriveOperationState.Error(
+                    "Google Drive is not authorized. Sign out and sign in again to enable Drive backups."
+                )
+                return@launch
+            }
+
             _driveOperation.value = DriveOperationState.Uploading(0f)
             
             // Create temporary backup file
@@ -453,7 +614,6 @@ class BackupRestoreViewModel @Inject constructor(
             try {
                 if (tempFile.exists()) tempFile.delete()
                 
-                val settings = backupSettings.value
                 val exportResult = importExportManager.exportToFile(
                     tempFile,
                     settings.includeLocalImages
@@ -582,33 +742,30 @@ class BackupRestoreViewModel @Inject constructor(
     }
     
     /**
-     * Set backup interval and schedule worker.
+     * Set backup interval and schedule the automatic device/Drive worker.
      */
     fun setBackupInterval(interval: BackupInterval) {
         viewModelScope.launch {
-            backupSettingsManager.setBackupInterval(interval)
-            
-            val settings = backupSettings.value
-            if (interval == BackupInterval.MANUAL) {
-                DriveBackupWorker.cancel(context)
-            } else {
-                DriveBackupWorker.schedule(context, interval.hours, settings.wifiOnly)
+            if (interval != BackupInterval.MANUAL &&
+                !LocalBackupStorage.hasSelectedDirectory(context)
+            ) {
+                LocalBackupFolderPickerActivity.launch(context, requestedInterval = interval)
+                return@launch
             }
+
+            backupSettingsManager.setBackupInterval(interval)
+            scheduleAutomaticBackups(backupSettingsManager.settings.first())
         }
     }
     
     /**
-     * Set Wi-Fi only preference.
+     * Set Wi-Fi only preference and update Drive constraints without disabling
+     * the device-copy portion of automatic backups.
      */
     fun setWifiOnly(wifiOnly: Boolean) {
         viewModelScope.launch {
             backupSettingsManager.setWifiOnly(wifiOnly)
-            
-            // Re-schedule if interval is not manual
-            val settings = backupSettings.value
-            if (settings.backupInterval != BackupInterval.MANUAL) {
-                DriveBackupWorker.schedule(context, settings.backupInterval.hours, wifiOnly)
-            }
+            scheduleAutomaticBackups(backupSettingsManager.settings.first())
         }
     }
     

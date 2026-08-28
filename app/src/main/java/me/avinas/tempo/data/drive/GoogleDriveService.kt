@@ -24,6 +24,7 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -59,6 +60,18 @@ class GoogleDriveService @Inject constructor(
         // Transient-failure retry policy for executeWithRetry
         private const val MAX_TRANSIENT_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 2000L
+
+        internal fun isRetryable403Reason(reason: String?): Boolean = reason in setOf(
+            "rateLimitExceeded",
+            "userRateLimitExceeded",
+            "sharingRateLimitExceeded",
+            "backendError"
+        )
+
+        internal fun shouldInvalidateAuthFor403(reason: String?): Boolean = reason in setOf(
+            "insufficientPermissions",
+            "appNotAuthorizedToFile"
+        )
     }
     
     private var driveService: Drive? = null
@@ -122,7 +135,8 @@ class GoogleDriveService @Inject constructor(
      * refresh + retry.
      */
     private suspend fun <T> executeWithRetry(
-        retryCount: Int = 0,
+        transientRetryCount: Int = 0,
+        authRetryCount: Int = 0,
         block: suspend (Drive) -> T
     ): T {
         val service = getDriveService() ?: throw DriveException.Auth(
@@ -139,25 +153,86 @@ class GoogleDriveService @Inject constructor(
                     cachedAccessToken = null
                     authManager.clearPersistedAccessToken()
                     
-                    if (retryCount < 1 && authManager.refreshAccessToken()) {
+                    if (authRetryCount < 1 && authManager.refreshAccessToken()) {
                         Log.i(TAG, "Token refreshed, retrying operation")
-                        executeWithRetry(retryCount + 1, block)
+                        executeWithRetry(
+                            transientRetryCount = transientRetryCount,
+                            authRetryCount = authRetryCount + 1,
+                            block = block
+                        )
                     } else {
                         throw DriveException.Auth("Session expired. Please sign in again.", e)
                     }
                 }
                 403 -> {
-                    // 403 from Drive = the access token is valid but does NOT have the
-                    // required scope (usually drive.file) or can't access the resource.
-                    // Surface the real Google reason and force a clean re-auth.
-                    val reason = e.details?.message ?: e.statusMessage ?: e.message
-                    Log.e(TAG, "Drive API returned 403 Permission denied: $reason", e)
-                    driveService = null
-                    cachedAccessToken = null
-                    authManager.invalidateAuthorization()
-                    authManager.clearPersistedAccessToken()
-                    throw DriveException.Auth(
-                        "Permission denied. Check Drive access. $reason",
+                    // Drive uses HTTP 403 for several unrelated conditions. Quota,
+                    // storage and administrator-policy failures must never wipe a
+                    // valid OAuth session; only known scope/authorization reasons do.
+                    val errorReason = e.details?.errors?.firstOrNull()?.reason
+                    val detail = e.details?.message ?: e.statusMessage ?: e.message
+
+                    if (isRetryable403Reason(errorReason)) {
+                        if (transientRetryCount < MAX_TRANSIENT_RETRIES) {
+                            val backoffMs = RETRY_BASE_DELAY_MS * (1L shl transientRetryCount)
+                            Log.w(
+                                TAG,
+                                "Transient Drive 403 ($errorReason), retrying in ${backoffMs}ms"
+                            )
+                            delay(backoffMs)
+                            return executeWithRetry(
+                                transientRetryCount = transientRetryCount + 1,
+                                authRetryCount = authRetryCount,
+                                block = block
+                            )
+                        }
+                        throw DriveException.Server(
+                            "Google Drive rate limit reached. Please try again later.",
+                            e
+                        )
+                    }
+
+                    when (errorReason) {
+                        "storageQuotaExceeded" -> throw DriveException.Server(
+                            "Google Drive storage is full. Free some Drive storage and try again.",
+                            e
+                        )
+
+                        "dailyLimitExceeded" -> throw DriveException.Server(
+                            "The Google Drive API daily quota has been reached. Try again later.",
+                            e
+                        )
+
+                        "activeItemCreationLimitExceeded",
+                        "numChildrenInNonRootLimitExceeded",
+                        "teamDriveFileLimitExceeded" -> throw DriveException.Server(
+                            "Google Drive cannot create another backup because an item or folder limit was reached. $detail",
+                            e
+                        )
+
+                        "domainPolicy" -> throw DriveException.Server(
+                            "Google Drive access is blocked by your account or organization policy. $detail",
+                            e
+                        )
+                    }
+
+                    if (shouldInvalidateAuthFor403(errorReason)) {
+                        Log.e(TAG, "Drive authorization is insufficient ($errorReason): $detail", e)
+                        driveService = null
+                        cachedAccessToken = null
+                        authManager.invalidateAuthorization()
+                        authManager.clearPersistedAccessToken()
+                        throw DriveException.Auth(
+                            "Google Drive permission is missing. Sign in again to restore Drive access.",
+                            e
+                        )
+                    }
+
+                    // Unknown 403s are surfaced without destroying credentials. A
+                    // future request may succeed, and re-signing in cannot fix quota,
+                    // policy, file-specific or other non-OAuth Drive restrictions.
+                    Log.e(TAG, "Drive API returned 403 ($errorReason): $detail", e)
+                    throw DriveException.Server(
+                        "Google Drive refused the request${if (errorReason != null) " ($errorReason)" else ""}. $detail",
                         e
                     )
                 }
@@ -166,24 +241,40 @@ class GoogleDriveService @Inject constructor(
                     backupFolderId = null
                     throw DriveException.Server("Resource not found. Please try again.", e)
                 }
-                429, 500, 502, 503 -> {
-                    // Rate-limited or transient server error — retry with backoff
-                    if (retryCount < MAX_TRANSIENT_RETRIES) {
-                        val backoffMs = RETRY_BASE_DELAY_MS * (1L shl retryCount)
-                        Log.w(TAG, "Transient Drive error ${e.statusCode} (attempt ${retryCount + 1}), retrying in ${backoffMs}ms")
+                408, 429, 500, 502, 503, 504 -> {
+                    // Rate-limited or transient server error — retry with backoff.
+                    // Keep this counter independent from the single OAuth refresh.
+                    if (transientRetryCount < MAX_TRANSIENT_RETRIES) {
+                        val backoffMs = RETRY_BASE_DELAY_MS * (1L shl transientRetryCount)
+                        Log.w(
+                            TAG,
+                            "Transient Drive error ${e.statusCode} " +
+                                "(attempt ${transientRetryCount + 1}), retrying in ${backoffMs}ms"
+                        )
                         delay(backoffMs)
-                        return executeWithRetry(retryCount + 1, block)
+                        return executeWithRetry(
+                            transientRetryCount = transientRetryCount + 1,
+                            authRetryCount = authRetryCount,
+                            block = block
+                        )
                     }
                     throw DriveException.Server("Drive is temporarily unavailable (${e.statusCode}). Please try again later.", e)
                 }
                 else -> throw DriveException.Server("Drive Error: ${e.message}", e)
             }
         } catch (e: IOException) {
-            if (retryCount < MAX_TRANSIENT_RETRIES) {
-                val backoffMs = RETRY_BASE_DELAY_MS * (1L shl retryCount)
-                Log.w(TAG, "Network error (attempt ${retryCount + 1}), retrying in ${backoffMs}ms...")
+            if (transientRetryCount < MAX_TRANSIENT_RETRIES) {
+                val backoffMs = RETRY_BASE_DELAY_MS * (1L shl transientRetryCount)
+                Log.w(
+                    TAG,
+                    "Network error (attempt ${transientRetryCount + 1}), retrying in ${backoffMs}ms..."
+                )
                 delay(backoffMs)
-                return executeWithRetry(retryCount + 1, block)
+                return executeWithRetry(
+                    transientRetryCount = transientRetryCount + 1,
+                    authRetryCount = authRetryCount,
+                    block = block
+                )
             }
             throw DriveException.Network("Network unavailable. Please check your connection.", e)
         } catch (e: Exception) {
@@ -252,6 +343,7 @@ class GoogleDriveService @Inject constructor(
      */
     suspend fun uploadBackup(
         localFile: File,
+        idempotencyKey: String = UUID.randomUUID().toString(),
         progressCallback: ((Float) -> Unit)? = null
     ): DriveBackupResult = withContext(Dispatchers.IO) {
         try {
@@ -279,7 +371,41 @@ class GoogleDriveService @Inject constructor(
             
             progressCallback?.invoke(0.15f)
             
+            // Keep a stable key for the whole logical upload. The scheduled worker
+            // passes its WorkRequest UUID, so the key also survives WorkManager
+            // retries. If Google created the file but the response was lost, the
+            // next attempt finds that exact file instead of creating a duplicate.
+            val safeIdempotencyKey = idempotencyKey
+                .replace(Regex("[^A-Za-z0-9._:-]"), "_")
+                .take(120)
+
             executeWithRetry { service ->
+                val existing = service.files().list()
+                    .setQ(
+                        "'$folderId' in parents and trashed = false and " +
+                            "appProperties has { key='backup_run_id' and value='$safeIdempotencyKey' }"
+                    )
+                    .setFields("files(id, name, size, createdTime)")
+                    .execute()
+                    .files
+                    ?.firstOrNull()
+
+                if (existing != null) {
+                    val existingSize = existing.getSize()?.toLong()
+                    if (existingSize == localFile.length()) {
+                        Log.i(TAG, "Reusing already-created Drive backup for run $safeIdempotencyKey")
+                        progressCallback?.invoke(0.85f)
+                        return@executeWithRetry DriveBackupResult.Success(existing.id, existing.name)
+                    }
+
+                    // A same-run file with the wrong size is incomplete/corrupt.
+                    // Remove it before retrying the upload from the validated archive.
+                    runCatching { service.files().delete(existing.id).execute() }
+                        .onFailure { error ->
+                            Log.w(TAG, "Could not remove incomplete same-run Drive backup", error)
+                        }
+                }
+
                 // Generate backup filename with timestamp
                 val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
                 val deviceName = "${Build.MANUFACTURER}_${Build.MODEL}".replace(" ", "_")
@@ -293,7 +419,8 @@ class GoogleDriveService @Inject constructor(
                     appProperties = mapOf(
                         "app_version" to BuildConfig.VERSION_NAME,
                         "device_name" to "${Build.MANUFACTURER} ${Build.MODEL}",
-                        "backup_timestamp" to System.currentTimeMillis().toString()
+                        "backup_timestamp" to System.currentTimeMillis().toString(),
+                        "backup_run_id" to safeIdempotencyKey
                     )
                 }
                 
