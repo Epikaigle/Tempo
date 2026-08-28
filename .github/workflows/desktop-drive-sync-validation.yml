@@ -1,0 +1,62 @@
+name: Desktop Google Drive validation
+
+on:
+  push:
+    branches:
+      - feat/desktop-google-drive-sync
+    paths:
+      - "desktop/**"
+      - ".github/workflows/build.yml"
+      - ".github/workflows/desktop-drive-sync-validation.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/build.yml"
+      - ".github/workflows/desktop-drive-sync-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP: test-client.apps.googleusercontent.com
+
+jobs:
+  desktop-rust:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux Tauri/system dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev libdbus-1-dev build-essential pkg-config playerctl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+      - run: cargo check --locked --all-targets
+      - run: cargo test --locked --all-targets
+
+  desktop-frontend:
+    name: Frontend
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - run: npm run build

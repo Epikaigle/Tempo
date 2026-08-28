@@ -2,6 +2,9 @@ name: Build and Release Tempo Desktop
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Public OAuth application identifier used at Rust compile time by option_env!.
+  # Configure this as a GitHub Actions repository variable, not a secret.
+  TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP: ${{ vars.TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP }}
 
 # Triggers:
 #   - Push a tag like desktop-v1.0.0  → builds all platforms and creates a GitHub Release (draft)
@@ -118,6 +121,15 @@ jobs:
             echo "version=dev" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Validate Google Drive OAuth configuration for releases
+        if: steps.tag.outputs.release_tag != ''
+        shell: bash
+        run: |
+          if [[ -z "${TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP}" ]]; then
+            echo "::error::Missing repository variable TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP. Refusing to publish a Desktop release with non-functional Google Drive sign-in."
+            exit 1
+          fi
+
       # ── 6. Build and publish release on tag pushes (or manual dispatch with tag_name) ──
       - name: Build Tauri app and publish release
         if: steps.tag.outputs.release_tag != ''
@@ -149,6 +161,12 @@ jobs:
             | **Linux** | `tempo-desktop_*.deb` | Debian / Ubuntu (apt) |
             | **Linux** | `tempo-desktop_*.AppImage` | Works on any distro — just `chmod +x` and run |
             | **Linux** | `tempo-desktop_*.rpm` | Fedora / RHEL / openSUSE |
+
+            ### Google Drive cross-network sync
+            Google Drive history sync is optional. It lets Tempo Desktop exchange
+            listening history with linked Tempo clients even when the computer and
+            Android phone are not on the same local network. The existing direct LAN
+            transport remains available independently.
 
             ### Linux: `playerctl` for best music detection
             The DEB installer automatically installs `playerctl` for you.
