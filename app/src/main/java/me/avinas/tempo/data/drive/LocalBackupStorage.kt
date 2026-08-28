@@ -7,6 +7,8 @@ import android.provider.DocumentsContract
 import android.util.Log
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -35,7 +37,9 @@ object LocalBackupStorage {
     fun hasSelectedDirectory(context: Context): Boolean {
         val uri = getSelectedDirectoryUri(context) ?: return false
         return context.contentResolver.persistedUriPermissions.any { permission ->
-            permission.uri == uri && permission.isWritePermission
+            permission.uri == uri &&
+                permission.isReadPermission &&
+                permission.isWritePermission
         }
     }
 
@@ -112,7 +116,9 @@ object LocalBackupStorage {
             ?: throw IOException("No automatic local backup folder has been selected")
 
         val hasWritePermission = context.contentResolver.persistedUriPermissions.any { permission ->
-            permission.uri == treeUri && permission.isWritePermission
+            permission.uri == treeUri &&
+                permission.isReadPermission &&
+                permission.isWritePermission
         }
         if (!hasWritePermission) {
             throw IOException("Access to the selected automatic backup folder has expired")
@@ -141,23 +147,47 @@ object LocalBackupStorage {
         }
 
         val directoryUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocumentId)
+        val sourceSize = sourceFile.length()
+        val sourceDigest = sourceFile.inputStream().use(::sha256Hex)
 
         // A worker retry must not create a second file if the previous process was
         // killed after the copy completed but before WorkManager recorded success.
         // The worker supplies a stable per-period file name, so exact-name lookup
         // gives the local destination the same idempotency guarantee as Drive.
-        val existing = findExistingBackup(context, treeUri, treeDocumentId, fileName)
-        if (existing != null) {
-            val (existingUri, existingSize) = existing
-            if (existingSize == sourceFile.length()) {
-                cleanupOldBackups(context, treeUri, treeDocumentId)
-                Log.i(TAG, "Reusing already-saved automatic local backup: $existingUri")
-                return existingUri.toString()
+        val existingBackups = findExistingBackups(context, treeUri, treeDocumentId, fileName)
+        val completedExisting = existingBackups.firstOrNull { (existingUri, existingSize) ->
+            val existingDigest = try {
+                resolver.openInputStream(existingUri)?.use(::sha256Hex)
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to verify an existing automatic backup", e)
+                null
             }
+            (existingSize == null || existingSize == sourceSize) &&
+                existingDigest == sourceDigest
+        }
+        if (completedExisting != null) {
+            existingBackups
+                .filterNot { (uri, _) -> uri == completedExisting.first }
+                .forEach { (duplicateUri, _) ->
+                    runCatching { DocumentsContract.deleteDocument(resolver, duplicateUri) }
+                        .onFailure { error ->
+                            Log.w(TAG, "Unable to remove a duplicate automatic backup", error)
+                        }
+                }
+            cleanupOldBackups(context, treeUri, treeDocumentId)
+            Log.i(TAG, "Reusing already-saved automatic local backup: ${completedExisting.first}")
+            return completedExisting.first.toString()
+        }
 
-            val deleted = runCatching {
+        // Never create another same-run document while an incomplete duplicate
+        // remains. A provider query/deletion failure must make WorkManager retry
+        // instead of silently defeating the idempotency guarantee.
+        existingBackups.forEach { (existingUri, _) ->
+            val deleted = try {
                 DocumentsContract.deleteDocument(resolver, existingUri)
-            }.getOrDefault(false)
+            } catch (e: Exception) {
+                throw IOException("Unable to replace an incomplete automatic backup file", e)
+            }
             if (!deleted) {
                 throw IOException("Unable to replace an incomplete automatic backup file")
             }
@@ -180,6 +210,12 @@ object LocalBackupStorage {
                 }
             }
 
+            val persistedDigest = resolver.openInputStream(outputUri)?.use(::sha256Hex)
+                ?: throw IOException("Unable to verify the automatic backup file")
+            if (persistedDigest != sourceDigest) {
+                throw IOException("The automatic backup copy failed its integrity check")
+            }
+
             cleanupOldBackups(context, treeUri, treeDocumentId)
             Log.i(TAG, "Saved automatic local backup: $outputUri")
             return outputUri.toString()
@@ -189,12 +225,12 @@ object LocalBackupStorage {
         }
     }
 
-    private fun findExistingBackup(
+    private fun findExistingBackups(
         context: Context,
         treeUri: Uri,
         treeDocumentId: String,
         fileName: String
-    ): Pair<Uri, Long?>? {
+    ): List<Pair<Uri, Long?>> {
         val resolver = context.contentResolver
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocumentId)
         val projection = arrayOf(
@@ -208,6 +244,7 @@ object LocalBackupStorage {
                 val idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val sizeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                val matches = mutableListOf<Pair<Uri, Long?>>()
 
                 while (cursor.moveToNext()) {
                     if (cursor.getString(nameColumn) != fileName) continue
@@ -218,13 +255,13 @@ object LocalBackupStorage {
                         null
                     }
                     val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
-                    return@use uri to size
+                    matches += uri to size
                 }
-                null
-            }
+                matches
+            } ?: throw IOException("Unable to enumerate the selected automatic backup folder")
         } catch (e: Exception) {
-            Log.w(TAG, "Unable to check for an existing retry-safe local backup", e)
-            null
+            if (e is IOException) throw e
+            throw IOException("Unable to check for an existing retry-safe local backup", e)
         }
     }
 
@@ -268,5 +305,16 @@ object LocalBackupStorage {
                         Log.w(TAG, "Failed to delete old automatic local backup $documentId", error)
                     }
             }
+    }
+
+    private fun sha256Hex(input: InputStream): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            if (read > 0) digest.update(buffer, 0, read)
+        }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
     }
 }

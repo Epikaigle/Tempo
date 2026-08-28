@@ -136,4 +136,13 @@ class DriveBackupWorkerStateTest {
         assertFalse(LocalBackupWorker.shouldRetryFailure(3))
         assertFalse(LocalBackupWorker.shouldRetryFailure(10))
     }
+
+    @Test
+    fun driveWorkerStopsRetryingOneBrokenPeriodSoFuturePeriodsCanRun() {
+        assertTrue(DriveBackupWorker.shouldRetryFailure(0))
+        assertTrue(DriveBackupWorker.shouldRetryFailure(1))
+        assertTrue(DriveBackupWorker.shouldRetryFailure(2))
+        assertFalse(DriveBackupWorker.shouldRetryFailure(3))
+        assertFalse(DriveBackupWorker.shouldRetryFailure(10))
+    }
 }

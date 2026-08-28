@@ -38,15 +38,24 @@ class LocalBackupFolderPickerActivity : ComponentActivity() {
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         lifecycleScope.launch {
-            if (uri != null) {
-                saveFolder(uri)
-            } else {
-                // The ViewModel may have briefly refreshed/cancelled the periodic
-                // registration while the picker was open. Restore whatever real
-                // interval is persisted when the user cancels.
-                reschedulePersistedInterval()
+            try {
+                if (uri != null) {
+                    saveFolder(uri)
+                } else {
+                    // The ViewModel may have briefly refreshed/cancelled the periodic
+                    // registration while the picker was open. Restore whatever real
+                    // interval is persisted when the user cancels.
+                    reschedulePersistedInterval()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@LocalBackupFolderPickerActivity,
+                    "Could not update automatic backups: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                finish()
             }
-            finish()
         }
     }
 

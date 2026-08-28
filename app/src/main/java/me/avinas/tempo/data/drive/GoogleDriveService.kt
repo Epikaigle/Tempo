@@ -3,15 +3,15 @@ package me.avinas.tempo.data.drive
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.FileContent
 import com.google.api.client.http.HttpRequestInitializer
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
-import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File as DriveFile
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -21,11 +21,11 @@ import me.avinas.tempo.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -74,8 +74,11 @@ class GoogleDriveService @Inject constructor(
         )
     }
     
+    @Volatile
     private var driveService: Drive? = null
+    @Volatile
     private var backupFolderId: String? = null
+    @Volatile
     private var cachedAccessToken: String? = null
     
     // Mutex to prevent race conditions when creating backup folder
@@ -277,6 +280,8 @@ class GoogleDriveService @Inject constructor(
                 )
             }
             throw DriveException.Network("Network unavailable. Please check your connection.", e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (e is DriveException) throw e
             throw DriveException.Unknown("Unexpected error: ${e.message}", e)
@@ -365,6 +370,9 @@ class GoogleDriveService @Inject constructor(
             
             Log.d(TAG, "Uploading backup file: ${localFile.name} (${localFile.length()} bytes)")
             progressCallback?.invoke(0.05f)
+
+            val sourceSize = localFile.length()
+            val sourceMd5 = md5Hex(localFile)
             
             // This handles auth checks via getOrCreateBackupFolder -> executeWithRetry
             val folderId = getOrCreateBackupFolder()
@@ -372,38 +380,63 @@ class GoogleDriveService @Inject constructor(
             progressCallback?.invoke(0.15f)
             
             // Keep a stable key for the whole logical upload. The scheduled worker
-            // passes its WorkRequest UUID, so the key also survives WorkManager
+            // passes a stable logical run ID, so the key also survives WorkManager
             // retries. If Google created the file but the response was lost, the
             // next attempt finds that exact file instead of creating a duplicate.
             val safeIdempotencyKey = idempotencyKey
                 .replace(Regex("[^A-Za-z0-9._:-]"), "_")
                 .take(120)
+                .ifBlank { UUID.randomUUID().toString() }
 
             executeWithRetry { service ->
-                val existing = service.files().list()
+                val existingFiles = service.files().list()
                     .setQ(
                         "'$folderId' in parents and trashed = false and " +
                             "appProperties has { key='backup_run_id' and value='$safeIdempotencyKey' }"
                     )
-                    .setFields("files(id, name, size, createdTime)")
+                    .setFields("files(id, name, size, md5Checksum, createdTime)")
+                    .setPageSize(100)
                     .execute()
                     .files
-                    ?.firstOrNull()
+                    .orEmpty()
 
-                if (existing != null) {
-                    val existingSize = existing.getSize()?.toLong()
-                    if (existingSize == localFile.length()) {
-                        Log.i(TAG, "Reusing already-created Drive backup for run $safeIdempotencyKey")
-                        progressCallback?.invoke(0.85f)
-                        return@executeWithRetry DriveBackupResult.Success(existing.id, existing.name)
-                    }
-
-                    // A same-run file with the wrong size is incomplete/corrupt.
-                    // Remove it before retrying the upload from the validated archive.
-                    runCatching { service.files().delete(existing.id).execute() }
-                        .onFailure { error ->
-                            Log.w(TAG, "Could not remove incomplete same-run Drive backup", error)
+                val completedExisting = existingFiles.firstOrNull { existing ->
+                    existing.getSize()?.toLong() == sourceSize &&
+                        existing.md5Checksum?.equals(sourceMd5, ignoreCase = true) == true
+                }
+                if (completedExisting != null) {
+                    // A previous request may have reached Drive even when its HTTP
+                    // response never reached Tempo. Reuse the byte-identical file
+                    // and remove any corrupt duplicates left by an older client.
+                    existingFiles
+                        .filterNot { it.id == completedExisting.id }
+                        .forEach { duplicate ->
+                            runCatching { service.files().delete(duplicate.id).execute() }
+                                .onFailure { error ->
+                                    Log.w(TAG, "Could not remove duplicate same-run Drive backup", error)
+                                }
                         }
+                    Log.i(TAG, "Reusing already-created Drive backup for run $safeIdempotencyKey")
+                    progressCallback?.invoke(0.85f)
+                    return@executeWithRetry DriveBackupResult.Success(
+                        completedExisting.id,
+                        completedExisting.name
+                    )
+                }
+
+                // Never create another same-run file while a corrupt/incomplete one
+                // still exists: a later retry could select the wrong duplicate and
+                // incorrectly report success. Deletion failure therefore aborts this
+                // attempt and is handled by the normal retry policy.
+                existingFiles.forEach { existing ->
+                    try {
+                        service.files().delete(existing.id).execute()
+                    } catch (error: Exception) {
+                        throw IOException(
+                            "Unable to replace an incomplete same-run Drive backup",
+                            error
+                        )
+                    }
                 }
 
                 // Generate backup filename with timestamp
@@ -431,7 +464,7 @@ class GoogleDriveService @Inject constructor(
                 progressCallback?.invoke(0.3f)
                 
                 val uploadedFile = service.files().create(fileMetadata, mediaContent)
-                    .setFields("id, name, size, createdTime")
+                    .setFields("id, name, size, md5Checksum, createdTime")
                     .execute()
 
                 progressCallback?.invoke(0.85f)
@@ -442,10 +475,13 @@ class GoogleDriveService @Inject constructor(
                 // fail (executeWithRetry re-uploads from scratch on transient IO
                 // errors).
                 val uploadedSize = uploadedFile.getSize()?.toLong()
-                if (uploadedSize != null && uploadedSize != localFile.length()) {
+                val uploadedMd5 = uploadedFile.md5Checksum
+                if (uploadedSize != sourceSize ||
+                    !uploadedMd5.equals(sourceMd5, ignoreCase = true)
+                ) {
                     runCatching { service.files().delete(uploadedFile.id).execute() }
                     throw IOException(
-                        "Upload verification failed: sent ${localFile.length()} bytes, Drive stored $uploadedSize"
+                        "Upload verification failed: Drive did not store the exact backup bytes"
                     )
                 }
 
@@ -455,12 +491,20 @@ class GoogleDriveService @Inject constructor(
                 DriveBackupResult.Success(uploadedFile.id, uploadedFile.name)
             }.also {
                 // Determine if we need to cleanup (best effort)
-                try { cleanupOldBackups() } catch (e: Exception) { Log.w(TAG, "Cleanup failed", e) }
+                try {
+                    cleanupOldBackups()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Cleanup failed", e)
+                }
                 progressCallback?.invoke(1.0f)
             }
         } catch (e: DriveException) {
             Log.e(TAG, "Upload failed with DriveException", e)
             DriveBackupResult.Error(e.message ?: "Upload failed", e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Upload failed unexpectedly", e)
             DriveBackupResult.Error("Upload failed: ${e.message}", e)
@@ -498,6 +542,8 @@ class GoogleDriveService @Inject constructor(
         } catch (e: DriveException) {
             Log.e(TAG, "Failed to list backups: ${e.message}", e)
             Result.failure(e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to list backups", e)
             Result.failure(e)
@@ -522,64 +568,67 @@ class GoogleDriveService @Inject constructor(
                 
                 // Get file metadata first
                 val driveFile = service.files().get(fileId)
-                    .setFields("id, name, size")
+                    .setFields("id, name, size, md5Checksum")
                     .execute()
                 
                 progressCallback?.invoke(0.2f)
                 
-                // Create local file. The Drive file name is untrusted input —
-                // strip any path components so a hostile name cannot escape the
-                // download directory.
                 val cacheDir = File(context.cacheDir, "drive_downloads")
-                if (!cacheDir.exists()) cacheDir.mkdirs()
-                
-                val file = File(cacheDir, sanitizeDriveFileName(driveFile.name))
-                
-                // Download file
-                FileOutputStream(file).use { outputStream ->
-                    service.files().get(fileId)
-                        .executeMediaAndDownloadTo(outputStream)
+                if ((!cacheDir.exists() && !cacheDir.mkdirs()) || !cacheDir.isDirectory) {
+                    throw IOException("Unable to create the Drive download cache")
                 }
-                
-                // Verify the download is complete. A truncated backup would
-                // otherwise fail deep inside import with a confusing error —
-                // or worse, restore partial data.
-                val expectedSize = driveFile.getSize()
-                if (expectedSize != null && file.length() != expectedSize) {
-                    val actualSize = file.length()
+
+                // Never trust the remote display name as a local path and never
+                // share a target between concurrent/retried downloads.
+                val file = File.createTempFile("tempo_drive_", ".tempo", cacheDir)
+
+                try {
+                    FileOutputStream(file).use { outputStream ->
+                        service.files().get(fileId)
+                            .executeMediaAndDownloadTo(outputStream)
+                    }
+
+                    val expectedSize = driveFile.getSize()?.toLong()
+                    val expectedMd5 = driveFile.md5Checksum
+                    if (expectedSize == null || expectedSize <= 0L || file.length() != expectedSize ||
+                        expectedMd5.isNullOrBlank() ||
+                        !md5Hex(file).equals(expectedMd5, ignoreCase = true)
+                    ) {
+                        throw IOException("Downloaded backup failed its integrity check")
+                    }
+
+                    progressCallback?.invoke(1.0f)
+
+                    Log.i(TAG, "Downloaded and verified Drive backup (${file.length()} bytes)")
+                    file
+                } catch (error: Exception) {
                     file.delete()
-                    throw IOException(
-                        "Downloaded backup is incomplete: expected $expectedSize bytes, got $actualSize"
-                    )
+                    throw error
                 }
-                
-                progressCallback?.invoke(1.0f)
-                
-                Log.i(TAG, "Downloaded backup: ${file.name} (${file.length()} bytes)")
-                file
             }
             DriveRestoreResult.Success(localFile)
         } catch (e: DriveException) {
             Log.e(TAG, "Download failed with DriveException", e)
             DriveRestoreResult.Error(e.message ?: "Download failed", e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Download failed", e)
             DriveRestoreResult.Error("Download failed: ${e.message}", e)
         }
     }
 
-    /**
-     * Sanitize an untrusted Drive file name for use as a local file name.
-     * Strips path separators and directory components so the file can never
-     * be written outside the download directory. Falls back to a safe default.
-     */
-    private fun sanitizeDriveFileName(driveName: String?): String {
-        val fallback = "backup.tempo"
-        if (driveName.isNullOrBlank()) return fallback
-        // Take only the final path component, then strip any remaining separators
-        val baseName = driveName.substringAfterLast('/').substringAfterLast('\\')
-        val sanitized = baseName.replace("/", "").replace("\\", "").trim()
-        return if (sanitized.isBlank() || sanitized == "." || sanitized == "..") fallback else sanitized
+    private fun md5Hex(file: File): String {
+        val digest = MessageDigest.getInstance("MD5")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
     }
     
     /**
@@ -595,6 +644,8 @@ class GoogleDriveService @Inject constructor(
                 Log.i(TAG, "Deleted backup: $fileId")
                 true
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete backup", e)
             false
@@ -618,6 +669,8 @@ class GoogleDriveService @Inject constructor(
                     Log.d(TAG, "Deleted old backup: ${backup.fileName}")
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to cleanup old backups", e)
         }

@@ -18,6 +18,7 @@ import androidx.work.WorkRequest
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -109,34 +110,39 @@ class LocalBackupWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val settings = settingsManager.settings.first()
-
-        if (settings.backupInterval == BackupInterval.MANUAL) {
-            cleanupRunState()
-            return@withContext Result.success()
-        }
-
-        if (!LocalBackupStorage.hasSelectedDirectory(context)) {
-            // If Android revoked the persisted grant, remove only the stale URI
-            // preference. A provider that is temporarily unavailable but still has
-            // a valid persisted grant is handled below with bounded retries instead.
-            if (LocalBackupStorage.getSelectedDirectoryUri(context) != null) {
-                LocalBackupStorage.clearSelectedDirectory(context)
-            }
-            notifyTerminalFailure(
-                "Device Backup Folder Needed",
-                "Open Tempo and choose an automatic backup folder"
-            )
-            cleanupRunState()
-            return@withContext Result.success()
-        }
-
         val runStateDir = runStateDir()
-        val backupRunId = getOrCreateBackupRunId(runStateDir)
-        val tempFile = File(runStateDir, "backup.tempo")
-        val archiveReadyMarker = File(runStateDir, "archive.ready")
 
         try {
+            val settings = settingsManager.settings.first()
+
+            if (settings.backupInterval == BackupInterval.MANUAL) {
+                cleanupRunState()
+                return@withContext Result.success()
+            }
+
+            if (!LocalBackupStorage.hasSelectedDirectory(context)) {
+                // If Android revoked the persisted grant, remove only the stale URI
+                // preference. A provider that is temporarily unavailable but still has
+                // a valid persisted grant is handled below with bounded retries instead.
+                if (LocalBackupStorage.getSelectedDirectoryUri(context) != null) {
+                    LocalBackupStorage.clearSelectedDirectory(context)
+                }
+                notifyTerminalFailure(
+                    "Device Backup Folder Needed",
+                    "Open Tempo and choose an automatic backup folder"
+                )
+                cleanupRunState()
+                return@withContext Result.success()
+            }
+
+            if ((!runStateDir.exists() && !runStateDir.mkdirs()) || !runStateDir.isDirectory) {
+                throw java.io.IOException("Unable to create device backup working directory")
+            }
+
+            val backupRunId = getOrCreateBackupRunId(runStateDir)
+            val tempFile = File(runStateDir, "backup.tempo")
+            val archiveReadyMarker = File(runStateDir, "archive.ready")
+
             setForeground(getForegroundInfo())
 
             val readyMarkerRunId = runCatching {
@@ -186,6 +192,8 @@ class LocalBackupWorker @AssistedInject constructor(
             )
             runStateDir.deleteRecursively()
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Automatic device backup failed", e)
             retryOrFinish(
@@ -211,7 +219,7 @@ class LocalBackupWorker @AssistedInject constructor(
     }
 
     private fun runStateDir(): File =
-        File(context.cacheDir, "tempo_local_backup_runs/$id").apply { mkdirs() }
+        File(context.cacheDir, "tempo_local_backup_runs/$id")
 
     private fun cleanupRunState() {
         File(context.cacheDir, "tempo_local_backup_runs/$id").deleteRecursively()
@@ -236,24 +244,30 @@ class LocalBackupWorker @AssistedInject constructor(
     }
 
     private fun showNotification(title: String, message: String) {
-        val notificationManager =
-            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                "Backup Notifications",
-                NotificationManager.IMPORTANCE_DEFAULT
+        try {
+            val notificationManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "Backup Notifications",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                )
             )
-        )
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .build()
-        notificationManager.notify(NOTIFICATION_ID, notification)
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .build()
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            // A denied notification permission must not turn a completed backup
+            // into a failed/retried backup.
+            Log.w(TAG, "Unable to show device backup notification", e)
+        }
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {

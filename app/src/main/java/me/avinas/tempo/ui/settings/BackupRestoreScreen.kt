@@ -1048,7 +1048,7 @@ private fun BackupTipsCard() {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "• Google Drive backups are automatic and encrypted\n" +
+                text = "• Google Drive backups are stored in your Drive account\n" +
                        "• Only the 5 most recent backups are kept\n" +
                        "• Album art from streaming services will be re-downloaded\n" +
                        "• Local album art is only included if toggled on",

@@ -23,7 +23,9 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -71,11 +73,13 @@ class GoogleAuthManager @Inject constructor(
     val needsDriveConsent: StateFlow<Boolean> = _needsDriveConsent.asStateFlow()
     
     // Cached authorization result for Drive API access.
+    @Volatile
     private var authorizationResult: AuthorizationResult? = null
 
     // ApiException can carry a consent resolution even when no AuthorizationResult
     // is returned. Keep that PendingIntent separately so the UI can always launch
     // the required Drive consent flow.
+    @Volatile
     private var authorizationResolution: PendingIntent? = null
 
     private fun configuredWebClientId(): String? =
@@ -132,6 +136,8 @@ class GoogleAuthManager @Inject constructor(
         } catch (e: GetCredentialException) {
             Log.e(TAG, "Sign-in failed", e)
             GoogleSignInResult.Error("Sign-in failed: ${e.message}", e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Unexpected error during sign-in", e)
             GoogleSignInResult.Error("Unexpected error: ${e.message}", e)
@@ -174,7 +180,7 @@ class GoogleAuthManager @Inject constructor(
                             photoUrl = account.photoUrl
                         )
                         
-                        Log.i(TAG, "Successfully signed in as ${account.email}")
+                        Log.i(TAG, "Google identity sign-in succeeded")
 
                         // An explicit account selection starts a fresh Drive authorization
                         // lifecycle. Never allow a token from a previous account/session to
@@ -188,7 +194,12 @@ class GoogleAuthManager @Inject constructor(
                         requestDriveAuthorization()
                         
                         GoogleSignInResult.Success(account)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
+                        _currentAccount.value = null
+                        _isSignedIn.value = false
+                        runCatching { tokenStorage.clearAll() }
                         Log.e(TAG, "Failed to parse Google ID credential", e)
                         GoogleSignInResult.Error("Failed to parse credential: ${e.message}", e)
                     }
@@ -271,6 +282,8 @@ class GoogleAuthManager @Inject constructor(
                 Log.e(TAG, "Failed to request Drive authorization (${e.status.statusCode}: ${e.status.statusMessage})", e)
                 false
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             authorizationResult = null
             authorizationResolution = null
@@ -324,6 +337,8 @@ class GoogleAuthManager @Inject constructor(
             tokenStorage.clearToken()
             Log.e(TAG, "Failed to complete consent flow (${e.status.statusCode}: ${e.status.statusMessage})", e)
             false
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             authorizationResult = null
             authorizationResolution = null
@@ -387,8 +402,9 @@ class GoogleAuthManager @Inject constructor(
         Log.i(TAG, "Authorization result updated, accessToken present: ${result.accessToken != null}")
 
         val hasDriveScope = result.grantedScopes.orEmpty().any { it.contains(DriveScopes.DRIVE_FILE) }
-        if (!result.hasResolution() && result.accessToken != null && hasDriveScope) {
-            tokenStorage.saveAccessToken(result.accessToken!!)
+        val accessToken = result.accessToken
+        if (!result.hasResolution() && accessToken != null && hasDriveScope) {
+            tokenStorage.saveAccessToken(accessToken)
             Log.d(TAG, "Authorization result token persisted to secure storage")
         } else if (!result.hasResolution()) {
             authorizationResult = null
@@ -457,6 +473,8 @@ class GoogleAuthManager @Inject constructor(
             
             Log.w(TAG, "No access token available (memory or storage)")
             null
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get access token", e)
             null
@@ -510,6 +528,8 @@ class GoogleAuthManager @Inject constructor(
             authorizationResolution = e.status.resolution
             _needsDriveConsent.value = authorizationResolution != null
             false
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             authorizationResult = null
             authorizationResolution = null
@@ -540,7 +560,7 @@ class GoogleAuthManager @Inject constructor(
     /**
      * Sign out and clear all credentials.
      */
-    suspend fun signOut() = withContext(Dispatchers.IO) {
+    suspend fun signOut() = withContext(Dispatchers.IO + NonCancellable) {
         Log.d(TAG, "Signing out")
 
         // Credential Manager cleanup is best effort. It must not gate the local
@@ -549,6 +569,8 @@ class GoogleAuthManager @Inject constructor(
         try {
             val credentialManager = CredentialManager.create(context)
             credentialManager.clearCredentialState(ClearCredentialStateRequest())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Credential Manager cleanup failed during sign out", e)
         }
@@ -556,6 +578,8 @@ class GoogleAuthManager @Inject constructor(
         try {
             tokenStorage.clearAll()
             Log.d(TAG, "Cleared persisted tokens from secure storage")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to clear persisted Google credentials", e)
         } finally {
@@ -609,6 +633,8 @@ class GoogleAuthManager @Inject constructor(
         } catch (e: GetCredentialCancellationException) {
             Log.d(TAG, "Session restore cancelled")
             false
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Failed to restore session", e)
             false
@@ -628,6 +654,7 @@ class GoogleAuthManager @Inject constructor(
             Log.d(TAG, "Session already active in memory")
             return@withContext true
         }
+        _isSignedIn.value = false
 
         // Never attempt background authorization against an implicit OAuth client.
         // Builds without the configured Web client ID must require an interactive,
@@ -650,7 +677,7 @@ class GoogleAuthManager @Inject constructor(
         val storedAccount = tokenStorage.getStoredAccount()
         if (storedAccount != null) {
             _currentAccount.value = storedAccount
-            Log.d(TAG, "Restored account info from storage: ${storedAccount.email}")
+            Log.d(TAG, "Restored Google account info from secure storage")
         }
         
         // Step 3: Attempt silent re-authorization with Google Play Services
@@ -679,7 +706,7 @@ class GoogleAuthManager @Inject constructor(
                 // Successfully got a fresh token
                 tokenStorage.saveAccessToken(accessToken)
                 _isSignedIn.value = true
-                Log.i(TAG, "Successfully restored session silently for ${storedAccount?.email}")
+                Log.i(TAG, "Successfully restored the Google session silently")
                 return@withContext true
             }
             
@@ -715,6 +742,8 @@ class GoogleAuthManager @Inject constructor(
                 return@withContext true
             }
             return@withContext false
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             authorizationResult = null
             authorizationResolution = null
