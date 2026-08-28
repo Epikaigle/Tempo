@@ -1458,18 +1458,36 @@ async fn run_sync(app_data_dir: &Path) -> Result<DriveSyncResult, String> {
     })
 }
 
-fn status_for(app_data_dir: &Path) -> Result<DriveSyncStatus, String> {
+async fn status_for(app_data_dir: &Path) -> Result<DriveSyncStatus, String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
+    drop(conn);
+
+    let has_valid_access = state
+        .access_token
+        .as_deref()
+        .is_some_and(|value| !value.is_empty())
+        && state.token_expires_at > now_ms() + 60_000;
+    let has_legacy_refresh = state
+        .refresh_token
+        .as_deref()
+        .is_some_and(|value| !value.is_empty());
+    let has_secure_refresh = if state.enabled && !has_legacy_refresh {
+        secure_refresh_token_get(&state.device_id)
+            .await
+            .unwrap_or(None)
+            .is_some()
+    } else {
+        false
+    };
+    let has_account_identity = state
+        .account_email
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
     let connected = state.enabled
-        && (state
-            .access_token
-            .as_deref()
-            .is_some_and(|value| !value.is_empty())
-            || state
-                .refresh_token
-                .as_deref()
-                .is_some_and(|value| !value.is_empty()));
+        && has_account_identity
+        && (has_valid_access || has_legacy_refresh || has_secure_refresh);
+
     Ok(DriveSyncStatus {
         enabled: state.enabled,
         configured: oauth_client_id().is_some(),
@@ -1484,7 +1502,7 @@ fn status_for(app_data_dir: &Path) -> Result<DriveSyncStatus, String> {
 
 #[tauri::command]
 pub async fn drive_get_status(state: State<'_, AppState>) -> Result<DriveSyncStatus, String> {
-    status_for(&state.app_data_dir)
+    status_for(&state.app_data_dir).await
 }
 
 #[tauri::command]
@@ -1519,7 +1537,7 @@ pub async fn drive_connect(
         let _ = set_last_error(&conn, Some(&err));
         return Err(err);
     }
-    status_for(&state.app_data_dir)
+    status_for(&state.app_data_dir).await
 }
 
 #[tauri::command]
@@ -1529,9 +1547,17 @@ pub async fn drive_disconnect(state: State<'_, AppState>) -> Result<DriveSyncSta
     let state_before = load_state(&conn)?;
     drop(conn);
 
-    let secure_refresh = secure_refresh_token_get(&state_before.device_id).await?;
-    // Remove the durable credential before declaring the local connection cleared.
-    secure_refresh_token_delete(&state_before.device_id).await?;
+    // The user explicitly asked to disconnect. A broken/unavailable native
+    // credential store must not leave background Drive sync enabled locally.
+    // Read/revoke is best-effort; deletion errors are reported only after the
+    // local database has been made safe and inert.
+    let secure_refresh = secure_refresh_token_get(&state_before.device_id)
+        .await
+        .ok()
+        .flatten();
+    let credential_delete_error = secure_refresh_token_delete(&state_before.device_id)
+        .await
+        .err();
 
     let conn = open_sync_db(&state.app_data_dir)?;
     conn.execute(
@@ -1558,7 +1584,13 @@ pub async fn drive_disconnect(state: State<'_, AppState>) -> Result<DriveSyncSta
             .send()
             .await;
     }
-    status_for(&state.app_data_dir)
+
+    if let Some(err) = credential_delete_error {
+        return Err(format!(
+            "Google Drive was disabled locally, but Tempo could not remove the OS credential: {err}"
+        ));
+    }
+    status_for(&state.app_data_dir).await
 }
 
 #[tauri::command]
