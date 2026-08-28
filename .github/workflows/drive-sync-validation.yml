@@ -2,8 +2,6 @@ name: Drive Sync Validation
 
 on:
   push:
-    branches:
-      - feat/cross-device-drive-sync
     paths:
       - ".github/workflows/drive-sync-validation.yml"
       - "PRIVACY.md"
