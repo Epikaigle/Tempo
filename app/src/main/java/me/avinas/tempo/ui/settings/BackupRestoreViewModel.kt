@@ -48,6 +48,7 @@ class BackupRestoreViewModel @Inject constructor(
     private val googleAuthManager: GoogleAuthManager,
     private val driveService: GoogleDriveService,
     private val backupSettingsManager: BackupSettingsManager,
+    private val driveHistorySyncManager: DriveHistorySyncManager,
     private val applicationScope: CoroutineScope
 ) : ViewModel() {
     
@@ -282,6 +283,13 @@ class BackupRestoreViewModel @Inject constructor(
         _showConflictDialog.value = null
         applicationScope.launch {
             val result = importExportManager.importData(uri, strategy)
+            if (result is ImportExportResult.Success) {
+                // Import/restore can replace Room rows while the Drive upload cursor
+                // lives independently in SharedPreferences. Always invalidate both
+                // Drive cursors after a successful data import so restored rows are
+                // rescanned idempotently instead of being skipped behind stale ids.
+                driveHistorySyncManager.resetCursors()
+            }
             _importExportResult.value = result
             // Refresh stats after import
             calculateStats()
@@ -540,6 +548,11 @@ class BackupRestoreViewModel @Inject constructor(
                         
                         when (importResult) {
                             is ImportExportResult.Success -> {
+                                // A restored database can reuse/overlap old Room ids.
+                                // Force the next Drive sync to rescan from a clean
+                                // cursor; deterministic event ids + dedup make replay
+                                // safe, while keeping the old cursor could lose plays.
+                                driveHistorySyncManager.resetCursors()
                                 calculateStats()
                                 loadDriveBackups() // Refresh backup list after restore
                                 _driveOperation.value = DriveOperationState.Success(
