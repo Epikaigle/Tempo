@@ -361,7 +361,11 @@ async function downloadRemotePlays(
     : null;
   const files = await listBatches(accessToken, after);
 
-  const existing = await storage.getAllPlays(MAX_LOCAL_SCAN);
+  // Exact origin IDs are the idempotency key. The plays store may temporarily
+  // exceed the normal 5k retention cap while locally-owned rows are waiting for
+  // their first Drive upload, so sample-based dedup can miss an older imported
+  // event. Scan the whole local store once per Drive download pass instead.
+  const existing = await storage.getAllPlays(Number.MAX_SAFE_INTEGER);
   const seenOriginIds = new Set(existing.map(p => p.originEventId).filter((x): x is string => !!x));
   let imported = 0;
   let duplicates = 0;
