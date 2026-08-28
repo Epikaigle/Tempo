@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.R
+import me.avinas.tempo.data.drive.BackupInterval
 import me.avinas.tempo.data.drive.BackupSettingsManager
 import me.avinas.tempo.data.drive.BackupStatus
 import me.avinas.tempo.data.drive.DriveBackupResult
@@ -37,6 +38,7 @@ import me.avinas.tempo.data.drive.GoogleDriveService
 import me.avinas.tempo.data.importexport.ImportExportManager
 import me.avinas.tempo.data.importexport.ImportExportResult
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
@@ -67,8 +69,10 @@ class DriveBackupWorker @AssistedInject constructor(
         internal fun isArchiveReusable(
             archiveExists: Boolean,
             archiveLength: Long,
-            readyMarkerExists: Boolean
-        ): Boolean = archiveExists && archiveLength > 0L && readyMarkerExists
+            readyMarkerRunId: String?,
+            backupRunId: String
+        ): Boolean =
+            archiveExists && archiveLength > 0L && readyMarkerRunId == backupRunId
 
         internal fun networkSatisfiesDrivePolicy(
             hasValidatedInternet: Boolean,
@@ -147,10 +151,12 @@ class DriveBackupWorker @AssistedInject constructor(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val settings = settingsManager.settings.first()
 
-        // A worker already running/retrying may observe a sign-out before the
-        // scheduler cancellation reaches it. Finish quietly instead of touching
-        // Drive with stale credentials.
-        if (!settings.isGoogleDriveEnabled) {
+        // A worker already running/retrying may observe Manual/sign-out before
+        // scheduler cancellation reaches it. Finish quietly instead of creating
+        // another automatic backup with stale settings.
+        if (settings.backupInterval == BackupInterval.MANUAL ||
+            !settings.isGoogleDriveEnabled
+        ) {
             cleanupRunState()
             return@withContext Result.success()
         }
@@ -161,6 +167,11 @@ class DriveBackupWorker @AssistedInject constructor(
         }
 
         val runStateDir = runStateDir()
+        // A PeriodicWorkRequest keeps the same WorkRequest UUID across periods.
+        // runAttemptCount, however, resets between periods. Generate a fresh
+        // logical backup id on the first attempt of each period, then persist and
+        // reuse it for every retry of that same period.
+        val backupRunId = getOrCreateBackupRunId(runStateDir)
         val tempFile = File(runStateDir, "backup.tempo")
         val archiveReadyMarker = File(runStateDir, "archive.ready")
 
@@ -189,7 +200,16 @@ class DriveBackupWorker @AssistedInject constructor(
                 return@withContext Result.retry()
             }
 
-            if (!isArchiveReusable(tempFile.exists(), tempFile.length(), archiveReadyMarker.exists())) {
+            val readyMarkerRunId = runCatching {
+                archiveReadyMarker.takeIf { it.exists() }?.readText()?.trim()
+            }.getOrNull()
+            if (!isArchiveReusable(
+                    tempFile.exists(),
+                    tempFile.length(),
+                    readyMarkerRunId,
+                    backupRunId
+                )
+            ) {
                 tempFile.delete()
                 archiveReadyMarker.delete()
                 setProgress(workDataOf("phase" to "Creating Drive backup..."))
@@ -210,7 +230,7 @@ class DriveBackupWorker @AssistedInject constructor(
                     notifyFirstAttempt("Drive Backup Failed", message)
                     return@withContext Result.retry()
                 }
-                archiveReadyMarker.writeText("ready")
+                archiveReadyMarker.writeText(backupRunId)
             } else {
                 Log.i(TAG, "Reusing Drive archive from an earlier attempt of this WorkManager run")
             }
@@ -218,7 +238,7 @@ class DriveBackupWorker @AssistedInject constructor(
             setProgress(workDataOf("phase" to "Uploading to Google Drive..."))
             when (val uploadResult = driveService.uploadBackup(
                 tempFile,
-                idempotencyKey = id.toString()
+                idempotencyKey = backupRunId
             ) { progress ->
                 setProgressAsync(
                     workDataOf(
@@ -249,6 +269,21 @@ class DriveBackupWorker @AssistedInject constructor(
             notifyFirstAttempt("Drive Backup Failed", "An unexpected error occurred")
             Result.retry()
         }
+    }
+
+    private fun getOrCreateBackupRunId(runStateDir: File): String {
+        val marker = File(runStateDir, "backup_run_id")
+
+        // WorkManager documents that runAttemptCount resets between periods. On
+        // retries (> 0), keep the marker written by this period's first attempt.
+        if (runAttemptCount > 0) {
+            val existing = runCatching { marker.readText().trim() }.getOrNull()
+            if (!existing.isNullOrBlank()) return existing
+        }
+
+        val fresh = UUID.randomUUID().toString()
+        marker.writeText(fresh)
+        return fresh
     }
 
     private fun runStateDir(): File =

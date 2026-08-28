@@ -88,7 +88,22 @@ object LocalBackupStorage {
             .apply()
     }
 
-    fun persist(context: Context, sourceFile: File): String {
+    internal fun buildAutomaticBackupFileName(
+        timestamp: String,
+        idempotencyKey: String?
+    ): String {
+        val stableKey = idempotencyKey
+            ?.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            ?.take(180)
+            ?.takeIf { it.isNotBlank() }
+        return "$FILE_PREFIX${stableKey ?: timestamp}.tempo"
+    }
+
+    fun persist(
+        context: Context,
+        sourceFile: File,
+        idempotencyKey: String? = null
+    ): String {
         require(sourceFile.exists() && sourceFile.length() > 0L) {
             "Backup source file is missing or empty"
         }
@@ -107,7 +122,7 @@ object LocalBackupStorage {
         }
 
         val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())
-        val fileName = "$FILE_PREFIX$timestamp.tempo"
+        val fileName = buildAutomaticBackupFileName(timestamp, idempotencyKey)
 
         return persistToTree(context, treeUri, sourceFile, fileName)
     }
@@ -126,6 +141,28 @@ object LocalBackupStorage {
         }
 
         val directoryUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocumentId)
+
+        // A worker retry must not create a second file if the previous process was
+        // killed after the copy completed but before WorkManager recorded success.
+        // The worker supplies a stable per-period file name, so exact-name lookup
+        // gives the local destination the same idempotency guarantee as Drive.
+        val existing = findExistingBackup(context, treeUri, treeDocumentId, fileName)
+        if (existing != null) {
+            val (existingUri, existingSize) = existing
+            if (existingSize == sourceFile.length()) {
+                cleanupOldBackups(context, treeUri, treeDocumentId)
+                Log.i(TAG, "Reusing already-saved automatic local backup: $existingUri")
+                return existingUri.toString()
+            }
+
+            val deleted = runCatching {
+                DocumentsContract.deleteDocument(resolver, existingUri)
+            }.getOrDefault(false)
+            if (!deleted) {
+                throw IOException("Unable to replace an incomplete automatic backup file")
+            }
+        }
+
         val outputUri = DocumentsContract.createDocument(
             resolver,
             directoryUri,
@@ -149,6 +186,45 @@ object LocalBackupStorage {
         } catch (e: Exception) {
             runCatching { DocumentsContract.deleteDocument(resolver, outputUri) }
             throw e
+        }
+    }
+
+    private fun findExistingBackup(
+        context: Context,
+        treeUri: Uri,
+        treeDocumentId: String,
+        fileName: String
+    ): Pair<Uri, Long?>? {
+        val resolver = context.contentResolver
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocumentId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_SIZE
+        )
+
+        return try {
+            resolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val sizeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameColumn) != fileName) continue
+                    val documentId = cursor.getString(idColumn)
+                    val size = if (sizeColumn >= 0 && !cursor.isNull(sizeColumn)) {
+                        cursor.getLong(sizeColumn)
+                    } else {
+                        null
+                    }
+                    val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+                    return@use uri to size
+                }
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to check for an existing retry-safe local backup", e)
+            null
         }
     }
 

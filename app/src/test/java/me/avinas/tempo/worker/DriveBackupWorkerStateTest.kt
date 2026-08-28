@@ -1,26 +1,50 @@
 package me.avinas.tempo.worker
 
 import me.avinas.tempo.data.drive.GoogleDriveService
+import me.avinas.tempo.data.drive.LocalBackupStorage
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DriveBackupWorkerStateTest {
 
     @Test
-    fun driveArchiveReuseRequiresCompletedNonEmptyArchive() {
-        assertTrue(DriveBackupWorker.isArchiveReusable(true, 42L, true))
-        assertFalse(DriveBackupWorker.isArchiveReusable(false, 42L, true))
-        assertFalse(DriveBackupWorker.isArchiveReusable(true, 0L, true))
-        assertFalse(DriveBackupWorker.isArchiveReusable(true, 42L, false))
+    fun driveArchiveReuseRequiresSameLogicalRun() {
+        assertTrue(DriveBackupWorker.isArchiveReusable(true, 42L, "run-a", "run-a"))
+        assertFalse(DriveBackupWorker.isArchiveReusable(false, 42L, "run-a", "run-a"))
+        assertFalse(DriveBackupWorker.isArchiveReusable(true, 0L, "run-a", "run-a"))
+        assertFalse(DriveBackupWorker.isArchiveReusable(true, 42L, null, "run-a"))
+        assertFalse(DriveBackupWorker.isArchiveReusable(true, 42L, "old-period", "new-period"))
     }
 
     @Test
-    fun localArchiveReuseRequiresCompletedNonEmptyArchive() {
-        assertTrue(LocalBackupWorker.isArchiveReusable(true, 42L, true))
-        assertFalse(LocalBackupWorker.isArchiveReusable(false, 42L, true))
-        assertFalse(LocalBackupWorker.isArchiveReusable(true, 0L, true))
-        assertFalse(LocalBackupWorker.isArchiveReusable(true, 42L, false))
+    fun localArchiveReuseRequiresSameLogicalRun() {
+        assertTrue(LocalBackupWorker.isArchiveReusable(true, 42L, "run-a", "run-a"))
+        assertFalse(LocalBackupWorker.isArchiveReusable(false, 42L, "run-a", "run-a"))
+        assertFalse(LocalBackupWorker.isArchiveReusable(true, 0L, "run-a", "run-a"))
+        assertFalse(LocalBackupWorker.isArchiveReusable(true, 42L, null, "run-a"))
+        assertFalse(LocalBackupWorker.isArchiveReusable(true, 42L, "old-period", "new-period"))
+    }
+
+    @Test
+    fun localRetryFileNameIsStableForOnePeriodAndChangesForTheNext() {
+        val first = LocalBackupStorage.buildAutomaticBackupFileName(
+            timestamp = "2099-01-01_00-00-00-000",
+            idempotencyKey = "2026-08-28_23-00-00-000_run-a"
+        )
+        val retry = LocalBackupStorage.buildAutomaticBackupFileName(
+            timestamp = "2099-12-31_23-59-59-999",
+            idempotencyKey = "2026-08-28_23-00-00-000_run-a"
+        )
+        val nextPeriod = LocalBackupStorage.buildAutomaticBackupFileName(
+            timestamp = "2099-12-31_23-59-59-999",
+            idempotencyKey = "2026-08-29_23-00-00-000_run-b"
+        )
+
+        assertEquals(first, retry)
+        assertNotEquals(first, nextPeriod)
     }
 
     @Test

@@ -22,11 +22,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.R
+import me.avinas.tempo.data.drive.BackupInterval
 import me.avinas.tempo.data.drive.BackupSettingsManager
 import me.avinas.tempo.data.drive.LocalBackupStorage
 import me.avinas.tempo.data.importexport.ImportExportManager
 import me.avinas.tempo.data.importexport.ImportExportResult
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
@@ -58,8 +63,10 @@ class LocalBackupWorker @AssistedInject constructor(
         internal fun isArchiveReusable(
             archiveExists: Boolean,
             archiveLength: Long,
-            readyMarkerExists: Boolean
-        ): Boolean = archiveExists && archiveLength > 0L && readyMarkerExists
+            readyMarkerRunId: String?,
+            backupRunId: String
+        ): Boolean =
+            archiveExists && archiveLength > 0L && readyMarkerRunId == backupRunId
 
         fun schedule(context: Context, intervalHours: Long) {
             if (intervalHours <= 0L) {
@@ -104,6 +111,11 @@ class LocalBackupWorker @AssistedInject constructor(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val settings = settingsManager.settings.first()
 
+        if (settings.backupInterval == BackupInterval.MANUAL) {
+            cleanupRunState()
+            return@withContext Result.success()
+        }
+
         if (!LocalBackupStorage.hasSelectedDirectory(context)) {
             // If Android revoked the persisted grant, remove only the stale URI
             // preference. A provider that is temporarily unavailable but still has
@@ -120,16 +132,21 @@ class LocalBackupWorker @AssistedInject constructor(
         }
 
         val runStateDir = runStateDir()
+        val backupRunId = getOrCreateBackupRunId(runStateDir)
         val tempFile = File(runStateDir, "backup.tempo")
         val archiveReadyMarker = File(runStateDir, "archive.ready")
 
         try {
             setForeground(getForegroundInfo())
 
+            val readyMarkerRunId = runCatching {
+                archiveReadyMarker.takeIf { it.exists() }?.readText()?.trim()
+            }.getOrNull()
             if (!isArchiveReusable(
                     tempFile.exists(),
                     tempFile.length(),
-                    archiveReadyMarker.exists()
+                    readyMarkerRunId,
+                    backupRunId
                 )
             ) {
                 tempFile.delete()
@@ -152,12 +169,16 @@ class LocalBackupWorker @AssistedInject constructor(
 
                 // ImportExportManager validates the ZIP before returning success.
                 // Mark it reusable only after that validation completed.
-                archiveReadyMarker.writeText("ready")
+                archiveReadyMarker.writeText(backupRunId)
             } else {
                 Log.i(TAG, "Reusing device archive from an earlier attempt of this WorkManager run")
             }
 
-            val location = LocalBackupStorage.persist(context, tempFile)
+            val location = LocalBackupStorage.persist(
+                context = context,
+                sourceFile = tempFile,
+                idempotencyKey = backupRunId
+            )
             Log.i(TAG, "Automatic device backup saved: $location")
             showNotification(
                 "Device Backup Complete",
@@ -172,6 +193,21 @@ class LocalBackupWorker @AssistedInject constructor(
                 e.message ?: "Could not save the automatic device backup"
             )
         }
+    }
+
+    private fun getOrCreateBackupRunId(runStateDir: File): String {
+        val marker = File(runStateDir, "backup_run_id")
+        if (runAttemptCount > 0) {
+            val existing = runCatching { marker.readText().trim() }.getOrNull()
+            if (!existing.isNullOrBlank()) return existing
+        }
+
+        // Prefix with an ISO-like timestamp so LocalBackupStorage's lexical
+        // retention order remains newest-first, then add UUID entropy.
+        val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", Locale.US).format(Date())
+        val fresh = "${timestamp}_${UUID.randomUUID()}"
+        marker.writeText(fresh)
+        return fresh
     }
 
     private fun runStateDir(): File =
