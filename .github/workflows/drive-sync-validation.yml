@@ -4,7 +4,35 @@ on:
   push:
     branches:
       - feat/cross-device-drive-sync
+    paths:
+      - ".github/workflows/drive-sync-validation.yml"
+      - "PRIVACY.md"
+      - "app/build.gradle.kts"
+      - "app/src/main/java/me/avinas/tempo/TempoApplication.kt"
+      - "app/src/main/java/me/avinas/tempo/data/drive/**"
+      - "app/src/main/java/me/avinas/tempo/di/DriveModule.kt"
+      - "app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreScreen.kt"
+      - "app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreViewModel.kt"
+      - "app/src/main/java/me/avinas/tempo/ui/settings/DriveHistorySyncSection.kt"
+      - "app/src/main/java/me/avinas/tempo/worker/DriveHistorySyncWorker.kt"
+      - "app/src/test/java/me/avinas/tempo/data/drive/**"
+      - "browser-extension/**"
+      - "docs/DRIVE_HISTORY_SYNC_V1.md"
   pull_request:
+    paths:
+      - ".github/workflows/drive-sync-validation.yml"
+      - "PRIVACY.md"
+      - "app/build.gradle.kts"
+      - "app/src/main/java/me/avinas/tempo/TempoApplication.kt"
+      - "app/src/main/java/me/avinas/tempo/data/drive/**"
+      - "app/src/main/java/me/avinas/tempo/di/DriveModule.kt"
+      - "app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreScreen.kt"
+      - "app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreViewModel.kt"
+      - "app/src/main/java/me/avinas/tempo/ui/settings/DriveHistorySyncSection.kt"
+      - "app/src/main/java/me/avinas/tempo/worker/DriveHistorySyncWorker.kt"
+      - "app/src/test/java/me/avinas/tempo/data/drive/**"
+      - "browser-extension/**"
+      - "docs/DRIVE_HISTORY_SYNC_V1.md"
   workflow_dispatch:
 
 permissions:
