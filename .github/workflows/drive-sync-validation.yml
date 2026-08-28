@@ -1,0 +1,56 @@
+name: Drive Sync Validation
+
+on:
+  push:
+    branches:
+      - feat/cross-device-drive-sync
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: browser-extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: browser-extension/package-lock.json
+      - run: npm ci
+      - name: TypeScript typecheck
+        run: npm run typecheck
+      - name: Existing tracker and LAN sync smoke tests
+        run: npm run smoke
+      - name: Build Chrome
+        env:
+          TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME: test-client.apps.googleusercontent.com
+        run: npm run build:chrome
+      - name: Build Firefox
+        env:
+          TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX: test-client.apps.googleusercontent.com
+        run: npm run build:firefox
+
+  android:
+    runs-on: ubuntu-latest
+    env:
+      TEMPO_GOOGLE_WEB_CLIENT_ID: test-client.apps.googleusercontent.com
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - run: chmod +x gradlew
+      - name: Compile Android Kotlin
+        run: ./gradlew :app:compileDebugKotlin --stacktrace
+      - name: Android unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
