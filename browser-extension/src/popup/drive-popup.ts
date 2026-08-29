@@ -184,7 +184,7 @@ function sendDriveCommand(command: string): Promise<DriveCommandResponse> {
       if (settled) return;
       try { port.disconnect(); } catch { /* ignore */ }
       finishReject(new Error('Drive sync request timed out'));
-    }, 90_000);
+    }, 180_000);
 
     port.onMessage.addListener((response: DriveCommandResponse) => {
       if (settled) return;

@@ -996,7 +996,7 @@ private fun BackupTipsCard() {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "• Google Drive backups are automatic and encrypted\n" +
+                text = "• Google Drive backups can run automatically and use HTTPS in transit\n" +
                        "• Cross-device history sync is optional and uses Drive app data\n" +
                        "• Only the 5 most recent full backups are kept\n" +
                        "• Album art from streaming services will be re-downloaded\n" +

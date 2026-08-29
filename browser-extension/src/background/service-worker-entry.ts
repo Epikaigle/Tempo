@@ -45,13 +45,21 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener((message: any) => {
     void handleDriveCommand(message)
-      .then(result => port.postMessage({ ok: true, ...result }))
-      .catch(err => port.postMessage({
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-      }));
+      .then(result => postToOpenPort(port, { ok: true, ...result }))
+      .catch(err => postToOpenPort(port, {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        }));
   });
 });
+
+function postToOpenPort(port: chrome.runtime.Port, message: Record<string, unknown>): void {
+  try {
+    port.postMessage(message);
+  } catch {
+    // The popup may have closed while a Drive request was still finishing.
+  }
+}
 
 async function handleDriveCommand(message: any): Promise<Record<string, unknown>> {
   const command = typeof message?.command === 'string' ? message.command : '';

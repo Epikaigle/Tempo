@@ -21,6 +21,7 @@ const MAX_LOCAL_SCAN = 5000;
 const DOWNLOAD_OVERLAP_MS = 24 * 60 * 60 * 1000;
 const MAX_BATCH_BYTES = 10 * 1024 * 1024;
 const MAX_DRIVE_RETRIES = 3;
+const DRIVE_REQUEST_TIMEOUT_MS = 30_000;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9._-]{1,200}$/;
 const PLATFORM_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
@@ -857,12 +858,19 @@ async function driveFetch(
   attempt = 0,
 ): Promise<Response> {
   let response: Response;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DRIVE_REQUEST_TIMEOUT_MS);
+  const abortParent = () => controller.abort();
+  init.signal?.addEventListener('abort', abortParent, { once: true });
   try {
-    response = await fetch(url, init);
+    response = await fetch(url, { ...init, signal: controller.signal });
   } catch (err) {
     if (attempt >= MAX_DRIVE_RETRIES) throw err;
     await delayMs(750 * (2 ** attempt));
     return driveFetch(accessToken, url, init, attempt + 1);
+  } finally {
+    clearTimeout(timeout);
+    init.signal?.removeEventListener('abort', abortParent);
   }
 
   if (response.status === 401) {
@@ -1102,3 +1110,13 @@ function safeNonNegativeStateNumber(value: unknown): number {
 function safeNullableStateNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
+
+/** Pure protocol hooks used by the Node smoke test; unused exports are removed from production bundles. */
+export const driveProtocolTest = {
+  eventId,
+  deterministicBatchId,
+  gzipJson,
+  ungzipJson,
+  isValidBatch,
+  isValidEvent,
+};

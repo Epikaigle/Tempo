@@ -731,6 +731,9 @@ export async function getSettings(): Promise<Settings> {
       _settingsCache = {
         ...DEFAULT_SETTINGS,
         ...raw,
+        // Cloud transmission is opt-in: only the literal boolean true enables
+        // it. Corrupt/legacy/string values must fail closed.
+        driveSyncEnabled: raw.driveSyncEnabled === true,
         knownArtists: sanitizeArray(raw.knownArtists),
         youtubeChannels: sanitizeArray(raw.youtubeChannels),
         blockedYoutubeChannels: sanitizeArray(raw.blockedYoutubeChannels),

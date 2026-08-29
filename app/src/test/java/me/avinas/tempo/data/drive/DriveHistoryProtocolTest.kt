@@ -4,6 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 class DriveHistoryProtocolTest {
 
@@ -97,8 +102,7 @@ class DriveHistoryProtocolTest {
 
     @Test
     fun `decoder rejects a batch with too many events`() {
-        val events = (0..DriveHistoryProtocol.MAX_EVENTS_PER_BATCH)
-            .map { index -> event("event-$index", 1_700_000_000_000L + index) }
+        val events = listOf(event("event-0", 1_700_000_000_000L))
         val batch = DriveHistoryBatch(
             batchId = DriveHistoryProtocol.createBatchId(events),
             sourceDeviceId = "remote-device",
@@ -107,7 +111,21 @@ class DriveHistoryProtocolTest {
             createdAtUtc = 1_700_000_000_000L,
             events = events
         )
-        val compressed = DriveHistoryProtocol.encodeCompressed(batch)
+        val validCompressed = DriveHistoryProtocol.encodeCompressed(batch)
+        val root = JSONObject(
+            GZIPInputStream(ByteArrayInputStream(validCompressed))
+                .bufferedReader(Charsets.UTF_8)
+                .use { it.readText() }
+        )
+        val eventsJson = root.getJSONArray("events")
+        val template = eventsJson.getJSONObject(0)
+        while (eventsJson.length() <= DriveHistoryProtocol.MAX_EVENTS_PER_BATCH) {
+            eventsJson.put(template)
+        }
+        val compressed = ByteArrayOutputStream().use { output ->
+            GZIPOutputStream(output).use { it.write(root.toString().toByteArray(Charsets.UTF_8)) }
+            output.toByteArray()
+        }
 
         val failure = runCatching { DriveHistoryProtocol.decodeCompressed(compressed) }.exceptionOrNull()
         assertTrue(failure is IllegalArgumentException)
