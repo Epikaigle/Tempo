@@ -60,6 +60,7 @@ class GoogleDriveService @Inject constructor(
         // Transient-failure retry policy for executeWithRetry
         private const val MAX_TRANSIENT_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 2000L
+        private const val DOWNLOAD_FREE_SPACE_BUFFER_BYTES = 16L * 1024L * 1024L
 
         internal fun isRetryable403Reason(reason: String?): Boolean = reason in setOf(
             "rateLimitExceeded",
@@ -72,6 +73,12 @@ class GoogleDriveService @Inject constructor(
             "insufficientPermissions",
             "appNotAuthorizedToFile"
         )
+
+        internal fun hasEnoughDownloadSpace(
+            expectedSize: Long,
+            usableSpace: Long
+        ): Boolean = usableSpace <= 0L ||
+            expectedSize <= (usableSpace - DOWNLOAD_FREE_SPACE_BUFFER_BYTES).coerceAtLeast(0L)
     }
     
     @Volatile
@@ -80,7 +87,12 @@ class GoogleDriveService @Inject constructor(
     private var backupFolderId: String? = null
     @Volatile
     private var cachedAccessToken: String? = null
-    
+
+    // The Drive client and its token form one cache entry. Building/updating
+    // them without a lock can leave a client initialized with token A while the
+    // cache says token B, causing every later call to reuse the wrong account.
+    private val driveServiceMutex = Mutex()
+
     // Mutex to prevent race conditions when creating backup folder
     private val folderCreationMutex = Mutex()
     
@@ -100,28 +112,41 @@ class GoogleDriveService @Inject constructor(
             return@withContext null
         }
         
-        // Recreate service if token changed
-        if (driveService == null || cachedAccessToken != accessToken) {
+        driveServiceMutex.withLock {
+            driveService?.takeIf { cachedAccessToken == accessToken }?.let {
+                return@withLock it
+            }
+
             Log.d(TAG, "Initializing Drive service with fresh access token")
-            cachedAccessToken = accessToken
-            
+
             // Create a simple HTTP request initializer that adds the Bearer token
             val httpRequestInitializer = HttpRequestInitializer { request ->
                 request.headers.authorization = "Bearer $accessToken"
                 request.connectTimeout = 30000
                 request.readTimeout = 30000
             }
-            
-            driveService = Drive.Builder(
+
+            val newService = Drive.Builder(
                 NetHttpTransport(),
                 GsonFactory.getDefaultInstance(),
                 httpRequestInitializer
             )
                 .setApplicationName("Tempo/${BuildConfig.VERSION_NAME}")
                 .build()
+
+            // Publish the matching client/token pair only after construction is
+            // complete, while still holding the same mutex.
+            driveService = newService
+            cachedAccessToken = accessToken
+            newService
         }
-        
-        driveService
+    }
+
+    private suspend fun clearDriveClient() {
+        driveServiceMutex.withLock {
+            driveService = null
+            cachedAccessToken = null
+        }
     }
     
     /**
@@ -152,8 +177,7 @@ class GoogleDriveService @Inject constructor(
             when (e.statusCode) {
                 401 -> {
                     Log.w(TAG, "Authorization failed (401) - attempting refresh")
-                    driveService = null
-                    cachedAccessToken = null
+                    clearDriveClient()
                     authManager.clearPersistedAccessToken()
                     
                     if (authRetryCount < 1 && authManager.refreshAccessToken()) {
@@ -220,8 +244,7 @@ class GoogleDriveService @Inject constructor(
 
                     if (shouldInvalidateAuthFor403(errorReason)) {
                         Log.e(TAG, "Drive authorization is insufficient ($errorReason): $detail", e)
-                        driveService = null
-                        cachedAccessToken = null
+                        clearDriveClient()
                         authManager.invalidateAuthorization()
                         authManager.clearPersistedAccessToken()
                         throw DriveException.Auth(
@@ -578,6 +601,18 @@ class GoogleDriveService @Inject constructor(
                     throw IOException("Unable to create the Drive download cache")
                 }
 
+                val expectedSize = driveFile.getSize()?.toLong()
+                val expectedMd5 = driveFile.md5Checksum
+                if (expectedSize == null || expectedSize <= 0L || expectedMd5.isNullOrBlank()) {
+                    throw DriveException.Server("Drive backup metadata is incomplete")
+                }
+                val usableSpace = cacheDir.usableSpace
+                if (!hasEnoughDownloadSpace(expectedSize, usableSpace)) {
+                    throw DriveException.Unknown(
+                        "Not enough free device storage to download this backup"
+                    )
+                }
+
                 // Never trust the remote display name as a local path and never
                 // share a target between concurrent/retried downloads.
                 val file = File.createTempFile("tempo_drive_", ".tempo", cacheDir)
@@ -588,10 +623,7 @@ class GoogleDriveService @Inject constructor(
                             .executeMediaAndDownloadTo(outputStream)
                     }
 
-                    val expectedSize = driveFile.getSize()?.toLong()
-                    val expectedMd5 = driveFile.md5Checksum
-                    if (expectedSize == null || expectedSize <= 0L || file.length() != expectedSize ||
-                        expectedMd5.isNullOrBlank() ||
+                    if (file.length() != expectedSize ||
                         !md5Hex(file).equals(expectedMd5, ignoreCase = true)
                     ) {
                         throw IOException("Downloaded backup failed its integrity check")
@@ -684,10 +716,17 @@ class GoogleDriveService @Inject constructor(
     /**
      * Clear cached service (call on sign out).
      */
-    fun clearCache() {
-        driveService = null
-        backupFolderId = null
-        cachedAccessToken = null
+    suspend fun clearCache() {
+        // Match getOrCreateBackupFolder's lock order. Waiting for an in-flight
+        // folder lookup prevents it from repopulating an old account's folder ID
+        // immediately after an explicit account switch/sign-out cleared it.
+        folderCreationMutex.withLock {
+            driveServiceMutex.withLock {
+                driveService = null
+                backupFolderId = null
+                cachedAccessToken = null
+            }
+        }
     }
     
     /**

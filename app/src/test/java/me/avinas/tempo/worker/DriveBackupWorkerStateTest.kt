@@ -129,6 +129,16 @@ class DriveBackupWorkerStateTest {
     }
 
     @Test
+    fun driveRestoreKeepsAFreeSpaceBufferBeforeDownloading() {
+        val mib = 1024L * 1024L
+
+        assertTrue(GoogleDriveService.hasEnoughDownloadSpace(20L * mib, 40L * mib))
+        assertFalse(GoogleDriveService.hasEnoughDownloadSpace(25L * mib, 40L * mib))
+        // Some providers/filesystems report unknown usable space as zero.
+        assertTrue(GoogleDriveService.hasEnoughDownloadSpace(20L * mib, 0L))
+    }
+
+    @Test
     fun localWorkerStopsRetryingOneBrokenPeriodSoFuturePeriodsCanRun() {
         assertTrue(LocalBackupWorker.shouldRetryFailure(0))
         assertTrue(LocalBackupWorker.shouldRetryFailure(1))

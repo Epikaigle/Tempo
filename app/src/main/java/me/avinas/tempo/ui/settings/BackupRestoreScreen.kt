@@ -201,7 +201,10 @@ fun BackupRestoreScreen(
             TopAppBar(
                 title = { Text("Backup & Restore", color = Color.White) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(
+                        onClick = onNavigateBack,
+                        enabled = !isOperationActive
+                    ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",

@@ -73,6 +73,7 @@ class GoogleDriveTokenStorage @Inject constructor(
      * Authorization API. Refresh tokens are managed internally by Google Play Services.
      */
     fun saveAccessToken(accessToken: String) {
+        require(accessToken.isNotBlank()) { "Google Drive access token must not be blank" }
         encryptedPrefs.edit().apply {
             putString(KEY_ACCESS_TOKEN, accessToken)
             putLong(KEY_TOKEN_TIMESTAMP, System.currentTimeMillis())
@@ -145,6 +146,7 @@ class GoogleDriveTokenStorage @Inject constructor(
      * Save the Google account information.
      */
     fun saveAccountInfo(email: String, displayName: String?, photoUrl: String?) {
+        require(email.isNotBlank()) { "Google account email must not be blank" }
         encryptedPrefs.edit().apply {
             putString(KEY_ACCOUNT_EMAIL, email)
             if (displayName != null) {
@@ -167,6 +169,7 @@ class GoogleDriveTokenStorage @Inject constructor(
      */
     fun getAccountEmail(): String? {
         return encryptedPrefs.getString(KEY_ACCOUNT_EMAIL, null)
+            ?.takeIf { it.isNotBlank() }
     }
     
     /**

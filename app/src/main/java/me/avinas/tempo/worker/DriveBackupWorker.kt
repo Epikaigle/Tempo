@@ -286,6 +286,10 @@ class DriveBackupWorker @AssistedInject constructor(
                 }
             }
         } catch (e: CancellationException) {
+            // A cancelled/replaced worker will never own this run directory
+            // again. Remove the archive because it contains a full private data
+            // snapshot and must not linger in cache after sign-out/rescheduling.
+            runStateDir.deleteRecursively()
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Scheduled Drive backup failed", e)

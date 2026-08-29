@@ -221,9 +221,6 @@ class BackupRestoreViewModel @Inject constructor(
                     }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: CancellationException) {
-                _driveOperation.value = DriveOperationState.Idle
-                throw e
             } catch (e: Exception) {
                 false
             }

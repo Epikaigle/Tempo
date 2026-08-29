@@ -193,6 +193,9 @@ class LocalBackupWorker @AssistedInject constructor(
             runStateDir.deleteRecursively()
             Result.success()
         } catch (e: CancellationException) {
+            // Constraint changes or schedule replacement can stop a run after the
+            // archive was created. Do not leave that private snapshot in cache.
+            runStateDir.deleteRecursively()
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Automatic device backup failed", e)

@@ -162,7 +162,7 @@ object LocalBackupStorage {
                 Log.w(TAG, "Unable to verify an existing automatic backup", e)
                 null
             }
-            (existingSize == null || existingSize == sourceSize) &&
+            (existingSize == null || existingSize < 0L || existingSize == sourceSize) &&
                 existingDigest == sourceDigest
         }
         if (completedExisting != null) {

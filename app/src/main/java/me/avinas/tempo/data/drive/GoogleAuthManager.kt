@@ -29,6 +29,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.BuildConfig
@@ -82,6 +84,11 @@ class GoogleAuthManager @Inject constructor(
     @Volatile
     private var authorizationResolution: PendingIntent? = null
 
+    // Google Play Services authorization calls mutate the same account/token
+    // state. Serialize interactive sign-in, silent restore, refresh, consent and
+    // sign-out so a background worker cannot overwrite a newly selected account.
+    private val authOperationMutex = Mutex()
+
     private fun configuredWebClientId(): String? =
         BuildConfig.GOOGLE_WEB_CLIENT_ID.trim().takeIf { it.isNotEmpty() }
     
@@ -91,7 +98,10 @@ class GoogleAuthManager @Inject constructor(
      * 
      * @param activity The Activity context REQUIRED for Credential Manager UI
      */
-    suspend fun signIn(activity: Activity): GoogleSignInResult = withContext(Dispatchers.Main) {
+    suspend fun signIn(activity: Activity): GoogleSignInResult =
+        authOperationMutex.withLock { signInUnlocked(activity) }
+
+    private suspend fun signInUnlocked(activity: Activity): GoogleSignInResult = withContext(Dispatchers.Main) {
         val webClientId = configuredWebClientId()
             ?: return@withContext GoogleSignInResult.Error(
                 "Google Sign-In is not configured in this build (missing GOOGLE_WEB_CLIENT_ID)."
@@ -298,7 +308,10 @@ class GoogleAuthManager @Inject constructor(
      * Called after user completes the consent flow via pendingIntent.
      * Re-requests authorization to get the access token.
      */
-    suspend fun completeConsentFlow(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun completeConsentFlow(): Boolean =
+        authOperationMutex.withLock { completeConsentFlowUnlocked() }
+
+    private suspend fun completeConsentFlowUnlocked(): Boolean = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Completing consent flow, re-requesting authorization")
             _needsDriveConsent.value = false
@@ -485,7 +498,10 @@ class GoogleAuthManager @Inject constructor(
      * Force refresh of the access token.
      * Call this when a 401 Unauthorized error is encountered.
      */
-    suspend fun refreshAccessToken(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun refreshAccessToken(): Boolean =
+        authOperationMutex.withLock { refreshAccessTokenUnlocked() }
+
+    private suspend fun refreshAccessTokenUnlocked(): Boolean = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Refreshing access token")
             
@@ -561,6 +577,10 @@ class GoogleAuthManager @Inject constructor(
      * Sign out and clear all credentials.
      */
     suspend fun signOut() = withContext(Dispatchers.IO + NonCancellable) {
+        authOperationMutex.withLock { signOutUnlocked() }
+    }
+
+    private suspend fun signOutUnlocked() = withContext(Dispatchers.IO + NonCancellable) {
         Log.d(TAG, "Signing out")
 
         // Credential Manager cleanup is best effort. It must not gate the local
@@ -599,7 +619,10 @@ class GoogleAuthManager @Inject constructor(
      * 
      * @param activity The Activity context REQUIRED for Credential Manager UI
      */
-    suspend fun restoreSession(activity: Activity): Boolean = withContext(Dispatchers.Main) {
+    suspend fun restoreSession(activity: Activity): Boolean =
+        authOperationMutex.withLock { restoreSessionUnlocked(activity) }
+
+    private suspend fun restoreSessionUnlocked(activity: Activity): Boolean = withContext(Dispatchers.Main) {
         val webClientId = configuredWebClientId()
         if (webClientId == null) {
             Log.w(TAG, "Skipping session restore: GOOGLE_WEB_CLIENT_ID is blank")
@@ -645,7 +668,10 @@ class GoogleAuthManager @Inject constructor(
      * Attempt silent session restore without showing UI for background operations (e.g. WorkManager).
      * Restores account info from encrypted storage and attempts silent re-authorization with Play Services.
      */
-    suspend fun restoreSessionSilently(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun restoreSessionSilently(): Boolean =
+        authOperationMutex.withLock { restoreSessionSilentlyUnlocked() }
+
+    private suspend fun restoreSessionSilentlyUnlocked(): Boolean = withContext(Dispatchers.IO) {
         // Step 1: Check if a drive.file-scoped session is already active in memory.
         val activeAuthorization = authorizationResult
         val activeHasDriveScope = activeAuthorization?.grantedScopes.orEmpty()
