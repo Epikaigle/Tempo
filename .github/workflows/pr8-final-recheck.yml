@@ -25,3 +25,5 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --stacktrace
+
+# Recheck trigger
