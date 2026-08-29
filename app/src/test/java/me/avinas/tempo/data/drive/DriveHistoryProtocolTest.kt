@@ -1,7 +1,9 @@
 package me.avinas.tempo.data.drive
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.json.JSONObject
@@ -98,6 +100,21 @@ class DriveHistoryProtocolTest {
             "tempo_history_v1_g0_device-a_${"a".repeat(64)}.json.gz",
             DriveHistoryProtocol.fileName("device-a", "a".repeat(64))
         )
+    }
+
+    @Test
+    fun `late auth failures match only the token that actually failed`() {
+        assertTrue(GoogleAuthManager.failedTokenIsStillCurrent("token-a", "token-a"))
+        assertFalse(GoogleAuthManager.failedTokenIsStillCurrent("token-a", "token-b"))
+        assertFalse(GoogleAuthManager.failedTokenIsStillCurrent("token-a", null))
+        assertFalse(GoogleAuthManager.failedTokenIsStillCurrent("", ""))
+    }
+
+    @Test
+    fun `Android stream volume never masquerades as a protocol percentage`() {
+        assertEquals(0, DriveHistorySyncManager.protocolVolumeLevel(0))
+        assertNull(DriveHistorySyncManager.protocolVolumeLevel(8))
+        assertNull(DriveHistorySyncManager.protocolVolumeLevel(null))
     }
 
     @Test

@@ -144,6 +144,6 @@ We may update this policy when Tempo's functionality or third-party integrations
 
 If you have questions about privacy or technical details:
 
-**Developer:** Avinash  
-**Email:** hi@avinas.me  
+**Developer:** Avinash
+**Email:** hi@avinas.me
 **GitHub:** https://github.com/avinaxhroy/Tempo

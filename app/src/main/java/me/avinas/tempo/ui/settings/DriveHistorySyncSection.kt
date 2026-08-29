@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.drive.DriveHistorySyncManager
@@ -104,11 +105,20 @@ class DriveHistorySyncViewModel @Inject constructor(
 
     fun deleteCloudHistory() {
         launchExclusive {
-            val deleted = syncManager.deleteCloudHistoryAndReset()
-            DriveHistorySyncWorker.cancel(context)
-            DriveHistoryUiOperation.Success(
-                "Deleted $deleted Tempo history batch${if (deleted == 1) "" else "es"} from Google Drive. Cross-device sync is now off on linked devices as they reconnect."
-            )
+            try {
+                val deleted = syncManager.deleteCloudHistoryAndReset()
+                DriveHistorySyncWorker.cancel(context)
+                DriveHistoryUiOperation.Success(
+                    "Deleted $deleted Tempo history batch${if (deleted == 1) "" else "es"} from Google Drive. Cross-device sync is now off on linked devices as they reconnect."
+                )
+            } catch (error: Exception) {
+                // Account-boundary protection can deliberately turn sync off
+                // before refusing to delete from an unexpected Google account.
+                if (!settingsManager.settings.first().enabled) {
+                    DriveHistorySyncWorker.cancel(context)
+                }
+                throw error
+            }
         }
     }
 
@@ -174,7 +184,7 @@ fun DriveHistorySyncSection(
         Column {
             SettingsSwitch(
                 title = "Sync listening history",
-                subtitle = "Use your private Google Drive app-data space to link Android, desktop and browser devices. No Tempo server is used.",
+                subtitle = "Link Android and browser devices through your private Google Drive app-data space. Compatible desktop clients can use the same protocol. No Tempo server is used.",
                 checked = settings.enabled,
                 onCheckedChange = viewModel::setEnabled,
                 enabled = operation !is DriveHistoryUiOperation.Running

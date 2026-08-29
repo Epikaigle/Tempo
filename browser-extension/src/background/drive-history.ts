@@ -101,6 +101,19 @@ const DEFAULT_STATE: DriveRuntimeState = {
 
 let syncPromise: Promise<{ uploaded: number; imported: number; duplicates: number }> | null = null;
 let deviceIdPromise: Promise<string> | null = null;
+let driveOperationTail: Promise<void> = Promise.resolve();
+
+/**
+ * Serialize sync, connect, disconnect, and cloud deletion. Chrome alarms and
+ * popup commands can arrive in the same service-worker turn; without a shared
+ * queue an upload from the old generation could finish after deletion and be
+ * marked locally as current-generation data even though readers must ignore it.
+ */
+function serializeDriveOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = driveOperationTail.then(operation, operation);
+  driveOperationTail = result.then(() => undefined, () => undefined);
+  return result;
+}
 
 export async function initDriveHistorySync(): Promise<void> {
   const settings = await storage.getSettings();
@@ -116,6 +129,10 @@ function normalizeAccountEmail(value: string | null | undefined): string | null 
   return normalized ? normalized : null;
 }
 
+function verifiedAccountChanged(previous: string | null, current: string | null): boolean {
+  return !!previous && !!current && previous !== current;
+}
+
 /**
  * Explicit opt-in. A shared cloud-deletion marker is acknowledged only here,
  * never silently by an alarm. If the marker advanced while this browser was
@@ -125,7 +142,11 @@ function normalizeAccountEmail(value: string | null | undefined): string | null 
  * Drive cursors are also account-scoped. Switching Google accounts resets all
  * Drive-only cursors/flags before the new account is accepted explicitly.
  */
-export async function connectDrive(): Promise<DriveSyncStatus> {
+export function connectDrive(): Promise<DriveSyncStatus> {
+  return serializeDriveOperation(connectDriveUnlocked);
+}
+
+async function connectDriveUnlocked(): Promise<DriveSyncStatus> {
   if (!isDriveOAuthConfigured()) throw new Error('Google Drive OAuth is not configured in this build');
   if (isFirefoxBuild() && !(await hasFirefoxDriveDataConsent())) {
     throw new Error('Allow the optional Firefox data-sharing permission before connecting Google Drive');
@@ -137,7 +158,7 @@ export async function connectDrive(): Promise<DriveSyncStatus> {
   const state = await getRuntimeState();
   const currentAccount = normalizeAccountEmail(session.accountEmail);
   const previousAccount = normalizeAccountEmail(state.lastAuthorizedAccountEmail);
-  const accountChanged = !!previousAccount && !!currentAccount && previousAccount !== currentAccount;
+  const accountChanged = verifiedAccountChanged(previousAccount, currentAccount);
 
   let acceptedDisableVersion = accountChanged ? 0 : state.acceptedDisableVersion;
   let downloadCreatedCursor = accountChanged ? 0 : state.downloadCreatedCursor;
@@ -166,14 +187,17 @@ export async function connectDrive(): Promise<DriveSyncStatus> {
   const settings = await storage.getSettings();
   await storage.saveSettings({ ...settings, driveSyncEnabled: true });
   await initDriveHistorySync();
-  await syncDriveHistory({ interactiveAuth: false });
+  // We already own the lifecycle queue; calling the public serialized function
+  // here would enqueue behind ourselves and deadlock.
+  await runSync({ interactiveAuth: false });
   return getDriveSyncStatus();
 }
 
-export async function disconnectDrive(): Promise<DriveSyncStatus> {
-  // Serialize user disconnect after an already-running sync so that no completed
-  // background task can rewrite account/status state after disconnect returns.
-  if (syncPromise) await syncPromise.catch(() => undefined);
+export function disconnectDrive(): Promise<DriveSyncStatus> {
+  return serializeDriveOperation(disconnectDriveUnlocked);
+}
+
+async function disconnectDriveUnlocked(): Promise<DriveSyncStatus> {
   const settings = await storage.getSettings();
   await storage.saveSettings({ ...settings, driveSyncEnabled: false });
   await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
@@ -222,7 +246,8 @@ export async function syncDriveHistory(
   options: { interactiveAuth?: boolean } = {},
 ): Promise<{ uploaded: number; imported: number; duplicates: number }> {
   if (syncPromise) return syncPromise;
-  syncPromise = runSync(options).finally(() => { syncPromise = null; });
+  syncPromise = serializeDriveOperation(() => runSync(options))
+    .finally(() => { syncPromise = null; });
   return syncPromise;
 }
 
@@ -245,7 +270,7 @@ async function runSync(
     const currentAccount = normalizeAccountEmail(session.accountEmail);
     const previousAccount = normalizeAccountEmail(state.lastAuthorizedAccountEmail);
 
-    if (previousAccount && currentAccount && previousAccount !== currentAccount) {
+    if (verifiedAccountChanged(previousAccount, currentAccount)) {
       // Never write to a different account automatically. Clear only Drive-side
       // bookkeeping; the user's local listening history is untouched.
       await storage.clearDriveUploadedFlags();
@@ -535,19 +560,44 @@ async function downloadRemotePlays(
  * generations and turn Drive sync off locally. A client deliberately re-enabled
  * after the marker update can safely seed the new generation immediately.
  */
-export async function deleteDriveHistory(): Promise<number> {
-  if (syncPromise) await syncPromise.catch(() => undefined);
+export function deleteDriveHistory(): Promise<number> {
+  return serializeDriveOperation(deleteDriveHistoryUnlocked);
+}
+
+async function deleteDriveHistoryUnlocked(): Promise<number> {
   await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
 
   try {
     const session = await getDriveAuthSession(true);
     if (!session) throw new Error('Google Drive sign-in is required');
+    const state = await getRuntimeState();
+    const currentAccount = normalizeAccountEmail(session.accountEmail);
+    const previousAccount = normalizeAccountEmail(state.lastAuthorizedAccountEmail);
+    if (verifiedAccountChanged(previousAccount, currentAccount)) {
+      // A delete is destructive and must never silently cross an account
+      // boundary. Reset Drive-only bookkeeping and require an explicit connect
+      // before the user can target data in the newly authorized account.
+      const settings = await storage.getSettings();
+      await storage.saveSettings({ ...settings, driveSyncEnabled: false });
+      await storage.clearDriveUploadedFlags();
+      await saveRuntimeState({
+        ...state,
+        downloadCreatedCursor: 0,
+        acceptedDisableVersion: 0,
+        accountEmail: session.accountEmail,
+        lastAuthorizedAccountEmail: currentAccount,
+        lastUploaded: 0,
+        lastImported: 0,
+        lastError: 'Google account changed. Connect Google again before deleting cloud history.',
+      });
+      throw new Error('Google account changed. Connect Google again before deleting cloud history.');
+    }
+
     const markerVersion = await bumpDisableMarker(session.accessToken);
     const deleted = await deleteBatchesBeforeGeneration(session.accessToken, markerVersion);
 
     const settings = await storage.getSettings();
     await storage.saveSettings({ ...settings, driveSyncEnabled: false });
-    const state = await getRuntimeState();
     await saveRuntimeState({
       ...state,
       acceptedDisableVersion: markerVersion,
@@ -857,6 +907,7 @@ async function driveFetch(
   init: RequestInit = {},
   attempt = 0,
 ): Promise<Response> {
+  const retrySafe = isDriveRequestRetrySafe(init.method);
   let response: Response;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DRIVE_REQUEST_TIMEOUT_MS);
@@ -865,7 +916,11 @@ async function driveFetch(
   try {
     response = await fetch(url, { ...init, signal: controller.signal });
   } catch (err) {
-    if (attempt >= MAX_DRIVE_RETRIES) throw err;
+    // POST creates are not idempotent. If Drive accepted a create but its
+    // response was lost, blindly replaying it can publish duplicate immutable
+    // batches/markers. The next serialized sync performs an exact-name lookup
+    // and safely recognizes an already completed upload.
+    if (!retrySafe || attempt >= MAX_DRIVE_RETRIES) throw err;
     await delayMs(750 * (2 ** attempt));
     return driveFetch(accessToken, url, init, attempt + 1);
   } finally {
@@ -886,7 +941,7 @@ async function driveFetch(
       transient = errors.some((error: any) => typeof error?.reason === 'string' && /rateLimit/i.test(error.reason));
     } catch { /* leave as non-transient forbidden */ }
   }
-  if (transient && attempt < MAX_DRIVE_RETRIES) {
+  if (retrySafe && transient && attempt < MAX_DRIVE_RETRIES) {
     const retryAfterSeconds = Number(response.headers.get('Retry-After') ?? '0');
     const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
       ? Math.min(retryAfterSeconds * 1000, 30_000)
@@ -895,6 +950,10 @@ async function driveFetch(
     return driveFetch(accessToken, url, init, attempt + 1);
   }
   return response;
+}
+
+function isDriveRequestRetrySafe(method: string | undefined): boolean {
+  return (method ?? 'GET').toUpperCase() !== 'POST';
 }
 
 async function playToWire(play: Play, deviceId: string): Promise<WireEvent> {
@@ -1119,4 +1178,7 @@ export const driveProtocolTest = {
   ungzipJson,
   isValidBatch,
   isValidEvent,
+  isDriveRequestRetrySafe,
+  serializeDriveOperation,
+  verifiedAccountChanged,
 };

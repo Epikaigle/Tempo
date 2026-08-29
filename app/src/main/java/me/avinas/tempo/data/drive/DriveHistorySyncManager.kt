@@ -45,6 +45,16 @@ class DriveHistorySyncManager @Inject constructor(
         private const val BATCH_SIZE = 50
         private const val DOWNLOAD_OVERLAP_MS = 24L * 60L * 60L * 1000L
         private const val IMPORT_FINGERPRINT_PREFIX = "drive:v1:"
+
+        /**
+         * Android stores the device-specific audio stream index, not a portable
+         * percentage. Preserve a known mute as 0 and report non-zero indices as
+         * unknown instead of misrepresenting (for example) level 8/15 as 8%.
+         */
+        internal fun protocolVolumeLevel(androidStreamIndex: Int?): Int? = when (androidStreamIndex) {
+            0 -> 0
+            else -> null
+        }
     }
 
     private val mutex = Mutex()
@@ -316,7 +326,7 @@ class DriveHistorySyncManager @Inject constructor(
             sessionId = event.sessionId?.take(1_000),
             site = null,
             contentType = track.contentType.ifBlank { "MUSIC" }.take(1_000),
-            volumeLevel = event.volumeLevel?.coerceIn(0, 100),
+            volumeLevel = protocolVolumeLevel(event.volumeLevel),
             totalPauseDurationMs = event.totalPauseDurationMs
                 .coerceIn(0L, DriveHistoryProtocol.MAX_WIRE_INTEGER),
             positionUpdatesCount = event.positionUpdatesCount.coerceAtLeast(0)
@@ -474,6 +484,12 @@ class DriveHistorySyncManager @Inject constructor(
     suspend fun deleteCloudHistoryAndReset(): Int = mutex.withLock {
         withContext(Dispatchers.IO) {
             if (!ensureAuthorized()) throw DriveException.Auth("Google Drive authorization is required")
+            if (reconcileGoogleAccountBoundary()) {
+                settingsManager.setEnabled(false)
+                throw DriveException.Auth(
+                    "Google account changed. Enable cross-device sync for the new account before deleting its Drive history."
+                )
+            }
 
             // Bump the shared server-timestamped generation BEFORE deleting old
             // batches. A client that explicitly re-enables after this point writes

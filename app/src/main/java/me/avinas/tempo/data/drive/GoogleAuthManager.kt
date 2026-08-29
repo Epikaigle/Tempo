@@ -30,6 +30,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.BuildConfig
@@ -69,6 +71,11 @@ class GoogleAuthManager @Inject constructor(
             DriveScopes.DRIVE_FILE,
             DriveScopes.DRIVE_APPDATA
         )
+
+        internal fun failedTokenIsStillCurrent(
+            failedAccessToken: String,
+            currentAccessToken: String?
+        ): Boolean = failedAccessToken.isNotBlank() && failedAccessToken == currentAccessToken
     }
 
     private val authorizationClient = Identity.getAuthorizationClient(context)
@@ -88,10 +95,18 @@ class GoogleAuthManager @Inject constructor(
     @Volatile
     private var authorizationResolution: PendingIntent? = null
 
+    // Every authorization path mutates the same account/token state. Serializing
+    // them prevents a background refresh or late HTTP failure from overwriting a
+    // newer interactive sign-in, consent result, account switch, or sign-out.
+    private val authOperationMutex = Mutex()
+
     private fun configuredWebClientId(): String? =
         BuildConfig.GOOGLE_WEB_CLIENT_ID.trim().takeIf { it.isNotEmpty() }
 
-    suspend fun signIn(activity: Activity): GoogleSignInResult = withContext(Dispatchers.Main) {
+    suspend fun signIn(activity: Activity): GoogleSignInResult =
+        authOperationMutex.withLock { signInUnlocked(activity) }
+
+    private suspend fun signInUnlocked(activity: Activity): GoogleSignInResult = withContext(Dispatchers.Main) {
         val webClientId = configuredWebClientId()
             ?: return@withContext GoogleSignInResult.Error(
                 "Google Sign-In is not configured in this build (missing GOOGLE_WEB_CLIENT_ID)."
@@ -211,7 +226,10 @@ class GoogleAuthManager @Inject constructor(
         }
     }
 
-    suspend fun completeConsentFlow(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun completeConsentFlow(): Boolean =
+        authOperationMutex.withLock { completeConsentFlowUnlocked() }
+
+    private suspend fun completeConsentFlowUnlocked(): Boolean = withContext(Dispatchers.IO) {
         try {
             _needsDriveConsent.value = false
             authorizationResult = null
@@ -333,7 +351,72 @@ class GoogleAuthManager @Inject constructor(
         }
     }
 
-    suspend fun refreshAccessToken(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun refreshAccessToken(): Boolean =
+        authOperationMutex.withLock { refreshAccessTokenUnlocked() }
+
+    /**
+     * Refresh after a concrete Drive request was rejected with HTTP 401.
+     *
+     * The HTTP response can arrive after another request has already rotated the
+     * token. In that case the newer token is preserved and the caller can retry
+     * immediately. Only the exact rejected token may be cleared.
+     */
+    suspend fun refreshAccessTokenAfterFailure(failedAccessToken: String): Boolean =
+        authOperationMutex.withLock {
+            val currentAccessToken = currentScopedAccessToken()
+            if (currentAccessToken != null &&
+                !failedTokenIsStillCurrent(failedAccessToken, currentAccessToken)
+            ) {
+                Log.d(TAG, "Ignoring stale 401 because Drive authorization already rotated")
+                return@withLock true
+            }
+
+            if (failedTokenIsStillCurrent(failedAccessToken, authorizationResult?.accessToken)) {
+                authorizationResult = null
+                authorizationResolution = null
+                _needsDriveConsent.value = false
+            }
+            if (failedTokenIsStillCurrent(failedAccessToken, tokenStorage.getAccessToken())) {
+                tokenStorage.clearToken()
+            }
+
+            refreshAccessTokenUnlocked()
+        }
+
+    /**
+     * Invalidate an authorization rejected for missing Drive scopes. Returns
+     * false when the response belongs to an older token that has already been
+     * replaced, so the caller can retry without damaging the new session.
+     */
+    suspend fun invalidateAuthorizationForAccessToken(failedAccessToken: String): Boolean =
+        authOperationMutex.withLock {
+            val currentAccessToken = currentScopedAccessToken()
+            if (!failedTokenIsStillCurrent(failedAccessToken, currentAccessToken)) {
+                Log.d(TAG, "Ignoring stale Drive authorization failure for a replaced token")
+                return@withLock false
+            }
+
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            if (failedTokenIsStillCurrent(failedAccessToken, tokenStorage.getAccessToken())) {
+                tokenStorage.clearToken()
+            }
+            true
+        }
+
+    private fun currentScopedAccessToken(): String? {
+        val inMemory = authorizationResult
+        return if (inMemory != null && !inMemory.hasResolution() &&
+            hasAllRequiredDriveScopes(inMemory.grantedScopes.orEmpty())
+        ) {
+            inMemory.accessToken?.takeIf { it.isNotBlank() }
+        } else {
+            tokenStorage.getAccessToken()
+        }
+    }
+
+    private suspend fun refreshAccessTokenUnlocked(): Boolean = withContext(Dispatchers.IO) {
         try {
             authorizationResult = null
             authorizationResolution = null
@@ -374,6 +457,10 @@ class GoogleAuthManager @Inject constructor(
     }
 
     suspend fun signOut() = withContext(Dispatchers.IO + NonCancellable) {
+        authOperationMutex.withLock { signOutUnlocked() }
+    }
+
+    private suspend fun signOutUnlocked() = withContext(Dispatchers.IO + NonCancellable) {
         try {
             CredentialManager.create(context)
                 .clearCredentialState(ClearCredentialStateRequest())
@@ -402,7 +489,10 @@ class GoogleAuthManager @Inject constructor(
         }
     }
 
-    suspend fun restoreSession(activity: Activity): Boolean = withContext(Dispatchers.Main) {
+    suspend fun restoreSession(activity: Activity): Boolean =
+        authOperationMutex.withLock { restoreSessionUnlocked(activity) }
+
+    private suspend fun restoreSessionUnlocked(activity: Activity): Boolean = withContext(Dispatchers.Main) {
         val webClientId = configuredWebClientId() ?: return@withContext false
         try {
             val credentialManager = CredentialManager.create(activity)
@@ -432,7 +522,10 @@ class GoogleAuthManager @Inject constructor(
      * needs fresh consent for drive.appdata after upgrading from an older Tempo
      * version, this returns false and the settings screen can request it later.
      */
-    suspend fun restoreSessionSilently(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun restoreSessionSilently(): Boolean =
+        authOperationMutex.withLock { restoreSessionSilentlyUnlocked() }
+
+    private suspend fun restoreSessionSilentlyUnlocked(): Boolean = withContext(Dispatchers.IO) {
         val active = authorizationResult
         if (_isSignedIn.value && active?.accessToken != null &&
             hasAllRequiredDriveScopes(active.grantedScopes.orEmpty())

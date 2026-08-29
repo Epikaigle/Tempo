@@ -41,16 +41,17 @@ class DriveAppDataClient @Inject constructor(
         private const val RETRY_BASE_DELAY_MS = 1_500L
     }
 
-    @Volatile private var driveService: Drive? = null
-    @Volatile private var cachedAccessToken: String? = null
+    @Volatile private var cachedClient: AuthorizedDriveClient? = null
 
-    private suspend fun service(): Drive = withContext(Dispatchers.IO) {
+    private suspend fun service(): AuthorizedDriveClient = withContext(Dispatchers.IO) {
         val token = authManager.getAccessToken()
             ?: throw DriveException.Auth("Google Drive authorization is unavailable")
 
-        driveService?.takeIf { cachedAccessToken == token }?.let { return@withContext it }
+        cachedClient?.takeIf { it.accessToken == token }?.let { return@withContext it }
         synchronized(this@DriveAppDataClient) {
-            driveService?.takeIf { cachedAccessToken == token } ?: Drive.Builder(
+            cachedClient?.takeIf { it.accessToken == token } ?: AuthorizedDriveClient(
+                accessToken = token,
+                service = Drive.Builder(
                     NetHttpTransport(),
                     GsonFactory.getDefaultInstance(),
                     HttpRequestInitializer { request ->
@@ -61,10 +62,7 @@ class DriveAppDataClient @Inject constructor(
                 )
                 .setApplicationName("Tempo/${BuildConfig.VERSION_NAME}")
                 .build()
-                .also {
-                    cachedAccessToken = token
-                    driveService = it
-                }
+            ).also { cachedClient = it }
         }
     }
 
@@ -73,15 +71,16 @@ class DriveAppDataClient @Inject constructor(
         transientAttempts: Int = 0,
         block: suspend (Drive) -> T
     ): T {
-        val api = service()
+        val client = service()
         return try {
-            block(api)
+            block(client.service)
         } catch (e: GoogleJsonResponseException) {
             when (e.statusCode) {
                 401 -> {
-                    clearCache()
-                    authManager.clearPersistedAccessToken()
-                    if (authAttempts < 1 && authManager.refreshAccessToken()) {
+                    clearCacheForAccessToken(client.accessToken)
+                    if (authAttempts < 1 &&
+                        authManager.refreshAccessTokenAfterFailure(client.accessToken)
+                    ) {
                         executeWithRetry(authAttempts + 1, transientAttempts, block)
                     } else {
                         throw DriveException.Auth("Google Drive session expired", e)
@@ -91,13 +90,18 @@ class DriveAppDataClient @Inject constructor(
                     val reasons = e.details?.errors.orEmpty().mapNotNull { it.reason }.toSet()
                     when {
                         reasons.any { it == "authError" || it == "insufficientPermissions" } -> {
-                            clearCache()
-                            authManager.invalidateAuthorization()
-                            authManager.clearPersistedAccessToken()
-                            throw DriveException.Auth(
-                                "Google Drive app-data permission is missing. Reconnect Google Drive.",
-                                e
+                            clearCacheForAccessToken(client.accessToken)
+                            val invalidated = authManager.invalidateAuthorizationForAccessToken(
+                                client.accessToken
                             )
+                            if (!invalidated && authAttempts < 1) {
+                                executeWithRetry(authAttempts + 1, transientAttempts, block)
+                            } else {
+                                throw DriveException.Auth(
+                                    "Google Drive app-data permission is missing. Reconnect Google Drive.",
+                                    e
+                                )
+                            }
                         }
                         reasons.any { it.contains("rateLimit", ignoreCase = true) } ->
                             retryTransient(authAttempts, transientAttempts, e, block)
@@ -376,8 +380,12 @@ class DriveAppDataClient @Inject constructor(
 
     @Synchronized
     fun clearCache() {
-        driveService = null
-        cachedAccessToken = null
+        cachedClient = null
+    }
+
+    @Synchronized
+    private fun clearCacheForAccessToken(accessToken: String) {
+        if (cachedClient?.accessToken == accessToken) cachedClient = null
     }
 
     private fun findFilesByExactName(api: Drive, fileName: String): List<DriveFile> {
@@ -437,6 +445,12 @@ class DriveAppDataClient @Inject constructor(
             super.write(b, off, len)
         }
     }
+
+    /** Keep the Drive service and its immutable Authorization header together. */
+    private data class AuthorizedDriveClient(
+        val accessToken: String,
+        val service: Drive
+    )
 }
 
 data class DriveAppDataFile(

@@ -121,5 +121,39 @@ const decoded = await protocol.ungzipJson(compressed);
 check('round trip preserves batch id', decoded.batch_id === batchId);
 check('round trip remains schema-valid', protocol.isValidBatch(decoded));
 
+console.log('\n[Drive 4] Retry and lifecycle concurrency guards');
+check('GET requests may be retried', protocol.isDriveRequestRetrySafe(undefined));
+check('PATCH requests may be retried', protocol.isDriveRequestRetrySafe('PATCH'));
+check('POST creates are never replayed blindly', !protocol.isDriveRequestRetrySafe('POST'));
+check('same normalized account stays in scope', !protocol.verifiedAccountChanged('a@example.com', 'a@example.com'));
+check('different verified account crosses scope', protocol.verifiedAccountChanged('a@example.com', 'b@example.com'));
+check('unknown account never guesses a switch', !protocol.verifiedAccountChanged('a@example.com', null));
+
+const order = [];
+let releaseFirst;
+const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+const firstOperation = protocol.serializeDriveOperation(async () => {
+  order.push('first-start');
+  await firstGate;
+  order.push('first-end');
+});
+const secondOperation = protocol.serializeDriveOperation(async () => {
+  order.push('second-start');
+  order.push('second-end');
+});
+await new Promise(resolve => setTimeout(resolve, 0));
+check(
+  'lifecycle operations do not overlap',
+  order.join(',') === 'first-start',
+  order.join(','),
+);
+releaseFirst();
+await Promise.all([firstOperation, secondOperation]);
+check(
+  'queued lifecycle operation runs after the first completes',
+  order.join(',') === 'first-start,first-end,second-start,second-end',
+  order.join(','),
+);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);
