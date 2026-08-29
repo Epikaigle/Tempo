@@ -286,10 +286,11 @@ class DriveBackupWorker @AssistedInject constructor(
                 }
             }
         } catch (e: CancellationException) {
-            // A cancelled/replaced worker will never own this run directory
-            // again. Remove the archive because it contains a full private data
-            // snapshot and must not linger in cache after sign-out/rescheduling.
-            runStateDir.deleteRecursively()
+            // Remove the private archive immediately, but keep the tiny logical
+            // run ID. WorkManager can stop and re-enqueue this same work when a
+            // constraint changes; the upload may already have reached Drive, so
+            // losing the ID here would let the resumed attempt create a duplicate.
+            BackupRunState.discardSnapshotPreservingRunId(runStateDir)
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Scheduled Drive backup failed", e)

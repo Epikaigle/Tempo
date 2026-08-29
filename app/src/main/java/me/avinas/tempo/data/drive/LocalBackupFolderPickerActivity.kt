@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.avinas.tempo.worker.DriveBackupWorker
@@ -47,6 +48,8 @@ class LocalBackupFolderPickerActivity : ComponentActivity() {
                     // interval is persisted when the user cancels.
                     reschedulePersistedInterval()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Toast.makeText(
                     this@LocalBackupFolderPickerActivity,
@@ -93,6 +96,8 @@ class LocalBackupFolderPickerActivity : ComponentActivity() {
                 "Automatic backups will be saved in the selected folder",
                 Toast.LENGTH_SHORT
             ).show()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: SecurityException) {
             reschedulePersistedInterval()
             Toast.makeText(

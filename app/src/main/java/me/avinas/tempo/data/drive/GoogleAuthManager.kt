@@ -59,6 +59,11 @@ class GoogleAuthManager @Inject constructor(
         // Using drive.file scope - only accesses files created by this app
         // This avoids CASA security assessment requirements
         private val DRIVE_SCOPE = Scope(DriveScopes.DRIVE_FILE)
+
+        internal fun failedTokenIsStillCurrent(
+            failedAccessToken: String,
+            currentAccessToken: String?
+        ): Boolean = failedAccessToken.isNotBlank() && failedAccessToken == currentAccessToken
     }
     
     // CredentialManager is created per-call with Activity context
@@ -363,12 +368,6 @@ class GoogleAuthManager @Inject constructor(
     }
     
     /**
-     * Get the authorization result for Drive API access.
-     * May return null if not authorized yet.
-     */
-    fun getAuthorizationResult(): AuthorizationResult? = authorizationResult
-
-    /**
      * Build the Drive authorization request.
      *
      * Binds the token to the OAuth Web client (GOOGLE_WEB_CLIENT_ID) and to the
@@ -404,27 +403,6 @@ class GoogleAuthManager @Inject constructor(
      */
     fun getDriveAuthorizationPendingIntent(): PendingIntent? =
         authorizationResolution ?: authorizationResult?.pendingIntent
-    
-    /**
-     * Update authorization result after user consent.
-     */
-    fun updateAuthorizationResult(result: AuthorizationResult) {
-        authorizationResult = result
-        authorizationResolution = result.pendingIntent.takeIf { result.hasResolution() }
-        _needsDriveConsent.value = result.hasResolution()
-        Log.i(TAG, "Authorization result updated, accessToken present: ${result.accessToken != null}")
-
-        val hasDriveScope = result.grantedScopes.orEmpty().any { it.contains(DriveScopes.DRIVE_FILE) }
-        val accessToken = result.accessToken
-        if (!result.hasResolution() && accessToken != null && hasDriveScope) {
-            tokenStorage.saveAccessToken(accessToken)
-            Log.d(TAG, "Authorization result token persisted to secure storage")
-        } else if (!result.hasResolution()) {
-            authorizationResult = null
-            authorizationResolution = null
-            tokenStorage.clearToken()
-        }
-    }
     
     /**
      * Get access token for Google Drive API calls.
@@ -501,6 +479,69 @@ class GoogleAuthManager @Inject constructor(
     suspend fun refreshAccessToken(): Boolean =
         authOperationMutex.withLock { refreshAccessTokenUnlocked() }
 
+    /**
+     * Refresh after a concrete Drive request was rejected with HTTP 401.
+     *
+     * Another concurrent request may already have rotated the token while the
+     * failed HTTP response was in flight. In that case the replacement token is
+     * kept and the caller can retry immediately. Only the exact rejected token is
+     * cleared/refreshed, so a late 401 can never erase a newer authorization.
+     */
+    suspend fun refreshAccessTokenAfterFailure(failedAccessToken: String): Boolean =
+        authOperationMutex.withLock {
+            val currentAccessToken = currentScopedAccessToken()
+            if (currentAccessToken != null &&
+                !failedTokenIsStillCurrent(failedAccessToken, currentAccessToken)
+            ) {
+                Log.d(TAG, "Ignoring stale 401 because Drive authorization already rotated")
+                return@withLock true
+            }
+
+            if (failedTokenIsStillCurrent(failedAccessToken, authorizationResult?.accessToken)) {
+                authorizationResult = null
+                authorizationResolution = null
+                _needsDriveConsent.value = false
+            }
+            if (failedTokenIsStillCurrent(failedAccessToken, tokenStorage.getAccessToken())) {
+                tokenStorage.clearToken()
+            }
+
+            refreshAccessTokenUnlocked()
+        }
+
+    /**
+     * Invalidate a token rejected for a known missing-scope authorization error.
+     * Returns false when the failure belongs to an older token that another
+     * request has already replaced.
+     */
+    suspend fun invalidateAuthorizationForAccessToken(failedAccessToken: String): Boolean =
+        authOperationMutex.withLock {
+            val currentAccessToken = currentScopedAccessToken()
+            if (!failedTokenIsStillCurrent(failedAccessToken, currentAccessToken)) {
+                Log.d(TAG, "Ignoring stale Drive authorization failure for a replaced token")
+                return@withLock false
+            }
+
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            if (failedTokenIsStillCurrent(failedAccessToken, tokenStorage.getAccessToken())) {
+                tokenStorage.clearToken()
+            }
+            true
+        }
+
+    private fun currentScopedAccessToken(): String? {
+        val inMemory = authorizationResult
+        val hasDriveScope = inMemory?.grantedScopes.orEmpty()
+            .any { it.contains(DriveScopes.DRIVE_FILE) }
+        return if (inMemory != null && !inMemory.hasResolution() && hasDriveScope) {
+            inMemory.accessToken?.takeIf { it.isNotBlank() }
+        } else {
+            tokenStorage.getAccessToken()
+        }
+    }
+
     private suspend fun refreshAccessTokenUnlocked(): Boolean = withContext(Dispatchers.IO) {
         try {
             Log.d(TAG, "Refreshing access token")
@@ -553,24 +594,6 @@ class GoogleAuthManager @Inject constructor(
             Log.e(TAG, "Failed to refresh token", e)
             false
         }
-    }
-    
-    /**
-     * Drop the in-memory authorization so the next Drive call re-authorizes.
-     * Called when Google returns HTTP 403 (the token lacks the required scope).
-     */
-    fun invalidateAuthorization() {
-        authorizationResult = null
-        authorizationResolution = null
-        _needsDriveConsent.value = false
-    }
-    
-    /**
-     * Drop the persisted access token. Called when a token is known to be
-     * broken (wrong scope / denied permissions).
-     */
-    fun clearPersistedAccessToken() {
-        tokenStorage.clearToken()
     }
     
     /**

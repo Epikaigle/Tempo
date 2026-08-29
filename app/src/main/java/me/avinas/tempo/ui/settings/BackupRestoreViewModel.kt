@@ -114,14 +114,22 @@ class BackupRestoreViewModel @Inject constructor(
      */
     private fun initializeBackupState() {
         viewModelScope.launch {
-            val settings = backupSettingsManager.settings.first()
-            ensureAutomaticBackupScheduled(settings)
+            try {
+                val settings = backupSettingsManager.settings.first()
+                ensureAutomaticBackupScheduled(settings)
 
-            if (!settings.isGoogleDriveEnabled) return@launch
+                if (!settings.isGoogleDriveEnabled) return@launch
 
-            val restored = googleAuthManager.restoreSessionSilently()
-            if (restored) {
-                loadDriveBackups()
+                val restored = googleAuthManager.restoreSessionSilently()
+                if (restored) {
+                    loadDriveBackups()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _driveOperation.value = DriveOperationState.Error(
+                    e.message ?: "Could not initialize automatic backup state"
+                )
             }
         }
     }
@@ -465,49 +473,59 @@ class BackupRestoreViewModel @Inject constructor(
         _signInRequested.value = false
         
         viewModelScope.launch {
-            when (val result = googleAuthManager.signIn(activity)) {
-                is GoogleSignInResult.Success -> {
-                    // Folder IDs are account-specific. Drop both the Drive client
-                    // and folder cache before any operation under the selected
-                    // account, including the no-consent fast path.
-                    driveService.clearCache()
-                    backupSettingsManager.setGoogleAccountEmail(result.account.email)
+            try {
+                when (val result = googleAuthManager.signIn(activity)) {
+                    is GoogleSignInResult.Success -> {
+                        // Folder IDs are account-specific. Drop both the Drive client
+                        // and folder cache before any operation under the selected
+                        // account, including the no-consent fast path.
+                        driveService.clearCache()
+                        backupSettingsManager.setGoogleAccountEmail(result.account.email)
 
-                    // Google identity sign-in and Drive authorization are separate.
-                    // Never mark Drive enabled until a drive.file-scoped access token
-                    // actually exists; otherwise a failed/denied consent can leave a
-                    // periodic Drive worker scheduled with unusable credentials.
-                    if (googleAuthManager.needsDriveConsent.value) {
-                        backupSettingsManager.setGoogleDriveEnabled(false)
-                        scheduleAutomaticBackups(backupSettingsManager.settings.first())
-                        _consentRequested.value = true
-                        _driveOperation.value = DriveOperationState.SigningIn
-                    } else if (googleAuthManager.getAccessToken() != null) {
-                        backupSettingsManager.setGoogleDriveEnabled(true)
-                        scheduleAutomaticBackups(backupSettingsManager.settings.first())
-                        refreshDriveBackups()
-                            .onSuccess {
-                                _driveOperation.value = DriveOperationState.Idle
-                            }
-                            .onFailure { error ->
-                                _driveOperation.value = DriveOperationState.Error(
-                                    error.message ?: "Google Drive connected, but backups could not be loaded"
-                                )
-                            }
-                    } else {
-                        backupSettingsManager.setGoogleDriveEnabled(false)
-                        scheduleAutomaticBackups(backupSettingsManager.settings.first())
-                        _driveOperation.value = DriveOperationState.Error(
-                            "Google account connected, but Drive authorization did not complete. Please try signing in again."
-                        )
+                        // Google identity sign-in and Drive authorization are separate.
+                        // Never mark Drive enabled until a drive.file-scoped access token
+                        // actually exists; otherwise a failed/denied consent can leave a
+                        // periodic Drive worker scheduled with unusable credentials.
+                        if (googleAuthManager.needsDriveConsent.value) {
+                            backupSettingsManager.setGoogleDriveEnabled(false)
+                            scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                            _consentRequested.value = true
+                            _driveOperation.value = DriveOperationState.SigningIn
+                        } else if (googleAuthManager.getAccessToken() != null) {
+                            backupSettingsManager.setGoogleDriveEnabled(true)
+                            scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                            refreshDriveBackups()
+                                .onSuccess {
+                                    _driveOperation.value = DriveOperationState.Idle
+                                }
+                                .onFailure { error ->
+                                    _driveOperation.value = DriveOperationState.Error(
+                                        error.message
+                                            ?: "Google Drive connected, but backups could not be loaded"
+                                    )
+                                }
+                        } else {
+                            backupSettingsManager.setGoogleDriveEnabled(false)
+                            scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                            _driveOperation.value = DriveOperationState.Error(
+                                "Google account connected, but Drive authorization did not complete. Please try signing in again."
+                            )
+                        }
+                    }
+                    is GoogleSignInResult.Error -> {
+                        _driveOperation.value = DriveOperationState.Error(result.message)
+                    }
+                    GoogleSignInResult.Cancelled -> {
+                        _driveOperation.value = DriveOperationState.Idle
                     }
                 }
-                is GoogleSignInResult.Error -> {
-                    _driveOperation.value = DriveOperationState.Error(result.message)
-                }
-                GoogleSignInResult.Cancelled -> {
-                    _driveOperation.value = DriveOperationState.Idle
-                }
+            } catch (e: CancellationException) {
+                _driveOperation.value = DriveOperationState.Idle
+                throw e
+            } catch (e: Exception) {
+                _driveOperation.value = DriveOperationState.Error(
+                    e.message ?: "Could not finish Google Drive sign-in"
+                )
             }
         }
     }
@@ -525,25 +543,41 @@ class BackupRestoreViewModel @Inject constructor(
         
         if (approved) {
             viewModelScope.launch {
-                // Complete consent flow to get access token
-                val success = googleAuthManager.completeConsentFlow()
-                if (success) {
-                    // Verify that we actually have an access token now
-                    val hasToken = googleAuthManager.getAccessToken() != null
-                    if (hasToken) {
-                        // Drive becomes enabled only after consent produced a real token.
-                        backupSettingsManager.setGoogleDriveEnabled(true)
-                        driveService.clearCache()
-                        scheduleAutomaticBackups(backupSettingsManager.settings.first())
-                        refreshDriveBackups()
-                            .onSuccess {
-                                _driveOperation.value = DriveOperationState.Idle
-                            }
-                            .onFailure { error ->
+                try {
+                    // Complete consent flow to get access token
+                    val success = googleAuthManager.completeConsentFlow()
+                    if (success) {
+                        // Verify that we actually have an access token now
+                        val hasToken = googleAuthManager.getAccessToken() != null
+                        if (hasToken) {
+                            // Drive becomes enabled only after consent produced a real token.
+                            backupSettingsManager.setGoogleDriveEnabled(true)
+                            driveService.clearCache()
+                            scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                            refreshDriveBackups()
+                                .onSuccess {
+                                    _driveOperation.value = DriveOperationState.Idle
+                                }
+                                .onFailure { error ->
+                                    _driveOperation.value = DriveOperationState.Error(
+                                        error.message
+                                            ?: "Google Drive connected, but backups could not be loaded"
+                                    )
+                                }
+                        } else {
+                            backupSettingsManager.setGoogleDriveEnabled(false)
+                            scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                            if (googleAuthManager.needsDriveConsent.value &&
+                                googleAuthManager.getDriveAuthorizationPendingIntent() != null
+                            ) {
+                                _consentRequested.value = true
+                                _driveOperation.value = DriveOperationState.SigningIn
+                            } else {
                                 _driveOperation.value = DriveOperationState.Error(
-                                    error.message ?: "Google Drive connected, but backups could not be loaded"
+                                    "Authorization incomplete. Please try signing out and signing in again."
                                 )
                             }
+                        }
                     } else {
                         backupSettingsManager.setGoogleDriveEnabled(false)
                         scheduleAutomaticBackups(backupSettingsManager.settings.first())
@@ -554,32 +588,35 @@ class BackupRestoreViewModel @Inject constructor(
                             _driveOperation.value = DriveOperationState.SigningIn
                         } else {
                             _driveOperation.value = DriveOperationState.Error(
-                                "Authorization incomplete. Please try signing out and signing in again."
+                                "Failed to authorize Google Drive access. Please try again or sign out and sign in again."
                             )
                         }
                     }
-                } else {
-                    backupSettingsManager.setGoogleDriveEnabled(false)
-                    scheduleAutomaticBackups(backupSettingsManager.settings.first())
-                    if (googleAuthManager.needsDriveConsent.value &&
-                        googleAuthManager.getDriveAuthorizationPendingIntent() != null
-                    ) {
-                        _consentRequested.value = true
-                        _driveOperation.value = DriveOperationState.SigningIn
-                    } else {
-                        _driveOperation.value = DriveOperationState.Error(
-                            "Failed to authorize Google Drive access. Please try again or sign out and sign in again."
-                        )
-                    }
+                } catch (e: CancellationException) {
+                    _driveOperation.value = DriveOperationState.Idle
+                    throw e
+                } catch (e: Exception) {
+                    _driveOperation.value = DriveOperationState.Error(
+                        e.message ?: "Could not finish Google Drive authorization"
+                    )
                 }
             }
         } else {
             viewModelScope.launch {
-                backupSettingsManager.setGoogleDriveEnabled(false)
-                scheduleAutomaticBackups(backupSettingsManager.settings.first())
-                _driveOperation.value = DriveOperationState.Error(
-                    "Google Drive access was denied. Sign out and sign in again when you want to enable Drive backups."
-                )
+                try {
+                    backupSettingsManager.setGoogleDriveEnabled(false)
+                    scheduleAutomaticBackups(backupSettingsManager.settings.first())
+                    _driveOperation.value = DriveOperationState.Error(
+                        "Google Drive access was denied. Sign out and sign in again when you want to enable Drive backups."
+                    )
+                } catch (e: CancellationException) {
+                    _driveOperation.value = DriveOperationState.Idle
+                    throw e
+                } catch (e: Exception) {
+                    _driveOperation.value = DriveOperationState.Error(
+                        e.message ?: "Could not disable Google Drive backups after consent was denied"
+                    )
+                }
             }
         }
     }

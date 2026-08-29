@@ -81,12 +81,15 @@ class GoogleDriveService @Inject constructor(
             expectedSize <= (usableSpace - DOWNLOAD_FREE_SPACE_BUFFER_BYTES).coerceAtLeast(0L)
     }
     
+    private data class CachedDriveClient(
+        val service: Drive,
+        val accessToken: String
+    )
+
     @Volatile
-    private var driveService: Drive? = null
+    private var driveClient: CachedDriveClient? = null
     @Volatile
     private var backupFolderId: String? = null
-    @Volatile
-    private var cachedAccessToken: String? = null
 
     // The Drive client and its token form one cache entry. Building/updating
     // them without a lock can leave a client initialized with token A while the
@@ -100,7 +103,7 @@ class GoogleDriveService @Inject constructor(
      * Initialize the Drive service with current access token.
      * Returns null if authorization is not complete or token is unavailable.
      */
-    private suspend fun getDriveService(): Drive? = withContext(Dispatchers.IO) {
+    private suspend fun getDriveClient(): CachedDriveClient? = withContext(Dispatchers.IO) {
         val accessToken = authManager.getAccessToken()
         if (accessToken == null) {
             Log.w(TAG, "No access token available - authorization may be incomplete")
@@ -113,7 +116,7 @@ class GoogleDriveService @Inject constructor(
         }
         
         driveServiceMutex.withLock {
-            driveService?.takeIf { cachedAccessToken == accessToken }?.let {
+            driveClient?.takeIf { it.accessToken == accessToken }?.let {
                 return@withLock it
             }
 
@@ -126,26 +129,29 @@ class GoogleDriveService @Inject constructor(
                 request.readTimeout = 30000
             }
 
-            val newService = Drive.Builder(
-                NetHttpTransport(),
-                GsonFactory.getDefaultInstance(),
-                httpRequestInitializer
+            val newClient = CachedDriveClient(
+                service = Drive.Builder(
+                    NetHttpTransport(),
+                    GsonFactory.getDefaultInstance(),
+                    httpRequestInitializer
+                )
+                    .setApplicationName("Tempo/${BuildConfig.VERSION_NAME}")
+                    .build(),
+                accessToken = accessToken
             )
-                .setApplicationName("Tempo/${BuildConfig.VERSION_NAME}")
-                .build()
 
-            // Publish the matching client/token pair only after construction is
-            // complete, while still holding the same mutex.
-            driveService = newService
-            cachedAccessToken = accessToken
-            newService
+            // Publish the matching client/token pair as one immutable value only
+            // after construction is complete, while holding the same mutex.
+            driveClient = newClient
+            newClient
         }
     }
 
-    private suspend fun clearDriveClient() {
+    private suspend fun clearDriveClient(expectedAccessToken: String? = null) {
         driveServiceMutex.withLock {
-            driveService = null
-            cachedAccessToken = null
+            if (expectedAccessToken == null || driveClient?.accessToken == expectedAccessToken) {
+                driveClient = null
+            }
         }
     }
     
@@ -167,20 +173,21 @@ class GoogleDriveService @Inject constructor(
         authRetryCount: Int = 0,
         block: suspend (Drive) -> T
     ): T {
-        val service = getDriveService() ?: throw DriveException.Auth(
+        val client = getDriveClient() ?: throw DriveException.Auth(
             "Google Drive authorization incomplete. Please sign out and sign in again."
         )
         
         return try {
-            block(service)
+            block(client.service)
         } catch (e: GoogleJsonResponseException) {
             when (e.statusCode) {
                 401 -> {
                     Log.w(TAG, "Authorization failed (401) - attempting refresh")
-                    clearDriveClient()
-                    authManager.clearPersistedAccessToken()
+                    clearDriveClient(client.accessToken)
                     
-                    if (authRetryCount < 1 && authManager.refreshAccessToken()) {
+                    if (authRetryCount < 1 &&
+                        authManager.refreshAccessTokenAfterFailure(client.accessToken)
+                    ) {
                         Log.i(TAG, "Token refreshed, retrying operation")
                         executeWithRetry(
                             transientRetryCount = transientRetryCount,
@@ -244,9 +251,18 @@ class GoogleDriveService @Inject constructor(
 
                     if (shouldInvalidateAuthFor403(errorReason)) {
                         Log.e(TAG, "Drive authorization is insufficient ($errorReason): $detail", e)
-                        clearDriveClient()
-                        authManager.invalidateAuthorization()
-                        authManager.clearPersistedAccessToken()
+                        clearDriveClient(client.accessToken)
+                        val invalidated = authManager.invalidateAuthorizationForAccessToken(
+                            client.accessToken
+                        )
+                        if (!invalidated && authRetryCount < 1) {
+                            Log.i(TAG, "Authorization changed during the failed request; retrying with the current token")
+                            return executeWithRetry(
+                                transientRetryCount = transientRetryCount,
+                                authRetryCount = authRetryCount + 1,
+                                block = block
+                            )
+                        }
                         throw DriveException.Auth(
                             "Google Drive permission is missing. Sign in again to restore Drive access.",
                             e
@@ -711,7 +727,7 @@ class GoogleDriveService @Inject constructor(
     /**
      * Check if Drive service is available and authenticated.
      */
-    suspend fun isAvailable(): Boolean = getDriveService() != null
+    suspend fun isAvailable(): Boolean = getDriveClient() != null
     
     /**
      * Clear cached service (call on sign out).
@@ -722,9 +738,8 @@ class GoogleDriveService @Inject constructor(
         // immediately after an explicit account switch/sign-out cleared it.
         folderCreationMutex.withLock {
             driveServiceMutex.withLock {
-                driveService = null
+                driveClient = null
                 backupFolderId = null
-                cachedAccessToken = null
             }
         }
     }

@@ -1,5 +1,6 @@
 package me.avinas.tempo.worker
 
+import me.avinas.tempo.data.drive.GoogleAuthManager
 import me.avinas.tempo.data.drive.GoogleDriveService
 import me.avinas.tempo.data.drive.LocalBackupStorage
 import org.junit.Assert.assertEquals
@@ -126,6 +127,14 @@ class DriveBackupWorkerStateTest {
         assertTrue(GoogleDriveService.isRetryable403Reason("userRateLimitExceeded"))
         assertFalse(GoogleDriveService.isRetryable403Reason("storageQuotaExceeded"))
         assertFalse(GoogleDriveService.isRetryable403Reason("insufficientPermissions"))
+    }
+
+    @Test
+    fun staleDriveFailureCannotInvalidateANewerAccessToken() {
+        assertTrue(GoogleAuthManager.failedTokenIsStillCurrent("token-a", "token-a"))
+        assertFalse(GoogleAuthManager.failedTokenIsStillCurrent("token-a", "token-b"))
+        assertFalse(GoogleAuthManager.failedTokenIsStillCurrent("token-a", null))
+        assertFalse(GoogleAuthManager.failedTokenIsStillCurrent("", ""))
     }
 
     @Test
