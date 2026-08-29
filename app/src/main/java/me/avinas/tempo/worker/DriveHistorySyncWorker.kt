@@ -79,7 +79,7 @@ class DriveHistorySyncWorker @AssistedInject constructor(
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 MANUAL_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.KEEP,
                 request
             )
         }
@@ -121,7 +121,7 @@ class DriveHistorySyncWorker @AssistedInject constructor(
                     result.message.contains("authorization", ignoreCase = true) ||
                     result.message.contains("reconnect", ignoreCase = true) ||
                     result.message.contains("session expired", ignoreCase = true)
-                if (authFailure) Result.success() else Result.retry()
+                if (authFailure || runAttemptCount >= 3) Result.success() else Result.retry()
             }
         }
     }

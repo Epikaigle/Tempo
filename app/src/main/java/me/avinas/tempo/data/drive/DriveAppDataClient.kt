@@ -9,13 +9,16 @@ import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.File as DriveFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.BuildConfig
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.time.Instant
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,33 +41,36 @@ class DriveAppDataClient @Inject constructor(
         private const val RETRY_BASE_DELAY_MS = 1_500L
     }
 
-    private var driveService: Drive? = null
-    private var cachedAccessToken: String? = null
+    @Volatile private var driveService: Drive? = null
+    @Volatile private var cachedAccessToken: String? = null
 
     private suspend fun service(): Drive = withContext(Dispatchers.IO) {
         val token = authManager.getAccessToken()
             ?: throw DriveException.Auth("Google Drive authorization is unavailable")
 
-        if (driveService == null || cachedAccessToken != token) {
-            cachedAccessToken = token
-            driveService = Drive.Builder(
-                NetHttpTransport(),
-                GsonFactory.getDefaultInstance(),
-                HttpRequestInitializer { request ->
-                    request.headers.authorization = "Bearer $token"
-                    request.connectTimeout = 30_000
-                    request.readTimeout = 30_000
-
-                }
-            )
+        driveService?.takeIf { cachedAccessToken == token }?.let { return@withContext it }
+        synchronized(this@DriveAppDataClient) {
+            driveService?.takeIf { cachedAccessToken == token } ?: Drive.Builder(
+                    NetHttpTransport(),
+                    GsonFactory.getDefaultInstance(),
+                    HttpRequestInitializer { request ->
+                        request.headers.authorization = "Bearer $token"
+                        request.connectTimeout = 30_000
+                        request.readTimeout = 30_000
+                    }
+                )
                 .setApplicationName("Tempo/${BuildConfig.VERSION_NAME}")
                 .build()
+                .also {
+                    cachedAccessToken = token
+                    driveService = it
+                }
         }
-        driveService!!
     }
 
     private suspend fun <T> executeWithRetry(
-        attempt: Int = 0,
+        authAttempts: Int = 0,
+        transientAttempts: Int = 0,
         block: suspend (Drive) -> T
     ): T {
         val api = service()
@@ -73,48 +79,57 @@ class DriveAppDataClient @Inject constructor(
         } catch (e: GoogleJsonResponseException) {
             when (e.statusCode) {
                 401 -> {
-                    driveService = null
-                    cachedAccessToken = null
+                    clearCache()
                     authManager.clearPersistedAccessToken()
-                    if (attempt < 1 && authManager.refreshAccessToken()) {
-                        executeWithRetry(attempt + 1, block)
+                    if (authAttempts < 1 && authManager.refreshAccessToken()) {
+                        executeWithRetry(authAttempts + 1, transientAttempts, block)
                     } else {
                         throw DriveException.Auth("Google Drive session expired", e)
                     }
                 }
                 403 -> {
-                    driveService = null
-                    cachedAccessToken = null
-                    authManager.invalidateAuthorization()
-                    authManager.clearPersistedAccessToken()
-                    throw DriveException.Auth(
-                        "Google Drive app-data permission is missing. Reconnect Google Drive.",
-                        e
-                    )
+                    val reasons = e.details?.errors.orEmpty().mapNotNull { it.reason }.toSet()
+                    when {
+                        reasons.any { it == "authError" || it == "insufficientPermissions" } -> {
+                            clearCache()
+                            authManager.invalidateAuthorization()
+                            authManager.clearPersistedAccessToken()
+                            throw DriveException.Auth(
+                                "Google Drive app-data permission is missing. Reconnect Google Drive.",
+                                e
+                            )
+                        }
+                        reasons.any { it.contains("rateLimit", ignoreCase = true) } ->
+                            retryTransient(authAttempts, transientAttempts, e, block)
+                        else -> throw DriveException.Server("Google Drive rejected the request: ${e.message}", e)
+                    }
                 }
-                429, 500, 502, 503, 504 -> retryTransient(attempt, e, block)
+                429, 500, 502, 503, 504 ->
+                    retryTransient(authAttempts, transientAttempts, e, block)
                 else -> throw DriveException.Server("Drive error ${e.statusCode}: ${e.message}", e)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IOException) {
-            retryTransient(attempt, e, block)
+            retryTransient(authAttempts, transientAttempts, e, block)
         }
     }
 
     private suspend fun <T> retryTransient(
-        attempt: Int,
+        authAttempts: Int,
+        transientAttempts: Int,
         error: Exception,
         block: suspend (Drive) -> T
     ): T {
-        if (attempt >= MAX_RETRIES) {
+        if (transientAttempts >= MAX_RETRIES) {
             if (error is IOException) throw DriveException.Network("Drive network request failed", error)
             throw DriveException.Server("Drive is temporarily unavailable", error)
         }
-        val delayMs = RETRY_BASE_DELAY_MS * (1L shl attempt)
+        val delayMs = RETRY_BASE_DELAY_MS * (1L shl transientAttempts)
         Log.w(TAG, "Transient Drive failure; retrying in ${delayMs}ms", error)
         delay(delayMs)
-        driveService = null
-        cachedAccessToken = null
-        return executeWithRetry(attempt + 1, block)
+        clearCache()
+        return executeWithRetry(authAttempts, transientAttempts + 1, block)
     }
 
     /**
@@ -131,21 +146,38 @@ class DriveAppDataClient @Inject constructor(
         require(compressedBytes.size <= DriveHistoryProtocol.MAX_COMPRESSED_BYTES) {
             "Tempo Drive history batch exceeds the compressed size limit"
         }
+        val expectedMd5 = md5Hex(compressedBytes)
+        val expectedSha256 = sha256Hex(compressedBytes)
         executeWithRetry { api ->
-            findByExactName(api, fileName)?.let { existing ->
-                Log.d(TAG, "History batch already exists; treating retry as success: $fileName")
+            findFilesByExactName(api, fileName).firstOrNull { existing ->
+                existing.getSize()?.toLong() == compressedBytes.size.toLong() &&
+                    existing.md5Checksum.equals(expectedMd5, ignoreCase = true) &&
+                    existing.appProperties?.get(DriveHistoryProtocol.APP_PROPERTY_SHA256) == expectedSha256
+            }?.let { existing ->
+                Log.d(TAG, "Verified existing history batch; treating retry as success: $fileName")
                 return@executeWithRetry existing.toAppDataFile()
+            }
+            // A same-name object with different bytes is never a successful
+            // idempotent retry. Remove it before publishing the deterministic
+            // payload so later clients cannot accept corrupted history.
+            findFilesByExactName(api, fileName).forEach { existing ->
+                api.files().delete(existing.id).execute()
             }
 
             val metadata = DriveFile().apply {
                 name = fileName
                 parents = listOf(APP_DATA_FOLDER)
-                this.appProperties = appProperties
+                this.appProperties = appProperties +
+                    (DriveHistoryProtocol.APP_PROPERTY_SHA256 to expectedSha256)
             }
             val result = api.files()
                 .create(metadata, ByteArrayContent(MIME_GZIP, compressedBytes))
-                .setFields("id,name,size,createdTime,modifiedTime,appProperties")
+                .setFields("id,name,size,md5Checksum,createdTime,modifiedTime,appProperties")
                 .execute()
+            require(
+                result.getSize()?.toLong() == compressedBytes.size.toLong() &&
+                    result.md5Checksum.equals(expectedMd5, ignoreCase = true)
+            ) { "Google Drive returned mismatched metadata for the uploaded history batch" }
             result.toAppDataFile()
         }
     }
@@ -159,6 +191,7 @@ class DriveAppDataClient @Inject constructor(
             executeWithRetry { api ->
                 val clauses = mutableListOf(
                     "name contains '${DriveHistoryProtocol.FILE_PREFIX}'",
+                    "appProperties has { key='${DriveHistoryProtocol.APP_PROPERTY_KIND}' and value='${DriveHistoryProtocol.KIND_HISTORY_BATCH}' }",
                     "trashed = false"
                 )
                 if (createdAfterMillis != null && createdAfterMillis > 0L) {
@@ -174,7 +207,7 @@ class DriveAppDataClient @Inject constructor(
                         .setOrderBy("createdTime asc")
                         .setPageSize(1_000)
                         .setPageToken(pageToken)
-                        .setFields("nextPageToken,files(id,name,size,createdTime,modifiedTime,appProperties)")
+                        .setFields("nextPageToken,files(id,name,size,md5Checksum,createdTime,modifiedTime,appProperties)")
                         .execute()
                     result.files.orEmpty().forEach { files += it.toAppDataFile() }
                     pageToken = result.nextPageToken
@@ -183,11 +216,27 @@ class DriveAppDataClient @Inject constructor(
             }
         }
 
-    suspend fun download(fileId: String): ByteArray = withContext(Dispatchers.IO) {
+    suspend fun download(file: DriveAppDataFile): ByteArray = withContext(Dispatchers.IO) {
+        require(file.sizeBytes in 1..DriveHistoryProtocol.MAX_COMPRESSED_BYTES.toLong()) {
+            "Tempo Drive history batch has an invalid compressed size"
+        }
         executeWithRetry { api ->
             val output = BoundedByteArrayOutputStream(DriveHistoryProtocol.MAX_COMPRESSED_BYTES)
-            api.files().get(fileId).executeMediaAndDownloadTo(output)
-            output.toByteArray()
+            api.files().get(file.fileId).executeMediaAndDownloadTo(output)
+            output.toByteArray().also { bytes ->
+                require(bytes.size.toLong() == file.sizeBytes) {
+                    "Tempo Drive history batch size does not match its metadata"
+                }
+                file.md5Checksum?.takeIf { it.isNotBlank() }?.let { expected ->
+                    require(md5Hex(bytes).equals(expected, ignoreCase = true)) {
+                        "Tempo Drive history batch checksum does not match its metadata"
+                    }
+                }
+                val expectedSha256 = file.appProperties[DriveHistoryProtocol.APP_PROPERTY_SHA256]
+                require(expectedSha256?.matches(Regex("^[0-9a-f]{64}$")) == true &&
+                    sha256Hex(bytes) == expectedSha256
+                ) { "Tempo Drive history batch SHA-256 does not match its metadata" }
+            }
         }
     }
 
@@ -199,8 +248,10 @@ class DriveAppDataClient @Inject constructor(
      */
     suspend fun getHistoryDisableMarkerVersion(): Long = withContext(Dispatchers.IO) {
         executeWithRetry { api ->
-            val marker = findByExactName(api, DISABLE_MARKER_NAME) ?: return@executeWithRetry 0L
-            marker.modifiedTime?.value?.takeIf { it > 0L }
+            val markerVersion = findFilesByExactName(api, DISABLE_MARKER_NAME)
+                .maxOfOrNull { it.modifiedTime?.value ?: 0L }
+                ?: return@executeWithRetry 0L
+            markerVersion.takeIf { it > 0L }
                 ?: throw DriveException.Server("Google Drive did not return a valid deletion marker version")
         }
     }
@@ -217,19 +268,11 @@ class DriveAppDataClient @Inject constructor(
                 .toString()
                 .toByteArray(Charsets.UTF_8)
             val media = ByteArrayContent(MIME_JSON, payload)
-            val existing = findByExactName(api, DISABLE_MARKER_NAME)
-            val result = if (existing != null) {
-                api.files()
-                    .update(
-                        existing.id,
-                        DriveFile().apply {
-                            appProperties = mapOf("tempo_kind" to "history_sync_control")
-                        },
-                        media
-                    )
-                    .setFields("id,name,size,createdTime,modifiedTime,appProperties")
-                    .execute()
-            } else {
+            val previousVersion = findFilesByExactName(api, DISABLE_MARKER_NAME)
+                .maxOfOrNull { it.modifiedTime?.value ?: 0L }
+                ?: 0L
+            var markers = findFilesByExactName(api, DISABLE_MARKER_NAME)
+            if (markers.isEmpty()) {
                 api.files()
                     .create(
                         DriveFile().apply {
@@ -239,10 +282,34 @@ class DriveAppDataClient @Inject constructor(
                         },
                         media
                     )
-                    .setFields("id,name,size,createdTime,modifiedTime,appProperties")
+                    .setFields("id,name,size,md5Checksum,createdTime,modifiedTime,appProperties")
                     .execute()
             }
-            result.modifiedTime?.value?.takeIf { it > 0L }
+            // Update every same-name marker. This converges concurrent first-use
+            // creates and ensures all clients observe the maximum server version.
+            var markerVersion = 0L
+            for (attempt in 0 until 3) {
+                markers = findFilesByExactName(api, DISABLE_MARKER_NAME)
+                for (marker in markers) {
+                    val updated = api.files()
+                        .update(
+                            marker.id,
+                            DriveFile().apply {
+                                appProperties = mapOf(
+                                    "tempo_kind" to "history_sync_control",
+                                    "revision" to UUID.randomUUID().toString()
+                                )
+                            },
+                            media
+                        )
+                        .setFields("id,name,size,md5Checksum,createdTime,modifiedTime,appProperties")
+                        .execute()
+                    markerVersion = maxOf(markerVersion, updated.modifiedTime?.value ?: 0L)
+                }
+                if (markerVersion > previousVersion) break
+                if (attempt < 2) delay(5L)
+            }
+            markerVersion.takeIf { it > previousVersion }
                 ?: throw DriveException.Server("Google Drive did not return a valid deletion marker version")
         }
     }
@@ -252,6 +319,8 @@ class DriveAppDataClient @Inject constructor(
         try {
             deleteStrict(fileId)
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Failed to delete appData file $fileId", e)
             false
@@ -305,30 +374,41 @@ class DriveAppDataClient @Inject constructor(
         }
     }
 
+    @Synchronized
     fun clearCache() {
         driveService = null
         cachedAccessToken = null
     }
 
-    private fun findByExactName(api: Drive, fileName: String): DriveFile? {
+    private fun findFilesByExactName(api: Drive, fileName: String): List<DriveFile> {
         val safeName = fileName
             .replace("\\", "\\\\")
             .replace("'", "\\'")
         return api.files().list()
             .setSpaces(APP_DATA_FOLDER)
             .setQ("name = '$safeName' and trashed = false")
-            .setPageSize(1)
-            .setFields("files(id,name,size,createdTime,modifiedTime,appProperties)")
+            .setPageSize(1_000)
+            .setFields("files(id,name,size,md5Checksum,createdTime,modifiedTime,appProperties)")
             .execute()
             .files
             .orEmpty()
-            .firstOrNull()
     }
+
+    private fun md5Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("MD5")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+
+    private fun sha256Hex(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it) }
 
     private fun DriveFile.toAppDataFile(): DriveAppDataFile = DriveAppDataFile(
         fileId = id,
         fileName = name,
         sizeBytes = getSize()?.toLong() ?: 0L,
+        md5Checksum = md5Checksum,
         createdAt = createdTime?.value ?: 0L,
         modifiedAt = modifiedTime?.value ?: 0L,
         appProperties = appProperties.orEmpty()
@@ -363,6 +443,7 @@ data class DriveAppDataFile(
     val fileId: String,
     val fileName: String,
     val sizeBytes: Long,
+    val md5Checksum: String?,
     val createdAt: Long,
     val modifiedAt: Long,
     val appProperties: Map<String, String>

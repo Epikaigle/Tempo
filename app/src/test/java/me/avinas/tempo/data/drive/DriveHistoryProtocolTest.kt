@@ -77,7 +77,7 @@ class DriveHistoryProtocolTest {
 
     @Test
     fun `batch filename stays inside Tempo history namespace`() {
-        val name = DriveHistoryProtocol.fileName("device-a", "batch-a")
+        val name = DriveHistoryProtocol.fileName("device-a", "a".repeat(64))
         assertTrue(name.startsWith(DriveHistoryProtocol.FILE_PREFIX))
         assertTrue(name.endsWith(".json.gz"))
     }
@@ -85,13 +85,13 @@ class DriveHistoryProtocolTest {
     @Test
     fun `batch filename includes accepted deletion generation`() {
         assertEquals(
-            "tempo_history_v1_g1234_device-a_batch-a.json.gz",
-            DriveHistoryProtocol.fileName("device-a", "batch-a", 1234L)
+            "tempo_history_v1_g1234_device-a_${"a".repeat(64)}.json.gz",
+            DriveHistoryProtocol.fileName("device-a", "a".repeat(64), 1234L)
         )
         // Pre-generation clients/files map to generation zero during migration.
         assertEquals(
-            "tempo_history_v1_g0_device-a_batch-a.json.gz",
-            DriveHistoryProtocol.fileName("device-a", "batch-a")
+            "tempo_history_v1_g0_device-a_${"a".repeat(64)}.json.gz",
+            DriveHistoryProtocol.fileName("device-a", "a".repeat(64))
         )
     }
 
@@ -124,7 +124,15 @@ class DriveHistoryProtocolTest {
     }
 
     private fun event(id: String, timestamp: Long) = DriveHistoryEvent(
-        eventId = id,
+        eventId = if (id.matches(Regex("^[0-9a-f]{64}$"))) id else {
+            DriveHistoryProtocol.createEventId(
+                "fixture-device",
+                id.hashCode().toLong() and 0x7fff_ffffL,
+                timestamp,
+                "Song $id",
+                "Artist"
+            )
+        },
         title = "Song $id",
         artist = "Artist",
         album = null,

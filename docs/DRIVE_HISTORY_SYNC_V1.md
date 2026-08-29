@@ -30,6 +30,11 @@ The marker is not a history batch. Its Google-server `modifiedTime` is used as t
 
 `tempo_generation=<generation>`
 
+Each batch also stores the lowercase SHA-256 of its exact compressed bytes as
+`tempo_sha256=<64 lowercase hex characters>`. Readers verify both the declared
+file size and this checksum before decompressing. A deterministic same-name
+upload is idempotent only when its size and checksum match.
+
 Files produced before generation metadata existed are treated as generation `0` for migration compatibility.
 
 The generation is Drive transport metadata; it does not change the v1 JSON payload schema.
@@ -52,7 +57,7 @@ A batch is UTF-8 JSON compressed with gzip.
 
 All timestamps and durations are integer milliseconds. Wire field names are snake_case.
 
-Current clients batch at most 50 locally-produced events per upload. Readers must reject unreasonable/oversized input rather than trusting remote JSON blindly.
+Current clients batch at most 50 locally-produced events per upload. Readers reject empty batches, more than 1,000 events, non-integral or out-of-range numeric fields, malformed device/event/batch IDs, payload IDs that do not reproduce the deterministic batch hash, and payload identity that does not match Drive filename/app metadata.
 
 ## Event object
 

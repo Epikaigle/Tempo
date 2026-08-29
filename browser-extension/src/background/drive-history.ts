@@ -4,6 +4,7 @@ import {
   disconnectDriveAuth,
   getDriveAuthSession,
   hasFirefoxDriveDataConsent,
+  invalidateDriveAccessToken,
   isDriveOAuthConfigured,
   isFirefoxBuild,
 } from './drive-auth';
@@ -13,11 +14,17 @@ const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3';
 const FILE_PREFIX = 'tempo_history_v1_';
 const DISABLE_MARKER_NAME = 'tempo_history_control_v1.json';
 const APP_PROPERTY_GENERATION = 'tempo_generation';
+const APP_PROPERTY_SHA256 = 'tempo_sha256';
 const SCHEMA_VERSION = 1;
 const BATCH_SIZE = 50;
 const MAX_LOCAL_SCAN = 5000;
 const DOWNLOAD_OVERLAP_MS = 24 * 60 * 60 * 1000;
 const MAX_BATCH_BYTES = 10 * 1024 * 1024;
+const MAX_DRIVE_RETRIES = 3;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const DEVICE_ID_PATTERN = /^[A-Za-z0-9._-]{1,200}$/;
+const PLATFORM_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+const MAX_SAFE_WIRE_INTEGER = Number.MAX_SAFE_INTEGER;
 
 const STATE_KEY = 'tempoDriveHistoryState';
 const DEVICE_KEY = 'tempoDriveDeviceId';
@@ -76,6 +83,7 @@ interface DriveFileRecord {
   size?: string;
   createdTime?: string;
   modifiedTime?: string;
+  md5Checksum?: string;
   appProperties?: Record<string, string>;
 }
 
@@ -91,6 +99,7 @@ const DEFAULT_STATE: DriveRuntimeState = {
 };
 
 let syncPromise: Promise<{ uploaded: number; imported: number; duplicates: number }> | null = null;
+let deviceIdPromise: Promise<string> | null = null;
 
 export async function initDriveHistorySync(): Promise<void> {
   const settings = await storage.getSettings();
@@ -340,6 +349,9 @@ async function uploadLocalPlays(accessToken: string, deviceId: string): Promise<
       created_at_utc: Date.now(),
       events,
     };
+    if (!isValidBatch(batch)) {
+      throw new Error('A local browser play cannot be represented safely in the Drive history protocol');
+    }
     const gzip = await gzipJson(batch);
     const fileName = `${FILE_PREFIX}g${generation}_${deviceId}_${batchId}.json.gz`;
     await uploadBatch(accessToken, fileName, gzip, deviceId, generation);
@@ -374,7 +386,13 @@ async function downloadRemotePlays(
   for (const file of files) {
     const createdRaw = file.createdTime ? Date.parse(file.createdTime) : 0;
     const created = Number.isFinite(createdRaw) ? createdRaw : 0;
-    if (batchGeneration(file) < acceptedGeneration) {
+    const generation = batchGeneration(file);
+    if (generation == null) {
+      console.warn(`[Tempo] Skipping Drive history batch with invalid generation ${file.name}`);
+      maxCreated = Math.max(maxCreated, created);
+      continue;
+    }
+    if (generation < acceptedGeneration) {
       // A pre-delete/in-flight stale batch must never resurrect after generation
       // N was accepted. Cleanup is best effort so current-generation sync can
       // continue even if this stale file races another client's deletion.
@@ -385,14 +403,28 @@ async function downloadRemotePlays(
       continue;
     }
 
-    if (file.appProperties?.source_device_id === deviceId) {
+    const sourceDeviceId = file.appProperties?.source_device_id;
+    const sourcePlatform = file.appProperties?.source_platform;
+    const checksum = file.appProperties?.[APP_PROPERTY_SHA256];
+    const metadataValid = file.appProperties?.tempo_kind === 'history_batch' &&
+      file.appProperties?.tempo_schema === String(SCHEMA_VERSION) &&
+      typeof sourceDeviceId === 'string' && DEVICE_ID_PATTERN.test(sourceDeviceId) &&
+      typeof sourcePlatform === 'string' && PLATFORM_PATTERN.test(sourcePlatform) &&
+      typeof checksum === 'string' && SHA256_PATTERN.test(checksum);
+    if (!metadataValid) {
+      console.warn(`[Tempo] Skipping Drive history batch with invalid metadata ${file.name}`);
+      maxCreated = Math.max(maxCreated, created);
+      continue;
+    }
+
+    if (sourceDeviceId === deviceId) {
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
 
     const declaredSize = Number(file.size ?? '0');
-    if (Number.isFinite(declaredSize) && declaredSize > MAX_BATCH_BYTES) {
-      console.warn(`[Tempo] Skipping oversized Drive history batch ${file.name}`);
+    if (!Number.isSafeInteger(declaredSize) || declaredSize <= 0 || declaredSize > MAX_BATCH_BYTES) {
+      console.warn(`[Tempo] Skipping Drive history batch with invalid size ${file.name}`);
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
@@ -400,10 +432,17 @@ async function downloadRemotePlays(
     // Fetch errors are retryable and must abort without advancing the cursor.
     // Otherwise a temporarily unavailable batch can fall outside the 24h overlap
     // and disappear from future scans even though it was never imported.
-    const bytes = await driveRequestBytes(
-      accessToken,
-      `${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`,
-    );
+    let bytes: Uint8Array;
+    try {
+      bytes = await driveRequestBytes(accessToken, file);
+    } catch (err) {
+      if (err instanceof PermanentBatchError) {
+        console.warn(`[Tempo] Skipping corrupt Drive history batch ${file.name}`, err);
+        maxCreated = Math.max(maxCreated, created);
+        continue;
+      }
+      throw err;
+    }
 
     let batch: WireBatch;
     try {
@@ -415,7 +454,15 @@ async function downloadRemotePlays(
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
-    if (!isValidBatch(batch) || batch.source_device_id === deviceId) {
+    const validBatch = isValidBatch(batch) &&
+      await deterministicBatchId(batch.events) === batch.batch_id;
+    const expectedName = `${FILE_PREFIX}g${generation}_${sourceDeviceId}_${batch.batch_id}.json.gz`;
+    if (!validBatch ||
+      batch.source_device_id !== sourceDeviceId ||
+      batch.source_platform !== sourcePlatform ||
+      file.name !== expectedName ||
+      batch.source_device_id === deviceId
+    ) {
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
@@ -526,7 +573,18 @@ async function uploadBatch(
   deviceId: string,
   generation: number,
 ): Promise<void> {
-  if (await findBatchByExactName(accessToken, fileName)) return;
+  const checksum = await sha256Bytes(gzip);
+  const existing = await findFilesByExactName(
+    accessToken,
+    fileName,
+    'files(id,name,size,md5Checksum,modifiedTime,appProperties)',
+  );
+  const verified = existing.find(file =>
+    Number(file.size) === gzip.byteLength &&
+    file.appProperties?.[APP_PROPERTY_SHA256] === checksum
+  );
+  if (verified) return;
+  for (const file of existing) await deleteDriveFileStrict(accessToken, file.id);
 
   const boundary = `tempo_${crypto.randomUUID().replace(/-/g, '')}`;
   const metadata = JSON.stringify({
@@ -538,6 +596,7 @@ async function uploadBatch(
       source_device_id: deviceId,
       source_platform: isFirefoxBuild() ? 'firefox_extension' : 'chrome_extension',
       [APP_PROPERTY_GENERATION]: String(generation),
+      [APP_PROPERTY_SHA256]: checksum,
     },
   });
   const body = new Blob([
@@ -546,8 +605,9 @@ async function uploadBatch(
     gzip as BlobPart,
     `\r\n--${boundary}--\r\n`,
   ]);
-  const response = await fetch(
-    `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,createdTime,appProperties`,
+  const response = await driveFetch(
+    accessToken,
+    `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,size,md5Checksum,createdTime,appProperties`,
     {
       method: 'POST',
       headers: {
@@ -558,64 +618,47 @@ async function uploadBatch(
     },
   );
   await assertDriveResponse(response);
+  const uploaded = await response.json() as DriveFileRecord;
+  if (Number(uploaded.size) !== gzip.byteLength || uploaded.appProperties?.[APP_PROPERTY_SHA256] !== checksum) {
+    throw new Error('Google Drive returned mismatched metadata for the uploaded history batch');
+  }
 }
 
-async function findBatchByExactName(accessToken: string, fileName: string): Promise<boolean> {
-  return !!(await findFileByExactName(accessToken, fileName, 'files(id)'));
-}
-
-async function findFileByExactName(
+async function findFilesByExactName(
   accessToken: string,
   fileName: string,
-  fields = 'files(id,name,modifiedTime,appProperties)',
-): Promise<DriveFileRecord | null> {
+  fields = 'files(id,name,size,md5Checksum,modifiedTime,appProperties)',
+): Promise<DriveFileRecord[]> {
   const escaped = fileName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const params = new URLSearchParams({
     spaces: 'appDataFolder',
     q: `name = '${escaped}' and trashed = false`,
-    pageSize: '1',
+    pageSize: '1000',
     fields,
   });
-  const response = await fetch(`${DRIVE_API}/files?${params.toString()}`, {
+  const response = await driveFetch(accessToken, `${DRIVE_API}/files?${params.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   await assertDriveResponse(response);
   const data = await response.json() as { files?: DriveFileRecord[] };
-  return data.files?.[0] ?? null;
+  return data.files ?? [];
 }
 
 async function getDisableMarkerVersion(accessToken: string): Promise<number> {
-  const file = await findFileByExactName(accessToken, DISABLE_MARKER_NAME);
-  if (!file) return 0;
-  const parsed = file.modifiedTime ? Date.parse(file.modifiedTime) : NaN;
-  if (!Number.isFinite(parsed)) {
+  const files = await findFilesByExactName(accessToken, DISABLE_MARKER_NAME);
+  if (files.length === 0) return 0;
+  const versions = files.map(file => file.modifiedTime ? Date.parse(file.modifiedTime) : NaN);
+  if (versions.some(version => !Number.isFinite(version))) {
     throw new Error('Google Drive did not return a valid deletion marker version');
   }
-  return parsed;
+  return Math.max(...versions);
 }
 
 async function bumpDisableMarker(accessToken: string): Promise<number> {
-  const existing = await findFileByExactName(accessToken, DISABLE_MARKER_NAME);
-  let response: Response;
-  if (existing) {
-    response = await fetch(
-      `${DRIVE_API}/files/${encodeURIComponent(existing.id)}?fields=id,name,modifiedTime,appProperties`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          appProperties: {
-            tempo_kind: 'history_sync_control',
-            revision: crypto.randomUUID(),
-          },
-        }),
-      },
-    );
-  } else {
-    response = await fetch(`${DRIVE_API}/files?fields=id,name,modifiedTime,appProperties`, {
+  const previousVersion = await getDisableMarkerVersion(accessToken);
+  let markers = await findFilesByExactName(accessToken, DISABLE_MARKER_NAME);
+  if (markers.length === 0) {
+    const response = await driveFetch(accessToken, `${DRIVE_API}/files?fields=id,name,modifiedTime,appProperties`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -630,16 +673,47 @@ async function bumpDisableMarker(accessToken: string): Promise<number> {
         },
       }),
     });
+    await assertDriveResponse(response);
   }
-  await assertDriveResponse(response);
-  const file = await response.json() as DriveFileRecord;
-  const parsed = file.modifiedTime ? Date.parse(file.modifiedTime) : NaN;
-  if (!Number.isFinite(parsed)) throw new Error('Google Drive did not return a valid deletion marker version');
-  return parsed;
+
+  let markerVersion = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    markers = await findFilesByExactName(accessToken, DISABLE_MARKER_NAME);
+    for (const marker of markers) {
+      const response = await driveFetch(
+        accessToken,
+        `${DRIVE_API}/files/${encodeURIComponent(marker.id)}?fields=id,name,modifiedTime,appProperties`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            appProperties: {
+              tempo_kind: 'history_sync_control',
+              revision: crypto.randomUUID(),
+            },
+          }),
+        },
+      );
+      await assertDriveResponse(response);
+      const updated = await response.json() as DriveFileRecord;
+      const parsed = updated.modifiedTime ? Date.parse(updated.modifiedTime) : NaN;
+      if (Number.isFinite(parsed)) markerVersion = Math.max(markerVersion, parsed);
+    }
+    if (markerVersion > previousVersion) return markerVersion;
+    if (attempt < 2) await delayMs(10);
+  }
+  throw new Error('Google Drive did not return a newer deletion marker version');
 }
 
 async function listBatches(accessToken: string, createdAfter: number | null): Promise<DriveFileRecord[]> {
-  const clauses = [`name contains '${FILE_PREFIX}'`, 'trashed = false'];
+  const clauses = [
+    `name contains '${FILE_PREFIX}'`,
+    "appProperties has { key='tempo_kind' and value='history_batch' }",
+    'trashed = false',
+  ];
   if (createdAfter != null && createdAfter > 0) {
     clauses.push(`createdTime > '${new Date(createdAfter).toISOString()}'`);
   }
@@ -652,10 +726,10 @@ async function listBatches(accessToken: string, createdAfter: number | null): Pr
       q: clauses.join(' and '),
       orderBy: 'createdTime asc',
       pageSize: '1000',
-      fields: 'nextPageToken,files(id,name,size,createdTime,modifiedTime,appProperties)',
+      fields: 'nextPageToken,files(id,name,size,md5Checksum,createdTime,modifiedTime,appProperties)',
     });
     if (pageToken) params.set('pageToken', pageToken);
-    const response = await fetch(`${DRIVE_API}/files?${params.toString()}`, {
+    const response = await driveFetch(accessToken, `${DRIVE_API}/files?${params.toString()}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     await assertDriveResponse(response);
@@ -666,13 +740,15 @@ async function listBatches(accessToken: string, createdAfter: number | null): Pr
   return files;
 }
 
-function batchGeneration(file: DriveFileRecord): number {
-  const raw = Number(file.appProperties?.[APP_PROPERTY_GENERATION] ?? '0');
-  return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+function batchGeneration(file: DriveFileRecord): number | null {
+  const value = file.appProperties?.[APP_PROPERTY_GENERATION];
+  if (value != null && !/^\d+$/.test(value)) return null;
+  const raw = Number(value ?? '0');
+  return Number.isSafeInteger(raw) && raw >= 0 ? raw : null;
 }
 
 async function deleteDriveFileStrict(accessToken: string, fileId: string): Promise<void> {
-  const response = await fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}`, {
+  const response = await driveFetch(accessToken, `${DRIVE_API}/files/${encodeURIComponent(fileId)}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -683,17 +759,32 @@ async function deleteBatchesBeforeGeneration(accessToken: string, generation: nu
   const files = await listBatches(accessToken, null);
   let deleted = 0;
   for (const file of files) {
-    if (batchGeneration(file) >= generation) continue;
+    const fileGeneration = batchGeneration(file);
+    if (fileGeneration == null) {
+      console.warn(`[Tempo] Leaving Drive history batch with invalid generation untouched: ${file.name}`);
+      continue;
+    }
+    if (fileGeneration >= generation) continue;
     await deleteDriveFileStrict(accessToken, file.id);
     deleted++;
   }
   return deleted;
 }
 
-async function driveRequestBytes(accessToken: string, url: string): Promise<Uint8Array> {
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+async function driveRequestBytes(accessToken: string, file: DriveFileRecord): Promise<Uint8Array> {
+  const response = await driveFetch(
+    accessToken,
+    `${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
   await assertDriveResponse(response);
-  return readStreamBytesWithLimit(response.body, MAX_BATCH_BYTES, 'compressed');
+  const bytes = await readStreamBytesWithLimit(response.body, MAX_BATCH_BYTES, 'compressed');
+  const declaredSize = Number(file.size ?? '0');
+  const expectedChecksum = file.appProperties?.[APP_PROPERTY_SHA256];
+  if (bytes.byteLength !== declaredSize || !expectedChecksum || await sha256Bytes(bytes) !== expectedChecksum) {
+    throw new PermanentBatchError('Tempo Drive history batch does not match its integrity metadata');
+  }
+  return bytes;
 }
 
 async function readStreamBytesWithLimit(
@@ -701,7 +792,7 @@ async function readStreamBytesWithLimit(
   maxBytes: number,
   label: string,
 ): Promise<Uint8Array> {
-  if (!stream) throw new Error(`Google Drive returned an empty ${label} history stream`);
+  if (!stream) throw new PermanentBatchError(`Google Drive returned an empty ${label} history stream`);
 
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
@@ -714,7 +805,7 @@ async function readStreamBytesWithLimit(
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel().catch(() => undefined);
-        throw new Error(`Tempo Drive history batch exceeds the ${label} size limit`);
+        throw new PermanentBatchError(`Tempo Drive history batch exceeds the ${label} size limit`);
       }
       chunks.push(value);
     }
@@ -734,44 +825,102 @@ async function readStreamBytesWithLimit(
 async function assertDriveResponse(response: Response): Promise<void> {
   if (response.ok) return;
   let detail = '';
+  let reasons: string[] = [];
   try {
     const json = await response.json() as any;
     detail = json?.error?.message ?? '';
+    reasons = Array.isArray(json?.error?.errors)
+      ? json.error.errors.map((error: any) => error?.reason).filter((reason: unknown): reason is string => typeof reason === 'string')
+      : [];
   } catch { /* response body may not be JSON */ }
 
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401 ||
+    (response.status === 403 && reasons.some(reason => reason === 'authError' || reason === 'insufficientPermissions'))
+  ) {
     throw new Error(`Google Drive authorization failed${detail ? `: ${detail}` : ''}`);
   }
-  if (response.status === 429 || response.status >= 500) {
+  if (response.status === 429 || response.status >= 500 ||
+    (response.status === 403 && reasons.some(reason => /rateLimit/i.test(reason)))
+  ) {
     throw new Error(`Google Drive is temporarily unavailable (HTTP ${response.status})`);
+  }
+  if (response.status === 403) {
+    throw new Error(`Google Drive rejected the request${detail ? `: ${detail}` : ''}`);
   }
   throw new Error(`Google Drive request failed (HTTP ${response.status})${detail ? `: ${detail}` : ''}`);
 }
 
+async function driveFetch(
+  accessToken: string,
+  url: string,
+  init: RequestInit = {},
+  attempt = 0,
+): Promise<Response> {
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch (err) {
+    if (attempt >= MAX_DRIVE_RETRIES) throw err;
+    await delayMs(750 * (2 ** attempt));
+    return driveFetch(accessToken, url, init, attempt + 1);
+  }
+
+  if (response.status === 401) {
+    await invalidateDriveAccessToken(accessToken);
+    return response;
+  }
+
+  let transient = response.status === 429 || response.status >= 500;
+  if (response.status === 403) {
+    try {
+      const json = await response.clone().json() as any;
+      const errors = Array.isArray(json?.error?.errors) ? json.error.errors : [];
+      transient = errors.some((error: any) => typeof error?.reason === 'string' && /rateLimit/i.test(error.reason));
+    } catch { /* leave as non-transient forbidden */ }
+  }
+  if (transient && attempt < MAX_DRIVE_RETRIES) {
+    const retryAfterSeconds = Number(response.headers.get('Retry-After') ?? '0');
+    const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? Math.min(retryAfterSeconds * 1000, 30_000)
+      : 750 * (2 ** attempt);
+    await delayMs(retryAfterMs);
+    return driveFetch(accessToken, url, init, attempt + 1);
+  }
+  return response;
+}
+
 async function playToWire(play: Play, deviceId: string): Promise<WireEvent> {
   const id = play.originEventId ?? await eventId(deviceId, play);
-  return {
+  const title = play.title.trim().slice(0, 1000);
+  const artist = play.artist.trim().slice(0, 1000);
+  if (!title || !artist || !isPositiveWireInteger(play.timestampUtc)) {
+    throw new Error('A local browser play has an invalid title, artist, or timestamp');
+  }
+  const sourceApp = (play.sourceApp || 'browser').trim().slice(0, 900) || 'browser';
+  const event: WireEvent = {
     event_id: id,
-    title: play.title,
-    artist: play.artist,
-    album: play.album || null,
+    title,
+    artist,
+    album: play.album ? play.album.slice(0, 1000) : null,
     timestamp_utc: play.timestampUtc,
-    duration_ms: Math.max(0, Math.round(play.durationMs || 0)),
-    listened_ms: Math.max(0, Math.round(play.listenedMs || 0)),
-    source_app: play.sourceApp || 'browser',
-    source: `browser:${play.sourceApp || 'unknown'}`,
+    duration_ms: safeWireInteger(play.durationMs),
+    listened_ms: safeWireInteger(play.listenedMs),
+    source_app: sourceApp,
+    source: `browser:${sourceApp}`,
     skipped: !!play.skipped,
-    replay_count: Math.max(0, Math.round(play.replayCount || 0)),
-    completion_percentage: Math.round(clamp(play.completionPercentage || 0, 0, 100)),
-    pause_count: Math.max(0, Math.round(play.pauseCount || 0)),
-    seek_count: Math.max(0, Math.round(play.seekCount || 0)),
-    session_id: play.sessionId || null,
-    site: play.site || null,
-    content_type: play.contentType || 'MUSIC',
+    replay_count: safeWireInteger(play.replayCount),
+    completion_percentage: Math.round(clamp(Number.isFinite(play.completionPercentage) ? play.completionPercentage : 0, 0, 100)),
+    pause_count: safeWireInteger(play.pauseCount),
+    seek_count: safeWireInteger(play.seekCount),
+    session_id: play.sessionId ? play.sessionId.slice(0, 1000) : null,
+    site: play.site ? play.site.slice(0, 1000) : null,
+    content_type: (play.contentType || 'MUSIC').trim().slice(0, 1000) || 'MUSIC',
     volume_level: protocolVolumeLevel(play),
-    total_pause_duration_ms: Math.max(0, Math.round(play.totalPauseDurationMs || 0)),
-    position_updates_count: Math.max(0, Math.round(play.positionUpdatesCount || 0)),
+    total_pause_duration_ms: safeWireInteger(play.totalPauseDurationMs),
+    position_updates_count: safeWireInteger(play.positionUpdatesCount),
   };
+  if (!isValidEvent(event)) throw new Error('A local browser play cannot be represented safely');
+  return event;
 }
 
 function protocolVolumeLevel(play: Play): number | null {
@@ -779,7 +928,7 @@ function protocolVolumeLevel(play: Play): number | null {
   const value = play.volumeLevel;
   if (!Number.isFinite(value) || value < 0) return null;
   if (value <= 1) return value <= 0.01 ? 0 : Math.max(1, Math.round(value * 100));
-  return Math.max(1, Math.round(value));
+  return Math.min(100, Math.max(1, Math.round(value)));
 }
 
 async function eventId(deviceId: string, play: Play): Promise<string> {
@@ -800,7 +949,11 @@ async function deterministicBatchId(events: WireEvent[]): Promise<string> {
 }
 
 async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return sha256Bytes(new TextEncoder().encode(value));
+}
+
+async function sha256Bytes(value: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', value as BufferSource);
   return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -828,33 +981,105 @@ function isValidBatch(value: unknown): value is WireBatch {
   if (!value || typeof value !== 'object') return false;
   const batch = value as Partial<WireBatch>;
   return batch.schema_version === SCHEMA_VERSION &&
-    typeof batch.batch_id === 'string' && batch.batch_id.length > 0 &&
-    typeof batch.source_device_id === 'string' && batch.source_device_id.length > 0 &&
-    Array.isArray(batch.events) && batch.events.length <= 1000;
+    typeof batch.batch_id === 'string' && SHA256_PATTERN.test(batch.batch_id) &&
+    typeof batch.source_device_id === 'string' && DEVICE_ID_PATTERN.test(batch.source_device_id) &&
+    typeof batch.source_device_name === 'string' && isBoundedText(batch.source_device_name) &&
+    typeof batch.source_platform === 'string' && PLATFORM_PATTERN.test(batch.source_platform) &&
+    isPositiveWireInteger(batch.created_at_utc) &&
+    Array.isArray(batch.events) && batch.events.length > 0 && batch.events.length <= 1000 &&
+    batch.events.every(isValidEvent);
 }
 
 function isValidEvent(value: unknown): value is WireEvent {
   if (!value || typeof value !== 'object') return false;
   const event = value as Partial<WireEvent>;
-  return typeof event.event_id === 'string' && event.event_id.length > 0 &&
-    typeof event.title === 'string' && event.title.trim().length > 0 && event.title.length <= 1000 &&
-    typeof event.artist === 'string' && event.artist.trim().length > 0 && event.artist.length <= 1000 &&
-    typeof event.timestamp_utc === 'number' && Number.isFinite(event.timestamp_utc) && event.timestamp_utc > 0;
+  return typeof event.event_id === 'string' && SHA256_PATTERN.test(event.event_id) &&
+    typeof event.title === 'string' && isBoundedText(event.title) &&
+    typeof event.artist === 'string' && isBoundedText(event.artist) &&
+    isOptionalBoundedText(event.album) &&
+    isPositiveWireInteger(event.timestamp_utc) &&
+    isNonNegativeWireInteger(event.duration_ms) &&
+    isNonNegativeWireInteger(event.listened_ms) &&
+    typeof event.source_app === 'string' && isBoundedText(event.source_app) &&
+    typeof event.source === 'string' && isBoundedText(event.source) &&
+    typeof event.skipped === 'boolean' &&
+    isNonNegativeWireInteger(event.replay_count) &&
+    isIntegerInRange(event.completion_percentage, 0, 100) &&
+    isNonNegativeWireInteger(event.pause_count) &&
+    isNonNegativeWireInteger(event.seek_count) &&
+    isOptionalBoundedText(event.session_id) &&
+    isOptionalBoundedText(event.site) &&
+    typeof event.content_type === 'string' && isBoundedText(event.content_type) &&
+    (event.volume_level === null || isIntegerInRange(event.volume_level, 0, 100)) &&
+    isNonNegativeWireInteger(event.total_pause_duration_ms) &&
+    isNonNegativeWireInteger(event.position_updates_count);
 }
 
 async function getDeviceId(): Promise<string> {
+  if (deviceIdPromise) return deviceIdPromise;
+  deviceIdPromise = loadOrCreateDeviceId().catch(err => {
+    deviceIdPromise = null;
+    throw err;
+  });
+  return deviceIdPromise;
+}
+
+async function loadOrCreateDeviceId(): Promise<string> {
   const result = await chrome.storage.local.get(DEVICE_KEY);
   const existing = result[DEVICE_KEY];
-  if (typeof existing === 'string' && existing) return existing;
+  if (typeof existing === 'string' && DEVICE_ID_PATTERN.test(existing)) return existing;
   const created = crypto.randomUUID();
   await chrome.storage.local.set({ [DEVICE_KEY]: created });
   return created;
 }
 
+function isBoundedText(value: string): boolean {
+  return value.trim().length > 0 && value.length <= 1000;
+}
+
+function isOptionalBoundedText(value: unknown): boolean {
+  return value === null || (typeof value === 'string' && value.length <= 1000);
+}
+
+function isPositiveWireInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= MAX_SAFE_WIRE_INTEGER;
+}
+
+function isNonNegativeWireInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= MAX_SAFE_WIRE_INTEGER;
+}
+
+function isIntegerInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
+}
+
+function safeWireInteger(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  return Math.min(MAX_SAFE_WIRE_INTEGER, Math.max(0, Math.round(value)));
+}
+
+class PermanentBatchError extends Error {}
+
+function delayMs(milliseconds: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
 async function getRuntimeState(): Promise<DriveRuntimeState> {
   const result = await chrome.storage.local.get(STATE_KEY);
   const raw = result[STATE_KEY] as Partial<DriveRuntimeState> | undefined;
-  return { ...DEFAULT_STATE, ...(raw ?? {}) };
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_STATE };
+  return {
+    downloadCreatedCursor: safeNonNegativeStateNumber(raw.downloadCreatedCursor),
+    acceptedDisableVersion: safeNonNegativeStateNumber(raw.acceptedDisableVersion),
+    lastSyncTime: safeNullableStateNumber(raw.lastSyncTime),
+    lastError: typeof raw.lastError === 'string' ? raw.lastError.slice(0, 2000) : null,
+    lastUploaded: safeNonNegativeStateNumber(raw.lastUploaded),
+    lastImported: safeNonNegativeStateNumber(raw.lastImported),
+    accountEmail: typeof raw.accountEmail === 'string' ? raw.accountEmail : null,
+    lastAuthorizedAccountEmail: typeof raw.lastAuthorizedAccountEmail === 'string'
+      ? raw.lastAuthorizedAccountEmail
+      : null,
+  };
 }
 
 async function saveRuntimeState(state: DriveRuntimeState): Promise<void> {
@@ -868,4 +1093,12 @@ async function patchRuntimeState(patch: Partial<DriveRuntimeState>): Promise<voi
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function safeNonNegativeStateNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function safeNullableStateNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }

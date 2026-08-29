@@ -2,6 +2,7 @@ package me.avinas.tempo.data.drive
 
 import android.accounts.Account
 import android.app.Activity
+import android.app.PendingIntent
 import android.content.Context
 import android.util.Log
 import androidx.credentials.ClearCredentialStateRequest
@@ -23,7 +24,9 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -79,7 +82,11 @@ class GoogleAuthManager @Inject constructor(
     private val _needsDriveConsent = MutableStateFlow(false)
     val needsDriveConsent: StateFlow<Boolean> = _needsDriveConsent.asStateFlow()
 
+    @Volatile
     private var authorizationResult: AuthorizationResult? = null
+
+    @Volatile
+    private var authorizationResolution: PendingIntent? = null
 
     private fun configuredWebClientId(): String? =
         BuildConfig.GOOGLE_WEB_CLIENT_ID.trim().takeIf { it.isNotEmpty() }
@@ -110,6 +117,8 @@ class GoogleAuthManager @Inject constructor(
         } catch (e: GetCredentialException) {
             Log.e(TAG, "Google sign-in failed", e)
             GoogleSignInResult.Error("Sign-in failed: ${e.message}", e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Unexpected Google sign-in error", e)
             GoogleSignInResult.Error("Unexpected error: ${e.message}", e)
@@ -140,15 +149,31 @@ class GoogleAuthManager @Inject constructor(
                 displayName = googleIdCredential.displayName,
                 photoUrl = googleIdCredential.profilePictureUri?.toString()
             )
+            // A newly-selected identity starts a new authorization boundary.
+            // Clear the previous account's token before any consent/failure path
+            // can return control to the UI.
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            tokenStorage.clearToken()
+
+            tokenStorage.saveAccountInfo(account.email, account.displayName, account.photoUrl)
             _currentAccount.value = account
             _isSignedIn.value = true
-            tokenStorage.saveAccountInfo(account.email, account.displayName, account.photoUrl)
 
             // Identity and Drive authorization are intentionally separate. Sign-in
             // succeeds even if the subsequent Drive consent still needs UI.
             requestDriveAuthorization()
             GoogleSignInResult.Success(account)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            authorizationResult = null
+            authorizationResolution = null
+            _currentAccount.value = null
+            _isSignedIn.value = false
+            _needsDriveConsent.value = false
+            runCatching { tokenStorage.clearAll() }
             Log.e(TAG, "Failed to parse Google ID credential", e)
             GoogleSignInResult.Error("Failed to parse credential: ${e.message}", e)
         }
@@ -156,21 +181,31 @@ class GoogleAuthManager @Inject constructor(
 
     private suspend fun requestDriveAuthorization(): Boolean = withContext(Dispatchers.IO) {
         try {
-            authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
-            if (authorizationResult?.hasResolution() == true) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            val result = authorizationClient.authorize(buildDriveAuthRequest()).await()
+            authorizationResult = result
+            if (result.hasResolution()) {
+                authorizationResolution = result.pendingIntent
                 _needsDriveConsent.value = true
                 return@withContext false
             }
-            persistAuthorizedToken(authorizationResult)
+            persistAuthorizedToken(result)
         } catch (e: ApiException) {
-            if (e.status.resolution != null) {
-                _needsDriveConsent.value = true
-                false
-            } else {
-                Log.e(TAG, "Drive authorization failed (${e.status.statusCode})", e)
-                false
-            }
+            authorizationResult = null
+            authorizationResolution = e.status.resolution
+            _needsDriveConsent.value = authorizationResolution != null
+            if (authorizationResolution == null) tokenStorage.clearToken()
+            Log.e(TAG, "Drive authorization failed (${e.status.statusCode})", e)
+            false
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            tokenStorage.clearToken()
             Log.e(TAG, "Drive authorization failed", e)
             false
         }
@@ -179,17 +214,30 @@ class GoogleAuthManager @Inject constructor(
     suspend fun completeConsentFlow(): Boolean = withContext(Dispatchers.IO) {
         try {
             _needsDriveConsent.value = false
-            authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
-            if (authorizationResult?.hasResolution() == true) {
+            authorizationResult = null
+            authorizationResolution = null
+            val result = authorizationClient.authorize(buildDriveAuthRequest()).await()
+            authorizationResult = result
+            if (result.hasResolution()) {
+                authorizationResolution = result.pendingIntent
                 _needsDriveConsent.value = true
                 return@withContext false
             }
-            persistAuthorizedToken(authorizationResult)
+            persistAuthorizedToken(result)
         } catch (e: ApiException) {
-            if (e.status.resolution != null) _needsDriveConsent.value = true
+            authorizationResult = null
+            authorizationResolution = e.status.resolution
+            _needsDriveConsent.value = authorizationResolution != null
+            tokenStorage.clearToken()
             Log.e(TAG, "Failed to complete Drive consent (${e.status.statusCode})", e)
             false
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            tokenStorage.clearToken()
             Log.e(TAG, "Failed to complete Drive consent", e)
             false
         }
@@ -201,11 +249,14 @@ class GoogleAuthManager @Inject constructor(
         val hasScopes = hasAllRequiredDriveScopes(grantedScopes)
         val valid = accessToken != null && hasScopes
 
-        if (valid) {
-            tokenStorage.saveAccessToken(accessToken!!)
+        if (accessToken != null && hasScopes) {
+            tokenStorage.saveAccessToken(accessToken, grantedScopes)
+            authorizationResolution = null
             _needsDriveConsent.value = false
             Log.i(TAG, "Drive authorization granted for backup + appData sync")
         } else {
+            authorizationResult = null
+            authorizationResolution = null
             tokenStorage.clearToken()
             if (!hasScopes) {
                 Log.w(
@@ -218,9 +269,7 @@ class GoogleAuthManager @Inject constructor(
     }
 
     private fun hasAllRequiredDriveScopes(grantedScopes: Collection<String>): Boolean =
-        REQUIRED_DRIVE_SCOPE_URIS.all { required ->
-            grantedScopes.any { granted -> granted == required || granted.contains(required) }
-        }
+        REQUIRED_DRIVE_SCOPE_URIS.all(grantedScopes::contains)
 
     fun getAuthorizationResult(): AuthorizationResult? = authorizationResult
 
@@ -238,10 +287,13 @@ class GoogleAuthManager @Inject constructor(
         return builder.build()
     }
 
-    fun getDriveAuthorizationPendingIntent() = authorizationResult?.pendingIntent
+    fun getDriveAuthorizationPendingIntent(): PendingIntent? =
+        authorizationResolution ?: authorizationResult?.pendingIntent
 
     fun updateAuthorizationResult(result: AuthorizationResult) {
         authorizationResult = result
+        authorizationResolution = result.pendingIntent.takeIf { result.hasResolution() }
+        _needsDriveConsent.value = result.hasResolution()
         if (!result.hasResolution()) {
             persistAuthorizedToken(result)
         }
@@ -249,21 +301,32 @@ class GoogleAuthManager @Inject constructor(
 
     suspend fun getAccessToken(): String? = withContext(Dispatchers.IO) {
         try {
-            authorizationResult?.takeIf { !it.hasResolution() }?.accessToken?.let {
-                return@withContext it
+            val current = authorizationResult
+            if (current != null && !current.hasResolution() &&
+                hasAllRequiredDriveScopes(current.grantedScopes.orEmpty())
+            ) {
+                current.accessToken?.takeIf { it.isNotBlank() }?.let {
+                    return@withContext it
+                }
             }
 
             val persisted = tokenStorage.getAccessToken()
-            if (persisted != null) {
-                if (tokenStorage.isTokenExpired()) {
+            if (persisted != null && tokenStorage.hasGrantedScopes(REQUIRED_DRIVE_SCOPE_URIS)) {
+                if (tokenStorage.isTokenStale()) {
                     if (refreshAccessToken()) {
                         return@withContext tokenStorage.getAccessToken()
                     }
-                    return@withContext null
+                    if (_needsDriveConsent.value || tokenStorage.isTokenExpired()) {
+                        tokenStorage.clearToken()
+                        return@withContext null
+                    }
                 }
                 return@withContext persisted
             }
+            if (persisted != null) tokenStorage.clearToken()
             null
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to obtain Drive access token", e)
             null
@@ -272,17 +335,29 @@ class GoogleAuthManager @Inject constructor(
 
     suspend fun refreshAccessToken(): Boolean = withContext(Dispatchers.IO) {
         try {
-            authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
-            if (authorizationResult?.hasResolution() == true) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            val result = authorizationClient.authorize(buildDriveAuthRequest()).await()
+            authorizationResult = result
+            if (result.hasResolution()) {
+                authorizationResolution = result.pendingIntent
                 _needsDriveConsent.value = true
                 return@withContext false
             }
-            persistAuthorizedToken(authorizationResult)
+            persistAuthorizedToken(result)
         } catch (e: ApiException) {
-            if (e.status.resolution != null) _needsDriveConsent.value = true
+            authorizationResult = null
+            authorizationResolution = e.status.resolution
+            _needsDriveConsent.value = authorizationResolution != null
             Log.w(TAG, "Drive token refresh failed (${e.status.statusCode})", e)
             false
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
             Log.e(TAG, "Drive token refresh failed", e)
             false
         }
@@ -290,13 +365,15 @@ class GoogleAuthManager @Inject constructor(
 
     fun invalidateAuthorization() {
         authorizationResult = null
+        authorizationResolution = null
+        _needsDriveConsent.value = false
     }
 
     fun clearPersistedAccessToken() {
         tokenStorage.clearToken()
     }
 
-    suspend fun signOut() = withContext(Dispatchers.IO) {
+    suspend fun signOut() = withContext(Dispatchers.IO + NonCancellable) {
         try {
             CredentialManager.create(context)
                 .clearCredentialState(ClearCredentialStateRequest())
@@ -318,6 +395,7 @@ class GoogleAuthManager @Inject constructor(
 
             tokenStorage.clearAll()
             authorizationResult = null
+            authorizationResolution = null
             _currentAccount.value = null
             _isSignedIn.value = false
             _needsDriveConsent.value = false
@@ -341,6 +419,8 @@ class GoogleAuthManager @Inject constructor(
             false
         } catch (e: GetCredentialCancellationException) {
             false
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Failed to restore Google session", e)
             false
@@ -353,29 +433,55 @@ class GoogleAuthManager @Inject constructor(
      * version, this returns false and the settings screen can request it later.
      */
     suspend fun restoreSessionSilently(): Boolean = withContext(Dispatchers.IO) {
-        if (_isSignedIn.value && authorizationResult?.accessToken != null) return@withContext true
+        val active = authorizationResult
+        if (_isSignedIn.value && active?.accessToken != null &&
+            hasAllRequiredDriveScopes(active.grantedScopes.orEmpty())
+        ) return@withContext true
+        _isSignedIn.value = false
         if (configuredWebClientId() == null || !tokenStorage.hasAccountInfo()) return@withContext false
 
         val storedAccount = tokenStorage.getStoredAccount() ?: return@withContext false
         _currentAccount.value = storedAccount
 
         try {
-            authorizationResult = authorizationClient.authorize(buildDriveAuthRequest()).await()
-            if (authorizationResult?.hasResolution() == true) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
+            val result = authorizationClient.authorize(buildDriveAuthRequest()).await()
+            authorizationResult = result
+            if (result.hasResolution()) {
+                authorizationResolution = result.pendingIntent
                 _needsDriveConsent.value = true
                 return@withContext false
             }
-            if (persistAuthorizedToken(authorizationResult)) {
+            if (persistAuthorizedToken(result)) {
                 _isSignedIn.value = true
                 return@withContext true
             }
+        } catch (e: ApiException) {
+            authorizationResult = null
+            authorizationResolution = e.status.resolution
+            _needsDriveConsent.value = authorizationResolution != null
+            Log.w(TAG, "Silent Drive authorization failed (${e.status.statusCode})", e)
+            if (authorizationResolution != null) {
+                tokenStorage.clearToken()
+                return@withContext false
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            authorizationResult = null
+            authorizationResolution = null
+            _needsDriveConsent.value = false
             Log.w(TAG, "Silent Drive authorization failed", e)
         }
 
         // A non-expired cached token can keep existing features alive, but after
         // this release tokens are normally refreshed with both required scopes.
-        if (tokenStorage.hasToken() && !tokenStorage.isTokenExpired()) {
+        if (tokenStorage.hasToken() &&
+            tokenStorage.hasGrantedScopes(REQUIRED_DRIVE_SCOPE_URIS) &&
+            !tokenStorage.isTokenExpired()
+        ) {
             _isSignedIn.value = true
             return@withContext true
         }

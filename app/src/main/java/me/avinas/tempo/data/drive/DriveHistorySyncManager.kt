@@ -3,7 +3,9 @@ package me.avinas.tempo.data.drive
 import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -50,14 +52,15 @@ class DriveHistorySyncManager @Inject constructor(
         context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
     }
 
-    val deviceId: String
-        get() {
-            val existing = statePrefs.getString(KEY_DEVICE_ID, null)
-            if (!existing.isNullOrBlank()) return existing
-            val generated = UUID.randomUUID().toString()
-            statePrefs.edit().putString(KEY_DEVICE_ID, generated).apply()
-            return generated
+    val deviceId: String by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val existing = statePrefs.getString(KEY_DEVICE_ID, null)
+        if (existing != null && DriveHistoryProtocol.isValidDeviceId(existing)) return@lazy existing
+        val generated = UUID.randomUUID().toString()
+        check(statePrefs.edit().putString(KEY_DEVICE_ID, generated).commit()) {
+            "Could not persist Tempo's Drive device identity"
         }
+        generated
+    }
 
     val deviceName: String
         get() = "Tempo Android"
@@ -83,10 +86,14 @@ class DriveHistorySyncManager @Inject constructor(
         }
     }
 
-    suspend fun syncNow(force: Boolean = false): DriveHistorySyncResult = mutex.withLock {
+    suspend fun disableSync() = mutex.withLock {
+        settingsManager.setEnabled(false)
+    }
+
+    suspend fun syncNow(): DriveHistorySyncResult = mutex.withLock {
         withContext(Dispatchers.IO) {
             val settings = settingsManager.settings.first()
-            if (!settings.enabled && !force) {
+            if (!settings.enabled) {
                 return@withContext DriveHistorySyncResult.Disabled
             }
 
@@ -124,6 +131,11 @@ class DriveHistorySyncManager @Inject constructor(
                     duplicates = download.skipped,
                     replaced = download.replaced
                 )
+            } catch (e: CancellationException) {
+                withContext(NonCancellable) {
+                    settingsManager.markFailure("Cross-device history sync was cancelled")
+                }
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "History sync failed", e)
                 val message = e.message ?: "Cross-device history sync failed"
@@ -266,40 +278,47 @@ class DriveHistorySyncManager @Inject constructor(
 
     private suspend fun localEventToProtocol(event: ListeningEvent): DriveHistoryEvent? {
         val track = database.trackDao().getTrackById(event.track_id) ?: return null
+        val title = track.title.trim().take(1_000).takeIf { it.isNotBlank() } ?: return null
+        val artist = track.artist.trim().take(1_000).takeIf { it.isNotBlank() } ?: return null
+        if (event.timestamp !in 1..DriveHistoryProtocol.MAX_WIRE_INTEGER) return null
         val durationMs = (event.estimatedDurationMs ?: track.duration ?: event.playDuration)
             .coerceAtLeast(event.playDuration)
             .coerceAtLeast(0L)
+            .coerceAtMost(DriveHistoryProtocol.MAX_WIRE_INTEGER)
         val sourceApp = event.source
             .removePrefix("desktop:")
             .removePrefix("browser:")
             .ifBlank { "android" }
+            .take(1_000)
+        val source = event.source.ifBlank { "android" }.take(1_000)
 
         return DriveHistoryEvent(
             eventId = DriveHistoryProtocol.createEventId(
                 deviceId = deviceId,
                 localEventId = event.id,
                 timestampUtc = event.timestamp,
-                title = track.title,
-                artist = track.artist
+                title = title,
+                artist = artist
             ),
-            title = track.title,
-            artist = track.artist,
-            album = track.album,
+            title = title,
+            artist = artist,
+            album = track.album?.trim()?.take(1_000)?.takeIf { it.isNotBlank() },
             timestampUtc = event.timestamp,
             durationMs = durationMs,
-            listenedMs = event.playDuration.coerceAtLeast(0L),
+            listenedMs = event.playDuration.coerceIn(0L, DriveHistoryProtocol.MAX_WIRE_INTEGER),
             sourceApp = sourceApp,
-            source = event.source,
+            source = source,
             skipped = event.wasSkipped,
             replayCount = if (event.isReplay) 1 else 0,
             completionPercentage = event.completionPercentage.coerceIn(0, 100),
             pauseCount = event.pauseCount.coerceAtLeast(0),
             seekCount = event.seekCount.coerceAtLeast(0),
-            sessionId = event.sessionId,
+            sessionId = event.sessionId?.take(1_000),
             site = null,
-            contentType = track.contentType,
-            volumeLevel = event.volumeLevel,
-            totalPauseDurationMs = event.totalPauseDurationMs.coerceAtLeast(0L),
+            contentType = track.contentType.ifBlank { "MUSIC" }.take(1_000),
+            volumeLevel = event.volumeLevel?.coerceIn(0, 100),
+            totalPauseDurationMs = event.totalPauseDurationMs
+                .coerceIn(0L, DriveHistoryProtocol.MAX_WIRE_INTEGER),
             positionUpdatesCount = event.positionUpdatesCount.coerceAtLeast(0)
         )
     }
@@ -323,10 +342,14 @@ class DriveHistorySyncManager @Inject constructor(
         var replaced = 0
 
         for (file in files.sortedBy { it.createdAt }) {
-            val fileGeneration = file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION]
-                ?.toLongOrNull()
-                ?.coerceAtLeast(0L)
-                ?: 0L
+            val rawGeneration = file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION]
+            val parsedGeneration = rawGeneration?.toLongOrNull()
+            if (rawGeneration != null && (parsedGeneration == null || parsedGeneration < 0L)) {
+                Log.w(TAG, "Skipping history file with an invalid generation: ${file.fileName}")
+                maxCreated = maxOf(maxCreated, file.createdAt)
+                continue
+            }
+            val fileGeneration = parsedGeneration ?: 0L
             if (fileGeneration < acceptedGeneration) {
                 // Pre-delete data (including an upload that finished after the
                 // delete request) is never allowed to resurrect. Cleanup is best
@@ -338,7 +361,20 @@ class DriveHistorySyncManager @Inject constructor(
             }
 
             val sourceDeviceId = file.appProperties[DriveHistoryProtocol.APP_PROPERTY_DEVICE_ID]
-            if (sourceDeviceId == deviceId) {
+                ?.takeIf(DriveHistoryProtocol::isValidDeviceId)
+            val metadataValid = file.fileName.startsWith(DriveHistoryProtocol.FILE_PREFIX) &&
+                file.appProperties[DriveHistoryProtocol.APP_PROPERTY_KIND] == DriveHistoryProtocol.KIND_HISTORY_BATCH &&
+                file.appProperties[DriveHistoryProtocol.APP_PROPERTY_SCHEMA] == DriveHistoryProtocol.SCHEMA_VERSION.toString() &&
+                file.appProperties[DriveHistoryProtocol.APP_PROPERTY_SHA256]
+                    ?.matches(Regex("^[0-9a-f]{64}$")) == true &&
+                sourceDeviceId != null
+            if (!metadataValid) {
+                Log.w(TAG, "Skipping history file with invalid Tempo metadata: ${file.fileName}")
+                maxCreated = maxOf(maxCreated, file.createdAt)
+                continue
+            }
+            val remoteDeviceId = requireNotNull(sourceDeviceId)
+            if (remoteDeviceId == deviceId) {
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
@@ -346,15 +382,28 @@ class DriveHistorySyncManager @Inject constructor(
             // Network/API failures are retryable. Do not move the created-time
             // cursor past a file we did not actually obtain, otherwise after the
             // 24-hour overlap expires that batch could be lost forever.
-            val bytes = appDataClient.download(file.fileId)
-
             // A permanently malformed/oversized payload must not block all later
             // history forever. Treat that specific file as consumed, but never do
             // the same for a transient download failure above.
             val batch = try {
+                val bytes = appDataClient.download(file)
                 DriveHistoryProtocol.decodeCompressed(bytes)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: DriveException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Skipping malformed history batch ${file.fileName}", e)
+                maxCreated = maxOf(maxCreated, file.createdAt)
+                continue
+            }
+            val sourcePlatform = file.appProperties[DriveHistoryProtocol.APP_PROPERTY_PLATFORM]
+            val expectedName = DriveHistoryProtocol.fileName(remoteDeviceId, batch.batchId, fileGeneration)
+            if (batch.sourceDeviceId != remoteDeviceId ||
+                sourcePlatform != batch.sourcePlatform ||
+                file.fileName != expectedName
+            ) {
+                Log.w(TAG, "Skipping history batch whose payload does not match Drive metadata: ${file.fileName}")
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
@@ -365,7 +414,7 @@ class DriveHistorySyncManager @Inject constructor(
 
             val incoming = mutableListOf<ListeningEvent>()
             for (event in batch.events) {
-                protocolEventToLocal(event)?.let(incoming::add)
+                protocolEventToLocal(event, batch.sourceDeviceId)?.let(incoming::add)
             }
 
             // Resolver/database failures are not safe to skip. Let them abort this
@@ -384,7 +433,10 @@ class DriveHistorySyncManager @Inject constructor(
         return ImportSummary(inserted, skipped, replaced)
     }
 
-    private suspend fun protocolEventToLocal(event: DriveHistoryEvent): ListeningEvent? {
+    private suspend fun protocolEventToLocal(
+        event: DriveHistoryEvent,
+        sourceDeviceId: String
+    ): ListeningEvent? {
         if (event.timestampUtc <= 0L || event.title.isBlank() || event.artist.isBlank()) return null
 
         val resolution = trackResolver.resolve(
@@ -403,9 +455,7 @@ class DriveHistorySyncManager @Inject constructor(
             timestamp = event.timestampUtc,
             playDuration = listenedMs,
             completionPercentage = event.completionPercentage.coerceIn(0, 100),
-            source = event.source.ifBlank {
-                "drive:${event.sourceApp.ifBlank { "unknown" }}"
-            },
+            source = "drive:$sourceDeviceId:${event.source.ifBlank { event.sourceApp }}",
             wasSkipped = event.skipped,
             isReplay = event.replayCount > 0,
             estimatedDurationMs = event.durationMs.takeIf { it > 0L },

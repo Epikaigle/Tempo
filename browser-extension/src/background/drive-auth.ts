@@ -63,19 +63,36 @@ export async function disconnectDriveAuth(): Promise<void> {
   }
 
   const token = await getChromeAuthToken(false).catch(() => null);
-  if (token) {
-    try {
-      await new Promise<void>((resolve) => {
-        const api = chrome.identity as any;
-        if (typeof api.removeCachedAuthToken !== 'function') {
-          resolve();
-          return;
-        }
-        const result = api.removeCachedAuthToken({ token }, () => resolve());
-        if (result && typeof result.then === 'function') result.then(() => resolve()).catch(() => resolve());
-      });
-    } catch { /* best effort */ }
+  if (token) await invalidateDriveAccessToken(token);
+}
+
+/** Remove only the unusable short-lived token; account-bound sync state stays intact. */
+export async function invalidateDriveAccessToken(accessToken: string): Promise<void> {
+  if (isFirefoxBuild()) {
+    const stored = await loadFirefoxAuth().catch(() => null);
+    if (!stored || stored.accessToken === accessToken) {
+      await chrome.storage.local.remove(FIREFOX_AUTH_STORAGE_KEY);
+    }
+    return;
   }
+
+  try {
+    await new Promise<void>((resolve) => {
+      const api = chrome.identity as any;
+      if (typeof api.removeCachedAuthToken !== 'function') {
+        resolve();
+        return;
+      }
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const result = api.removeCachedAuthToken({ token: accessToken }, done);
+      if (result && typeof result.then === 'function') result.then(done).catch(done);
+    });
+  } catch { /* best effort */ }
 }
 
 async function getChromeSession(interactive: boolean): Promise<DriveAuthSession | null> {
@@ -87,6 +104,7 @@ async function getChromeSession(interactive: boolean): Promise<DriveAuthSession 
   // transient userinfo failure could make a later account switch look safe.
   const accountEmail = await fetchGoogleEmail(token);
   if (!accountEmail) {
+    await invalidateDriveAccessToken(token);
     if (!interactive) return null;
     throw new Error('Google account identity could not be verified. Try connecting again.');
   }

@@ -452,7 +452,10 @@ export async function hasRecentPlay(
         const play = cursor.value as Play;
         const sameOriginDevice = !!incomingOriginDeviceId &&
           play.originDeviceId === incomingOriginDeviceId;
-        if (!sameOriginDevice && play.title === title && play.artist === artist) {
+        if (!sameOriginDevice &&
+          play.title.trim().toLowerCase() === title.trim().toLowerCase() &&
+          play.artist.trim().toLowerCase() === artist.trim().toLowerCase()
+        ) {
           found = true;
         } else {
           cursor.continue();

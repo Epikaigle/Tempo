@@ -25,6 +25,7 @@ object DriveHistoryProtocol {
     const val APP_PROPERTY_DEVICE_ID = "source_device_id"
     const val APP_PROPERTY_PLATFORM = "source_platform"
     const val APP_PROPERTY_GENERATION = "tempo_generation"
+    const val APP_PROPERTY_SHA256 = "tempo_sha256"
     const val KIND_HISTORY_BATCH = "history_batch"
 
     // Keep hostile/corrupt Drive files from forcing unbounded allocations. These
@@ -34,9 +35,13 @@ object DriveHistoryProtocol {
     const val MAX_DECOMPRESSED_BYTES = 10 * 1024 * 1024
     const val MAX_EVENTS_PER_BATCH = 1_000
     private const val MAX_PRIMARY_TEXT_LENGTH = 1_000
+    const val MAX_WIRE_INTEGER = 9_007_199_254_740_991L
+    private val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
+    private val DEVICE_ID_PATTERN = Regex("^[A-Za-z0-9._-]{1,200}$")
+    private val PLATFORM_PATTERN = Regex("^[A-Za-z0-9._-]{1,100}$")
 
     /** Kept for callers that need a one-off identifier outside retryable uploads. */
-    fun newBatchId(): String = UUID.randomUUID().toString()
+    fun newBatchId(): String = sha256(UUID.randomUUID().toString())
 
     /**
      * Generation is the Google-server timestamp of the deletion marker this
@@ -44,8 +49,12 @@ object DriveHistoryProtocol {
      * metadata so a post-delete re-seed can never collide with an old immutable
      * batch that happens to contain the same deterministic event IDs.
      */
-    fun fileName(deviceId: String, batchId: String, generation: Long = 0L): String =
-        "${FILE_PREFIX}g${generation}_${deviceId}_${batchId}.json.gz"
+    fun fileName(deviceId: String, batchId: String, generation: Long = 0L): String {
+        require(isValidDeviceId(deviceId)) { "Invalid Tempo Drive device id" }
+        require(SHA256_PATTERN.matches(batchId)) { "Invalid Tempo Drive batch id" }
+        require(generation >= 0L) { "Tempo Drive generation cannot be negative" }
+        return "${FILE_PREFIX}g${generation}_${deviceId}_${batchId}.json.gz"
+    }
 
     /**
      * Deterministic batch id derived only from the ordered event ids.
@@ -56,6 +65,9 @@ object DriveHistoryProtocol {
      */
     fun createBatchId(events: List<DriveHistoryEvent>): String {
         require(events.isNotEmpty()) { "A history batch cannot be empty" }
+        require(events.all { SHA256_PATTERN.matches(it.eventId) }) {
+            "A history batch contains an invalid event id"
+        }
         return sha256(
             buildString {
                 append("tempo-batch-v1")
@@ -80,6 +92,10 @@ object DriveHistoryProtocol {
         title: String,
         artist: String
     ): String {
+        require(isValidDeviceId(deviceId)) { "Invalid Tempo Drive device id" }
+        require(localEventId >= 0L) { "Tempo local event id cannot be negative" }
+        require(timestampUtc in 1..MAX_WIRE_INTEGER) { "Invalid Tempo event timestamp" }
+        require(title.isNotBlank() && artist.isNotBlank()) { "Tempo event identity is incomplete" }
         val canonical = buildString {
             append("tempo-history-v1|")
             append(deviceId)
@@ -96,6 +112,7 @@ object DriveHistoryProtocol {
     }
 
     fun encodeCompressed(batch: DriveHistoryBatch): ByteArray {
+        validateBatch(batch)
         val json = JSONObject().apply {
             put("schema_version", batch.schemaVersion)
             put("batch_id", batch.batchId)
@@ -143,14 +160,14 @@ object DriveHistoryProtocol {
             }
         }
         val root = JSONObject(String(jsonBytes, Charsets.UTF_8))
-        val schema = root.optInt("schema_version", -1)
+        val schema = root.requireInt("schema_version", 0, Int.MAX_VALUE)
         require(schema == SCHEMA_VERSION) {
             "Unsupported Tempo history schema: $schema"
         }
 
-        val batchId = root.optString("batch_id")
-        val sourceDeviceId = root.optString("source_device_id")
-        require(batchId.isNotBlank() && sourceDeviceId.isNotBlank()) {
+        val batchId = root.requireString("batch_id", 64)
+        val sourceDeviceId = root.requireString("source_device_id", 200)
+        require(SHA256_PATTERN.matches(batchId) && isValidDeviceId(sourceDeviceId)) {
             "Malformed Tempo Drive history batch identity"
         }
 
@@ -160,25 +177,19 @@ object DriveHistoryProtocol {
         }
         val events = ArrayList<DriveHistoryEvent>(eventsJson.length())
         for (index in 0 until eventsJson.length()) {
-            val event = eventFromJson(eventsJson.getJSONObject(index))
-            if (
-                event.eventId.isNotBlank() &&
-                event.title.isNotBlank() && event.title.length <= MAX_PRIMARY_TEXT_LENGTH &&
-                event.artist.isNotBlank() && event.artist.length <= MAX_PRIMARY_TEXT_LENGTH
-            ) {
-                events.add(event)
-            }
+            events.add(eventFromJson(eventsJson.getJSONObject(index)))
         }
-
-        return DriveHistoryBatch(
+        val batch = DriveHistoryBatch(
             schemaVersion = schema,
             batchId = batchId,
             sourceDeviceId = sourceDeviceId,
-            sourceDeviceName = root.optString("source_device_name", "Tempo device"),
-            sourcePlatform = root.optString("source_platform", "unknown"),
-            createdAtUtc = root.optLong("created_at_utc", 0L),
+            sourceDeviceName = root.requireString("source_device_name", MAX_PRIMARY_TEXT_LENGTH),
+            sourcePlatform = root.requireString("source_platform", 100),
+            createdAtUtc = root.requireLong("created_at_utc", 1L, MAX_WIRE_INTEGER),
             events = events
         )
+        validateBatch(batch)
+        return batch
     }
 
     private fun eventToJson(event: DriveHistoryEvent): JSONObject = JSONObject().apply {
@@ -205,35 +216,113 @@ object DriveHistoryProtocol {
     }
 
     private fun eventFromJson(json: JSONObject): DriveHistoryEvent = DriveHistoryEvent(
-        eventId = json.optString("event_id"),
-        title = json.optString("title"),
-        artist = json.optString("artist"),
+        eventId = json.requireString("event_id", 64).also {
+            require(SHA256_PATTERN.matches(it)) { "Malformed Tempo Drive event id" }
+        },
+        title = json.requireString("title", MAX_PRIMARY_TEXT_LENGTH),
+        artist = json.requireString("artist", MAX_PRIMARY_TEXT_LENGTH),
         album = json.optNullableString("album"),
-        timestampUtc = json.optLong("timestamp_utc", 0L),
-        durationMs = json.optLong("duration_ms", 0L).coerceAtLeast(0L),
-        listenedMs = json.optLong("listened_ms", 0L).coerceAtLeast(0L),
-        sourceApp = json.optString("source_app", "unknown"),
-        source = json.optString("source", "unknown"),
-        skipped = json.optBoolean("skipped", false),
-        replayCount = json.optInt("replay_count", 0).coerceAtLeast(0),
-        completionPercentage = json.optInt("completion_percentage", 0).coerceIn(0, 100),
-        pauseCount = json.optInt("pause_count", 0).coerceAtLeast(0),
-        seekCount = json.optInt("seek_count", 0).coerceAtLeast(0),
+        timestampUtc = json.requireLong("timestamp_utc", 1L, MAX_WIRE_INTEGER),
+        durationMs = json.requireLong("duration_ms", 0L, MAX_WIRE_INTEGER),
+        listenedMs = json.requireLong("listened_ms", 0L, MAX_WIRE_INTEGER),
+        sourceApp = json.requireString("source_app", MAX_PRIMARY_TEXT_LENGTH),
+        source = json.requireString("source", MAX_PRIMARY_TEXT_LENGTH),
+        skipped = json.requireBoolean("skipped"),
+        replayCount = json.requireInt("replay_count", 0, Int.MAX_VALUE),
+        completionPercentage = json.requireInt("completion_percentage", 0, 100),
+        pauseCount = json.requireInt("pause_count", 0, Int.MAX_VALUE),
+        seekCount = json.requireInt("seek_count", 0, Int.MAX_VALUE),
         sessionId = json.optNullableString("session_id"),
         site = json.optNullableString("site"),
-        contentType = json.optString("content_type", "MUSIC").ifBlank { "MUSIC" },
-        volumeLevel = if (json.isNull("volume_level")) null else json.optInt("volume_level"),
-        totalPauseDurationMs = json.optLong("total_pause_duration_ms", 0L).coerceAtLeast(0L),
-        positionUpdatesCount = json.optInt("position_updates_count", 0).coerceAtLeast(0)
+        contentType = json.requireString("content_type", MAX_PRIMARY_TEXT_LENGTH),
+        volumeLevel = if (json.has("volume_level") && json.isNull("volume_level")) {
+            null
+        } else {
+            json.requireInt("volume_level", 0, 100)
+        },
+        totalPauseDurationMs = json.requireLong("total_pause_duration_ms", 0L, MAX_WIRE_INTEGER),
+        positionUpdatesCount = json.requireInt("position_updates_count", 0, Int.MAX_VALUE)
     )
+
+    private fun validateBatch(batch: DriveHistoryBatch) {
+        require(batch.schemaVersion == SCHEMA_VERSION) { "Unsupported Tempo history schema" }
+        require(SHA256_PATTERN.matches(batch.batchId)) { "Malformed Tempo Drive batch id" }
+        require(isValidDeviceId(batch.sourceDeviceId)) { "Malformed Tempo Drive device id" }
+        require(batch.sourceDeviceName.isNotBlank() && batch.sourceDeviceName.length <= MAX_PRIMARY_TEXT_LENGTH) {
+            "Malformed Tempo Drive device name"
+        }
+        require(PLATFORM_PATTERN.matches(batch.sourcePlatform)) { "Malformed Tempo Drive source platform" }
+        require(batch.createdAtUtc in 1..MAX_WIRE_INTEGER) { "Malformed Tempo Drive batch timestamp" }
+        require(batch.events.isNotEmpty()) { "Tempo Drive history batch is empty" }
+        require(batch.events.size <= MAX_EVENTS_PER_BATCH) { "Tempo Drive history batch contains too many events" }
+        batch.events.forEach { event ->
+            require(SHA256_PATTERN.matches(event.eventId)) { "Malformed Tempo Drive event id" }
+            require(event.title.isNotBlank() && event.title.length <= MAX_PRIMARY_TEXT_LENGTH) { "Malformed Tempo event title" }
+            require(event.artist.isNotBlank() && event.artist.length <= MAX_PRIMARY_TEXT_LENGTH) { "Malformed Tempo event artist" }
+            require(event.timestampUtc in 1..MAX_WIRE_INTEGER) { "Malformed Tempo event timestamp" }
+            require(event.durationMs in 0..MAX_WIRE_INTEGER && event.listenedMs in 0..MAX_WIRE_INTEGER) {
+                "Malformed Tempo event duration"
+            }
+            require(event.sourceApp.isNotBlank() && event.sourceApp.length <= MAX_PRIMARY_TEXT_LENGTH &&
+                event.source.isNotBlank() && event.source.length <= MAX_PRIMARY_TEXT_LENGTH
+            ) { "Malformed Tempo event source" }
+            require(event.album == null || event.album.length <= MAX_PRIMARY_TEXT_LENGTH) { "Malformed Tempo event album" }
+            require(event.replayCount >= 0 && event.completionPercentage in 0..100 &&
+                event.pauseCount >= 0 && event.seekCount >= 0 && event.positionUpdatesCount >= 0
+            ) { "Malformed Tempo event counters" }
+            require(event.sessionId == null || event.sessionId.length <= MAX_PRIMARY_TEXT_LENGTH) { "Malformed Tempo event session" }
+            require(event.site == null || event.site.length <= MAX_PRIMARY_TEXT_LENGTH) { "Malformed Tempo event site" }
+            require(event.contentType.isNotBlank() && event.contentType.length <= MAX_PRIMARY_TEXT_LENGTH) {
+                "Malformed Tempo event content type"
+            }
+            require(event.totalPauseDurationMs in 0..MAX_WIRE_INTEGER) { "Malformed Tempo event pause duration" }
+            require(event.volumeLevel == null || event.volumeLevel in 0..100) { "Malformed Tempo event volume" }
+        }
+        require(createBatchId(batch.events) == batch.batchId) {
+            "Tempo Drive history batch id does not match its events"
+        }
+    }
+
+    fun isValidDeviceId(value: String): Boolean = DEVICE_ID_PATTERN.matches(value)
 
     private fun JSONObject.putNullable(key: String, value: Any?) {
         if (value == null) put(key, JSONObject.NULL) else put(key, value)
     }
 
     private fun JSONObject.optNullableString(key: String): String? {
-        if (!has(key) || isNull(key)) return null
-        return optString(key).takeIf { it.isNotBlank() }
+        require(has(key)) { "Malformed Tempo field: $key" }
+        if (isNull(key)) return null
+        val value = get(key)
+        require(value is String && value.length <= MAX_PRIMARY_TEXT_LENGTH) { "Malformed Tempo field: $key" }
+        return value.takeIf { it.isNotBlank() }
+    }
+
+    private fun JSONObject.requireString(key: String, maxLength: Int): String {
+        val value = get(key)
+        require(value is String && value.isNotBlank() && value.length <= maxLength) {
+            "Malformed Tempo field: $key"
+        }
+        return value
+    }
+
+    private fun JSONObject.requireLong(key: String, min: Long, max: Long): Long {
+        val number = get(key)
+        require(number is Number) { "Malformed Tempo field: $key" }
+        val double = number.toDouble()
+        val value = number.toLong()
+        require(double.isFinite() && value.toDouble() == double && value in min..max) {
+            "Malformed Tempo field: $key"
+        }
+        return value
+    }
+
+    private fun JSONObject.requireInt(key: String, min: Int, max: Int): Int =
+        requireLong(key, min.toLong(), max.toLong()).toInt()
+
+    private fun JSONObject.requireBoolean(key: String): Boolean {
+        val value = get(key)
+        require(value is Boolean) { "Malformed Tempo field: $key" }
+        return value
     }
 
     private fun sha256(value: String): String =

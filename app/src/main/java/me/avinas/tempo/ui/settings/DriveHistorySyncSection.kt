@@ -57,13 +57,16 @@ import me.avinas.tempo.worker.DriveHistorySyncWorker
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
 import javax.inject.Inject
 
 @HiltViewModel
 class DriveHistorySyncViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settingsManager: DriveHistorySyncSettingsManager,
-    private val syncManager: DriveHistorySyncManager
+    private val syncManager: DriveHistorySyncManager,
+    private val applicationScope: CoroutineScope
 ) : ViewModel() {
     val settings: StateFlow<DriveHistorySyncSettings> = settingsManager.settings.stateIn(
         viewModelScope,
@@ -73,76 +76,70 @@ class DriveHistorySyncViewModel @Inject constructor(
 
     private val _operation = MutableStateFlow<DriveHistoryUiOperation>(DriveHistoryUiOperation.Idle)
     val operation: StateFlow<DriveHistoryUiOperation> = _operation.asStateFlow()
+    private val operationRunning = AtomicBoolean(false)
 
     fun setEnabled(enabled: Boolean) {
-        viewModelScope.launch {
+        launchExclusive {
             if (enabled) {
-                _operation.value = DriveHistoryUiOperation.Running
-                try {
-                    if (!syncManager.enableSync()) {
-                        _operation.value = DriveHistoryUiOperation.Error(
-                            "Google Drive authorization is required before cross-device sync can be enabled."
-                        )
-                        return@launch
-                    }
-                    DriveHistorySyncWorker.schedule(context)
-                    _operation.value = when (val result = syncManager.syncNow()) {
-                        DriveHistorySyncResult.Disabled -> DriveHistoryUiOperation.Idle
-                        is DriveHistorySyncResult.RemoteDisabled -> DriveHistoryUiOperation.Error(result.message)
-                        is DriveHistorySyncResult.Success -> DriveHistoryUiOperation.Success(
-                            "Synced ${result.uploaded} outgoing and ${result.imported} incoming plays"
-                        )
-                        is DriveHistorySyncResult.Error -> DriveHistoryUiOperation.Error(result.message)
-                    }
-                } catch (e: Exception) {
-                    _operation.value = DriveHistoryUiOperation.Error(
-                        e.message ?: "Failed to enable cross-device sync"
+                if (!syncManager.enableSync()) {
+                    return@launchExclusive DriveHistoryUiOperation.Error(
+                        "Google Drive authorization is required before cross-device sync can be enabled."
                     )
                 }
+                DriveHistorySyncWorker.schedule(context)
+                syncResultToUi(syncManager.syncNow())
             } else {
-                settingsManager.setEnabled(false)
+                syncManager.disableSync()
                 DriveHistorySyncWorker.cancel(context)
-                _operation.value = DriveHistoryUiOperation.Idle
+                DriveHistoryUiOperation.Idle
             }
         }
     }
 
     fun syncNow() {
-        if (_operation.value is DriveHistoryUiOperation.Running) return
-        viewModelScope.launch {
-            _operation.value = DriveHistoryUiOperation.Running
-            _operation.value = when (val result = syncManager.syncNow(force = true)) {
-                DriveHistorySyncResult.Disabled -> DriveHistoryUiOperation.Idle
-                is DriveHistorySyncResult.RemoteDisabled -> {
-                    DriveHistorySyncWorker.cancel(context)
-                    DriveHistoryUiOperation.Error(result.message)
-                }
-                is DriveHistorySyncResult.Success -> DriveHistoryUiOperation.Success(
-                    "Synced ${result.uploaded} outgoing and ${result.imported} incoming plays"
-                )
-                is DriveHistorySyncResult.Error -> DriveHistoryUiOperation.Error(result.message)
-            }
+        launchExclusive {
+            syncResultToUi(syncManager.syncNow())
         }
     }
 
     fun deleteCloudHistory() {
-        if (_operation.value is DriveHistoryUiOperation.Running) return
-        viewModelScope.launch {
-            _operation.value = DriveHistoryUiOperation.Running
-            _operation.value = try {
-                val deleted = syncManager.deleteCloudHistoryAndReset()
-                DriveHistorySyncWorker.cancel(context)
-                DriveHistoryUiOperation.Success(
-                    "Deleted $deleted Tempo history batch${if (deleted == 1) "" else "es"} from Google Drive. Cross-device sync is now off on linked devices as they reconnect."
-                )
-            } catch (e: Exception) {
-                DriveHistoryUiOperation.Error(e.message ?: "Failed to delete synced Drive history")
-            }
+        launchExclusive {
+            val deleted = syncManager.deleteCloudHistoryAndReset()
+            DriveHistorySyncWorker.cancel(context)
+            DriveHistoryUiOperation.Success(
+                "Deleted $deleted Tempo history batch${if (deleted == 1) "" else "es"} from Google Drive. Cross-device sync is now off on linked devices as they reconnect."
+            )
         }
     }
 
     fun clearOperation() {
-        _operation.value = DriveHistoryUiOperation.Idle
+        if (!operationRunning.get()) _operation.value = DriveHistoryUiOperation.Idle
+    }
+
+    private fun launchExclusive(block: suspend () -> DriveHistoryUiOperation) {
+        if (!operationRunning.compareAndSet(false, true)) return
+        _operation.value = DriveHistoryUiOperation.Running
+        applicationScope.launch {
+            _operation.value = try {
+                block()
+            } catch (e: Exception) {
+                DriveHistoryUiOperation.Error(e.message ?: "Google Drive history operation failed")
+            } finally {
+                operationRunning.set(false)
+            }
+        }
+    }
+
+    private fun syncResultToUi(result: DriveHistorySyncResult): DriveHistoryUiOperation = when (result) {
+        DriveHistorySyncResult.Disabled -> DriveHistoryUiOperation.Idle
+        is DriveHistorySyncResult.RemoteDisabled -> {
+            DriveHistorySyncWorker.cancel(context)
+            DriveHistoryUiOperation.Error(result.message)
+        }
+        is DriveHistorySyncResult.Success -> DriveHistoryUiOperation.Success(
+            "Synced ${result.uploaded} outgoing and ${result.imported} incoming plays"
+        )
+        is DriveHistorySyncResult.Error -> DriveHistoryUiOperation.Error(result.message)
     }
 }
 
@@ -179,7 +176,8 @@ fun DriveHistorySyncSection(
                 title = "Sync listening history",
                 subtitle = "Use your private Google Drive app-data space to link Android, desktop and browser devices. No Tempo server is used.",
                 checked = settings.enabled,
-                onCheckedChange = viewModel::setEnabled
+                onCheckedChange = viewModel::setEnabled,
+                enabled = operation !is DriveHistoryUiOperation.Running
             )
 
             if (settings.enabled) {
