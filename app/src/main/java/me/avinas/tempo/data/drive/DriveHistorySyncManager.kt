@@ -78,7 +78,7 @@ class DriveHistorySyncManager @Inject constructor(
             val currentMarker = appDataClient.getHistoryDisableMarkerVersion()
             val acceptedMarker = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L)
             if (currentMarker > acceptedMarker) {
-                resetCursors()
+                resetCursorsLocked()
             }
             statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, currentMarker).apply()
             settingsManager.setEnabled(true)
@@ -203,7 +203,7 @@ class DriveHistorySyncManager @Inject constructor(
         appDataClient.deleteHistoryBatchesBeforeGeneration(currentMarker)
         statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, currentMarker).apply()
         settingsManager.setEnabled(false)
-        resetCursors()
+        resetCursorsLocked()
         return DriveHistorySyncResult.RemoteDisabled(
             "Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history."
         )
@@ -482,7 +482,7 @@ class DriveHistorySyncManager @Inject constructor(
             val deleted = appDataClient.deleteHistoryBatchesBeforeGeneration(markerVersion)
             statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, markerVersion).apply()
             settingsManager.setEnabled(false)
-            resetCursors()
+            resetCursorsLocked()
             deleted
         }
     }
@@ -492,11 +492,28 @@ class DriveHistorySyncManager @Inject constructor(
      * Re-enabling Drive history sync later intentionally republishes locally-owned
      * history if a newer shared deletion marker was acknowledged.
      */
-    fun resetCursors() {
+    private fun resetCursorsLocked() {
         statePrefs.edit()
             .remove(KEY_UPLOAD_CURSOR)
             .remove(KEY_DOWNLOAD_CREATED_CURSOR)
             .apply()
+    }
+
+    /**
+     * Serialize a local import/restore with Drive synchronization and invalidate
+     * both cursors afterwards. Without holding the same mutex as [syncNow], a
+     * worker could advance its upload cursor while Room is being replaced and
+     * permanently skip restored rows whose ids fall behind that cursor.
+     *
+     * Cursors are reset even when the import fails because importers may already
+     * have committed part of the database before reporting an error.
+     */
+    suspend fun <T> withLocalHistoryRestore(block: suspend () -> T): T = mutex.withLock {
+        try {
+            block()
+        } finally {
+            resetCursorsLocked()
+        }
     }
 
     private data class ImportSummary(

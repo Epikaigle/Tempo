@@ -282,13 +282,8 @@ class BackupRestoreViewModel @Inject constructor(
     fun importData(uri: Uri, strategy: ImportConflictStrategy) {
         _showConflictDialog.value = null
         applicationScope.launch {
-            val result = importExportManager.importData(uri, strategy)
-            if (result is ImportExportResult.Success) {
-                // Import/restore can replace Room rows while the Drive upload cursor
-                // lives independently in SharedPreferences. Always invalidate both
-                // Drive cursors after a successful data import so restored rows are
-                // rescanned idempotently instead of being skipped behind stale ids.
-                driveHistorySyncManager.resetCursors()
+            val result = driveHistorySyncManager.withLocalHistoryRestore {
+                importExportManager.importData(uri, strategy)
             }
             _importExportResult.value = result
             // Refresh stats after import
@@ -536,23 +531,24 @@ class BackupRestoreViewModel @Inject constructor(
                 when (downloadResult) {
                     is DriveRestoreResult.Success -> {
                         _driveOperation.value = DriveOperationState.Restoring
-                        
-                        // Import using existing import mechanism
-                        val importResult = importExportManager.importData(
-                            Uri.fromFile(downloadResult.localFile),
-                            strategy
-                        )
-                        
-                        // Cleanup downloaded file
-                        downloadResult.localFile.delete()
-                        
+
+                        val downloadedFile = downloadResult.localFile
+                        // Import using the existing mechanism while excluding Drive
+                        // sync. Always remove the temporary plaintext backup, even
+                        // if import is cancelled or throws unexpectedly.
+                        val importResult = try {
+                            driveHistorySyncManager.withLocalHistoryRestore {
+                                importExportManager.importData(
+                                    Uri.fromFile(downloadedFile),
+                                    strategy
+                                )
+                            }
+                        } finally {
+                            downloadedFile.delete()
+                        }
+
                         when (importResult) {
                             is ImportExportResult.Success -> {
-                                // A restored database can reuse/overlap old Room ids.
-                                // Force the next Drive sync to rescan from a clean
-                                // cursor; deterministic event ids + dedup make replay
-                                // safe, while keeping the old cursor could lose plays.
-                                driveHistorySyncManager.resetCursors()
                                 calculateStats()
                                 loadDriveBackups() // Refresh backup list after restore
                                 _driveOperation.value = DriveOperationState.Success(

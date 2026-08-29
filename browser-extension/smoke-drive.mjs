@@ -64,7 +64,7 @@ const play = {
 console.log('\n[Drive 1] Cross-client identity vectors');
 const eventId = await protocol.eventId('device-1', play);
 check(
-  'event id matches Android/Desktop golden vector',
+  'event id matches Android/extension golden vector',
   eventId === '69bd5521a322b3d1aaeca431b7380bd49f3a28e1c1d1b1dc0a754ca37e6a06b4',
   eventId,
 );
@@ -93,7 +93,7 @@ const event = {
 };
 const batchId = await protocol.deterministicBatchId([event]);
 check(
-  'batch id matches Android/Desktop golden vector',
+  'batch id matches Android/extension golden vector',
   batchId === '785b57b5c9e86c35176a413093df3c9fce37eb266c70485a0f9e8fff66e95d43',
   batchId,
 );

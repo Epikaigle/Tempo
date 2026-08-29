@@ -1,6 +1,6 @@
 # Tempo Drive History Sync Protocol v1
 
-This document defines the cross-client wire contract used by Tempo Android, the browser extension, and Tempo Desktop. It is deliberately transport-focused: each client keeps its own local database model and converts to/from this canonical representation.
+This document defines the cross-client wire contract used by Tempo Android and the browser extension. It is deliberately transport-focused so another compatible client, including a future Tempo Desktop build, can convert its own local database model to and from this canonical representation.
 
 ## Goals
 
