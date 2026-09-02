@@ -7,7 +7,10 @@ import me.avinas.tempo.ui.theme.TempoPrimary
 import me.avinas.tempo.ui.theme.TempoPrimaryDeep
 import me.avinas.tempo.ui.theme.TempoAccentBright
 import me.avinas.tempo.ui.theme.TextOnAccent
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.GoldDark
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
+import me.avinas.tempo.ui.theme.TextTertiary
 import me.avinas.tempo.ui.theme.innerShadow
 import me.avinas.tempo.ui.theme.premiumClickable
 import kotlinx.coroutines.launch
@@ -26,6 +29,10 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TrendingDown
 import androidx.compose.material.icons.filled.MoreVert
@@ -190,7 +197,14 @@ fun StatsScreen(
                 // 2. Stats Items
                 if (!uiState.isLoading && uiState.items.isEmpty()) {
                     item(key = "empty_state") {
-                        if (uiState.searchQuery.isNotBlank()) {
+                        if (uiState.error != null) {
+                            // Display error state if load failed
+                            StatsErrorState(
+                                message = uiState.error.orEmpty(),
+                                onRetry = { viewModel.retry() },
+                                modifier = Modifier.fillParentMaxHeight(0.7f)
+                            )
+                        } else if (uiState.searchQuery.isNotBlank()) {
                             SearchEmptyState(query = uiState.searchQuery)
                         } else {
                             me.avinas.tempo.ui.components.EmptyState(
@@ -264,12 +278,11 @@ fun StatsScreen(
                         GlassStatItem(
                             rank = rank,
                             item = item,
-                            onClick = { 
+                            onClick = {
                                 walkthroughController.dismiss()
-                                resolveNavigation(item, onNavigateToTrack, onNavigateToArtist, onNavigateToAlbum) 
+                                resolveNavigation(item, onNavigateToTrack, onNavigateToArtist, onNavigateToAlbum)
                             }
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
 
@@ -277,7 +290,7 @@ fun StatsScreen(
                 if (uiState.isLoadingMore) {
                     item(key = "loading_more") {
                         Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = TempoRed)
+                            CircularProgressIndicator(color = TempoPrimary)
                         }
                     }
                 }
@@ -298,6 +311,10 @@ fun StatsScreen(
                 modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
             ) {
                 TopAppBar(
+                    navigationIcon = {
+                        // Balance right-side share action to keep title centered
+                        Spacer(modifier = Modifier.width(48.dp))
+                    },
                     title = { 
                         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             Text(stringResource(R.string.stats_screen_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
@@ -334,7 +351,7 @@ fun StatsScreen(
             }
 
             if (uiState.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = TempoRed)
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = TempoPrimary)
             }
         }
 
@@ -399,8 +416,8 @@ fun HeroStatItem(item: Any, onNavigate: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .clickable(onClick = onNavigate),
-        backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.15f), // Reduced from 0.25f for better blend
+            .premiumClickable(onClick = onNavigate),
+        backgroundColor = GoldDark.copy(alpha = 0.15f), // Reduced from 0.25f for better blend
         contentPadding = PaddingValues(16.dp) // Reduced from 24.dp
     ) {
         Row(
@@ -409,7 +426,7 @@ fun HeroStatItem(item: Any, onNavigate: () -> Unit) {
             // Big Image
             Box(contentAlignment = Alignment.Center) {
                 // Glow Layer
-                Box(modifier = Modifier.size(90.dp).clip(CircleShape).background(Color(0xFFF59E0B).copy(alpha = 0.25f))) // Reduced glow size
+                Box(modifier = Modifier.size(90.dp).clip(CircleShape).background(GoldDark.copy(alpha = 0.25f))) // Reduced glow size
                 
                 // Image Layer
                 if (imageUrl != null) {
@@ -422,7 +439,7 @@ fun HeroStatItem(item: Any, onNavigate: () -> Unit) {
                     )
                 } else {
                      Box(modifier = Modifier.size(80.dp).clip(CircleShape).background(Color.DarkGray), contentAlignment = Alignment.Center) {
-                         Text(title.firstOrNull()?.toString() ?: "?", style = MaterialTheme.typography.headlineMedium, color = Color.White)
+                         Text(title.firstOrNull()?.toString() ?: "?", style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
                      }
                 }
             }
@@ -430,10 +447,10 @@ fun HeroStatItem(item: Any, onNavigate: () -> Unit) {
             Spacer(modifier = Modifier.width(20.dp))
             
             Column(modifier = Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelMedium, color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
+                Text(label, style = MaterialTheme.typography.labelMedium, color = GoldDark, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = TextSecondary, maxLines = 1)
             }
 
             val timeMs = when (item) {
@@ -447,7 +464,7 @@ fun HeroStatItem(item: Any, onNavigate: () -> Unit) {
                 text = formatListeningTime(timeMs),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White.copy(alpha = 0.6f)
+                color = TextSecondary
             )
         }
     }
@@ -481,7 +498,7 @@ fun GlassStatItem(rank: Int, item: Any, onClick: () -> Unit) {
     }
 
     val (tintColor, bgAlpha) = when(rank) {
-        1 -> Color(0xFFF59E0B) to 0.15f // Gold
+        1 -> GoldDark to 0.15f // Gold
         2 -> Color(0xFFE879F9) to 0.12f // Dusty Orchid
         3 -> Color(0xFFB45309) to 0.12f // Bronze
         else -> GlassStatItemPalette[(rank - 4) % GlassStatItemPalette.size] to 0.15f // Cycle through palette
@@ -495,7 +512,7 @@ fun GlassStatItem(rank: Int, item: Any, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .clickable(onClick = onClick)
+            .premiumClickable(onClick = onClick)
             .innerShadow(
                 color = if (rank <= 3) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.2f),
                 cornersRadius = 24.dp,
@@ -511,7 +528,7 @@ fun GlassStatItem(rank: Int, item: Any, onClick: () -> Unit) {
                 text = "#$rank",
                 style = MaterialTheme.typography.titleMedium, // Reduced from Large
                 fontWeight = FontWeight.Bold,
-                color = if (rank <= 3) tintColor else Color.White.copy(alpha = 0.7f),
+                color = if (rank <= 3) tintColor else TextSecondary,
                 modifier = Modifier.width(36.dp)
             )
             
@@ -534,11 +551,11 @@ fun GlassStatItem(rank: Int, item: Any, onClick: () -> Unit) {
             
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f), maxLines = 1)
+                Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = TextPrimary, maxLines = 1)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextSecondary, maxLines = 1)
             }
             
-            Text(formatListeningTime(timeMs), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f))
+            Text(formatListeningTime(timeMs), style = MaterialTheme.typography.labelSmall, color = TextSecondary)
         }
     }
 }
@@ -600,7 +617,7 @@ fun StatsTabSelector(selectedTab: StatsTab, onTabSelected: (StatsTab) -> Unit) {
             StatsTab.entries.forEach { tab ->
                 val isSelected = tab == selectedTab
                 val contentColor by animateColorAsState(
-                    targetValue = if (isSelected) TextOnAccent else Color.White.copy(alpha = 0.7f),
+                    targetValue = if (isSelected) TextOnAccent else TextSecondary,
                     label = "tabContentColor"
                 )
 
@@ -679,6 +696,7 @@ private fun StatsSearchField(
         backgroundColor = Color.Black.copy(alpha = 0.5f),
         variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
     ) {
+        val focusManager = LocalFocusManager.current
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxSize()
@@ -686,35 +704,42 @@ private fun StatsSearchField(
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = null,
-                tint = Color(0xFFCAC4D0)
+                tint = TextSecondary
             )
             Spacer(modifier = Modifier.width(10.dp))
             Box(modifier = Modifier.weight(1f)) {
                 if (query.isEmpty()) {
                     Text(
                         text = placeholder,
-                        color = Color(0xFFCAC4D0),
+                        color = TextSecondary,
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }
                 BasicTextField(
                     value = query,
                     onValueChange = onQueryChange,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = TextPrimary),
                     singleLine = true,
-                    cursorBrush = SolidColor(TempoRed),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                    cursorBrush = SolidColor(TempoPrimary),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
             if (query.isNotEmpty()) {
-                IconButton(
-                    onClick = { onQueryChange("") },
-                    modifier = Modifier.size(24.dp)
+                // 48dp touch target for clear button
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .clickable { onQueryChange("") },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = stringResource(R.string.stats_search_clear),
-                        tint = Color(0xFFCAC4D0)
+                        tint = TextSecondary,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -735,15 +760,59 @@ private fun SearchEmptyState(query: String) {
                 imageVector = Icons.Default.Search,
                 contentDescription = null,
                 modifier = Modifier.size(40.dp),
-                tint = Color.White.copy(alpha = 0.4f)
+                tint = TextTertiary
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.stats_search_no_results, query),
                 style = MaterialTheme.typography.bodyLarge,
-                color = Color.White.copy(alpha = 0.7f),
+                color = TextSecondary,
                 textAlign = TextAlign.Center
             )
+        }
+    }
+}
+
+/** Error state view with retry action. */
+@Composable
+private fun StatsErrorState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.TrendingDown,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = TextTertiary
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.stats_error_title),
+                style = MaterialTheme.typography.titleLarge,
+                color = TextPrimary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TempoPrimary,
+                    contentColor = TextOnAccent
+                )
+            ) {
+                Text(stringResource(R.string.stats_error_retry))
+            }
         }
     }
 }
@@ -771,7 +840,7 @@ fun SortBySelector(
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(text = stringResource(R.string.stats_sort_by), style = MaterialTheme.typography.bodySmall, color = Color(0xFFCAC4D0))
+        Text(text = stringResource(R.string.stats_sort_by), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
         Box {
             TextButton(
                 onClick = { expanded = true },
@@ -785,7 +854,7 @@ fun SortBySelector(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Medium,
-                    color = TempoRed
+                    color = TempoPrimary
                 )
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -797,7 +866,7 @@ fun SortBySelector(
                             SortBy.TOTAL_TIME -> stringResource(R.string.stats_sort_total_time)
                         }, fontWeight = if (sortBy == selectedSortBy) FontWeight.Bold else FontWeight.Normal) },
                         onClick = { expanded = false; onSortBySelected(sortBy) },
-                        leadingIcon = if (sortBy == selectedSortBy) { { Text("✓", color = TempoRed) } } else null
+                        leadingIcon = if (sortBy == selectedSortBy) { { Text("✓", color = TempoPrimary) } } else null
                     )
                 }
             }

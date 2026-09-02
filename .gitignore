@@ -8,116 +8,61 @@
 *.dex
 *.class
 
-# Log Files
+# Log & Output Files
 *.log
+build_output.txt
 
-# Android Studio Navigation editor temp files
-.navigation/
-
-# Android Studio captures folder
-captures/
-
-# IntelliJ
+# Android Studio / IntelliJ / VS Code
 *.iml
-.idea/workspace.xml
-.idea/tasks.xml
-.idea/gradle.xml
-.idea/assetWizardSettings.xml
-.idea/dictionaries
-.idea/libraries
-.idea/caches
-.idea/modules.xml
-.idea/runConfigurations.xml
-.idea/misc.xml
-.idea/navEditor.xml
-# .idea/codeStyles is missing on purpose to share code styles
+.idea/
+.vscode/
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
 
 # Keystore files
 *.jks
 *.keystore
 
-# External native build folder generated in Android Studio for NDK projects
-.externalNativeBuild
-.cxx/
-
-# Google Services (oops, better strict than sorry)
+# Google Services & Credentials
 google-services.json
 
-# Environment Variables
+# Environment Variables & Local Configs
 .env
 .env.local
 .env.*.local
 *.local.env
+local.properties
 
 # Gradle files
 .gradle/
 build/
-build_output.txt
+/app/release/
 !gradle/wrapper/gradle-wrapper.jar
 !gradle/wrapper/gradle-wrapper.properties
 
-# Local configuration file (sdk path, etc)
-local.properties
-
-# Proguard
-proguard-rules.pro
-
-# Bundle artifacts
-*.zip
-
-# MacOS
+# MacOS / Windows OS files
 .DS_Store
-
-# Windows
 Thumbs.db
 desktop.ini
 
 # Kotlin
 *.kotlin_module
+.kotlin/
 
-# Documentation
-doc/
-docs/
-
-# Mockups
-MOCKUP/
-SpotlightStoryMockup/
-WidgetMockup/
-Screenshots/
-
-# Landing Page
-web/
-
-# Compressed Files
+# Bundle artifacts / Archives
 *.zip
-/.idea
-/app/release
-.kotlin/sessions/kotlin-compiler-13130970231225510226.salive
-/.kotlin
-*.sh
-desktopplan.md
+*.tar.gz
 
-# Desktop app build artifacts
+# Local shell scripts
+*.sh
+
+# Web & Desktop app build artifacts
+node_modules/
 desktop/node_modules/
 desktop/dist/
 desktop/src-tauri/target/
 desktop/Tempo Desktop/
-/.vscode
-BATTERY_OPTIMIZATION.md
-REDDIT_POST_WINDOWS_SYNC.md
-PRODUCTHUNT_RELAUNCH.md
-/.commandcode
-CHROMEWEBSTORE.md
-ANDROID_APP_VERIFICATION.md
-PERFORMANCE_ISSUES.md
-app/src/test/java/me/avinas/tempo/data/local/Migration49To50Test.kt
-app/src/test/java/me/avinas/tempo/data/stats/TimeRangeTest.kt
-app/src/test/java/me/avinas/tempo/data/stats/TimeRangeTest.kt
+browser-extension/dist/
 
-# Tool cache / generated analysis output
-/.hallmark/
-/graphify-out/
-/.agents
-/.claude
-/.kalakar
-skills-lock.json

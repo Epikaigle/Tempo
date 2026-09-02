@@ -8,10 +8,7 @@ package me.avinas.tempo.ui.details
  * - Zero emojis, 100% SVG vector icons and disciplined layout tokens
  */
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -44,13 +41,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.CallMerge
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Album
+
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
@@ -61,6 +60,8 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Timeline
+import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material.icons.rounded.WbTwilight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -75,7 +76,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -298,11 +302,28 @@ fun SongDetailsContent(
     // Sections below need real playback data, not just an empty engagement row.
     val engagement = uiState.engagement
     val hasPlaybackData = engagement != null && engagement.playCount > 0
+    val hasJourney = trackDetails.firstPlayed != null ||
+        trackDetails.lastPlayed != null ||
+        uiState.engagement?.firstPlayedTimestamp != null ||
+        uiState.habitualHour != null
+    val hasListeningHistory = uiState.listeningHistory.isNotEmpty()
+    val hasAcousticData = uiState.audioFeatures != null
+
+    // Assign sequential numbering for currently visible sections
+    val sectionNumbers = remember(hasPlaybackData, hasJourney, hasListeningHistory, hasAcousticData) {
+        var next = 0
+        mapOf(
+            "odyssey" to hasJourney,
+            "trends" to hasListeningHistory,
+            "acoustic" to hasAcousticData,
+            "playback" to hasPlaybackData,
+        ).mapNotNull { (id, visible) ->
+            if (visible) id to "%02d".format(++next) else null
+        }.toMap()
+    }
 
     DeepOceanBackground {
         Box(modifier = Modifier.fillMaxSize()) {
-            // The room recolors per track: blurred cover-art wash behind all
-            // content. Falls through to the plain DeepOcean base when no art.
             ArtAtmosphereLayer(
                 artUrl = trackDetails.track.albumArtUrl
                     ?.takeIf { it.isNotBlank() }
@@ -320,7 +341,7 @@ fun SongDetailsContent(
                     bottom = 64.dp
                 ),
             ) {
-                // 1. Hero Stage (Artwork, Audio Preview Pill, Title, Artist, Album, Meta)
+                // Hero stage (artwork, preview controls, metadata)
                 item(key = "hero_section") {
                     SongHeroEditorialStage(
                         trackDetails = trackDetails,
@@ -346,7 +367,7 @@ fun SongDetailsContent(
                     )
                 }
 
-                // 2. High-Contrast Master Stats
+                // Summary statistics
                 item(key = "master_stats_masthead") {
                     Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                         MasterStatMasthead(
@@ -357,89 +378,78 @@ fun SongDetailsContent(
                     }
                 }
 
-                // 3. Listening Activity Over Time (Touch-Scrubbable with Micro-Stats)
-                if (uiState.listeningHistory.isNotEmpty()) {
+                // Affinity and library ranking
+                if (hasPlaybackData) {
+                    item(key = "listener_affinity") {
+                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
+                            ListenerAffinitySection(
+                                engagement = engagement,
+                            )
+                        }
+                    }
+                }
+
+                // Listening milestones
+                if (hasJourney) {
+                    item(key = "chronological_odyssey") {
+                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 18.dp)) {
+                            ListeningOdysseySection(
+                                trackDetails = trackDetails,
+                                engagement = uiState.engagement,
+                                habitualHour = uiState.habitualHour,
+                                habitualHourOfDay = uiState.habitualHourOfDay,
+                                tint = dominantColor,
+                                sectionNumber = sectionNumbers["odyssey"] ?: "01",
+                            )
+                        }
+                    }
+                }
+
+                // Listening history trends
+                if (hasListeningHistory) {
                     item(key = "temporal_rhythm") {
                         Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
                             TemporalRhythmSection(
                                 history = uiState.listeningHistory,
                                 peakBinge = uiState.peakBingeDay,
                                 tint = dominantColor,
+                                sectionNumber = sectionNumbers["trends"] ?: "02",
                             )
                         }
                     }
                 }
 
-                // 4. Audio Features & Sonic Profile (hidden until data exists)
-                if (uiState.audioFeatures != null || uiState.moodSummary != null) {
+                // Audio features spec sheet
+                if (hasAcousticData) {
                     item(key = "acoustic_dna") {
                         Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
                             AcousticDNASpecSheet(
                                 audioFeatures = uiState.audioFeatures,
                                 moodSummary = uiState.moodSummary,
                                 tint = dominantColor,
+                                sectionNumber = sectionNumbers["acoustic"] ?: "03",
                             )
                         }
                     }
                 }
 
-                // 5. Listening Standing
-                if (hasPlaybackData || trackDetails.isFavorite) {
-                    item(key = "listener_affinity") {
-                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
-                            if (hasPlaybackData) {
-                                ListenerAffinitySection(
-                                    engagement = engagement,
-                                    isFavorite = trackDetails.isFavorite,
-                                    tint = dominantColor,
-                                )
-                            } else {
-                                FavoriteBadgeCard()
-                            }
-                        }
-                    }
-                }
-
-                // 6. Listening Timeline & Milestones
-                val hasJourney = trackDetails.firstPlayed != null ||
-                    trackDetails.lastPlayed != null ||
-                    uiState.engagement?.firstPlayedTimestamp != null ||
-                    uiState.peakBingeDay != null ||
-                    uiState.habitualHour != null
-
-                if (hasJourney) {
-                    item(key = "chronological_odyssey") {
-                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
-                            ListeningOdysseySection(
-                                trackDetails = trackDetails,
-                                engagement = uiState.engagement,
-                                peakBingeDay = uiState.peakBingeDay,
-                                habitualHour = uiState.habitualHour,
-                                tint = dominantColor,
-                            )
-                        }
-                    }
-                }
-
-                // 7. Playback Breakdown
+                // Playback breakdown
                 if (hasPlaybackData) {
                     item(key = "playback_telemetry") {
                         Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
                             PlaybackFidelitySection(
                                 engagement = engagement,
                                 tint = dominantColor,
+                                sectionNumber = sectionNumbers["playback"] ?: "04",
                             )
                         }
                     }
                 }
 
-                // 8. Streaming & Actions
+                // Share action
                 item(key = "streaming_hub") {
                     Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp)) {
                         StreamingHubSection(
-                            trackDetails = trackDetails,
-                            spotifyUrl = uiState.spotifyTrackUrl,
-                            appleMusicUrl = uiState.appleMusicUrl,
                             onShare = { showShareDialog = true },
                         )
                     }
@@ -855,22 +865,42 @@ fun SongHeroEditorialStage(
             )
         }
 
-        // Metadata line (Contrast compliant TextTertiary)
+        // Release date and album metadata
         val metaParts = listOfNotNull(
             releaseDate?.let { formatReleaseDate(it) } ?: releaseYear?.toString(),
             genre?.takeIf { it.isNotBlank() },
             recordLabel?.takeIf { it.isNotBlank() },
         )
         if (metaParts.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = metaParts.joinToString("   ·   "),
-                style = MaterialTheme.typography.labelSmall,
-                color = TextTertiary,
-                letterSpacing = 0.5.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(28.dp)
+                        .height(0.8.dp)
+                        .background(GlassBorderMedium),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = metaParts.joinToString("  ·  ").uppercase(Locale.getDefault()),
+                    style = KickerSmall,
+                    color = TextTertiary,
+                    letterSpacing = 1.4.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .width(28.dp)
+                        .height(0.8.dp)
+                        .background(GlassBorderMedium),
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -1066,86 +1096,131 @@ fun MasterStatMasthead(
         contentPadding = PaddingValues(0.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Row 1: Plays & Time
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Stat 1: Total Plays
-                EditorialStatBlock(
-                    label = stringResource(R.string.details_total_plays),
-                    value = "${trackDetails.playCount}",
-                    subtext = stringResource(R.string.details_stat_recorded_library),
-                    accentTint = dominantColor,
-                    modifier = Modifier.weight(1f),
-                )
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 20.dp)) {
+                // Total play count hero metric
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(dominantColor)
+                    )
+                    Text(
+                        text = stringResource(R.string.details_total_plays).uppercase(Locale.getDefault()),
+                        style = KickerSmall,
+                        color = TextTertiary,
+                    )
+                }
 
-                // Vertical Hairline Divider
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = String.format(Locale.getDefault(), "%,d", trackDetails.playCount),
+                        style = MaterialTheme.typography.displaySmall.copy(
+                            fontFamily = DisplayFontFamily,
+                            letterSpacing = (-1).sp,
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.details_together_suffix, formattedTime),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(bottom = 6.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
                 Box(
                     modifier = Modifier
-                        .fillMaxHeight()
-                        .width(0.8.dp)
-                        .background(GlassBorderSoft),
+                        .fillMaxWidth()
+                        .height(0.8.dp)
+                        .background(GlassBorderSoft)
                 )
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Stat 2: Listening Time
-                EditorialStatBlock(
-                    label = stringResource(R.string.details_listening_time),
-                    value = formattedTime,
-                    subtext = stringResource(R.string.details_stat_total_recorded),
-                    accentTint = dominantColor,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            // Horizontal Hairline Divider
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(0.8.dp)
-                    .background(GlassBorderSoft),
-            )
-
-            // Row 2: Peak Rank & Completion Rate
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Stat 3: Peak Rank
-                EditorialStatBlock(
-                    label = stringResource(R.string.details_peak_position),
-                    value = rankText,
-                    subtext = rankSubtext,
-                    accentTint = dominantColor,
-                    isCompact = true,
-                    modifier = Modifier.weight(1f),
-                )
-
-                // Vertical Hairline Divider
-                Box(
+                // Secondary metrics
+                Row(
                     modifier = Modifier
-                        .fillMaxHeight()
-                        .width(0.8.dp)
-                        .background(GlassBorderSoft),
-                )
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.details_peak_position).uppercase(Locale.getDefault()),
+                            style = KickerSmall,
+                            color = TextTertiary,
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = buildAnnotatedString {
+                                append(rankText)
+                                append("  ")
+                                withStyle(
+                                    SpanStyle(
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = TextTertiary,
+                                    )
+                                ) {
+                                    append(rankSubtext)
+                                }
+                            },
+                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = DisplayFontFamily),
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
 
-                // Stat 4: Completion Rate (semantic — the one tint with meaning)
-                EditorialStatBlock(
-                    label = stringResource(R.string.details_completion_rate),
-                    value = loyaltyText,
-                    subtext = loyaltySubtext,
-                    accentTint = when {
-                        loyaltyRate == null -> TextTertiary
-                        loyaltyRate >= 70 -> TempoSuccess
-                        else -> TempoWarning
-                    },
-                    isCompact = true,
-                    modifier = Modifier.weight(1f),
-                )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(0.8.dp)
+                            .background(GlassBorderSoft),
+                    )
+
+                    Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
+                        Text(
+                            text = stringResource(R.string.details_completion_rate).uppercase(Locale.getDefault()),
+                            style = KickerSmall,
+                            color = TextTertiary,
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = buildAnnotatedString {
+                                append(loyaltyText)
+                                append("  ")
+                                withStyle(
+                                    SpanStyle(
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = TextTertiary,
+                                    )
+                                ) {
+                                    append(loyaltySubtext)
+                                }
+                            },
+                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = DisplayFontFamily),
+                            fontWeight = FontWeight.Bold,
+                            color = when {
+                                loyaltyRate == null -> TextPrimary
+                                loyaltyRate >= 70 -> TempoSuccess
+                                else -> TempoWarning
+                            },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
@@ -1216,6 +1291,7 @@ fun TemporalRhythmSection(
     history: List<DailyListening>,
     peakBinge: Pair<String, Int>?,
     tint: Color = TempoPrimary,
+    sectionNumber: String = "02",
 ) {
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -1230,11 +1306,9 @@ fun TemporalRhythmSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = stringResource(R.string.details_listening_trends),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
+                SectionCatalogKicker(
+                    number = sectionNumber,
+                    label = stringResource(R.string.details_listening_trends),
                 )
                 if (peakBinge != null && peakBinge.second > 1) {
                     Text(
@@ -1272,12 +1346,15 @@ private fun ScrubbableRhythmChart(
     var clearJob by remember { mutableStateOf<Job?>(null) }
     val haptic = LocalHapticFeedback.current
 
-    val activeDays = remember(history) { history.count { it.playCount > 0 } }
-    val totalPlaysInPeriod = remember(history) { history.sumOf { it.playCount } }
-    val avgPerActiveDay = if (activeDays > 0) String.format(Locale.getDefault(), "%.1f", totalPlaysInPeriod.toFloat() / activeDays) else "1.0"
-
     val maxPlays = remember(history) {
         history.maxOfOrNull { it.playCount }?.coerceAtLeast(1) ?: 1
+    }
+    val activeDays = remember(history) { history.count { it.playCount > 0 } }
+    val totalPlays = remember(history) { history.sumOf { it.playCount } }
+    val avgPerActiveDay = if (activeDays > 0) {
+        String.format(Locale.getDefault(), "%.1f", totalPlays.toFloat() / activeDays)
+    } else {
+        "1.0"
     }
 
     // Bars grow in with a small stagger on first appearance
@@ -1305,82 +1382,48 @@ private fun ScrubbableRhythmChart(
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Summary Micro-Stats
+        // Summary metrics (active days, daily average, peak day)
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RhythmSummaryItem(
-                label = stringResource(R.string.details_trends_active_days),
-                value = stringResource(R.string.details_trends_days, activeDays),
-            )
-            RhythmSummaryItem(
-                label = stringResource(R.string.details_trends_daily_avg),
-                value = stringResource(R.string.details_trends_per_day, avgPerActiveDay),
-            )
-            RhythmSummaryItem(
-                label = stringResource(R.string.details_trends_peak_day),
-                value = stringResource(R.string.details_plays_count, peakBinge?.second ?: maxPlays),
-            )
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-        Box(modifier = Modifier.fillMaxWidth().height(0.6.dp).background(GlassBorderSoft))
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Inspection HUD
-        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 28.dp),
-            contentAlignment = Alignment.CenterStart
+                .height(IntrinsicSize.Min),
         ) {
-            if (inspectedItem != null) {
-                val mins = (inspectedItem.totalTimeMs / 60000L).toInt()
-                val timeStr = if (mins >= 60) "${mins / 60}h ${mins % 60}m" else "${mins}m"
-                val playsLabel = stringResource(
-                    if (inspectedItem.playCount == 1) R.string.details_trends_hud_one else R.string.details_trends_hud_many,
-                    inspectedItem.playCount,
-                    timeStr,
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(TempoDarkSurfaceElevated)
-                        .border(0.8.dp, GlassBorderMedium, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = formatSongDate(parseIsoToTimestamp(inspectedItem.date)),
-                        style = KickerSmall,
-                        color = TextPrimary,
-                    )
-                    Text(
-                        text = "·",
-                        style = CaptionSmall,
-                        color = TextTertiary,
-                    )
-                    Text(
-                        text = playsLabel,
-                        style = KickerSmall,
-                        color = tint,
-                    )
-                }
-            } else {
-                Text(
-                    text = stringResource(R.string.details_trends_scrub_hint),
-                    style = CaptionSmall,
-                    color = TextTertiary,
-                )
-            }
+            TelemetryMiniCell(
+                label = stringResource(R.string.details_trends_active_days),
+                value = activeDays.toString(),
+                modifier = Modifier.weight(1f),
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(0.8.dp)
+                    .background(GlassBorderSoft)
+            )
+
+            TelemetryMiniCell(
+                label = stringResource(R.string.details_trends_daily_avg),
+                value = stringResource(R.string.details_trends_per_day, avgPerActiveDay),
+                modifier = Modifier.weight(1f),
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(0.8.dp)
+                    .background(GlassBorderSoft)
+            )
+
+            TelemetryMiniCell(
+                label = stringResource(R.string.details_trends_peak_day),
+                value = (peakBinge?.second ?: maxPlays).toString(),
+                modifier = Modifier.weight(1f),
+            )
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Density Bars Canvas
+        // History bar chart
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1436,7 +1479,7 @@ private fun ScrubbableRhythmChart(
                 val availableWidth = totalWidth - (barSpacing * (barCount - 1).coerceAtLeast(0))
                 val barWidth = (availableWidth / barCount.coerceAtLeast(1)).coerceIn(2.5.dp.toPx(), 14.dp.toPx())
 
-                // Baseline rule
+                // Baseline
                 drawLine(
                     color = GlassBorderSoft,
                     start = Offset(0f, totalHeight),
@@ -1450,8 +1493,7 @@ private fun ScrubbableRhythmChart(
                     val isPeak = item.playCount == maxPlays && maxPlays > 1
 
                     if (item.playCount == 0) {
-                        // Honest zero: a baseline dot, never a stub that
-                        // implies activity on an empty day.
+                        // Empty-day indicator dot on baseline
                         drawCircle(
                             color = if (isSelected) TextPrimary else GlassBorderMedium,
                             radius = 1.5.dp.toPx(),
@@ -1463,6 +1505,7 @@ private fun ScrubbableRhythmChart(
                     val fraction = (item.playCount.toFloat() / maxPlays).coerceIn(0.06f, 1f)
                     val stagger = ((entrance.value * (barCount + 10)) - index).coerceIn(0f, 1f)
                     val barHeight = totalHeight * fraction * stagger
+                    val barTop = totalHeight - barHeight
 
                     val barColor = when {
                         isSelected -> TextPrimary
@@ -1470,11 +1513,76 @@ private fun ScrubbableRhythmChart(
                         else -> tint.copy(alpha = 0.55f)
                     }
 
+                    // Highlight halo for selected and peak bars
+                    if (isSelected || isPeak) {
+                        drawRoundRect(
+                            color = barColor.copy(alpha = 0.20f),
+                            topLeft = Offset(x - 1.5.dp.toPx(), barTop - 2.dp.toPx()),
+                            size = Size(barWidth + 3.dp.toPx(), barHeight + 2.dp.toPx()),
+                            cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                        )
+                    }
+
+                    // Bar vertical gradient fill
                     drawRoundRect(
-                        color = barColor,
-                        topLeft = Offset(x, totalHeight - barHeight),
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                barColor,
+                                barColor.copy(alpha = 0.45f),
+                            ),
+                            startY = barTop,
+                            endY = totalHeight,
+                        ),
+                        topLeft = Offset(x, barTop),
                         size = Size(barWidth, barHeight),
-                        cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx()),
+                        cornerRadius = CornerRadius(2.5.dp.toPx(), 2.5.dp.toPx()),
+                    )
+
+                    // Cap dot indicator above selected bar
+                    if (isSelected) {
+                        drawCircle(
+                            color = TextPrimary,
+                            radius = 2.dp.toPx(),
+                            center = Offset(x + barWidth / 2f, barTop - 5.dp.toPx()),
+                        )
+                    }
+                }
+            }
+
+            // Scrubbing inspection HUD overlay
+            inspectedItem?.let { item ->
+                val mins = (item.totalTimeMs / 60000L).toInt()
+                val timeStr = if (mins >= 60) "${mins / 60}h ${mins % 60}m" else "${mins}m"
+                val playsLabel = stringResource(
+                    if (item.playCount == 1) R.string.details_trends_hud_one else R.string.details_trends_hud_many,
+                    item.playCount,
+                    timeStr,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(TempoDarkSurfaceElevated)
+                        .border(0.8.dp, GlassBorderMedium, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = formatSongDate(parseIsoToTimestamp(item.date)),
+                        style = KickerSmall,
+                        color = TextPrimary,
+                    )
+                    Text(
+                        text = "·",
+                        style = CaptionSmall,
+                        color = TextTertiary,
+                    )
+                    Text(
+                        text = playsLabel,
+                        style = KickerSmall,
+                        color = tint,
                     )
                 }
             }
@@ -1482,7 +1590,13 @@ private fun ScrubbableRhythmChart(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Date Axis
+        // Date axis labels with optional midpoint for wide ranges
+        val midIndex = history.size / 2
+        val midDate = if (history.size >= 45 && midIndex in history.indices) {
+            formatChartDate(history[midIndex].date)
+        } else {
+            null
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1492,30 +1606,20 @@ private fun ScrubbableRhythmChart(
                 style = CaptionSmall,
                 color = TextTertiary,
             )
+            if (midDate != null) {
+                Text(
+                    text = midDate,
+                    style = CaptionSmall,
+                    color = TextTertiary,
+                    textAlign = TextAlign.Center,
+                )
+            }
             Text(
                 text = formatChartDate(history.last().date),
                 style = CaptionSmall,
                 color = TextTertiary,
             )
         }
-    }
-}
-
-@Composable
-private fun RhythmSummaryItem(label: String, value: String) {
-    Column {
-        Text(
-            text = label.uppercase(Locale.getDefault()),
-            style = KickerSmall,
-            color = TextTertiary,
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.SemiBold,
-            color = TextPrimary,
-        )
     }
 }
 
@@ -1529,6 +1633,7 @@ fun AcousticDNASpecSheet(
     audioFeatures: TrackAudioFeatures?,
     moodSummary: TagBasedMoodAnalyzer.MoodSummary?,
     tint: Color = TempoPrimary,
+    sectionNumber: String = "03",
 ) {
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -1543,11 +1648,9 @@ fun AcousticDNASpecSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = stringResource(R.string.details_audio_features_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
+                SectionCatalogKicker(
+                    number = sectionNumber,
+                    label = stringResource(R.string.details_audio_features_title),
                 )
                 Text(
                     text = when {
@@ -1563,19 +1666,9 @@ fun AcousticDNASpecSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (audioFeatures == null && moodSummary == null) {
-                // No analysis yet — the caller keeps this whole card hidden
-                // until enrichment produces data; nothing to render here.
-            } else {
-                // Readouts: BPM & Harmonic Key
-                val bpm = audioFeatures?.tempo?.roundToInt()
-                val tempoDesc = audioFeatures?.tempoDescription ?: when {
-                    bpm == null -> stringResource(R.string.details_af_pending_tempo)
-                    bpm > 140 -> stringResource(R.string.details_af_fast)
-                    bpm > 120 -> stringResource(R.string.details_af_upbeat)
-                    bpm > 95 -> stringResource(R.string.details_af_moderate)
-                    else -> stringResource(R.string.details_af_laidback)
-                }
+            if (audioFeatures != null || moodSummary != null) {
+                val bpm = audioFeatures?.tempo?.roundToInt()?.takeIf { it > 0 }
+                val hasHarmonicKey = audioFeatures != null && audioFeatures.hasValidKey
 
                 Row(
                     modifier = Modifier
@@ -1583,38 +1676,49 @@ fun AcousticDNASpecSheet(
                         .height(IntrinsicSize.Min),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Tempo / BPM
-                    AcousticHeaderMetric(
-                        icon = Icons.Rounded.Speed,
-                        label = stringResource(R.string.details_af_tempo),
-                        primaryValue = bpm?.let { "$it BPM" } ?: "—",
-                        sublabel = tempoDesc,
-                        tint = tint,
-                        modifier = Modifier.weight(1f),
-                    )
+                    // Tempo / BPM readout
+                    if (bpm != null) {
+                        val tempoDesc = when {
+                            bpm > 140 -> stringResource(R.string.details_af_fast)
+                            bpm > 120 -> stringResource(R.string.details_af_upbeat)
+                            bpm > 95 -> stringResource(R.string.details_af_moderate)
+                            else -> stringResource(R.string.details_af_laidback)
+                        }
+                        AcousticHeaderMetric(
+                            icon = Icons.Rounded.Speed,
+                            label = stringResource(R.string.details_af_tempo),
+                            primaryValue = "$bpm BPM",
+                            sublabel = tempoDesc,
+                            tint = tint,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
 
-                    // Vertical Hairline Divider
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .width(0.8.dp)
-                            .background(GlassBorderSoft)
-                    )
+                    if (bpm != null && hasHarmonicKey) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(0.8.dp)
+                                .background(GlassBorderSoft)
+                        )
+                    }
 
-                    // Harmonic Key Signature
-                    val keyName = audioFeatures?.musicalKey ?: moodSummary?.moodName ?: "—"
-                    val keyDesc = audioFeatures?.moodDescription
-                        ?: moodSummary?.energyName
-                        ?: stringResource(R.string.details_af_awaiting_profile)
+                    // Musical key readout
+                    val keyName = audioFeatures?.takeIf { it.hasValidKey }?.musicalKey
+                    if (keyName != null) {
+                        val keyDesc = audioFeatures?.moodDescription
+                            ?: moodSummary?.energyName
+                            ?: stringResource(R.string.details_af_awaiting_profile)
 
-                    AcousticHeaderMetric(
-                        icon = Icons.Rounded.GraphicEq,
-                        label = stringResource(R.string.details_af_key),
-                        primaryValue = keyName,
-                        sublabel = keyDesc,
-                        tint = tint,
-                        modifier = Modifier.weight(1f),
-                    )
+                        AcousticHeaderMetric(
+                            icon = Icons.Rounded.GraphicEq,
+                            label = stringResource(R.string.details_af_key),
+                            primaryValue = keyName,
+                            sublabel = keyDesc,
+                            tint = tint,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
 
                 if (audioFeatures != null) {
@@ -1828,8 +1932,6 @@ private fun MoodTagPill(tag: String) {
 @Composable
 fun ListenerAffinitySection(
     engagement: TrackEngagement,
-    isFavorite: Boolean,
-    tint: Color = TempoPrimary,
 ) {
     val score = engagement.engagementScore
     val tier = when {
@@ -1877,110 +1979,62 @@ fun ListenerAffinitySection(
         )
     }
 
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        variant = GlassCardVariant.TintedSolid,
-        accentColor = tint,
-        contentPadding = PaddingValues(20.dp),
+    // Affinity tier badge and engagement score
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(TempoSurfaceWhiteGray)
+            .border(0.8.dp, GlassBorderMedium, RoundedCornerShape(16.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.details_standing_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
-                )
-                Text(
-                    text = stringResource(R.string.details_standing_score, score),
-                    style = CaptionSmall,
-                    color = TextTertiary,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = tier.icon,
-                            contentDescription = null,
-                            tint = tint,
-                            modifier = Modifier.size(13.dp),
-                        )
-                        Text(
-                            text = tier.status.uppercase(Locale.getDefault()),
-                            style = KickerSmall,
-                            color = tint,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = tier.name,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontFamily = DisplayFontFamily,
-                            fontWeight = FontWeight.Bold,
-                        ),
-                        color = TextPrimary,
-                    )
-                }
-
-                Text(
-                    text = "$score",
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontFamily = DisplayFontFamily,
-                        fontSize = 24.sp,
-                    ),
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Precision Meter Rule with Diamond Needle
-            MeterRule(
-                fraction = score / 100f,
-                color = tint,
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(TempoSurfaceWhiteGrayChip),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = tier.icon,
+                contentDescription = null,
+                tint = TextSecondary,
+                modifier = Modifier.size(16.dp),
             )
+        }
 
-            Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.width(12.dp))
 
-            // Narrative Insight
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = buildAnnotatedString {
-                    append(tier.description)
-                    append(" ")
-                    append(stringResource(R.string.details_tier_played_prefix))
-                    append(" ")
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TextPrimary)) {
-                        append(stringResource(R.string.details_tier_sessions, engagement.uniqueSessionsCount))
-                    }
-                    if (engagement.replayCount > 0) {
-                        append(" ")
-                        append(stringResource(R.string.details_tier_with))
-                        append(" ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = tint)) {
-                            append(stringResource(R.string.details_tier_replays, engagement.replayCount))
-                        }
-                    }
-                },
-                style = MaterialTheme.typography.bodySmall,
+                text = tier.name,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontFamily = DisplayFontFamily,
+                ),
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            Text(
+                text = tier.status.uppercase(Locale.getDefault()),
+                style = KickerSmall,
                 color = TextSecondary,
-                lineHeight = 19.sp,
+            )
+        }
+
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = "$score",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontFamily = DisplayFontFamily,
+                ),
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            Text(
+                text = stringResource(R.string.details_engagement_score).uppercase(Locale.getDefault()),
+                style = KickerSmall,
+                color = TextSecondary,
             )
         }
     }
@@ -1993,185 +2047,230 @@ private data class AffinityTierInfo(
     val description: String,
 )
 
-@Composable
-fun FavoriteBadgeCard() {
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        variant = GlassCardVariant.TintedSolid,
-        accentColor = TempoError,
-        contentPadding = PaddingValues(18.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(TempoError.copy(alpha = 0.14f))
-                    .border(1.dp, TempoError.copy(alpha = 0.28f), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Favorite,
-                    contentDescription = null,
-                    tint = TempoError,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.details_favorite_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = stringResource(R.string.details_favorite_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
-                )
-            }
-        }
-    }
-}
-
 // ──────────────────────────────────────────────────────────────
 // 6. Listening Timeline & Milestones
 // ──────────────────────────────────────────────────────────────
+
+/**
+ * Palette for flat timeline markers and labels, adjusted for contrast against the dynamic backdrop.
+ */
+private data class FlatTimelineInk(
+    val title: Color,
+    val value: Color,
+    val icon: Color,
+    val divider: Color,
+)
+
+private val DarkRoomInk = FlatTimelineInk(
+    title = TextTertiary,
+    value = TextPrimary,
+    icon = TextSecondary,
+    divider = GlassBorderSoft,
+)
+
+private val BrightRoomInk = FlatTimelineInk(
+    title = TextOnAccent.copy(alpha = 0.55f),
+    value = TextOnAccent,
+    icon = TextOnAccent.copy(alpha = 0.78f),
+    divider = TextOnAccent.copy(alpha = 0.14f),
+)
 
 @Composable
 fun ListeningOdysseySection(
     trackDetails: TrackDetails,
     engagement: TrackEngagement?,
-    peakBingeDay: Pair<String, Int>?,
     habitualHour: String?,
+    habitualHourOfDay: Int? = null,
     tint: Color = TempoPrimary,
+    sectionNumber: String = "01",
 ) {
     val firstListen = trackDetails.firstPlayed ?: engagement?.firstPlayedTimestamp
     val lastListen = trackDetails.lastPlayed ?: engagement?.lastPlayedTimestamp
 
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        variant = GlassCardVariant.QuietGlass,
-        accentColor = tint,
-        contentPadding = PaddingValues(20.dp),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = stringResource(R.string.details_timeline_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
+    // Construct milestones for first played, peak listening hour, and latest played
+    val milestones = listOfNotNull(
+        firstListen?.let {
+            OdysseyMilestone(
+                icon = Icons.Rounded.AutoAwesome,
+                title = stringResource(R.string.details_stat_first_played),
+                value = formatFlowDate(it),
             )
+        },
+        habitualHour?.let {
+            OdysseyMilestone(
+                icon = habitualHourIcon(habitualHourOfDay),
+                title = stringResource(R.string.details_most_active),
+                value = it,
+            )
+        },
+        lastListen?.let {
+            OdysseyMilestone(
+                icon = Icons.Rounded.Headphones,
+                title = stringResource(R.string.details_timeline_latest),
+                value = formatFlowDate(it),
+            )
+        },
+    )
+    if (milestones.isEmpty()) return
 
-            Spacer(modifier = Modifier.height(16.dp))
+    // Pick high-contrast text color based on background luminance
+    val ink = remember(tint) {
+        val backdrop = lerp(tint, TempoDarkBackground, 0.65f)
+        if (backdrop.luminance() > 0.25f) BrightRoomInk else DarkRoomInk
+    }
 
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // Milestone 1: Discovery Date
-                if (firstListen != null) {
-                    MilestoneEntry(
-                        icon = Icons.Rounded.AutoAwesome,
-                        title = stringResource(R.string.details_stat_first_played),
-                        value = formatSongDate(firstListen),
-                        subtext = if (engagement != null && engagement.daysSinceFirstPlay > 0) {
-                            stringResource(R.string.details_days_ago, engagement.daysSinceFirstPlay)
-                        } else null,
-                        iconTint = tint,
-                    )
-                }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SectionCatalogKicker(
+            number = sectionNumber,
+            label = stringResource(R.string.details_timeline_title),
+        )
 
-                // Milestone 2: Peak Record
-                if (peakBingeDay != null && peakBingeDay.second > 1) {
-                    MilestoneEntry(
-                        icon = Icons.Rounded.LocalFireDepartment,
-                        title = stringResource(R.string.details_timeline_peak_day),
-                        value = stringResource(R.string.details_plays_count, peakBingeDay.second),
-                        subtext = formatChartDate(peakBingeDay.first),
-                        iconTint = tint,
-                    )
-                }
+        Spacer(modifier = Modifier.height(18.dp))
 
-                // Milestone 3: Habitual Hour
-                if (habitualHour != null) {
-                    MilestoneEntry(
-                        icon = Icons.Rounded.NightsStay,
-                        title = stringResource(R.string.details_most_active),
-                        value = habitualHour,
-                        subtext = stringResource(R.string.details_timeline_peak_window),
-                        iconTint = tint,
-                    )
-                }
+        // Horizontal connecting milestone line
+        TimeFlowRibbon(
+            stationCount = milestones.size,
+            ink = ink,
+        )
 
-                // Milestone 4: Latest Session
-                if (lastListen != null) {
-                    MilestoneEntry(
-                        icon = Icons.Rounded.Headphones,
-                        title = stringResource(R.string.details_timeline_recent),
-                        value = formatSongDate(lastListen),
-                        subtext = stringResource(R.string.details_timeline_latest),
-                        iconTint = TextTertiary,
-                    )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            milestones.forEach { milestone ->
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                ) {
+                    FlatMilestoneRow(milestone = milestone, ink = ink)
                 }
             }
         }
     }
 }
 
+/**
+ * Horizontal connecting line with milestone markers and end chevron.
+ */
 @Composable
-private fun MilestoneEntry(
-    icon: ImageVector,
-    title: String,
-    value: String,
-    subtext: String?,
-    iconTint: Color,
+private fun TimeFlowRibbon(
+    stationCount: Int,
+    ink: FlatTimelineInk,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(10.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(iconTint.copy(alpha = 0.12f))
-                .border(0.8.dp, iconTint.copy(alpha = 0.25f), CircleShape),
-            contentAlignment = Alignment.Center,
+        val cy = size.height / 2f
+        val arrowLen = 5.dp.toPx()
+        val endX = size.width - arrowLen
+        val step = if (stationCount > 0) size.width / stationCount else size.width
+
+        // Horizontal connecting line
+        drawLine(
+            brush = Brush.horizontalGradient(
+                colors = listOf(ink.divider, ink.icon.copy(alpha = 0.55f)),
+                startX = 0f,
+                endX = endX,
+            ),
+            start = Offset(0f, cy),
+            end = Offset(endX, cy),
+            strokeWidth = 1.2.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+
+        // End chevron
+        val chevronBase = endX + 1.2.dp.toPx()
+        drawLine(
+            color = ink.icon,
+            start = Offset(chevronBase - 2.6.dp.toPx(), cy - 3.dp.toPx()),
+            end = Offset(chevronBase, cy),
+            strokeWidth = 1.2.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = ink.icon,
+            start = Offset(chevronBase - 2.6.dp.toPx(), cy + 3.dp.toPx()),
+            end = Offset(chevronBase, cy),
+            strokeWidth = 1.2.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+
+        // Milestone dots
+        repeat(stationCount) { index ->
+            drawCircle(
+                color = if (index == stationCount - 1) ink.value else ink.icon,
+                radius = 2.8.dp.toPx(),
+                center = Offset(index * step, cy),
+            )
+            if (index == 0 && stationCount > 1) {
+                // Outer ring for first milestone
+                drawCircle(
+                    color = ink.icon.copy(alpha = 0.45f),
+                    radius = 5.2.dp.toPx(),
+                    center = Offset(0f, cy),
+                    style = Stroke(width = 1.dp.toPx()),
+                )
+            }
+        }
+    }
+}
+
+private data class OdysseyMilestone(
+    val icon: ImageVector,
+    val title: String,
+    val value: String,
+)
+
+/**
+ * Returns an icon representing the time of day for the given hour (0..23).
+ */
+private fun habitualHourIcon(hourOfDay: Int?): ImageVector = when (hourOfDay) {
+    in 5..7 -> Icons.Rounded.WbTwilight       // Dawn (5-7 AM)
+    in 8..11 -> Icons.Rounded.LightMode       // Morning (8-11 AM)
+    in 12..16 -> Icons.Rounded.WbSunny        // Afternoon (12-4 PM)
+    in 17..21 -> Icons.Rounded.WbTwilight     // Evening (5-9 PM)
+    in 22..23, in 0..4 -> Icons.Rounded.DarkMode // Night (10 PM - 4 AM)
+    else -> Icons.Rounded.DarkMode
+}
+
+/**
+ * Milestone column displaying an icon, label, and formatted date or hour.
+ */
+@Composable
+private fun FlatMilestoneRow(
+    milestone: OdysseyMilestone,
+    ink: FlatTimelineInk,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Icon(
-                imageVector = icon,
+                imageVector = milestone.icon,
                 contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(16.dp),
+                tint = ink.icon,
+                modifier = Modifier.size(11.dp),
             )
-        }
-
-        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = title.uppercase(Locale.getDefault()),
+                text = milestone.title.uppercase(Locale.getDefault()),
                 style = KickerSmall,
-                color = TextTertiary,
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
+                color = ink.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-
-        if (subtext != null) {
-            Text(
-                text = subtext,
-                style = CaptionSmall,
-                color = TextSecondary,
-            )
-        }
+        Spacer(modifier = Modifier.height(5.dp))
+        Text(
+            text = milestone.value,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = ink.value,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -2183,17 +2282,12 @@ private fun MilestoneEntry(
 fun PlaybackFidelitySection(
     engagement: TrackEngagement,
     tint: Color = TempoPrimary,
+    sectionNumber: String = "04",
 ) {
     val total = engagement.playCount.coerceAtLeast(1)
     val fullPlaysRatio = (engagement.fullPlaysCount.toFloat() / total).coerceIn(0f, 1f)
     val partialPlaysRatio = (engagement.partialPlaysCount.toFloat() / total).coerceIn(0f, 1f)
     val skipsRatio = (engagement.skipsCount.toFloat() / total).coerceIn(0f, 1f)
-
-    val narrative = when {
-        fullPlaysRatio >= 0.8f -> stringResource(R.string.details_playback_narrative_full)
-        fullPlaysRatio >= 0.5f -> stringResource(R.string.details_playback_narrative_mixed)
-        else -> stringResource(R.string.details_playback_narrative_skipped)
-    }
 
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -2203,24 +2297,10 @@ fun PlaybackFidelitySection(
         contentPadding = PaddingValues(20.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.details_playback_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
-                )
-                Text(
-                    text = stringResource(R.string.details_playback_full_pct, (fullPlaysRatio * 100).roundToInt()),
-                    style = CaptionSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = TempoSuccess,
-                )
-            }
+            SectionCatalogKicker(
+                number = sectionNumber,
+                label = stringResource(R.string.details_playback_title),
+            )
 
             Spacer(modifier = Modifier.height(14.dp))
 
@@ -2269,31 +2349,18 @@ fun PlaybackFidelitySection(
                 FidelityLegendItem(
                     color = TempoSuccess,
                     label = stringResource(R.string.details_playback_full_label),
-                    count = engagement.fullPlaysCount,
                 )
                 FidelityLegendItem(
                     color = TempoWarning,
                     label = stringResource(R.string.details_playback_partial_label),
-                    count = engagement.partialPlaysCount,
                 )
                 FidelityLegendItem(
                     color = TempoError,
                     label = stringResource(R.string.details_playback_skipped_label),
-                    count = engagement.skipsCount,
                 )
             }
 
             Spacer(modifier = Modifier.height(14.dp))
-
-            // Narrative callout (clean flattened style without nested borders)
-            Text(
-                text = narrative,
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary,
-                lineHeight = 18.sp,
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             // Telemetry Data Points
             Row(
@@ -2304,7 +2371,6 @@ fun PlaybackFidelitySection(
                 TelemetryMiniCell(
                     label = stringResource(R.string.details_stat_replays),
                     value = "${engagement.replayCount}",
-                    subtext = stringResource(R.string.details_telemetry_replays_sub),
                     modifier = Modifier.weight(1f),
                 )
 
@@ -2318,7 +2384,6 @@ fun PlaybackFidelitySection(
                 TelemetryMiniCell(
                     label = stringResource(R.string.details_telemetry_pauses),
                     value = String.format(Locale.getDefault(), "%.1f", engagement.averagePauseCount),
-                    subtext = stringResource(R.string.details_telemetry_pauses_sub),
                     modifier = Modifier.weight(1f),
                 )
 
@@ -2332,7 +2397,6 @@ fun PlaybackFidelitySection(
                 TelemetryMiniCell(
                     label = stringResource(R.string.details_telemetry_sessions),
                     value = "${engagement.uniqueSessionsCount}",
-                    subtext = stringResource(R.string.details_telemetry_sessions_sub),
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -2344,7 +2408,6 @@ fun PlaybackFidelitySection(
 private fun FidelityLegendItem(
     color: Color,
     label: String,
-    count: Int,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -2357,7 +2420,7 @@ private fun FidelityLegendItem(
                 .background(color)
         )
         Text(
-            text = stringResource(R.string.details_playback_legend_fmt, label, count),
+            text = label,
             style = CaptionSmall,
             color = TextTertiary,
         )
@@ -2368,7 +2431,6 @@ private fun FidelityLegendItem(
 private fun TelemetryMiniCell(
     label: String,
     value: String,
-    subtext: String,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -2389,11 +2451,6 @@ private fun TelemetryMiniCell(
             ),
             color = TextPrimary,
         )
-        Text(
-            text = subtext,
-            style = CaptionSmall,
-            color = TextTertiary,
-        )
     }
 }
 
@@ -2403,78 +2460,18 @@ private fun TelemetryMiniCell(
 
 @Composable
 fun StreamingHubSection(
-    trackDetails: TrackDetails,
-    spotifyUrl: String?,
-    appleMusicUrl: String?,
     onShare: () -> Unit,
 ) {
-    val context = LocalContext.current
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // Streaming buttons + their header only exist when there is somewhere
-        // to deep-link; the share CTA stands alone otherwise.
-        if (spotifyUrl != null || appleMusicUrl != null) {
-            Text(
-                text = stringResource(R.string.details_streaming_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (spotifyUrl != null) {
-                    StreamingButton(
-                        label = "Spotify",
-                        icon = Icons.Rounded.GraphicEq,
-                        tint = SpotifyGreen,
-                        containerColor = SpotifyGreen.copy(alpha = 0.16f),
-                        borderColor = SpotifyGreen.copy(alpha = 0.45f),
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(spotifyUrl))
-                                context.startActivity(intent)
-                            } catch (_: ActivityNotFoundException) {
-                                Toast.makeText(context, context.getString(R.string.details_spotify_not_found), Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                    )
-                }
-
-                if (appleMusicUrl != null) {
-                    StreamingButton(
-                        label = "Apple Music",
-                        icon = Icons.Rounded.Album,
-                        tint = LastFmRed,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(appleMusicUrl))
-                                context.startActivity(intent)
-                            } catch (_: ActivityNotFoundException) {
-                                Toast.makeText(context, context.getString(R.string.details_apple_not_found), Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-
-        // Share Card Action — the screen's single solid-white primary CTA
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(PillSurface)
-                .premiumClickable(onClick = onShare, pressedScale = 0.98f)
-                .padding(vertical = 14.dp),
-            contentAlignment = Alignment.Center
-        ) {
+    // Share card button
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(PillSurface)
+            .premiumClickable(onClick = onShare, pressedScale = 0.98f)
+            .padding(vertical = 14.dp),
+        contentAlignment = Alignment.Center
+    ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2494,88 +2491,43 @@ fun StreamingHubSection(
                 )
             }
         }
-    }
 }
 
+// ──────────────────────────────────────────────────────────────
+// Section Headers
+// ──────────────────────────────────────────────────────────────
+
 @Composable
-private fun StreamingButton(
+internal fun SectionCatalogKicker(
+    number: String,
     label: String,
-    icon: ImageVector,
-    tint: Color,
-    modifier: Modifier = Modifier,
-    containerColor: Color = TempoDarkSurfaceElevated,
-    borderColor: Color = GlassBorderSoft,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(containerColor)
-            .border(0.8.dp, borderColor, RoundedCornerShape(14.dp))
-            .premiumClickable(onClick = onClick, pressedScale = 0.97f)
-            .padding(vertical = 12.dp, horizontal = 12.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(16.dp)
-            )
-            Text(
-                text = label,
-                style = Kicker,
-                color = TextPrimary,
-            )
-        }
-    }
-}
-
-// ──────────────────────────────────────────────────────────────
-// Meter Rule with Diamond Needle
-// ──────────────────────────────────────────────────────────────
-
-@Composable
-private fun MeterRule(
-    fraction: Float,
-    color: Color,
     modifier: Modifier = Modifier,
 ) {
-    val animated = rememberAnimatedFraction(fraction, delayMs = 100, durationMs = 600)
-    Canvas(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(8.dp),
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val midY = size.height / 2f
-        drawLine(
-            color = GlassBorderMedium,
-            start = Offset(0f, midY),
-            end = Offset(size.width, midY),
-            strokeWidth = 1.dp.toPx(),
-            cap = StrokeCap.Round,
+        Text(
+            text = number,
+            style = KickerSmall,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
         )
-        if (animated > 0f) {
-            val endX = size.width * animated
-            drawLine(
-                color = color,
-                start = Offset(0f, midY),
-                end = Offset(endX, midY),
-                strokeWidth = 3.dp.toPx(),
-                cap = StrokeCap.Round,
-            )
-            rotate(45f, pivot = Offset(endX, midY)) {
-                drawRect(
-                    color = color,
-                    topLeft = Offset(endX - 3.5.dp.toPx(), midY - 3.5.dp.toPx()),
-                    size = Size(7.dp.toPx(), 7.dp.toPx()),
-                )
-            }
-        }
+        Box(
+            modifier = Modifier
+                .width(10.dp)
+                .height(0.8.dp)
+                .background(GlassBorderMedium),
+        )
+        Text(
+            text = label.uppercase(Locale.getDefault()),
+            style = KickerSmall,
+            color = TextTertiary,
+            letterSpacing = 1.2.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -2814,6 +2766,12 @@ private fun SongDetailsFooter() {
 
 private fun formatSongDate(timestamp: Long): String {
     val sdf = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
+
+/** Formats timestamp as "MMM d, yyyy" (e.g., "Jun 12, 2023"). */
+private fun formatFlowDate(timestamp: Long): String {
+    val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
     return sdf.format(Date(timestamp))
 }
 

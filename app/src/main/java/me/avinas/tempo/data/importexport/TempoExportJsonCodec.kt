@@ -206,7 +206,7 @@ internal class TempoExportJsonCodec(private val moshi: Moshi) {
                 }
                 "lastFmImportMetadata" -> lastFmImportMetadata = readArray(reader, lastFmImportMetadataAdapter)
                 "localImageManifest" -> localImageManifest = nextMapOrDefault(reader, localImageManifest)
-                "hotlinkedUrls" -> hotlinkedUrls = readArray(reader, moshi.adapter(String::class.java))
+                "hotlinkedUrls" -> hotlinkedUrls = readHotlinkedUrls(reader)
                 "imageManifest" -> imageManifest = nextMapOrDefault(reader, imageManifest)
                 else -> reader.skipValue()
             }
@@ -259,6 +259,37 @@ internal class TempoExportJsonCodec(private val moshi: Moshi) {
         val out = ArrayList<T>()
         while (reader.hasNext()) {
             adapter.fromJson(reader)?.let { out.add(it) }
+        }
+        reader.endArray()
+        return out
+    }
+
+    /**
+     * Reads `hotlinkedUrls`, supporting both flat string arrays and the legacy
+     * nested array format (`[["url1", "url2"]]`) from earlier exports. Non-string
+     * tokens are skipped to prevent import failures.
+     */
+    private fun readHotlinkedUrls(reader: JsonReader): List<String> {
+        if (reader.peek() == JsonReader.Token.NULL) {
+            reader.skipValue()
+            return emptyList()
+        }
+        val out = ArrayList<String>()
+        reader.beginArray()
+        while (reader.hasNext()) {
+            when (reader.peek()) {
+                JsonReader.Token.STRING -> out.add(reader.nextString())
+                JsonReader.Token.BEGIN_ARRAY -> {
+                    // Backward compatibility: handle nested string arrays from older exports.
+                    reader.beginArray()
+                    while (reader.hasNext()) {
+                        if (reader.peek() == JsonReader.Token.STRING) out.add(reader.nextString())
+                        else reader.skipValue()
+                    }
+                    reader.endArray()
+                }
+                else -> reader.skipValue()
+            }
         }
         reader.endArray()
         return out

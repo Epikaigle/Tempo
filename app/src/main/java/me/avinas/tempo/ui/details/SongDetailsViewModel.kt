@@ -10,6 +10,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +19,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.local.dao.ListeningEventDao
+import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
+import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.repository.EnrichedMetadataRepository
 import me.avinas.tempo.data.repository.StatsRepository
@@ -97,12 +101,27 @@ class SongDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             if (!quiet) _uiState.update { it.copy(isLoading = true) }
             try {
-                val details = statsRepository.getTrackDetails(trackId)
-                val history = statsRepository.getTrackListeningHistory(trackId, TimeRange.ALL_TIME)
-                val enrichedMetadata = enrichedMetadataRepository.forTrackSync(trackId)
-                val audioFeatures = statsRepository.getTrackAudioFeatures(trackId)
-                val engagement = statsRepository.getTrackEngagement(trackId)
-                val events = listeningEventDao.getEventsForTrack(trackId)
+                // Fetch stats and metadata queries concurrently.
+                lateinit var details: TrackDetails
+                lateinit var history: List<DailyListening>
+                var enrichedMetadata: EnrichedMetadata? = null
+                var audioFeatures: TrackAudioFeatures? = null
+                var engagement: TrackEngagement? = null
+                lateinit var events: List<ListeningEvent>
+                coroutineScope {
+                    val detailsDeferred = async { statsRepository.getTrackDetails(trackId) }
+                    val historyDeferred = async { statsRepository.getTrackListeningHistory(trackId, TimeRange.ALL_TIME) }
+                    val enrichedDeferred = async { enrichedMetadataRepository.forTrackSync(trackId) }
+                    val featuresDeferred = async { statsRepository.getTrackAudioFeatures(trackId) }
+                    val engagementDeferred = async { statsRepository.getTrackEngagement(trackId) }
+                    val eventsDeferred = async { listeningEventDao.getEventsForTrack(trackId) }
+                    details = detailsDeferred.await()
+                    history = historyDeferred.await()
+                    enrichedMetadata = enrichedDeferred.await()
+                    audioFeatures = featuresDeferred.await()
+                    engagement = engagementDeferred.await()
+                    events = eventsDeferred.await()
+                }
 
                 // Derive mood from MusicBrainz tags if available
                 val moodSummary = if (enrichedMetadata != null) {
@@ -118,26 +137,33 @@ class SongDetailsViewModel @Inject constructor(
                     if (it.playCount > 0) Pair(it.date, it.playCount) else null
                 }
 
-                // Compute habitual listening hour
-                val habitualHour = if (events.isNotEmpty()) {
-                    val hourCounts = events.groupBy {
-                        try {
-                            Instant.ofEpochMilli(it.timestamp)
+                // Compute peak listening hour across all recorded events
+                var habitualHour: String? = null
+                var habitualHourOfDay: Int? = null
+                if (events.isNotEmpty()) {
+                    val hourHistogram = IntArray(24)
+                    for (event in events) {
+                        val hour = try {
+                            Instant.ofEpochMilli(event.timestamp)
                                 .atZone(ZoneId.systemDefault())
                                 .hour
                         } catch (_: Exception) {
                             12
                         }
-                    }.mapValues { it.value.size }
-                    val peakHour = hourCounts.maxByOrNull { it.value }?.key
-                    when (peakHour) {
-                        in 5..11 -> "Morning Focus · ${if (peakHour == 0) 12 else peakHour} AM"
-                        in 12..16 -> "Afternoon Vibe · ${if (peakHour == 12) 12 else peakHour?.minus(12)} PM"
-                        in 17..21 -> "Evening Wind-down · ${peakHour?.minus(12)} PM"
-                        in 22..23, in 0..4 -> "Night Owl · ${if (peakHour == 0) 12 else if (peakHour != null && peakHour > 12) peakHour - 12 else peakHour} ${if (peakHour != null && peakHour >= 12) "PM" else "AM"}"
-                        else -> null
+                        hourHistogram[hour.coerceIn(0, 23)]++
                     }
-                } else null
+                    val peakHour = hourHistogram.indices.maxByOrNull { hourHistogram[it] }
+                    if (peakHour != null && hourHistogram[peakHour] > 0) {
+                        habitualHourOfDay = peakHour
+                        val h12 = when {
+                            peakHour == 0 -> 12
+                            peakHour > 12 -> peakHour - 12
+                            else -> peakHour
+                        }
+                        val amPm = if (peakHour < 12) "AM" else "PM"
+                        habitualHour = "$h12 $amPm"
+                    }
+                }
 
                 // Audio preview URL
                 val previewUrl = enrichedMetadata?.previewUrl ?: enrichedMetadata?.spotifyPreviewUrl
@@ -165,7 +191,8 @@ class SongDetailsViewModel @Inject constructor(
                         spotifyTrackUrl = spotifyTrackUrl,
                         appleMusicUrl = appleMusicUrl,
                         peakBingeDay = peakBinge,
-                        habitualHour = habitualHour
+                        habitualHour = habitualHour,
+                        habitualHourOfDay = habitualHourOfDay
                     ) 
                 }
 
@@ -433,6 +460,7 @@ data class SongDetailsUiState(
     val appleMusicUrl: String? = null,
     val peakBingeDay: Pair<String, Int>? = null,
     val habitualHour: String? = null,
+    val habitualHourOfDay: Int? = null,
     val error: String? = null,
     val showDeleteDialog: Boolean = false,
     val isDeleting: Boolean = false,

@@ -126,6 +126,12 @@ class StatsViewModel @Inject constructor(
         loadData(isLoadMore = true)
     }
 
+    /** Retries loading stats data after a failure. */
+    fun retry() {
+        _uiState.update { it.copy(error = null, isLoading = true, items = emptyList(), page = 0, hasMore = true) }
+        loadData()
+    }
+
     private fun loadData(isLoadMore: Boolean = false) {
         viewModelScope.launch {
             try {
@@ -168,7 +174,8 @@ class StatsViewModel @Inject constructor(
                         isLoading = false,
                         isLoadingMore = false,
                         page = page,
-                        hasMore = hasMore
+                        hasMore = hasMore,
+                        error = null
                     )
                 }
                 

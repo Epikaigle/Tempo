@@ -212,4 +212,38 @@ class TempoExportJsonCodecRoundTripTest {
         assertTrue(data.listeningEvents.isEmpty())
         assertTrue(data.scrobbleArchive.isEmpty())
     }
+
+    @Test
+    fun `legacy double-wrapped hotlinkedUrls arrays are flattened on read`() = runBlocking {
+        // Backups from older versions nested URLs as [["a", "b"], ["c"]] instead of flat strings.
+        val legacy = """
+            {"version":${TempoExportData.CURRENT_VERSION},
+             "hotlinkedUrls":[["https://a.jpg","https://b.jpg"],["https://c.jpg"]]}
+        """.trimIndent().replace(System.lineSeparator(), "")
+        val data = codec.read(
+            JsonReader.of(Buffer().writeUtf8(legacy)),
+            TempoExportJsonCodec.StreamHandlers()
+        )
+        assertEquals(
+            listOf("https://a.jpg", "https://b.jpg", "https://c.jpg"),
+            data.hotlinkedUrls
+        )
+    }
+
+    @Test
+    fun `flat and null hotlinkedUrls still parse after the legacy fix`() = runBlocking {
+        val flat = """{"version":${TempoExportData.CURRENT_VERSION},"hotlinkedUrls":["https://a.jpg"]}"""
+        val flatData = codec.read(
+            JsonReader.of(Buffer().writeUtf8(flat)),
+            TempoExportJsonCodec.StreamHandlers()
+        )
+        assertEquals(listOf("https://a.jpg"), flatData.hotlinkedUrls)
+
+        val nullUrls = """{"version":${TempoExportData.CURRENT_VERSION},"hotlinkedUrls":null}"""
+        val nullData = codec.read(
+            JsonReader.of(Buffer().writeUtf8(nullUrls)),
+            TempoExportJsonCodec.StreamHandlers()
+        )
+        assertTrue(nullData.hotlinkedUrls.isEmpty())
+    }
 }

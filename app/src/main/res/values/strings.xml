@@ -771,6 +771,15 @@
     <string name="stats_search_hint_artists">Search artists…</string>
     <string name="stats_search_hint_albums">Search albums, artists…</string>
     <string name="stats_search_clear">Clear search</string>
+    <string name="stats_range_week">Week</string>
+    <string name="stats_range_month">Month</string>
+    <string name="stats_range_year">Year</string>
+    <string name="stats_range_all_time">All Time</string>
+    <string name="stats_error_title">Something went wrong</string>
+    <string name="stats_error_retry">Retry</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_stats">Stats</string>
+    <string name="nav_history">History</string>
     <string name="stats_search_no_results">No matches for \"%1$s\" in this ranking</string>
 
     <!-- Stats Share -->
@@ -1174,6 +1183,7 @@
     <string name="details_spotify_not_found">Spotify app not found</string>
     <string name="details_apple_not_found">Apple Music app not found</string>
     <string name="details_stat_recorded_library">Recorded in library</string>
+    <string name="details_together_suffix">%1$s listened together</string>
     <string name="details_stat_total_recorded">Total recorded time</string>
     <string name="details_rank_most_played">Most played track</string>
     <string name="details_rank_top_5">Top 5 in library</string>
@@ -1188,8 +1198,9 @@
     <string name="details_trends_empty">No listening activity recorded yet</string>
     <string name="details_trends_active_days">Active days</string>
     <string name="details_trends_daily_avg">Daily average</string>
-    <string name="details_trends_peak_day">Peak single day</string>
+    <string name="details_trends_peak_day">Peak day</string>
     <string name="details_trends_days">%1$d days</string>
+    <string name="details_trends_summary">%1$d active days · %2$s / day · peak %3$d plays</string>
     <string name="details_trends_per_day">%1$s / day</string>
     <string name="details_trends_hud_one">%1$d play (%2$s)</string>
     <string name="details_trends_hud_many">%1$d plays (%2$s)</string>
@@ -1271,9 +1282,9 @@
     <string name="details_timeline_latest">Latest spin</string>
     <string name="details_playback_title">Playback Breakdown</string>
     <string name="details_playback_full_pct">%1$d%% full plays</string>
-    <string name="details_playback_full_label" formatted="false">Full (≥ 80%)</string>
-    <string name="details_playback_partial_label" formatted="false">Partial (30–80%)</string>
-    <string name="details_playback_skipped_label" formatted="false">Skipped (&lt; 30%)</string>
+    <string name="details_playback_full_label" formatted="false">Full</string>
+    <string name="details_playback_partial_label" formatted="false">Partial</string>
+    <string name="details_playback_skipped_label" formatted="false">Skipped</string>
     <string name="details_playback_legend_fmt">%1$s: %2$d</string>
     <string name="details_playback_narrative_full" formatted="false">You almost never skip this track. 80%+ of plays were listened to the end.</string>
     <string name="details_playback_narrative_mixed">Played regularly in full, occasionally paused or skipped.</string>

@@ -533,7 +533,13 @@ data class TrackAudioFeatures(
             else -> "Very Slow"
         }
 
-    val keyName: String
+    /**
+     * True if the key represents a valid pitch class (0..11). Missing or invalid keys map to -1.
+     */
+    val hasValidKey: Boolean
+        get() = key in 0..11
+
+    val keyName: String?
         get() = when (key) {
             0 -> "C"
             1 -> "C♯/D♭"
@@ -547,14 +553,14 @@ data class TrackAudioFeatures(
             9 -> "A"
             10 -> "A♯/B♭"
             11 -> "B"
-            else -> "Unknown"
+            else -> null
         }
 
     val modeName: String
         get() = if (mode == 1) "Major" else "Minor"
 
-    val musicalKey: String
-        get() = "$keyName $modeName"
+    val musicalKey: String?
+        get() = keyName?.let { "$it $modeName" }
 
     val isAcoustic: Boolean
         get() = acousticness > 0.5f

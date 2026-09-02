@@ -72,6 +72,9 @@ val TempoSurfacePopup = Color(0xFF131717)
 val TempoSurfaceCard = Color(0xFF111515)
 val TempoSurfaceDialog = Color(0xFF151919)
 val TempoSurfaceRaised = Color(0xFF181C1C)
+// Neutral gray tones for solid surface bars and chips
+val TempoSurfaceWhiteGray = Color(0xFF4A4F4F)
+val TempoSurfaceWhiteGrayChip = Color(0xFF5A5F5F)
 val TempoWarningDeep = Color(0xFFD97706)
 val TempoSecondaryAlias = TempoSecondary
 

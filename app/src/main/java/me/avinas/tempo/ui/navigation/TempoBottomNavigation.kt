@@ -1,41 +1,55 @@
 package me.avinas.tempo.ui.navigation
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
+import me.avinas.tempo.R
 import me.avinas.tempo.ui.theme.TempoDarkSurface
+import me.avinas.tempo.ui.theme.TempoDarkSurfaceElevated
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.TextSecondary
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Leaderboard
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Leaderboard
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -53,9 +67,30 @@ fun TempoBottomNavigation(
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(horizontal = 24.dp, vertical = 24.dp)
+            .shadow(
+                elevation = 16.dp,
+                shape = RoundedCornerShape(36.dp),
+                ambientColor = Color.Transparent,
+                spotColor = Color.Black.copy(alpha = 0.35f)
+            )
             .height(72.dp)
             .clip(RoundedCornerShape(36.dp))
-            .background(TempoDarkSurface)
+            .background(
+                // Vertical gradient fill
+                Brush.verticalGradient(
+                    colors = listOf(TempoDarkSurfaceElevated, TempoDarkSurface)
+                )
+            )
+            .drawBehind {
+                // Top border highlight line
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.10f), Color.Transparent)
+                    ),
+                    topLeft = Offset.Zero,
+                    size = Size(size.width, 1.dp.toPx())
+                )
+            }
             .border(
                 width = 1.dp,
                 brush = Brush.linearGradient(
@@ -67,34 +102,6 @@ fun TempoBottomNavigation(
                 shape = RoundedCornerShape(36.dp)
             )
     ) {
-        // Red Deep Ocean Blobs
-        /*
-        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-            
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFEF4444).copy(alpha = 0.15f), Color.Transparent),
-                    center = Offset(0f, 0f),
-                    radius = width * 0.8f
-                ),
-                center = Offset(0f, 0f),
-                radius = width * 0.8f
-            )
-            
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFB91C1C).copy(alpha = 0.15f), Color.Transparent),
-                    center = Offset(width, height),
-                    radius = width * 0.9f
-                ),
-                center = Offset(width, height),
-                radius = width * 0.9f
-            )
-        }
-        */
-
         // Glassmorphism overlay
         Box(
             modifier = Modifier
@@ -110,25 +117,25 @@ fun TempoBottomNavigation(
             TempoNavItem(
                 selected = currentDestination?.hierarchy?.any { it.route == Screen.Home.route } == true,
                 onClick = onNavigateToHome,
-                icon = Icons.Default.Home,
+                icon = Icons.Rounded.Home,
                 unselectedIcon = Icons.Outlined.Home,
-                label = "Home"
+                label = stringResource(R.string.nav_home)
             )
             
             TempoNavItem(
                 selected = currentDestination?.hierarchy?.any { it.route == Screen.Stats.route } == true,
                 onClick = onNavigateToStats,
-                icon = Icons.Default.BarChart,
-                unselectedIcon = Icons.Outlined.BarChart,
-                label = "Stats"
+                icon = Icons.Rounded.Leaderboard,
+                unselectedIcon = Icons.Outlined.Leaderboard,
+                label = stringResource(R.string.nav_stats)
             )
             
             TempoNavItem(
                 selected = currentDestination?.hierarchy?.any { it.route == Screen.History.route } == true,
                 onClick = onNavigateToHistory,
-                icon = Icons.Default.History,
+                icon = Icons.Rounded.History,
                 unselectedIcon = Icons.Outlined.History,
-                label = "History"
+                label = stringResource(R.string.nav_history)
             )
         }
     }
@@ -143,22 +150,38 @@ private fun TempoNavItem(
     label: String
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    
-    val selectedColor = Color.White
-    val unselectedColor = Color.White.copy(alpha = 0.6f)
-    
+    val haptics = LocalHapticFeedback.current
+    val isSelected = selected
+
+    val selectedColor = TextPrimary
+    val unselectedColor = TextSecondary
+
     val iconColor by animateColorAsState(
         targetValue = if (selected) selectedColor else unselectedColor,
         label = "iconColor"
     )
-    
-    val scale by animateFloatAsState(
+
+    // Separate selection bounce and touch-press animations
+    val selectionScale by animateFloatAsState(
         targetValue = if (selected) 1.1f else 1.0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessLow
         ),
-        label = "scale"
+        label = "selectionScale"
+    )
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.88f else 1f,
+        animationSpec = tween(120, easing = FastOutSlowInEasing),
+        label = "pressScale"
+    )
+
+    // Selection indicator dot alpha transition
+    val dotAlpha by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(150),
+        label = "dotAlpha"
     )
 
     Column(
@@ -166,33 +189,39 @@ private fun TempoNavItem(
             .clip(CircleShape)
             .clickable(
                 interactionSource = interactionSource,
-                indication = null, // Custom ripple or no ripple
-                onClick = onClick
+                indication = null, // Scale press feedback instead of ripple
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                }
             )
+            .semantics {
+                role = Role.Tab
+                this.selected = isSelected
+            }
             .padding(12.dp)
-            .scale(scale),
+            .scale(selectionScale * pressScale),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Box(
             contentAlignment = Alignment.Center
         ) {
-            // Glow effect for selected item
-            if (selected) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    selectedColor.copy(alpha = 0.3f),
-                                    Color.Transparent
-                                )
+            // Radial glow behind active icon
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .graphicsLayer { alpha = dotAlpha }
+                    .background(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                selectedColor.copy(alpha = 0.3f),
+                                Color.Transparent
                             )
                         )
-                )
-            }
-            
+                    )
+            )
+
             Icon(
                 imageVector = if (selected) icon else unselectedIcon,
                 contentDescription = label,
@@ -200,14 +229,14 @@ private fun TempoNavItem(
                 modifier = Modifier.size(26.dp)
             )
         }
-        
-        if (selected) {
-            Box(
-                modifier = Modifier
-                    .padding(top = 4.dp)
-                    .size(4.dp)
-                    .background(selectedColor, CircleShape)
-            )
-        }
+
+        // Selection indicator dot
+        Box(
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .size(4.dp)
+                .graphicsLayer { alpha = dotAlpha }
+                .background(selectedColor, CircleShape)
+        )
     }
 }

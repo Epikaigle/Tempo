@@ -21,6 +21,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import me.avinas.tempo.R
 import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.theme.*
 
@@ -53,10 +55,10 @@ fun TimePeriodSelector(
                 )
 
                 val displayText = when (range) {
-                    TimeRange.THIS_WEEK -> "Week"
-                    TimeRange.THIS_MONTH -> "Month"
-                    TimeRange.THIS_YEAR -> "Year"
-                    TimeRange.ALL_TIME -> "All Time"
+                    TimeRange.THIS_WEEK -> stringResource(R.string.stats_range_week)
+                    TimeRange.THIS_MONTH -> stringResource(R.string.stats_range_month)
+                    TimeRange.THIS_YEAR -> stringResource(R.string.stats_range_year)
+                    TimeRange.ALL_TIME -> stringResource(R.string.stats_range_all_time)
                     else -> range.name
                 }
                 
