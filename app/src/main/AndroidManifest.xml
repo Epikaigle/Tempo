@@ -83,6 +83,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Transparent bridge used to choose/persist the automatic local backup folder -->
+        <activity
+            android:name="me.avinas.tempo.data.drive.LocalBackupFolderPickerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Music Tracking NotificationListenerService -->
         <service
             android:name="me.avinas.tempo.service.MusicTrackingService"

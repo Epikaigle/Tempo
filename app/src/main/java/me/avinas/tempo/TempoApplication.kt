@@ -7,22 +7,25 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
-import me.avinas.tempo.data.drive.BackupSettingsManager
-import me.avinas.tempo.data.drive.BackupStatus
-import me.avinas.tempo.data.local.dao.UserKnownArtistDao
-import me.avinas.tempo.data.local.dao.UserPreferencesDao
-import me.avinas.tempo.utils.ArtistParser
-import me.avinas.tempo.worker.EnrichmentWorker
-import me.avinas.tempo.worker.ServiceHealthWorker
-import me.avinas.tempo.worker.SpotifyPollingWorker
-import me.avinas.tempo.worker.SpotlightUnlockWorker
-import me.avinas.tempo.worker.ChallengeWorker
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import me.avinas.tempo.data.drive.BackupInterval
+import me.avinas.tempo.data.drive.BackupSettingsManager
+import me.avinas.tempo.data.drive.LocalBackupStorage
+import me.avinas.tempo.data.local.dao.UserKnownArtistDao
+import me.avinas.tempo.data.local.dao.UserPreferencesDao
+import me.avinas.tempo.utils.ArtistParser
+import me.avinas.tempo.worker.ChallengeWorker
+import me.avinas.tempo.worker.DriveBackupWorker
+import me.avinas.tempo.worker.EnrichmentWorker
+import me.avinas.tempo.worker.LocalBackupWorker
+import me.avinas.tempo.worker.ServiceHealthWorker
+import me.avinas.tempo.worker.SpotifyPollingWorker
+import me.avinas.tempo.worker.SpotlightUnlockWorker
 import java.util.concurrent.Executors
 import javax.inject.Inject
 
@@ -35,13 +38,13 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
-    
+
     @Inject
     lateinit var imageLoader: ImageLoader
-    
+
     @Inject
     lateinit var userPreferencesDao: UserPreferencesDao
-    
+
     @Inject
     lateinit var userKnownArtistDao: UserKnownArtistDao
 
@@ -53,7 +56,7 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
 
     @Inject
     lateinit var backupSettingsManager: BackupSettingsManager
-    
+
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -61,18 +64,19 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
             .build()
-    
+
     override fun newImageLoader(context: android.content.Context): ImageLoader {
         return imageLoader
     }
 
     override fun onCreate() {
         super.onCreate()
-        
+
         loadUserKnownArtists()
+        reconcileAutomaticBackupSchedules()
         scheduleBackgroundWorkDeferred()
     }
-    
+
     private fun loadUserKnownArtists() {
         applicationScope.launch {
             try {
@@ -97,7 +101,64 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
             }
         }
     }
-    
+
+    /**
+     * Reconcile persisted automatic-backup settings on every process start.
+     *
+     * This is important when upgrading from the old combined Drive/local worker:
+     * users who already selected Daily/Weekly/Monthly must receive the dedicated
+     * LocalBackupWorker without having to revisit the Backup & Restore screen.
+     * ExistingPeriodicWorkPolicy.UPDATE keeps healthy periodic cadence while also
+     * repairing a missing WorkManager registration after an app/process restart.
+     */
+    private fun reconcileAutomaticBackupSchedules() {
+        applicationScope.launch {
+            try {
+                val settings = backupSettingsManager.settings.first()
+
+                if (settings.backupInterval == BackupInterval.MANUAL) {
+                    LocalBackupWorker.cancel(this@TempoApplication)
+                    DriveBackupWorker.cancel(this@TempoApplication)
+                    return@launch
+                }
+
+                // Only the persisted SAF write grant is checked here. A valid
+                // external/SD-card provider can be temporarily unavailable during
+                // boot; do not erase the user's folder choice merely because the
+                // provider cannot be queried at this exact moment.
+                if (LocalBackupStorage.hasSelectedDirectory(this@TempoApplication)) {
+                    LocalBackupWorker.schedule(
+                        this@TempoApplication,
+                        settings.backupInterval.hours
+                    )
+                } else {
+                    if (LocalBackupStorage.getSelectedDirectoryUri(this@TempoApplication) != null) {
+                        LocalBackupStorage.clearSelectedDirectory(this@TempoApplication)
+                    }
+                    LocalBackupWorker.cancel(this@TempoApplication)
+                }
+
+                if (settings.isGoogleDriveEnabled) {
+                    DriveBackupWorker.schedule(
+                        this@TempoApplication,
+                        settings.backupInterval.hours,
+                        settings.wifiOnly
+                    )
+                } else {
+                    DriveBackupWorker.cancel(this@TempoApplication)
+                }
+            } catch (e: Exception) {
+                // Backup schedule repair is best-effort and must never prevent the
+                // application process from starting.
+                android.util.Log.w(
+                    "TempoApplication",
+                    "Failed to reconcile automatic backup schedules",
+                    e
+                )
+            }
+        }
+    }
+
     private fun scheduleBackgroundWorkDeferred() {
         backgroundExecutor.execute {
             Thread.sleep(500)
@@ -114,37 +175,22 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
         me.avinas.tempo.service.MusicTrackingService.ensureComponentEnabled(this)
 
         ServiceHealthWorker.schedule(this)
-        
+
         EnrichmentWorker.schedulePeriodic(this)
-        
+
         EnrichmentWorker.enqueueImmediate(this)
-        
+
         me.avinas.tempo.worker.GamificationWorker.enqueuePeriodicRefresh(this)
         me.avinas.tempo.worker.GamificationWorker.enqueueImmediateRefresh(this)
-        
-        scheduleSpotifyPollingIfEnabled()
 
-        // A backup status of IN_PROGRESS can only mean the app was killed while
-        // a backup was running (crash, force-stop, OS kill). No worker survives
-        // that, so the status would stay stuck forever. Reset it to FAILED so
-        // the UI reflects reality and the user can retry.
-        applicationScope.launch {
-            try {
-                val settings = backupSettingsManager.settings.first()
-                if (settings.lastBackupStatus == BackupStatus.IN_PROGRESS) {
-                    backupSettingsManager.updateLastBackup(BackupStatus.FAILED)
-                }
-            } catch (e: Exception) {
-                // Non-critical — ignore
-            }
-        }
+        scheduleSpotifyPollingIfEnabled()
 
         Handler(Looper.getMainLooper()).postDelayed({
             SpotlightUnlockWorker.scheduleWeekly(this)
             ChallengeWorker.scheduleDaily(this)
         }, 30_000L)
     }
-    
+
     /**
      * Check if Spotify-API-Only mode is enabled and schedule polling if so.
      * This ensures the worker resumes after app restart.
@@ -163,10 +209,9 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
             }
         }
     }
-    
+
     override fun onTerminate() {
         super.onTerminate()
         backgroundExecutor.shutdown()
     }
 }
-

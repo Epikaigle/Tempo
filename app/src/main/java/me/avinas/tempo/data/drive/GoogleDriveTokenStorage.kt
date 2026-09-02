@@ -73,6 +73,7 @@ class GoogleDriveTokenStorage @Inject constructor(
      * Authorization API. Refresh tokens are managed internally by Google Play Services.
      */
     fun saveAccessToken(accessToken: String) {
+        require(accessToken.isNotBlank()) { "Google Drive access token must not be blank" }
         encryptedPrefs.edit().apply {
             putString(KEY_ACCESS_TOKEN, accessToken)
             putLong(KEY_TOKEN_TIMESTAMP, System.currentTimeMillis())
@@ -87,6 +88,7 @@ class GoogleDriveTokenStorage @Inject constructor(
      */
     fun getAccessToken(): String? {
         return encryptedPrefs.getString(KEY_ACCESS_TOKEN, null)
+            ?.takeIf { it.isNotBlank() }
     }
     
     /**
@@ -114,7 +116,7 @@ class GoogleDriveTokenStorage @Inject constructor(
         if (timestamp == 0L) return true
         
         val age = System.currentTimeMillis() - timestamp
-        return age > TOKEN_STALE_THRESHOLD_MS
+        return age < 0L || age > TOKEN_STALE_THRESHOLD_MS
     }
     
     /**
@@ -125,7 +127,7 @@ class GoogleDriveTokenStorage @Inject constructor(
         if (timestamp == 0L) return true
         
         val age = System.currentTimeMillis() - timestamp
-        return age > TOKEN_MAX_AGE_MS
+        return age < 0L || age > TOKEN_MAX_AGE_MS
     }
     
     /**
@@ -144,13 +146,22 @@ class GoogleDriveTokenStorage @Inject constructor(
      * Save the Google account information.
      */
     fun saveAccountInfo(email: String, displayName: String?, photoUrl: String?) {
+        require(email.isNotBlank()) { "Google account email must not be blank" }
         encryptedPrefs.edit().apply {
             putString(KEY_ACCOUNT_EMAIL, email)
-            displayName?.let { putString(KEY_ACCOUNT_DISPLAY_NAME, it) }
-            photoUrl?.let { putString(KEY_ACCOUNT_PHOTO_URL, it) }
+            if (displayName != null) {
+                putString(KEY_ACCOUNT_DISPLAY_NAME, displayName)
+            } else {
+                remove(KEY_ACCOUNT_DISPLAY_NAME)
+            }
+            if (photoUrl != null) {
+                putString(KEY_ACCOUNT_PHOTO_URL, photoUrl)
+            } else {
+                remove(KEY_ACCOUNT_PHOTO_URL)
+            }
             apply()
         }
-        Log.d(TAG, "Account info saved for: $email")
+        Log.d(TAG, "Google account info saved")
     }
     
     /**
@@ -158,6 +169,7 @@ class GoogleDriveTokenStorage @Inject constructor(
      */
     fun getAccountEmail(): String? {
         return encryptedPrefs.getString(KEY_ACCOUNT_EMAIL, null)
+            ?.takeIf { it.isNotBlank() }
     }
     
     /**
@@ -246,7 +258,7 @@ class GoogleDriveTokenStorage @Inject constructor(
         override fun toString(): String {
             val ageStr = tokenAgeMs?.let { "${it / 1000 / 60}min" } ?: "N/A"
             return "StorageStatus(token=$hasToken, stale=$isTokenStale, expired=$isTokenExpired, " +
-                    "age=$ageStr, account=$accountEmail)"
+                    "age=$ageStr, accountPresent=${accountEmail != null})"
         }
     }
 }

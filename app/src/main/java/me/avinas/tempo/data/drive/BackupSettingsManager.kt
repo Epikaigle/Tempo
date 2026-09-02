@@ -39,8 +39,8 @@ class BackupSettingsManager @Inject constructor(
     val settings: Flow<BackupSettings> = context.backupDataStore.data.map { preferences ->
         BackupSettings(
             isGoogleDriveEnabled = preferences[GOOGLE_DRIVE_ENABLED] ?: false,
-            backupInterval = BackupInterval.entries.find { 
-                it.name == preferences[BACKUP_INTERVAL] 
+            backupInterval = BackupInterval.entries.find {
+                it.name == preferences[BACKUP_INTERVAL]
             } ?: BackupInterval.MANUAL,
             lastBackupTime = preferences[LAST_BACKUP_TIME],
             lastBackupStatus = BackupStatus.entries.find {
@@ -62,7 +62,7 @@ class BackupSettingsManager @Inject constructor(
     }
     
     /**
-     * Set backup interval.
+     * Persist the selected automatic backup interval.
      */
     suspend fun setBackupInterval(interval: BackupInterval) {
         context.backupDataStore.edit { preferences ->
