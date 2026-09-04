@@ -1,12 +1,7 @@
 package me.avinas.tempo.ui.history
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,75 +10,57 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import kotlinx.coroutines.launch
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
-import me.avinas.tempo.R
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
-import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import kotlinx.coroutines.delay
-import me.avinas.tempo.ui.components.CachedAsyncImage
+import kotlinx.coroutines.launch
+import me.avinas.tempo.R
 import me.avinas.tempo.data.local.dao.HistoryItem
-import me.avinas.tempo.ui.components.CoachMark
-import me.avinas.tempo.ui.components.CoachMarkArrow
-import me.avinas.tempo.ui.components.DeepOceanBackground
-import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.components.TempoSnackbar
+import me.avinas.tempo.ui.components.*
 import me.avinas.tempo.ui.theme.*
 import java.time.Instant
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.Locale
+
+private val RelativeDateFormatter = java.time.format.DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -95,6 +72,7 @@ fun HistoryScreen(
     val listState = remember(uiState.viewMode, uiState.startDate, uiState.endDate, uiState.showSkips) { LazyListState() }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     
     // Show feedback snackbar when message is set
     LaunchedEffect(uiState.feedbackMessage) {
@@ -107,18 +85,15 @@ fun HistoryScreen(
         }
     }
     
-    // Pagination
+    // Pagination — prefetch 4 items before end to prevent scrolling stalls and avoid per-pixel offset recalculation
     val isAtBottom by remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
-            val visibleItemsInfo = layoutInfo.visibleItemsInfo
             if (layoutInfo.totalItemsCount == 0) {
                 false
             } else {
-                val lastVisibleItem = visibleItemsInfo.last()
-                val viewportHeight = layoutInfo.viewportEndOffset + layoutInfo.viewportStartOffset
-                (lastVisibleItem.index + 1 == layoutInfo.totalItemsCount) &&
-                        (lastVisibleItem.offset + lastVisibleItem.size <= viewportHeight)
+                val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                lastVisibleIndex >= layoutInfo.totalItemsCount - 4
             }
         }
     }
@@ -136,8 +111,17 @@ fun HistoryScreen(
         ModalBottomSheet(
             onDismissRequest = { showFilterSheet = false },
             sheetState = sheetState,
-            containerColor = TempoSurfaceDialog,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+            containerColor = TempoDarkSurfaceElevated,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 12.dp)
+                        .size(width = 36.dp, height = 4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(GlassBorderMedium)
+                )
+            }
         ) {
             HistoryFilterSheetContent(
                 currentShowSkips = uiState.showSkips,
@@ -166,138 +150,217 @@ fun HistoryScreen(
                 },
                 modifier = Modifier.fillMaxSize()
             ) {
-            // List Content
-            HistoryListContent(
-                // Recent Activity section
-                groupedItems = uiState.groupedItems,
-                isLoading = uiState.isLoading,
-                isLoadingMore = uiState.isLoadingMore,
-                showCoachMark = uiState.showCoachMark,
-                listState = listState,
-                onLoadMore = viewModel::loadMore,
-                viewModel = viewModel,
-                onNavigateToTrack = onNavigateToTrack,
-                onDismissCoachMark = viewModel::dismissCoachMark,
-                // Last.fm History section
-                viewMode = uiState.viewMode,
-                hasArchiveData = uiState.hasArchiveData,
-                lastFmGroupedItems = uiState.lastFmGroupedItems,
-                archiveItems = uiState.archiveItems,
-                archiveTrackCount = uiState.archiveTrackCount,
-                archiveTotalPlays = uiState.archiveTotalPlays,
-                isLoadingMoreLastFm = uiState.isLoadingMoreLastFm,
-                hasMoreLastFm = uiState.hasMoreLastFm,
-                onLoadMoreLastFm = viewModel::loadMoreLastFmHistory,
-                onViewModeChange = viewModel::setViewMode
-            )
+                // List Content
+                HistoryListContent(
+                    // Recent Activity section
+                    groupedItems = uiState.groupedItems,
+                    isLoading = uiState.isLoading,
+                    isLoadingMore = uiState.isLoadingMore,
+                    showCoachMark = uiState.showCoachMark,
+                    listState = listState,
+                    onLoadMore = viewModel::loadMore,
+                    viewModel = viewModel,
+                    onNavigateToTrack = onNavigateToTrack,
+                    onDismissCoachMark = viewModel::dismissCoachMark,
+                    // Last.fm History section
+                    viewMode = uiState.viewMode,
+                    hasArchiveData = uiState.hasArchiveData,
+                    lastFmGroupedItems = uiState.lastFmGroupedItems,
+                    archiveItems = uiState.archiveItems,
+                    archiveTrackCount = uiState.archiveTrackCount,
+                    archiveTotalPlays = uiState.archiveTotalPlays,
+                    isLoadingMoreLastFm = uiState.isLoadingMoreLastFm,
+                    hasMoreLastFm = uiState.hasMoreLastFm,
+                    onLoadMoreLastFm = viewModel::loadMoreLastFmHistory,
+                    onViewModeChange = viewModel::setViewMode,
+                    searchQuery = uiState.searchQuery,
+                    onClearSearch = { viewModel.onSearchQueryChanged("") }
+                )
 
-            // Snackbar for feedback messages
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 100.dp), // Above nav bar
-                snackbar = { snackbarData ->
-                    TempoSnackbar(snackbarData)
-                }
-            )
-            
-            // Loading overlay when marking content
-            if (uiState.isMarking) {
-                Box(
+                // Snackbar for feedback messages
+                SnackbarHost(
+                    hostState = snackbarHostState,
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.4f))
-                        .clickable(enabled = false) { }, // Block clicks
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = TempoRed)
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp), // Above nav bar
+                    snackbar = { snackbarData ->
+                        TempoSnackbar(snackbarData)
+                    }
+                )
+                
+                // Loading overlay when marking content
+                if (uiState.isMarking) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.45f))
+                            .clickable(enabled = false) { }, // Block clicks
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = TempoPrimary,
+                            modifier = Modifier.size(36.dp),
+                            strokeWidth = 3.dp
+                        )
+                    }
                 }
-            }
             } // end PullToRefreshBox
 
-            // Search & Filter Header (Overlay)
-            Box(
+            // Top Bar with scroll-aware elevation and studio glass styling
+            val isScrolled by remember {
+                derivedStateOf {
+                    listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+                }
+            }
+            val headerAlpha by animateFloatAsState(
+                targetValue = if (isScrolled) 1f else 0f,
+                label = "historyHeaderAlpha"
+            )
+
+            Surface(
+                color = TempoDarkBackground.copy(alpha = 0.95f * headerAlpha),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(vertical = 12.dp, horizontal = 16.dp)
+                    .zIndex(10f)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Search Bar
-                    GlassCard(
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp),
-                        shape = RoundedCornerShape(25.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        backgroundColor = Color.Black.copy(alpha = 0.5f), // Blend with deep background
-                        variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
                     ) {
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxSize()
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = Color(0xFFCAC4D0)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Box(modifier = Modifier.weight(1f)) {
-                                if (uiState.searchQuery.isEmpty()) {
-                                    Text(
-                                        text = stringResource(R.string.history_search_hint),
-                                        color = Color(0xFFCAC4D0),
-                                        style = MaterialTheme.typography.bodyLarge
-                                    )
-                                }
-                                androidx.compose.foundation.text.BasicTextField(
-                                    value = uiState.searchQuery,
-                                    onValueChange = viewModel::onSearchQueryChanged,
-                                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-                                    singleLine = true,
-                                    cursorBrush = androidx.compose.ui.graphics.SolidColor(TempoRed),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                            if (uiState.searchQuery.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { viewModel.onSearchQueryChanged("") },
-                                    modifier = Modifier.size(24.dp)
+                            // Search Bar with obsidian glass styling
+                            GlassCard(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(24.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp),
+                                backgroundColor = TempoDarkSurfaceSunken.copy(alpha = 0.85f),
+                                variant = GlassCardVariant.LowProminence,
+                                borderColor = GlassBorderSoft,
+                                borderWidth = 1.dp
+                            ) {
+                                val focusManager = LocalFocusManager.current
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxSize()
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Clear",
-                                        tint = Color(0xFFCAC4D0)
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = stringResource(R.string.history_search),
+                                        tint = if (uiState.searchQuery.isNotBlank()) TempoPrimary else TextTertiary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        if (uiState.searchQuery.isEmpty()) {
+                                            Text(
+                                                text = stringResource(R.string.history_search_hint),
+                                                color = TextTertiary,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                        BasicTextField(
+                                            value = uiState.searchQuery,
+                                            onValueChange = viewModel::onSearchQueryChanged,
+                                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                                            cursorBrush = SolidColor(TempoPrimary),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                    if (uiState.searchQuery.isNotEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .premiumClickable(onClick = { viewModel.onSearchQueryChanged("") }),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = stringResource(R.string.stats_search_clear),
+                                                tint = TextSecondary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Filter Button
+                            val isFilterActive = uiState.startDate != null || !uiState.showSkips
+
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .then(
+                                        if (isFilterActive) {
+                                            Modifier
+                                                .background(
+                                                    Brush.verticalGradient(
+                                                        listOf(
+                                                            TempoPrimary.copy(alpha = 0.25f),
+                                                            TempoPrimaryDeep.copy(alpha = 0.35f)
+                                                        )
+                                                    )
+                                                )
+                                                .border(1.dp, TempoPrimary.copy(alpha = 0.6f), CircleShape)
+                                        } else {
+                                            Modifier
+                                                .background(TempoDarkSurfaceElevated.copy(alpha = 0.85f))
+                                                .border(0.8.dp, GlassBorderSoft, CircleShape)
+                                        }
+                                    )
+                                    .premiumClickable(
+                                        onClick = {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            showFilterSheet = true
+                                        },
+                                        pressedScale = 0.94f
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.List,
+                                    contentDescription = stringResource(R.string.history_title),
+                                    tint = if (isFilterActive) TempoPrimary else TextSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+
+                                // Active indicator dot
+                                if (isFilterActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 4.dp, end = 4.dp)
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(TempoAccentBright)
+                                            .border(1.dp, TempoDarkBackground, CircleShape)
                                     )
                                 }
                             }
                         }
                     }
 
-                    // Filter Button
-                    val isFilterActive = uiState.startDate != null || !uiState.showSkips
-                    val filterBgColor = if (isFilterActive) TempoRed.copy(alpha = 0.2f) else Color(0xFF1E1B24).copy(alpha = 0.6f)
-                    val filterIconColor = if (isFilterActive) TempoRed else Color(0xFFCAC4D0)
-
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(CircleShape)
-                            .background(filterBgColor)
-                            .clickable { showFilterSheet = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.List,
-                            contentDescription = "Filter",
-                            tint = filterIconColor
+                    if (isScrolled) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(0.8.dp)
+                                .background(GlassBorderSoft.copy(alpha = 0.6f * headerAlpha))
                         )
                     }
                 }
@@ -317,130 +380,264 @@ fun HistoryFilterSheetContent(
 ) {
     var showSkips by remember { mutableStateOf(currentShowSkips) }
     var selectedRange by remember { mutableStateOf(getRangeLabel(currentStartDate)) }
+    val haptics = LocalHapticFeedback.current
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(24.dp)
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 28.dp)
             .navigationBarsPadding()
     ) {
-        Text(
-            text = stringResource(R.string.history_filter_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary
-        )
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Text(
-            stringResource(R.string.history_time_range), 
-            style = MaterialTheme.typography.labelLarge, 
-            color = TextSecondary
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        
+        // Header row
         Row(
-            modifier = Modifier.fillMaxWidth(), 
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            FilterChip(
-                selected = selectedRange == "All Time",
-                onClick = { selectedRange = "All Time" },
-                label = { Text(stringResource(R.string.history_all_time)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = TempoPrimary,
-                    selectedLabelColor = TextOnAccent,
-                    containerColor = GlassFrostSoft,
-                    labelColor = TextSecondary
-                ),
-                border = null
+            Text(
+                text = stringResource(R.string.history_filter_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
             )
-            FilterChip(
-                selected = selectedRange == "Last 7 Days",
-                onClick = { selectedRange = "Last 7 Days" },
-                label = { Text(stringResource(R.string.history_7_days_abbr)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = TempoPrimary,
-                    selectedLabelColor = TextOnAccent,
-                    containerColor = GlassFrostSoft,
-                    labelColor = TextSecondary
-                ),
-                border = null
-            )
-            FilterChip(
-                selected = selectedRange == "Last 30 Days",
-                onClick = { selectedRange = "Last 30 Days" },
-                label = { Text(stringResource(R.string.history_30_days_abbr)) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = TempoPrimary,
-                    selectedLabelColor = TextOnAccent,
-                    containerColor = GlassFrostSoft,
-                    labelColor = TextSecondary
-                ),
-                border = null
+            Text(
+                text = stringResource(R.string.history_reset),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selectedRange != "All Time" || !showSkips) TempoPrimary else TextTertiary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        selectedRange = "All Time"
+                        showSkips = true
+                        onReset()
+                    }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             )
         }
-        
+
         Spacer(modifier = Modifier.height(24.dp))
-        
+
+        // Time Range Kicker
         Text(
-            stringResource(R.string.history_playback), 
-            style = MaterialTheme.typography.labelLarge, 
-            color = TextSecondary
+            text = stringResource(R.string.history_time_range).uppercase(Locale.getDefault()),
+            style = KickerSmall,
+            fontWeight = FontWeight.Bold,
+            color = TextSecondary,
+            letterSpacing = 1.sp
         )
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        Column(
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Segmented Pill Bar for Time Range
+        val ranges = listOf(
+            "All Time" to stringResource(R.string.history_all_time),
+            "Last 7 Days" to stringResource(R.string.history_7_days_abbr),
+            "Last 30 Days" to stringResource(R.string.history_30_days_abbr)
+        )
+
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(GlassFrostSoft)
-                .clickable { showSkips = !showSkips }
-                .padding(16.dp)
+                .height(48.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(TempoDarkSurfaceSunken)
+                .innerShadow(
+                    color = Color.Black.copy(alpha = 0.55f),
+                    cornersRadius = 24.dp,
+                    blur = 4.dp,
+                    offsetY = 1.dp
+                )
+                .border(
+                    1.dp,
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.12f),
+                            Color.White.copy(alpha = 0.03f)
+                        )
+                    ),
+                    RoundedCornerShape(24.dp)
+                )
+                .padding(3.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(
-                    stringResource(R.string.history_show_skipped), 
-                    color = TextPrimary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
+                ranges.forEach { (key, label) ->
+                    val isSelected = selectedRange == key
+                    val contentColor by animateColorAsState(
+                        targetValue = if (isSelected) TextOnAccent else TextSecondary,
+                        label = "filterRangeContentColor"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .then(
+                                if (isSelected) {
+                                    Modifier
+                                        .shadow(
+                                            elevation = 4.dp,
+                                            shape = RoundedCornerShape(21.dp),
+                                            spotColor = TempoPrimary.copy(alpha = 0.4f),
+                                            ambientColor = Color.Black.copy(alpha = 0.7f)
+                                        )
+                                        .clip(RoundedCornerShape(21.dp))
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    TempoAccentBright,
+                                                    TempoPrimary,
+                                                    TempoPrimaryDeep
+                                                )
+                                            )
+                                        )
+                                        .border(
+                                            1.dp,
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    Color.White.copy(alpha = 0.45f),
+                                                    Color.Transparent
+                                                )
+                                            ),
+                                            RoundedCornerShape(21.dp)
+                                        )
+                                } else {
+                                    Modifier.clip(RoundedCornerShape(21.dp))
+                                }
+                            )
+                            .premiumClickable(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    selectedRange = key
+                                },
+                                pressedScale = 0.96f
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            color = contentColor,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Playback Kicker
+        Text(
+            text = stringResource(R.string.history_playback).uppercase(Locale.getDefault()),
+            style = KickerSmall,
+            fontWeight = FontWeight.Bold,
+            color = TextSecondary,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        GlassCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .clickable {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    showSkips = !showSkips
+                },
+            shape = RoundedCornerShape(16.dp),
+            backgroundColor = TempoDarkSurfaceSunken.copy(alpha = 0.7f),
+            variant = GlassCardVariant.LowProminence,
+            borderColor = GlassBorderSoft,
+            borderWidth = 0.8.dp,
+            contentPadding = PaddingValues(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.history_show_skipped),
+                        color = TextPrimary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Include songs skipped during playback",
+                        color = TextTertiary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 Switch(
                     checked = showSkips,
-                    onCheckedChange = { showSkips = it },
+                    onCheckedChange = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        showSkips = it
+                    },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = TextOnAccent,
-                        checkedTrackColor = TempoPrimary
+                        checkedTrackColor = TempoPrimary,
+                        uncheckedThumbColor = TextTertiary,
+                        uncheckedTrackColor = TempoDarkSurfaceElevated
                     )
                 )
             }
         }
-        
+
         Spacer(modifier = Modifier.height(32.dp))
-        
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            OutlinedButton(
-                onClick = onReset,
-                modifier = Modifier.weight(1f).height(48.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCAC4D0))
-            ) {
-                Text(stringResource(R.string.history_reset))
-            }
-            
-            Button(
-                onClick = { 
-                    val (start, end) = getRangeBounds(selectedRange)
-                    onApply(start, end, showSkips) 
-                },
-                modifier = Modifier.weight(1f).height(48.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = TempoRed)
-            ) {
-                Text(stringResource(R.string.history_apply_filters))
-            }
+
+        // Apply Button
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .shadow(
+                    elevation = 6.dp,
+                    shape = RoundedCornerShape(24.dp),
+                    spotColor = TempoPrimary.copy(alpha = 0.4f)
+                )
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            TempoAccentBright,
+                            TempoPrimary,
+                            TempoPrimaryDeep
+                        )
+                    )
+                )
+                .border(
+                    1.dp,
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.White.copy(alpha = 0.45f),
+                            Color.Transparent
+                        )
+                    ),
+                    RoundedCornerShape(24.dp)
+                )
+                .premiumClickable(
+                    onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        val (start, end) = getRangeBounds(selectedRange)
+                        onApply(start, end, showSkips)
+                    },
+                    pressedScale = 0.98f
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = stringResource(R.string.history_apply_filters),
+                color = TextOnAccent,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -450,17 +647,17 @@ fun getRangeLabel(start: Long?): String {
     val now = System.currentTimeMillis()
     val diff = now - start
     return when {
-        diff < 7L * 24 * 60 * 60 * 1000 -> "Last 7 Days"
-        diff < 30L * 24 * 60 * 60 * 1000 -> "Last 30 Days"
-        else -> "Custom"
+        diff <= 8 * 24 * 60 * 60 * 1000L -> "Last 7 Days"
+        diff <= 31 * 24 * 60 * 60 * 1000L -> "Last 30 Days"
+        else -> "All Time"
     }
 }
 
 fun getRangeBounds(label: String): Pair<Long?, Long?> {
     val now = System.currentTimeMillis()
     return when (label) {
-        "Last 7 Days" -> Pair(now - 7L * 24 * 60 * 60 * 1000, now)
-        "Last 30 Days" -> Pair(now - 30L * 24 * 60 * 60 * 1000, now)
+        "Last 7 Days" -> Pair(now - 7 * 24 * 60 * 60 * 1000L, now)
+        "Last 30 Days" -> Pair(now - 30 * 24 * 60 * 60 * 1000L, now)
         else -> Pair(null, null)
     }
 }
@@ -478,6 +675,7 @@ fun SwipeToDeleteHistoryItem(
     // Use item.id as key for all state to prevent state reuse when items shift
     var showDeleteDialog by remember(item.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     
     // Reset dismiss state when item.id changes (item was deleted and a new one appeared)
     val dismissState = key(item.id) {
@@ -486,86 +684,78 @@ fun SwipeToDeleteHistoryItem(
     
     LaunchedEffect(dismissState.currentValue) {
         if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             showDeleteDialog = true
         }
     }
 
     // Delete confirmation dialog
     if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = null,
-                    tint = TempoError
+        Dialog(onDismissRequest = { 
+            showDeleteDialog = false 
+            scope.launch { dismissState.snapTo(SwipeToDismissBoxValue.Settled) }
+        }) {
+            TempoDialogSurface {
+                TempoDialogIcon(
+                    icon = TempoIcons.Trash,
+                    tint = TempoError,
+                    size = 48
                 )
-            },
-            title = {
-                Text(
-                    stringResource(R.string.history_delete_dialog_title),
-                    color = TextPrimary,
-                    fontWeight = FontWeight.SemiBold
-                )
-            },
-            text = {
-                Text(
-                    stringResource(R.string.history_delete_dialog_message, item.title),
-                    color = TextSecondary
-                )
-            },
-            confirmButton = {
-                TextButton(
+                Spacer(modifier = Modifier.height(16.dp))
+                TempoDialogTitle(text = stringResource(R.string.history_delete_dialog_title))
+                Spacer(modifier = Modifier.height(8.dp))
+                TempoDialogBody(text = stringResource(R.string.history_delete_dialog_message, item.title))
+                Spacer(modifier = Modifier.height(24.dp))
+                TempoDialogDangerButton(
+                    text = stringResource(R.string.history_delete_button),
                     onClick = {
                         showDeleteDialog = false
                         onDelete()
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = TempoError)
-                ) {
-                    Text(stringResource(R.string.history_delete_button), fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    scope.launch { dismissState.snapTo(SwipeToDismissBoxValue.Settled) }
-                }) {
-                    Text(stringResource(R.string.common_cancel), color = TextTertiary)
-                }
-            },
-            containerColor = TempoSurfaceDialog,
-            shape = RoundedCornerShape(24.dp)
-        )
+                    icon = TempoIcons.Trash
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                TempoDialogSecondaryButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = {
+                        showDeleteDialog = false
+                        scope.launch { dismissState.snapTo(SwipeToDismissBoxValue.Settled) }
+                    }
+                )
+            }
+        }
     }
-
-    val isSwiping = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart || 
-                    dismissState.currentValue == SwipeToDismissBoxValue.EndToStart ||
-                    dismissState.progress > 0.0f
 
     SwipeToDismissBox(
         state = dismissState,
         backgroundContent = {
-            // Delete background - Only visible when swiping
-            val backgroundColor = if (dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-                TempoRed.copy(alpha = 0.9f)
-            } else {
-                 Color.Transparent
-            }
+            val isDismissing = dismissState.targetValue == SwipeToDismissBoxValue.EndToStart ||
+                    dismissState.currentValue == SwipeToDismissBoxValue.EndToStart
 
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(16.dp)) // Match card shape
-                    .background(backgroundColor),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                if (dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
+            if (isDismissing) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color.Transparent,
+                                    TempoErrorDeep.copy(alpha = 0.6f),
+                                    TempoError.copy(alpha = 0.95f)
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete",
+                        imageVector = TempoIcons.Trash,
+                        contentDescription = stringResource(R.string.history_delete_button),
                         tint = Color.White,
-                        modifier = Modifier.padding(end = 24.dp)
+                        modifier = Modifier
+                            .padding(end = 24.dp)
+                            .size(22.dp)
                     )
                 }
             }
@@ -608,7 +798,9 @@ fun HistoryListContent(
     isLoadingMoreLastFm: Boolean = false,
     hasMoreLastFm: Boolean = false,
     onLoadMoreLastFm: () -> Unit = {},
-    onViewModeChange: (HistoryViewMode) -> Unit = {}
+    onViewModeChange: (HistoryViewMode) -> Unit = {},
+    searchQuery: String = "",
+    onClearSearch: () -> Unit = {}
 ) {
     // Workaround for LazyColumn crash when item count drops below current scroll index
     val totalItemCount = remember(
@@ -636,16 +828,19 @@ fun HistoryListContent(
         }
         count
     }
-    if (totalItemCount > 0 && listState.firstVisibleItemIndex >= totalItemCount) {
-        listState.requestScrollToItem(totalItemCount - 1)
+    LaunchedEffect(totalItemCount) {
+        if (totalItemCount > 0 && listState.firstVisibleItemIndex >= totalItemCount) {
+            listState.requestScrollToItem(totalItemCount - 1)
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            // Top padding for header (approx 80dp + status bars), Bottom for nav
-            contentPadding = PaddingValues(top = 100.dp, bottom = 120.dp),
-            modifier = Modifier.fillMaxSize()
+            // Top padding for persistent search bar (status bar + 48dp bar + paddings), bottom for bottom nav
+            contentPadding = PaddingValues(top = 96.dp, bottom = 120.dp),
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // View Mode Toggle Banner (only show if user has archive data in SEPARATED mode)
             if (hasArchiveData && viewMode == HistoryViewMode.SEPARATED) {
@@ -661,33 +856,13 @@ fun HistoryListContent(
             val allEmpty = groupedItems.isEmpty() && lastFmGroupedItems.isEmpty() && archiveItems.isEmpty()
             if (!isLoading && allEmpty) {
                 item(key = "empty_state") {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(400.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.History,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(80.dp)
-                                .padding(bottom = 16.dp),
-                            tint = Color(0xFF2D2A32) // Charcoal Lighter
+                    if (searchQuery.isNotBlank()) {
+                        SearchEmptyState(
+                            query = searchQuery,
+                            onClear = onClearSearch
                         )
-                        Text(
-                            text = stringResource(R.string.history_empty_title),
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.history_empty_message),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFFCAC4D0) // Warm Gray
-                        )
+                    } else {
+                        HistoryEmptyState()
                     }
                 }
             }
@@ -700,7 +875,7 @@ fun HistoryListContent(
                         title = stringResource(R.string.history_recent_activity),
                         subtitle = stringResource(R.string.history_recent_activity_subtitle),
                         icon = Icons.Default.PlayCircle,
-                        iconTint = TempoRed
+                        iconTint = TempoPrimary
                     )
                 }
             }
@@ -712,7 +887,8 @@ fun HistoryListContent(
 
                 items(
                     count = itemsList.size,
-                    key = { index -> "recent_${header}_${index}_${itemsList[index].id}" }
+                    key = { index -> itemsList[index].id },
+                    contentType = { "history_item" }
                 ) { index ->
                     val item = itemsList[index]
                     val isFirstItem = groupIndex == 0 && index == 0
@@ -722,8 +898,7 @@ fun HistoryListContent(
                     
                     if (isFirstItem) {
                         LaunchedEffect(Unit) {
-                            // Try to trigger tutorial if we have data
-                             walkthroughController.checkAndTrigger(me.avinas.tempo.ui.components.WalkthroughStep.HISTORY_FILTER)
+                            walkthroughController.checkAndTrigger(me.avinas.tempo.ui.components.WalkthroughStep.HISTORY_FILTER)
                         }
                     }
 
@@ -750,7 +925,6 @@ fun HistoryListContent(
                             onMarkArtist = viewModel::markArtistContent
                         )
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
                 }
             }
 
@@ -761,9 +935,13 @@ fun HistoryListContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                            contentAlignment = Alignment.Center
+                        contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = TempoRed)
+                        CircularProgressIndicator(
+                            color = TempoPrimary,
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.5.dp
+                        )
                     }
                 }
             }
@@ -776,7 +954,7 @@ fun HistoryListContent(
                         title = stringResource(R.string.history_lastfm_history),
                         subtitle = stringResource(R.string.history_lastfm_subtitle),
                         icon = Icons.Default.History,
-                        iconTint = Color(0xFFFFB74D) // Amber/Orange
+                        iconTint = GoldDark
                     )
                 }
                 
@@ -788,7 +966,8 @@ fun HistoryListContent(
 
                     items(
                         count = itemsList.size,
-                        key = { index -> "lastfm_${header}_${index}_${itemsList[index].id}" }
+                        key = { index -> "lastfm_${itemsList[index].id}" },
+                        contentType = { "history_item" }
                     ) { index ->
                         val item = itemsList[index]
                         Box(modifier = Modifier.fillMaxWidth()) {
@@ -801,7 +980,6 @@ fun HistoryListContent(
                                 onMarkArtist = viewModel::markArtistContent
                             )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
                 
@@ -812,9 +990,13 @@ fun HistoryListContent(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(16.dp),
-                                contentAlignment = Alignment.Center
+                            contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(color = Color(0xFFFFB74D))
+                            CircularProgressIndicator(
+                                color = GoldDark,
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.5.dp
+                            )
                         }
                     }
                 }
@@ -830,11 +1012,11 @@ fun HistoryListContent(
                     
                     items(
                         count = archiveItems.size,
-                        key = { index -> "archive_sep_${index}_${archiveItems[index].archiveId}" }
+                        key = { index -> "archive_sep_${archiveItems[index].archiveId}" },
+                        contentType = { "archive_item" }
                     ) { index ->
                         val archiveItem = archiveItems[index]
                         ArchiveHistoryListItem(item = archiveItem)
-                        Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
             }
@@ -850,11 +1032,11 @@ fun HistoryListContent(
                 
                 items(
                     count = archiveItems.size,
-                    key = { index -> "archive_uni_${index}_${archiveItems[index].archiveId}" }
+                    key = { index -> "archive_uni_${archiveItems[index].archiveId}" },
+                    contentType = { "archive_item" }
                 ) { index ->
                     val archiveItem = archiveItems[index]
                     ArchiveHistoryListItem(item = archiveItem)
-                    Spacer(modifier = Modifier.height(12.dp))
                 }
             }
         }
@@ -872,34 +1054,44 @@ fun SeparatedModeInfoBanner(
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        backgroundColor = Color(0xFF1A1A2E).copy(alpha = 0.8f),
-        shape = RoundedCornerShape(12.dp),
-        contentPadding = PaddingValues(12.dp),
-        variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        backgroundColor = TempoDarkSurfaceElevated.copy(alpha = 0.75f),
+        accentColor = GoldDark,
+        shape = RoundedCornerShape(16.dp),
+        contentPadding = PaddingValues(14.dp),
+        variant = GlassCardVariant.QuietGlass
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Info,
-                contentDescription = null,
-                tint = Color(0xFFFFB74D),
-                modifier = Modifier.size(20.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(GoldDark.copy(alpha = 0.15f))
+                    .border(0.8.dp, GoldDark.copy(alpha = 0.3f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = GoldLight,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.history_lastfm_imported),
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
                 )
                 Text(
-                    text = stringResource(R.string.history_archive_plays, archiveTotalPlays.formatNumber(), archiveTrackCount),
+                    text = "${archiveTotalPlays.formatNumber()} plays • $archiveTrackCount tracks archived",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFCAC4D0)
+                    color = TextSecondary
                 )
             }
         }
@@ -919,41 +1111,50 @@ fun SectionDividerHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(24.dp)
-            )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(iconTint.copy(alpha = 0.14f))
+                    .border(0.8.dp, iconTint.copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
         }
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFFCAC4D0),
-            modifier = Modifier.padding(start = 32.dp, top = 2.dp)
-        )
-        // Visual divider
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(1.dp)
+                .height(0.8.dp)
                 .background(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            iconTint.copy(alpha = 0.5f),
+                    Brush.horizontalGradient(
+                        listOf(
+                            iconTint.copy(alpha = 0.4f),
                             iconTint.copy(alpha = 0.1f),
                             Color.Transparent
                         )
@@ -974,38 +1175,46 @@ fun ArchiveSectionHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.History,
-                contentDescription = null,
-                tint = Color(0xFFFFB74D), // Amber/Orange to distinguish
-                modifier = Modifier.size(20.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(GoldDark.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.History,
+                    contentDescription = null,
+                    tint = GoldLight,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
             Text(
-                text = stringResource(R.string.history_from_archive),
-                style = MaterialTheme.typography.titleSmall,
+                text = stringResource(R.string.history_from_archive).uppercase(Locale.getDefault()),
+                style = KickerSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFFFB74D),
+                color = GoldLight,
                 letterSpacing = 1.sp
             )
         }
         Text(
-            text = stringResource(R.string.history_archive_showing_tracks, itemCount, totalTracks),
+            text = "Showing $itemCount of $totalTracks archived tracks",
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFFCAC4D0),
-            modifier = Modifier.padding(top = 4.dp)
+            color = TextTertiary,
+            modifier = Modifier.padding(start = 36.dp, top = 2.dp)
         )
     }
 }
 
 /**
  * Display item for archived scrobbles.
- * Visually distinct from regular history items.
+ * Visually distinct with gold telemetry accents.
  */
 @Composable
 fun ArchiveHistoryListItem(item: ArchiveHistoryItem) {
@@ -1013,85 +1222,100 @@ fun ArchiveHistoryListItem(item: ArchiveHistoryItem) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        backgroundColor = Color(0xFF1A1A2E).copy(alpha = 0.6f), // Slightly different tint
+        backgroundColor = TempoDarkSurfaceElevated.copy(alpha = 0.5f),
+        accentColor = GoldDark,
         shape = RoundedCornerShape(16.dp),
-        contentPadding = PaddingValues(16.dp),
-        variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+        contentPadding = PaddingValues(12.dp),
+        variant = GlassCardVariant.LowProminence,
+        borderColor = GlassBorderSoft,
+        borderWidth = 0.8.dp
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Album Art with archive indicator
             Box {
                 CachedAsyncImage(
                     imageUrl = item.albumArtUrl,
                     contentDescription = "Album art for ${item.trackTitle}",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(8.dp)),
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
+                    targetSizeDp = 52,
                     placeholder = {
                         Box(
                             modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF2D2A32)),
+                                .size(52.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(TempoDarkSurfaceSunken),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Rounded.MusicNote,
+                                imageVector = Icons.Rounded.Album,
                                 contentDescription = null,
-                                tint = Color(0xFF4A4458),
-                                modifier = Modifier.size(24.dp)
+                                tint = TextTertiary,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
                 )
-                // Archive badge
+                // Archive play count badge
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .offset(x = 4.dp, y = 4.dp)
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFFFB74D)),
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(GoldDark)
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = item.playCount.toString(),
+                        text = "${item.playCount}x",
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black
+                        color = TextOnAccent
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
             // Track Info
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.trackTitle,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    color = TextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = item.artistName,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFFCAC4D0),
+                    color = TextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                // Play count info
+            }
+
+            // Play count pill
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(GoldDark.copy(alpha = 0.12f))
+                    .border(0.8.dp, GoldDark.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
                 Text(
-                    text = stringResource(R.string.history_archive_plays_item, item.playCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFFFB74D).copy(alpha = 0.8f)
+                    text = "${item.playCount} plays",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GoldLight,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
@@ -1103,27 +1327,64 @@ fun ArchiveHistoryListItem(item: ArchiveHistoryItem) {
  */
 private fun Long.formatNumber(): String {
     return when {
-        this >= 1_000_000 -> String.format("%.1fM", this / 1_000_000.0)
-        this >= 1_000 -> String.format("%.1fK", this / 1_000.0)
+        this >= 1_000_000 -> String.format(Locale.US, "%.1fM", this / 1_000_000.0)
+        this >= 1_000 -> String.format(Locale.US, "%.1fK", this / 1_000.0)
         else -> this.toString()
     }
 }
 
 @Composable
 fun HistorySectionHeader(title: String, isLastFmSection: Boolean = false) {
-    val headerColor = if (isLastFmSection) Color(0xFFFFB74D) else TempoRed
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp)
+            .background(TempoDarkBackground.copy(alpha = 0.95f))
+            .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            color = headerColor,
-            letterSpacing = 1.sp
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (isLastFmSection) GoldDark.copy(alpha = 0.14f)
+                        else TempoPrimary.copy(alpha = 0.12f)
+                    )
+                    .border(
+                        0.8.dp,
+                        if (isLastFmSection) GoldDark.copy(alpha = 0.35f)
+                        else TempoPrimary.copy(alpha = 0.3f),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = title.uppercase(Locale.getDefault()),
+                    style = KickerSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isLastFmSection) GoldLight else TempoAccentBright,
+                    letterSpacing = 1.2.sp
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(0.8.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                if (isLastFmSection) GoldDark.copy(alpha = 0.3f)
+                                else GlassBorderMedium,
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
     }
 }
 
@@ -1139,6 +1400,7 @@ fun HistoryListItem(
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val walkthroughController = me.avinas.tempo.ui.components.LocalWalkthroughController.current
+    val haptics = LocalHapticFeedback.current
 
     Box {
         GlassCard(
@@ -1148,80 +1410,98 @@ fun HistoryListItem(
                 .combinedClickable(
                     onClick = { 
                         walkthroughController.dismiss()
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onClick() 
                     },
                     onLongClick = { 
                         walkthroughController.dismiss()
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         showMenu = true 
                     }
                 ),
-            backgroundColor = Color(0xFF1E1B24).copy(alpha = 0.4f), // Warm Charcoal Transparent
+            shape = RoundedCornerShape(16.dp),
+            backgroundColor = TempoDarkSurfaceElevated.copy(alpha = 0.6f),
             contentPadding = PaddingValues(12.dp),
-            variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+            variant = GlassCardVariant.LowProminence,
+            borderColor = GlassBorderSoft,
+            borderWidth = 0.8.dp
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.08f)),
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(0.5.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     if (item.album_art_url.isNullOrBlank()) {
-                        Icon(
-                            imageVector = Icons.Rounded.MusicNote,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.5f)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(TempoDarkSurfaceSunken),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.MusicNote,
+                                contentDescription = null,
+                                tint = TextTertiary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     } else {
                         CachedAsyncImage(
                             imageUrl = item.album_art_url,
                             contentDescription = "Album art for ${item.title}",
                             modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Crop,
+                            targetSizeDp = 52
                         )
                     }
                     
-                    // Visual Badge for Non-Music Content
+                    // Visual Badge for Non-Music Content on Art
                     if (item.content_type != "MUSIC") {
                         val badgeColor = when(item.content_type) {
-                            "PODCAST" -> Color(0xFF03DAC6) // Teal
-                            "AUDIOBOOK" -> Color(0xFFFFA000) // Amber
-                            else -> Color.Gray
+                            "PODCAST" -> TempoCyan
+                            "AUDIOBOOK" -> GoldenAmber
+                            else -> TextTertiary
                         }
                         
                         Box(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(2.dp)
-                                .background(badgeColor, CircleShape)
+                                .clip(CircleShape)
+                                .background(badgeColor)
                                 .size(16.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = if (item.content_type == "PODCAST") 
-                                    androidx.compose.material.icons.Icons.Default.Mic 
+                                    TempoIcons.Podcast 
                                 else 
-                                    androidx.compose.material.icons.Icons.Default.Book,
+                                    TempoIcons.Audiobook,
                                 contentDescription = item.content_type,
-                                tint = Color.Black,
+                                tint = TextOnAccent,
                                 modifier = Modifier.size(10.dp)
                             )
                         }
                     }
                 }
                 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(14.dp))
                 
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Text(
                             text = item.title,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
+                            color = TextPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
@@ -1230,68 +1510,88 @@ fun HistoryListItem(
                         // Inline Badge Text
                         if (item.content_type != "MUSIC") {
                             val badgeColor = when(item.content_type) {
-                                "PODCAST" -> Color(0xFF03DAC6) // Teal
-                                "AUDIOBOOK" -> Color(0xFFFFA000) // Amber
-                                else -> Color.Gray
+                                "PODCAST" -> TempoCyan
+                                "AUDIOBOOK" -> GoldenAmber
+                                else -> TextTertiary
                             }
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = item.content_type.take(1),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = badgeColor,
-                                fontWeight = FontWeight.Bold,
+                            Box(
                                 modifier = Modifier
-                                    .border(1.dp, badgeColor, RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 4.dp, vertical = 0.dp)
-                            )
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(badgeColor.copy(alpha = 0.14f))
+                                    .border(0.8.dp, badgeColor.copy(alpha = 0.35f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = item.content_type.take(1),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    color = badgeColor,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                         
                         // Desktop source tag
                         if (item.source.startsWith("desktop:")) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Desktop",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF7C4DFF),
-                                fontWeight = FontWeight.Bold,
+                            Box(
                                 modifier = Modifier
-                                    .border(1.dp, Color(0xFF7C4DFF), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 4.dp, vertical = 0.dp)
-                            )
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF8B5CF6).copy(alpha = 0.14f))
+                                    .border(0.8.dp, Color(0xFF8B5CF6).copy(alpha = 0.35f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = "DESK",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 9.sp,
+                                    color = Color(0xFFA78BFA),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = item.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFCAC4D0), // Warm Gray
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
                 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(10.dp))
     
                 Column(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.height(56.dp) // Match height of album art for alignment
+                    modifier = Modifier.height(52.dp)
                 ) {
                     Text(
                         text = formatRelativeTime(item.timestamp),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFFA8A29E) // Warm Mid-Gray
+                        color = TextTertiary,
+                        fontWeight = FontWeight.Medium
                     )
                     
-                    IconButton(
-                        onClick = onDeleteClick,
-                        modifier = Modifier.size(24.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .premiumClickable(
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onDeleteClick()
+                                },
+                                pressedScale = 0.88f
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = Color(0xFFA8A29E), // Warm Mid-Gray
-                            modifier = Modifier.size(20.dp)
+                            imageVector = TempoIcons.Trash,
+                            contentDescription = stringResource(R.string.history_delete_button),
+                            tint = TextTertiary,
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -1299,112 +1599,58 @@ fun HistoryListItem(
         }
         
         // Context Menu for Blocking Content
-        DropdownMenu(
+        TempoDropdownMenu(
             expanded = showMenu,
-            onDismissRequest = { showMenu = false },
-            modifier = Modifier
-                .background(Color(0xFF2D2A32))
-                .widthIn(max = 280.dp)
+            onDismissRequest = { showMenu = false }
         ) {
-            // Section Header: Block this track
-            Text(
-                text = stringResource(R.string.history_block_track),
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.Gray,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-            DropdownMenuItem(
-                text = { 
-                    Column {
-                        Text(stringResource(R.string.history_its_a_podcast), color = Color.White)
-                        Text(stringResource(R.string.history_remove_and_block), 
-                             color = Color.Gray, 
-                             style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                onClick = { 
+            TempoMenuKicker(text = stringResource(R.string.history_block_track))
+            TempoDropdownMenuItem(
+                title = stringResource(R.string.history_its_a_podcast),
+                subtitle = stringResource(R.string.history_remove_and_block),
+                leadingIcon = TempoIcons.Podcast,
+                leadingIconTint = TempoCyan,
+                onClick = {
                     onMarkContent?.invoke("PODCAST", true)
-                    showMenu = false 
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Default.Mic,
-                        contentDescription = null,
-                        tint = Color(0xFF03DAC6)
-                    )
+                    showMenu = false
                 }
             )
-            DropdownMenuItem(
-                text = { 
-                    Column {
-                        Text(stringResource(R.string.history_its_an_audiobook), color = Color.White)
-                        Text(stringResource(R.string.history_remove_and_block), 
-                             color = Color.Gray, 
-                             style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                onClick = { 
+            TempoDropdownMenuItem(
+                title = stringResource(R.string.history_its_an_audiobook),
+                subtitle = stringResource(R.string.history_remove_and_block),
+                leadingIcon = TempoIcons.Audiobook,
+                leadingIconTint = GoldenAmber,
+                onClick = {
                     onMarkContent?.invoke("AUDIOBOOK", true)
-                    showMenu = false 
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Default.Book,
-                        contentDescription = null,
-                        tint = Color(0xFFFFA000)
-                    )
+                    showMenu = false
                 }
             )
-            
-            HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-            
-            // Section Header: Block artist
-            Text(
+
+            TempoMenuDivider()
+
+            TempoMenuKicker(
                 text = stringResource(R.string.history_block_entire_artist),
-                style = MaterialTheme.typography.labelSmall,
-                color = TempoRed.copy(alpha = 0.7f),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                color = TempoError.copy(alpha = 0.8f)
             )
-            DropdownMenuItem(
-                text = { 
-                    Column {
-                        Text(stringResource(R.string.history_artist_is_podcast, item.artist), color = TempoRed)
-                        Text(stringResource(R.string.history_remove_all_from_source), 
-                             color = Color.Gray, 
-                             style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                onClick = { 
+            TempoDropdownMenuItem(
+                title = stringResource(R.string.history_artist_is_podcast, item.artist),
+                subtitle = stringResource(R.string.history_remove_all_from_source),
+                leadingIcon = TempoIcons.Podcast,
+                leadingIconTint = TempoError,
+                isDestructive = true,
+                onClick = {
                     onMarkArtist?.invoke("PODCAST", true)
-                    showMenu = false 
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = null,
-                        tint = Color(0xFF03DAC6)
-                    )
+                    showMenu = false
                 }
             )
-            DropdownMenuItem(
-                text = { 
-                    Column {
-                        Text(stringResource(R.string.history_artist_is_audiobook, item.artist), color = TempoRed)
-                        Text(stringResource(R.string.history_remove_all_from_source), 
-                             color = Color.Gray, 
-                             style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                onClick = { 
+            TempoDropdownMenuItem(
+                title = stringResource(R.string.history_artist_is_audiobook, item.artist),
+                subtitle = stringResource(R.string.history_remove_all_from_source),
+                leadingIcon = TempoIcons.Audiobook,
+                leadingIconTint = TempoError,
+                isDestructive = true,
+                onClick = {
                     onMarkArtist?.invoke("AUDIOBOOK", true)
-                    showMenu = false 
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = null,
-                        tint = Color(0xFFFFA000)
-                    )
+                    showMenu = false
                 }
             )
         }
@@ -1417,13 +1663,121 @@ fun formatRelativeTime(timestamp: Long): String {
     val diff = ChronoUnit.MINUTES.between(time, now)
 
     return when {
+        diff < 1 -> "Just now"
         diff < 60 -> "${diff}m ago"
         diff < 24 * 60 -> "${diff / 60}h ago"
         else -> {
             val date = time.atZone(ZoneId.systemDefault()).toLocalDate()
             val today = now.atZone(ZoneId.systemDefault()).toLocalDate()
             if (date.isEqual(today.minusDays(1))) "Yesterday"
-            else date.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+            else date.format(RelativeDateFormatter)
+        }
+    }
+}
+
+@Composable
+fun HistoryEmptyState() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 64.dp, horizontal = 32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(TempoPrimary.copy(alpha = 0.08f))
+                    .border(1.dp, TempoPrimary.copy(alpha = 0.2f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.History,
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp),
+                    tint = TempoPrimary
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.history_empty_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.history_empty_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+fun SearchEmptyState(query: String, onClear: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 64.dp, horizontal = 32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(68.dp)
+                    .clip(CircleShape)
+                    .background(GlassFrostSoft)
+                    .border(1.dp, GlassBorderSoft, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    modifier = Modifier.size(30.dp),
+                    tint = TextTertiary
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "No scrobbles found",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "No matches for \"$query\"",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(TempoPrimary.copy(alpha = 0.12f))
+                    .border(1.dp, TempoPrimary.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+                    .premiumClickable(onClick = onClear)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.stats_search_clear),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TempoPrimary
+                )
+            }
         }
     }
 }

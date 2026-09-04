@@ -26,6 +26,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
@@ -53,7 +54,16 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private val _flagsState = MutableStateFlow(HomeFlags())
+    val flagsState: StateFlow<HomeFlags> = _flagsState.asStateFlow()
+
     private var loadJob: Job? = null
+
+    // Coalesced reactive reload signal (see observeDataChanges).
+    private val reactiveReload = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    // Rate-app prompt is evaluated at most once per app session.
+    private var rateAppChecked = false
 
     init {
         loadData()
@@ -62,6 +72,15 @@ class HomeViewModel @Inject constructor(
     }
     
     private fun observeDataChanges() {
+        // All reactive reload sources funnel into one debounced signal so a single
+        // listening event (which fires BOTH the Room overview flow and refreshEvents)
+        // produces one data reload instead of two full multi-query fetches.
+        viewModelScope.launch {
+            reactiveReload
+                .debounce(1_500)
+                .collect { loadData() }
+        }
+
         viewModelScope.launch {
             _uiState
                 .map { it.selectedTimeRange }
@@ -72,35 +91,29 @@ class HomeViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { overview ->
                     _uiState.update { it.copy(listeningOverview = overview, hasData = overview.totalPlayCount > 0) }
-                    loadData()
+                    reactiveReload.tryEmit(Unit)
                 }
         }
-        
+
         // Also observe metadata updates (album art, artist images) from enrichment
         viewModelScope.launch {
             statsRepository.observeMetadataUpdates()
-                .debounce(3_000)
-                .collect {
-                    loadData()
-                }
+                .collect { reactiveReload.tryEmit(Unit) }
         }
-        
+
         // Listen for new track events from MusicTrackingService
         viewModelScope.launch {
             refreshCoordinator.refreshEvents
-                .debounce(2_000)
-                .collect {
-                    loadData()
-                }
+                .collect { reactiveReload.tryEmit(Unit) }
         }
-        
+
         // Listen for preference changes (e.g. Gamification toggle, spotlight viewed state)
         viewModelScope.launch {
             var lastGamificationState: Boolean? = null
             preferencesRepository.preferences().collect { prefs ->
                 val state = prefs?.isGamificationEnabled ?: true
                 if (lastGamificationState != null && lastGamificationState != state) {
-                    loadData() // Reload if toggle changed
+                    loadData() // Reload if toggle changed (deliberate user action, no debounce)
                 }
                 lastGamificationState = state
 
@@ -110,26 +123,27 @@ class HomeViewModel @Inject constructor(
                     me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.storyPeriodKey(storyTimeRange)
                 } else null
                 val viewed = currentKey != null && currentKey == prefs?.lastSpotlightStoryViewed
-                _uiState.update { it.copy(spotlightStoryViewed = viewed) }
+                _flagsState.update { it.copy(spotlightStoryViewed = viewed) }
             }
         }
     }
 
     fun onTimeRangeSelected(timeRange: TimeRange) {
-        _uiState.update { it.copy(selectedTimeRange = timeRange, isLoading = true) }
+        _uiState.update { it.copy(selectedTimeRange = timeRange) }
+        _flagsState.update { it.copy(isLoading = true) }
         loadData()
     }
 
     suspend fun refresh() {
         val startTime = System.currentTimeMillis()
-        _uiState.update { it.copy(isRefreshing = true, isLoading = true) }
+        _flagsState.update { it.copy(isRefreshing = true, isLoading = true) }
         try {
             fetchData()
         } finally {
             // Ensure spinner shows for at least 600ms so it doesn't flash away
             val elapsed = System.currentTimeMillis() - startTime
             if (elapsed < 600) delay(600 - elapsed)
-            _uiState.update { it.copy(isRefreshing = false) }
+            _flagsState.update { it.copy(isRefreshing = false) }
         }
     }
 
@@ -153,10 +167,12 @@ class HomeViewModel @Inject constructor(
                 val dataLimit = when (timeRange) {
                     TimeRange.TODAY, TimeRange.THIS_WEEK -> 7
                     TimeRange.THIS_MONTH -> 31
-                    TimeRange.THIS_YEAR -> 365
-                    TimeRange.ALL_TIME -> 365
+                    TimeRange.THIS_YEAR -> 366
+                    TimeRange.ALL_TIME -> 5000
                 }
                 val rawDailyListeningDeferred = async { statsRepository.getDailyListening(timeRange, dataLimit, withLeeway = false) }
+                val activeDaysDeferred = async { statsRepository.getActiveDaysCount(timeRange, withLeeway = false) }
+                val peakDayMsDeferred = async { statsRepository.getPeakDayListeningMs(timeRange, withLeeway = false) }
                 val topTracksDeferred = async { statsRepository.getTopTracks(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1, withLeeway = false) }
                 val topArtistsDeferred = async { statsRepository.getTopArtists(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1, withLeeway = false) }
                 val discoveryStatsDeferred = async { statsRepository.getDiscoveryStats(timeRange, withLeeway = false) }
@@ -166,6 +182,7 @@ class HomeViewModel @Inject constructor(
                 // Use ALL_TIME stats for rate app check - ensures consistent behavior regardless of current filter
                 val allTimeOverviewDeferred = async { statsRepository.getListeningOverview(TimeRange.ALL_TIME) }
                 val profileIdentityDeferred = async { profileIdentityManager.getProfileIdentity() }
+                val earliestTimestampDeferred = async { statsRepository.getEarliestDataTimestamp() }
                 
                 // Today's Listen Widget data
                 val todayOverviewDeferred = async { statsRepository.getListeningOverview(TimeRange.TODAY) }
@@ -243,18 +260,51 @@ class HomeViewModel @Inject constructor(
                 
                 // Combine insights (Gamification Card first, then others)
                 combinedInsights.addAll(insightsDeferred.await())
-                
+
+                val activeDaysCount = activeDaysDeferred.await()
+                val peakDayMs = peakDayMsDeferred.await()
+                val peakDayMinutes = peakDayMs / 1000 / 60
+                val earliestTimestamp = earliestTimestampDeferred.await()
+
+                val today = java.time.LocalDate.now()
+                val totalDaysCount = when (timeRange) {
+                    TimeRange.TODAY -> 1
+                    TimeRange.THIS_WEEK -> today.dayOfWeek.value
+                    TimeRange.THIS_MONTH -> today.dayOfMonth
+                    TimeRange.THIS_YEAR -> today.dayOfYear
+                    TimeRange.ALL_TIME -> {
+                        if (earliestTimestamp != null) {
+                            val earliestDate = java.time.Instant.ofEpochMilli(earliestTimestamp)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .toLocalDate()
+                            (java.time.temporal.ChronoUnit.DAYS.between(earliestDate, today).toInt() + 1).coerceAtLeast(1)
+                        } else {
+                            1
+                        }
+                    }
+                }
+
+                val totalListeningMinutes = overview.totalListeningTimeMs / 1000 / 60
+                val dailyAvgMinutes = if (activeDaysCount > 0) totalListeningMinutes / activeDaysCount else 0L
+
                 val hasData = overview.totalPlayCount > 0
-                val earliestTimestamp = statsRepository.getEarliestDataTimestamp()
                 val isNewUser = earliestTimestamp == null
                 
+                // Hoist the suspend rate-app check out of the state-update lambda, and
+                // preserve an already-visible popup across reloads (shouldShowRateApp()
+                // writes a 3-day cooldown on success and would otherwise dismiss it).
+                val showRateApp = _flagsState.value.showRateAppPopup || shouldShowRateApp()
+
                 _uiState.update {
                     it.copy(
-                        isLoading = false,
                         listeningOverview = overview,
                         periodComparison = periodComparison,
                         chartLabels = chartLabels,
                         dailyListening = dailyListening,
+                        dailyAvgMinutes = dailyAvgMinutes,
+                        activeDaysCount = activeDaysCount,
+                        totalDaysCount = totalDaysCount,
+                        peakDayMinutes = peakDayMinutes,
                         topTrack = topTracks.items.firstOrNull(),
                         topArtist = topArtists.items.firstOrNull(),
                         spotlightTopTrack = spotlightTopTrack,
@@ -266,13 +316,7 @@ class HomeViewModel @Inject constructor(
                         profileImagePath = profileIdentity.profileImagePath,
                         hasData = hasData,
                         isNewUser = isNewUser,
-                        // visible until the user actively interacts with it. Without this guard,
-                        // any subsequent data reload (e.g. time-range change) would call
-                        // shouldShowRateApp() which now sees the 3-day cooldown has just been
-                        // written and returns false, silently dismissing the popup mid-interaction.
-                        showRateAppPopup = it.showRateAppPopup || shouldShowRateApp(),
                         isGamificationEnabled = isGamificationEnabled,
-                        // Today's Listen Widget + Today Overview overlay lists
                         todayOverview = todayOverview,
                         todayTopTrack = todayTopTracks.items.firstOrNull(),
                         todayTopArtist = todayTopArtists.items.firstOrNull(),
@@ -282,16 +326,29 @@ class HomeViewModel @Inject constructor(
                         todayPeriodComparison = todayPeriodComparison
                     )
                 }
+                _flagsState.update {
+                    it.copy(
+                        isLoading = false,
+                        showRateAppPopup = showRateApp
+                    )
+                }
 
                 // Share nudge — evaluate once per session, once home data is ready.
                 maybeShowShareNudge()
             }
         } catch (e: Exception) {
-            _uiState.update { it.copy(isLoading = false, error = e.message) }
+            _uiState.update { it.copy(error = e.message) }
+            _flagsState.update { it.copy(isLoading = false) }
         }
     }
 
     private suspend fun shouldShowRateApp(): Boolean {
+        // Evaluated at most once per app session: the engagement gates are two full-table
+        // DAO scans (getRealListeningTimeMs/getRealPlayCount) and must not run on every
+        // data reload. If engagement is below threshold now, the prompt simply waits for
+        // the next launch rather than re-scanning on every track change.
+        if (rateAppChecked) return false
+        rateAppChecked = true
         // Check cheapest gates first to short-circuit before hitting the DB.
         val preferences = context.dataStore.data.first()
 
@@ -347,13 +404,26 @@ class HomeViewModel @Inject constructor(
         val today = java.time.LocalDate.now()
         
         return when (timeRange) {
-            TimeRange.TODAY, TimeRange.THIS_WEEK -> {
-                val last7Days = (0..6).map { dayOffset -> 
-                    today.minusDays(dayOffset.toLong()) 
-                }.reversed()
+            TimeRange.TODAY -> {
+                val todayStr = today.toString()
+                val todayData = rawData.firstOrNull { it.date == todayStr } ?: me.avinas.tempo.data.stats.DailyListening(
+                    date = todayStr,
+                    playCount = 0,
+                    totalTimeMs = 0,
+                    uniqueTracks = 0,
+                    uniqueArtists = 0
+                )
+                Pair(listOf(todayData), listOf("Today"))
+            }
+
+            TimeRange.THIS_WEEK -> {
+                val monday = today.minusDays(today.dayOfWeek.value.toLong() - 1)
+                val daysInWeek = (0 until today.dayOfWeek.value).map { 
+                    monday.plusDays(it.toLong()) 
+                }
                 
                 val rawDataMap = rawData.associateBy { it.date }
-                val data = last7Days.map { date ->
+                val data = daysInWeek.map { date ->
                     val dateStr = date.toString()
                     rawDataMap[dateStr] ?: me.avinas.tempo.data.stats.DailyListening(
                         date = dateStr,
@@ -365,7 +435,7 @@ class HomeViewModel @Inject constructor(
                 }
                 
                 // Force English locale for day names
-                val labels = last7Days.map { date ->
+                val labels = daysInWeek.map { date ->
                     date.dayOfWeek.getDisplayName(
                         java.time.format.TextStyle.SHORT,
                         java.util.Locale.ENGLISH
@@ -402,98 +472,117 @@ class HomeViewModel @Inject constructor(
             }
             
             TimeRange.THIS_YEAR -> {
-                val sortedData = rawData.sortedBy { it.date }
-                
-                // If more than 60 days, aggregate by month
-                if (sortedData.size > 60) {
-                    val monthlyData = aggregateByMonth(sortedData)
-                    val labels = monthlyData.map { daily ->
-                        try {
-                            val date = java.time.LocalDate.parse(daily.date)
-                            date.month.getDisplayName(
-                                java.time.format.TextStyle.SHORT,
-                                java.util.Locale.ENGLISH
-                            )
-                        } catch (e: Exception) {
-                            daily.date
-                        }
+                // If more than 60 days have passed this year, aggregate by month
+                if (today.dayOfYear > 60) {
+                    val currentMonth = today.monthValue
+                    val rawByMonth = rawData.groupBy { it.date.take(7) } // single-pass grouping
+                    val monthlyData = (1..currentMonth).map { monthNum ->
+                        val yearMonth = "${today.year}-${monthNum.toString().padStart(2, '0')}"
+                        val firstDate = "$yearMonth-01"
+                        val monthListens = rawByMonth[yearMonth].orEmpty()
+                        me.avinas.tempo.data.stats.DailyListening(
+                            date = firstDate,
+                            playCount = monthListens.sumOf { it.playCount },
+                            totalTimeMs = monthListens.sumOf { it.totalTimeMs },
+                            uniqueTracks = monthListens.sumOf { it.uniqueTracks },
+                            uniqueArtists = monthListens.sumOf { it.uniqueArtists }
+                        )
+                    }
+                    val labels = (1..currentMonth).map { monthNum ->
+                        java.time.Month.of(monthNum).getDisplayName(
+                            java.time.format.TextStyle.SHORT,
+                            java.util.Locale.ENGLISH
+                        )
                     }
                     Pair(monthlyData, labels)
                 } else {
-                    // Show daily data with day + month labels
-                    val labels = sortedData.map { daily ->
-                        try {
-                            val date = java.time.LocalDate.parse(daily.date)
-                            "${date.dayOfMonth} ${date.month.getDisplayName(
-                                java.time.format.TextStyle.SHORT,
-                                java.util.Locale.ENGLISH
-                            )}"
-                        } catch (e: Exception) {
-                            daily.date
-                        }
+                    // Continuous daily data from Jan 1 to today
+                    val firstDayOfYear = today.withDayOfYear(1)
+                    val daysInYear = (0 until today.dayOfYear).map {
+                        firstDayOfYear.plusDays(it.toLong())
                     }
-                    Pair(sortedData, labels)
+                    val rawDataMap = rawData.associateBy { it.date }
+                    val data = daysInYear.map { date ->
+                        val dateStr = date.toString()
+                        rawDataMap[dateStr] ?: me.avinas.tempo.data.stats.DailyListening(
+                            date = dateStr,
+                            playCount = 0,
+                            totalTimeMs = 0,
+                            uniqueTracks = 0,
+                            uniqueArtists = 0
+                        )
+                    }
+                    val labels = daysInYear.map { date ->
+                        "${date.dayOfMonth} ${date.month.getDisplayName(
+                            java.time.format.TextStyle.SHORT,
+                            java.util.Locale.ENGLISH
+                        )}"
+                    }
+                    Pair(data, labels)
                 }
             }
             
             TimeRange.ALL_TIME -> {
                 val sortedData = rawData.sortedBy { it.date }
+                val earliestDate = sortedData.firstOrNull()?.let {
+                    try { java.time.LocalDate.parse(it.date) } catch (e: Exception) { null }
+                } ?: today
                 
-                // If 60 days or less, show daily data like THIS_YEAR
-                // If more than 60 days, aggregate by month
-                if (sortedData.size <= 60) {
-                    // Show daily data with day + month labels
-                    val labels = sortedData.map { daily ->
-                        try {
-                            val date = java.time.LocalDate.parse(daily.date)
-                            val year = date.year
-                            val currentYear = today.year
-                            
-                            // For current year, show "15 Jan"
-                            // For past years, show "15 Jan 2023"
-                            if (year == currentYear) {
-                                "${date.dayOfMonth} ${date.month.getDisplayName(
-                                    java.time.format.TextStyle.SHORT,
-                                    java.util.Locale.ENGLISH
-                                )}"
-                            } else {
-                                "${date.dayOfMonth} ${date.month.getDisplayName(
-                                    java.time.format.TextStyle.SHORT,
-                                    java.util.Locale.ENGLISH
-                                )} ${year}"
-                            }
-                        } catch (e: Exception) {
-                            daily.date
-                        }
+                val totalDays = java.time.temporal.ChronoUnit.DAYS.between(earliestDate, today).toInt() + 1
+                if (totalDays > 60) {
+                    val startYearMonth = java.time.YearMonth.from(earliestDate)
+                    val endYearMonth = java.time.YearMonth.from(today)
+                    val months = mutableListOf<java.time.YearMonth>()
+                    var current = startYearMonth
+                    while (!current.isAfter(endYearMonth)) {
+                        months.add(current)
+                        current = current.plusMonths(1)
                     }
-                    Pair(sortedData, labels)
-                } else {
-                    // Aggregate by month for better visualization
-                    val monthlyData = aggregateByMonth(sortedData)
-                    val labels = monthlyData.map { daily ->
-                        try {
-                            val date = java.time.LocalDate.parse(daily.date)
-                            val year = date.year
-                            val currentYear = today.year
-                            
-                            // For current year, show "Jan"
-                            // For past years, show "Jan 2023"
-                            if (year == currentYear) {
-                                date.month.getDisplayName(
-                                    java.time.format.TextStyle.SHORT,
-                                    java.util.Locale.ENGLISH
-                                )
-                            } else {
-                                "${date.month.getDisplayName(
-                                    java.time.format.TextStyle.SHORT,
-                                    java.util.Locale.ENGLISH
-                                )} ${year}"
-                            }
-                        } catch (e: Exception) {
-                            daily.date
+                    
+                    // Single-pass grouping avoids the O(months × n) filter scan.
+                    val rawByMonth = rawData.groupBy { it.date.take(7) }
+                    val monthlyData = months.map { ym ->
+                        val ymPrefix = ym.toString()
+                        val monthListens = rawByMonth[ymPrefix].orEmpty()
+                        me.avinas.tempo.data.stats.DailyListening(
+                            date = "$ymPrefix-01",
+                            playCount = monthListens.sumOf { it.playCount },
+                            totalTimeMs = monthListens.sumOf { it.totalTimeMs },
+                            uniqueTracks = monthListens.sumOf { it.uniqueTracks },
+                            uniqueArtists = monthListens.sumOf { it.uniqueArtists }
+                        )
+                    }
+                    val currentYear = today.year
+                    val labels = months.map { ym ->
+                        if (ym.year == currentYear) {
+                            ym.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
+                        } else {
+                            "${ym.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} ${ym.year}"
                         }
                     }
                     Pair(monthlyData, labels)
+                } else {
+                    val rawDataMap = rawData.associateBy { it.date }
+                    val days = (0 until totalDays).map { earliestDate.plusDays(it.toLong()) }
+                    val data = days.map { date ->
+                        val dateStr = date.toString()
+                        rawDataMap[dateStr] ?: me.avinas.tempo.data.stats.DailyListening(
+                            date = dateStr,
+                            playCount = 0,
+                            totalTimeMs = 0,
+                            uniqueTracks = 0,
+                            uniqueArtists = 0
+                        )
+                    }
+                    val currentYear = today.year
+                    val labels = days.map { date ->
+                        if (date.year == currentYear) {
+                            "${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)}"
+                        } else {
+                            "${date.dayOfMonth} ${date.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)} ${date.year}"
+                        }
+                    }
+                    Pair(data, labels)
                 }
             }
         }
@@ -538,7 +627,7 @@ class HomeViewModel @Inject constructor(
 
     fun onRateAppFlowHandled() {
         // Dismiss immediately so the user sees instant feedback.
-        _uiState.update { it.copy(showRateAppPopup = false) }
+        _flagsState.update { it.copy(showRateAppPopup = false) }
         viewModelScope.launch {
             context.dataStore.edit { prefs ->
                 // The Play Review API does not tell us whether the user submitted a rating.
@@ -550,7 +639,7 @@ class HomeViewModel @Inject constructor(
     
     fun onRateAppDismissed() {
         // Dismiss immediately so the user sees instant feedback.
-        _uiState.update { it.copy(showRateAppPopup = false) }
+        _flagsState.update { it.copy(showRateAppPopup = false) }
         viewModelScope.launch {
             context.dataStore.edit { prefs ->
                 val current = prefs[intPreferencesKey("rate_app_dismiss_count")] ?: 0
@@ -584,8 +673,8 @@ class HomeViewModel @Inject constructor(
                 // Let the home screen settle before any overlay appears.
                 delay(1500)
 
-                val state = _uiState.value
-                if (state.showRateAppPopup || state.showSpotlightReminder || state.showShareNudge) return@launch
+                val flags = _flagsState.value
+                if (flags.showRateAppPopup || flags.showSpotlightReminder || flags.showShareNudge) return@launch
 
                 val preferences = context.dataStore.data.first()
 
@@ -624,7 +713,7 @@ class HomeViewModel @Inject constructor(
                     prefs[longPreferencesKey("share_nudge_last_shown")] = System.currentTimeMillis()
                 }
 
-                _uiState.update {
+                _flagsState.update {
                     it.copy(
                         showShareNudge = true,
                         shareNudgeTimeRange = timeRange,
@@ -643,7 +732,7 @@ class HomeViewModel @Inject constructor(
      * 3-dismiss permanent suppression.
      */
     fun onShareNudgeDismissed() {
-        _uiState.update {
+        _flagsState.update {
             it.copy(
                 showShareNudge = false,
                 shareNudgeTimeRange = null,
@@ -664,7 +753,7 @@ class HomeViewModel @Inject constructor(
      * nudge can return after the normal cooldown, and record the share.
      */
     fun onShareNudgeShared() {
-        _uiState.update {
+        _flagsState.update {
             it.copy(
                 showShareNudge = false,
                 shareNudgeTimeRange = null,
@@ -706,12 +795,12 @@ class HomeViewModel @Inject constructor(
                 android.util.Log.d("HomeViewModel", "Monthly data: totalPlayCount=${overview.totalPlayCount}")
                 if (overview.totalPlayCount > 0) {
                     android.util.Log.i("HomeViewModel", "✅ Showing MONTHLY Spotlight reminder")
-                    _uiState.update { 
+                    _flagsState.update {
                         it.copy(
                             showSpotlightReminder = true,
                             reminderTimeRange = TimeRange.THIS_MONTH,
                             reminderType = me.avinas.tempo.ui.components.SpotlightReminderType.MONTHLY
-                        ) 
+                        )
                     }
                     return@launch
                 } else {
@@ -730,12 +819,12 @@ class HomeViewModel @Inject constructor(
                 android.util.Log.d("HomeViewModel", "Yearly data: totalPlayCount=${overview.totalPlayCount}")
                 if (overview.totalPlayCount > 0) {
                     android.util.Log.i("HomeViewModel", "✅ Showing YEARLY Spotlight reminder")
-                    _uiState.update { 
+                    _flagsState.update {
                         it.copy(
                             showSpotlightReminder = true,
                             reminderTimeRange = TimeRange.THIS_YEAR,
                             reminderType = me.avinas.tempo.ui.components.SpotlightReminderType.YEARLY
-                        ) 
+                        )
                     }
                     return@launch
                 } else {
@@ -754,12 +843,12 @@ class HomeViewModel @Inject constructor(
                 android.util.Log.d("HomeViewModel", "Weekly data: totalPlayCount=${overview.totalPlayCount}")
                 if (overview.totalPlayCount > 0) {
                     android.util.Log.i("HomeViewModel", "✅ Showing WEEKLY Spotlight reminder")
-                    _uiState.update { 
+                    _flagsState.update {
                         it.copy(
                             showSpotlightReminder = true,
                             reminderTimeRange = TimeRange.THIS_WEEK,
                             reminderType = me.avinas.tempo.ui.components.SpotlightReminderType.WEEKLY
-                        ) 
+                        )
                     }
                 } else {
                     android.util.Log.d("HomeViewModel", "❌ Skipping weekly reminder: no data for THIS_WEEK")
@@ -779,7 +868,7 @@ class HomeViewModel @Inject constructor(
             val preferences = preferencesRepository.preferences().first() ?: return@launch
             
             // Update preferences based on reminder type
-            val updatedPrefs = when (_uiState.value.reminderType) {
+            val updatedPrefs = when (_flagsState.value.reminderType) {
                 me.avinas.tempo.ui.components.SpotlightReminderType.WEEKLY -> 
                     preferences.copy(lastWeeklyReminderShown = today)
                 me.avinas.tempo.ui.components.SpotlightReminderType.MONTHLY -> 
@@ -792,12 +881,12 @@ class HomeViewModel @Inject constructor(
             preferencesRepository.upsert(updatedPrefs)
             
             // Hide popup
-            _uiState.update { 
+            _flagsState.update {
                 it.copy(
                     showSpotlightReminder = false,
                     reminderTimeRange = null,
                     reminderType = null
-                ) 
+                )
             }
         }
     }
@@ -819,8 +908,6 @@ class HomeViewModel @Inject constructor(
 
 @Immutable
 data class HomeUiState(
-    val isLoading: Boolean = true,
-    val isRefreshing: Boolean = false,
     val error: String? = null,
     val selectedTimeRange: TimeRange = TimeRange.THIS_WEEK,
     val hasData: Boolean = false,
@@ -832,6 +919,10 @@ data class HomeUiState(
     val periodComparison: me.avinas.tempo.data.stats.PeriodComparison? = null,
     val dailyListening: List<me.avinas.tempo.data.stats.DailyListening> = emptyList(),
     val chartLabels: List<String> = emptyList(),  // Labels for interactive chart
+    val dailyAvgMinutes: Long = 0L,
+    val activeDaysCount: Int = 0,
+    val totalDaysCount: Int = 0,
+    val peakDayMinutes: Long = 0L,
     val topTrack: me.avinas.tempo.data.stats.TopTrack? = null,
     val topArtist: me.avinas.tempo.data.stats.TopArtist? = null,
     val discoveryStats: me.avinas.tempo.data.stats.DiscoveryStats? = null,
@@ -840,19 +931,6 @@ data class HomeUiState(
     val insights: List<me.avinas.tempo.data.stats.InsightCardData> = emptyList(),
     val userName: String? = null,
     val profileImagePath: String? = null,
-    val showRateAppPopup: Boolean = false,
-
-    // Share Nudge — gated promotion of the share feature; opens the artist share
-    // preview (StatsShareDialog) directly instead of showing a message popup.
-    val showShareNudge: Boolean = false,
-    val shareNudgeTimeRange: TimeRange? = null,
-    val shareNudgeArtists: List<me.avinas.tempo.data.stats.TopArtist> = emptyList(),
-    val shareNudgeOverview: me.avinas.tempo.data.stats.ListeningOverview? = null,
-    
-    // Spotlight Story Reminder
-    val showSpotlightReminder: Boolean = false,
-    val reminderTimeRange: TimeRange? = null,
-    val reminderType: me.avinas.tempo.ui.components.SpotlightReminderType? = null,
     
     // Spotlight story top track (correct period, with leeway)
     val spotlightTopTrack: me.avinas.tempo.data.stats.TopTrack? = null,
@@ -864,6 +942,25 @@ data class HomeUiState(
     val todayTopTracks: List<me.avinas.tempo.data.stats.TopTrack> = emptyList(),
     val todayTopArtists: List<me.avinas.tempo.data.stats.TopArtist> = emptyList(),
     val todayHourlyDistribution: List<me.avinas.tempo.data.stats.HourlyDistribution> = emptyList(),
-    val todayPeriodComparison: me.avinas.tempo.data.stats.PeriodComparison? = null,
+    val todayPeriodComparison: me.avinas.tempo.data.stats.PeriodComparison? = null
+)
+
+/**
+ * Transient UI flags that toggle independently of the stats payload. Split out of
+ * [HomeUiState] so that a pull-to-refresh spinner toggle or popup dismissal no longer
+ * recomposes the whole data feed (which shares a single StateFlow).
+ */
+@Immutable
+data class HomeFlags(
+    val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
+    val showRateAppPopup: Boolean = false,
+    val showShareNudge: Boolean = false,
+    val shareNudgeTimeRange: TimeRange? = null,
+    val shareNudgeArtists: List<me.avinas.tempo.data.stats.TopArtist> = emptyList(),
+    val shareNudgeOverview: me.avinas.tempo.data.stats.ListeningOverview? = null,
+    val showSpotlightReminder: Boolean = false,
+    val reminderTimeRange: TimeRange? = null,
+    val reminderType: me.avinas.tempo.ui.components.SpotlightReminderType? = null,
     val spotlightStoryViewed: Boolean = false
 )

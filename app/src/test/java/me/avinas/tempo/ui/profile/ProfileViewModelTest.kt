@@ -113,4 +113,54 @@ class ProfileViewModelTest {
         assertEquals(4, GamificationEngine.computeStars(200, 10)) // 20x = ★4
         assertEquals(5, GamificationEngine.computeStars(500, 10)) // 50x = ★5
     }
+
+    @Test
+    fun `test badge rarity and XP contribution calculation`() {
+        val commonRarity = GamificationEngine.getRarity("first_play")
+        assertEquals(GamificationEngine.BadgeRarity.COMMON, commonRarity)
+        assertEquals(25, commonRarity.xpPerStar)
+
+        val mythicRarity = GamificationEngine.getRarity("streak_365")
+        assertEquals(GamificationEngine.BadgeRarity.MYTHIC, mythicRarity)
+        assertEquals(1500, mythicRarity.xpPerStar)
+
+        // 3 stars on mythic badge = 3 * 1500 = 4500 XP
+        val mythicXp = GamificationEngine.getBadgeXpContribution("streak_365", 3)
+        assertEquals(4500L, mythicXp)
+
+        // 0 stars = 0 XP
+        assertEquals(0L, GamificationEngine.getBadgeXpContribution("streak_365", 0))
+    }
+
+    @Test
+    fun `test level tier accents match prestige progression`() {
+        // Levels 1-4: Studio Tier
+        val lvl1Color = getLevelTierAccent(1)
+        // Level 5+: Emerald
+        val lvl5Color = getLevelTierAccent(5)
+        // Level 10+: Cyan
+        val lvl10Color = getLevelTierAccent(10)
+        // Level 50+: Gold
+        val lvl50Color = getLevelTierAccent(50)
+        // Level 100+: Mythic Pink
+        val lvl100Color = getLevelTierAccent(100)
+
+        org.junit.Assert.assertNotEquals(lvl1Color, lvl5Color)
+        org.junit.Assert.assertNotEquals(lvl5Color, lvl10Color)
+        org.junit.Assert.assertNotEquals(lvl10Color, lvl50Color)
+        org.junit.Assert.assertNotEquals(lvl50Color, lvl100Color)
+    }
+
+    @Test
+    fun `test listener title hierarchy progression`() {
+        assertEquals("Newcomer", GamificationEngine.computeTitle(0, 0))
+        assertEquals("Casual Listener", GamificationEngine.computeTitle(5, 10))
+        assertEquals("Music Fan", GamificationEngine.computeTitle(10, 50))
+        assertEquals("Music Enthusiast", GamificationEngine.computeTitle(20, 100))
+        assertEquals("Dedicated Listener", GamificationEngine.computeTitle(35, 250))
+        assertEquals("Music Connoisseur", GamificationEngine.computeTitle(50, 500))
+        assertEquals("Music Legend", GamificationEngine.computeTitle(75, 750))
+        assertEquals("Audiophile", GamificationEngine.computeTitle(100, 1000))
+        assertEquals("Sound God", GamificationEngine.computeTitle(150, 2000))
+    }
 }

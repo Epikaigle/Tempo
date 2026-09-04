@@ -457,7 +457,7 @@ fun RestoreScreen(
                                                  Icon(
                                                      Icons.Default.CloudDownload,
                                                      contentDescription = "Restore",
-                                                     tint = TempoRed
+                                                    tint = TempoPrimary
                                                  )
                                              }
                                              if (index < driveBackups.lastIndex) {
@@ -580,14 +580,18 @@ fun RestoreScreen(
                             .fillMaxWidth()
                             .height(scaledSize(54.dp, 0.85f, 1.1f)),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(alpha = 0.1f),
-                            contentColor = Color.White
+                            containerColor = TempoPrimary,
+                            contentColor = TextOnAccent
                         ),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = ButtonDefaults.buttonElevation(
+                            defaultElevation = 8.dp,
+                            pressedElevation = 4.dp
+                        )
                     ) {
                         Text(
-                            text = "Start Fresh",
-                            fontSize = adaptiveTextUnitByCategory(16.sp, 15.sp, 14.sp),
+                            text = "Start Tracking",
+                            fontSize = adaptiveTextUnitByCategory(17.sp, 16.sp, 15.sp),
                             fontWeight = FontWeight.Bold
                         )
                     }

@@ -6,7 +6,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.asComposePath
 import androidx.core.graphics.PathParser
-
+import kotlin.math.roundToInt
 /**
  * Silhouette contour paths for profile badges in Tempo.
  *
@@ -15,38 +15,62 @@ import androidx.core.graphics.PathParser
  */
 object BadgeSilhouettes {
 
+    private data class PathCacheKey(
+        val badgeId: String,
+        val widthPx: Int,
+        val heightPx: Int,
+        val insetScaleThousandths: Int
+    )
+
     private val rawPathCache = HashMap<String, android.graphics.Path>()
+    private val scaledPathCache = HashMap<PathCacheKey, Path>()
 
     /**
      * Get the outer silhouette path for a badge, scaled to the given canvas [size].
+     *
+     * Returns a cached [Path] matching the geometry to avoid allocating native SkPath
+     * and Matrix objects on every draw frame.
      *
      * @param badgeId The unique badge identifier.
      * @param size The destination canvas dimensions.
      * @param insetScale Concentric scale factor (1.0f = outer rim, 0.83f = enamel face).
      */
     fun getPath(badgeId: String, size: Size, insetScale: Float = 1.0f): Path {
-        val baseAndroidPath = rawPathCache.getOrPut(badgeId) {
-            val svgStr = getSvgData(badgeId)
-            PathParser.createPathFromPathData(svgStr)
+        if (size.width <= 0f || size.height <= 0f) return Path()
+
+        val key = PathCacheKey(
+            badgeId = badgeId,
+            widthPx = size.width.roundToInt(),
+            heightPx = size.height.roundToInt(),
+            insetScaleThousandths = (insetScale * 1000f).roundToInt()
+        )
+
+        return synchronized(scaledPathCache) {
+            scaledPathCache.getOrPut(key) {
+                val baseAndroidPath = rawPathCache.getOrPut(badgeId) {
+                    val svgStr = getSvgData(badgeId)
+                    PathParser.createPathFromPathData(svgStr)
+                }
+
+                val dstAndroidPath = android.graphics.Path()
+                val matrix = Matrix()
+
+                // 1. Scale from normalized 24x24 coordinates to canvas size
+                val sx = size.width / 24f
+                val sy = size.height / 24f
+                matrix.setScale(sx, sy)
+
+                // 2. Apply concentric inset scale around center if requested
+                if (insetScale != 1.0f) {
+                    val cx = size.width / 2f
+                    val cy = size.height / 2f
+                    matrix.postScale(insetScale, insetScale, cx, cy)
+                }
+
+                baseAndroidPath.transform(matrix, dstAndroidPath)
+                dstAndroidPath.asComposePath()
+            }
         }
-
-        val dstAndroidPath = android.graphics.Path()
-        val matrix = Matrix()
-
-        // 1. Scale from normalized 24x24 coordinates to canvas size
-        val sx = size.width / 24f
-        val sy = size.height / 24f
-        matrix.setScale(sx, sy)
-
-        // 2. Apply concentric inset scale around center if requested
-        if (insetScale != 1.0f) {
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            matrix.postScale(insetScale, insetScale, cx, cy)
-        }
-
-        baseAndroidPath.transform(matrix, dstAndroidPath)
-        return dstAndroidPath.asComposePath()
     }
 
     private fun getSvgData(badgeId: String): String = when (badgeId) {

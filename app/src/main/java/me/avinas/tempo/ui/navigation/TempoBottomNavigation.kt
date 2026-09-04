@@ -184,7 +184,7 @@ private fun TempoNavItem(
         label = "dotAlpha"
     )
 
-    Column(
+    Box(
         modifier = Modifier
             .clip(CircleShape)
             .clickable(
@@ -201,39 +201,20 @@ private fun TempoNavItem(
             }
             .padding(12.dp)
             .scale(selectionScale * pressScale),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            contentAlignment = Alignment.Center
-        ) {
-            // Radial glow behind active icon
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .graphicsLayer { alpha = dotAlpha }
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                selectedColor.copy(alpha = 0.3f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-            )
+        Icon(
+            imageVector = if (selected) icon else unselectedIcon,
+            contentDescription = label,
+            tint = iconColor,
+            modifier = Modifier.size(26.dp)
+        )
 
-            Icon(
-                imageVector = if (selected) icon else unselectedIcon,
-                contentDescription = label,
-                tint = iconColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-
-        // Selection indicator dot
+        // Selection indicator dot positioned cleanly below without displacing the icon
         Box(
             modifier = Modifier
-                .padding(top = 4.dp)
+                .align(Alignment.Center)
+                .offset(y = 18.dp)
                 .size(4.dp)
                 .graphicsLayer { alpha = dotAlpha }
                 .background(selectedColor, CircleShape)

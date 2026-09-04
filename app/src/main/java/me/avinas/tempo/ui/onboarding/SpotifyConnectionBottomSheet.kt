@@ -136,11 +136,7 @@ fun SpotifyConnectionBottomSheet(
             )
         }
         
-        // Add spacing for the navigation bar
-        Spacer(modifier = Modifier.height(adaptiveSizeByCategory(32.dp, 24.dp, 16.dp)))
-        
-        // Add spacing for the navigation bar specifically
-        Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+        Spacer(modifier = Modifier.height(adaptiveSizeByCategory(16.dp, 12.dp, 8.dp)))
     }
 }
 

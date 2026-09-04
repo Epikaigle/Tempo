@@ -19,13 +19,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.R
 import me.avinas.tempo.ui.components.CachedAsyncImage
+import me.avinas.tempo.ui.components.GlassCard
+import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.ui.theme.*
-
+import java.util.Locale
 /* QuickStatsRow — two figures, shared baseline */
 @Composable
 fun QuickStatsRow(
@@ -33,109 +36,200 @@ fun QuickStatsRow(
     topArtistImage: String?,
     topTrackName: String?,
     topTrackImage: String?,
+    topArtistPlayCount: Int? = null,
+    topTrackArtist: String? = null,
+    topTrackPlayCount: Int? = null,
     onArtistClick: (() -> Unit)? = null,
     onTrackClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+        // Top Artist Editorial Card
+        GlassCard(
             modifier = Modifier
                 .weight(1f)
                 .then(
                     if (onArtistClick != null && topArtistName != null)
                         Modifier.premiumClickable(onClick = onArtistClick, pressedScale = 0.97f)
                     else Modifier
-                )
+                ),
+            variant = GlassCardVariant.QuietGlass,
+            shape = RoundedCornerShape(20.dp),
+            borderColor = GlassBorderSoft,
+            borderWidth = 0.8.dp,
+            contentPadding = PaddingValues(14.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .background(GlassFrostSoft)
-                    .border(1.dp, GlassBorderSoft, CircleShape)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                CachedAsyncImage(
-                    imageUrl = topArtistImage,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    placeholder = {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Person, null, tint = Color.White.copy(alpha = 0.22f), modifier = Modifier.size(28.dp))
+                // Kicker row
+                Text(
+                    text = stringResource(R.string.home_top_artist).uppercase(Locale.getDefault()),
+                    style = KickerSmall,
+                    color = TextTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Circular Artist Avatar
+                Box(
+                    modifier = Modifier
+                        .size(62.dp)
+                        .clip(CircleShape)
+                        .background(TempoDarkSurfaceSunken)
+                        .border(1.dp, GlassBorderMedium, CircleShape)
+                ) {
+                    CachedAsyncImage(
+                        imageUrl = topArtistImage,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        placeholder = {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.22f),
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
                         }
-                    }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = topArtistName ?: "—",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = DisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.3).sp
+                    ),
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                val artistSubtitle = if (topArtistPlayCount != null && topArtistPlayCount > 0) {
+                    "$topArtistPlayCount plays"
+                } else {
+                    stringResource(R.string.details_rank_most_played)
+                }
+
+                Text(
+                    text = artistSubtitle,
+                    style = CaptionSmall,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
                 )
             }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = topArtistName ?: "—",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = stringResource(R.string.home_top_artist),
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
-                letterSpacing = 0.3.sp,
-                maxLines = 1
-            )
         }
 
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+        // On Repeat Track Editorial Card
+        GlassCard(
             modifier = Modifier
                 .weight(1f)
                 .then(
                     if (onTrackClick != null && topTrackName != null)
                         Modifier.premiumClickable(onClick = onTrackClick, pressedScale = 0.97f)
                     else Modifier
-                )
+                ),
+            variant = GlassCardVariant.QuietGlass,
+            shape = RoundedCornerShape(20.dp),
+            borderColor = GlassBorderSoft,
+            borderWidth = 0.8.dp,
+            contentPadding = PaddingValues(14.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(GlassFrostSoft)
-                    .border(1.dp, GlassBorderSoft, RoundedCornerShape(16.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                CachedAsyncImage(
-                    imageUrl = topTrackImage,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    placeholder = {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.MusicNote, null, tint = Color.White.copy(alpha = 0.22f), modifier = Modifier.size(28.dp))
+                // Kicker row
+                Text(
+                    text = stringResource(R.string.home_on_repeat).uppercase(Locale.getDefault()),
+                    style = KickerSmall,
+                    color = TextTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Rounded Track Art
+                Box(
+                    modifier = Modifier
+                        .size(62.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(TempoDarkSurfaceSunken)
+                        .border(1.dp, GlassBorderMedium, RoundedCornerShape(14.dp))
+                ) {
+                    CachedAsyncImage(
+                        imageUrl = topTrackImage,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        placeholder = {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.22f),
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
                         }
-                    }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = topTrackName ?: "—",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = DisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.3).sp
+                    ),
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                val trackSubtitle = if (!topTrackArtist.isNullOrBlank()) {
+                    topTrackArtist
+                } else if (topTrackPlayCount != null && topTrackPlayCount > 0) {
+                    "$topTrackPlayCount plays"
+                } else {
+                    stringResource(R.string.home_on_repeat)
+                }
+
+                Text(
+                    text = trackSubtitle,
+                    style = CaptionSmall,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
                 )
             }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = topTrackName ?: "—",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = stringResource(R.string.home_on_repeat),
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
-                letterSpacing = 0.3.sp,
-                maxLines = 1
-            )
         }
     }
 }

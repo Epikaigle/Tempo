@@ -2,17 +2,9 @@ package me.avinas.tempo.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarData
@@ -21,11 +13,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.draw.shadow
 import me.avinas.tempo.ui.theme.*
 
 /**
@@ -67,69 +59,105 @@ fun TempoSnackbar(
     modifier: Modifier = Modifier,
     variant: TempoSnackbarVariant = TempoSnackbarVariant.fromMessage(data.visuals.message)
 ) {
-    Row(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
             .shadow(
-                elevation = 12.dp,
+                elevation = 16.dp,
                 shape = TempoSnackbarShape,
-                ambientColor = Color.Black.copy(alpha = 0.4f),
-                spotColor = Color.Black.copy(alpha = 0.5f)
+                ambientColor = Color.Black.copy(alpha = 0.5f),
+                spotColor = Color.Black.copy(alpha = 0.6f)
             )
             .clip(TempoSnackbarShape)
-            .background(TempoSurfaceDialog)
+            .background(
+                Brush.verticalGradient(
+                    listOf(TempoSurfaceRaised, TempoSurfaceDialog)
+                )
+            )
             .border(
                 width = 1.dp,
                 color = GlassBorderSoft,
                 shape = TempoSnackbarShape
             )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
-        if (variant != TempoSnackbarVariant.Neutral) {
-            androidx.compose.material3.Icon(
-                imageVector = when (variant) {
-                    TempoSnackbarVariant.Success -> Icons.Rounded.CheckCircle
-                    TempoSnackbarVariant.Error -> Icons.Rounded.ErrorOutline
-                    TempoSnackbarVariant.Warning -> Icons.Rounded.WarningAmber
-                    TempoSnackbarVariant.Neutral -> Icons.Rounded.CheckCircle
-                },
-                contentDescription = null,
-                tint = variant.tint,
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(variant.tint.copy(alpha = 0.14f))
-                    .padding(6.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-        }
-
-        Text(
-            text = data.visuals.message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextPrimary,
-            modifier = Modifier.weight(1f, fill = false)
+        // Specular top hairline edge
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.15f),
+                            Color.Transparent
+                        )
+                    )
+                )
         )
 
-        data.visuals.actionLabel?.let { actionLabel ->
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = actionLabel,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = variant.tint,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Clean single-tile icon badge
+            Box(
                 modifier = Modifier
-                    .clickable(
-                        interactionSource = null,
-                        indication = null
-                    ) {
-                        data.performAction()
-                        data.dismiss()
-                    }
-                    .padding(horizontal = 8.dp, vertical = 10.dp)
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(variant.tint.copy(alpha = 0.10f))
+                    .border(0.5.dp, variant.tint.copy(alpha = 0.20f), RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = when (variant) {
+                        TempoSnackbarVariant.Success -> TempoIcons.CheckCircle
+                        TempoSnackbarVariant.Error -> TempoIcons.ErrorCircle
+                        TempoSnackbarVariant.Warning -> TempoIcons.AlertCircle
+                        TempoSnackbarVariant.Neutral -> TempoIcons.InfoCircle
+                    },
+                    contentDescription = null,
+                    tint = variant.tint,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            Text(
+                text = data.visuals.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextPrimary,
+                modifier = Modifier.weight(1f, fill = false)
             )
+
+            data.visuals.actionLabel?.let { actionLabel ->
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(variant.tint.copy(alpha = 0.08f))
+                        .border(0.5.dp, variant.tint.copy(alpha = 0.22f), RoundedCornerShape(8.dp))
+                        .clickable(
+                            interactionSource = null,
+                            indication = null
+                        ) {
+                            data.performAction()
+                            data.dismiss()
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = actionLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = variant.tint
+                    )
+                }
+            }
         }
     }
 }

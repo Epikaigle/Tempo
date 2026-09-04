@@ -8,12 +8,7 @@ package me.avinas.tempo.ui.details
  */
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -34,9 +29,11 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +66,15 @@ import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.ui.components.TempoDialogShape
 import me.avinas.tempo.ui.theme.*
+import me.avinas.tempo.ui.components.TempoDropdownMenu
+import me.avinas.tempo.ui.components.TempoDropdownMenuItem
+import me.avinas.tempo.ui.components.TempoDialogSurface
+import me.avinas.tempo.ui.components.TempoDialogIcon
+import me.avinas.tempo.ui.components.TempoDialogTitle
+import me.avinas.tempo.ui.components.TempoDialogBody
+import me.avinas.tempo.ui.components.TempoDialogDangerButton
+import me.avinas.tempo.ui.components.TempoDialogSecondaryButton
+import me.avinas.tempo.ui.components.TempoIcons
 import java.util.Locale
 
 @Composable
@@ -77,6 +83,7 @@ fun AlbumDetailsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToSong: (Long) -> Unit,
     onNavigateToArtist: (Long) -> Unit = {},
+    onNavigateToAlbum: (Long) -> Unit = {},
     viewModel: AlbumDetailsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -91,6 +98,7 @@ fun AlbumDetailsScreen(
             onNavigateBack = onNavigateBack,
             onNavigateToSong = onNavigateToSong,
             onNavigateToArtist = onNavigateToArtist,
+            onNavigateToAlbum = onNavigateToAlbum,
             onToggleEdit = viewModel::toggleEditMode,
             onAddClick = viewModel::openAddDialog,
             onRemoveTrack = viewModel::requestRemove,
@@ -182,11 +190,14 @@ private fun AlbumDetailsContent(
     onNavigateBack: () -> Unit,
     onNavigateToSong: (Long) -> Unit,
     onNavigateToArtist: (Long) -> Unit,
+    onNavigateToAlbum: (Long) -> Unit,
     onToggleEdit: () -> Unit,
     onAddClick: () -> Unit,
     onRemoveTrack: (TrackWithStats) -> Unit,
 ) {
     var dominantColor by remember { mutableStateOf<Color>(TempoPrimary) }
+    var showMenu by remember { mutableStateOf(false) }
+    var showMergeDialog by remember { mutableStateOf(false) }
 
     // Collapsed header title appears when the hero title itself scrolls under
     // the top bar — anchored to its live position, not a scroll-pixel guess.
@@ -296,7 +307,43 @@ private fun AlbumDetailsContent(
                 isEditMode = isEditMode,
                 onNavigateBack = onNavigateBack,
                 onToggleEdit = onToggleEdit,
+                onMenuClick = { showMenu = true },
             )
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(end = 16.dp, top = 48.dp)
+            ) {
+                TempoDropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    TempoDropdownMenuItem(
+                        title = stringResource(R.string.details_merge_album),
+                        leadingIcon = TempoIcons.MergeStreams,
+                        onClick = {
+                            showMenu = false
+                            showMergeDialog = true
+                        }
+                    )
+                }
+            }
+
+            if (showMergeDialog) {
+                AlbumMergeSearchDialog(
+                    sourceAlbumId = albumDetails.album.id,
+                    sourceAlbumTitle = albumDetails.album.title,
+                    sourceArtistId = albumDetails.album.artistId,
+                    sourceArtistName = albumDetails.artistName,
+                    onDismiss = { showMergeDialog = false },
+                    onMergeComplete = { targetAlbumId ->
+                        showMergeDialog = false
+                        onNavigateToAlbum(targetAlbumId)
+                    }
+                )
+            }
         }
     }
 }
@@ -313,6 +360,7 @@ private fun AlbumTopBar(
     isEditMode: Boolean,
     onNavigateBack: () -> Unit,
     onToggleEdit: () -> Unit,
+    onMenuClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -359,16 +407,26 @@ private fun AlbumTopBar(
             Spacer(modifier = Modifier.weight(1f))
         }
 
-        AlbumTopBarAction(
-            icon = if (isEditMode) Icons.Rounded.Check else Icons.Rounded.Edit,
-            contentDescription = stringResource(
-                if (isEditMode) R.string.album_action_done_cd else R.string.album_action_edit_cd
-            ),
-            onClick = onToggleEdit,
-            iconTint = if (isEditMode) TempoPrimary else TextPrimary,
-            containerColor = if (isEditMode) TempoPrimary.copy(alpha = 0.16f) else GlassFrostMedium,
-            borderColor = if (isEditMode) TempoPrimary.copy(alpha = 0.40f) else GlassBorderSoft,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AlbumTopBarAction(
+                icon = if (isEditMode) Icons.Rounded.Check else Icons.Rounded.Edit,
+                contentDescription = stringResource(
+                    if (isEditMode) R.string.album_action_done_cd else R.string.album_action_edit_cd
+                ),
+                onClick = onToggleEdit,
+                iconTint = if (isEditMode) TempoPrimary else TextPrimary,
+                containerColor = if (isEditMode) TempoPrimary.copy(alpha = 0.16f) else GlassFrostMedium,
+                borderColor = if (isEditMode) TempoPrimary.copy(alpha = 0.40f) else GlassBorderSoft,
+            )
+            AlbumTopBarAction(
+                icon = Icons.Default.MoreVert,
+                contentDescription = stringResource(R.string.details_action_song_options),
+                onClick = onMenuClick,
+            )
+        }
     }
 }
 
@@ -485,16 +543,9 @@ private fun AlbumHeroEditorialStage(
             )
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
 
-        ClickableEntityRow(
-            text = albumDetails.artistName,
-            style = MaterialTheme.typography.titleMedium,
-            tint = TextSecondary,
-            onClick = { onNavigateToArtist(albumDetails.album.artistId) },
-        )
-
-        // Metadata line (year · release type)
+        // Release-style metadata: hairline divider over a kicker meta line,
+        // matching the artist hero treatment.
         val metaParts = listOfNotNull(
             albumDetails.album.releaseYear?.toString(),
             albumDetails.album.releaseType
@@ -502,15 +553,36 @@ private fun AlbumHeroEditorialStage(
                 ?.replaceFirstChar { it.uppercase(Locale.getDefault()) },
         )
         if (metaParts.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = metaParts.joinToString("   ·   "),
-                style = MaterialTheme.typography.labelSmall,
-                color = TextTertiary,
-                letterSpacing = 0.5.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(28.dp)
+                        .height(0.8.dp)
+                        .background(GlassBorderMedium),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = metaParts.joinToString("  ·  ").uppercase(Locale.getDefault()),
+                    style = KickerSmall,
+                    color = TextTertiary,
+                    letterSpacing = 1.4.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .width(28.dp)
+                        .height(0.8.dp)
+                        .background(GlassBorderMedium),
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -552,53 +624,37 @@ private fun AlbumStatMasthead(
         borderWidth = 0.8.dp,
         contentPadding = PaddingValues(0.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Row 1: Plays & Time
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                EditorialStatBlock(
-                    label = stringResource(R.string.details_total_plays),
-                    value = formatCount(albumDetails.totalPlayCount.toLong()),
-                    subtext = stringResource(R.string.details_stat_recorded_library),
-                    accentTint = dominantColor,
-                    modifier = Modifier.weight(1f),
-                )
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 20.dp)) {
+            // Hero metric — same anatomy as the song and artist mastheads:
+            // display-size play count with the listening time as its suffix.
+            MastheadHeroMetric(
+                label = stringResource(R.string.details_total_plays),
+                value = String.format(Locale.getDefault(), "%,d", albumDetails.totalPlayCount),
+                suffix = stringResource(
+                    R.string.details_together_suffix,
+                    formatListeningTime(albumDetails.totalTimeMs),
+                ),
+                accentTint = dominantColor,
+            )
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(0.8.dp)
-                        .background(GlassBorderSoft),
-                )
-
-                EditorialStatBlock(
-                    label = stringResource(R.string.details_listening_time),
-                    value = formatListeningTime(albumDetails.totalTimeMs),
-                    subtext = stringResource(R.string.details_stat_total_recorded),
-                    accentTint = dominantColor,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
+            Spacer(modifier = Modifier.height(16.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(0.8.dp)
-                    .background(GlassBorderSoft),
+                    .background(GlassBorderSoft)
             )
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Row 2: Tracks & Completion Rate
+            // Secondary row: track count with runtime, and the completion
+            // rate — the one tint with meaning.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(IntrinsicSize.Min),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                EditorialStatBlock(
+                MastheadSecondaryStat(
                     label = stringResource(R.string.details_tracks),
                     value = "${albumDetails.tracks.size}",
                     subtext = if (runtimeMs > 0) {
@@ -606,8 +662,6 @@ private fun AlbumStatMasthead(
                     } else {
                         stringResource(R.string.details_stat_recorded_library)
                     },
-                    accentTint = dominantColor,
-                    isCompact = true,
                     modifier = Modifier.weight(1f),
                 )
 
@@ -618,18 +672,16 @@ private fun AlbumStatMasthead(
                         .background(GlassBorderSoft),
                 )
 
-                // Completion Rate (semantic — the one tint with meaning)
-                EditorialStatBlock(
+                MastheadSecondaryStat(
                     label = stringResource(R.string.details_completion_rate),
                     value = completionText,
                     subtext = completionSubtext,
-                    accentTint = when {
-                        !hasPlays -> TextTertiary
+                    valueColor = when {
+                        !hasPlays -> TextPrimary
                         completion >= 70 -> TempoSuccess
                         else -> TempoWarning
                     },
-                    isCompact = true,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).padding(start = 16.dp),
                 )
             }
         }
@@ -655,11 +707,9 @@ private fun AlbumTrackSheet(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = stringResource(R.string.details_tracks),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
+            SectionCatalogKicker(
+                number = "01",
+                label = stringResource(R.string.details_tracks),
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -680,7 +730,7 @@ private fun AlbumTrackSheet(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         if (tracks.isEmpty()) {
             AlbumEmptyTracksCard(tint = tint)
@@ -710,7 +760,7 @@ private fun AlbumEmptyTracksCard(tint: Color) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
-                imageVector = Icons.Rounded.QueueMusic,
+                imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                 contentDescription = null,
                 tint = TextTertiary,
                 modifier = Modifier.size(30.dp),
@@ -741,10 +791,6 @@ private fun AlbumTrackList(
     onNavigateToSong: (Long) -> Unit,
     onRemoveTrack: (TrackWithStats) -> Unit,
 ) {
-    val maxPlays = remember(tracks) {
-        tracks.maxOfOrNull { it.playCount }?.coerceAtLeast(1) ?: 1
-    }
-
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -766,8 +812,11 @@ private fun AlbumTrackList(
                 ) {
                     Text(
                         text = "${index + 1}",
-                        style = Kicker,
-                        color = TextTertiary,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontFamily = DisplayFontFamily,
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = if (track.playCount > 0) tint else TextQuaternary,
                         textAlign = TextAlign.End,
                         modifier = Modifier.width(28.dp),
                     )
@@ -784,52 +833,48 @@ private fun AlbumTrackList(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(modifier = Modifier.height(3.dp))
-                        val playsLabel = stringResource(
-                            if (track.playCount == 1) R.string.album_track_one_play else R.string.album_track_plays,
-                            track.playCount,
-                        )
                         val duration = track.track.duration
                         val durationLabel = if (duration != null && duration > 0) {
                             formatDuration(duration)
                         } else {
                             null
                         }
-                        Text(
-                            text = listOfNotNull(playsLabel, durationLabel).joinToString("  ·  "),
-                            style = CaptionSmall,
-                            color = TextTertiary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        if (durationLabel != null) {
+                            Text(
+                                text = durationLabel,
+                                style = CaptionSmall,
+                                color = TextTertiary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
 
-                    // Trailing affordance: remove in edit mode, otherwise a
-                    // play-share meter relative to the album's most played track.
-                    if (isEditMode) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(TempoError.copy(alpha = 0.14f))
-                                .border(0.8.dp, TempoError.copy(alpha = 0.30f), CircleShape)
-                                .premiumClickable(onClick = { onRemoveTrack(track) }),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = stringResource(R.string.album_remove_track_cd),
-                                tint = TempoError,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    } else if (track.playCount > 0) {
-                        PlayShareMeter(
-                            fraction = track.playCount.toFloat() / maxPlays,
-                            tint = tint,
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "${track.playCount}",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontFamily = DisplayFontFamily,
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = stringResource(R.string.details_plays).uppercase(Locale.getDefault()),
+                            style = CaptionSmall,
+                            color = TextTertiary,
                         )
                     }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                        contentDescription = null,
+                        tint = TextTertiary,
+                        modifier = Modifier
+                            .padding(start = 10.dp)
+                            .size(11.dp)
+                    )
                 }
 
                 if (index < tracks.lastIndex) {
@@ -842,38 +887,6 @@ private fun AlbumTrackList(
                 }
             }
         }
-    }
-}
-
-/** Hairline meter showing each track's plays relative to the album peak. */
-@Composable
-private fun PlayShareMeter(
-    fraction: Float,
-    tint: Color,
-    modifier: Modifier = Modifier,
-) {
-    val reducedMotion = rememberReducedMotion()
-    val clamped = fraction.coerceIn(0.05f, 1f)
-    val animated by animateFloatAsState(
-        targetValue = clamped,
-        animationSpec = tween(700, easing = FastOutSlowInEasing),
-        label = "trackPlayShare",
-    )
-    val fill = if (reducedMotion) clamped else animated
-
-    Box(
-        modifier
-            .width(34.dp)
-            .height(4.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(GlassBorderMedium),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(fill)
-                .background(tint)
-        )
     }
 }
 
@@ -1066,49 +1079,37 @@ private fun RemoveFromAlbumDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = TempoSurfaceDialog,
-        shape = RoundedCornerShape(24.dp),
-        title = {
-            Text(
-                text = stringResource(R.string.album_remove_title),
-                color = TextPrimary,
-                fontWeight = FontWeight.SemiBold,
+    Dialog(onDismissRequest = onDismiss) {
+        TempoDialogSurface {
+            TempoDialogIcon(
+                icon = TempoIcons.Trash,
+                tint = TempoError,
+                size = 48
             )
-        },
-        text = {
-            Column {
-                Text(
-                    text = stringResource(R.string.album_remove_msg, trackTitle),
-                    color = TextSecondary,
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = stringResource(R.string.album_remove_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextTertiary,
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    text = stringResource(R.string.common_remove),
-                    color = TempoError,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    text = stringResource(R.string.common_cancel),
-                    color = TextTertiary,
-                )
-            }
-        },
-    )
+            Spacer(modifier = Modifier.height(16.dp))
+            TempoDialogTitle(text = stringResource(R.string.album_remove_title))
+            Spacer(modifier = Modifier.height(8.dp))
+            TempoDialogBody(text = stringResource(R.string.album_remove_msg, trackTitle))
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = stringResource(R.string.album_remove_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = TextTertiary,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            TempoDialogDangerButton(
+                text = stringResource(R.string.common_remove),
+                onClick = onConfirm,
+                icon = TempoIcons.Trash
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            TempoDialogSecondaryButton(
+                text = stringResource(R.string.common_cancel),
+                onClick = onDismiss
+            )
+        }
+    }
 }
 
 private fun formatDuration(ms: Long): String {

@@ -9,6 +9,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,14 +39,14 @@ fun TempoDialogSurface(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .shadow(
                 elevation = 28.dp,
                 shape = TempoDialogShape.shape,
-                ambientColor = Color.Black.copy(alpha = 0.45f),
-                spotColor = Color.Black.copy(alpha = 0.55f)
+                ambientColor = Color.Black.copy(alpha = 0.5f),
+                spotColor = Color.Black.copy(alpha = 0.6f)
             )
             .clip(TempoDialogShape.shape)
             .background(
@@ -57,10 +59,31 @@ fun TempoDialogSurface(
                 color = GlassBorderSoft,
                 shape = TempoDialogShape.shape
             )
-            .padding(horizontal = 24.dp, vertical = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        content = content
-    )
+    ) {
+        // Specular top highlight edge
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.18f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            content = content
+        )
+    }
 }
 /**
  * Header icon badge for dialogs.
@@ -72,16 +95,16 @@ fun TempoDialogIcon(
     modifier: Modifier = Modifier,
     size: Int = 48
 ) {
-    val badgeShape = RoundedCornerShape((size * 0.32).dp)
+    val shape = RoundedCornerShape((size * 0.30).dp)
     Box(
         modifier = modifier
             .size(size.dp)
-            .clip(badgeShape)
-            .background(tint.copy(alpha = 0.14f))
+            .clip(shape)
+            .background(tint.copy(alpha = 0.10f))
             .border(
                 width = 1.dp,
                 color = tint.copy(alpha = 0.22f),
-                shape = badgeShape
+                shape = shape
             ),
         contentAlignment = Alignment.Center
     ) {
@@ -146,17 +169,17 @@ private fun accentFill(containerColor: Color, enabled: Boolean): Brush =
         Brush.verticalGradient(listOf(flat, flat))
     }
 
-/** Glow shadow + sheen background shared by all accent buttons. */
+/** Grounded drop shadow + subtle sheen shared by all accent buttons. */
 private fun Modifier.accentButtonChrome(
     containerColor: Color,
     enabled: Boolean,
     shape: RoundedCornerShape
 ): Modifier = this
     .shadow(
-        elevation = if (enabled) 10.dp else 0.dp,
+        elevation = if (enabled) 6.dp else 0.dp,
         shape = shape,
-        ambientColor = Color.Black.copy(alpha = 0.3f),
-        spotColor = containerColor.copy(alpha = if (enabled) 0.4f else 0f)
+        ambientColor = Color.Black.copy(alpha = 0.35f),
+        spotColor = Color.Black.copy(alpha = if (enabled) 0.45f else 0f)
     )
     .background(accentFill(containerColor, enabled), shape)
 
@@ -300,4 +323,76 @@ fun TempoDialogButtonRow(
             )
         }
     }
+}
+
+/**
+ * Destructive action button using [TempoError] color.
+ */
+@Composable
+fun TempoDialogDangerButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    icon: ImageVector? = null
+) {
+    TempoDialogPrimaryButton(
+        text = text,
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        icon = icon,
+        containerColor = TempoError,
+        contentColor = Color.White
+    )
+}
+
+/**
+ * Text field for dialog inputs such as renaming, editing titles, or custom tags.
+ */
+@Composable
+fun TempoDialogTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    placeholder: String? = null,
+    singleLine: Boolean = true,
+    isError: Boolean = false,
+    supportingText: String? = null,
+    maxLines: Int = 1
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        label = label?.let { { Text(it, style = MaterialTheme.typography.bodyMedium) } },
+        placeholder = placeholder?.let { { Text(it, style = MaterialTheme.typography.bodyMedium, color = TextTertiary) } },
+        singleLine = singleLine,
+        maxLines = maxLines,
+        isError = isError,
+        supportingText = supportingText?.let {
+            {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isError) TempoError else TextTertiary
+                )
+            }
+        },
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = TextPrimary,
+            unfocusedTextColor = TextPrimary,
+            focusedBorderColor = TempoPrimary,
+            unfocusedBorderColor = GlassBorderSoft,
+            focusedLabelColor = TempoPrimary,
+            unfocusedLabelColor = TextTertiary,
+            cursorColor = TempoPrimary,
+            focusedContainerColor = TempoDarkSurfaceSunken,
+            unfocusedContainerColor = TempoDarkSurfaceSunken,
+            errorBorderColor = TempoError,
+            errorContainerColor = TempoDarkSurfaceSunken
+        )
+    )
 }

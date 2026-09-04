@@ -30,6 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import me.avinas.tempo.R
 import androidx.hilt.navigation.compose.hiltViewModel
 import me.avinas.tempo.data.local.entities.AppPreference
 import me.avinas.tempo.ui.components.DeepOceanBackground
@@ -61,21 +63,21 @@ fun SupportedAppsScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Manage Apps", color = Color.White) },
+                title = { Text(stringResource(R.string.settings_manage_apps), color = TextPrimary) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = TextPrimary)
                     }
                 },
                 actions = {
                     IconButton(onClick = { showAddAppDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add App", tint = Color.White)
+                        Icon(Icons.Default.Add, contentDescription = "Add App", tint = TextPrimary)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    titleContentColor = TextPrimary,
+                    navigationIconContentColor = TextPrimary
                 )
             )
         }
@@ -102,17 +104,17 @@ fun SupportedAppsScreen(
                         placeholder = { 
                             Text(
                                 "Search apps...", 
-                                color = Color.White.copy(alpha = 0.5f),
+                                color = TextTertiary,
                                 style = MaterialTheme.typography.bodyMedium
                             ) 
                         },
                         leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
+                            Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary)
                         },
                         trailingIcon = {
                             if (uiState.searchQuery.isNotEmpty()) {
                                 IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.White.copy(alpha = 0.7f))
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = TextSecondary)
                                 }
                             }
                         },
@@ -122,9 +124,9 @@ fun SupportedAppsScreen(
                             disabledContainerColor = Color.Transparent,
                             focusedIndicatorColor = Color.Transparent,
                             unfocusedIndicatorColor = Color.Transparent,
-                            cursorColor = Color.White,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            cursorColor = TextPrimary,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
                         ),
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodyMedium
@@ -136,7 +138,7 @@ fun SupportedAppsScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = Color.White)
+                        CircularProgressIndicator(color = TempoPrimary)
                     }
                 } else {
                     LazyColumn(
@@ -234,7 +236,7 @@ fun SupportedAppsScreen(
                                     Text(
                                         text = "No apps found",
                                         style = MaterialTheme.typography.bodyLarge,
-                                        color = Color.White.copy(alpha = 0.5f)
+                                        color = TextTertiary
                                     )
                                 }
                             }
@@ -246,7 +248,7 @@ fun SupportedAppsScreen(
                             Text(
                                 text = "Enable apps to track music listening. Block apps to exclude them completely. Tap + to add a custom app.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.5f),
+                                color = TextTertiary,
                                 modifier = Modifier
                                     .padding(horizontal = 8.dp)
                             )
@@ -299,14 +301,14 @@ private fun AppPreferenceItem(
                     text = app.displayName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White,
+                    color = TextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = app.packageName,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = TextTertiary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -316,7 +318,7 @@ private fun AppPreferenceItem(
                     Text(
                         text = "Installed • Start listening to track",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -331,7 +333,7 @@ private fun AppPreferenceItem(
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = "Remove",
-                        tint = Color.White.copy(alpha = 0.4f)
+                        tint = TextQuaternary
                     )
                 }
             }
@@ -342,7 +344,7 @@ private fun AppPreferenceItem(
                     Icon(
                         Icons.Default.Block,
                         contentDescription = "Block",
-                        tint = Color.White.copy(alpha = 0.4f)
+                        tint = TextQuaternary
                     )
                 }
             }
@@ -353,8 +355,8 @@ private fun AppPreferenceItem(
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = TextOnAccent,
                     checkedTrackColor = MaterialTheme.colorScheme.primary,
-                    uncheckedThumbColor = Color.White.copy(alpha = 0.8f),
-                    uncheckedTrackColor = Color.White.copy(alpha = 0.2f),
+                    uncheckedThumbColor = TextTertiary,
+                    uncheckedTrackColor = TempoDarkSurfaceElevated,
                     checkedBorderColor = Color.Transparent,
                     uncheckedBorderColor = Color.Transparent
                 )
@@ -363,7 +365,7 @@ private fun AppPreferenceItem(
 
         if (showDivider) {
             HorizontalDivider(
-                color = Color.White.copy(alpha = 0.1f),
+                color = GlassBorderSoft,
                 modifier = Modifier.padding(start = 72.dp, end = 16.dp) // Indented divider
             )
         }
@@ -395,14 +397,14 @@ private fun BlockedAppItem(
                     text = app.displayName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = TextTertiary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = app.packageName,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = TextQuaternary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -410,7 +412,7 @@ private fun BlockedAppItem(
 
             TextButton(
                 onClick = onUnblock,
-                colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF81C784))
+                colors = ButtonDefaults.textButtonColors(contentColor = TempoSuccessBright)
             ) {
                 Text("Unblock")
             }
@@ -418,7 +420,7 @@ private fun BlockedAppItem(
 
         if (showDivider) {
             HorizontalDivider(
-                color = Color.White.copy(alpha = 0.1f),
+                color = GlassBorderSoft,
                 modifier = Modifier.padding(start = 72.dp, end = 16.dp)
             )
         }
@@ -455,13 +457,13 @@ fun AppIcon(packageName: String, modifier: Modifier = Modifier) {
         )
     } else {
         Box(
-            modifier = modifier.background(Color.White.copy(alpha = 0.1f), CircleShape),
+            modifier = modifier.background(GlassFrostSoft, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.Android,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.5f),
+                tint = TextTertiary,
                 modifier = Modifier.padding(4.dp)
             )
         }

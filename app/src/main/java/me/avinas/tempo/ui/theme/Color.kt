@@ -48,6 +48,7 @@ val StatAlbums = TempoWarning
 
 val SpotifyGreen = Color(0xFF1DB954)
 val LastFmRed = Color(0xFFFC3C44)
+val YouTubeRed = Color(0xFFFF0000)
 
 val GoldPrimary = Color(0xFFFFD700)
 val GoldLight = Color(0xFFFBBF24)

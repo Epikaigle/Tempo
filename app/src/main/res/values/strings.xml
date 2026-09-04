@@ -109,7 +109,7 @@
     <!-- Onboarding: Battery Optimization -->
     <string name="battery_title">One more thing for better accuracy</string>
     <string name="battery_description">Let Tempo run in the background for continuous tracking. This ensures we don\'t miss any songs while your screen is off.</string>
-    <string name="battery_optimize">Optimize</string>
+    <string name="battery_optimize">Allow Background Running</string>
     <string name="battery_skip">Skip for now</string>
 
     <!-- Onboarding: Advanced Settings -->
@@ -267,6 +267,8 @@
     <string name="details_share_preview">Share Preview</string>
     <string name="details_merge_artist">Merge Artist</string>
     <string name="details_merge_with">Merge with…</string>
+    <string name="details_merge_album">Merge Album</string>
+    <string name="album_details_merge">Merge Album</string>
     <string name="details_block_artist">BLOCK ENTIRE ARTIST</string>
     <string name="details_block_track">BLOCK THIS TRACK</string>
     <string name="details_unique_tracks">Unique Songs</string>
@@ -311,6 +313,13 @@
     <string name="merge_search_artists">Type to search for artists</string>
     <string name="merge_search_tracks">Type to search for tracks</string>
     <string name="merge_merging">Merging: %1$s</string>
+    <string name="merge_album_into">Merge \"%1$s\" into \"%2$s\"?</string>
+    <string name="merge_merging_albums">Merging albums…</string>
+    <string name="merge_album_search">Search for the correct album to merge into. All listening history will be combined.</string>
+    <string name="merge_search_albums">Type to search for albums</string>
+    <string name="merge_album_other_by_artist">Albums by %1$s</string>
+    <string name="merge_album_search_placeholder">Search for target album…</string>
+    <string name="merge_album_no_results">No albums found</string>
 
     <!-- Engagement -->
     <string name="engagement_score">Engagement Score</string>
@@ -664,6 +673,18 @@
     <string name="settings_disconnect_spotify_msg">This will remove your Spotify connection. Audio features and mood tracking will no longer be available.</string>
     <string name="settings_disconnect">Disconnect</string>
     <string name="settings_import_success">Successfully processed %1$d records and %2$d images</string>
+    <string name="settings_notification_settings_error">Unable to open notification settings</string>
+    <string name="settings_pause_tracking_low_battery">Pause tracking on low battery</string>
+    <string name="settings_pause_tracking_on_desc">Tracking pauses below 20%% battery to save power (currently %1$d%%)</string>
+    <string name="settings_pause_tracking_off_desc">Tracking continues at all battery levels — no automatic pausing</string>
+    <string name="settings_enable_gamification">Enable Gamification</string>
+    <string name="settings_enable_gamification_desc">Turn off to hide XP, levels, and badges</string>
+    <string name="settings_import_spotify_json">Import Spotify Data Export</string>
+    <string name="settings_import_spotify_json_desc">Import listening history from Spotify JSON data export files</string>
+    <string name="settings_import_youtube_music">Import YouTube Music Data</string>
+    <string name="settings_import_youtube_music_desc">Import listening history from a YouTube Takeout ZIP (JSON or HTML)</string>
+    <string name="settings_name_dialog_body">Choose the display name shown in your personal profile and stories.</string>
+    <string name="settings_no_browser">No browser found</string>
 
     <!-- Spotlight story slide labels (Wrapped / Year in Review type) -->
     <string name="spotlight_this_year_title">Your %1$d Spotlight</string>
@@ -780,6 +801,8 @@
     <string name="nav_home">Home</string>
     <string name="nav_stats">Stats</string>
     <string name="nav_history">History</string>
+    <string name="stats_search_open">Search</string>
+    <string name="stats_search_close">Close search</string>
     <string name="stats_search_no_results">No matches for \"%1$s\" in this ranking</string>
 
     <!-- Stats Share -->
@@ -1275,6 +1298,8 @@
     <string name="details_journey_discovered_since">and have since listened to</string>
     <string name="details_journey_across">across</string>
     <string name="details_journey_songs">different songs</string>
+    <string name="artist_streak_short">Streak</string>
+    <string name="artist_explored_sub">in your history</string>
     <string name="details_days_ago">%1$d days ago</string>
     <string name="details_timeline_peak_day">Most played in a day</string>
     <string name="details_timeline_peak_window">Peak listening window</string>

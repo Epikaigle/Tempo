@@ -21,6 +21,7 @@ import me.avinas.tempo.R
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
+import me.avinas.tempo.ui.theme.*
 
 /**
  * Enrichment Report screen.
@@ -61,13 +62,13 @@ fun EnrichmentReportScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.enrichment_report_title), color = Color.White) },
+                title = { Text(stringResource(R.string.enrichment_report_title), color = TextPrimary) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
+                            contentDescription = stringResource(R.string.settings_back),
+                            tint = TextPrimary
                         )
                     }
                 },
@@ -88,7 +89,7 @@ fun EnrichmentReportScreen(
                 GlassCard(variant = GlassCardVariant.LowProminence) {
                     Text(
                         text = stringResource(R.string.enrichment_report_description),
-                        color = Color.White.copy(alpha = 0.8f),
+                        color = TextSecondary,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -140,17 +141,17 @@ fun EnrichmentReportScreen(
                                         stringResource(R.string.enrichment_report_waiting)
                                     else -> stringResource(R.string.enrichment_report_starting)
                                 },
-                                color = Color.White,
+                                color = TextPrimary,
                                 style = MaterialTheme.typography.titleSmall
                             )
                             LinearProgressIndicator(
-                                progress = { if (progress.total > 0) progress.processed.toFloat() / progress.total else 0f },
+                                progress = { if (progress.total > 0) (progress.processed.toFloat() / progress.total).coerceIn(0f, 1f) else 0f },
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(
                                     "${progress.percent}%",
-                                    color = Color.White.copy(alpha = 0.7f),
+                                    color = TextSecondary,
                                     modifier = Modifier.weight(1f)
                                 )
                                 OutlinedButton(onClick = { viewModel.cancelEnrichAll() }) {
@@ -165,19 +166,19 @@ fun EnrichmentReportScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 text = stringResource(R.string.enrichment_report_enrich_all),
-                                color = Color.White,
+                                color = TextPrimary,
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 text = stringResource(R.string.enrichment_report_enrich_all_desc),
-                                color = Color.White.copy(alpha = 0.7f),
+                                color = TextSecondary,
                                 style = MaterialTheme.typography.bodySmall
                             )
                             if (nothingToDo) {
                                 Text(
                                     text = stringResource(R.string.enrichment_report_nothing_to_do),
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = TextTertiary,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             } else {
@@ -194,7 +195,7 @@ fun EnrichmentReportScreen(
                             if (blockedNotFound > 0) {
                                 Text(
                                     text = stringResource(R.string.enrichment_report_blocked, blockedNotFound),
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = TextTertiary,
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -203,7 +204,7 @@ fun EnrichmentReportScreen(
                     if (progress.isDone && stats.totalTracks > 0) {
                         Text(
                             text = stringResource(R.string.enrichment_report_complete),
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = TextTertiary,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -217,11 +218,11 @@ fun EnrichmentReportScreen(
 private fun CoverageBar(label: String, percent: Int, summary: String) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = Color.White, modifier = Modifier.weight(1f))
-            Text(summary, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+            Text(label, color = TextPrimary, modifier = Modifier.weight(1f))
+            Text(summary, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
         }
         LinearProgressIndicator(
-            progress = { percent / 100f },
+            progress = { (percent / 100f).coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth().height(8.dp)
         )
     }
@@ -233,12 +234,12 @@ private fun BreakdownRow(label: String, value: Int) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, color = Color.White.copy(alpha = 0.85f))
-        Text("$value", color = Color.White, fontWeight = FontWeight.Medium)
+        Text(label, color = TextPrimary)
+        Text("$value", color = TextPrimary, fontWeight = FontWeight.Medium)
     }
 }
 
 @Composable
 private fun Divider() {
-    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+    HorizontalDivider(color = GlassBorderSoft)
 }

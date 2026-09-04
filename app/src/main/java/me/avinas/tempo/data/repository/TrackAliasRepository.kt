@@ -27,7 +27,7 @@ import javax.inject.Singleton
  * 6. Invalidates stats cache to refresh UI
  */
 @Singleton
-class TrackAliasRepository @Inject constructor(
+open class TrackAliasRepository @Inject constructor(
     private val trackAliasDao: TrackAliasDao,
     private val listeningEventDao: ListeningEventDao,
     private val trackDao: TrackDao,
@@ -80,7 +80,7 @@ class TrackAliasRepository @Inject constructor(
      * @param targetTrackId The track to merge INTO (will remain)
      * @return true if merge succeeded, false otherwise
      */
-    suspend fun mergeTracks(sourceTrackId: Long, targetTrackId: Long): Boolean {
+    open suspend fun mergeTracks(sourceTrackId: Long, targetTrackId: Long): Boolean {
         if (sourceTrackId == targetTrackId) {
             Log.w(TAG, "Cannot merge track into itself")
             return false

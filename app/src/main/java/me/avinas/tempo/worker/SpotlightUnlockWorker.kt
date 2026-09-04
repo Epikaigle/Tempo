@@ -236,10 +236,11 @@ class SpotlightUnlockWorker @AssistedInject constructor(
         
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Your Weekly Wrapped is Ready! 🎵")
+            .setColor(0xFF2FDBB8.toInt())
+            .setContentTitle("Your Weekly Wrapped is Ready")
             .setContentText("Your weekly listening story for $weekLabel is now available")
             .setStyle(NotificationCompat.BigTextStyle()
-                .bigText("Your $weekLabel listening story is ready! Tap to view your stats, top songs, and personality."))
+                .bigText("Your $weekLabel listening story is ready. Tap to view your stats, top songs, and listening personality."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
@@ -281,10 +282,11 @@ class SpotlightUnlockWorker @AssistedInject constructor(
         
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Your $monthName Wrapped is Ready! 🎉")
+            .setColor(0xFF2FDBB8.toInt())
+            .setContentTitle("Your $monthName Wrapped is Ready")
             .setContentText("Your monthly listening story is now available")
             .setStyle(NotificationCompat.BigTextStyle()
-                .bigText("Your $monthName listening story is ready! Tap to view your stats, top songs, and personality."))
+                .bigText("Your $monthName listening story is ready. Tap to view your stats, top songs, and listening personality."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
@@ -314,15 +316,15 @@ class SpotlightUnlockWorker @AssistedInject constructor(
         
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Your $year Wrapped is Here! 🌟")
+            .setColor(0xFF2FDBB8.toInt())
+            .setContentTitle("Your $year Wrapped is Here")
             .setContentText("Your yearly listening story is now available")
             .setStyle(NotificationCompat.BigTextStyle()
-                .bigText("Your $year listening story is ready! Discover your top artists, songs, genres, and listening personality."))
+                .bigText("Your $year listening story is ready. Discover your top artists, songs, genres, and listening personality."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
-        
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID_YEARLY, notification)
         
@@ -345,15 +347,15 @@ class SpotlightUnlockWorker @AssistedInject constructor(
         
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("All-Time Wrapped Unlocked! 🏆")
-            .setContentText("6 months of listening data - your ultimate story awaits")
+            .setColor(0xFF2FDBB8.toInt())
+            .setContentTitle("All-Time Wrapped Unlocked")
+            .setContentText("6 months of listening data — your ultimate story awaits")
             .setStyle(NotificationCompat.BigTextStyle()
                 .bigText("Congratulations! You've reached 6 months of listening. Your All-Time Wrapped story is now available with your complete listening journey."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
-        
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID_ALL_TIME, notification)
         

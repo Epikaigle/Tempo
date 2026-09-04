@@ -3,9 +3,6 @@ package me.avinas.tempo.ui.home
 import me.avinas.tempo.ui.theme.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.background
@@ -17,13 +14,11 @@ import androidx.compose.material.icons.filled.Celebration
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Piano
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +64,7 @@ fun HomeScreen(
     onNavigateToProfile: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val flags by viewModel.flagsState.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     var isLaunchingReview by remember { mutableStateOf(false) }
     var showTodaysOverview by remember { mutableStateOf(false) }
@@ -94,11 +90,10 @@ fun HomeScreen(
         }
         if (currentLevel > 0) lastKnownLevel = currentLevel
     }
-
     DeepOceanBackground {
         Box(modifier = Modifier.fillMaxSize()) {
             PullToRefreshBox(
-                isRefreshing = uiState.isRefreshing,
+                isRefreshing = flags.isRefreshing,
                 onRefresh = {
                     scope.launch {
                         viewModel.refresh()
@@ -123,7 +118,8 @@ fun HomeScreen(
                             levelProgress = userLevel?.levelProgress ?: 0f,
                             levelTitle = userLevel?.title,
                             isGamificationEnabled = uiState.isGamificationEnabled,
-                            onLevelClick = onNavigateToProfile
+                            onLevelClick = onNavigateToProfile,
+                            onSettingsClick = onNavigateToSettings
                         )
                     }
                     
@@ -170,7 +166,11 @@ fun HomeScreen(
                                     timeChangePercent = uiState.periodComparison?.timeChangePercent ?: 0.0,
                                     trendData = trendData,
                                     selectedRange = uiState.selectedTimeRange,
-                                    dailyLabels = dailyLabels
+                                    dailyLabels = dailyLabels,
+                                    dailyAvgMinutes = uiState.dailyAvgMinutes,
+                                    activeDays = uiState.activeDaysCount,
+                                    totalDays = uiState.totalDaysCount,
+                                    peakDayMinutes = uiState.peakDayMinutes
                                 )
                             }
                         }
@@ -207,7 +207,7 @@ fun HomeScreen(
                                     },
                                     albumArtUrl = uiState.spotlightTopTrack?.albumArtUrl,
                                     storyAvailable = directStoryTimeRange != null,
-                                    storyViewed = uiState.spotlightStoryViewed,
+                                    storyViewed = flags.spotlightStoryViewed,
                                     modifier = Modifier.onGloballyPositioned { coordinates ->
                                         walkthroughController.registerTarget(
                                             me.avinas.tempo.ui.components.WalkthroughStep.HOME_SPOTLIGHT,
@@ -225,6 +225,9 @@ fun HomeScreen(
                                     topArtistImage = uiState.topArtist?.imageUrl,
                                     topTrackName = uiState.topTrack?.title,
                                     topTrackImage = uiState.topTrack?.albumArtUrl,
+                                    topArtistPlayCount = uiState.topArtist?.playCount,
+                                    topTrackArtist = uiState.topTrack?.artist,
+                                    topTrackPlayCount = uiState.topTrack?.playCount,
                                     onArtistClick = {
                                         val artist = uiState.topArtist
                                         if (artist != null) {
@@ -244,8 +247,7 @@ fun HomeScreen(
                                 )
                             }
                         }
-
-                    } else if (!uiState.isLoading) {
+                    } else if (!flags.isLoading) {
                         item(key = "empty") {
                             me.avinas.tempo.ui.components.EmptyState(
                                 modifier = Modifier
@@ -294,16 +296,12 @@ fun HomeScreen(
                             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 Text(
                                     text = stringResource(R.string.home_your_signal),
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontFamily = DisplayFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = (-0.2).sp
+                                    ),
                                     color = TextPrimary
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .padding(top = 8.dp)
-                                        .width(24.dp)
-                                        .height(1.dp)
-                                        .background(Divider)
                                 )
                             }
                         }
@@ -321,72 +319,6 @@ fun HomeScreen(
                 }
             }
 
-            val headerAlpha by remember {
-                derivedStateOf {
-                    val firstVisibleItem = lazyListState.firstVisibleItemIndex
-                    val firstVisibleItemScrollOffset = lazyListState.firstVisibleItemScrollOffset
-                    if (firstVisibleItem > 0) 1f else (firstVisibleItemScrollOffset.toFloat() / 400f).coerceIn(0f, 1f)
-                }
-            }
-            val headerAlphaAnimated by animateFloatAsState(
-                targetValue = headerAlpha,
-                label = "headerAlpha"
-            )
-            val barBrush = Brush.verticalGradient(
-                colors = listOf(
-                    TempoDarkBackground.copy(alpha = headerAlphaAnimated),
-                    TempoDarkBackground.copy(alpha = headerAlphaAnimated * 0.55f)
-                )
-            )
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .background(barBrush)
-                    .statusBarsPadding()
-                    .height(56.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Text(
-                        text = stringResource(R.string.home_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary.copy(alpha = headerAlphaAnimated),
-                        letterSpacing = 0.2.sp
-                    )
-                }
-                IconButton(
-                    onClick = onNavigateToSettings,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = 4.dp),
-                    colors = IconButtonDefaults.iconButtonColors(
-                        containerColor = Color.Transparent,
-                        contentColor = TextSecondary
-                    )
-                ) {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = stringResource(R.string.home_settings),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                if (headerAlphaAnimated > 0.02f) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(me.avinas.tempo.ui.theme.Divider.copy(alpha = headerAlphaAnimated * 0.9f))
-                    )
-                }
-            }
             
             // Time Period Filter (Floating)
             TimePeriodSelector(
@@ -402,7 +334,7 @@ fun HomeScreen(
         }
         
         // Rate App Bottom Sheet
-        if (uiState.showRateAppPopup) {
+        if (flags.showRateAppPopup) {
             RateAppBottomSheet(
                 onDismiss = viewModel::onRateAppDismissed,
                 onRate = {
@@ -432,15 +364,15 @@ fun HomeScreen(
         // Share Nudge — gated in the ViewModel; opens the artist share preview
         // (music share card) directly instead of showing a message popup. Never
         // stacks with the rate popup or spotlight reminder.
-        if (uiState.showShareNudge && uiState.shareNudgeArtists.isNotEmpty() &&
-            !uiState.showRateAppPopup && !uiState.showSpotlightReminder
+        if (flags.showShareNudge && flags.shareNudgeArtists.isNotEmpty() &&
+            !flags.showRateAppPopup && !flags.showSpotlightReminder
         ) {
-            val nudgeRange = uiState.shareNudgeTimeRange ?: TimeRange.THIS_WEEK
+            val nudgeRange = flags.shareNudgeTimeRange ?: TimeRange.THIS_WEEK
             StatsShareDialog(
                 tab = StatsTab.TOP_ARTISTS,
                 timeRange = nudgeRange,
-                items = uiState.shareNudgeArtists,
-                overview = uiState.shareNudgeOverview,
+                items = flags.shareNudgeArtists,
+                overview = flags.shareNudgeOverview,
                 nudgeCaption = stringResource(
                     if (nudgeRange == TimeRange.THIS_MONTH) R.string.share_nudge_caption_monthly
                     else R.string.share_nudge_caption_weekly
@@ -452,15 +384,15 @@ fun HomeScreen(
         }
 
         // Spotlight Story Reminder Popup
-        val reminderType = uiState.reminderType
-        if (uiState.showSpotlightReminder && reminderType != null) {
+        val reminderType = flags.reminderType
+        if (flags.showSpotlightReminder && reminderType != null) {
             me.avinas.tempo.ui.components.SpotlightReminderPopup(
                 type = reminderType,
-                timeRange = uiState.reminderTimeRange,
+                timeRange = flags.reminderTimeRange,
                 onDismiss = viewModel::dismissSpotlightReminder,
                 onViewStory = {
                     // Navigate to Spotlight with the specified time range
-                    onNavigateToSpotlight(uiState.reminderTimeRange, false)
+                    onNavigateToSpotlight(flags.reminderTimeRange, false)
                     // Dismiss the reminder
                     viewModel.dismissSpotlightReminder()
                 }

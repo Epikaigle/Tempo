@@ -6,34 +6,44 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoAwesome
-
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import me.avinas.tempo.ui.components.DeepOceanBackground
-import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.components.TimePeriodSelector
+import me.avinas.tempo.R
 import me.avinas.tempo.data.stats.TimeRange
+import me.avinas.tempo.ui.components.*
 import me.avinas.tempo.ui.navigation.Screen
+import me.avinas.tempo.ui.theme.*
+import java.util.Locale
 
 @Composable
 fun SpotlightScreen(
@@ -44,11 +54,11 @@ fun SpotlightScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    
-    // For direct launches, show the story overlay immediately (loading screen) so the
+
+    // For direct launches, show the story overlay immediately so the
     // dashboard never flashes underneath before the story is ready to play.
     var showStory by remember { mutableStateOf(directLaunch) }
-    
+
     // Apply initial time range if provided (e.g., from reminder)
     LaunchedEffect(initialTimeRange) {
         if (initialTimeRange != null && initialTimeRange != uiState.selectedTimeRange) {
@@ -65,251 +75,584 @@ fun SpotlightScreen(
             showStory = false
         }
     }
-    
-    // Navigate to canvas with card ID
+
     val onShareCard: (SpotlightCardData) -> Unit = { card ->
         navController.navigate(Screen.ShareCanvas.createRoute(card.id))
     }
+
+    val periodLabel = remember(uiState.selectedTimeRange) {
+        SpotlightPeriodFormatter.periodLabel(uiState.selectedTimeRange)
+    }
+
     val storyButtonText = remember(uiState.selectedTimeRange) {
         SpotlightPeriodFormatter.viewStoryText(context, uiState.selectedTimeRange)
     }
 
-    DeepOceanBackground {
-        Scaffold(
-            containerColor = Color.Transparent,
-            topBar = {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .statusBarsPadding(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = { navController.popBackStack() },
-                        modifier = Modifier
-                            .background(color = Color.White.copy(alpha = 0.1f), shape = CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Spotlight",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                }
+    // Lead artwork thumbnail URL for the story ring preview
+    val leadArtUrl: String? = remember(uiState.cards, uiState.storyPages) {
+        val storyArt: String? = uiState.storyPages.firstNotNullOfOrNull { page ->
+            when (page) {
+                is SpotlightStoryPage.TopSongs -> page.topSongImageUrl?.takeIf { it.isNotBlank() }
+                is SpotlightStoryPage.TopTrackSetup -> page.topSongImageUrl?.takeIf { it.isNotBlank() }
+                is SpotlightStoryPage.TopAlbum -> page.albumArtUrl?.takeIf { it.isNotBlank() }
+                is SpotlightStoryPage.TopArtist -> page.topArtistImageUrl?.takeIf { it.isNotBlank() }
+                is SpotlightStoryPage.Conclusion -> page.topSongs.firstOrNull()?.imageUrl?.takeIf { it.isNotBlank() }
+                    ?: page.topArtists.firstOrNull()?.imageUrl?.takeIf { it.isNotBlank() }
+                else -> null
             }
-        ) { paddingValues ->
-            if (uiState.isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .background(
-                                    color = Color.White.copy(alpha = 0.08f),
-                                    shape = CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                color = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier.size(36.dp),
-                                strokeWidth = 3.dp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Text(
-                            text = "Crunching your data…",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "We're analysing your listening habits to build your personalised Spotlight.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.6f),
-                            textAlign = TextAlign.Center
-                        )
-                    }
+        }
+        storyArt ?: uiState.cards.firstNotNullOfOrNull { card ->
+            when (card) {
+                is SpotlightCardData.ForgottenFavorite -> card.albumArtUrl?.takeIf { it.isNotBlank() }
+                is SpotlightCardData.NewObsession -> card.artistImageUrl?.takeIf { it.isNotBlank() }
+                is SpotlightCardData.EarlyAdopter -> card.artistImageUrl?.takeIf { it.isNotBlank() }
+                is SpotlightCardData.ArtistLoyalty -> card.artistImageUrl?.takeIf { it.isNotBlank() }
+                else -> null
+            }
+        }
+    }
+
+    DeepOceanBackground {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
+                containerColor = Color.Transparent,
+                topBar = {
+                    SpotlightTopBar(
+                        periodLabel = periodLabel,
+                        onNavigateBack = { navController.popBackStack() }
+                    )
                 }
-            } else if (uiState.cards.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    ) {
-                        Box(
+            ) { paddingValues ->
+                when {
+                    uiState.isLoading -> {
+                        SpotlightLoadingView(
+                            periodLabel = periodLabel,
                             modifier = Modifier
-                                .size(80.dp)
-                                .background(
-                                    color = Color.White.copy(alpha = 0.08f),
-                                    shape = CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Headphones,
-                                contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.6f),
-                                modifier = Modifier.size(40.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Text(
-                            text = "Not enough data yet",
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                                .fillMaxSize()
+                                .padding(paddingValues)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Keep listening to your favourite tracks and come back soon — your Spotlight insights are on the way!",
-                            color = Color.White.copy(alpha = 0.6f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(bottom = 100.dp) // Space for bottom bar
-                ) {
-                    // Spotlight Story Button
-                    item(key = "story_button") {
-                        AnimatedVisibility(
-                            visible = true,
-                            enter = fadeIn(animationSpec = tween(500)) + 
-                                   slideInVertically(animationSpec = tween(500), initialOffsetY = { 50 })
-                        ) {
-                            SpotlightStoryButton(
-                                onClick = { 
-                                    if (!uiState.isStoryLocked) {
-                                        showStory = true 
-                                    }
-                                },
-                                buttonText = storyButtonText,
-                                isLocked = uiState.isStoryLocked,
-                                lockMessage = uiState.storyLockMessage
-                            )
-                        }
                     }
 
-                    // Dynamic Feed of Insights
-                    items(
-                        items = uiState.cards,
-                        key = { card -> card.id }
-                    ) { card ->
-                        AnimatedVisibility(
-                            visible = true,
-                            enter = fadeIn(animationSpec = tween(500)) + 
-                                   slideInVertically(animationSpec = tween(500), initialOffsetY = { 50 })
+                    uiState.cards.isEmpty() -> {
+                        SpotlightEmptyView(
+                            periodLabel = periodLabel,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(paddingValues)
+                        )
+                    }
+
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(paddingValues)
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 120.dp)
                         ) {
-                            when (card) {
-                                is SpotlightCardData.CosmicClock -> DashboardCosmicClockCard(
-                                    data = card,
-                                    onShareClick = { onShareCard(card) }
-                                )
-                                is SpotlightCardData.WeekendWarrior -> DashboardWeekendWarriorCard(
-                                    data = card,
-                                    onShareClick = { onShareCard(card) }
-                                )
-                                is SpotlightCardData.ForgottenFavorite -> DashboardForgottenFavoriteCard(
-                                    data = card,
-                                    onShareClick = { onShareCard(card) }
-                                )
-                                is SpotlightCardData.DeepDive -> DashboardDeepDiveCard(
-                                    data = card,
-                                    onShareClick = { onShareCard(card) }
-                                )
-                                is SpotlightCardData.NewObsession -> DashboardNewObsessionCard(
-                                    data = card,
-                                    onShareClick = { onShareCard(card) }
-                                )
-                                is SpotlightCardData.EarlyAdopter -> DashboardEarlyAdopterCard(
-                                    data = card,
-                                    onShareClick = { onShareCard(card) }
-                                )
-                                is SpotlightCardData.ListeningPeak -> DashboardListeningPeakCard(
-                                    data = card,
-                                    onShareClick = { onShareCard(card) }
-                                )
-                                is SpotlightCardData.ArtistLoyalty -> DashboardArtistLoyaltyCard(
-                                    data = card,
-                                    onShareClick = { onShareCard(card) }
-                                )
-                                is SpotlightCardData.Discovery -> DashboardDiscoveryCard(
-                                    data = card,
-                                    onShareClick = { onShareCard(card) }
-                                )
+                            // Spotlight Story Hero Card
+                            item(key = "story_hero") {
+                                AnimatedVisibility(
+                                    visible = true,
+                                    enter = fadeIn(animationSpec = tween(400)) +
+                                            slideInVertically(animationSpec = tween(400), initialOffsetY = { 20 })
+                                ) {
+                                    SpotlightStoryHeroCard(
+                                        onClick = {
+                                            if (!uiState.isStoryLocked) {
+                                                showStory = true
+                                            }
+                                        },
+                                        buttonText = storyButtonText,
+                                        isLocked = uiState.isStoryLocked,
+                                        lockMessage = uiState.storyLockMessage,
+                                        leadArtUrl = leadArtUrl,
+                                        storyLoading = uiState.storyLoading
+                                    )
+                                }
+                            }
+
+                            // Generative Visual Cards Feed
+                            items(
+                                items = uiState.cards,
+                                key = { card -> card.id }
+                            ) { card ->
+                                AnimatedVisibility(
+                                    visible = true,
+                                    enter = fadeIn(animationSpec = tween(400)) +
+                                            slideInVertically(animationSpec = tween(400), initialOffsetY = { 40 })
+                                ) {
+                                    when (card) {
+                                        is SpotlightCardData.CosmicClock -> DashboardCosmicClockCard(
+                                            data = card,
+                                            onShareClick = { onShareCard(card) }
+                                        )
+                                        is SpotlightCardData.WeekendWarrior -> DashboardWeekendWarriorCard(
+                                            data = card,
+                                            onShareClick = { onShareCard(card) }
+                                        )
+                                        is SpotlightCardData.ForgottenFavorite -> DashboardForgottenFavoriteCard(
+                                            data = card,
+                                            onShareClick = { onShareCard(card) }
+                                        )
+                                        is SpotlightCardData.DeepDive -> DashboardDeepDiveCard(
+                                            data = card,
+                                            onShareClick = { onShareCard(card) }
+                                        )
+                                        is SpotlightCardData.NewObsession -> DashboardNewObsessionCard(
+                                            data = card,
+                                            onShareClick = { onShareCard(card) }
+                                        )
+                                        is SpotlightCardData.EarlyAdopter -> DashboardEarlyAdopterCard(
+                                            data = card,
+                                            onShareClick = { onShareCard(card) }
+                                        )
+                                        is SpotlightCardData.ListeningPeak -> DashboardListeningPeakCard(
+                                            data = card,
+                                            onShareClick = { onShareCard(card) }
+                                        )
+                                        is SpotlightCardData.ArtistLoyalty -> DashboardArtistLoyaltyCard(
+                                            data = card,
+                                            onShareClick = { onShareCard(card) }
+                                        )
+                                        is SpotlightCardData.Discovery -> DashboardDiscoveryCard(
+                                            data = card,
+                                            onShareClick = { onShareCard(card) }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-        
-        // Floating Time Period Selector
-        TimePeriodSelector(
-            selectedRange = uiState.selectedTimeRange,
-            onRangeSelected = viewModel::onTimeRangeSelected,
-            availableRanges = listOf(TimeRange.THIS_WEEK, TimeRange.THIS_MONTH, TimeRange.THIS_YEAR, TimeRange.ALL_TIME),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(16.dp)
-                .navigationBarsPadding()
-        )
 
-        // Story Overlay - only show if story pages are loaded
-        AnimatedVisibility(
-            visible = showStory,
-            enter = fadeIn(),
-            exit = fadeOut()
+            // Floating Time Period Selector
+            TimePeriodSelector(
+                selectedRange = uiState.selectedTimeRange,
+                onRangeSelected = viewModel::onTimeRangeSelected,
+                availableRanges = listOf(TimeRange.THIS_WEEK, TimeRange.THIS_MONTH, TimeRange.THIS_YEAR, TimeRange.ALL_TIME),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(bottom = 20.dp)
+                    .padding(horizontal = 32.dp)
+            )
+
+            // Fullscreen Story Overlay
+            AnimatedVisibility(
+                visible = showStory,
+                enter = fadeIn(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(250))
+            ) {
+                if (uiState.storyLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.94f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .statusBarsPadding()
+                                .padding(16.dp),
+                            contentAlignment = Alignment.TopEnd
+                        ) {
+                            FrostedIconButton(
+                                icon = Icons.Default.Close,
+                                contentDescription = "Close",
+                                onClick = { showStory = false }
+                            )
+                        }
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 32.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                color = TempoPrimary,
+                                strokeWidth = 3.dp,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Text(
+                                text = stringResource(R.string.spotlight_preparing),
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.SemiBold
+                                ),
+                                color = TextPrimary
+                            )
+                        }
+                    }
+                } else {
+                    SpotlightStoryScreen(
+                        storyPages = uiState.storyPages,
+                        onClose = { showStory = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Top bar with back button, screen title, and the selected period pill.
+ */
+@Composable
+private fun SpotlightTopBar(
+    periodLabel: String,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f, fill = false)
         ) {
-            if (uiState.storyLoading) {
-                // Story still loading - show loading indicator
+            FrostedIconButton(
+                icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = stringResource(R.string.details_action_back),
+                onClick = onNavigateBack
+            )
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Text(
+                text = stringResource(R.string.spotlight_title),
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontFamily = DisplayFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    letterSpacing = (-0.5).sp
+                ),
+                color = TextPrimary
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Active Period Pill Chip
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(GlassFrostMedium)
+                .border(0.8.dp, GlassBorderSoft, RoundedCornerShape(999.dp))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = periodLabel.uppercase(Locale.getDefault()),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.6.sp
+                ),
+                color = TextSecondary,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/**
+ * Header card linking to the fullscreen Spotlight story.
+ */
+@Composable
+fun SpotlightStoryHeroCard(
+    onClick: () -> Unit,
+    buttonText: String,
+    isLocked: Boolean,
+    lockMessage: String,
+    leadArtUrl: String?,
+    storyLoading: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val cardShape = RoundedCornerShape(22.dp)
+    val cardBlendBrush = remember(isLocked) {
+        if (isLocked) {
+            Brush.linearGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.03f),
+                    Color.White.copy(alpha = 0.01f)
+                )
+            )
+        } else {
+            Brush.linearGradient(
+                colors = listOf(
+                    TempoPrimary.copy(alpha = 0.14f),
+                    Color(0xFFA855F7).copy(alpha = 0.10f),
+                    Color(0xFFEC4899).copy(alpha = 0.06f)
+                )
+            )
+        }
+    }
+    val cardBorderBrush = remember(isLocked) {
+        if (isLocked) {
+            Brush.linearGradient(
+                colors = listOf(GlassBorderMedium, GlassBorderSoft)
+            )
+        } else {
+            Brush.linearGradient(
+                colors = listOf(
+                    TempoPrimary.copy(alpha = 0.45f),
+                    Color(0xFFA855F7).copy(alpha = 0.35f),
+                    Color(0xFFEC4899).copy(alpha = 0.22f)
+                )
+            )
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(cardShape)
+            .background(TempoDarkSurfaceElevated.copy(alpha = 0.94f))
+            .background(cardBlendBrush)
+            .border(0.8.dp, cardBorderBrush, cardShape)
+            .then(
+                if (!isLocked) Modifier.premiumClickable(onClick = onClick, pressedScale = 0.98f)
+                else Modifier
+            )
+            .padding(16.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Visual Story Avatar (Ring, Cover Preview, or Lock)
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isLocked) TempoDarkSurfaceSunken
+                        else Color(0xFFA855F7).copy(alpha = 0.2f)
+                    )
+                    .border(
+                        1.dp,
+                        if (isLocked) SolidColor(GlassBorderSoft)
+                        else Brush.linearGradient(
+                            listOf(TempoPrimary, Color(0xFFA855F7), Color(0xFFEC4899))
+                        ),
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isLocked) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        tint = TextTertiary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else if (!leadArtUrl.isNullOrBlank()) {
+                    CachedAsyncImage(
+                        imageUrl = leadArtUrl,
+                        contentDescription = "Story preview",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.PlayArrow,
+                        contentDescription = null,
+                        tint = TextPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            // Headline & Description
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (isLocked) "Story Locked" else buttonText,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = DisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    ),
+                    color = if (isLocked) TextSecondary else TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = when {
+                        isLocked -> lockMessage.ifBlank { "Unlocks at the end of the period" }
+                        storyLoading -> "Composing your story..."
+                        else -> "Tap to play your interactive story"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Trailing Action Cue
+            if (!isLocked) {
+                val buttonBlendBrush = remember {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            TempoPrimary.copy(alpha = 0.20f),
+                            Color(0xFFA855F7).copy(alpha = 0.22f),
+                            Color(0xFFEC4899).copy(alpha = 0.18f)
+                        )
+                    )
+                }
+                val buttonBorderBrush = remember {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            TempoPrimary.copy(alpha = 0.48f),
+                            Color(0xFFA855F7).copy(alpha = 0.38f),
+                            Color(0xFFEC4899).copy(alpha = 0.30f)
+                        )
+                    )
+                }
+
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black),
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(buttonBlendBrush)
+                        .border(0.8.dp, buttonBorderBrush, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = Color.White)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Preparing your story...",
-                            color = Color.White.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                        contentDescription = null,
+                        tint = TextPrimary,
+                        modifier = Modifier.size(12.dp)
+                    )
                 }
-            } else {
-                SpotlightStoryScreen(
-                    storyPages = uiState.storyPages,
-                    onClose = { showStory = false }
+            }
+        }
+    }
+}
+
+/**
+ * Loading indicator shown while analytical cards are generated.
+ */
+@Composable
+private fun SpotlightLoadingView(
+    periodLabel: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.padding(horizontal = 32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            CircularProgressIndicator(
+                color = TempoPrimary,
+                strokeWidth = 3.dp,
+                modifier = Modifier.size(36.dp)
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = "Analyzing $periodLabel…",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontFamily = DisplayFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                ),
+                color = TextPrimary
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Building your personalized music cards and story",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+/**
+ * Empty state shown when no listening data exists for the selected period.
+ */
+@Composable
+private fun SpotlightEmptyView(
+    periodLabel: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            variant = GlassCardVariant.Obsidian,
+            shape = RoundedCornerShape(22.dp),
+            borderColor = GlassBorderSoft,
+            borderWidth = 0.8.dp,
+            contentPadding = PaddingValues(28.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(TempoDarkSurfaceSunken)
+                        .border(0.8.dp, GlassBorderSoft, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Headphones,
+                        contentDescription = null,
+                        tint = TextSecondary,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Text(
+                    text = "No Insights for $periodLabel",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = DisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    color = TextPrimary
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "Keep listening to your favorite tracks or switch time periods below to see your music visualized.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 18.sp
                 )
             }
         }
     }
 }
 
+/**
+ * Backward compatibility wrapper for [SpotlightStoryHeroCard].
+ */
 @Composable
 fun SpotlightStoryButton(
     onClick: () -> Unit,
@@ -317,62 +660,12 @@ fun SpotlightStoryButton(
     isLocked: Boolean = false,
     lockMessage: String = ""
 ) {
-    GlassCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = !isLocked, onClick = onClick),
-        backgroundColor = if (isLocked) 
-            Color.Gray.copy(alpha = 0.1f) 
-        else 
-            Color(0xFFA855F7).copy(alpha = 0.15f), // Purple Tint
-        contentPadding = PaddingValues(20.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        brush = if (isLocked) 
-                            Brush.linearGradient(colors = listOf(Color.Gray, Color.DarkGray))
-                        else 
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    Color(0xFFA855F7),
-                                    Color(0xFFEC4899)
-                                )
-                            ),
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column {
-                Text(
-                    text = if (isLocked) "Story Locked" else buttonText,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color.White.copy(alpha = if (isLocked) 0.5f else 1f),
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = if (isLocked) lockMessage else "Open your spotlight story",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.7f)
-                )
-            }
-        }
-    }
+    SpotlightStoryHeroCard(
+        onClick = onClick,
+        buttonText = buttonText,
+        isLocked = isLocked,
+        lockMessage = lockMessage,
+        leadArtUrl = null,
+        storyLoading = false
+    )
 }
-
-

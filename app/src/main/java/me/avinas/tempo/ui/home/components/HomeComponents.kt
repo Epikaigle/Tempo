@@ -18,6 +18,12 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,12 +49,15 @@ import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.ui.components.GlassCard
-
+import me.avinas.tempo.ui.components.GlassCardVariant
+import me.avinas.tempo.ui.components.TelemetryMiniCell
 import me.avinas.tempo.ui.components.TrendLine
 import me.avinas.tempo.ui.theme.*
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 import me.avinas.tempo.ui.theme.premiumClickable
+import androidx.compose.foundation.border
+import java.util.Locale
 
 @Composable
 fun HeroCard(
@@ -59,6 +68,10 @@ fun HeroCard(
     trendData: List<Float>,
     selectedRange: TimeRange,
     dailyLabels: List<String> = emptyList(),
+    dailyAvgMinutes: Long = 0L,
+    activeDays: Int = 0,
+    totalDays: Int = 0,
+    peakDayMinutes: Long = 0L,
     modifier: Modifier = Modifier
 ) {
     var scrubbingTime by remember { mutableStateOf<String?>(null) }
@@ -73,111 +86,191 @@ fun HeroCard(
     val greeting = remember(userName) {
         me.avinas.tempo.utils.TempoCopyEngine.getHeroGreeting(userName)
     }
-    val greetingStyle = when {
-        greeting.length <= 20 -> MaterialTheme.typography.headlineSmall
-        greeting.length <= 30 -> MaterialTheme.typography.titleLarge
-        else -> MaterialTheme.typography.titleMedium
+
+    val dailyAvgFormatted = remember(dailyAvgMinutes) {
+        val h = dailyAvgMinutes / 60
+        val m = dailyAvgMinutes % 60
+        if (h > 0) "${h}h ${m}m" else "${m}m"
+    }
+    val peakFormatted = remember(peakDayMinutes) {
+        val h = peakDayMinutes / 60
+        val m = peakDayMinutes % 60
+        if (h > 0) "${h}h ${m}m" else "${m}m"
     }
 
     GlassCard(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        contentPadding = PaddingValues(16.dp)
+        variant = GlassCardVariant.Obsidian,
+        shape = RoundedCornerShape(24.dp),
+        borderColor = GlassBorderSoft,
+        borderWidth = 0.8.dp,
+        contentPadding = PaddingValues(18.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            // Masthead kicker row with accent dot
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Greeting
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(TempoPrimary)
+                )
                 Text(
-                    text = greeting,
-                    style = greetingStyle,
-                    color = TextPrimary.copy(alpha = 0.92f),
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth()
+                    text = periodLabel.uppercase(Locale.getDefault()),
+                    style = KickerSmall,
+                    color = TextTertiary,
+                    letterSpacing = 1.0.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Large Hero Metric with DisplayFontFamily
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = scrubbingTime ?: listeningTime,
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontFamily = DisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-1).sp
+                    ),
+                    color = TextPrimary
                 )
 
-                // Hero Time Display + period context
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                if (scrubbingLabel != null) {
                     Text(
-                        text = scrubbingTime ?: listeningTime,
-                        style = MaterialTheme.typography.displayMedium,
-                        color = TextPrimary,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
-
-                    if (scrubbingLabel != null) {
-                        Text(
-                            text = "• $scrubbingLabel",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                    } else if (periodLabel.isNotBlank()) {
-                        Text(
-                            text = periodLabel,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = TextTertiary,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
-                }
-
-                val isPositive = timeChangePercent >= 0
-                val percentString = "${if (isPositive) "+" else ""}${timeChangePercent.toInt()}%"
-                val comparisonColor = if (isPositive) TempoSuccessBright else TempoWarningBright
-                val arrowIcon = if (isPositive) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
-                            .background(comparisonColor.copy(alpha = 0.14f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Icon(
-                                imageVector = arrowIcon,
-                                contentDescription = null,
-                                tint = comparisonColor,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = percentString,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = comparisonColor,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.3.sp
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Text(
-                        text = me.avinas.tempo.utils.TempoCopyEngine.getHeroSubtitle(timeChangePercent, selectedRange),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
+                        text = "• $scrubbingLabel",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontFamily = DisplayFontFamily,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = TextSecondary,
+                        modifier = Modifier.padding(bottom = 6.dp)
                     )
                 }
             }
 
-            
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
+            // Greeting & Delta pill context
+            val isPositive = timeChangePercent >= 0
+            val percentString = "${if (isPositive) "+" else ""}${timeChangePercent.toInt()}%"
+            val comparisonColor = if (isPositive) TempoSuccessBright else TempoWarningBright
+            val arrowIcon = if (isPositive) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown
+            val comparisonText = when (selectedRange) {
+                TimeRange.TODAY -> "vs yesterday"
+                TimeRange.THIS_WEEK -> "vs last week"
+                TimeRange.THIS_MONTH -> "vs last month"
+                TimeRange.THIS_YEAR -> "vs last year"
+                TimeRange.ALL_TIME -> ""
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(comparisonColor.copy(alpha = 0.14f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Icon(
+                            imageVector = arrowIcon,
+                            contentDescription = null,
+                            tint = comparisonColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = percentString,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = comparisonColor,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.3.sp
+                        )
+                    }
+                }
+
+                if (comparisonText.isNotBlank()) {
+                    Text(
+                        text = comparisonText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Hairline separator
+            Spacer(modifier = Modifier.height(16.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.8.dp)
+                    .background(GlassBorderSoft)
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Secondary Telemetry Metrics Row
+            if (trendData.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TelemetryMiniCell(
+                        label = "DAILY AVG",
+                        value = dailyAvgFormatted,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(0.8.dp)
+                            .background(GlassBorderSoft)
+                    )
+
+                    TelemetryMiniCell(
+                        label = "ACTIVE DAYS",
+                        value = "$activeDays / $totalDays",
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(0.8.dp)
+                            .background(GlassBorderSoft)
+                    )
+
+                    TelemetryMiniCell(
+                        label = "PEAK DAY",
+                        value = peakFormatted,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Chart Box
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -215,7 +308,7 @@ fun HeroCard(
                         modifier = Modifier.fillMaxSize(),
                         lineColor = me.avinas.tempo.ui.theme.TempoSecondary,
                         fillColor = me.avinas.tempo.ui.theme.TempoSecondary.copy(alpha = 0.2f),
-                        strokeWidth = 3.dp // Thicker line
+                        strokeWidth = 3.dp
                     )
                 }
             }
@@ -224,7 +317,14 @@ fun HeroCard(
 }
 
 
-private val SpotlightAccent = me.avinas.tempo.ui.theme.TempoPrimary
+private val SpotlightStoryGradient = listOf(
+    TempoPrimary,       // Electric Teal
+    Color(0xFF06B6D4),  // Bright Cyan
+    Color(0xFF8B5CF6),  // Vivid Violet
+    Color(0xFFEC4899),  // Neon Rose
+    Color(0xFFF59E0B),  // Warm Amber
+    TempoPrimary        // Seamless loop back to Teal
+)
 
 @Composable
 private fun SpotlightRing(
@@ -233,97 +333,209 @@ private fun SpotlightRing(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    if (viewed) {
+        ViewedSpotlightRing(
+            albumArtUrl = albumArtUrl,
+            onClick = onClick,
+            modifier = modifier
+        )
+    } else {
+        ActiveSpotlightRing(
+            albumArtUrl = albumArtUrl,
+            onClick = onClick,
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
+private fun ActiveSpotlightRing(
+    albumArtUrl: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val storyAccessibilityLabel = stringResource(R.string.spotlight_view_story)
+    val infiniteTransition = rememberInfiniteTransition(label = "spotlightRingTransition")
+    val rotationAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 7000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "ringRotation"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.22f,
+        targetValue = 0.48f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "ringPulse"
+    )
+
+    val sweepGradientBrush = remember {
+        Brush.sweepGradient(SpotlightStoryGradient)
+    }
+
     Box(
         modifier = modifier
             .size(62.dp)
-            .premiumClickable(onClick = onClick, pressedScale = 0.97f),
+            .semantics {
+                contentDescription = storyAccessibilityLabel
+                role = Role.Button
+            }
+            .premiumClickable(onClick = onClick, pressedScale = 0.94f),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
-            val outerStroke = 1.5.dp.toPx()
-            val inset = outerStroke / 2
-            val d = size.minDimension - outerStroke
-            val tl = Offset(inset, inset)
-            val sz = androidx.compose.ui.geometry.Size(d, d)
-            if (!viewed) {
-                drawArc(
-                    color = Color.White.copy(alpha = 0.10f),
-                    startAngle = 0f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = outerStroke),
-                    topLeft = tl,
-                    size = sz
-                )
-                drawArc(
-                    color = SpotlightAccent,
-                    startAngle = -90f,
-                    sweepAngle = 298f,
-                    useCenter = false,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(
-                        width = outerStroke,
-                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+            val outerStroke = 2.2.dp.toPx()
+            val ringRadius = (size.minDimension - outerStroke) / 2f
+
+            // Ambient radial aura/glow behind the ring
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        TempoPrimary.copy(alpha = pulseAlpha * 0.36f),
+                        Color(0xFF8B5CF6).copy(alpha = pulseAlpha * 0.16f),
+                        Color.Transparent
                     ),
-                    topLeft = tl,
-                    size = sz
-                )
-            } else {
-                drawArc(
-                    color = Color.White.copy(alpha = 0.09f),
-                    startAngle = 0f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()),
-                    topLeft = tl,
-                    size = sz
+                    radius = size.minDimension / 2f
+                ),
+                radius = size.minDimension / 2f,
+                center = center
+            )
+
+            // Rotating multi-stop gradient story ring
+            rotate(rotationAngle) {
+                drawCircle(
+                    brush = sweepGradientBrush,
+                    style = Stroke(width = outerStroke),
+                    radius = ringRadius,
+                    center = center
                 )
             }
+        }
+
+        // Inner circular avatar with intentional dark separator border
+        SpotlightAvatarContent(
+            albumArtUrl = albumArtUrl,
+            modifier = Modifier.size(50.dp)
+        )
+
+        // Interactive "Play Story" badge
+        val badgeGradient = remember {
+            Brush.linearGradient(
+                colors = listOf(
+                    TempoPrimary,
+                    Color(0xFF8B5CF6)
+                )
+            )
         }
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .align(Alignment.BottomEnd)
+                .offset(x = 1.dp, y = 1.dp)
+                .size(18.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.06f)),
+                .background(TempoDarkSurfaceElevated)
+                .padding(1.8.dp)
+                .clip(CircleShape)
+                .background(badgeGradient),
             contentAlignment = Alignment.Center
         ) {
-            if (!albumArtUrl.isNullOrBlank()) {
-                CachedAsyncImage(
-                    imageUrl = albumArtUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    targetSizeDp = 88
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = SpotlightAccent,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
+            Icon(
+                imageVector = Icons.Rounded.PlayArrow,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier
+                    .size(11.dp)
+                    .offset(x = 0.5.dp) // Optical center compensation for play triangle
+            )
         }
-        if (!viewed) {
+    }
+}
+
+@Composable
+private fun ViewedSpotlightRing(
+    albumArtUrl: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val storyAccessibilityLabel = stringResource(R.string.spotlight_view_story)
+    Box(
+        modifier = modifier
+            .size(62.dp)
+            .semantics {
+                contentDescription = storyAccessibilityLabel
+                role = Role.Button
+            }
+            .premiumClickable(onClick = onClick, pressedScale = 0.94f),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val outerStroke = 1.2.dp.toPx()
+            val ringRadius = (size.minDimension - outerStroke) / 2f
+
+            // Calm, elegant, thin muted ring
+            drawCircle(
+                color = Color.White.copy(alpha = 0.18f),
+                style = Stroke(width = outerStroke),
+                radius = ringRadius,
+                center = center
+            )
+        }
+
+        // Inner circular avatar with intentional dark separator border
+        SpotlightAvatarContent(
+            albumArtUrl = albumArtUrl,
+            modifier = Modifier.size(50.dp)
+        )
+    }
+}
+
+@Composable
+private fun SpotlightAvatarContent(
+    albumArtUrl: String?,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(TempoDarkSurfaceElevated)
+            .border(2.dp, TempoDarkSurfaceElevated, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!albumArtUrl.isNullOrBlank()) {
+            CachedAsyncImage(
+                imageUrl = albumArtUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape),
+                contentScale = ContentScale.Crop,
+                targetSizeDp = 100
+            )
+        } else {
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 1.dp, y = 1.dp)
-                    .size(14.dp)
-                    .clip(CircleShape)
-                    .background(SpotlightAccent)
+                    .fillMaxSize()
                     .background(
                         Brush.radialGradient(
-                            colors = listOf(Color.White.copy(alpha = 0.22f), Color.Transparent),
-                            radius = 14.dp.value * 2
+                            colors = listOf(
+                                TempoPrimary.copy(alpha = 0.20f),
+                                TempoDarkSurfaceElevated
+                            )
                         )
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(5.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
+                Icon(
+                    imageVector = Icons.Rounded.AutoAwesome,
+                    contentDescription = null,
+                    tint = TempoPrimary,
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
@@ -339,11 +551,35 @@ fun SpotlightStoryCard(
     storyViewed: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    GlassCard(
-        modifier = modifier.fillMaxWidth().premiumClickable(onClick = onClick, pressedScale = 0.98f),
-        accentColor = me.avinas.tempo.ui.theme.TempoPrimary,
-        accentStrength = 0.06f,
-        contentPadding = PaddingValues(16.dp)
+    val cardShape = RoundedCornerShape(22.dp)
+    val cardBlendBrush = remember {
+        Brush.linearGradient(
+            colors = listOf(
+                TempoPrimary.copy(alpha = 0.12f),
+                Color(0xFFA855F7).copy(alpha = 0.08f),
+                Color(0xFFEC4899).copy(alpha = 0.06f)
+            )
+        )
+    }
+    val cardBorderBrush = remember {
+        Brush.linearGradient(
+            colors = listOf(
+                TempoPrimary.copy(alpha = 0.35f),
+                Color(0xFFA855F7).copy(alpha = 0.25f),
+                Color(0xFFEC4899).copy(alpha = 0.18f)
+            )
+        )
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(cardShape)
+            .background(TempoDarkSurfaceElevated.copy(alpha = 0.94f))
+            .background(cardBlendBrush)
+            .border(0.8.dp, cardBorderBrush, cardShape)
+            .premiumClickable(onClick = onClick, pressedScale = 0.98f)
+            .padding(16.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -359,23 +595,55 @@ fun SpotlightStoryCard(
             ) {
                 Text(
                     text = stringResource(R.string.home_spotlight_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = DisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    ),
+                    color = TextPrimary
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = stringResource(R.string.home_spotlight_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
             }
 
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                contentDescription = null,
-                tint = TextTertiary,
-                modifier = Modifier.size(16.dp)
-            )
+            val buttonBlendBrush = remember {
+                Brush.linearGradient(
+                    colors = listOf(
+                        TempoPrimary.copy(alpha = 0.20f),
+                        Color(0xFFA855F7).copy(alpha = 0.22f),
+                        Color(0xFFEC4899).copy(alpha = 0.18f)
+                    )
+                )
+            }
+            val buttonBorderBrush = remember {
+                Brush.linearGradient(
+                    colors = listOf(
+                        TempoPrimary.copy(alpha = 0.48f),
+                        Color(0xFFA855F7).copy(alpha = 0.38f),
+                        Color(0xFFEC4899).copy(alpha = 0.30f)
+                    )
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(buttonBlendBrush)
+                    .border(0.8.dp, buttonBorderBrush, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                    contentDescription = null,
+                    tint = TextPrimary,
+                    modifier = Modifier.size(12.dp)
+                )
+            }
         }
     }
 }

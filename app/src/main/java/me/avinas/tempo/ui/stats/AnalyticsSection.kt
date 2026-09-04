@@ -19,6 +19,7 @@ import me.avinas.tempo.data.stats.InsightCardData
 import me.avinas.tempo.data.stats.InsightType
 import me.avinas.tempo.data.stats.ListeningOverview
 import me.avinas.tempo.ui.components.StatCard
+import me.avinas.tempo.ui.home.components.InsightCard
 
 @Composable
 fun AnalyticsContent(
@@ -184,34 +185,9 @@ fun HourlyChart(hourlyData: List<HourlyDistribution>) {
 
 @Composable
 fun InsightItem(insight: InsightCardData) {
-    val gradient = when (insight.type) {
-        InsightType.MOOD -> listOf(Color(0xFF7C3AED), Color(0xFF4C1D95)) // Violet
-        InsightType.BINGE -> listOf(Color(0xFFBE123C), Color(0xFF881337)) // Rose
-        InsightType.DISCOVERY -> listOf(Color(0xFF059669), Color(0xFF065F46)) // Emerald
-        InsightType.PEAK_TIME -> listOf(Color(0xFFCA8A04), Color(0xFF854D0E)) // Yellow
-        else -> listOf(Color(0xFF374151), Color(0xFF1F2937)) // Gray
-    }
-
-    StatCard(
-        modifier = Modifier.fillMaxWidth(),
-        gradientColors = gradient.map { it.copy(alpha = 0.7f) }
-    ) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                 // You could add an icon here based on type
-                Text(
-                    text = insight.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = insight.description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.9f)
-            )
-        }
-    }
+    InsightCard(
+        insight = insight,
+        onCloseClick = null,
+        onClick = {}
+    )
 }

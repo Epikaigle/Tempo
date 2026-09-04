@@ -45,10 +45,10 @@ data class Artist(
     val genres: List<String> = emptyList(),
     
     @ColumnInfo(name = "musicbrainz_id") 
-    val musicbrainzId: String?,
+    val musicbrainzId: String? = null,
     
     @ColumnInfo(name = "spotify_id") 
-    val spotifyId: String?,
+    val spotifyId: String? = null,
     
     /**
      * Country/region of the artist (e.g., "IN", "US", "GB")

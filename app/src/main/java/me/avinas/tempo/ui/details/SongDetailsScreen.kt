@@ -24,6 +24,18 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.window.Dialog
+import me.avinas.tempo.ui.components.TempoDialogSurface
+import me.avinas.tempo.ui.components.TempoDialogIcon
+import me.avinas.tempo.ui.components.TempoDialogTitle
+import me.avinas.tempo.ui.components.TempoDialogBody
+import me.avinas.tempo.ui.components.TempoDialogButtonRow
+import me.avinas.tempo.ui.components.TempoDialogDangerButton
+import me.avinas.tempo.ui.components.TempoDialogSecondaryButton
+import me.avinas.tempo.ui.components.TempoDialogTextField
+import me.avinas.tempo.ui.components.TempoDropdownMenu
+import me.avinas.tempo.ui.components.TempoDropdownMenuItem
+import me.avinas.tempo.ui.components.TempoIcons
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -122,6 +134,7 @@ import me.avinas.tempo.ui.components.ArtAtmosphereLayer
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
+import me.avinas.tempo.ui.components.FrostedIconButton
 import me.avinas.tempo.ui.components.SharePreviewDialog
 import me.avinas.tempo.ui.components.SongShareCard
 import me.avinas.tempo.ui.spotify.SpotifyViewModel
@@ -392,7 +405,7 @@ fun SongDetailsContent(
                 // Listening milestones
                 if (hasJourney) {
                     item(key = "chronological_odyssey") {
-                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 18.dp)) {
+                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 26.dp)) {
                             ListeningOdysseySection(
                                 trackDetails = trackDetails,
                                 engagement = uiState.engagement,
@@ -408,7 +421,7 @@ fun SongDetailsContent(
                 // Listening history trends
                 if (hasListeningHistory) {
                     item(key = "temporal_rhythm") {
-                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
+                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)) {
                             TemporalRhythmSection(
                                 history = uiState.listeningHistory,
                                 peakBinge = uiState.peakBingeDay,
@@ -499,49 +512,52 @@ fun SongDetailsContent(
                     .statusBarsPadding()
                     .padding(top = 52.dp, end = 16.dp)
             ) {
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false },
-                    modifier = Modifier.background(TempoDarkSurfaceElevated),
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.details_merge_duplicate), color = TextPrimary) },
-                        leadingIcon = {
-                            Icon(
-                                Icons.AutoMirrored.Rounded.CallMerge,
-                                contentDescription = null,
-                                tint = TextPrimary,
-                            )
-                        },
-                        onClick = {
-                            showMenu = false
-                            showMergeDialog = true
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.details_delete_song), color = TempoError) },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                contentDescription = null,
-                                tint = TempoError,
-                            )
-                        },
-                        onClick = {
-                            showMenu = false
-                            viewModel.showDeleteDialog()
-                        },
-                    )
-                }
+            TempoDropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                TempoDropdownMenuItem(
+                    title = stringResource(R.string.details_merge_duplicate),
+                    leadingIcon = TempoIcons.MergeStreams,
+                    onClick = {
+                        showMenu = false
+                        showMergeDialog = true
+                    }
+                )
+                TempoDropdownMenuItem(
+                    title = stringResource(R.string.details_delete_song),
+                    leadingIcon = TempoIcons.Trash,
+                    isDestructive = true,
+                    onClick = {
+                        showMenu = false
+                        viewModel.showDeleteDialog()
+                    }
+                )
             }
         }
+    }
     }
 
     if (showShareDialog) {
         SharePreviewDialog(
             onDismiss = { showShareDialog = false },
             contentToShare = { theme ->
-                SongShareCard(trackDetails = trackDetails, theme = theme)
+                val engagement = uiState.engagement
+                val completionFraction = engagement?.let { it.averageCompletionPercent / 100f }
+                val skipFraction = engagement?.let {
+                    if (it.playCount > 0) it.skipsCount.toFloat() / it.playCount else null
+                }
+                SongShareCard(
+                    trackDetails = trackDetails,
+                    theme = theme,
+                    genre = uiState.genre,
+                    mood = uiState.moodSummary?.moodName,
+                    habitualHour = uiState.habitualHour,
+                    peakBingeDay = uiState.peakBingeDay,
+                    completionRate = completionFraction,
+                    skipRate = skipFraction,
+                    releaseYear = uiState.releaseYear,
+                )
             },
         )
     }
@@ -606,7 +622,7 @@ private fun TopBarNavigation(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FrostedHeaderButton(
+        FrostedIconButton(
             icon = Icons.AutoMirrored.Rounded.ArrowBack,
             contentDescription = stringResource(R.string.details_action_back),
             onClick = onNavigateBack,
@@ -648,13 +664,13 @@ private fun TopBarNavigation(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FrostedHeaderButton(
+            FrostedIconButton(
                 icon = Icons.Rounded.Share,
                 contentDescription = stringResource(R.string.details_action_share_card),
                 onClick = onShare,
             )
 
-            FrostedHeaderButton(
+            FrostedIconButton(
                 icon = Icons.Rounded.MoreVert,
                 contentDescription = stringResource(R.string.details_action_song_options),
                 onClick = onMenuClick,
@@ -663,29 +679,6 @@ private fun TopBarNavigation(
     }
 }
 
-@Composable
-private fun FrostedHeaderButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(GlassFrostMedium)
-            .border(0.8.dp, GlassBorderSoft, CircleShape)
-            .premiumClickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = TextPrimary,
-            modifier = Modifier.size(18.dp),
-        )
-    }
-}
 
 // ──────────────────────────────────────────────────────────────
 // 1. Song Hero Stage
@@ -1097,44 +1090,12 @@ fun MasterStatMasthead(
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 20.dp)) {
-                // Total play count hero metric
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(5.dp)
-                            .clip(CircleShape)
-                            .background(dominantColor)
-                    )
-                    Text(
-                        text = stringResource(R.string.details_total_plays).uppercase(Locale.getDefault()),
-                        style = KickerSmall,
-                        color = TextTertiary,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = String.format(Locale.getDefault(), "%,d", trackDetails.playCount),
-                        style = MaterialTheme.typography.displaySmall.copy(
-                            fontFamily = DisplayFontFamily,
-                            letterSpacing = (-1).sp,
-                        ),
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.details_together_suffix, formattedTime),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(bottom = 6.dp),
-                    )
-                }
+                MastheadHeroMetric(
+                    label = stringResource(R.string.details_total_plays),
+                    value = String.format(Locale.getDefault(), "%,d", trackDetails.playCount),
+                    suffix = stringResource(R.string.details_together_suffix, formattedTime),
+                    accentTint = dominantColor,
+                )
 
                 Spacer(modifier = Modifier.height(16.dp))
                 Box(
@@ -1152,34 +1113,12 @@ fun MasterStatMasthead(
                         .height(IntrinsicSize.Min),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.details_peak_position).uppercase(Locale.getDefault()),
-                            style = KickerSmall,
-                            color = TextTertiary,
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = buildAnnotatedString {
-                                append(rankText)
-                                append("  ")
-                                withStyle(
-                                    SpanStyle(
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = TextTertiary,
-                                    )
-                                ) {
-                                    append(rankSubtext)
-                                }
-                            },
-                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = DisplayFontFamily),
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                    MastheadSecondaryStat(
+                        label = stringResource(R.string.details_peak_position),
+                        value = rankText,
+                        subtext = rankSubtext,
+                        modifier = Modifier.weight(1f),
+                    )
 
                     Box(
                         modifier = Modifier
@@ -1188,38 +1127,17 @@ fun MasterStatMasthead(
                             .background(GlassBorderSoft),
                     )
 
-                    Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
-                        Text(
-                            text = stringResource(R.string.details_completion_rate).uppercase(Locale.getDefault()),
-                            style = KickerSmall,
-                            color = TextTertiary,
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = buildAnnotatedString {
-                                append(loyaltyText)
-                                append("  ")
-                                withStyle(
-                                    SpanStyle(
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = TextTertiary,
-                                    )
-                                ) {
-                                    append(loyaltySubtext)
-                                }
-                            },
-                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = DisplayFontFamily),
-                            fontWeight = FontWeight.Bold,
-                            color = when {
-                                loyaltyRate == null -> TextPrimary
-                                loyaltyRate >= 70 -> TempoSuccess
-                                else -> TempoWarning
-                            },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+                    MastheadSecondaryStat(
+                        label = stringResource(R.string.details_completion_rate),
+                        value = loyaltyText,
+                        subtext = loyaltySubtext,
+                        valueColor = when {
+                            loyaltyRate == null -> TextPrimary
+                            loyaltyRate >= 70 -> TempoSuccess
+                            else -> TempoWarning
+                        },
+                        modifier = Modifier.weight(1f).padding(start = 16.dp),
+                    )
                 }
             }
         }
@@ -1278,6 +1196,98 @@ internal fun EditorialStatBlock(
             text = subtext,
             style = CaptionSmall,
             color = TextTertiary,
+        )
+    }
+}
+
+/**
+ * Hero metric header for editorial stat mastheads: accent-dot kicker over a
+ * display-size value with a trailing suffix line. Shared by song and artist.
+ */
+@Composable
+internal fun MastheadHeroMetric(
+    label: String,
+    value: String,
+    suffix: String,
+    accentTint: Color,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(5.dp)
+                .clip(CircleShape)
+                .background(accentTint)
+        )
+        Text(
+            text = label.uppercase(Locale.getDefault()),
+            style = KickerSmall,
+            color = TextTertiary,
+        )
+    }
+
+    Spacer(modifier = Modifier.height(6.dp))
+
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.displaySmall.copy(
+                fontFamily = DisplayFontFamily,
+                letterSpacing = (-1).sp,
+            ),
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = suffix,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+    }
+}
+
+/**
+ * Secondary masthead stat: kicker label over value with inline 11sp subtext.
+ * Shared by song and artist mastheads.
+ */
+@Composable
+internal fun MastheadSecondaryStat(
+    label: String,
+    value: String,
+    subtext: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = TextPrimary,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = label.uppercase(Locale.getDefault()),
+            style = KickerSmall,
+            color = TextTertiary,
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = buildAnnotatedString {
+                append(value)
+                append("  ")
+                withStyle(
+                    SpanStyle(
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextTertiary,
+                    )
+                ) {
+                    append(subtext)
+                }
+            },
+            style = MaterialTheme.typography.titleMedium.copy(fontFamily = DisplayFontFamily),
+            fontWeight = FontWeight.Bold,
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -2054,21 +2064,21 @@ private data class AffinityTierInfo(
 /**
  * Palette for flat timeline markers and labels, adjusted for contrast against the dynamic backdrop.
  */
-private data class FlatTimelineInk(
+internal data class FlatTimelineInk(
     val title: Color,
     val value: Color,
     val icon: Color,
     val divider: Color,
 )
 
-private val DarkRoomInk = FlatTimelineInk(
+internal val DarkRoomInk = FlatTimelineInk(
     title = TextTertiary,
     value = TextPrimary,
     icon = TextSecondary,
     divider = GlassBorderSoft,
 )
 
-private val BrightRoomInk = FlatTimelineInk(
+internal val BrightRoomInk = FlatTimelineInk(
     title = TextOnAccent.copy(alpha = 0.55f),
     value = TextOnAccent,
     icon = TextOnAccent.copy(alpha = 0.78f),
@@ -2153,7 +2163,7 @@ fun ListeningOdysseySection(
  * Horizontal connecting line with milestone markers and end chevron.
  */
 @Composable
-private fun TimeFlowRibbon(
+internal fun TimeFlowRibbon(
     stationCount: Int,
     ink: FlatTimelineInk,
 ) {
@@ -2217,7 +2227,7 @@ private fun TimeFlowRibbon(
     }
 }
 
-private data class OdysseyMilestone(
+internal data class OdysseyMilestone(
     val icon: ImageVector,
     val title: String,
     val value: String,
@@ -2239,7 +2249,7 @@ private fun habitualHourIcon(hourOfDay: Int?): ImageVector = when (hourOfDay) {
  * Milestone column displaying an icon, label, and formatted date or hour.
  */
 @Composable
-private fun FlatMilestoneRow(
+internal fun FlatMilestoneRow(
     milestone: OdysseyMilestone,
     ink: FlatTimelineInk,
 ) {
@@ -2549,72 +2559,59 @@ private fun EditTitleDialog(
     val isUnchanged = trimmed == currentTitle
     val canSave = trimmed.isNotEmpty() && !isUnchanged && !isSaving
 
-    AlertDialog(
-        onDismissRequest = { if (!isSaving) onDismiss() },
-        containerColor = TempoDarkSurfaceElevated,
-        shape = RoundedCornerShape(24.dp),
-        icon = {
-            Icon(
-                Icons.Rounded.Edit,
-                contentDescription = null,
+    Dialog(onDismissRequest = { if (!isSaving) onDismiss() }) {
+        TempoDialogSurface {
+            TempoDialogIcon(
+                icon = TempoIcons.Edit,
                 tint = TempoPrimary,
+                size = 48
             )
-        },
-        title = { Text(stringResource(R.string.details_edit_title_dialog_title), color = TextPrimary) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = titleText,
-                    onValueChange = {
-                        if (it.length <= 200) {
-                            titleText = it
-                            if (error != null) onClearWarnings()
-                        }
-                    },
-                    label = { Text(stringResource(R.string.details_edit_title_label)) },
-                    singleLine = true,
-                    isError = error != null || trimmed.isEmpty(),
-                    supportingText = {
-                        when {
-                            error != null -> Text(error, color = MaterialTheme.colorScheme.error)
-                            trimmed.isEmpty() -> Text(stringResource(R.string.details_edit_title_empty), color = MaterialTheme.colorScheme.error)
-                            isUnchanged -> Text(stringResource(R.string.details_edit_title_unchanged), color = TextTertiary)
-                            else -> Text("${titleText.length} / 200", style = MaterialTheme.typography.bodySmall, color = TextTertiary)
-                        }
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = TempoPrimary,
-                        unfocusedBorderColor = TextPrimary.copy(alpha = 0.3f),
-                        focusedLabelColor = TempoPrimary,
-                        unfocusedLabelColor = TextPrimary.copy(alpha = 0.6f),
-                        cursorColor = TempoPrimary,
-                    ),
+            Spacer(modifier = Modifier.height(16.dp))
+            TempoDialogTitle(text = stringResource(R.string.details_edit_title_dialog_title))
+            Spacer(modifier = Modifier.height(6.dp))
+            TempoDialogBody(text = "Adjust the track title to fix scrobble typos or match your library.")
+            Spacer(modifier = Modifier.height(20.dp))
+
+            TempoDialogTextField(
+                value = titleText,
+                onValueChange = {
+                    if (it.length <= 200) {
+                        titleText = it
+                        if (error != null) onClearWarnings()
+                    }
+                },
+                label = stringResource(R.string.details_edit_title_label),
+                isError = error != null || trimmed.isEmpty(),
+                supportingText = when {
+                    error != null -> error
+                    trimmed.isEmpty() -> stringResource(R.string.details_edit_title_empty)
+                    isUnchanged -> stringResource(R.string.details_edit_title_unchanged)
+                    else -> "${titleText.length} / 200"
+                }
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (isSaving) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = TempoPrimary)
+                }
+            } else {
+                TempoDialogButtonRow(
+                    primaryText = stringResource(R.string.common_save),
+                    onPrimary = { onSave(trimmed) },
+                    secondaryText = stringResource(R.string.common_cancel),
+                    onSecondary = onDismiss,
+                    primaryEnabled = canSave
                 )
             }
-        },
-        confirmButton = {
-            if (isSaving) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = TempoPrimary)
-            } else {
-                TextButton(
-                    onClick = { onSave(trimmed) },
-                    enabled = canSave,
-                ) {
-                    Text(stringResource(R.string.common_save).uppercase(), color = if (canSave) TempoPrimary else TextTertiary)
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isSaving,
-            ) {
-                Text(stringResource(R.string.common_cancel), color = TextSecondary)
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -2624,46 +2621,44 @@ private fun MergeConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = { if (!isMerging) onDismiss() },
-        containerColor = TempoDarkSurfaceElevated,
-        shape = RoundedCornerShape(24.dp),
-        icon = {
-            Icon(
-                Icons.AutoMirrored.Rounded.CallMerge,
-                contentDescription = null,
+    Dialog(onDismissRequest = { if (!isMerging) onDismiss() }) {
+        TempoDialogSurface {
+            TempoDialogIcon(
+                icon = TempoIcons.MergeStreams,
                 tint = TempoPrimary,
+                size = 48
             )
-        },
-        title = { Text(stringResource(R.string.details_edit_title_merge_title), color = TextPrimary) },
-        text = {
-            Text(
-                stringResource(
+            Spacer(modifier = Modifier.height(16.dp))
+            TempoDialogTitle(text = stringResource(R.string.details_edit_title_merge_title))
+            Spacer(modifier = Modifier.height(8.dp))
+            TempoDialogBody(
+                text = stringResource(
                     R.string.details_edit_title_merge_message,
                     target.title,
-                    target.artist,
-                ),
-                color = TextSecondary,
+                    target.artist
+                )
             )
-        },
-        confirmButton = {
+            Spacer(modifier = Modifier.height(24.dp))
+
             if (isMerging) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = TempoPrimary)
-            } else {
-                TextButton(onClick = onConfirm) {
-                    Text(stringResource(R.string.details_edit_title_merge_button).uppercase(), color = TempoPrimary)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = TempoPrimary)
                 }
+            } else {
+                TempoDialogButtonRow(
+                    primaryText = stringResource(R.string.details_edit_title_merge_button),
+                    onPrimary = onConfirm,
+                    secondaryText = stringResource(R.string.common_cancel),
+                    onSecondary = onDismiss
+                )
             }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isMerging,
-            ) {
-                Text(stringResource(R.string.common_cancel), color = TextSecondary)
-            }
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -2673,65 +2668,73 @@ private fun DeleteSongConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = { if (!isDeleting) onDismiss() },
-        containerColor = TempoDarkSurfaceElevated,
-        shape = RoundedCornerShape(24.dp),
-        icon = {
-            Icon(
-                Icons.Rounded.Delete,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
+    Dialog(onDismissRequest = { if (!isDeleting) onDismiss() }) {
+        TempoDialogSurface {
+            TempoDialogIcon(
+                icon = TempoIcons.Trash,
+                tint = TempoError,
+                size = 48
             )
-        },
-        title = { Text(stringResource(R.string.details_delete_song_title), color = TextPrimary) },
-        text = {
-            Column {
-                Text(stringResource(R.string.details_delete_song_confirmation), color = TextSecondary)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "“${trackDetails.track.title}” by ${trackDetails.track.artist}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    stringResource(R.string.details_delete_song_warning),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(stringResource(R.string.details_delete_song_bullet_library), color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                Text(stringResource(R.string.details_delete_song_bullet_history, trackDetails.playCount), color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                Text(stringResource(R.string.details_delete_song_bullet_metadata), color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                Text(stringResource(R.string.details_delete_song_bullet_artist), color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    stringResource(R.string.details_delete_song_undone),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        },
-        confirmButton = {
-            if (isDeleting) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = TempoError)
-            } else {
-                TextButton(
-                    onClick = onConfirm,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) {
-                    Text(stringResource(R.string.history_delete_button).uppercase(), fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(16.dp))
+            TempoDialogTitle(text = stringResource(R.string.details_delete_song_title))
+            Spacer(modifier = Modifier.height(6.dp))
+            TempoDialogBody(text = "“${trackDetails.track.title}” by ${trackDetails.track.artist}")
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(TempoError.copy(alpha = 0.08f))
+                    .border(0.5.dp, TempoError.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                    .padding(12.dp)
+            ) {
+                Column {
+                    Text(
+                        text = stringResource(R.string.details_delete_song_warning),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TempoError
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "• ${stringResource(R.string.details_delete_song_bullet_history, trackDetails.playCount)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                    Text(
+                        text = "• ${stringResource(R.string.details_delete_song_undone)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextTertiary
+                    )
                 }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isDeleting) {
-                Text(stringResource(R.string.common_cancel), color = TextSecondary)
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (isDeleting) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = TempoError)
+                }
+            } else {
+                TempoDialogDangerButton(
+                    text = stringResource(R.string.history_delete_button),
+                    onClick = onConfirm,
+                    icon = TempoIcons.Trash
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                TempoDialogSecondaryButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = onDismiss
+                )
             }
-        },
-    )
+        }
+    }
 }
 
 // ──────────────────────────────────────────────────────────────

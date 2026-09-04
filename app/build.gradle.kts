@@ -35,8 +35,8 @@ android {
         applicationId = "me.avinas.tempo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 486
-        versionName = "4.8.6"
+        versionCode = 487
+        versionName = "4.8.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -96,6 +96,7 @@ android {
     kotlin {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            freeCompilerArgs.add("-Xannotation-default-target=param-property")
         }
     }
 
@@ -105,6 +106,7 @@ android {
         }
         jniLibs {
             useLegacyPackaging = false
+            keepDebugSymbols += listOf("libandroidx.graphics.path.so", "libimage_processing_util_jni.so")
         }
     }
     

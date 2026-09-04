@@ -7,22 +7,19 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -30,11 +27,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.LifecycleEventObserver
 import me.avinas.tempo.service.MusicTrackingService
-import me.avinas.tempo.ui.components.GlassCard
+import me.avinas.tempo.ui.theme.TempoDarkSurfaceElevated
 import me.avinas.tempo.ui.theme.TempoRed
-import androidx.compose.ui.res.stringResource
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TextOnAccent
+import me.avinas.tempo.ui.components.GlassCard
+import androidx.compose.ui.res.painterResource
 import me.avinas.tempo.R
 
 /**
@@ -76,6 +77,8 @@ fun PermissionScreen(
     me.avinas.tempo.ui.components.DeepOceanBackground(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
 
         Column(
@@ -85,40 +88,28 @@ fun PermissionScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Hero Illustration
+            // Hero Illustration enclosed in a square card matching Tempo aesthetic
+            val heroCardSize = 160.dp
             GlassCard(
-                modifier = Modifier.size(120.dp),
-                backgroundColor = Color(0xFFF59E0B).copy(alpha = 0.1f), // Amber tint for notifications
-                contentPadding = PaddingValues(0.dp)
+                modifier = Modifier.size(heroCardSize),
+                shape = RoundedCornerShape(24.dp),
+                backgroundColor = Color.White.copy(alpha = 0.06f),
+                contentPadding = PaddingValues(0.dp),
+                contentAlignment = Alignment.BottomCenter,
+                fillMaxWidth = false
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Inner glow
-                    Box(
-                        modifier = Modifier
-                            .size(80.dp)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(Color(0xFFF59E0B).copy(alpha = 0.4f), Color.Transparent)
-                                ),
-                                shape = CircleShape
-                            )
-                    )
-                    
-                    Icon(
-                        imageVector = Icons.Default.Notifications,
-                        contentDescription = null,
-                        modifier = Modifier.size(56.dp),
-                        tint = Color.White
-                    )
-                }
+                Image(
+                    painter = painterResource(id = R.drawable.notification_vector),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.BottomCenter,
+                    modifier = Modifier.size(heroCardSize)
+                )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
             Text(
                 text = stringResource(R.string.perm_one_needed),
@@ -224,9 +215,46 @@ fun PermissionScreen(
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(20.dp))
 
-            Spacer(modifier = Modifier.height(32.dp))
+            // Quick 3-step guidance bar for system settings - flat, no glassmorphism
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = TempoDarkSurfaceElevated,
+                shadowElevation = 0.dp
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .background(TempoPrimary.copy(alpha = 0.2f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "ℹ",
+                            color = TempoPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "In Settings: Find \"Tempo\" → Toggle switch ON → Tap Allow",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
 
+            Spacer(modifier = Modifier.height(24.dp))
             Button(
                 onClick = {
                     openNotificationListenerSettings(context)
@@ -235,8 +263,8 @@ fun PermissionScreen(
                     .fillMaxWidth()
                     .height(56.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed,
-                    contentColor = Color.White
+                    containerColor = TempoPrimary,
+                    contentColor = TextOnAccent
                 ),
                 shape = RoundedCornerShape(16.dp),
                 elevation = ButtonDefaults.buttonElevation(

@@ -1,5 +1,6 @@
 package me.avinas.tempo.data.stats
 
+import androidx.compose.runtime.Immutable
 import androidx.room.ColumnInfo
 import androidx.room.Ignore
 import java.time.DayOfWeek
@@ -136,6 +137,15 @@ private fun TimeRange.getDaysInRange(withLeeway: Boolean = true): Int {
 }
 
 // Top Charts Models
+
+/**
+ * Base sealed interface for top stats items (track, artist, album).
+ * Marked @Immutable so Compose compiler recognizes it as stable for recomposition skipping.
+ */
+@Immutable
+sealed interface StatItem
+
+@Immutable
 data class TopTrack(
     @ColumnInfo(name = "track_id") val trackId: Long,
     val title: String,
@@ -148,7 +158,7 @@ data class TopTrack(
     @ColumnInfo(name = "last_played") val lastPlayed: Long,
     @ColumnInfo(name = "preview_url") val previewUrl: String? = null, // From enriched_metadata
     @ColumnInfo(name = "combined_score") val combinedScore: Double? = null // For combined ranking, not stored in DB
-) {
+) : StatItem {
     /** Global rank within the current ranking; only populated by search. Not a DB column. */
     @Ignore
     var rank: Int? = null
@@ -165,6 +175,7 @@ data class RawArtistStats(
     @ColumnInfo(name = "last_played") val lastPlayed: Long
 )
 
+@Immutable
 data class TopArtist(
     @ColumnInfo(name = "artist_id") val artistId: Long? = null,
     val artist: String,
@@ -175,7 +186,7 @@ data class TopArtist(
     @ColumnInfo(name = "last_played") val lastPlayed: Long,
     @ColumnInfo(name = "image_url") val imageUrl: String? = null,
     @ColumnInfo(name = "country") val country: String? = null
-) {
+) : StatItem {
     /** Global rank within the current ranking; only populated by search. Not a DB column. */
     @Ignore
     var rank: Int? = null
@@ -183,6 +194,7 @@ data class TopArtist(
     val totalTimeHours: Double get() = totalTimeMs / 3_600_000.0
 }
 
+@Immutable
 data class TopAlbum(
     val album: String,
     val artist: String,
@@ -190,7 +202,7 @@ data class TopAlbum(
     @ColumnInfo(name = "play_count") val playCount: Int,
     @ColumnInfo(name = "total_time_ms") val totalTimeMs: Long,
     @ColumnInfo(name = "unique_tracks") val uniqueTracks: Int
-) {
+) : StatItem {
     /** Global rank within the current ranking; only populated by search. Not a DB column. */
     @Ignore
     var rank: Int? = null

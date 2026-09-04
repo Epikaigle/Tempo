@@ -375,7 +375,11 @@ fun AppNavigation(
                             albumId = albumId,
                             onNavigateBack = { navController.popBackStack() },
                             onNavigateToSong = { trackId -> navController.safeNavigate(Screen.SongDetails.createRoute(trackId)) },
-                            onNavigateToArtist = { artistId -> navController.safeNavigate(Screen.ArtistDetails.createRouteById(artistId)) }
+                            onNavigateToArtist = { artistId -> navController.safeNavigate(Screen.ArtistDetails.createRouteById(artistId)) },
+                            onNavigateToAlbum = { targetAlbumId ->
+                                navController.popBackStack()
+                                navController.safeNavigate(Screen.AlbumDetails.createRoute(targetAlbumId))
+                            }
                         )
                     }
 

@@ -27,6 +27,9 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
+import java.util.Locale
+
+private val GroupDateFormatter = DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.getDefault())
 
 /**
  * History view mode - controls what data is shown.
@@ -550,7 +553,7 @@ class HistoryViewModel @Inject constructor(
     private fun groupHistoryItems(items: List<HistoryItem>): Map<String, List<HistoryItem>> {
         val today = Instant.now().atZone(ZoneId.systemDefault()).toLocalDate()
         val yesterday = today.minusDays(1)
-        val dateFormatter = DateTimeFormatter.ofPattern("MMMM d, yyyy")
+        val dateFormatter = GroupDateFormatter
 
         return items.groupBy { item ->
             val itemDate = Instant.ofEpochMilli(item.timestamp).atZone(ZoneId.systemDefault()).toLocalDate()

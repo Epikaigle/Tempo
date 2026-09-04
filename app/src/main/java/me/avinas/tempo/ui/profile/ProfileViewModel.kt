@@ -44,14 +44,14 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             gamificationRepository.observeUserLevel().collect { level ->
                 val uniqueArtists = try {
-                    gamificationRepository.getUniqueArtistCount()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        gamificationRepository.getUniqueArtistCount()
+                    }
                 } catch (e: Exception) { 0 }
                 
                 val calculatedTitle = GamificationEngine.computeTitle(level?.currentLevel ?: 0, uniqueArtists)
-                
-                val streakAtRisk = if (level?.currentStreak == 0) false else try {
-                    level?.lastStreakDate != java.time.LocalDate.now().toString()
-                } catch (e: Exception) { false }
+                val currentLevel = level ?: UserLevel()
+                val streakAtRisk = ProfileUiState.computeStreakAtRisk(currentLevel)
                 
                 val streakDurationMinutes = if (!streakAtRisk) Long.MAX_VALUE else try {
                     java.time.Duration.between(java.time.LocalTime.now(), java.time.LocalTime.MAX).toMinutes()
@@ -68,10 +68,11 @@ class ProfileViewModel @Inject constructor(
                         state.userLevel.currentLevel > 0
 
                     state.copy(
-                        userLevel = level ?: UserLevel(),
+                        userLevel = currentLevel,
                         isLoading = false,
                         showLevelUpCelebration = shouldCelebrate || state.showLevelUpCelebration,
                         userTitle = calculatedTitle,
+                        streakAtRisk = streakAtRisk,
                         streakDurationMinutes = streakDurationMinutes,
                         streakTimeRemaining = streakTimeRemaining,
                         challengeXpTotal = challengeXpTotal
@@ -90,7 +91,10 @@ class ProfileViewModel @Inject constructor(
                         filteredBadges = filteredBadges,
                         earnedCount = badges.count { it.isEarned },
                         totalCount = badges.size,
-                        categories = badges.map { it.category }.distinct().sorted()
+                        categories = badges.map { it.category }.distinct().sorted(),
+                        almostUnlockedBadges = ProfileUiState.computeAlmostUnlockedBadges(badges),
+                        totalStars = ProfileUiState.computeTotalStars(badges),
+                        maxPossibleStars = ProfileUiState.computeMaxPossibleStars(badges)
                     )
                 }
             }
@@ -182,17 +186,6 @@ class ProfileViewModel @Inject constructor(
         }
     }
     
-    fun claimChallenge(challengeId: Long) {
-        _uiState.update { it.copy(claimedChallengeIds = it.claimedChallengeIds + challengeId) }
-        viewModelScope.launch {
-            try {
-                challengeRepository.claimChallengeXp(challengeId)
-            } catch (e: Exception) {
-                // Ignore for now
-            }
-        }
-    }
-    
     fun onCategorySelected(category: String?) {
         _uiState.update { state ->
             val filteredBadges = if (category == null) state.allBadges
@@ -234,19 +227,24 @@ data class ProfileUiState(
     val earnedCount: Int = 0,
     val totalCount: Int = 0,
     val categories: List<String> = emptyList(),
-    val claimedChallengeIds: Set<Long> = emptySet()
+    val streakAtRisk: Boolean = computeStreakAtRisk(userLevel),
+    val almostUnlockedBadges: List<Badge> = computeAlmostUnlockedBadges(allBadges),
+    val totalStars: Int = computeTotalStars(allBadges),
+    val maxPossibleStars: Int = computeMaxPossibleStars(allBadges)
 ) {
-    val streakAtRisk: Boolean
-        get() = userLevel.currentStreak > 0 && try {
-            userLevel.lastStreakDate != java.time.LocalDate.now().toString()
-        } catch (e: Exception) { false }
+    companion object {
+        fun computeStreakAtRisk(userLevel: UserLevel): Boolean =
+            userLevel.currentStreak > 0 && try {
+                userLevel.lastStreakDate != java.time.LocalDate.now().toString()
+            } catch (_: Exception) { false }
 
-    val almostUnlockedBadges: List<Badge>
-        get() = allBadges.filter { !it.isMaxed && it.progressFraction >= 0.7f }
+        fun computeAlmostUnlockedBadges(allBadges: List<Badge>): List<Badge> =
+            allBadges.filter { !it.isMaxed && it.progressFraction >= 0.7f }
 
-    val totalStars: Int
-        get() = allBadges.filter { it.badgeId !in GamificationEngine.BEGINNER_BADGES }.sumOf { it.stars }
+        fun computeTotalStars(allBadges: List<Badge>): Int =
+            allBadges.filter { it.badgeId !in GamificationEngine.BEGINNER_BADGES }.sumOf { it.stars }
 
-    val maxPossibleStars: Int
-        get() = allBadges.filter { it.badgeId !in GamificationEngine.BEGINNER_BADGES }.size * 5
+        fun computeMaxPossibleStars(allBadges: List<Badge>): Int =
+            allBadges.filter { it.badgeId !in GamificationEngine.BEGINNER_BADGES }.size * 5
+    }
 }

@@ -14,7 +14,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -69,9 +69,14 @@ fun StatsShareDialog(
 
     LaunchedEffect(Unit) {
         captureController.capturedBitmap.collect { bitmap ->
-            isSharing = true
-            val success = ShareUtils.shareBitmap(context, bitmap)
-            isSharing = false
+            val success = try {
+                ShareUtils.shareBitmap(context, bitmap)
+            } finally {
+                if (!bitmap.isRecycled) {
+                    bitmap.recycle()
+                }
+                isSharing = false
+            }
             if (!success) {
                 Toast.makeText(context, "Failed to share image", Toast.LENGTH_SHORT).show()
             } else {
@@ -85,6 +90,14 @@ fun StatsShareDialog(
             }
         }
     }
+    // Safety timeout: in case capture fails to emit, reset loading indicator after 8 seconds
+    LaunchedEffect(isSharing) {
+        if (isSharing) {
+            kotlinx.coroutines.delay(8000L)
+            isSharing = false
+        }
+    }
+
 
     val contentToShare: @Composable () -> Unit = {
         StatsShareCard(
@@ -204,7 +217,12 @@ fun StatsShareDialog(
 
                 // Share button
                 Button(
-                    onClick = { if (!isSharing) captureController.capture() },
+                    onClick = {
+                        if (!isSharing) {
+                            isSharing = true
+                            captureController.capture()
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                     shape = RoundedCornerShape(28.dp)
@@ -249,7 +267,7 @@ private fun ConfigPanel(
                     ConfigLabel(text = stringResource(R.string.stats_share_layout_label))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         LayoutToggle(
-                            icon = Icons.Default.ViewList,
+                            icon = Icons.AutoMirrored.Filled.ViewList,
                             contentDescription = stringResource(R.string.stats_share_layout_list),
                             selected = config.layout == StatsShareLayout.LIST,
                             onClick = { onConfigChange(config.copy(layout = StatsShareLayout.LIST)) }

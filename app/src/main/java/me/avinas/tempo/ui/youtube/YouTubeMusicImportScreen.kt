@@ -54,14 +54,15 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.res.stringResource
+import me.avinas.tempo.R
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import me.avinas.tempo.data.youtube.YouTubeMusicImportService
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
-
-private val YouTubeRed = Color(0xFFFF0000)
+import me.avinas.tempo.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,10 +110,10 @@ fun YouTubeMusicImportScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "YouTube Music Import",
+                                text = stringResource(R.string.settings_import_youtube_music),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = TextPrimary
                             )
                         }
                     },
@@ -120,8 +121,8 @@ fun YouTubeMusicImportScreen(
                         IconButton(onClick = onNavigateBack) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = Color.White
+                                contentDescription = stringResource(R.string.settings_back),
+                                tint = TextPrimary
                             )
                         }
                     },
@@ -202,7 +203,7 @@ private fun IdleContent(
                 text = "Import from YouTube Takeout",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextPrimary,
                 textAlign = TextAlign.Center
             )
 
@@ -222,7 +223,7 @@ private fun IdleContent(
                     append(", choosing \"YouTube and YouTube Music\" → only \"history\". Both JSON and HTML formats work. Select the downloaded ZIP here (no need to extract) — if Takeout split your export into several ZIPs, select all of them.")
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.7f),
+                color = TextSecondary,
                 textAlign = TextAlign.Center
             )
 
@@ -252,7 +253,7 @@ private fun IdleContent(
                 text = "How to get your YouTube Music data",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = TextPrimary
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -281,7 +282,7 @@ private fun IdleContent(
                 Text(
                     text = step,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = TextSecondary,
                     modifier = Modifier.padding(vertical = 2.dp)
                 )
             }
@@ -291,21 +292,21 @@ private fun IdleContent(
             Text(
                 text = "Only YouTube Music entries are imported; regular YouTube videos are filtered out.",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.5f),
+                color = TextTertiary,
                 modifier = Modifier.padding(vertical = 2.dp)
             )
 
             Text(
                 text = "Takeout only includes plays recorded while Watch history was on, and exports sometimes cut off older data. If a play count looks too low, that's why.",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.5f),
+                color = TextTertiary,
                 modifier = Modifier.padding(vertical = 2.dp)
             )
 
             Text(
                 text = "Albums, album art and genres aren't in the Takeout file. Tempo fills them in automatically in the background, which can take a few hours for large libraries.",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.5f),
+                color = TextTertiary,
                 modifier = Modifier.padding(vertical = 2.dp)
             )
         }
@@ -332,7 +333,7 @@ private fun ImportingContent(importState: YouTubeMusicImportService.ImportState)
                 text = "Importing...",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = TextPrimary
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -353,17 +354,17 @@ private fun ImportingContent(importState: YouTubeMusicImportService.ImportState)
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.7f),
+                color = TextSecondary,
                 textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             LinearProgressIndicator(
-                progress = { progress },
+                progress = { progress.coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
                 color = YouTubeRed,
-                trackColor = Color.White.copy(alpha = 0.1f)
+                trackColor = GlassFrostSoft
             )
         }
     }
@@ -393,7 +394,7 @@ private fun CompletedContent(
                 text = "Import Complete!",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = TextPrimary
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -411,7 +412,7 @@ private fun CompletedContent(
                 Text(
                     text = "${result.errors.size} warnings",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFFFA500)
+                    color = TempoWarningBright
                 )
             }
 
@@ -420,7 +421,7 @@ private fun CompletedContent(
             Text(
                 text = "Continuing automatically...",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.5f)
+                color = TextTertiary
             )
         }
     }
@@ -437,13 +438,13 @@ private fun StatRow(label: String, value: Int) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.7f)
+            color = TextSecondary
         )
         Text(
             text = value.toString(),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = TextPrimary
         )
     }
 }
@@ -464,7 +465,7 @@ private fun ErrorContent(
             Icon(
                 imageVector = Icons.Default.Error,
                 contentDescription = null,
-                tint = Color(0xFFE74C3C),
+                tint = TempoError,
                 modifier = Modifier.size(56.dp)
             )
 
@@ -474,7 +475,7 @@ private fun ErrorContent(
                 text = "Import Failed",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = TextPrimary
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -482,7 +483,7 @@ private fun ErrorContent(
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.7f),
+                color = TextSecondary,
                 textAlign = TextAlign.Center
             )
 

@@ -41,6 +41,16 @@ import me.avinas.tempo.ui.components.SettingsOption
 import me.avinas.tempo.ui.components.SettingsSectionHeader
 import me.avinas.tempo.ui.components.SettingsSwitch
 import me.avinas.tempo.ui.components.TempoSnackbar
+import androidx.compose.ui.window.Dialog
+import me.avinas.tempo.ui.components.TempoDialogSurface
+import me.avinas.tempo.ui.components.TempoDialogIcon
+import me.avinas.tempo.ui.components.TempoDialogTitle
+import me.avinas.tempo.ui.components.TempoDialogBody
+import me.avinas.tempo.ui.components.TempoDialogButtonRow
+import me.avinas.tempo.ui.components.TempoDialogDangerButton
+import me.avinas.tempo.ui.components.TempoDialogSecondaryButton
+import me.avinas.tempo.ui.components.TempoDialogTextField
+import me.avinas.tempo.ui.components.TempoIcons
 import me.avinas.tempo.ui.theme.*
 import me.avinas.tempo.utils.OemBackgroundHelper
 import me.avinas.tempo.utils.ReviewUtils
@@ -155,13 +165,12 @@ fun SettingsScreen(
     }
     
     // Show result snackbar
-    val importSuccessMsg = stringResource(R.string.settings_import_success, 0, 0)
     LaunchedEffect(importExportResult) {
         importExportResult?.let { result ->
             when (result) {
                 is ImportExportResult.Success -> {
                     snackbarHostState.showSnackbar(
-                        "Successfully processed ${result.totalRecords} records and ${result.imagesCount} images"
+                        context.getString(R.string.settings_import_success, result.totalRecords, result.imagesCount)
                     )
                 }
                 is ImportExportResult.Error -> {
@@ -189,16 +198,16 @@ fun SettingsScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_title), color = Color.White) },
+                title = { Text(stringResource(R.string.settings_title), color = TextPrimary) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back), tint = TextPrimary)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    titleContentColor = TextPrimary,
+                    navigationIconContentColor = TextPrimary
                 )
             )
         },
@@ -239,7 +248,7 @@ fun SettingsScreen(
                                     .clip(CircleShape)
                                     .background(
                                         brush = androidx.compose.ui.graphics.Brush.linearGradient(
-                                            colors = listOf(TempoRed, Color(0xFF991B1B))
+                                            colors = listOf(TempoPrimary, TempoPrimaryDeep)
                                         ),
                                         shape = CircleShape
                                     ),
@@ -250,7 +259,7 @@ fun SettingsScreen(
                                         text = uiState.userName.firstOrNull()?.toString()?.uppercase() ?: "U",
                                         style = MaterialTheme.typography.headlineMedium,
                                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                        color = Color.White
+                                        color = TextPrimary
                                     )
                                 } else {
                                     me.avinas.tempo.ui.components.CachedAsyncImage(
@@ -264,7 +273,7 @@ fun SettingsScreen(
 
                             Surface(
                                 shape = CircleShape,
-                                color = Color(0xCC111827),
+                                color = TempoDarkSurfaceSunken,
                                 tonalElevation = 0.dp,
                                 modifier = Modifier.size(22.dp)
                             ) {
@@ -272,7 +281,7 @@ fun SettingsScreen(
                                     Icon(
                                         imageVector = Icons.Default.Edit,
                                         contentDescription = stringResource(R.string.settings_change_photo),
-                                        tint = Color.White,
+                                        tint = TextPrimary,
                                         modifier = Modifier.size(12.dp)
                                     )
                                 }
@@ -286,17 +295,17 @@ fun SettingsScreen(
                                 text = uiState.userName,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                color = Color.White
+                                color = TextPrimary
                             )
                             Text(
                                 text = stringResource(R.string.settings_tap_to_edit),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.6f)
+                                color = TextTertiary
                             )
                             Text(
                                 text = stringResource(R.string.settings_tap_photo_to_change),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.45f)
+                                color = TextQuaternary
                             )
                         }
                         
@@ -304,13 +313,13 @@ fun SettingsScreen(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = stringResource(R.string.settings_update_name),
-                                tint = Color.White.copy(alpha = 0.6f)
+                                tint = TextPrimary.copy(alpha = 0.6f)
                             )
                         } else {
                             TextButton(onClick = viewModel::removeProfileImage) {
                                 Text(
                                     text = stringResource(R.string.settings_remove_photo),
-                                    color = Color.White.copy(alpha = 0.75f)
+                                    color = TextSecondary
                                 )
                             }
                         }
@@ -347,7 +356,7 @@ fun SettingsScreen(
                             checked = uiState.dailySummaryEnabled,
                             onCheckedChange = viewModel::toggleDailySummary
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsSwitch(
                             title = stringResource(R.string.settings_weekly_recap),
                             subtitle = stringResource(R.string.settings_weekly_recap_desc),
@@ -355,14 +364,14 @@ fun SettingsScreen(
                             onCheckedChange = viewModel::toggleWeeklyRecap
                         )
                         if (uiState.isGamificationEnabled) {
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            HorizontalDivider(color = GlassBorderSoft)
                             SettingsSwitch(
                                 title = stringResource(R.string.settings_daily_challenges),
                                 subtitle = stringResource(R.string.settings_daily_challenges_desc),
                                 checked = uiState.dailyChallengesEnabled,
                                 onCheckedChange = viewModel::toggleDailyChallenges
                             )
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            HorizontalDivider(color = GlassBorderSoft)
                             SettingsSwitch(
                                 title = stringResource(R.string.settings_achievements),
                                 subtitle = stringResource(R.string.settings_achievements_desc),
@@ -391,23 +400,23 @@ fun SettingsScreen(
                                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                     context.startActivity(intent)
                                 } catch (_: ActivityNotFoundException) {
-                                    Toast.makeText(context, "Unable to open notification settings", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.settings_notification_settings_error), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsOption(
                             title = stringResource(R.string.settings_manage_apps),
                             subtitle = stringResource(R.string.settings_manage_apps_desc),
                             onClick = { onNavigateToSupportedApps?.invoke() }
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsSwitch(
-                            title = "Pause tracking on low battery",
+                            title = stringResource(R.string.settings_pause_tracking_low_battery),
                             subtitle = if (uiState.pauseTrackingOnLowBattery)
-                                "Tracking pauses below 20% battery to save power (currently $batteryLevel%)"
+                                stringResource(R.string.settings_pause_tracking_on_desc, batteryLevel)
                             else
-                                "Tracking continues at all battery levels — no automatic pausing",
+                                stringResource(R.string.settings_pause_tracking_off_desc),
                             checked = uiState.pauseTrackingOnLowBattery,
                             onCheckedChange = viewModel::togglePauseTrackingOnLowBattery
                         )
@@ -450,7 +459,7 @@ fun SettingsScreen(
                             checked = uiState.filterPodcasts,
                             onCheckedChange = viewModel::toggleFilterPodcasts
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsSwitch(
                             title = stringResource(R.string.settings_filter_audiobooks),
                             subtitle = stringResource(R.string.settings_filter_audiobooks_desc),
@@ -475,10 +484,10 @@ fun SettingsScreen(
                             checked = uiState.extendedAudioAnalysisEnabled,
                             onCheckedChange = viewModel::toggleExtendedAudioAnalysis
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsSwitch(
-                            title = "Enable Gamification",
-                            subtitle = "Turn off to hide XP, levels, and badges",
+                            title = stringResource(R.string.settings_enable_gamification),
+                            subtitle = stringResource(R.string.settings_enable_gamification_desc),
                             checked = uiState.isGamificationEnabled,
                             onCheckedChange = viewModel::toggleGamificationEnabled
                         )
@@ -512,19 +521,19 @@ fun SettingsScreen(
                             )
                         }
                         
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         
                         SettingsOption(
-                            title = "Import Spotify Data Export",
-                            subtitle = "Import listening history from Spotify JSON data export files",
+                            title = stringResource(R.string.settings_import_spotify_json),
+                            subtitle = stringResource(R.string.settings_import_spotify_json_desc),
                             onClick = { onNavigateToSpotifyJsonImport?.invoke() }
                         )
 
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
 
                         SettingsOption(
-                            title = "Import YouTube Music Data",
-                            subtitle = "Import listening history from a YouTube Takeout ZIP (JSON or HTML)",
+                            title = stringResource(R.string.settings_import_youtube_music),
+                            subtitle = stringResource(R.string.settings_import_youtube_music_desc),
                             onClick = { onNavigateToYouTubeMusicImport?.invoke() }
                         )
                     }
@@ -544,47 +553,47 @@ fun SettingsScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFF8B0000).copy(alpha = 0.2f))
+                                    .background(TempoErrorDeep.copy(alpha = 0.25f))
                                     .padding(12.dp)
                             ) {
                                 Text(
                                     text = stringResource(R.string.settings_desktop_battery_critical, batteryLevel),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFFFF6B6B),
+                                    color = TempoErrorSoft,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            HorizontalDivider(color = GlassBorderSoft)
                         } else if (isLowBattery) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFFFF8C00).copy(alpha = 0.2f))
+                                    .background(TempoWarningDeep.copy(alpha = 0.2f))
                                     .padding(12.dp)
                             ) {
                                 Text(
                                     text = stringResource(R.string.settings_desktop_battery_low, batteryLevel),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFFFFA500),
+                                    color = TempoWarningBright,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            HorizontalDivider(color = GlassBorderSoft)
                         } else {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFF4CAF50).copy(alpha = 0.1f))
+                                    .background(TempoSuccessDeep.copy(alpha = 0.15f))
                                     .padding(12.dp)
                             ) {
                                 Text(
                                     text = stringResource(R.string.settings_desktop_battery_healthy, batteryLevel),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF81C784),
+                                    color = TempoSuccessBright,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            HorizontalDivider(color = GlassBorderSoft)
                         }
                         
                         SettingsOption(
@@ -610,22 +619,22 @@ fun SettingsScreen(
                             checked = uiState.mergeAlternateVersions,
                             onCheckedChange = viewModel::toggleMergeAlternateVersions
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsOption(
                             title = stringResource(R.string.settings_backup_restore),
                             subtitle = stringResource(R.string.settings_backup_restore_desc),
                             onClick = { onNavigateToBackup?.invoke() }
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsOption(
                             title = stringResource(R.string.enrichment_report_settings_option),
                             subtitle = stringResource(R.string.enrichment_report_settings_option_desc),
                             onClick = { onNavigateToEnrichmentReport?.invoke() }
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsOption(
                             title = stringResource(R.string.settings_clear_all),
-                            textColor = TempoRed,
+                            textColor = TempoError,
                             onClick = { showClearDataDialog = true }
                         )
                     }
@@ -648,11 +657,11 @@ fun SettingsScreen(
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.reddit.com/r/TempoStats/"))
                                     context.startActivity(intent)
                                 } catch (_: ActivityNotFoundException) {
-                                    Toast.makeText(context, "No browser found", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.settings_no_browser), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
 
                         SettingsOption(
                             title = stringResource(R.string.settings_github),
@@ -662,11 +671,11 @@ fun SettingsScreen(
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/avinaxhroy/Tempo"))
                                     context.startActivity(intent)
                                 } catch (_: ActivityNotFoundException) {
-                                    Toast.makeText(context, "No browser found", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.settings_no_browser), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsOption(
                             title = stringResource(R.string.settings_contribute),
                             subtitle = stringResource(R.string.settings_contribute_desc),
@@ -675,7 +684,7 @@ fun SettingsScreen(
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/avinaxhroy/Tempo/blob/main/CONTRIBUTION.md"))
                                     context.startActivity(intent)
                                 } catch (_: ActivityNotFoundException) {
-                                    Toast.makeText(context, "No browser found", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.settings_no_browser), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
@@ -697,7 +706,7 @@ fun SettingsScreen(
                                 ReviewUtils.openPlayStoreListing(context)
                             }
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsOption(
                             title = stringResource(R.string.settings_privacy_policy),
                             onClick = { 
@@ -705,11 +714,11 @@ fun SettingsScreen(
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://tempo.avinas.me/privacy.html"))
                                     context.startActivity(intent)
                                 } catch (_: ActivityNotFoundException) {
-                                    Toast.makeText(context, "No browser found", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.settings_no_browser), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                        HorizontalDivider(color = GlassBorderSoft)
                         SettingsOption(
                             title = stringResource(R.string.settings_version),
                             subtitle = versionName,
@@ -725,49 +734,38 @@ fun SettingsScreen(
     
     // Name Edit Dialog
     if (showNameDialog) {
-        AlertDialog(
-            onDismissRequest = { showNameDialog = false },
-            containerColor = TempoSurfaceDialog,
-            shape = RoundedCornerShape(24.dp),
-            title = { Text(stringResource(R.string.settings_update_name), color = TextPrimary, fontWeight = FontWeight.SemiBold) },
-            text = {
-                OutlinedTextField(
+        Dialog(onDismissRequest = { showNameDialog = false }) {
+            TempoDialogSurface {
+                TempoDialogIcon(
+                    icon = TempoIcons.Edit,
+                    tint = TempoPrimary,
+                    size = 48
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                TempoDialogTitle(text = stringResource(R.string.settings_update_name))
+                Spacer(modifier = Modifier.height(6.dp))
+                TempoDialogBody(text = stringResource(R.string.settings_name_dialog_body))
+                Spacer(modifier = Modifier.height(20.dp))
+                TempoDialogTextField(
                     value = tempName,
                     onValueChange = { tempName = it },
-                    label = { Text(stringResource(R.string.settings_display_name), color = TextTertiary) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                         focusedBorderColor = TempoPrimary,
-                         focusedLabelColor = TempoPrimary,
-                         cursorColor = TempoPrimary,
-                         focusedTextColor = TextPrimary,
-                         unfocusedTextColor = TextPrimary,
-                         unfocusedBorderColor = TextQuaternary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                    label = stringResource(R.string.settings_display_name)
                 )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
+                Spacer(modifier = Modifier.height(24.dp))
+                TempoDialogButtonRow(
+                    primaryText = stringResource(R.string.settings_save),
+                    onPrimary = {
                         if (tempName.isNotBlank()) {
                             viewModel.updateUserName(tempName.trim())
                             showNameDialog = false
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = TempoPrimary, contentColor = TextOnAccent),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(stringResource(R.string.settings_save), fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNameDialog = false }) {
-                    Text(stringResource(R.string.settings_cancel), color = TextTertiary)
-                }
+                    secondaryText = stringResource(R.string.settings_cancel),
+                    onSecondary = { showNameDialog = false },
+                    primaryEnabled = tempName.isNotBlank()
+                )
             }
-        )
+        }
     }
     
     // Language Selector Dialog
@@ -847,7 +845,7 @@ fun SettingsScreen(
                         CircularProgressIndicator(color = TempoPrimary, strokeWidth = 2.dp)
                     } else {
                         LinearProgressIndicator(
-                            progress = { progress.percentage },
+                            progress = { progress.percentage.coerceIn(0f, 1f) },
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
                             color = TempoPrimary,
                             trackColor = GlassFrostSoft
@@ -898,30 +896,34 @@ fun SettingsScreen(
     }
 
     if (showClearDataDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDataDialog = false },
-            containerColor = TempoSurfaceDialog,
-            shape = RoundedCornerShape(24.dp),
-            title = { Text(stringResource(R.string.settings_clear_data_title), color = TextPrimary, fontWeight = FontWeight.SemiBold) },
-            text = { Text(stringResource(R.string.settings_clear_data_msg), color = TextSecondary) },
-            confirmButton = {
-                TextButton(
+        Dialog(onDismissRequest = { showClearDataDialog = false }) {
+            TempoDialogSurface {
+                TempoDialogIcon(
+                    icon = TempoIcons.Trash,
+                    tint = TempoError,
+                    size = 48
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                TempoDialogTitle(text = stringResource(R.string.settings_clear_data_title))
+                Spacer(modifier = Modifier.height(8.dp))
+                TempoDialogBody(text = stringResource(R.string.settings_clear_data_msg))
+                Spacer(modifier = Modifier.height(24.dp))
+                TempoDialogDangerButton(
+                    text = stringResource(R.string.settings_clear_everything),
                     onClick = {
                         viewModel.clearAllData()
                         showClearDataDialog = false
                         onNavigateToOnboarding?.invoke()
                     },
-                    colors = ButtonDefaults.textButtonColors(contentColor = TempoError)
-                ) {
-                    Text(stringResource(R.string.settings_clear_everything), fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDataDialog = false }) {
-                    Text(stringResource(R.string.settings_cancel), color = TextTertiary)
-                }
+                    icon = TempoIcons.Trash
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                TempoDialogSecondaryButton(
+                    text = stringResource(R.string.settings_cancel),
+                    onClick = { showClearDataDialog = false }
+                )
             }
-        )
+        }
     }
     
 }

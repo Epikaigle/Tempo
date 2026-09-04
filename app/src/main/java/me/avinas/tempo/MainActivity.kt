@@ -10,6 +10,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -151,73 +153,90 @@ fun TempoApp(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        when (currentStep) {
-            OnboardingStep.WELCOME -> {
-                WelcomeScreen(
-                    onGetStarted = { currentStep = OnboardingStep.HOW_IT_WORKS },
-                    onSkip = {
-                        viewModel.completeOnboarding()
-                        currentStep = OnboardingStep.COMPLETED
-                    }
-                )
-            }
-            OnboardingStep.HOW_IT_WORKS -> {
-                HowItWorksScreen(
-                    onNext = { currentStep = OnboardingStep.PRIVACY },
-                    onSkip = {
-                        viewModel.completeOnboarding()
-                        currentStep = OnboardingStep.COMPLETED
-                    }
-                )
-            }
-            OnboardingStep.PRIVACY -> {
-                PrivacyExplainerScreen(
-                    onNext = { currentStep = OnboardingStep.PERMISSION },
-                    onSkip = {
-                        viewModel.completeOnboarding()
-                        currentStep = OnboardingStep.COMPLETED
-                    }
-                )
-            }
-            OnboardingStep.PERMISSION -> {
-                PermissionScreen(
-                    onPermissionGranted = { currentStep = OnboardingStep.BATTERY },
-                    onSkip = { currentStep = OnboardingStep.BATTERY }
-                )
-            }
-            OnboardingStep.BATTERY -> {
-                BatteryOptimizationScreen(
-                    onOptimize = {
-                        currentStep = OnboardingStep.RESTORE
-                    },
-                    onSkip = {
-                        currentStep = OnboardingStep.RESTORE
-                    }
-                )
-            }
-            OnboardingStep.RESTORE -> {
-                me.avinas.tempo.ui.onboarding.RestoreScreen(
-                    onFinish = {
-                        viewModel.completeOnboarding()
-                        currentStep = OnboardingStep.COMPLETED
-                    },
-                    onBack = {
-                        currentStep = OnboardingStep.BATTERY
-                    }
-                )
-            }
-            OnboardingStep.COMPLETED -> {
-                AppNavigation(
-                    walkthroughController = walkthroughController,
-                    onResetToOnboarding = {
-                        currentStep = OnboardingStep.WELCOME
-                    },
-                    navigationTrigger = localNavigationTrigger ?: navigationTrigger
-                )
-                // Clear local trigger after passing it
-                LaunchedEffect(localNavigationTrigger) {
-                    if (localNavigationTrigger != null) {
-                        localNavigationTrigger = null
+        AnimatedContent(
+            targetState = currentStep,
+            transitionSpec = {
+                if (targetState == OnboardingStep.COMPLETED || initialState == OnboardingStep.COMPLETED) {
+                    fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(300))
+                } else if (targetState.ordinal > initialState.ordinal) {
+                    (slideInHorizontally(animationSpec = tween(350)) { it } + fadeIn(animationSpec = tween(350))) togetherWith
+                        (slideOutHorizontally(animationSpec = tween(350)) { -it } + fadeOut(animationSpec = tween(250)))
+                } else {
+                    (slideInHorizontally(animationSpec = tween(350)) { -it } + fadeIn(animationSpec = tween(350))) togetherWith
+                        (slideOutHorizontally(animationSpec = tween(350)) { it } + fadeOut(animationSpec = tween(250)))
+                }
+            },
+            label = "onboarding_step_transition"
+        ) { step ->
+            when (step) {
+                OnboardingStep.WELCOME -> {
+                    WelcomeScreen(
+                        onGetStarted = { currentStep = OnboardingStep.HOW_IT_WORKS },
+                        onSkip = {
+                            // Skip educational intro directly to permissions, never bypass tracking
+                            currentStep = OnboardingStep.PERMISSION
+                        }
+                    )
+                }
+                OnboardingStep.HOW_IT_WORKS -> {
+                    HowItWorksScreen(
+                        onNext = { currentStep = OnboardingStep.PRIVACY },
+                        onSkip = {
+                            currentStep = OnboardingStep.PERMISSION
+                        }
+                    )
+                }
+                OnboardingStep.PRIVACY -> {
+                    PrivacyExplainerScreen(
+                        onNext = { currentStep = OnboardingStep.PERMISSION },
+                        onSkip = {
+                            currentStep = OnboardingStep.PERMISSION
+                        }
+                    )
+                }
+                OnboardingStep.PERMISSION -> {
+                    PermissionScreen(
+                        onPermissionGranted = { currentStep = OnboardingStep.BATTERY },
+                        onSkip = { currentStep = OnboardingStep.BATTERY }
+                    )
+                }
+                OnboardingStep.BATTERY -> {
+                    BatteryOptimizationScreen(
+                        onOptimize = {
+                            currentStep = OnboardingStep.RESTORE
+                        },
+                        onSkip = {
+                            currentStep = OnboardingStep.RESTORE
+                        },
+                        onBack = {
+                            currentStep = OnboardingStep.PERMISSION
+                        }
+                    )
+                }
+                OnboardingStep.RESTORE -> {
+                    me.avinas.tempo.ui.onboarding.RestoreScreen(
+                        onFinish = {
+                            viewModel.completeOnboarding()
+                            currentStep = OnboardingStep.COMPLETED
+                        },
+                        onBack = {
+                            currentStep = OnboardingStep.BATTERY
+                        }
+                    )
+                }
+                OnboardingStep.COMPLETED -> {
+                    AppNavigation(
+                        walkthroughController = walkthroughController,
+                        onResetToOnboarding = {
+                            currentStep = OnboardingStep.WELCOME
+                        },
+                        navigationTrigger = localNavigationTrigger ?: navigationTrigger
+                    )
+                    // Clear local trigger after passing it
+                    LaunchedEffect(localNavigationTrigger) {
+                        if (localNavigationTrigger != null) {
+                            localNavigationTrigger = null
+                        }
                     }
                 }
             }

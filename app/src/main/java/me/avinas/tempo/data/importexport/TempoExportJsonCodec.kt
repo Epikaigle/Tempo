@@ -79,6 +79,7 @@ internal class TempoExportJsonCodec(private val moshi: Moshi) {
      * paged sources. Each lambda returns the next page of rows, or null/empty when
      * exhausted.
      */
+    @Suppress("DEPRECATION")
     suspend fun write(
         writer: JsonWriter,
         shell: TempoExportData,

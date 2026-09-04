@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,11 +20,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.window.Dialog
 import me.avinas.tempo.ui.theme.*
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.ui.components.TempoDialogButtonRow
 import me.avinas.tempo.ui.components.TempoDialogShape
+import me.avinas.tempo.ui.components.CachedAsyncImage
 import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
@@ -226,17 +229,43 @@ fun TrackSearchItem(track: Track, onClick: () -> Unit) {
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Simple placeholder for art if not available
+        // Track artwork or placeholder
         Box(
             modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(GlassFrostMedium)
-        )
+                .background(GlassFrostMedium),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!track.albumArtUrl.isNullOrBlank()) {
+                CachedAsyncImage(
+                    imageUrl = track.albumArtUrl,
+                    contentDescription = track.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    targetSizeDp = 40,
+                    error = {
+                        Icon(
+                            imageVector = Icons.Rounded.MusicNote,
+                            contentDescription = null,
+                            tint = TextTertiary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    tint = TextTertiary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = track.title,
                 style = MaterialTheme.typography.bodyMedium,

@@ -10,6 +10,7 @@ import me.avinas.tempo.data.stats.TimeRange
 import me.avinas.tempo.data.stats.TopAlbum
 import me.avinas.tempo.data.stats.TopArtist
 import me.avinas.tempo.data.stats.TopTrack
+import me.avinas.tempo.data.stats.StatItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.async
@@ -42,9 +43,11 @@ class StatsViewModel @Inject constructor(
     // Track last loaded analytics time range to skip redundant reloads
     // Analytics is time-range dependent, not tab-dependent
     private var lastAnalyticsTimeRange: TimeRange? = null
+    private var loadJob: Job? = null
+
 
     init {
-        loadData()
+        loadJob = loadData()
         observeDataChanges()
     }
     
@@ -84,24 +87,34 @@ class StatsViewModel @Inject constructor(
                 .collect { _ ->
                     // Invalidate cache and reload data
                     statsRepository.invalidateCache(_uiState.value.selectedTimeRange)
-                    loadData()
+                    loadJob?.cancel()
+                    loadJob = loadData()
                 }
         }
     }
 
     fun onTabSelected(tab: StatsTab) {
+        if (_uiState.value.selectedTab == tab && _uiState.value.items.isNotEmpty()) return
+        searchJob?.cancel()
+        loadJob?.cancel()
         _uiState.update { it.copy(selectedTab = tab, isLoading = true, items = emptyList(), page = 0, hasMore = true) }
-        loadData()
+        loadJob = loadData()
     }
 
     fun onTimeRangeSelected(timeRange: TimeRange) {
+        if (_uiState.value.selectedTimeRange == timeRange && _uiState.value.items.isNotEmpty()) return
+        searchJob?.cancel()
+        loadJob?.cancel()
         _uiState.update { it.copy(selectedTimeRange = timeRange, isLoading = true, items = emptyList(), page = 0, hasMore = true) }
-        loadData()
+        loadJob = loadData()
     }
     
     fun onSortBySelected(sortBy: SortBy) {
+        if (_uiState.value.selectedSortBy == sortBy && _uiState.value.items.isNotEmpty()) return
+        searchJob?.cancel()
+        loadJob?.cancel()
         _uiState.update { it.copy(selectedSortBy = sortBy, isLoading = true, items = emptyList(), page = 0, hasMore = true) }
-        loadData()
+        loadJob = loadData()
     }
 
     // Search state: debounced query that live-filters the current ranking.
@@ -114,103 +127,108 @@ class StatsViewModel @Inject constructor(
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             delay(300) // Debounce keystrokes
+            loadJob?.cancel()
             _uiState.update { it.copy(isLoading = true, items = emptyList(), page = 0, hasMore = false) }
-            loadData()
+            loadJob = loadData()
         }
     }
 
     fun loadMore() {
-        if (_uiState.value.isLoadingMore || !_uiState.value.hasMore) return
-        if (_uiState.value.searchQuery.isNotBlank()) return // Search results are not paginated
+        val state = _uiState.value
+        if (state.isLoading || state.isLoadingMore || !state.hasMore) return
+        if (state.searchQuery.isNotBlank()) return // Search results are not paginated
         _uiState.update { it.copy(isLoadingMore = true) }
         loadData(isLoadMore = true)
     }
 
     /** Retries loading stats data after a failure. */
     fun retry() {
+        searchJob?.cancel()
+        loadJob?.cancel()
         _uiState.update { it.copy(error = null, isLoading = true, items = emptyList(), page = 0, hasMore = true) }
-        loadData()
+        loadJob = loadData()
     }
 
-    private fun loadData(isLoadMore: Boolean = false) {
-        viewModelScope.launch {
-            try {
-                val currentState = _uiState.value
-                val page = if (isLoadMore) currentState.page + 1 else 0
-                val timeRange = currentState.selectedTimeRange
-                val sortBy = currentState.selectedSortBy
-                val searchQuery = currentState.searchQuery.takeIf { it.isNotBlank() }
+    private fun loadData(isLoadMore: Boolean = false): Job = viewModelScope.launch {
+        try {
+            val currentState = _uiState.value
+            val page = if (isLoadMore) currentState.page + 1 else 0
+            val timeRange = currentState.selectedTimeRange
+            val sortBy = currentState.selectedSortBy
+            val searchQuery = currentState.searchQuery.takeIf { it.isNotBlank() }
 
-                val result = if (searchQuery != null) {
-                    // Search mode: matches with global ranks, capped, no pagination
-                    when (currentState.selectedTab) {
-                        StatsTab.TOP_SONGS -> statsRepository.searchTopTracks(timeRange, sortBy, searchQuery)
-                        StatsTab.TOP_ARTISTS -> statsRepository.searchTopArtists(timeRange, sortBy, searchQuery)
-                        StatsTab.TOP_ALBUMS -> statsRepository.searchTopAlbums(timeRange, searchQuery)
+            val result: List<StatItem> = if (searchQuery != null) {
+                // Search mode: matches with global ranks, capped, no pagination
+                when (currentState.selectedTab) {
+                    StatsTab.TOP_SONGS -> statsRepository.searchTopTracks(timeRange, sortBy, searchQuery)
+                    StatsTab.TOP_ARTISTS -> statsRepository.searchTopArtists(timeRange, sortBy, searchQuery)
+                    StatsTab.TOP_ALBUMS -> statsRepository.searchTopAlbums(timeRange, sortBy, searchQuery)
+                }
+            } else {
+                when (currentState.selectedTab) {
+                    StatsTab.TOP_SONGS -> {
+                        val res = statsRepository.getTopTracks(timeRange, sortBy, page)
+                        res.items
                     }
-                } else {
-                    when (currentState.selectedTab) {
-                        StatsTab.TOP_SONGS -> {
-                            val res = statsRepository.getTopTracks(timeRange, sortBy, page)
-                            res.items
-                        }
-                        StatsTab.TOP_ARTISTS -> {
-                            val res = statsRepository.getTopArtists(timeRange, sortBy, page)
-                            res.items
-                        }
-                        StatsTab.TOP_ALBUMS -> {
-                            val res = statsRepository.getTopAlbums(timeRange, page)
-                            res.items
-                        }
+                    StatsTab.TOP_ARTISTS -> {
+                        val res = statsRepository.getTopArtists(timeRange, sortBy, page)
+                        res.items
+                    }
+                    StatsTab.TOP_ALBUMS -> {
+                        val res = statsRepository.getTopAlbums(timeRange, sortBy, page)
+                        res.items
                     }
                 }
+            }
 
                 val hasMore = searchQuery == null && result.isNotEmpty() // Simplified check, ideally use totalCount from PaginatedResult
 
-                _uiState.update { state ->
-                    val newItems = if (isLoadMore) state.items + result else result
-                    state.copy(
-                        items = newItems,
-                        isLoading = false,
-                        isLoadingMore = false,
-                        page = page,
-                        hasMore = hasMore,
-                        error = null
-                    )
+            _uiState.update { state ->
+                val newItems = if (isLoadMore) {
+                    (state.items + result).distinctBy { item ->
+                        when (item) {
+                            is TopTrack -> "track_${item.trackId}"
+                            is TopArtist -> "artist_${item.artistId ?: item.artist}"
+                            is TopAlbum -> "album_${item.album}_${item.artist}"
+                        }
+                    }
+                } else {
+                    result
                 }
-                
-                // Fetch analytics data only if time range changed (analytics is time-range dependent, not tab-dependent)
-                if (page == 0 && timeRange != lastAnalyticsTimeRange) {
-                    lastAnalyticsTimeRange = timeRange
-                    loadAnalyticsData(timeRange)
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, isLoadingMore = false, error = e.message) }
+                state.copy(
+                    items = newItems,
+                    isLoading = false,
+                    isLoadingMore = false,
+                    page = page,
+                    hasMore = hasMore,
+                    error = null
+                )
             }
+            
+            // Fetch listening overview only if time range changed (needed for share dialog)
+            if (page == 0 && timeRange != lastAnalyticsTimeRange) {
+                lastAnalyticsTimeRange = timeRange
+                loadAnalyticsData(timeRange)
+            }
+        } catch (e: Exception) {
+            _uiState.update { it.copy(isLoading = false, isLoadingMore = false, error = e.message) }
         }
     }
 
     private suspend fun loadAnalyticsData(timeRange: TimeRange) {
-        // Parallelize the 3 independent analytics calls for ~50% faster loading
-        coroutineScope {
-            val overviewDeferred = async { statsRepository.getListeningOverview(timeRange) }
-            val hourlyDistDeferred = async { statsRepository.getHourlyDistribution(timeRange) }
-            val insightsDeferred = async { statsRepository.getInsights(timeRange) }
-            
-            val overview = overviewDeferred.await()
-            val hourlyDist = hourlyDistDeferred.await()
-            val insights = insightsDeferred.await()
-            
+        try {
+            val overview = statsRepository.getListeningOverview(timeRange)
             _uiState.update { 
                 it.copy(
                     analyticsData = AnalyticsUiData(
                         overview = overview,
-                        hourlyDistribution = hourlyDist,
-                        insightCards = insights
-                    ),
-                    isLoading = false
+                        hourlyDistribution = emptyList(),
+                        insightCards = emptyList()
+                    )
                 ) 
             }
+        } catch (e: Exception) {
+            // Non-fatal if overview loading fails
         }
     }
 
@@ -240,11 +258,11 @@ class StatsViewModel @Inject constructor(
             val sortBy = currentState.selectedSortBy
             val searchQuery = currentState.searchQuery.takeIf { it.isNotBlank() }
 
-            val result = if (searchQuery != null) {
+            val result: List<StatItem> = if (searchQuery != null) {
                 when (currentState.selectedTab) {
                     StatsTab.TOP_SONGS -> statsRepository.searchTopTracks(timeRange, sortBy, searchQuery)
                     StatsTab.TOP_ARTISTS -> statsRepository.searchTopArtists(timeRange, sortBy, searchQuery)
-                    StatsTab.TOP_ALBUMS -> statsRepository.searchTopAlbums(timeRange, searchQuery)
+                    StatsTab.TOP_ALBUMS -> statsRepository.searchTopAlbums(timeRange, sortBy, searchQuery)
                 }
             } else {
                 when (currentState.selectedTab) {
@@ -257,7 +275,7 @@ class StatsViewModel @Inject constructor(
                         res.items
                     }
                     StatsTab.TOP_ALBUMS -> {
-                        val res = statsRepository.getTopAlbums(timeRange, 0)
+                        val res = statsRepository.getTopAlbums(timeRange, sortBy, 0)
                         res.items
                     }
                 }
@@ -297,7 +315,7 @@ data class StatsUiState(
     val selectedTab: StatsTab = StatsTab.TOP_SONGS,
     val selectedTimeRange: TimeRange = TimeRange.THIS_WEEK,
     val selectedSortBy: SortBy = SortBy.COMBINED_SCORE, // Default to combined score
-    val items: List<Any> = emptyList(), // Can be TopTrack, TopArtist, or TopAlbum
+    val items: List<StatItem> = emptyList(), // Can be TopTrack, TopArtist, or TopAlbum
     val searchQuery: String = "",
     val page: Int = 0,
     val hasMore: Boolean = true,

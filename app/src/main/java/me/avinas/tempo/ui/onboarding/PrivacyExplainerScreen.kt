@@ -21,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -33,6 +34,8 @@ import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.theme.TempoDarkBackground
 import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TextOnAccent
 import me.avinas.tempo.ui.utils.adaptiveSize
 import me.avinas.tempo.ui.utils.adaptiveTextUnit
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
@@ -73,180 +76,206 @@ fun PrivacyExplainerScreen(
             .navigationBarsPadding()
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = adaptiveSizeByCategory(24.dp, 20.dp, 16.dp)),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.fillMaxSize()
         ) {
-            // Top flexible spacing
-            Spacer(modifier = Modifier.weight(0.06f))
-
-            // Shield Icon with clamped sizing
-            val shieldContainerSize = rememberClampedHeightPercentage(0.10f, 70.dp, 95.dp)
-            val shieldGlowSize = rememberClampedHeightPercentage(0.09f, 60.dp, 85.dp)
-            val shieldIconSize = rememberClampedHeightPercentage(0.06f, 42.dp, 58.dp)
-            
+            // Dedicated Top Action Bar with Skip button
             Box(
                 modifier = Modifier
-                    .size(shieldContainerSize)
-                    .scale(shieldScale),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = adaptiveSizeByCategory(16.dp, 14.dp, 12.dp),
+                        vertical = 4.dp
+                    ),
+                contentAlignment = Alignment.CenterEnd
             ) {
-                // Glow effect
-                Box(
-                    modifier = Modifier
-                        .size(shieldGlowSize)
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color(0xFF22C55E).copy(alpha = 0.3f),
-                                    Color.Transparent
-                                )
-                            ),
-                            shape = CircleShape
-                        )
-                )
-                Icon(
-                    imageVector = Icons.Default.Shield,
-                    contentDescription = null,
-                    modifier = Modifier.size(shieldIconSize),
-                    tint = Color(0xFF22C55E)
-                )
+                TextButton(
+                    onClick = onSkip,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.welcome_skip),
+                        color = Color.White.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.025f)))
-
-            // Header
-            Text(
-                text = stringResource(R.string.privacy_title),
-                style = if (isSmallScreen()) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                color = Color.White,
-                fontSize = adaptiveTextUnitByCategory(30.sp, 26.sp, 22.sp)
-            )
-
-            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.01f)))
-
-            Text(
-                text = stringResource(R.string.privacy_subtitle),
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = adaptiveTextUnitByCategory(17.sp, 15.sp, 13.sp)
-            )
-
-            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
-
-            // Privacy points with staggered animation
-            val listVisible = remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) { listVisible.value = true }
-            
+            // Main Content Section
             Column(
-                verticalArrangement = Arrangement.spacedBy(rememberScreenHeightPercentage(0.014f))
-            ) {
-                // Item 1
-                AnimatedOpacity(delay = 200, visible = listVisible.value) {
-                    PrivacyPoint(
-                        icon = Icons.Default.PhoneAndroid,
-                        iconColor = Color(0xFF3B82F6),
-                        title = stringResource(R.string.privacy_local_title),
-                        description = stringResource(R.string.privacy_local_desc)
-                    )
-                }
-
-                // Item 2
-                AnimatedOpacity(delay = 400, visible = listVisible.value) {
-                    PrivacyPoint(
-                        icon = Icons.Default.CloudOff,
-                        iconColor = Color(0xFFF59E0B),
-                        title = stringResource(R.string.privacy_no_cloud_title),
-                        description = stringResource(R.string.privacy_no_cloud_desc)
-                    )
-                }
-
-                // Item 3
-                AnimatedOpacity(delay = 600, visible = listVisible.value) {
-                    PrivacyPoint(
-                        icon = Icons.Default.Visibility,
-                        iconColor = MaterialTheme.colorScheme.primary,
-                        title = stringResource(R.string.privacy_notif_title),
-                        description = stringResource(R.string.privacy_notif_desc)
-                    )
-                }
-
-                // Item 4
-                AnimatedOpacity(delay = 800, visible = listVisible.value) {
-                    PrivacyPoint(
-                        icon = Icons.Default.Code,
-                        iconColor = Color(0xFF22C55E),
-                        title = stringResource(R.string.privacy_open_source_title),
-                        description = stringResource(R.string.privacy_open_source_desc)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
-
-            // Bottom quote
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                backgroundColor = Color(0xFF22C55E).copy(alpha = 0.08f),
-                contentPadding = PaddingValues(adaptiveSizeByCategory(16.dp, 12.dp, 10.dp))
-            ) {
-                Text(
-                    text = stringResource(R.string.privacy_quote),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    color = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.fillMaxWidth(),
-                    fontSize = adaptiveTextUnitByCategory(15.sp, 13.sp, 12.sp)
-                )
-            }
-
-            // Flexible spacer before button
-            Spacer(modifier = Modifier.weight(0.08f))
-
-            // CTA Button
-            Button(
-                onClick = onNext,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(scaledSize(54.dp, 0.85f, 1.1f)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(16.dp),
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = 8.dp,
-                    pressedElevation = 4.dp
-                )
+                    .weight(1f)
+                    .padding(horizontal = adaptiveSizeByCategory(24.dp, 20.dp, 16.dp))
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = stringResource(R.string.privacy_got_it),
-                    fontSize = adaptiveTextUnitByCategory(18.sp, 17.sp, 16.sp),
-                    fontWeight = FontWeight.Bold
+                // Dynamic, device-size aware spacing between Skip bar and main section
+                val topSpacing = adaptiveSizeByCategory(
+                    expanded = rememberScreenHeightPercentage(0.035f),
+                    medium = 20.dp,
+                    compact = 12.dp
                 )
+                Spacer(modifier = Modifier.height(topSpacing))
+
+                // Shield Icon with clamped sizing
+                val shieldContainerSize = rememberClampedHeightPercentage(0.10f, 70.dp, 95.dp)
+                val shieldGlowSize = rememberClampedHeightPercentage(0.09f, 60.dp, 85.dp)
+                val shieldIconSize = rememberClampedHeightPercentage(0.06f, 42.dp, 58.dp)
+                
+                Box(
+                    modifier = Modifier
+                        .size(shieldContainerSize)
+                        .scale(shieldScale),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Glow effect
+                    Box(
+                        modifier = Modifier
+                            .size(shieldGlowSize)
+                            .background(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        Color(0xFF22C55E).copy(alpha = 0.3f),
+                                        Color.Transparent
+                                    )
+                                ),
+                                shape = CircleShape
+                            )
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = null,
+                        modifier = Modifier.size(shieldIconSize),
+                        tint = Color(0xFF22C55E)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.025f)))
+
+                // Header
+                Text(
+                    text = stringResource(R.string.privacy_title),
+                    style = if (isSmallScreen()) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    color = Color.White,
+                    fontSize = adaptiveTextUnitByCategory(30.sp, 26.sp, 22.sp)
+                )
+
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.01f)))
+
+                Text(
+                    text = stringResource(R.string.privacy_subtitle),
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = adaptiveTextUnitByCategory(17.sp, 15.sp, 13.sp)
+                )
+
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
+
+                // Privacy points with staggered animation
+                val listVisible = remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { listVisible.value = true }
+                
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(rememberScreenHeightPercentage(0.014f))
+                ) {
+                    // Item 1
+                    AnimatedOpacity(delay = 200, visible = listVisible.value) {
+                        PrivacyPoint(
+                            icon = Icons.Default.PhoneAndroid,
+                            iconColor = Color(0xFF3B82F6),
+                            title = stringResource(R.string.privacy_local_title),
+                            description = stringResource(R.string.privacy_local_desc)
+                        )
+                    }
+
+                    // Item 2
+                    AnimatedOpacity(delay = 400, visible = listVisible.value) {
+                        PrivacyPoint(
+                            icon = Icons.Default.CloudOff,
+                            iconColor = Color(0xFFF59E0B),
+                            title = stringResource(R.string.privacy_no_cloud_title),
+                            description = stringResource(R.string.privacy_no_cloud_desc)
+                        )
+                    }
+
+                    // Item 3
+                    AnimatedOpacity(delay = 600, visible = listVisible.value) {
+                        PrivacyPoint(
+                            icon = Icons.Default.Visibility,
+                            iconColor = MaterialTheme.colorScheme.primary,
+                            title = stringResource(R.string.privacy_notif_title),
+                            description = stringResource(R.string.privacy_notif_desc)
+                        )
+                    }
+
+                    // Item 4
+                    AnimatedOpacity(delay = 800, visible = listVisible.value) {
+                        PrivacyPoint(
+                            icon = Icons.Default.Code,
+                            iconColor = Color(0xFF22C55E),
+                            title = stringResource(R.string.privacy_open_source_title),
+                            description = stringResource(R.string.privacy_open_source_desc)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
+
+                // Bottom quote - flat white pill (no glassmorphism) for strong contrast
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.White)
+                        .padding(
+                            horizontal = adaptiveSizeByCategory(18.dp, 16.dp, 14.dp),
+                            vertical = adaptiveSizeByCategory(14.dp, 12.dp, 10.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.privacy_quote),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        color = TempoDarkBackground,
+                        modifier = Modifier.fillMaxWidth(),
+                        fontSize = adaptiveTextUnitByCategory(15.sp, 13.sp, 12.sp)
+                    )
+                }
+
+                // Spacer before button
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.035f)))
+
+                // CTA Button
+                Button(
+                    onClick = onNext,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(scaledSize(54.dp, 0.85f, 1.1f)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TempoPrimary,
+                        contentColor = TextOnAccent
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 8.dp,
+                        pressedElevation = 4.dp
+                    )
+                ) {
+                    Text(
+                        text = stringResource(R.string.privacy_got_it),
+                        fontSize = adaptiveTextUnitByCategory(18.sp, 17.sp, 16.sp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Bottom padding
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
             }
-
-            // Bottom padding
-            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
-        }
-
-        // Skip button - rendered LAST to be on top of all content (z-ordering in Box)
-        TextButton(
-            onClick = onSkip,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.welcome_skip),
-                color = Color.White.copy(alpha = 0.6f),
-                style = MaterialTheme.typography.labelLarge
-            )
         }
     }
 }
@@ -282,7 +311,7 @@ private fun PrivacyPoint(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Check,
+                    imageVector = icon,
                     contentDescription = null,
                     modifier = Modifier.size(checkIconSize),
                     tint = iconColor

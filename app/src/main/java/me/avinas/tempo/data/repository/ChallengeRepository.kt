@@ -157,20 +157,4 @@ class ChallengeRepository @Inject constructor(
             gamificationRepository.recomputeXpAndLevel()
         }
     }
-
-    suspend fun claimChallengeXp(challengeId: Long) {
-        // Technically, XP is entirely deterministic from listening events.
-        // We can't arbitrarily inject manual XP into the user_level table since recomputeXpAndLevel()
-        // overrides it from scratch every 6 hours.
-        // 
-        // SOLUTION: The gamification engine must include daily challenges in its deterministic XP calc.
-        // For now, we will mark the challenge as claimed and trigger a refresh.
-        
-        val todayStr = LocalDate.now().toString()
-        val challenges = gamificationDao.getChallengesForDate(todayStr)
-        val target = challenges.find { it.id == challengeId } ?: return
-        
-        Log.i(TAG, "Claiming ${target.xpReward} XP for challenge: ${target.title}")
-        gamificationRepository.recomputeXpAndLevel()
-    }
 }

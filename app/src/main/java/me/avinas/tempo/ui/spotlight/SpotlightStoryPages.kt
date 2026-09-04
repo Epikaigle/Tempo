@@ -108,7 +108,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Piano
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.DarkMode
@@ -3081,7 +3081,7 @@ private fun getPersonalityAssets(key: String): Pair<ImageVector, Color> {
         "Metalhead"           -> Icons.Default.FlashOn to Color(0xFFDC2626)
         "R&B Soul"            -> Icons.Default.Favorite to Color(0xFFEC4899)
         "Electronic Voyager"  -> Icons.Default.GraphicEq to Color(0xFF22D3EE)
-        "Jazz Cat"            -> Icons.Default.QueueMusic to Color(0xFFF59E0B)
+        "Jazz Cat"            -> Icons.AutoMirrored.Filled.QueueMusic to Color(0xFFF59E0B)
         "Maestro"             -> Icons.Default.Piano to Color(0xFFA78BFA)
         "Indie Spirit"        -> Icons.Default.Explore to Color(0xFF34D399)
         "Party Starter"       -> Icons.Default.Celebration to Color(0xFFF472B6)

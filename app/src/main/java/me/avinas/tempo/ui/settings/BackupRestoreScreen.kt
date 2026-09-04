@@ -45,8 +45,12 @@ import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.ui.components.SettingsSwitch
+import me.avinas.tempo.ui.components.SettingsSectionHeader
 import me.avinas.tempo.ui.components.TempoSnackbar
 import me.avinas.tempo.ui.theme.*
+import me.avinas.tempo.ui.components.TempoDropdownMenu
+import me.avinas.tempo.ui.components.TempoDropdownMenuItem
+import me.avinas.tempo.ui.components.TempoIcons
 import me.avinas.tempo.utils.FormatUtils.formatBytes
 import java.text.SimpleDateFormat
 import java.util.*
@@ -199,7 +203,7 @@ fun BackupRestoreScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Backup & Restore", color = Color.White) },
+                title = { Text(stringResource(R.string.settings_backup_restore), color = TextPrimary) },
                 navigationIcon = {
                     IconButton(
                         onClick = onNavigateBack,
@@ -207,15 +211,15 @@ fun BackupRestoreScreen(
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
+                            contentDescription = stringResource(R.string.settings_back),
+                            tint = TextPrimary
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    titleContentColor = TextPrimary,
+                    navigationIconContentColor = TextPrimary
                 )
             )
         },
@@ -467,7 +471,7 @@ fun BackupRestoreScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         LinearProgressIndicator(
-                            progress = { op.progress },
+                            progress = { op.progress.coerceIn(0f, 1f) },
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
                             color = TempoPrimary,
                             trackColor = GlassFrostSoft
@@ -491,7 +495,7 @@ fun BackupRestoreScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         LinearProgressIndicator(
-                            progress = { op.progress },
+                            progress = { op.progress.coerceIn(0f, 1f) },
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
                             color = TempoPrimary,
                             trackColor = GlassFrostSoft
@@ -509,13 +513,7 @@ fun BackupRestoreScreen(
 
 @Composable
 private fun DataOverviewSection(uiState: BackupRestoreUiState) {
-    Text(
-        text = stringResource(R.string.backup_restore_data_header),
-        style = MaterialTheme.typography.titleSmall,
-        color = TempoRed,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
-    )
+    SettingsSectionHeader(stringResource(R.string.backup_restore_data_header))
     
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -545,7 +543,7 @@ private fun DataOverviewSection(uiState: BackupRestoreUiState) {
                     .height(80.dp),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(color = TempoRed, modifier = Modifier.size(32.dp))
+                CircularProgressIndicator(color = TempoPrimary, modifier = Modifier.size(32.dp))
             }
         }
     }
@@ -565,13 +563,7 @@ private fun GoogleDriveSection(
     onDelete: (DriveBackupInfo) -> Unit,
     onRefreshBackups: () -> Unit
 ) {
-    Text(
-        text = "GOOGLE DRIVE",
-        style = MaterialTheme.typography.titleSmall,
-        color = TempoRed,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
-    )
+    SettingsSectionHeader("Google Drive")
     
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -592,7 +584,7 @@ private fun GoogleDriveSection(
                         modifier = Modifier
                             .size(48.dp)
                             .background(
-                                color = Color(0xFF4285F4).copy(alpha = 0.2f),
+                                color = TempoInfo.copy(alpha = 0.2f),
                                 shape = CircleShape
                             ),
                         contentAlignment = Alignment.Center
@@ -600,7 +592,7 @@ private fun GoogleDriveSection(
                         Icon(
                             Icons.Default.Cloud,
                             contentDescription = null,
-                            tint = Color(0xFF4285F4),
+                            tint = TempoInfo,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -611,19 +603,19 @@ private fun GoogleDriveSection(
                         Text(
                             text = "Connect Google Account",
                             style = MaterialTheme.typography.bodyLarge,
-                            color = Color.White
+                            color = TextPrimary
                         )
                         Text(
                             text = "Back up your data to Google Drive",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = TextSecondary
                         )
                     }
                     
                     Icon(
                         Icons.Default.ChevronRight,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.5f)
+                        tint = TextTertiary
                     )
                 }
             } else {
@@ -648,13 +640,13 @@ private fun GoogleDriveSection(
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .background(Color(0xFF4285F4), CircleShape),
+                                .background(TempoInfo, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = googleAccount?.email?.first()?.uppercase() ?: "G",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = Color.White
+                                color = TextPrimary
                             )
                         }
                     }
@@ -665,23 +657,23 @@ private fun GoogleDriveSection(
                         Text(
                             text = googleAccount?.displayName ?: "Google Account",
                             style = MaterialTheme.typography.bodyLarge,
-                            color = Color.White
+                            color = TextPrimary
                         )
                         Text(
                             text = googleAccount?.email ?: "",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.7f),
+                            color = TextSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                     
                     TextButton(onClick = onSignOut) {
-                        Text("Sign Out", color = Color.White.copy(alpha = 0.7f))
+                        Text("Sign Out", color = TextSecondary)
                     }
                 }
                 
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                HorizontalDivider(color = GlassBorderSoft)
                 
                 // Backup Now button
                 Row(
@@ -694,13 +686,13 @@ private fun GoogleDriveSection(
                         Text(
                             text = "Backup to Drive",
                             style = MaterialTheme.typography.bodyLarge,
-                            color = Color.White
+                            color = TextPrimary
                         )
                         if (backupSettings.lastBackupTime != null) {
                             Text(
                                 text = "Last backup: ${formatRelativeTime(backupSettings.lastBackupTime)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
+                                color = TextSecondary
                             )
                         }
                     }
@@ -709,7 +701,7 @@ private fun GoogleDriveSection(
                         onClick = onBackupNow,
                         enabled = driveOperation == DriveOperationState.Idle &&
                             backupSettings.isGoogleDriveEnabled,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
+                        colors = ButtonDefaults.buttonColors(containerColor = TempoInfo),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -720,7 +712,7 @@ private fun GoogleDriveSection(
                 
                 // Backup history
                 if (driveBackups.isNotEmpty()) {
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    HorizontalDivider(color = GlassBorderSoft)
                     
                     Row(
                         modifier = Modifier
@@ -732,14 +724,14 @@ private fun GoogleDriveSection(
                         Text(
                             text = "Backup History (${driveBackups.size})",
                             style = MaterialTheme.typography.titleSmall,
-                            color = Color.White.copy(alpha = 0.7f)
+                            color = TextSecondary
                         )
                         
                         IconButton(onClick = onRefreshBackups, modifier = Modifier.size(24.dp)) {
                             Icon(
                                 Icons.Default.Refresh,
                                 contentDescription = "Refresh",
-                                tint = Color.White.copy(alpha = 0.7f),
+                                tint = TextSecondary,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -764,13 +756,7 @@ private fun AutomaticBackupSection(
     onSetInterval: (BackupInterval) -> Unit,
     onSetWifiOnly: (Boolean) -> Unit
 ) {
-    Text(
-        text = "AUTOMATIC BACKUPS",
-        style = MaterialTheme.typography.titleSmall,
-        color = TempoRed,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
-    )
+    SettingsSectionHeader("Automatic Backups")
 
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -790,12 +776,12 @@ private fun AutomaticBackupSection(
                     Text(
                         text = "Auto-backup",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     Text(
                         text = backupSettings.backupInterval.displayName,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.7f)
+                        color = TextSecondary
                     )
                 }
 
@@ -803,31 +789,27 @@ private fun AutomaticBackupSection(
                     Icon(
                         Icons.Default.Schedule,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.7f)
+                        tint = TextSecondary
                     )
-                    DropdownMenu(
+                    TempoDropdownMenu(
                         expanded = intervalExpanded,
                         onDismissRequest = { intervalExpanded = false }
                     ) {
                         BackupInterval.entries.forEach { interval ->
-                            DropdownMenuItem(
-                                text = { Text(interval.displayName) },
+                            TempoDropdownMenuItem(
+                                title = interval.displayName,
                                 onClick = {
                                     onSetInterval(interval)
                                     intervalExpanded = false
                                 },
-                                leadingIcon = {
-                                    if (backupSettings.backupInterval == interval) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                    }
-                                }
+                                isSelected = backupSettings.backupInterval == interval
                             )
                         }
                     }
                 }
             }
 
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = GlassBorderSoft)
 
             SettingsSwitch(
                 title = "Drive on Wi-Fi only",
@@ -855,19 +837,19 @@ private fun DriveBackupItem(
             Text(
                 text = formatDate(backup.createdAt),
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.White
+                color = TextPrimary
             )
             Row {
                 Text(
                     text = formatBytes(backup.sizeBytes),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.6f)
+                    color = TextTertiary
                 )
                 if (backup.deviceName != null) {
                     Text(
                         text = " • ${backup.deviceName}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.5f),
+                        color = TextTertiary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -880,14 +862,14 @@ private fun DriveBackupItem(
                 Icon(
                     Icons.Default.CloudDownload,
                     contentDescription = "Restore",
-                    tint = Color(0xFF4285F4)
+                    tint = TempoInfo
                 )
             }
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = "Delete",
-                    tint = Color.White.copy(alpha = 0.6f)
+                    tint = TextTertiary
                 )
             }
         }
@@ -902,13 +884,7 @@ private fun LocalBackupSection(
     onExport: () -> Unit,
     onImport: () -> Unit
 ) {
-    Text(
-        text = stringResource(R.string.backup_restore_local_backup_header),
-        style = MaterialTheme.typography.titleSmall,
-        color = TempoRed,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
-    )
+    SettingsSectionHeader(stringResource(R.string.backup_restore_local_backup_header))
     
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -927,13 +903,13 @@ private fun LocalBackupSection(
                     Text(
                         text = "Automatic backup folder",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Choose or change where scheduled device backups are saved",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.7f)
+                        color = TextSecondary
                     )
                 }
                 OutlinedButton(onClick = onChooseAutoBackupFolder) {
@@ -943,7 +919,7 @@ private fun LocalBackupSection(
                 }
             }
 
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = GlassBorderSoft)
 
             // Local images toggle
             SettingsSwitch(
@@ -957,7 +933,7 @@ private fun LocalBackupSection(
                 onCheckedChange = onToggleLocalImages
             )
             
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = GlassBorderSoft)
             
             // Export button
             Row(
@@ -970,19 +946,19 @@ private fun LocalBackupSection(
                     Text(
                         text = stringResource(R.string.backup_restore_export_device),
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = stringResource(R.string.backup_restore_estimated_size, uiState.estimatedExportSizeFormatted),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.7f)
+                        color = TextSecondary
                     )
                 }
                 
                 Button(
                     onClick = onExport,
-                    colors = ButtonDefaults.buttonColors(containerColor = TempoRed),
+                    colors = ButtonDefaults.buttonColors(containerColor = TempoPrimary),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -991,7 +967,7 @@ private fun LocalBackupSection(
                 }
             }
             
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = GlassBorderSoft)
             
             // Import button
             Row(
@@ -1004,23 +980,23 @@ private fun LocalBackupSection(
                     Text(
                         text = stringResource(R.string.backup_restore_import_device),
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color.White
+                        color = TextPrimary
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = stringResource(R.string.backup_restore_import_file_desc),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.7f)
+                        color = TextSecondary
                     )
                 }
                 
                 OutlinedButton(
                     onClick = onImport,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                     border = BorderStroke(
                         width = 1.dp,
                         brush = Brush.horizontalGradient(
-                            listOf(Color.White.copy(alpha = 0.3f), Color.White.copy(alpha = 0.3f))
+                            listOf(GlassBorderMedium, GlassBorderMedium)
                         )
                     ),
                     shape = RoundedCornerShape(12.dp)
@@ -1040,13 +1016,13 @@ private fun BackupTipsCard() {
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(16.dp),
         variant = GlassCardVariant.LowProminence,
-        backgroundColor = TempoRed.copy(alpha = 0.1f)
+        backgroundColor = TempoPrimary.copy(alpha = 0.1f)
     ) {
         Column {
             Text(
                 text = "💡 Backup Tips",
                 style = MaterialTheme.typography.titleSmall,
-                color = Color.White,
+                color = TextPrimary,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -1056,7 +1032,7 @@ private fun BackupTipsCard() {
                        "• Album art from streaming services will be re-downloaded\n" +
                        "• Local album art is only included if toggled on",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.8f),
+                color = TextSecondary,
                 lineHeight = MaterialTheme.typography.bodySmall.lineHeight * 1.3
             )
         }
@@ -1073,22 +1049,22 @@ private fun DataStatItem(
         Box(
             modifier = Modifier
                 .size(48.dp)
-                .background(color = TempoRed.copy(alpha = 0.2f), shape = RoundedCornerShape(12.dp)),
+                .background(color = TempoPrimary.copy(alpha = 0.2f), shape = RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(imageVector = icon, contentDescription = null, tint = TempoRed, modifier = Modifier.size(24.dp))
+            Icon(imageVector = icon, contentDescription = null, tint = TempoPrimary, modifier = Modifier.size(24.dp))
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = formatCount(count),
             style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
+            color = TextPrimary,
             fontWeight = FontWeight.Bold
         )
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.7f)
+            color = TextSecondary
         )
     }
 }

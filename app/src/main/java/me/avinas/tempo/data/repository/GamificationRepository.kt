@@ -136,10 +136,12 @@ class GamificationRepository @Inject constructor(
         val morningPlays = gamificationDao.getPlayCountBetweenHours(5, 8)
         val marathonSessions = gamificationDao.getMarathonSessionCount()
         
+        val existingBadgesMap = gamificationDao.getAllBadges().associateBy { it.badgeId }
+        val updatedBadges = ArrayList<Badge>(GamificationEngine.ALL_BADGE_DEFINITIONS.size)
         val newlyEarned = mutableListOf<String>()
         
         for (def in GamificationEngine.ALL_BADGE_DEFINITIONS) {
-            val existing = gamificationDao.getBadgeById(def.badgeId)
+            val existing = existingBadgesMap[def.badgeId]
             
             // Get raw (uncapped) progress for this badge
             val rawProgress = when {
@@ -201,7 +203,7 @@ class GamificationRepository @Inject constructor(
                 isAcknowledged = if ((isNowEarned && !wasAlreadyEarned) || (currentStars > previousStars)) false else existing?.isAcknowledged ?: false
             )
             
-            gamificationDao.upsertBadge(badge)
+            updatedBadges.add(badge)
             
             if (isNowEarned && !wasAlreadyEarned) {
                 newlyEarned.add(def.badgeId)
@@ -211,17 +213,20 @@ class GamificationRepository @Inject constructor(
             }
         }
         
+        if (updatedBadges.isNotEmpty()) {
+            gamificationDao.upsertBadges(updatedBadges)
+        }
+        
         Log.d(TAG, "Badge evaluation complete: ${newlyEarned.size} new badges earned")
         return newlyEarned
     }
-    
     /**
      * Full refresh: recompute XP + evaluate all badges.
      */
-    suspend fun fullRefresh(): GamificationRefreshResult {
+    suspend fun fullRefresh(): GamificationRefreshResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val levelUpResult = recomputeXpAndLevel()
         val newBadges = evaluateAllBadges()
-        return GamificationRefreshResult(
+        GamificationRefreshResult(
             levelUpResult = levelUpResult,
             newlyEarnedBadgeIds = newBadges
         )

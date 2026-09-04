@@ -33,7 +33,7 @@ junit = "4.13.2"
 androidxTestExt = "1.1.5"
 espresso = "3.5.1"
 coroutinesTest = "1.10.2"
-ksp = "2.3.2"
+ksp = "2.3.6"
 sqliteJdbc = "3.47.1.0"
 
 [libraries]

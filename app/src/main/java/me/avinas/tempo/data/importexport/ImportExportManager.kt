@@ -13,6 +13,7 @@ import me.avinas.tempo.BuildConfig
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.profile.ProfileIdentityManager
+import me.avinas.tempo.utils.ImageUrlHostAllowlist
 import com.squareup.moshi.JsonReader
 import com.squareup.moshi.JsonWriter
 import me.avinas.tempo.worker.PostRestoreCacheWorker
@@ -790,10 +791,19 @@ class ImportExportManager @Inject constructor(
             profileIdentityManager.restoreProfileImagePath(restoredProfileImagePath)
             Log.i(TAG, "Restored profile image path present=${!restoredProfileImagePath.isNullOrBlank()}")
             
-            // Schedule pre-caching of hotlinked images
-            if (data.hotlinkedUrls.isNotEmpty()) {
+            // Schedule pre-caching of hotlinked images. The list comes from the
+            // restored backup file and is therefore untrusted input: a crafted
+            // backup must not be able to make Tempo bulk-fetch arbitrary
+            // attacker-chosen URLs in the background (covert beacon). Only known
+            // music-art CDN hosts are pre-cached; per-image UI loading is unaffected.
+            val cacheableHotlinks = ImageUrlHostAllowlist.filterAllowed(data.hotlinkedUrls)
+            val droppedHotlinkCount = data.hotlinkedUrls.size - cacheableHotlinks.size
+            if (droppedHotlinkCount > 0) {
+                Log.w(TAG, "Dropped $droppedHotlinkCount non-allowlisted hotlinked URLs from the restored backup")
+            }
+            if (cacheableHotlinks.isNotEmpty()) {
                 _progress.value = ImportExportProgress("Scheduling image cache...", 95, 100)
-                PostRestoreCacheWorker.schedule(context, data.hotlinkedUrls)
+                PostRestoreCacheWorker.schedule(context, cacheableHotlinks)
             }
             
             // Invalidate stats cache to force UI refresh (fixes "New User" state persisting)
@@ -1127,9 +1137,12 @@ internal fun resolveRestoredProfileImagePath(
     pathMapping: Map<String, String>
 ): String? {
     if (exportedProfileImagePath.isNullOrBlank()) return null
-    return if (exportedProfileImagePath.startsWith("file://")) {
-        pathMapping[exportedProfileImagePath]
-    } else {
-        exportedProfileImagePath
-    }
+    // A legitimate exported profile image is always a file:// URI inside the
+    // app's private storage (ProfileIdentityManager.updateProfileImage only ever
+    // saves that form, and the export bundles + remaps it via the image
+    // manifest). A backup file is untrusted input, so any other value — an
+    // http(s) URL, a content:// URI, or an arbitrary device path — is discarded
+    // instead of being persisted as-is.
+    if (!exportedProfileImagePath.startsWith("file://")) return null
+    return pathMapping[exportedProfileImagePath]
 }

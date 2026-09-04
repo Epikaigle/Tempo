@@ -4,12 +4,24 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import me.avinas.tempo.ui.theme.DisplayFontFamily
+import me.avinas.tempo.ui.theme.KickerSmall
+import me.avinas.tempo.ui.theme.TextTertiary
+import java.util.Locale
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -25,6 +37,8 @@ import me.avinas.tempo.ui.theme.GlassFrostSoft
 import me.avinas.tempo.ui.theme.GlassHighlightTop
 import me.avinas.tempo.ui.theme.GlassShadowTeal
 import me.avinas.tempo.ui.theme.GlassTintTeal
+import me.avinas.tempo.ui.theme.TextPrimary
+import me.avinas.tempo.ui.theme.premiumClickable
 import me.avinas.tempo.ui.theme.TempoDarkSurface
 import me.avinas.tempo.ui.theme.TempoDarkSurfaceElevated
 import me.avinas.tempo.ui.theme.TempoDarkSurfaceSunken
@@ -202,5 +216,112 @@ fun GlassCard(
         ) {
             content()
         }
+    }
+}
+
+/**
+ * Shared frosted-glass circular icon button for top bars — the single spec
+ * every screen floating over artwork/scrolling content must use:
+ * 40dp circle, GlassFrostMedium fill, 0.8dp GlassBorderSoft border, 18dp icon.
+ */
+@Composable
+fun FrostedIconButton(
+    icon: ImageVector,
+    contentDescription: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconTint: Color = TextPrimary,
+    containerColor: Color = GlassFrostMedium,
+    borderColor: Color = GlassBorderSoft,
+) {
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(containerColor)
+            .border(0.8.dp, borderColor, CircleShape)
+            .premiumClickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = iconTint,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+/**
+ * Shared catalog kicker for section indexing across Tempo screens.
+ * Displays bold number, fine horizontal hairline, and uppercase tracked label.
+ */
+@Composable
+fun SectionCatalogKicker(
+    number: String,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = number,
+            style = KickerSmall,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+        )
+        Box(
+            modifier = Modifier
+                .width(10.dp)
+                .height(0.8.dp)
+                .background(GlassBorderMedium),
+        )
+        Text(
+            text = label.uppercase(Locale.getDefault()),
+            style = KickerSmall,
+            color = TextTertiary,
+            letterSpacing = 1.2.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * Shared telemetry cell for structured stat breakdowns.
+ * Kicker label over display-family metric value.
+ */
+@Composable
+fun TelemetryMiniCell(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = TextPrimary,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = label.uppercase(Locale.getDefault()),
+            style = KickerSmall,
+            color = TextTertiary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = value,
+            style = androidx.compose.material3.MaterialTheme.typography.titleMedium.copy(
+                fontFamily = DisplayFontFamily,
+                fontWeight = FontWeight.Bold,
+            ),
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

@@ -1,5 +1,7 @@
 package me.avinas.tempo.ui.onboarding
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -7,6 +9,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Phone
@@ -30,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.theme.TempoDarkBackground
 import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TextOnAccent
 import me.avinas.tempo.ui.utils.adaptiveSize
 import me.avinas.tempo.ui.utils.adaptiveTextUnit
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
@@ -87,130 +95,148 @@ fun HowItWorksScreen(
             .navigationBarsPadding()
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = adaptiveSizeByCategory(24.dp, 20.dp, 16.dp)),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.fillMaxSize()
         ) {
-            // Top flexible spacing
-            Spacer(modifier = Modifier.weight(0.08f))
-            val isSmall = isSmallScreen()
-            // Header
-            Text(
-                text = stringResource(R.string.how_it_works_title),
-                style = if (isSmall) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                color = Color.White,
-                fontSize = adaptiveTextUnitByCategory(30.sp, 26.sp, 22.sp)
-            )
-
-            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.01f)))
-
-            Text(
-                text = stringResource(R.string.how_it_works_subtitle),
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = adaptiveTextUnitByCategory(17.sp, 15.sp, 13.sp)
-            )
-
-            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
-
-            // Visual Flow: Three connected steps
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(rememberScreenHeightPercentage(0.018f))
-
-            ) {
-                // Step 1: Music App
-                FlowStep(
-                    modifier = Modifier.alpha(step1Alpha),
-                    icon = Icons.Default.MusicNote,
-                    iconColor = Color(0xFF1DB954), // Spotify green
-                    title = stringResource(R.string.how_it_works_step1_title),
-                    subtitle = stringResource(R.string.how_it_works_step1_subtitle)
-                )
-
-                // Animated connector
-                FlowConnector(progress = arrowProgress, alpha = step1Alpha)
-
-                // Step 2: Notification
-                FlowStep(
-                    modifier = Modifier.alpha(step2Alpha),
-                    icon = Icons.Default.Notifications,
-                    iconColor = Color(0xFFF59E0B), // Amber
-                    title = stringResource(R.string.how_it_works_step2_title),
-                    subtitle = stringResource(R.string.how_it_works_step2_subtitle)
-                )
-
-                // Animated connector
-                FlowConnector(progress = arrowProgress, alpha = step2Alpha)
-
-                // Step 3: Stats
-                FlowStep(
-                    modifier = Modifier.alpha(step3Alpha),
-                    icon = Icons.Default.BarChart,
-                    iconColor = TempoRed,
-                    title = stringResource(R.string.how_it_works_step3_title),
-                    subtitle = stringResource(R.string.how_it_works_step3_subtitle)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.035f)))
-
-            // Bottom info badges
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                InfoBadge(emoji = "📱", text = stringResource(R.string.how_it_works_badge_apps))
-                InfoBadge(emoji = "🔒", text = stringResource(R.string.how_it_works_badge_local))
-                InfoBadge(emoji = "⚡", text = stringResource(R.string.how_it_works_badge_auto))
-            }
-
-            // Flexible spacer before button
-            Spacer(modifier = Modifier.weight(0.1f))
-
-            // CTA Button
-            Button(
-                onClick = onNext,
+            // Dedicated Top Action Bar with Skip button
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(scaledSize(54.dp, 0.85f, 1.1f)),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(16.dp),
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = 8.dp,
-                    pressedElevation = 4.dp
-                )
+                    .padding(
+                        horizontal = adaptiveSizeByCategory(16.dp, 14.dp, 12.dp),
+                        vertical = 4.dp
+                    ),
+                contentAlignment = Alignment.CenterEnd
             ) {
-                Text(
-                    text = stringResource(R.string.how_it_works_next),
-                    fontSize = adaptiveTextUnitByCategory(18.sp, 17.sp, 16.sp),
-                    fontWeight = FontWeight.Bold
-                )
+                TextButton(
+                    onClick = onSkip,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.welcome_skip),
+                        color = Color.White.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
             }
-            
-            // Bottom padding
-            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
-        }
 
-        // Skip button - rendered LAST to be on top of all content (z-ordering in Box)
-        TextButton(
-            onClick = onSkip,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.welcome_skip),
-                color = Color.White.copy(alpha = 0.6f),
-                style = MaterialTheme.typography.labelLarge
-            )
+            // Main Content Section
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(horizontal = adaptiveSizeByCategory(24.dp, 20.dp, 16.dp))
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Dynamic, device-size aware spacing between Skip bar and main section
+                val topSpacing = adaptiveSizeByCategory(
+                    expanded = rememberScreenHeightPercentage(0.035f),
+                    medium = 20.dp,
+                    compact = 12.dp
+                )
+                Spacer(modifier = Modifier.height(topSpacing))
+
+                val isSmall = isSmallScreen()
+                // Header
+                Text(
+                    text = stringResource(R.string.how_it_works_title),
+                    style = if (isSmall) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    color = Color.White,
+                    fontSize = adaptiveTextUnitByCategory(30.sp, 26.sp, 22.sp)
+                )
+
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.01f)))
+
+                Text(
+                    text = stringResource(R.string.how_it_works_subtitle),
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = adaptiveTextUnitByCategory(17.sp, 15.sp, 13.sp)
+                )
+
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
+
+                // Visual Flow: Three connected steps
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(rememberScreenHeightPercentage(0.018f))
+
+                ) {
+                    // Step 1: Music App
+                    FlowStep(
+                        modifier = Modifier.alpha(step1Alpha),
+                        icon = Icons.Default.MusicNote,
+                        iconColor = Color(0xFF1DB954), // Spotify green
+                        title = stringResource(R.string.how_it_works_step1_title),
+                        subtitle = stringResource(R.string.how_it_works_step1_subtitle)
+                    )
+
+                    // Animated connector
+                    FlowConnector(progress = arrowProgress, alpha = step1Alpha)
+
+                    // Step 2: Notification
+                    FlowStep(
+                        modifier = Modifier.alpha(step2Alpha),
+                        icon = Icons.Default.Notifications,
+                        iconColor = Color(0xFFF59E0B), // Amber
+                        title = stringResource(R.string.how_it_works_step2_title),
+                        subtitle = stringResource(R.string.how_it_works_step2_subtitle)
+                    )
+
+                    // Animated connector
+                    FlowConnector(progress = arrowProgress, alpha = step2Alpha)
+
+                    // Step 3: Stats
+                    FlowStep(
+                        modifier = Modifier.alpha(step3Alpha),
+                        icon = Icons.Default.BarChart,
+                        iconColor = TempoPrimary,
+                        title = stringResource(R.string.how_it_works_step3_title),
+                        subtitle = stringResource(R.string.how_it_works_step3_subtitle)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.035f)))
+
+                // Bottom info badges
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    InfoBadge(icon = Icons.Default.Apps, iconTint = Color(0xFF3B82F6), text = stringResource(R.string.how_it_works_badge_apps))
+                    InfoBadge(icon = Icons.Default.Lock, iconTint = Color(0xFF22C55E), text = stringResource(R.string.how_it_works_badge_local))
+                    InfoBadge(icon = Icons.Default.Bolt, iconTint = Color(0xFFF59E0B), text = stringResource(R.string.how_it_works_badge_auto))
+                }
+
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.04f)))
+                Button(
+                    onClick = onNext,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(scaledSize(54.dp, 0.85f, 1.1f)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = TempoPrimary,
+                        contentColor = TextOnAccent
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 8.dp,
+                        pressedElevation = 4.dp
+                    )
+                ) {
+                    Text(
+                        text = stringResource(R.string.how_it_works_next),
+                        fontSize = adaptiveTextUnitByCategory(18.sp, 17.sp, 16.sp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                
+                // Bottom padding
+                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
+            }
         }
     }
 }
@@ -313,28 +339,40 @@ private fun FlowConnector(
             )
         }
         
-        // Arrow head
-        Text(
-            text = "↓",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = adaptiveTextUnitByCategory(16.sp, 14.sp, 12.sp),
-            modifier = Modifier.scale(1f + (progress * 0.1f))
+        // Arrow icon
+        Icon(
+            imageVector = Icons.Default.KeyboardArrowDown,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier
+                .size(18.dp)
+                .scale(1f + (progress * 0.12f))
         )
     }
 }
 
 @Composable
 private fun InfoBadge(
-    emoji: String,
+    icon: ImageVector,
+    iconTint: Color,
     text: String
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = emoji,
-            fontSize = adaptiveTextUnitByCategory(34.sp, 30.sp, 26.sp) // Adaptive emoji
-        )
+        Box(
+            modifier = Modifier
+                .size(adaptiveSizeByCategory(44.dp, 40.dp, 36.dp))
+                .background(iconTint.copy(alpha = 0.15f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(adaptiveSizeByCategory(22.dp, 20.dp, 18.dp))
+            )
+        }
         Spacer(modifier = Modifier.height(adaptiveSizeByCategory(8.dp, 6.dp, 4.dp)))
         Text(
             text = text,

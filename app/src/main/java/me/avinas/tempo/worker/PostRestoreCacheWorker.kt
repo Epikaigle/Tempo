@@ -21,6 +21,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.R
+import me.avinas.tempo.utils.ImageUrlHostAllowlist
 
 /**
  * Worker to pre-cache hotlinked images after backup restore.
@@ -50,10 +51,16 @@ class PostRestoreCacheWorker @AssistedInject constructor(
         /**
          * Schedule caching for top 200 most relevant images.
          * Additional images can be cached on-demand.
+         *
+         * Defense in depth: [urls] may originate from a restored backup file and
+         * is therefore untrusted. Only allowlisted music-art CDN hosts are ever
+         * fetched, so a crafted backup cannot turn this worker into a covert
+         * "phone-home" beacon. ImportExportManager applies the same filter.
          */
         fun schedule(context: Context, urls: List<String>) {
-            // Limit to top 200 for initial cache
-            val prioritizedUrls = urls.take(MAX_INITIAL_CACHE)
+            val prioritizedUrls = ImageUrlHostAllowlist
+                .filterAllowed(urls)
+                .take(MAX_INITIAL_CACHE)
             
             if (prioritizedUrls.isEmpty()) {
                 Log.i(TAG, "No URLs to cache")

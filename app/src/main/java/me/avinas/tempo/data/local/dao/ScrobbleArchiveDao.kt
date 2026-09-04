@@ -220,6 +220,21 @@ interface ScrobbleArchiveDao {
     @Query("SELECT COALESCE(SUM(LENGTH(timestamps_blob)), 0) FROM scrobbles_archive")
     suspend fun getStorageSizeBytes(): Long
     
+
+    /**
+     * Update album name in archive rows during album merge.
+     */
+    @Query("""
+        UPDATE scrobbles_archive
+        SET album_name = :targetAlbumTitle
+        WHERE album_name = :sourceAlbumTitle
+        AND artist_name_normalized = :artistNameNormalized
+    """)
+    suspend fun updateAlbumName(
+        sourceAlbumTitle: String,
+        targetAlbumTitle: String,
+        artistNameNormalized: String
+    ): Int
     // Promotion Operations
     @Query("SELECT EXISTS(SELECT 1 FROM scrobbles_archive WHERE track_hash = :trackHash)")
     suspend fun exists(trackHash: String): Boolean

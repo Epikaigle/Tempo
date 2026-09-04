@@ -7,28 +7,31 @@ import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
-import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.res.painterResource
+import me.avinas.tempo.R
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TextOnAccent
 import me.avinas.tempo.ui.utils.adaptiveSizeByCategory
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
 import me.avinas.tempo.ui.utils.isSmallScreen
@@ -36,12 +39,12 @@ import me.avinas.tempo.ui.utils.rememberScreenHeightPercentage
 import me.avinas.tempo.ui.utils.scaledSize
 import me.avinas.tempo.ui.utils.rememberClampedHeightPercentage
 import androidx.compose.ui.res.stringResource
-import me.avinas.tempo.R
 
 @Composable
 fun BatteryOptimizationScreen(
     onOptimize: () -> Unit,
-    onSkip: () -> Unit
+    onSkip: () -> Unit,
+    onBack: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -77,7 +80,20 @@ fun BatteryOptimizationScreen(
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-
+        if (onBack != null) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White
+                )
+            }
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -87,39 +103,23 @@ fun BatteryOptimizationScreen(
             // Top flexible spacer
             Spacer(modifier = Modifier.weight(0.15f))
             
-            // Hero Illustration with clamped sizing
-            val heroSize = rememberClampedHeightPercentage(0.16f, 90.dp, 160.dp)
-            val innerGlowSize = rememberClampedHeightPercentage(0.10f, 55.dp, 100.dp)
-            val iconSize = rememberClampedHeightPercentage(0.08f, 45.dp, 80.dp)
-            
+            // Hero Illustration enclosed in a square card matching Tempo aesthetic
+            val heroArtCardSize = rememberClampedHeightPercentage(0.22f, 130.dp, 190.dp)
             GlassCard(
-                modifier = Modifier.size(heroSize),
-                backgroundColor = Color(0xFF22C55E).copy(alpha = 0.1f), // Green tint for battery
-                contentPadding = PaddingValues(0.dp)
+                modifier = Modifier.size(heroArtCardSize),
+                shape = RoundedCornerShape(24.dp),
+                backgroundColor = Color.White.copy(alpha = 0.06f),
+                contentPadding = PaddingValues(0.dp),
+                contentAlignment = Alignment.BottomCenter,
+                fillMaxWidth = false
             ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Inner glow
-                    Box(
-                        modifier = Modifier
-                            .size(innerGlowSize)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(Color(0xFF22C55E).copy(alpha = 0.4f), Color.Transparent)
-                                ),
-                                shape = CircleShape
-                            )
-                    )
-                    
-                    Icon(
-                        imageVector = Icons.Default.BatteryFull,
-                        contentDescription = null,
-                        modifier = Modifier.size(iconSize),
-                        tint = Color.White
-                    )
-                }
+                Image(
+                    painter = painterResource(id = R.drawable.battery_vector),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.BottomCenter,
+                    modifier = Modifier.size(heroArtCardSize)
+                )
             }
 
             // Proportional spacing after hero
@@ -146,6 +146,15 @@ fun BatteryOptimizationScreen(
                 fontSize = adaptiveTextUnitByCategory(16.sp, 15.sp, 14.sp)
             )
 
+            Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.015f)))
+
+            Text(
+                text = "Uses <1% battery daily • No continuous polling",
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = adaptiveTextUnitByCategory(13.sp, 12.sp, 11.sp)
+            )
             // Flexible spacer between content and buttons
             Spacer(modifier = Modifier.weight(0.2f))
 
@@ -157,8 +166,8 @@ fun BatteryOptimizationScreen(
                     .fillMaxWidth()
                     .height(scaledSize(54.dp, 0.85f, 1.1f)),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = TempoRed,
-                    contentColor = Color.White
+                    containerColor = TempoPrimary,
+                    contentColor = TextOnAccent
                 ),
                 shape = RoundedCornerShape(16.dp),
                 elevation = ButtonDefaults.buttonElevation(

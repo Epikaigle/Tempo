@@ -46,9 +46,7 @@ import me.avinas.tempo.R
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.theme.TempoDarkSurface
-import me.avinas.tempo.ui.theme.TempoRed
-import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -91,14 +89,14 @@ fun DesktopLinkScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(stringResource(R.string.desktop_link_title), color = Color.White)
+                    Text(stringResource(R.string.desktop_link_title), color = TextPrimary)
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.settings_back),
-                            tint = Color.White
+                            tint = TextPrimary
                         )
                     }
                 },
@@ -140,7 +138,7 @@ fun DesktopLinkScreen(
                                 )
                                 Text(
                                     text = stringResource(R.string.ui_loading),
-                                    color = Color.White.copy(alpha = 0.8f),
+                                    color = TextSecondary,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             }
@@ -195,13 +193,13 @@ fun DesktopLinkScreen(
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
                                     text = "Processing QR code...",
-                                    color = Color.White.copy(alpha = 0.8f),
+                                    color = TextSecondary,
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "Please wait while we connect to your device",
-                                    color = Color.White.copy(alpha = 0.5f),
+                                    color = TextTertiary,
                                     style = MaterialTheme.typography.bodySmall,
                                     textAlign = TextAlign.Center
                                 )
@@ -214,7 +212,7 @@ fun DesktopLinkScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = error,
-                        color = TempoRed,
+                        color = TempoError,
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 8.dp)
@@ -236,9 +234,9 @@ fun DesktopLinkScreen(
 private fun DesktopSyncHeroCard(uiState: DesktopLinkUiState) {
     val isConnected = uiState.phase == PairingPhase.PAIRED
     val statusColor = when {
-        uiState.isBatteryCritical -> TempoRed
-        isConnected && uiState.isServerRunning -> Color(0xFF4ADE80)
-        isConnected -> Color(0xFFFBBF24)
+        uiState.isBatteryCritical -> TempoError
+        isConnected && uiState.isServerRunning -> TempoSuccessBright
+        isConnected -> TempoWarningBright
         else -> TempoPrimary
     }
 
@@ -273,12 +271,12 @@ private fun DesktopSyncHeroCard(uiState: DesktopLinkUiState) {
                         Icon(
                             Icons.Filled.Sync,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = TextPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
                             text = stringResource(R.string.desktop_link_title),
-                            color = Color.White,
+                            color = TextPrimary,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -292,7 +290,7 @@ private fun DesktopSyncHeroCard(uiState: DesktopLinkUiState) {
 
                 Text(
                     text = stringResource(R.string.desktop_link_description),
-                    color = Color.White.copy(alpha = 0.75f),
+                    color = TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
                     lineHeight = 18.sp
                 )
@@ -350,22 +348,22 @@ private fun MiniInfoTile(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.06f))
-            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+            .background(GlassFrostSoft)
+            .border(1.dp, GlassBorderSoft, RoundedCornerShape(12.dp))
             .padding(10.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(icon, contentDescription = null, tint = TempoPrimary, modifier = Modifier.size(14.dp))
             Text(
                 text = title,
-                color = Color.White.copy(alpha = 0.55f),
+                color = TextTertiary,
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = subtitle,
-                color = Color.White,
+                color = TextPrimary,
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
@@ -388,7 +386,7 @@ private fun DesktopScanningScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(TempoDarkBackground)
     ) {
         // Use key to force remount scanner when needed (for retry)
         key(scannerKey) {
@@ -412,7 +410,7 @@ private fun DesktopScanningScreen(
             Box(
                 modifier = Modifier
                     .size(240.dp)
-                    .border(2.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                    .border(2.dp, TextPrimary, RoundedCornerShape(16.dp))
             )
 
             Column(
@@ -421,14 +419,14 @@ private fun DesktopScanningScreen(
             ) {
                 Text(
                     text = stringResource(R.string.desktop_scan_instruction),
-                    color = Color.White,
+                    color = TextPrimary,
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center
                 )
                 OutlinedButton(
                     onClick = onCancel,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f))
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                    border = BorderStroke(1.dp, GlassBorderMedium)
                 ) {
                     Text(stringResource(R.string.desktop_cancel_scan))
                 }
@@ -470,14 +468,14 @@ private fun UnpairedContent(
                 text = stringResource(R.string.desktop_scan_qr_title),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White,
+                color = TextPrimary,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = stringResource(R.string.desktop_scan_qr_subtitle),
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.6f),
+                color = TextTertiary,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(16.dp))
@@ -528,13 +526,13 @@ private fun ManualEntrySection(
                     text = stringResource(R.string.desktop_manual_entry),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = TextPrimary
                 )
                 IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
                     Icon(
                         if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.6f),
+                        tint = TextTertiary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -598,7 +596,7 @@ private fun PairedContent(
                     modifier = Modifier
                         .size(10.dp)
                         .background(
-                            color = if (uiState.isServerRunning) Color(0xFF4ADE80) else Color(0xFFFBBF24),
+                            color = if (uiState.isServerRunning) TempoSuccessBright else TempoWarningBright,
                             shape = CircleShape
                         )
                 )
@@ -610,7 +608,7 @@ private fun PairedContent(
                         stringResource(R.string.desktop_receiver_stopped),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = TextPrimary
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -653,18 +651,18 @@ private fun PairedContent(
                     text = stringResource(R.string.desktop_auth_token),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = TextPrimary
                 )
                 StatusPill(
                     text = if (uiState.isServerRunning) "Listening" else "Paused",
-                    color = if (uiState.isServerRunning) Color(0xFF4ADE80) else Color(0xFFFBBF24)
+                    color = if (uiState.isServerRunning) TempoSuccessBright else TempoWarningBright
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = session.authToken,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.7f),
+                color = TextSecondary,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -715,8 +713,8 @@ private fun PairedContent(
     // Disconnect button
     OutlinedButton(
         onClick = onDisconnect,
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = TempoRed),
-        border = BorderStroke(1.dp, TempoRed.copy(alpha = 0.6f)),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = TempoError),
+        border = BorderStroke(1.dp, TempoError.copy(alpha = 0.6f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Icon(
@@ -741,7 +739,7 @@ private fun DesktopStatsSection(stats: DesktopStats) {
         text = stringResource(R.string.desktop_stats_title),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
-        color = Color.White,
+        color = TextPrimary,
         modifier = Modifier.fillMaxWidth()
     )
 
@@ -801,7 +799,7 @@ private fun DesktopStatsSection(stats: DesktopStats) {
                     text = stringResource(R.string.desktop_stats_top_listened),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = TextPrimary
                 )
                 stats.topArtist?.let { artist ->
                     Spacer(modifier = Modifier.height(10.dp))
@@ -817,13 +815,13 @@ private fun DesktopStatsSection(stats: DesktopStats) {
                             Text(
                                 text = stringResource(R.string.desktop_stats_top_artist),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.5f)
+                                color = TextTertiary
                             )
                             Text(
                                 text = artist,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
-                                color = Color.White
+                                color = TextPrimary
                             )
                         }
                     }
@@ -842,13 +840,13 @@ private fun DesktopStatsSection(stats: DesktopStats) {
                             Text(
                                 text = stringResource(R.string.desktop_stats_top_track),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.5f)
+                                color = TextTertiary
                             )
                             Text(
                                 text = if (stats.topTrackArtist != null) "$track — ${stats.topTrackArtist}" else track,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
-                                color = Color.White,
+                                color = TextPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -873,7 +871,7 @@ private fun DesktopStatsSection(stats: DesktopStats) {
                     text = stringResource(R.string.desktop_stats_sources),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = TextPrimary
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 stats.sourceBreakdown.forEach { source ->
@@ -887,7 +885,7 @@ private fun DesktopStatsSection(stats: DesktopStats) {
                         Text(
                             text = source.source.removePrefix("desktop:"),
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.8f),
+                            color = TextSecondary,
                             modifier = Modifier.weight(1f)
                         )
                         Text(
@@ -927,13 +925,13 @@ private fun DesktopStatCard(
                 text = value,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = TextPrimary,
                 textAlign = TextAlign.Center
             )
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.6f),
+                color = TextTertiary,
                 textAlign = TextAlign.Center,
                 lineHeight = 14.sp
             )
@@ -1010,14 +1008,14 @@ private fun InfoRow(
         Text(
             text = "$label:",
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.5f),
+            color = TextTertiary,
             modifier = Modifier.width(72.dp)
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
-            color = Color.White.copy(alpha = 0.85f),
+            color = TextPrimary,
             fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
             maxLines = if (truncate) 1 else Int.MAX_VALUE,
             overflow = if (truncate) TextOverflow.Ellipsis else TextOverflow.Clip,
@@ -1044,12 +1042,12 @@ private fun DesktopTextField(
             fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default
         ),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White.copy(alpha = 0.8f),
+            focusedTextColor = TextPrimary,
+            unfocusedTextColor = TextSecondary,
             focusedBorderColor = TempoPrimary,
-            unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+            unfocusedBorderColor = GlassBorderMedium,
             focusedLabelColor = TempoPrimary,
-            unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
+            unfocusedLabelColor = TextTertiary,
             cursorColor = TempoPrimary
         ),
         modifier = Modifier.fillMaxWidth(),

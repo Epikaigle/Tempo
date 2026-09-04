@@ -29,7 +29,7 @@ import javax.inject.Singleton
  * This consolidates listening history under a single canonical artist.
  */
 @Singleton
-class ArtistMergeRepository @Inject constructor(
+open class ArtistMergeRepository @Inject constructor(
     private val artistAliasDao: ArtistAliasDao,
     private val artistDao: ArtistDao,
     private val trackArtistDao: TrackArtistDao,
@@ -329,7 +329,7 @@ class ArtistMergeRepository @Inject constructor(
      * Search for artists by name (for merge destination selection).
      * Excludes the source artist.
      */
-    suspend fun searchArtists(query: String, excludeArtistId: Long? = null): List<Artist> {
+    open suspend fun searchArtists(query: String, excludeArtistId: Long? = null): List<Artist> {
         val results = artistDao.searchSync(query)
         return if (excludeArtistId != null) {
             results.filter { it.id != excludeArtistId }

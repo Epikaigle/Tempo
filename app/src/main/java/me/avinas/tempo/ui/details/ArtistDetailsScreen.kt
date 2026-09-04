@@ -32,11 +32,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.rounded.CallMerge
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -44,12 +42,14 @@ import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.LocalFireDepartment
-import androidx.compose.material.icons.rounded.LocationOn
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.NightsStay
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.*
+import me.avinas.tempo.ui.components.TempoDropdownMenu
+import me.avinas.tempo.ui.components.TempoDropdownMenuItem
+import me.avinas.tempo.ui.components.TempoIcons
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,8 +57,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
@@ -66,13 +67,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -96,7 +93,6 @@ import me.avinas.tempo.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.math.roundToInt
 
 @Composable
 fun ArtistDetailsScreen(
@@ -314,7 +310,7 @@ fun ArtistDetailsContent(
 
             // 4. Listening Journey & Milestones
             item(key = "listening_journey") {
-                Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
+                Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 26.dp)) {
                     ListeningJourneySection(artistDetails = artistDetails, tint = accent)
                 }
             }
@@ -335,15 +331,16 @@ fun ArtistDetailsContent(
             // 6. Top Albums
             if (artistDetails.topAlbums.isNotEmpty()) {
                 item(key = "top_albums_header") {
-                    Text(
-                        text = stringResource(R.string.details_top_albums),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 20.dp, end = 16.dp, top = 14.dp, bottom = 10.dp)
-                    )
+                            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 14.dp)
+                    ) {
+                        SectionCatalogKicker(
+                            number = "03",
+                            label = stringResource(R.string.details_top_albums),
+                        )
+                    }
                 }
 
                 item(key = "top_albums_row") {
@@ -407,52 +404,33 @@ fun ArtistDetailsContent(
                 .statusBarsPadding()
                 .padding(top = 52.dp, end = 16.dp)
         ) {
-            DropdownMenu(
+            TempoDropdownMenu(
                 expanded = showMenu,
-                onDismissRequest = { showMenu = false },
-                modifier = Modifier.background(TempoDarkSurfaceElevated),
+                onDismissRequest = { showMenu = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.details_merge_with), color = TextPrimary) },
-                    leadingIcon = {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.CallMerge,
-                            contentDescription = null,
-                            tint = TextPrimary,
-                        )
-                    },
+                TempoDropdownMenuItem(
+                    title = stringResource(R.string.details_merge_with),
+                    leadingIcon = TempoIcons.MergeStreams,
                     onClick = {
                         showMenu = false
                         showMergeDialog = true
-                    },
+                    }
                 )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.details_rename_artist), color = TextPrimary) },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Edit,
-                            contentDescription = null,
-                            tint = TextPrimary,
-                        )
-                    },
+                TempoDropdownMenuItem(
+                    title = stringResource(R.string.details_rename_artist),
+                    leadingIcon = TempoIcons.Edit,
                     onClick = {
                         showMenu = false
                         onShowRenameDialog()
-                    },
+                    }
                 )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.details_split_artist), color = TextPrimary) },
-                    leadingIcon = {
-                        Icon(
-                            Icons.AutoMirrored.Filled.CallSplit,
-                            contentDescription = null,
-                            tint = TextPrimary,
-                        )
-                    },
+                TempoDropdownMenuItem(
+                    title = stringResource(R.string.details_split_artist),
+                    leadingIcon = TempoIcons.SplitStreams,
                     onClick = {
                         showMenu = false
                         onShowSplitDialog()
-                    },
+                    }
                 )
             }
         }
@@ -752,35 +730,44 @@ fun ArtistHeroSection(
             }
         }
 
-        // Country & Genres metadata line
+        // Release-style metadata: hairline divider over a kicker meta line.
         val country = artistDetails.country
         val genresList = artistDetails.topGenres.ifEmpty { artistDetails.artist.genres }
         val metaParts = listOfNotNull(
             country?.takeIf { it.isNotBlank() },
-            genresList.take(3)
+            genresList.take(2)
                 .takeIf { it.isNotEmpty() }
                 ?.joinToString(", ") { it.replaceFirstChar { c -> c.uppercase() } },
         )
         if (metaParts.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(horizontal = 24.dp),
+            Spacer(modifier = Modifier.height(14.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.LocationOn,
-                    contentDescription = null,
-                    tint = TextTertiary,
-                    modifier = Modifier.size(13.dp),
+                Box(
+                    modifier = Modifier
+                        .width(28.dp)
+                        .height(0.8.dp)
+                        .background(GlassBorderMedium),
                 )
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = metaParts.joinToString("   ·   "),
-                    style = MaterialTheme.typography.labelSmall,
+                    text = metaParts.joinToString("  ·  ").uppercase(Locale.getDefault()),
+                    style = KickerSmall,
                     color = TextTertiary,
-                    letterSpacing = 0.5.sp,
+                    letterSpacing = 1.4.sp,
+                    textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .width(28.dp)
+                        .height(0.8.dp)
+                        .background(GlassBorderMedium),
                 )
             }
         }
@@ -803,80 +790,52 @@ fun ArtistStatMasthead(artistDetails: ArtistDetails, accent: Color = TempoPrimar
         borderWidth = 0.8.dp,
         contentPadding = PaddingValues(0.dp),
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Row 1: Plays & Time
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                EditorialStatBlock(
-                    label = stringResource(R.string.details_total_plays),
-                    value = formatCount(artistDetails.personalPlayCount.toLong()),
-                    subtext = stringResource(R.string.details_stat_recorded_library),
-                    accentTint = accent,
-                    modifier = Modifier.weight(1f),
-                )
-
-                HairlineDividerVertical()
-
-                EditorialStatBlock(
-                    label = stringResource(R.string.details_listening_time),
-                    value = formatListeningTime(artistDetails.personalTotalTimeMs.toLong()),
-                    subtext = stringResource(R.string.details_stat_total_recorded),
-                    accentTint = accent,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(0.8.dp)
-                    .background(GlassBorderSoft),
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 20.dp)) {
+            // Total play count hero metric — same anatomy as the song masthead.
+            MastheadHeroMetric(
+                label = stringResource(R.string.details_total_plays),
+                value = String.format(Locale.getDefault(), "%,d", artistDetails.personalPlayCount),
+                suffix = stringResource(
+                    R.string.details_together_suffix,
+                    formatListeningTime(artistDetails.personalTotalTimeMs.toLong()),
+                ),
+                accentTint = accent,
             )
 
-            // Row 2: Unique Songs & Albums
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Secondary metrics: unique songs and albums explored
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(IntrinsicSize.Min),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                EditorialStatBlock(
+                MastheadSecondaryStat(
                     label = stringResource(R.string.details_unique_tracks),
                     value = formatCount(artistDetails.uniqueTracksPlayed.toLong()),
-                    subtext = stringResource(R.string.details_stat_recorded_library),
-                    accentTint = accent,
-                    isCompact = true,
+                    subtext = stringResource(R.string.artist_explored_sub),
                     modifier = Modifier.weight(1f),
                 )
 
-                HairlineDividerVertical()
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(0.8.dp)
+                        .background(GlassBorderSoft),
+                )
 
-                EditorialStatBlock(
+                MastheadSecondaryStat(
                     label = stringResource(R.string.details_unique_albums),
                     value = formatCount(artistDetails.uniqueAlbumsPlayed.toLong()),
-                    subtext = stringResource(R.string.details_stat_total_recorded),
-                    accentTint = accent,
-                    isCompact = true,
-                    modifier = Modifier.weight(1f),
+                    subtext = stringResource(R.string.artist_explored_sub),
+                    modifier = Modifier.weight(1f).padding(start = 16.dp),
                 )
             }
         }
     }
 }
 
-@Composable
-private fun HairlineDividerVertical() {
-    Box(
-        modifier = Modifier
-            .fillMaxHeight()
-            .width(0.8.dp)
-            .background(GlassBorderSoft),
-    )
-}
 
 // ──────────────────────────────────────────────────────────────
 // 3. Fan Standing
@@ -1097,158 +1056,72 @@ fun ListeningJourneySection(artistDetails: ArtistDetails, tint: Color = TempoPri
     val firstListen = artistDetails.firstListenedDate ?: artistDetails.firstDiscovery?.firstListenTimestamp
     val lastListen = artistDetails.lastListenedDate
 
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        variant = GlassCardVariant.QuietGlass,
-        accentColor = tint,
-        contentPadding = PaddingValues(20.dp),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = stringResource(R.string.details_timeline_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
+    val milestones = listOfNotNull(
+        firstListen?.let {
+            OdysseyMilestone(
+                icon = Icons.Rounded.AutoAwesome,
+                title = stringResource(R.string.details_first_listen),
+                value = formatRibbonDate(firstListen),
             )
+        },
+        artistDetails.listeningStreakDays.takeIf { it > 1 }?.let {
+            OdysseyMilestone(
+                icon = Icons.Rounded.LocalFireDepartment,
+                title = stringResource(R.string.artist_streak_short),
+                value = stringResource(R.string.details_trends_days, artistDetails.listeningStreakDays),
+            )
+        },
+        artistDetails.peakListeningHour?.let {
+            val isDay = artistDetails.peakListeningHour in 6..17
+            OdysseyMilestone(
+                icon = if (isDay) Icons.Rounded.WbSunny else Icons.Rounded.NightsStay,
+                title = stringResource(R.string.details_peak_hour),
+                value = artistDetails.peakHourFormatted,
+            )
+        },
+        lastListen?.let {
+            OdysseyMilestone(
+                icon = Icons.Rounded.Headphones,
+                title = stringResource(R.string.details_last_listen),
+                value = formatRibbonDate(lastListen),
+            )
+        },
+    )
+    if (milestones.isEmpty()) return
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // Milestone 1: Discovery
-                if (firstListen != null) {
-                    MilestoneEntry(
-                        icon = Icons.Rounded.AutoAwesome,
-                        title = stringResource(R.string.details_first_listen),
-                        value = formatDate(firstListen),
-                        subtext = null,
-                        iconTint = tint,
-                    )
-                }
-
-                // Milestone 2: Listening streak
-                if (artistDetails.listeningStreakDays > 1) {
-                    MilestoneEntry(
-                        icon = Icons.Rounded.LocalFireDepartment,
-                        title = stringResource(R.string.details_streak_days),
-                        value = stringResource(R.string.details_trends_days, artistDetails.listeningStreakDays),
-                        subtext = stringResource(R.string.details_streak_desc),
-                        iconTint = tint,
-                    )
-                }
-
-                // Milestone 3: Peak listening hour
-                if (artistDetails.peakListeningHour != null) {
-                    val isDay = artistDetails.peakListeningHour in 6..17
-                    MilestoneEntry(
-                        icon = if (isDay) Icons.Rounded.WbSunny else Icons.Rounded.NightsStay,
-                        title = stringResource(R.string.details_peak_hour),
-                        value = artistDetails.peakHourFormatted,
-                        subtext = stringResource(R.string.details_most_active) + " " +
-                            if (isDay) {
-                                stringResource(R.string.details_streak_day_window)
-                            } else {
-                                stringResource(R.string.details_streak_night_window)
-                            },
-                        iconTint = tint,
-                    )
-                }
-
-                // Milestone 4: Latest session
-                if (lastListen != null) {
-                    MilestoneEntry(
-                        icon = Icons.Rounded.Headphones,
-                        title = stringResource(R.string.details_last_listen),
-                        value = formatDate(lastListen),
-                        subtext = stringResource(R.string.details_timeline_latest),
-                        iconTint = TextTertiary,
-                    )
-                }
-            }
-
-            // Discovery narrative
-            if (artistDetails.firstDiscovery != null && firstListen != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = buildAnnotatedString {
-                        append(stringResource(R.string.details_journey_discovered_prefix))
-                        append(" ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TextPrimary)) {
-                            append(artistDetails.artist.name)
-                        }
-                        append(" ")
-                        append(stringResource(R.string.details_journey_discovered_since))
-                        append(" ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TextPrimary)) {
-                            append(formatListeningTime(artistDetails.personalTotalTimeMs))
-                        }
-                        append(" ")
-                        append(stringResource(R.string.details_journey_across))
-                        append(" ")
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = TextPrimary)) {
-                            append("${artistDetails.uniqueTracksPlayed}")
-                        }
-                        append(" ")
-                        append(stringResource(R.string.details_journey_songs))
-                        append(".")
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                    lineHeight = 19.sp,
-                )
-            }
-        }
+    // Same ink treatment as the song timeline: contrast flips when the
+    // accent-derived backdrop gets bright.
+    val ink = remember(tint) {
+        val backdrop = lerp(tint, TempoDarkBackground, 0.65f)
+        if (backdrop.luminance() > 0.25f) BrightRoomInk else DarkRoomInk
     }
-}
 
-@Composable
-private fun MilestoneEntry(
-    icon: ImageVector,
-    title: String,
-    value: String,
-    subtext: String?,
-    iconTint: Color,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(iconTint.copy(alpha = 0.12f))
-                .border(0.8.dp, iconTint.copy(alpha = 0.25f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(16.dp),
-            )
-        }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SectionCatalogKicker(
+            number = "01",
+            label = stringResource(R.string.details_timeline_title),
+        )
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title.uppercase(Locale.getDefault()),
-                style = KickerSmall,
-                color = TextTertiary,
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-            )
-        }
+        Spacer(modifier = Modifier.height(18.dp))
 
-        if (subtext != null) {
-            Text(
-                text = subtext,
-                style = CaptionSmall,
-                color = TextSecondary,
-            )
+        // Horizontal connecting milestone line
+        TimeFlowRibbon(
+            stationCount = milestones.size,
+            ink = ink,
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            milestones.forEach { milestone ->
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                ) {
+                    FlatMilestoneRow(milestone = milestone, ink = ink)
+                }
+            }
         }
     }
 }
@@ -1265,105 +1138,106 @@ fun TopSongsPanel(
 ) {
     if (songs.isEmpty()) return
 
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        variant = GlassCardVariant.QuietGlass,
-        accentColor = accent,
-        contentPadding = PaddingValues(0.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = stringResource(R.string.details_top_songs),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
-            )
+    Column(modifier = Modifier.fillMaxWidth()) {
+        SectionCatalogKicker(
+            number = "02",
+            label = stringResource(R.string.details_top_songs),
+        )
 
-            songs.forEachIndexed { index, song ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .premiumClickable(onClick = { onNavigateToSong(song.trackId) })
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${index + 1}",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontFamily = DisplayFontFamily,
-                        ),
-                        fontWeight = FontWeight.Bold,
-                        color = accent,
-                        modifier = Modifier.width(30.dp),
-                        textAlign = TextAlign.Start
-                    )
+        Spacer(modifier = Modifier.height(12.dp))
 
-                    CachedAsyncImage(
-                        imageUrl = song.albumArtUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            variant = GlassCardVariant.QuietGlass,
+            accentColor = accent,
+            contentPadding = PaddingValues(0.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                songs.forEachIndexed { index, song ->
+                    Row(
                         modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                    )
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
+                            .fillMaxWidth()
+                            .premiumClickable(onClick = { onNavigateToSong(song.trackId) })
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = song.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = song.album ?: stringResource(R.string.details_unknown_album),
-                            style = CaptionSmall,
-                            color = TextTertiary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = TextTertiary,
-                        modifier = Modifier.size(16.dp),
-                    )
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "${song.playCount}",
-                            style = MaterialTheme.typography.titleSmall.copy(
+                            text = "${index + 1}",
+                            style = MaterialTheme.typography.titleMedium.copy(
                                 fontFamily = DisplayFontFamily,
                             ),
                             fontWeight = FontWeight.Bold,
-                            color = TextPrimary
+                            color = accent,
+                            modifier = Modifier.width(30.dp),
+                            textAlign = TextAlign.Start
                         )
-                        Text(
-                            text = stringResource(R.string.details_plays).uppercase(Locale.getDefault()),
-                            style = CaptionSmall,
-                            color = TextTertiary,
+
+                        CachedAsyncImage(
+                            imageUrl = song.albumArtUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = song.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = song.album ?: stringResource(R.string.details_unknown_album),
+                                style = CaptionSmall,
+                                color = TextTertiary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "${song.playCount}",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontFamily = DisplayFontFamily,
+                                ),
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = stringResource(R.string.details_plays).uppercase(Locale.getDefault()),
+                                style = CaptionSmall,
+                                color = TextTertiary,
+                            )
+                        }
+
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                            contentDescription = null,
+                            tint = TextTertiary,
+                            modifier = Modifier
+                                .padding(start = 10.dp)
+                                .size(11.dp)
                         )
                     }
-                }
 
-                if (index < songs.lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .padding(start = 16.dp)
-                            .fillMaxWidth()
-                            .height(0.6.dp)
-                            .background(GlassBorderSoft)
-                    )
+                    if (index < songs.lastIndex) {
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 16.dp)
+                                .fillMaxWidth()
+                                .height(0.6.dp)
+                                .background(GlassBorderSoft)
+                        )
+                    }
                 }
             }
         }
@@ -1491,11 +1365,6 @@ fun formatListeningTime(millis: Long): String {
     }
 }
 
-fun formatDate(timestamp: Long): String {
-    val sdf = SimpleDateFormat("MMMM d, yyyy", Locale.getDefault())
-    return sdf.format(Date(timestamp))
-}
-
 // ──────────────────────────────────────────────────────────────
 // Footer
 // ──────────────────────────────────────────────────────────────
@@ -1520,5 +1389,11 @@ private fun ArtistDetailsFooter() {
             letterSpacing = 2.sp,
         )
     }
+}
+
+/** Formats timestamp as "MMM d, yyyy" — ribbon-safe short date. */
+private fun formatRibbonDate(timestamp: Long): String {
+    val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+    return sdf.format(Date(timestamp))
 }
 

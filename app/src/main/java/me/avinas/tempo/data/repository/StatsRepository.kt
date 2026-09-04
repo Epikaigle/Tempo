@@ -121,6 +121,7 @@ interface StatsRepository {
      */
     suspend fun getTopAlbums(
         timeRange: TimeRange,
+        sortBy: SortBy = SortBy.PLAY_COUNT,
         page: Int = 0,
         pageSize: Int = 20
     ): PaginatedResult<TopAlbum>
@@ -161,6 +162,7 @@ interface StatsRepository {
      */
     suspend fun searchTopAlbums(
         timeRange: TimeRange,
+        sortBy: SortBy = SortBy.PLAY_COUNT,
         query: String,
         limit: Int = 100
     ): List<TopAlbum>
@@ -181,6 +183,16 @@ interface StatsRepository {
      * Get daily listening trends.
      */
     suspend fun getDailyListening(timeRange: TimeRange, limit: Int = 30, withLeeway: Boolean = true): List<DailyListening>
+    
+    /**
+     * Get active days count in a time range.
+     */
+    suspend fun getActiveDaysCount(timeRange: TimeRange, withLeeway: Boolean = true): Int
+
+    /**
+     * Get peak daily listening duration in milliseconds within a time range.
+     */
+    suspend fun getPeakDayListeningMs(timeRange: TimeRange, withLeeway: Boolean = true): Long
     
     /**
      * Get monthly listening trends.

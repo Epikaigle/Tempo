@@ -39,7 +39,7 @@ fun CaptureWrapper(
     content: @Composable () -> Unit
 ) {
     var capturedView: android.view.View? by remember { mutableStateOf(null) }
-    
+    val currentContent by rememberUpdatedState(content)
     LaunchedEffect(controller) {
         controller.captureRequest.collectLatest {
             capturedView?.let { view ->
@@ -80,7 +80,7 @@ fun CaptureWrapper(
                     // Provide capture context to all children
                     // This signals that images should use software bitmaps
                     CompositionLocalProvider(LocalInCaptureContext provides true) {
-                        content()
+                        currentContent()
                     }
                 }
             }

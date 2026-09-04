@@ -2,8 +2,30 @@
 
 All notable changes to Tempo are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [4.8.7] - 2026-09-04
+
+### Added
+- Album merge tool in the album details menu to consolidate split albums, duplicate track history, and scrobble archives into a single target album.
+- Fullscreen level-up and badge celebration screens with particle effects and exportable achievement share cards.
+- Setting to toggle gamification on or off, hiding levels, badges, and XP counters across the app.
+- Listening overview sheet on the home screen with hourly listening distribution charts, period comparisons, and direct share export.
+- Top search drawer on the rankings screen for filtering artists, albums, and tracks in place.
+- Option to pause playback tracking when device battery drops below 20%.
+
+### Changed
+- Reworked share themes into six dedicated visual styles (Midnight, Glass, ASCII, Minimum, Daylight, and Glitch), including artwork-derived motion blur, scanlines, and RGB splits for Glitch.
+- Updated the album details screen layout to match the artist view, replacing the 2x2 stat grid with a hero play count and reformatting track rows with track numbers and play counts.
+- Redesigned the history screen header with a persistent search bar and a filter sheet for custom time ranges and playback sources.
+- Prefetched history pages four items before the end of the list to prevent scrolling hitches.
+- Offloaded profile unique artist calculations to IO threads and precomputed badge star progress.
+
+### Fixed
+- Switched Google Drive sign-in to Credential Manager to resolve authentication hangs and missing account states.
+- Isolated periodic Google Drive backup worker runs across retries to prevent overlapping jobs and state corruption.
+- Fixed background backup restore cancellation issues by preserving active backup identity and manual worker triggers.
+- Restricted post-restore bulk image pre-caching to known music CDN domains to prevent arbitrary background network requests from untrusted backup archives.
+- Restricted restored profile image paths strictly to verified internal storage URIs, dropping arbitrary schemes from backup data.
+- Constrained share theme background layers to card boundaries to stop visual overflow in export previews.
 
 ## [4.8.3] - 2026-08-19
 
