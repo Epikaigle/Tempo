@@ -1,0 +1,276 @@
+name: Final non-music race verification
+
+on:
+  push:
+    branches:
+      - feat/configurable-tracking-rules
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/configurable-tracking-rules
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Apply final persistence-race fix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          manager_path = Path('app/src/main/java/me/avinas/tempo/service/MusicTrackingManager.kt')
+          service_path = Path('app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt')
+
+          manager = manager_path.read_text()
+          service = service_path.read_text()
+
+          old_ctor = '''class MusicTrackingManager(
+              private val listeningRepository: ListeningRepository,
+              private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+              private val offlineEventStore: OfflineEventStore? = null
+          ) {'''
+          new_ctor = '''class MusicTrackingManager(
+              private val listeningRepository: ListeningRepository,
+              private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+              private val offlineEventStore: OfflineEventStore? = null,
+              private val eventValidator: suspend (ListeningEvent) -> Boolean = { true }
+          ) {'''
+          assert old_ctor in manager, 'MusicTrackingManager constructor anchor not found'
+          manager = manager.replace(old_ctor, new_ctor, 1)
+
+          queue_anchor = '''    suspend fun queueEvent(event: ListeningEvent, sessionId: String): Boolean {
+              // Check for duplicates atomically using compute'''
+          queue_replacement = '''    suspend fun queueEvent(event: ListeningEvent, sessionId: String): Boolean {
+              // Validate at queue time for an immediate rejection, then validate again immediately
+              // before/after persistence so a manual NON_MUSIC mark cannot race the batch delay.
+              if (!shouldPersistEvent(event)) {
+                  Log.d(TAG, "Event rejected by persistence validator before queueing: trackId=${event.track_id}")
+                  return false
+              }
+
+              // Check for duplicates atomically using compute'''
+          assert queue_anchor in manager, 'queueEvent anchor not found'
+          manager = manager.replace(queue_anchor, queue_replacement, 1)
+
+          save_start = manager.index('    suspend fun saveEventImmediate(event: ListeningEvent): Result<Long> {')
+          save_end = manager.index('    /**\n     * Register an active playback session for recovery.', save_start)
+          new_save = '''    suspend fun saveEventImmediate(event: ListeningEvent): Result<Long> {
+              if (!shouldPersistEvent(event)) return Result.success(0L)
+
+              val result = withRetry(MAX_RETRIES, INITIAL_RETRY_DELAY_MS) {
+                  listeningRepository.insert(event)
+              }
+              val id = result.getOrElse { return result }
+
+              if (id > 0L && !shouldPersistEvent(event)) {
+                  listeningRepository.deleteById(id)
+                  Log.d(TAG, "Removed event rejected immediately after persistence: trackId=${event.track_id}")
+                  return Result.success(0L)
+              }
+
+              if (id > 0L) updateMetrics { it.copy(eventsSaved = it.eventsSaved + 1) }
+              return Result.success(id)
+          }
+
+'''
+          manager = manager[:save_start] + new_save + manager[save_end:]
+
+          batch_start = manager.index('    private suspend fun processBatch(batch: List<PendingEvent>) {')
+          batch_end = manager.index('    private fun handleFailedEvent', batch_start)
+          new_batch = '''    private suspend fun processBatch(batch: List<PendingEvent>) {
+              if (batch.isEmpty()) return
+
+              processingMutex.withLock {
+                  isProcessing.value = true
+                  try {
+                      // A mark may have changed while the event was sitting in the 30-second batch.
+                      val candidates = batch.filter { shouldPersistEvent(it.event) }
+                      if (candidates.isEmpty()) {
+                          Log.d(TAG, "Batch dropped because all events are now rejected")
+                          return@withLock
+                      }
+
+                      val ids = try {
+                          listeningRepository.insertAll(candidates.map { it.event })
+                      } catch (e: Exception) {
+                          Log.e(TAG, "Batch save failed, moving valid events to offline queue", e)
+                          candidates.forEach { handleFailedEvent(it) }
+                          updateMetrics { it.copy(batchErrors = it.batchErrors + 1) }
+                          return@withLock
+                      }
+
+                      var successCount = 0
+                      candidates.forEachIndexed { index, pending ->
+                          val id = ids.getOrNull(index) ?: -1L
+                          if (id <= 0L) {
+                              handleFailedEvent(pending)
+                          } else if (shouldPersistEvent(pending.event)) {
+                              successCount++
+                          } else {
+                              // Complements the pre-insert check: if NON_MUSIC was committed
+                              // during insertAll(), remove the just-created row immediately.
+                              listeningRepository.deleteById(id)
+                              Log.d(TAG, "Removed event rejected after batch persistence: trackId=${pending.event.track_id}")
+                          }
+                      }
+
+                      updateMetrics {
+                          it.copy(
+                              eventsSaved = it.eventsSaved + successCount,
+                              batchesProcessed = it.batchesProcessed + 1
+                          )
+                      }
+                      Log.d(TAG, "Batch saved: $successCount/${candidates.size} valid events")
+                  } finally {
+                      isProcessing.value = false
+                  }
+              }
+          }
+
+'''
+          manager = manager[:batch_start] + new_batch + manager[batch_end:]
+
+          offline_start = manager.index('    private suspend fun processOfflineQueue() {')
+          offline_end = manager.index('    private suspend fun <T> withRetry(', offline_start)
+          new_offline = '''    private suspend fun processOfflineQueue() {
+              if (offlineQueue.isEmpty()) return
+
+              Log.d(TAG, "Processing offline queue: ${offlineQueue.size} events")
+              val toProcess = offlineQueue.values.toList()
+
+              for (pending in toProcess) {
+                  try {
+                      val delay = calculateRetryDelay(pending.retryCount)
+                      delay(delay)
+
+                      // Durable retries can outlive a later manual classification, so never
+                      // resurrect an event that has since become NON_MUSIC.
+                      if (!shouldPersistEvent(pending.event)) {
+                          offlineQueue.remove(pending.key())
+                          Log.d(TAG, "Discarded offline event rejected by current rules: trackId=${pending.event.track_id}")
+                          continue
+                      }
+
+                      val id = listeningRepository.insert(pending.event)
+                      if (id > 0L) {
+                          if (!shouldPersistEvent(pending.event)) {
+                              listeningRepository.deleteById(id)
+                              Log.d(TAG, "Removed offline event rejected after persistence: trackId=${pending.event.track_id}")
+                          } else {
+                              updateMetrics { it.copy(eventsSaved = it.eventsSaved + 1) }
+                          }
+                          offlineQueue.remove(pending.key())
+                      } else {
+                          handleFailedEvent(pending)
+                      }
+                  } catch (e: Exception) {
+                      Log.w(TAG, "Offline queue retry failed", e)
+                      handleFailedEvent(pending)
+                  }
+              }
+
+              updateMetrics { it.copy(eventsInOfflineQueue = offlineQueue.size) }
+              persistOfflineQueue()
+          }
+
+          /**
+           * Revalidate events at the persistence boundary. Validation deliberately fails open
+           * on an infrastructure error so a transient Room failure cannot silently lose music.
+           */
+          private suspend fun shouldPersistEvent(event: ListeningEvent): Boolean {
+              return try {
+                  eventValidator(event)
+              } catch (e: Exception) {
+                  Log.w(TAG, "Persistence validator failed; keeping event", e)
+                  true
+              }
+          }
+
+'''
+          manager = manager[:offline_start] + new_offline + manager[offline_end:]
+
+          init_anchor = '''        trackingManager = MusicTrackingManager(listeningRepository, serviceScope, offlineStore)'''
+          init_replacement = '''        trackingManager = MusicTrackingManager(
+              listeningRepository = listeningRepository,
+              scope = serviceScope,
+              offlineEventStore = offlineStore
+          ) { event ->
+              // Read Room at persistence time rather than relying only on the flow cache.
+              // This closes the window where a newly committed NON_MUSIC mark could race
+              // a previously queued/offline event.
+              val track = trackRepository.getById(event.track_id).first()
+              if (track == null) {
+                  true
+              } else {
+                  val currentMarks = manualContentMarkDao.getAllMarks().first()
+                  manualContentOverride(track.title, track.artist, currentMarks) != ContentOverrideType.VIDEO
+              }
+          }'''
+          assert init_anchor in service, 'tracking manager initialization anchor not found'
+          service = service.replace(init_anchor, init_replacement, 1)
+
+          helper_sig = '''    private fun findManualContentMark(title: String, artist: String): ManualContentMark? {'''
+          helper_new = '''    private fun findManualContentMark(
+              title: String,
+              artist: String,
+              marks: List<ManualContentMark> = cachedManualContentMarks
+          ): ManualContentMark? {'''
+          assert helper_sig in service, 'manual mark helper signature not found'
+          service = service.replace(helper_sig, helper_new, 1)
+
+          cache_anchor = '''        return cachedManualContentMarks
+              .asSequence()'''
+          cache_new = '''        return marks
+              .asSequence()'''
+          assert cache_anchor in service, 'manual mark cache anchor not found'
+          service = service.replace(cache_anchor, cache_new, 1)
+
+          override_sig = '''    private fun manualContentOverride(title: String, artist: String): ContentOverrideType? =
+              when (findManualContentMark(title, artist)?.contentType?.uppercase()) {'''
+          override_new = '''    private fun manualContentOverride(
+              title: String,
+              artist: String,
+              marks: List<ManualContentMark> = cachedManualContentMarks
+          ): ContentOverrideType? =
+              when (findManualContentMark(title, artist, marks)?.contentType?.uppercase()) {'''
+          assert override_sig in service, 'manualContentOverride anchor not found'
+          service = service.replace(override_sig, override_new, 1)
+
+          manager_path.write_text(manager)
+          service_path.write_text(service)
+          PY
+
+          git diff --check
+          grep -q 'eventValidator' app/src/main/java/me/avinas/tempo/service/MusicTrackingManager.kt
+          grep -q 'currentMarks = manualContentMarkDao.getAllMarks().first()' app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Assemble debug
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Commit validated source fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/me/avinas/tempo/service/MusicTrackingManager.kt \
+                  app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt
+          if ! git diff --cached --quiet; then
+            git commit -m 'Fix queued non-music persistence race'
+            git push origin HEAD:feat/configurable-tracking-rules
+          fi
