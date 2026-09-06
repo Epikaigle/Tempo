@@ -2,14 +2,15 @@ name: Final tracking-rule review fixes
 
 on:
   push:
-    branches: [feat/configurable-tracking-rules]
+    branches:
+      - feat/configurable-tracking-rules
 
 permissions:
   contents: write
 
 jobs:
   patch-test-and-commit:
-    if: github.actor != 'github-actions[bot]'
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -28,276 +29,8 @@ jobs:
       - name: Apply reviewed fixes
         shell: bash
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          def replace_once(path, old, new, label):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
-              p.write_text(text.replace(old, new, 1))
-
-          def replace_all_checked(path, old, new, minimum, label):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count < minimum:
-                  raise SystemExit(f"{label}: expected at least {minimum} matches, found {count}")
-              p.write_text(text.replace(old, new))
-
-          service = 'app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt'
-          replace_once(
-              service,
-              '''        if (isInBlockedApps(packageName)) return false
-        if (isInEnabledApps(packageName)) return true
-        val notification = sbn.notification''',
-              '''        if (isInBlockedApps(packageName)) return false
-        if (isInEnabledApps(packageName)) return true
-        // A package already present in Room but neither enabled nor blocked is explicitly
-        // disabled by the user. Do not let notification heuristics opt it back in.
-        if (isAppPreferenceCacheInitialized && packageName in cachedAllKnownPackages) return false
-        val notification = sbn.notification''',
-              'notification explicit-disable guard'
-          )
-          replace_all_checked(
-              service,
-              'trackRepository.getById(trackId).first()?.duration',
-              'trackRepository.getById(trackId).first()?.duration?.takeIf { it > 0L }',
-              2,
-              'zero-duration DB fallback'
-          )
-          replace_once(
-              service,
-              'val duration = track.duration ?: getTrackDurationFromMetadata(track.id)',
-              'val duration = track.duration?.takeIf { it > 0L } ?: getTrackDurationFromMetadata(track.id)',
-              'notification duration fallback'
-          )
-
-          vm = 'app/src/main/java/me/avinas/tempo/ui/settings/AppPreferenceViewModel.kt'
-          replace_once(
-              vm,
-              '''import me.avinas.tempo.data.repository.AppPreferenceRepository
-import javax.inject.Inject''',
-              '''import me.avinas.tempo.data.repository.AppPreferenceRepository
-import me.avinas.tempo.data.repository.ListeningRepository
-import me.avinas.tempo.data.repository.StatsRepository
-import me.avinas.tempo.data.repository.TrackRepository
-import javax.inject.Inject''',
-              'settings repository imports'
-          )
-          replace_once(
-              vm,
-              '''    private val repository: AppPreferenceRepository,
-    private val manualContentMarkDao: ManualContentMarkDao,
-    @param:ApplicationContext private val context: Context''',
-              '''    private val repository: AppPreferenceRepository,
-    private val manualContentMarkDao: ManualContentMarkDao,
-    private val trackRepository: TrackRepository,
-    private val listeningRepository: ListeningRepository,
-    private val statsRepository: StatsRepository,
-    @param:ApplicationContext private val context: Context''',
-              'settings constructor dependencies'
-          )
-          replace_once(
-              vm,
-              '''            manualContentMarkDao.insertMark(
-                ManualContentMark(
-                    targetTrackId = 0L,
-                    patternType = patternType,
-                    originalTitle = cleanTitle,
-                    originalArtist = cleanArtist,
-                    patternValue = patternValue,
-                    contentType = contentType,
-                    markedAt = System.currentTimeMillis()
-                )
-            )
-        }
-    }
-
-    fun removeContentOverride''',
-              '''            manualContentMarkDao.insertMark(
-                ManualContentMark(
-                    targetTrackId = 0L,
-                    patternType = patternType,
-                    originalTitle = cleanTitle,
-                    originalArtist = cleanArtist,
-                    patternValue = patternValue,
-                    contentType = contentType,
-                    markedAt = System.currentTimeMillis()
-                )
-            )
-
-            // NON_MUSIC is a correction, not just a future filter: remove already-recorded
-            // plays that match the same exact title/artist rule so history and statistics
-            // immediately agree with the user's classification.
-            if (type == ContentOverrideType.VIDEO) {
-                removeExistingMatchesFromHistory(cleanTitle, cleanArtist)
-            }
-        }
-    }
-
-    private suspend fun removeExistingMatchesFromHistory(title: String, artist: String) {
-        val matchingTrackIds = trackRepository.all().first()
-            .asSequence()
-            .filter { track ->
-                when {
-                    title.isNotBlank() && artist.isNotBlank() ->
-                        track.title.equals(title, ignoreCase = true) &&
-                            track.artist.equals(artist, ignoreCase = true)
-                    title.isNotBlank() -> track.title.equals(title, ignoreCase = true)
-                    else -> track.artist.equals(artist, ignoreCase = true)
-                }
-            }
-            .map { it.id }
-            .distinct()
-            .toList()
-
-        matchingTrackIds.forEach { trackId ->
-            listeningRepository.deleteByTrackId(trackId)
-        }
-        if (matchingTrackIds.isNotEmpty()) {
-            statsRepository.invalidateCache()
-        }
-    }
-
-    fun removeContentOverride''',
-              'retroactive NON_MUSIC cleanup'
-          )
-
-          screen = 'app/src/main/java/me/avinas/tempo/ui/settings/SupportedAppsScreen.kt'
-          replace_once(
-              screen,
-              'subtitle = "Never include matching media in music history or stats",',
-              'subtitle = "Remove existing matches and exclude future plays from history and stats",',
-              'settings NON_MUSIC explanation'
-          )
-
-          history = 'app/src/main/java/me/avinas/tempo/ui/history/HistoryScreen.kt'
-          replace_once(
-              history,
-              '''            )
-            
-            HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))''',
-              '''            )
-            DropdownMenuItem(
-                text = {
-                    Column {
-                        Text("It's video / non-music", color = Color.White)
-                        Text(
-                            "Remove existing plays and block future matches",
-                            color = Color.Gray,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                },
-                onClick = {
-                    onMarkContent?.invoke("NON_MUSIC", true)
-                    showMenu = false
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.PlayCircle,
-                        contentDescription = null,
-                        tint = TempoRed
-                    )
-                }
-            )
-            
-            HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))''',
-              'history track NON_MUSIC action'
-          )
-          replace_once(
-              history,
-              '''            )
-        }
-    }
-}
-
-fun formatRelativeTime''',
-              '''            )
-            DropdownMenuItem(
-                text = {
-                    Column {
-                        Text("Treat ${item.artist} as video / non-music", color = TempoRed)
-                        Text(
-                            "Remove all matching history and block future plays",
-                            color = Color.Gray,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                },
-                onClick = {
-                    onMarkArtist?.invoke("NON_MUSIC", true)
-                    showMenu = false
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = null,
-                        tint = TempoRed
-                    )
-                }
-            )
-        }
-    }
-}
-
-fun formatRelativeTime''',
-              'history artist NON_MUSIC action'
-          )
-
-          entity = 'app/src/main/java/me/avinas/tempo/data/local/entities/ManualContentMark.kt'
-          replace_once(
-              entity,
-              '''/**
- * Manual content marks for user-defined podcast/audiobook filtering.
- * 
- * When a user manually marks content as podcast or audiobook,
- * we store a pattern (title/artist/album) that will be used to
- * auto-filter similar content in the future.
- * 
- * Example: User marks "Chapter 5 of The Great Gatsby" as audiobook
- * -> Store pattern: "Chapter % of The Great Gatsby" (wildcard for chapter numbers)
- * -> Future chapters of this book are auto-filtered
- */''',
-              '''/**
- * Persistent user-defined content classifications.
- *
- * Marks can classify an exact title+artist pair, every matching title, or every item from an
- * artist/channel. They are used both for podcast/audiobook filtering and for the explicit
- * ALWAYS_MUSIC / NON_MUSIC tracking overrides.
- */''',
-              'manual mark class docs'
-          )
-          replace_once(
-              entity,
-              '''     * Pattern type: TITLE, ARTIST, or ALBUM.
-     * Determines which field to match against.''',
-              '''     * Pattern type: TITLE_ARTIST, TITLE, or ARTIST.
-     * Determines which fields are matched.''',
-              'manual mark pattern docs'
-          )
-          replace_once(
-              entity,
-              '''     * Content type: PODCAST or AUDIOBOOK.''',
-              '''     * Content type: PODCAST, AUDIOBOOK, ALWAYS_MUSIC, NON_MUSIC, or legacy VIDEO.''',
-              'manual mark content-type docs'
-          )
-
-          # Static assertions for the reviewed edge cases before invoking Gradle.
-          service_text = Path(service).read_text()
-          assert 'if (isAppPreferenceCacheInitialized && packageName in cachedAllKnownPackages) return false' in service_text
-          assert 'track.duration?.takeIf { it > 0L } ?: getTrackDurationFromMetadata(track.id)' in service_text
-          assert 'first()?.duration\n                                ?: getTrackDurationFromMetadata(trackId)' not in service_text
-          assert 'first()?.duration\n                    ?: getTrackDurationFromMetadata(trackId)' not in service_text
-          vm_text = Path(vm).read_text()
-          assert 'removeExistingMatchesFromHistory(cleanTitle, cleanArtist)' in vm_text
-          history_text = Path(history).read_text()
-          assert 'onMarkContent?.invoke("NON_MUSIC", true)' in history_text
-          assert 'onMarkArtist?.invoke("NON_MUSIC", true)' in history_text
-          PY
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpkZWYgcmVwbGFjZV9vbmNlKHBhdGgsIG9sZCwgbmV3LCBsYWJlbCk6CiAgICBwID0gUGF0aChwYXRoKQogICAgdGV4dCA9IHAucmVhZF90ZXh0KCkKICAgIGNvdW50ID0gdGV4dC5jb3VudChvbGQpCiAgICBpZiBjb3VudCAhPSAxOgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJ7bGFiZWx9OiBleHBlY3RlZCBleGFjdGx5IG9uZSBtYXRjaCwgZm91bmQge2NvdW50fSIpCiAgICBwLndyaXRlX3RleHQodGV4dC5yZXBsYWNlKG9sZCwgbmV3LCAxKSkKCmRlZiByZXBsYWNlX2FsbF9jaGVja2VkKHBhdGgsIG9sZCwgbmV3LCBtaW5pbXVtLCBsYWJlbCk6CiAgICBwID0gUGF0aChwYXRoKQogICAgdGV4dCA9IHAucmVhZF90ZXh0KCkKICAgIGNvdW50ID0gdGV4dC5jb3VudChvbGQpCiAgICBpZiBjb3VudCA8IG1pbmltdW06CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdChmIntsYWJlbH06IGV4cGVjdGVkIGF0IGxlYXN0IHttaW5pbXVtfSBtYXRjaGVzLCBmb3VuZCB7Y291bnR9IikKICAgIHAud3JpdGVfdGV4dCh0ZXh0LnJlcGxhY2Uob2xkLCBuZXcpKQoKc2VydmljZSA9ICdhcHAvc3JjL21haW4vamF2YS9tZS9hdmluYXMvdGVtcG8vc2VydmljZS9NdXNpY1RyYWNraW5nU2VydmljZS5rdCcKcmVwbGFjZV9vbmNlKAogICAgc2VydmljZSwKICAgICIiIiAgICAgICAgaWYgKGlzSW5CbG9ja2VkQXBwcyhwYWNrYWdlTmFtZSkpIHJldHVybiBmYWxzZQogICAgICAgIGlmIChpc0luRW5hYmxlZEFwcHMocGFja2FnZU5hbWUpKSByZXR1cm4gdHJ1ZQogICAgICAgIHZhbCBub3RpZmljYXRpb24gPSBzYm4ubm90aWZpY2F0aW9uIiIiLAogICAgIiIiICAgICAgICBpZiAoaXNJbkJsb2NrZWRBcHBzKHBhY2thZ2VOYW1lKSkgcmV0dXJuIGZhbHNlCiAgICAgICAgaWYgKGlzSW5FbmFibGVkQXBwcyhwYWNrYWdlTmFtZSkpIHJldHVybiB0cnVlCiAgICAgICAgLy8gQSBwYWNrYWdlIGFscmVhZHkgcHJlc2VudCBpbiBSb29tIGJ1dCBuZWl0aGVyIGVuYWJsZWQgbm9yIGJsb2NrZWQgaXMgZXhwbGljaXRseQogICAgICAgIC8vIGRpc2FibGVkIGJ5IHRoZSB1c2VyLiBEbyBub3QgbGV0IG5vdGlmaWNhdGlvbiBoZXVyaXN0aWNzIG9wdCBpdCBiYWNrIGluLgogICAgICAgIGlmIChpc0FwcFByZWZlcmVuY2VDYWNoZUluaXRpYWxpemVkICYmIHBhY2thZ2VOYW1lIGluIGNhY2hlZEFsbEtub3duUGFja2FnZXMpIHJldHVybiBmYWxzZQogICAgICAgIHZhbCBub3RpZmljYXRpb24gPSBzYm4ubm90aWZpY2F0aW9uIiIiLAogICAgJ25vdGlmaWNhdGlvbiBleHBsaWNpdC1kaXNhYmxlIGd1YXJkJwopCnJlcGxhY2VfYWxsX2NoZWNrZWQoCiAgICBzZXJ2aWNlLAogICAgJ3RyYWNrUmVwb3NpdG9yeS5nZXRCeUlkKHRyYWNrSWQpLmZpcnN0KCk/LmR1cmF0aW9uJywKICAgICd0cmFja1JlcG9zaXRvcnkuZ2V0QnlJZCh0cmFja0lkKS5maXJzdCgpPy5kdXJhdGlvbj8udGFrZUlmIHsgaXQgPiAwTCB9JywKICAgIDIsCiAgICAnemVyby1kdXJhdGlvbiBEQiBmYWxsYmFjaycKKQpyZXBsYWNlX29uY2UoCiAgICBzZXJ2aWNlLAogICAgJ3ZhbCBkdXJhdGlvbiA9IHRyYWNrLmR1cmF0aW9uID86IGdldFRyYWNrRHVyYXRpb25Gcm9tTWV0YWRhdGEodHJhY2suaWQpJywKICAgICd2YWwgZHVyYXRpb24gPSB0cmFjay5kdXJhdGlvbj8udGFrZUlmIHsgaXQgPiAwTCB9ID86IGdldFRyYWNrRHVyYXRpb25Gcm9tTWV0YWRhdGEodHJhY2suaWQpJywKICAgICdub3RpZmljYXRpb24gZHVyYXRpb24gZmFsbGJhY2snCikKCnZtID0gJ2FwcC9zcmMvbWFpbi9qYXZhL21lL2F2aW5hcy90ZW1wby91aS9zZXR0aW5ncy9BcHBQcmVmZXJlbmNlVmlld01vZGVsLmt0JwpyZXBsYWNlX29uY2UoCiAgICB2bSwKICAgICIiImltcG9ydCBtZS5hdmluYXMudGVtcG8uZGF0YS5yZXBvc2l0b3J5LkFwcFByZWZlcmVuY2VSZXBvc2l0b3J5CmltcG9ydCBqYXZheC5pbmplY3QuSW5qZWN0IiIiLAogICAgIiIiaW1wb3J0IG1lLmF2aW5hcy50ZW1wby5kYXRhLnJlcG9zaXRvcnkuQXBwUHJlZmVyZW5jZVJlcG9zaXRvcnkKaW1wb3J0IG1lLmF2aW5hcy50ZW1wby5kYXRhLnJlcG9zaXRvcnkuTGlzdGVuaW5nUmVwb3NpdG9yeQppbXBvcnQgbWUuYXZpbmFzLnRlbXBvLmRhdGEucmVwb3NpdG9yeS5TdGF0c1JlcG9zaXRvcnkKaW1wb3J0IG1lLmF2aW5hcy50ZW1wby5kYXRhLnJlcG9zaXRvcnkuVHJhY2tSZXBvc2l0b3J5CmltcG9ydCBqYXZheC5pbmplY3QuSW5qZWN0IiIiLAogICAgJ3NldHRpbmdzIHJlcG9zaXRvcnkgaW1wb3J0cycKKQpyZXBsYWNlX29uY2UoCiAgICB2bSwKICAgICIiIiAgICBwcml2YXRlIHZhbCByZXBvc2l0b3J5OiBBcHBQcmVmZXJlbmNlUmVwb3NpdG9yeSwKICAgIHByaXZhdGUgdmFsIG1hbnVhbENvbnRlbnRNYXJrRGFvOiBNYW51YWxDb250ZW50TWFya0RhbywKICAgIEBwYXJhbTpBcHBsaWNhdGlvbkNvbnRleHQgcHJpdmF0ZSB2YWwgY29udGV4dDogQ29udGV4dCIiIiwKICAgICIiIiAgICBwcml2YXRlIHZhbCByZXBvc2l0b3J5OiBBcHBQcmVmZXJlbmNlUmVwb3NpdG9yeSwKICAgIHByaXZhdGUgdmFsIG1hbnVhbENvbnRlbnRNYXJrRGFvOiBNYW51YWxDb250ZW50TWFya0RhbywKICAgIHByaXZhdGUgdmFsIHRyYWNrUmVwb3NpdG9yeTogVHJhY2tSZXBvc2l0b3J5LAogICAgcHJpdmF0ZSB2YWwgbGlzdGVuaW5nUmVwb3NpdG9yeTogTGlzdGVuaW5nUmVwb3NpdG9yeSwKICAgIHByaXZhdGUgdmFsIHN0YXRzUmVwb3NpdG9yeTogU3RhdHNSZXBvc2l0b3J5LAogICAgQHBhcmFtOkFwcGxpY2F0aW9uQ29udGV4dCBwcml2YXRlIHZhbCBjb250ZXh0OiBDb250ZXh0IiIiLAogICAgJ3NldHRpbmdzIGNvbnN0cnVjdG9yIGRlcGVuZGVuY2llcycKKQpyZXBsYWNlX29uY2UoCiAgICB2bSwKICAgICIiIiAgICAgICAgICAgIG1hbnVhbENvbnRlbnRNYXJrRGFvLmluc2VydE1hcmsoCiAgICAgICAgICAgICAgICBNYW51YWxDb250ZW50TWFyaygKICAgICAgICAgICAgICAgICAgICB0YXJnZXRUcmFja0lkID0gMEwsCiAgICAgICAgICAgICAgICAgICAgcGF0dGVyblR5cGUgPSBwYXR0ZXJuVHlwZSwKICAgICAgICAgICAgICAgICAgICBvcmlnaW5hbFRpdGxlID0gY2xlYW5UaXRsZSwKICAgICAgICAgICAgICAgICAgICBvcmlnaW5hbEFydGlzdCA9IGNsZWFuQXJ0aXN0LAogICAgICAgICAgICAgICAgICAgIHBhdHRlcm5WYWx1ZSA9IHBhdHRlcm5WYWx1ZSwKICAgICAgICAgICAgICAgICAgICBjb250ZW50VHlwZSA9IGNvbnRlbnRUeXBlLAogICAgICAgICAgICAgICAgICAgIG1hcmtlZEF0ID0gU3lzdGVtLmN1cnJlbnRUaW1lTWlsbGlzKCkKICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgKQogICAgICAgIH0KICAgIH0KCiAgICBmdW4gcmVtb3ZlQ29udGVudE92ZXJyaWRlIiIiLAogICAgIiIiICAgICAgICAgICAgbWFudWFsQ29udGVudE1hcmtEYW8uaW5zZXJ0TWFyaygKICAgICAgICAgICAgICAgIE1hbnVhbENvbnRlbnRNYXJrKAogICAgICAgICAgICAgICAgICAgIHRhcmdldFRyYWNrSWQgPSAwTCwKICAgICAgICAgICAgICAgICAgICBwYXR0ZXJuVHlwZSA9IHBhdHRlcm5UeXBlLAogICAgICAgICAgICAgICAgICAgIG9yaWdpbmFsVGl0bGUgPSBjbGVhblRpdGxlLAogICAgICAgICAgICAgICAgICAgIG9yaWdpbmFsQXJ0aXN0ID0gY2xlYW5BcnRpc3QsCiAgICAgICAgICAgICAgICAgICAgcGF0dGVyblZhbHVlID0gcGF0dGVyblZhbHVlLAogICAgICAgICAgICAgICAgICAgIGNvbnRlbnRUeXBlID0gY29udGVudFR5cGUsCiAgICAgICAgICAgICAgICAgICAgbWFya2VkQXQgPSBTeXN0ZW0uY3VycmVudFRpbWVNaWxsaXMoKQogICAgICAgICAgICAgICAgKQogICAgICAgICAgICApCgogICAgICAgICAgICAvLyBOT05fTVVTSUMgaXMgYSBjb3JyZWN0aW9uLCBub3QganVzdCBhIGZ1dHVyZSBmaWx0ZXI6IHJlbW92ZSBhbHJlYWR5LXJlY29yZGVkCiAgICAgICAgICAgIC8vIHBsYXlzIHRoYXQgbWF0Y2ggdGhlIHNhbWUgZXhhY3QgdGl0bGUvYXJ0aXN0IHJ1bGUgc28gaGlzdG9yeSBhbmQgc3RhdGlzdGljcwogICAgICAgICAgICAvLyBpbW1lZGlhdGVseSBhZ3JlZSB3aXRoIHRoZSB1c2VyJ3MgY2xhc3NpZmljYXRpb24uCiAgICAgICAgICAgIGlmICh0eXBlID09IENvbnRlbnRPdmVycmlkZVR5cGUuVklERU8pIHsKICAgICAgICAgICAgICAgIHJlbW92ZUV4aXN0aW5nTWF0Y2hlc0Zyb21IaXN0b3J5KGNsZWFuVGl0bGUsIGNsZWFuQXJ0aXN0KQogICAgICAgICAgICB9CiAgICAgICAgfQogICAgfQoKICAgIHByaXZhdGUgc3VzcGVuZCBmdW4gcmVtb3ZlRXhpc3RpbmdNYXRjaGVzRnJvbUhpc3RvcnkodGl0bGU6IFN0cmluZywgYXJ0aXN0OiBTdHJpbmcpIHsKICAgICAgICB2YWwgbWF0Y2hpbmdUcmFja0lkcyA9IHRyYWNrUmVwb3NpdG9yeS5hbGwoKS5maXJzdCgpCiAgICAgICAgICAgIC5hc1NlcXVlbmNlKCkKICAgICAgICAgICAgLmZpbHRlciB7IHRyYWNrIC0+CiAgICAgICAgICAgICAgICB3aGVuIHsKICAgICAgICAgICAgICAgICAgICB0aXRsZS5pc05vdEJsYW5rKCkgJiYgYXJ0aXN0LmlzTm90QmxhbmsoKSAtPgogICAgICAgICAgICAgICAgICAgICAgICB0cmFjay50aXRsZS5lcXVhbHModGl0bGUsIGlnbm9yZUNhc2UgPSB0cnVlKSAmJgogICAgICAgICAgICAgICAgICAgICAgICAgICAgdHJhY2suYXJ0aXN0LmVxdWFscyhhcnRpc3QsIGlnbm9yZUNhc2UgPSB0cnVlKQogICAgICAgICAgICAgICAgICAgIHRpdGxlLmlzTm90QmxhbmsoKSAtPiB0cmFjay50aXRsZS5lcXVhbHModGl0bGUsIGlnbm9yZUNhc2UgPSB0cnVlKQogICAgICAgICAgICAgICAgICAgIGVsc2UgLT4gdHJhY2suYXJ0aXN0LmVxdWFscyhhcnRpc3QsIGlnbm9yZUNhc2UgPSB0cnVlKQogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9CiAgICAgICAgICAgIC5tYXAgeyBpdC5pZCB9CiAgICAgICAgICAgIC5kaXN0aW5jdCgpCiAgICAgICAgICAgIC50b0xpc3QoKQoKICAgICAgICBtYXRjaGluZ1RyYWNrSWRzLmZvckVhY2ggeyB0cmFja0lkIC0+CiAgICAgICAgICAgIGxpc3RlbmluZ1JlcG9zaXRvcnkuZGVsZXRlQnlUcmFja0lkKHRyYWNrSWQpCiAgICAgICAgfQogICAgICAgIGlmIChtYXRjaGluZ1RyYWNrSWRzLmlzTm90RW1wdHkoKSkgewogICAgICAgICAgICBzdGF0c1JlcG9zaXRvcnkuaW52YWxpZGF0ZUNhY2hlKCkKICAgICAgICB9CiAgICB9CgogICAgZnVuIHJlbW92ZUNvbnRlbnRPdmVycmlkZSIiIiwKICAgICdyZXRyb2FjdGl2ZSBOT05fTVVTSUMgY2xlYW51cCcKKQoKc2NyZWVuID0gJ2FwcC9zcmMvbWFpbi9qYXZhL21lL2F2aW5hcy90ZW1wby91aS9zZXR0aW5ncy9TdXBwb3J0ZWRBcHBzU2NyZWVuLmt0JwpyZXBsYWNlX29uY2UoCiAgICBzY3JlZW4sCiAgICAnc3VidGl0bGUgPSAiTmV2ZXIgaW5jbHVkZSBtYXRjaGluZyBtZWRpYSBpbiBtdXNpYyBoaXN0b3J5IG9yIHN0YXRzIiwnLAogICAgJ3N1YnRpdGxlID0gIlJlbW92ZSBleGlzdGluZyBtYXRjaGVzIGFuZCBleGNsdWRlIGZ1dHVyZSBwbGF5cyBmcm9tIGhpc3RvcnkgYW5kIHN0YXRzIiwnLAogICAgJ3NldHRpbmdzIE5PTl9NVVNJQyBleHBsYW5hdGlvbicKKQoKaGlzdG9yeSA9ICdhcHAvc3JjL21haW4vamF2YS9tZS9hdmluYXMvdGVtcG8vdWkvaGlzdG9yeS9IaXN0b3J5U2NyZWVuLmt0JwpyZXBsYWNlX29uY2UoCiAgICBoaXN0b3J5LAogICAgIiIiICAgICAgICAgICAgKQoKICAgICAgICAgICAgSG9yaXpvbnRhbERpdmlkZXIoY29sb3IgPSBDb2xvci5HcmF5LmNvcHkoYWxwaGEgPSAwLjJmKSwgbW9kaWZpZXIgPSBNb2RpZmllci5wYWRkaW5nKHZlcnRpY2FsID0gNC5kcCkpIiIiLAogICAgIiIiICAgICAgICAgICAgKQogICAgICAgICAgICBEcm9wZG93bk1lbnVJdGVtKAogICAgICAgICAgICAgICAgdGV4dCA9IHsKICAgICAgICAgICAgICAgICAgICBDb2x1bW4gewogICAgICAgICAgICAgICAgICAgICAgICBUZXh0KCJJdCdzIHZpZGVvIC8gbm9uLW11c2ljIiwgY29sb3IgPSBDb2xvci5XaGl0ZSkKICAgICAgICAgICAgICAgICAgICAgICAgVGV4dCgKICAgICAgICAgICAgICAgICAgICAgICAgICAgICJSZW1vdmUgZXhpc3RpbmcgcGxheXMgYW5kIGJsb2NrIGZ1dHVyZSBtYXRjaGVzIiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNvbG9yID0gQ29sb3IuR3JheSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHN0eWxlID0gTWF0ZXJpYWxUaGVtZS50eXBvZ3JhcGh5LmxhYmVsU21hbGwKICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICBvbkNsaWNrID0gewogICAgICAgICAgICAgICAgICAgIG9uTWFya0NvbnRlbnQ/Lmludm9rZSgiTk9OX01VU0lDIiwgdHJ1ZSkKICAgICAgICAgICAgICAgICAgICBzaG93TWVudSA9IGZhbHNlCiAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgbGVhZGluZ0ljb24gPSB7CiAgICAgICAgICAgICAgICAgICAgSWNvbigKICAgICAgICAgICAgICAgICAgICAgICAgaW1hZ2VWZWN0b3IgPSBJY29ucy5EZWZhdWx0LlBsYXlDaXJjbGUsCiAgICAgICAgICAgICAgICAgICAgICAgIGNvbnRlbnREZXNjcmlwdGlvbiA9IG51bGwsCiAgICAgICAgICAgICAgICAgICAgICAgIHRpbnQgPSBUZW1wb1JlZAogICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgKQoKICAgICAgICAgICAgSG9yaXpvbnRhbERpdmlkZXIoY29sb3IgPSBDb2xvci5HcmF5LmNvcHkoYWxwaGEgPSAwLjJmKSwgbW9kaWZpZXIgPSBNb2RpZmllci5wYWRkaW5nKHZlcnRpY2FsID0gNC5kcCkpIiIiLAogICAgJ2hpc3RvcnkgdHJhY2sgTk9OX01VU0lDIGFjdGlvbicKKQpyZXBsYWNlX29uY2UoCiAgICBoaXN0b3J5LAogICAgIiIiICAgICAgICAgICAgKQogICAgICAgIH0KICAgIH0KfQoKZnVuIGZvcm1hdFJlbGF0aXZlVGltZSIiIiwKICAgICIiIiAgICAgICAgICAgICkKICAgICAgICAgICAgRHJvcGRvd25NZW51SXRlbSgKICAgICAgICAgICAgICAgIHRleHQgPSB7CiAgICAgICAgICAgICAgICAgICAgQ29sdW1uIHsKICAgICAgICAgICAgICAgICAgICAgICAgVGV4dCgiVHJlYXQgJHtpdGVtLmFydGlzdH0gYXMgdmlkZW8gLyBub24tbXVzaWMiLCBjb2xvciA9IFRlbXBvUmVkKQogICAgICAgICAgICAgICAgICAgICAgICBUZXh0KAogICAgICAgICAgICAgICAgICAgICAgICAgICAgIlJlbW92ZSBhbGwgbWF0Y2hpbmcgaGlzdG9yeSBhbmQgYmxvY2sgZnV0dXJlIHBsYXlzIiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGNvbG9yID0gQ29sb3IuR3JheSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHN0eWxlID0gTWF0ZXJpYWxUaGVtZS50eXBvZ3JhcGh5LmxhYmVsU21hbGwKICAgICAgICAgICAgICAgICAgICAgICAgKQogICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICBvbkNsaWNrID0gewogICAgICAgICAgICAgICAgICAgIG9uTWFya0FydGlzdD8uaW52b2tlKCJOT05fTVVTSUMiLCB0cnVlKQogICAgICAgICAgICAgICAgICAgIHNob3dNZW51ID0gZmFsc2UKICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICBsZWFkaW5nSWNvbiA9IHsKICAgICAgICAgICAgICAgICAgICBJY29uKAogICAgICAgICAgICAgICAgICAgICAgICBpbWFnZVZlY3RvciA9IEljb25zLkRlZmF1bHQuQ2xvc2UsCiAgICAgICAgICAgICAgICAgICAgICAgIGNvbnRlbnREZXNjcmlwdGlvbiA9IG51bGwsCiAgICAgICAgICAgICAgICAgICAgICAgIHRpbnQgPSBUZW1wb1JlZAogICAgICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgKQogICAgICAgIH0KICAgIH0KfQoKZnVuIGZvcm1hdFJlbGF0aXZlVGltZSIiIiwKICAgICdoaXN0b3J5IGFydGlzdCBOT05fTVVTSUMgYWN0aW9uJwopCgplbnRpdHkgPSAnYXBwL3NyYy9tYWluL2phdmEvbWUvYXZpbmFzL3RlbXBvL2RhdGEvbG9jYWwvZW50aXRpZXMvTWFudWFsQ29udGVudE1hcmsua3QnCnJlcGxhY2Vfb25jZSgKICAgIGVudGl0eSwKICAgICIiIi8qKiAKICogTWFudWFsIGNvbnRlbnQgbWFya3MgZm9yIHVzZXItZGVmaW5lZCBwb2RjYXN0L2F1ZGlvYm9vayBmaWx0ZXJpbmcuCiAqIAogKiBXaGVuIGEgdXNlciBtYW51YWxseSBtYXJrcyBjb250ZW50IGFzIHBvZGNhc3Qgb3IgYXVkaW9ib29rLAogKiB3ZSBzdG9yZSBhIHBhdHRlcm4gKHRpdGxlL2FydGlzdC9hbGJ1bSkgdGhhdCB3aWxsIGJlIHVzZWQgdG8KICogYXV0by1maWx0ZXIgc2ltaWxhciBjb250ZW50IGluIHRoZSBmdXR1cmUuCiAqIAogKiBFeGFtcGxlOiBVc2VyIG1hcmtzICJDaGFwdGVyIDUgb2YgVGhlIEdyZWF0IEdhdHNieSIgYXMgYXVkaW9ib29rCiAqIC0+IFN0b3JlIHBhdHRlcm46ICJDaGFwdGVyICUgb2YgVGhlIEdyZWF0IEdhdHNieSIgKHdpbGRjYXJkIGZvciBjaGFwdGVyIG51bWJlcnMpCiAqIC0+IEZ1dHVyZSBjaGFwdGVycyBvZiB0aGlzIGJvb2sgYXJlIGF1dG8tZmlsdGVyZWQKICovIiIiLnJlcGxhY2UoIi8qKiAiLCIvKioiKSwKICAgICIiIi8qKiAKICogUGVyc2lzdGVudCB1c2VyLWRlZmluZWQgY29udGVudCBjbGFzc2lmaWNhdGlvbnMuCiAqCiAqIE1hcmtzIGNhbiBjbGFzc2lmeSBhbiBleGFjdCB0aXRsZSthcnRpc3QgcGFpciwgZXZlcnkgbWF0Y2hpbmcgdGl0bGUsIG9yIGV2ZXJ5IGl0ZW0gZnJvbSBhbgogKiBhcnRpc3QvY2hhbm5lbC4gVGhleSBhcmUgdXNlZCBib3RoIGZvciBwb2RjYXN0L2F1ZGlvYm9vayBmaWx0ZXJpbmcgYW5kIGZvciB0aGUgZXhwbGljaXQKICogQUxXQVlTX01VU0lDIC8gTk9OX01VU0lDIHRyYWNraW5nIG92ZXJyaWRlcy4KICovIiIiLnJlcGxhY2UoIi8qKiAiLCIvKioiKSwKICAgICdtYW51YWwgbWFyayBjbGFzcyBkb2NzJwopCnJlcGxhY2Vfb25jZSgKICAgIGVudGl0eSwKICAgICIiIiAgICAgKiBQYXR0ZXJuIHR5cGU6IFRJVExFLCBBUlRJU1QsIG9yIEFMQlVNLgogICAgICogRGV0ZXJtaW5lcyB3aGljaCBmaWVsZCB0byBtYXRjaCBhZ2FpbnN0LiIiIiwKICAgICIiIiAgICAgKiBQYXR0ZXJuIHR5cGU6IFRJVExFX0FSVElTVCwgVElUTEUsIG9yIEFSVElTVC4KICAgICAqIERldGVybWluZXMgd2hpY2ggZmllbGRzIGFyZSBtYXRjaGVkLiIiIiwKICAgICdtYW51YWwgbWFyayBwYXR0ZXJuIGRvY3MnCikKcmVwbGFjZV9vbmNlKAogICAgZW50aXR5LAogICAgIiIiICAgICAqIENvbnRlbnQgdHlwZTogUE9EQ0FTVCBvciBBVURJT0JPT0suIiIiLAogICAgIiIiICAgICAqIENvbnRlbnQgdHlwZTogUE9EQ0FTVCwgQVVESU9CT09LLCBBTFdBWVNfTVVTSUMsIE5PTl9NVVNJQywgb3IgbGVnYWN5IFZJREVPLiIiIiwKICAgICdtYW51YWwgbWFyayBjb250ZW50LXR5cGUgZG9jcycKKQoKc2VydmljZV90ZXh0ID0gUGF0aChzZXJ2aWNlKS5yZWFkX3RleHQoKQphc3NlcnQgJ2lmIChpc0FwcFByZWZlcmVuY2VDYWNoZUluaXRpYWxpemVkICYmIHBhY2thZ2VOYW1lIGluIGNhY2hlZEFsbEtub3duUGFja2FnZXMpIHJldHVybiBmYWxzZScgaW4gc2VydmljZV90ZXh0CmFzc2VydCAndHJhY2suZHVyYXRpb24/LnRha2VJZiB7IGl0ID4gMEwgfSA/OiBnZXRUcmFja0R1cmF0aW9uRnJvbU1ldGFkYXRhKHRyYWNrLmlkKScgaW4gc2VydmljZV90ZXh0CmFzc2VydCAnZmlyc3QoKT8uZHVyYXRpb25cbiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgPzogZ2V0VHJhY2tEdXJhdGlvbkZyb21NZXRhZGF0YSh0cmFja0lkKScgbm90IGluIHNlcnZpY2VfdGV4dAphc3NlcnQgJ2ZpcnN0KCk/LmR1cmF0aW9uXG4gICAgICAgICAgICAgICAgICAgID86IGdldFRyYWNrRHVyYXRpb25Gcm9tTWV0YWRhdGEodHJhY2tJZCknIG5vdCBpbiBzZXJ2aWNlX3RleHQKdm1fdGV4dCA9IFBhdGgodm0pLnJlYWRfdGV4dCgpCmFzc2VydCAncmVtb3ZlRXhpc3RpbmdNYXRjaGVzRnJvbUhpc3RvcnkoY2xlYW5UaXRsZSwgY2xlYW5BcnRpc3QpJyBpbiB2bV90ZXh0Cmhpc3RvcnlfdGV4dCA9IFBhdGgoaGlzdG9yeSkucmVhZF90ZXh0KCkKYXNzZXJ0ICdvbk1hcmtDb250ZW50Py5pbnZva2UoIk5PTl9NVVNJQyIsIHRydWUpJyBpbiBoaXN0b3J5X3RleHQKYXNzZXJ0ICdvbk1hcmtBcnRpc3Q/Lmludm9rZSgiTk9OX01VU0lDIiwgdHJ1ZSknIGluIGhpc3RvcnlfdGV4dAo=' | base64 -d > /tmp/tempo_patch.py
+          python3 /tmp/tempo_patch.py
 
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
@@ -305,12 +38,11 @@ fun formatRelativeTime''',
       - name: Assemble debug
         run: ./gradlew :app:assembleDebug --stacktrace
 
-      - name: Commit verified fixes and remove temporary workflow
+      - name: Commit verified fixes
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/final-review-fix.yml
           git add app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt \
                   app/src/main/java/me/avinas/tempo/ui/settings/AppPreferenceViewModel.kt \
                   app/src/main/java/me/avinas/tempo/ui/settings/SupportedAppsScreen.kt \
