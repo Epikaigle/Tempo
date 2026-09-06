@@ -20,64 +20,20 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-
-      - name: Apply crash recovery app guard
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt')
-          text = path.read_text()
-          sentinel = 'Skipping recovered session from disabled/blocked app'
-          if sentinel in text:
-              print('Recovery guard already present')
-          else:
-              old = '''                    for (state in recoveredSessions) {
-                        val alreadySaved = try {
-                            listeningRepository.getEventsBySessionId(state.sessionId).isNotEmpty()
-                        } catch (_: Exception) { false }
-'''
-              new = '''                    for (state in recoveredSessions) {
-                        // Recovery must respect the CURRENT app preference, not the state that
-                        // existed before the process died. This direct Room read avoids a race
-                        // with the asynchronously populated in-memory app cache.
-                        val appPreference = try {
-                            appPreferenceDao.getAppPreference(state.packageName)
-                        } catch (_: Exception) { null }
-                        val disabledOrBlocked = appPreference?.let { !it.isEnabled || it.isBlocked } == true
-                        val staticallyBlockedWithoutExplicitEnable =
-                            appPreference == null && state.packageName in BLOCKED_APPS
-                        if (disabledOrBlocked || staticallyBlockedWithoutExplicitEnable) {
-                            Log.d(TAG, "Skipping recovered session from disabled/blocked app: ${state.packageName}")
-                            continue
-                        }
-
-                        val alreadySaved = try {
-                            listeningRepository.getEventsBySessionId(state.sessionId).isNotEmpty()
-                        } catch (_: Exception) { false }
-'''
-              if old not in text:
-                  raise SystemExit('Expected recovery anchor not found; refusing to patch')
-              path.write_text(text.replace(old, new, 1))
-              print('Recovery guard applied')
-          PY
-
+      - name: Apply recovery guard
+        run: python3 .github/patch_recovery.py
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Assemble debug
         run: ./gradlew :app:assembleDebug --stacktrace
-
-      - name: Commit verified recovery fix
-        if: success()
-        shell: bash
+      - name: Commit verified source fix
         run: |
           if git diff --quiet -- app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt; then
             echo "No source change to commit"
-            exit 0
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt
+            git commit -m "Respect app preferences during crash recovery"
+            git push origin HEAD:feat/configurable-tracking-rules
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt
-          git commit -m "Respect app preferences during crash recovery"
-          git push origin HEAD:feat/configurable-tracking-rules
