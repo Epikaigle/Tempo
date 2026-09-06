@@ -3,205 +3,173 @@ from pathlib import Path
 changes = 0
 
 # -----------------------------------------------------------------------------
-# History hardening:
-# - Never create a broad ARTIST rule for the unstable "Unknown Artist" placeholder.
-# - For an individual track whose artist is unknown, use a TITLE rule so the future
-#   corrected metadata does not make the user's block silently stop matching.
-# - Resolve rule precedence in Kotlin, matching the service/repository semantics and
-#   avoiding SQLite LOWER()'s ASCII-only edge cases for accented artist names.
+# 1. Re-apply the current minimum/max-duration rules at the actual Room persistence
+#    boundary. An event may wait in the batching/offline queue while enrichment learns
+#    a reliable duration or while the user changes the configured threshold.
+#    ALWAYS_MUSIC still bypasses only the maximum/content filters, not minimum listen time.
 # -----------------------------------------------------------------------------
-history_path = Path("app/src/main/java/me/avinas/tempo/ui/history/HistoryViewModel.kt")
-history = history_path.read_text()
+repo_path = Path("app/src/main/java/me/avinas/tempo/data/repository/RoomListeningRepository.kt")
+repo = repo_path.read_text()
 
-old_track_mark = '''                // 1. Save the block pattern for future content
-                val mark = me.avinas.tempo.data.local.entities.ManualContentMark(
-                    targetTrackId = trackId,
-                    patternType = "TITLE_ARTIST",
-                    originalTitle = track.title,
-                    originalArtist = track.artist,
-                    patternValue = track.title,
-                    contentType = contentType,
-                    markedAt = System.currentTimeMillis()
-                )
+old_imports = '''package me.avinas.tempo.data.repository
+
+import kotlinx.coroutines.flow.Flow
+import me.avinas.tempo.data.local.dao.ListeningEventDao
+import me.avinas.tempo.data.local.dao.ManualContentMarkDao
+import me.avinas.tempo.data.local.dao.TrackDao
+import me.avinas.tempo.data.local.entities.ListeningEvent
+import me.avinas.tempo.data.local.entities.ManualContentMark
+import javax.inject.Inject
+import javax.inject.Singleton
 '''
-new_track_mark = '''                // 1. Save the block pattern for future content. "Unknown Artist" is a
-                // transient metadata placeholder, so binding an exact TITLE_ARTIST rule to it
-                // would stop matching as soon as the real artist/channel is discovered.
-                val hasStableArtist = !me.avinas.tempo.utils.ArtistParser.isUnknownArtist(track.artist)
-                val mark = me.avinas.tempo.data.local.entities.ManualContentMark(
-                    targetTrackId = trackId,
-                    patternType = if (hasStableArtist) "TITLE_ARTIST" else "TITLE",
-                    originalTitle = track.title,
-                    originalArtist = if (hasStableArtist) track.artist else "",
-                    patternValue = track.title,
-                    contentType = contentType,
-                    markedAt = System.currentTimeMillis()
-                )
+new_imports = '''package me.avinas.tempo.data.repository
+
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.Flow
+import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
+import me.avinas.tempo.data.local.dao.ListeningEventDao
+import me.avinas.tempo.data.local.dao.ManualContentMarkDao
+import me.avinas.tempo.data.local.dao.TrackDao
+import me.avinas.tempo.data.local.entities.ListeningEvent
+import me.avinas.tempo.data.local.entities.ManualContentMark
+import me.avinas.tempo.data.preferences.TrackingRulesPreferences
+import javax.inject.Inject
+import javax.inject.Singleton
 '''
-if old_track_mark not in history:
-    raise SystemExit("Track mark anchor not found")
-history = history.replace(old_track_mark, new_track_mark, 1)
+if old_imports not in repo:
+    raise SystemExit("RoomListeningRepository imports anchor not found")
+repo = repo.replace(old_imports, new_imports, 1)
 changes += 1
 
-old_artist_start = '''                val artistName = track.artist
-
-                // 1. Save the artist-level block pattern for future content
+old_ctor = '''class RoomListeningRepository @Inject constructor(
+    private val dao: ListeningEventDao,
+    private val trackDao: TrackDao,
+    private val manualContentMarkDao: ManualContentMarkDao
+) : ListeningRepository {
 '''
-new_artist_start = '''                val artistName = track.artist
-                if (me.avinas.tempo.utils.ArtistParser.isUnknownArtist(artistName)) {
-                    _uiState.update {
-                        it.copy(
-                            feedbackMessage = "Artist/channel is unknown — use the track-level correction instead",
-                            isMarking = false
-                        )
-                    }
-                    return@launch
-                }
-
-                // 1. Save the artist-level block pattern for future content
+new_ctor = '''class RoomListeningRepository @Inject constructor(
+    private val dao: ListeningEventDao,
+    private val trackDao: TrackDao,
+    private val manualContentMarkDao: ManualContentMarkDao,
+    private val enrichedMetadataDao: EnrichedMetadataDao,
+    @param:ApplicationContext context: Context
+) : ListeningRepository {
+    private val trackingRules = TrackingRulesPreferences(context)
 '''
-if old_artist_start not in history:
-    raise SystemExit("Artist stability guard anchor not found")
-history = history.replace(old_artist_start, new_artist_start, 1)
+if old_ctor not in repo:
+    raise SystemExit("RoomListeningRepository constructor anchor not found")
+repo = repo.replace(old_ctor, new_ctor, 1)
 changes += 1
 
-old_artist_resolution = '''                val artistTracks = trackRepository.all().first()
-                    .filter { it.artist.equals(artistName, ignoreCase = true) }
-                var affectedTracks = 0
-                var protectedTracks = 0
-
-                for (artistTrack in artistTracks) {
-                    val effectiveMark = manualContentMarkDao.findMatchingMark(
-                        artistTrack.title,
-                        artistTrack.artist
-                    )
-                    val effectiveType = effectiveMark?.contentType?.uppercase()
-
-                    if (effectiveType == "ALWAYS_MUSIC") {
-'''
-new_artist_resolution = '''                val artistTracks = trackRepository.all().first()
-                    .filter { it.artist.equals(artistName, ignoreCase = true) }
-                val allMarks = manualContentMarkDao.getAllSync()
-                var affectedTracks = 0
-                var protectedTracks = 0
-
-                for (artistTrack in artistTracks) {
-                    val effectiveType = resolveEffectiveContentType(
-                        artistTrack.title,
-                        artistTrack.artist,
-                        allMarks
-                    )
-
-                    if (effectiveType == "ALWAYS_MUSIC") {
-'''
-if old_artist_resolution not in history:
-    raise SystemExit("Artist rule resolution anchor not found")
-history = history.replace(old_artist_resolution, new_artist_resolution, 1)
-changes += 1
-
-helper_anchor = '''    private suspend fun checkShouldShowCoachMark(history: List<HistoryItem>): Boolean {
-'''
-helper_code = '''    /** Resolve manual content rules exactly like the tracking service. */
-    private fun resolveEffectiveContentType(
-        title: String,
-        artist: String,
-        marks: List<me.avinas.tempo.data.local.entities.ManualContentMark>
-    ): String? {
-        val cleanTitle = title.trim()
-        val cleanArtist = artist.trim()
-
-        return marks.asSequence()
-            .mapNotNull { mark ->
-                val patternType = mark.patternType.uppercase()
-                val matches = when (patternType) {
-                    "TITLE_ARTIST" ->
-                        mark.originalTitle.equals(cleanTitle, ignoreCase = true) &&
-                            mark.originalArtist.equals(cleanArtist, ignoreCase = true)
-                    "TITLE" -> mark.originalTitle.equals(cleanTitle, ignoreCase = true)
-                    "ARTIST" -> mark.originalArtist.equals(cleanArtist, ignoreCase = true)
-                    else -> false
+old_return = '''        return when (matchingMark?.contentType?.uppercase()) {
+            "NON_MUSIC", "VIDEO" -> false
+            "ALWAYS_MUSIC" -> {
+                // Stats/history also filter by Track.contentType. Normalize the track itself
+                // so an old PODCAST/AUDIOBOOK classification cannot hide an allowed play.
+                if (track.contentType != "MUSIC") {
+                    trackDao.update(track.copy(contentType = "MUSIC"))
                 }
-                if (!matches) return@mapNotNull null
-
-                val specificity = when (patternType) {
-                    "TITLE_ARTIST" -> 3
-                    "TITLE" -> 2
-                    "ARTIST" -> 1
-                    else -> 0
-                }
-                Triple(mark, specificity, mark.markedAt)
+                true
             }
-            .maxWithOrNull(
-                compareBy<Triple<me.avinas.tempo.data.local.entities.ManualContentMark, Int, Long>> { it.second }
-                    .thenBy { it.third }
-            )
-            ?.first
-            ?.contentType
-            ?.uppercase()
-    }
-
-    private suspend fun checkShouldShowCoachMark(history: List<HistoryItem>): Boolean {
+            else -> true
+        }
 '''
-if helper_anchor not in history:
-    raise SystemExit("History helper insertion anchor not found")
-history = history.replace(helper_anchor, helper_code, 1)
-history_path.write_text(history)
-changes += 1
-
-# -----------------------------------------------------------------------------
-# Fresh-install app preference hardening. A newly-created current-version Room DB
-# has an empty app_preferences table until Manage Apps performs its seed. Empty is
-# therefore "not initialized", not an explicit user decision to disable everything.
-# Keep the original static allow/block fallbacks until real preference rows exist.
-# -----------------------------------------------------------------------------
-service_path = Path("app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt")
-service = service_path.read_text()
-
-old_cache = '''    private fun applyAppPreferenceCache(apps: List<me.avinas.tempo.data.local.entities.AppPreference>) {
-        cachedEnabledApps = apps.asSequence()
-            .filter { it.isEnabled && !it.isBlocked }
-            .map { it.packageName }
-            .toSet()
-        cachedBlockedApps = apps.asSequence()
-            .filter { it.isBlocked }
-            .map { it.packageName }
-            .toSet()
-        cachedAllKnownPackages = apps.map { it.packageName }.toSet()
-        lastAppPreferenceFetch = System.currentTimeMillis()
-        isAppPreferenceCacheInitialized = true
-    }
-'''
-new_cache = '''    private fun applyAppPreferenceCache(apps: List<me.avinas.tempo.data.local.entities.AppPreference>) {
-        lastAppPreferenceFetch = System.currentTimeMillis()
-
-        // On a fresh install the current Room schema creates app_preferences empty; the
-        // Manage Apps screen seeds it later. Treat an empty table as "not initialized" so
-        // the original static music/block lists remain the safe startup fallback instead of
-        // accidentally interpreting zero rows as an explicit decision to disable every app.
-        if (apps.isEmpty()) {
-            cachedEnabledApps = emptySet()
-            cachedBlockedApps = emptySet()
-            cachedAllKnownPackages = emptySet()
-            isAppPreferenceCacheInitialized = false
-            return
+new_return = '''        val isAlwaysMusic = when (matchingMark?.contentType?.uppercase()) {
+            "NON_MUSIC", "VIDEO" -> return false
+            "ALWAYS_MUSIC" -> {
+                // Stats/history also filter by Track.contentType. Normalize the track itself
+                // so an old PODCAST/AUDIOBOOK classification cannot hide an allowed play.
+                if (track.contentType != "MUSIC") {
+                    trackDao.update(track.copy(contentType = "MUSIC"))
+                }
+                true
+            }
+            else -> false
         }
 
-        cachedEnabledApps = apps.asSequence()
-            .filter { it.isEnabled && !it.isBlocked }
-            .map { it.packageName }
-            .toSet()
-        cachedBlockedApps = apps.asSequence()
-            .filter { it.isBlocked }
-            .map { it.packageName }
-            .toSet()
-        cachedAllKnownPackages = apps.map { it.packageName }.toSet()
-        isAppPreferenceCacheInitialized = true
-    }
+        // Minimum listening time is a counting rule, not a content-classification rule;
+        // Always Music therefore still has to meet it.
+        if (event.playDuration < trackingRules.minimumPlayDurationMs) return false
+
+        // Only use a reliable persisted/enriched duration here. event.estimatedDurationMs may
+        // come from SmartDurationEstimator and must never be treated as proof that media is long.
+        // The pre/post persistence calls around batch/offline writes mean a duration discovered
+        // while an insert is in flight is still caught.
+        if (!isAlwaysMusic) {
+            val reliableDuration = track.duration?.takeIf { it > 0L }
+                ?: enrichedMetadataDao.forTrackSync(event.track_id)?.trackDurationMs?.takeIf { it > 0L }
+            if (reliableDuration != null) {
+                val maxDuration = trackingRules.getMaxMusicDurationMs(event.source)
+                if (maxDuration != null && reliableDuration > maxDuration) return false
+            }
+        }
+
+        return true
 '''
-if old_cache not in service:
-    raise SystemExit("App preference cache anchor not found")
-service = service.replace(old_cache, new_cache, 1)
-service_path.write_text(service)
+if old_return not in repo:
+    raise SystemExit("RoomListeningRepository rule return anchor not found")
+repo = repo.replace(old_return, new_return, 1)
+repo_path.write_text(repo)
 changes += 1
 
-print(f"Applied {changes} second-pass hardening change(s)")
+# -----------------------------------------------------------------------------
+# 2. Removing an override must immediately expose/re-apply the rule underneath it.
+#    Example: Artist=NON_MUSIC, Song=ALWAYS_MUSIC. Deleting the song exception must
+#    remove its retained history immediately rather than only blocking future plays.
+# -----------------------------------------------------------------------------
+vm_path = Path("app/src/main/java/me/avinas/tempo/ui/settings/AppPreferenceViewModel.kt")
+vm = vm_path.read_text()
+
+old_remove = '''    fun removeContentOverride(mark: ManualContentMark) {
+        viewModelScope.launch {
+            manualContentMarkDao.deleteMark(mark)
+        }
+    }
+'''
+new_remove = '''    fun removeContentOverride(mark: ManualContentMark) {
+        viewModelScope.launch {
+            manualContentMarkDao.deleteMark(mark)
+
+            // Deleting a specific exception can reveal a broader rule underneath it.
+            // Re-apply that effective rule to existing local data immediately so history/stats
+            // and future tracking do not disagree until the next play.
+            val remainingMarks = manualContentMarkDao.getAllSync()
+            val affectedTracks = trackRepository.all().first().filter { track ->
+                when (mark.patternType.uppercase()) {
+                    "TITLE_ARTIST" ->
+                        track.title.equals(mark.originalTitle, ignoreCase = true) &&
+                            track.artist.equals(mark.originalArtist, ignoreCase = true)
+                    "TITLE" -> track.title.equals(mark.originalTitle, ignoreCase = true)
+                    "ARTIST" -> track.artist.equals(mark.originalArtist, ignoreCase = true)
+                    else -> false
+                }
+            }
+
+            var changed = false
+            affectedTracks.forEach { track ->
+                when (effectiveContentType(track.title, track.artist, remainingMarks)) {
+                    CONTENT_TYPE_NON_MUSIC, CONTENT_TYPE_LEGACY_VIDEO -> {
+                        listeningRepository.deleteByTrackId(track.id)
+                        changed = true
+                    }
+                    CONTENT_TYPE_ALWAYS_MUSIC -> {
+                        if (track.contentType != "MUSIC") {
+                            trackRepository.update(track.copy(contentType = "MUSIC"))
+                            changed = true
+                        }
+                    }
+                }
+            }
+
+            if (changed) statsRepository.invalidateCache()
+        }
+    }
+'''
+if old_remove not in vm:
+    raise SystemExit("removeContentOverride anchor not found")
+vm = vm.replace(old_remove, new_remove, 1)
+vm_path.write_text(vm)
+changes += 1
+
+print(f"Applied {changes} final persistence hardening change(s)")
