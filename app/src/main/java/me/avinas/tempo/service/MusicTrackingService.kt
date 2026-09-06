@@ -612,7 +612,10 @@ class MusicTrackingService : NotificationListenerService() {
                     else -> 0
                 }
             }
-            .maxByOrNull { it.second }
+            .maxWithOrNull(
+                compareBy<Pair<ManualContentMark, Int>> { it.second }
+                    .thenBy { it.first.markedAt }
+            )
             ?.first
     }
 
@@ -1068,18 +1071,37 @@ class MusicTrackingService : NotificationListenerService() {
         serviceScope.launch {
             manualContentMarkDao.getAllMarks().collect { marks ->
                 cachedManualContentMarks = marks
-                playbackStates.values.toList().forEach { session ->
-                    if (manualContentOverride(session.title, session.artist) == ContentOverrideType.VIDEO) {
-                        removeRejectedSession(session.packageName, session.title, session.artist)
-                    }
-                }
 
-                // Re-evaluate active sources after a manual rule change so an ALWAYS_MUSIC
-                // correction can start tracking immediately, and removing an override also
-                // returns the current media to normal classification without another player event.
-                // The first Room emission can arrive during onCreate before tracking components
-                // are initialized, so only rescan once the manager is ready.
+                // Manual rules are live controls. Re-evaluate the complete content policy for
+                // every active session, not only NON_MUSIC. This matters when ALWAYS_MUSIC is
+                // removed (automatic podcast/audiobook filtering becomes active again) and when
+                // a PODCAST/AUDIOBOOK mark is added while the media is already playing.
                 if (::trackingManager.isInitialized) {
+                    playbackStates.values.toList().forEach { session ->
+                        val rejectedByTrackingRule = shouldRejectByTrackingRules(
+                            session.packageName,
+                            session.title,
+                            session.artist,
+                            session.estimatedDurationMs ?: 0L
+                        )
+                        val filteredByContent = if (rejectedByTrackingRule) {
+                            false
+                        } else {
+                            shouldFilterContent(
+                                session.packageName,
+                                session.trackId?.let { localMetadataCache.get(it) },
+                                session.title,
+                                session.artist
+                            )
+                        }
+                        if (rejectedByTrackingRule || filteredByContent) {
+                            removeRejectedSession(session.packageName, session.title, session.artist)
+                        }
+                    }
+
+                    // Re-evaluate active sources after a manual rule change so an ALWAYS_MUSIC
+                    // correction can start tracking immediately, and removing an override also
+                    // returns the current media to normal classification without another player event.
                     withContext(Dispatchers.Main) {
                         rescanActiveMediaSessions()
                         activeControllers.values.toList().forEach { controller ->

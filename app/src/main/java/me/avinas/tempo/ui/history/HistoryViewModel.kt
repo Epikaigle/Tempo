@@ -782,17 +782,51 @@ class HistoryViewModel @Inject constructor(
                 }
                 userPreferencesDao.upsert(finalPrefs)
 
-                // 3. Delete ALL listening events from this artist
-                val deletedEventsCount = listeningRepository.deleteByArtist(artistName)
-                Log.d(TAG, "Deleted $deletedEventsCount listening events from artist '$artistName'")
+                // 3. Apply the artist-level correction only where it is the effective rule.
+                // A TITLE or TITLE_ARTIST ALWAYS_MUSIC exception is more specific and must win;
+                // deleting every row by artist here would otherwise destroy history that the
+                // tracking service intentionally keeps.
+                val artistTracks = trackRepository.all().first()
+                    .filter { it.artist.equals(artistName, ignoreCase = true) }
+                var affectedTracks = 0
+                var protectedTracks = 0
 
-                // 4. Delete ALL tracks from this artist
-                val deletedTracksCount = trackRepository.deleteByArtist(artistName)
-                Log.d(TAG, "Deleted $deletedTracksCount tracks from artist '$artistName'")
+                for (artistTrack in artistTracks) {
+                    val effectiveMark = manualContentMarkDao.findMatchingMark(
+                        artistTrack.title,
+                        artistTrack.artist
+                    )
+                    val effectiveType = effectiveMark?.contentType?.uppercase()
+
+                    if (effectiveType == "ALWAYS_MUSIC") {
+                        protectedTracks++
+                        continue
+                    }
+
+                    if (deleteFromHistory) {
+                        listeningRepository.deleteByTrackId(artistTrack.id)
+                        trackRepository.deleteById(artistTrack.id)
+                    } else {
+                        trackRepository.update(
+                            artistTrack.copy(contentType = effectiveType ?: contentType)
+                        )
+                    }
+                    affectedTracks++
+                }
+
+                Log.d(
+                    TAG,
+                    "Applied artist correction '$contentType' to $affectedTracks track(s) for '$artistName'; " +
+                        "preserved $protectedTracks more-specific ALWAYS_MUSIC exception(s)"
+                )
                 
                 // Show success feedback
                 val contentTypeName = contentType.lowercase().replaceFirstChar { it.uppercase() }
-                val feedbackMsg = "Blocked \"$artistName\" - removed all content from history & stats"
+                val feedbackMsg = if (protectedTracks > 0) {
+                    "Blocked \"$artistName\" - kept $protectedTracks specific Always Music exception${if (protectedTracks == 1) "" else "s"}"
+                } else {
+                    "Blocked \"$artistName\" - removed all matching content from history & stats"
+                }
                 _uiState.update { it.copy(showCoachMark = false, feedbackMessage = feedbackMsg, isMarking = false) }
 
                 // Invalidate stats cache
