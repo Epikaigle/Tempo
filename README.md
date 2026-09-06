@@ -14,105 +14,37 @@
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-purple.svg?style=flat&logo=kotlin)](https://kotlinlang.org) 
 [![Android](https://img.shields.io/badge/Android-16-green.svg?style=flat&logo=android)](https://developer.android.com) 
-[![Version](https://img.shields.io/badge/Version-4.8.3-orange.svg?style=flat)](Changelog.md)
+[![Version](https://img.shields.io/badge/Version-4.8.7-orange.svg?style=flat)](Changelog.md)
 [![License](https://img.shields.io/badge/License-AGPLv3%20Custom-blue.svg)](LICENSE) 
 [![Status](https://img.shields.io/badge/Status-Active_Development-success.svg)]()
 
 </div>
 
-Tempo is a local-first music journal and scrobbler for Android. It monitors playback across supported media players, records listening history into a local SQLite database, and computes listening analytics, heatmaps, and shareable stat cards on device without remote tracking servers.
+Tempo is a local-first music journal and scrobbler for Android. It monitors playback across media players, writes listening history to a local SQLite database, and computes listening analytics, heatmaps, and exportable stat cards on device without remote tracking servers.
 
 ---
 
 ## Screenshots
 
 <p align="center">
-  <img src="https://play-lh.googleusercontent.com/3zlapa0nBvp_Dk13V_Pme5UIH0YCMEq79CVxmjCdGfrZS4yvwUACLNWBIdEGGJXXULeeHdpL4EOhD5b8cc1r8xY=w1052-h592-rw" width="23%" alt="Home Screen" />
-  <img src="https://play-lh.googleusercontent.com/Jjet6lUeoeJeUX3i_p9Ni79_chhz9_v953MIL2gHUQbYH759hgcWc2R8ntBUgoc1aYVO64j0p6SrREPiuzC5fA=w1052-h592-rw" width="23%" alt="History Screen" />
-  <img src="https://play-lh.googleusercontent.com/XgXBvNYIELTUXfZih8ZjUuIAi424JgWPxw3PgVwaOmrkD8k-ART98fQz3k_-oR_I1zCEUqpwiO4mK1IUPi7Q=w1052-h592-rw" width="23%" alt="Spotlight Screen" />
-  <img src="https://play-lh.googleusercontent.com/pSiGJMJs0g_tUOoPp3PwDhsYK3cgLfx7MY4yf0dQdgcwIzWezMOS0KKNhJl81QWBybnjpPc5So-na78JFZhe2HU=w1052-h592-rw" width="23%" alt="Stats Screen" />
+  <img src="Screenshots/S1.png" width="23%" alt="Home Screen" />
+  <img src="Screenshots/S2.png" width="23%" alt="User Reviews" />
+  <img src="Screenshots/S3.png" width="23%" alt="Spotlight Screen" />
+  <img src="Screenshots/S4.png" width="23%" alt="Leaderboard and Stats" />
 </p>
 <p align="center">
-  <img src="https://play-lh.googleusercontent.com/gSgUEoht6IUOj4zOyc3E1dxjlKDK51yiOComMfzrhfl0QSxy55Qr6zFESQFj3st15k4sbwM9lFWjH015M_2-yQ=w1052-h592-rw" width="23%" alt="Artist Details" />
-  <img src="https://play-lh.googleusercontent.com/-iOrEIw60JbDRM9j31XU95KR4KpYPzp62QMLTDuybjSQM1Zo6bGuONalMDNLgGtYUWPWFImwQmxeEFIIIQcmtFg=w1052-h592-rw" width="23%" alt="Widget" />
-  <img src="https://play-lh.googleusercontent.com/bymaDuX5iUlA6Ls52_YpBleJpybTEedmQjR8ch-TE81yXix7NI7yXQd5tgvNAr4zVzc2Sp6bP3RFVrAzSsSRcg=w1052-h592-rw" width="23%" alt="Challenges" />
-  <img src="https://play-lh.googleusercontent.com/tmo65W63qon96XPpjddoysaHw2fwzal-_mE-Uh-MTcHqsTal0pIEfzM0Fx1UXJ9R2MQFenBPNlDf7druHTS_Ow=w1052-h592-rw" width="23%" alt="Widgets Preview" />
+  <img src="Screenshots/S5.png" width="23%" alt="Artist Details" />
+  <img src="Screenshots/S6.png" width="23%" alt="Share Stats Card" />
+  <img src="Screenshots/S7.png" width="23%" alt="Levels and Challenges" />
+  <img src="Screenshots/S8.png" width="23%" alt="Widgets Preview" />
 </p>
 
 ---
 
-## Features
-
-### Playback tracking
-- Monitors audio playback from Spotify, YouTube Music, Apple Music, Poweramp, Tidal, and 50+ other Android media players via Android `NotificationListenerService`.
-- Filters out non-music media events like podcasts, audiobooks, and system notifications.
-- Pauses scrobbling when device media volume is muted.
-- Deduplicates rapid consecutive loops of short tracks to prevent inflated play counts.
-- Handles OEM background restrictions with periodic worker checks and recovery flushes.
-
-### Analytics and detail views
-- Computes play counts, listening duration, heatmaps, and timeline trends for tracks, artists, and albums.
-- Calculates a Listening Quality Score (LQS) based on completion rate, replay frequency, and skip behavior.
-- Maps acoustic characteristics (energy, valence, danceability) to track listening mood patterns.
-- Includes a live search on ranking screens that filters by song, artist, or album with global rank indicators.
-
-### Spotlight cards and export
-- Renders exportable stat summaries with Jetpack Compose Canvas:
-  - 24-hour radial activity distribution (Circadian Rhythm).
-  - Weekday vs. weekend comparison (Weekly Pulse).
-  - Inactive tracks with days elapsed since last play (Forgotten Favorite).
-  - Monthly listening recap summaries.
-- Supports six export themes (Midnight, Rose, Aurora, Mono, Daylight, Ocean) with theme-specific geometry and typography for light and dark backgrounds.
-
-### Browser companion extension
-- Manifest V3 extension (Chrome and Firefox) that logs web playback from YouTube Music, Spotify Web, SoundCloud, Bandcamp, Apple Music Web, Deezer, and Tidal Web.
-- Measures listen time directly from HTML media element playback positions rather than wall-clock timers.
-- Syncs queued plays over local Wi-Fi to the phone's internal HTTP receiver (`POST /api/plays`), authenticated with HMAC-SHA256 signatures.
-
-### Data imports and external sources
-- Last.fm: Imports complete historical scrobbles using a split storage model (recent history in the active query set, older history in an indexed archive).
-- YouTube Music / Google Takeout: Parses multi-part ZIP exports and localized `watch-history.json` files across languages.
-- Spotify Web API: Fetches track audio features and supports an API-only polling mode to save battery when notification tracking is disabled.
-- MusicBrainz: Retrieves album cover art, release details, and genre tags.
-
-### Library corrections
-- Split merged artists directly from the artist details menu.
-- Rename artists across all associated tracks, multi-artist credits, and cached stats in a single operation.
-- Unicode normalization (NFKC) prevents Japanese, Korean, and Cyrillic artist names from collapsing into duplicate records.
-
-### Widgets and profiles
-- 7 Jetpack Glance home screen widgets, including now-playing monitors, heatmaps, daily stats, and recommendations.
-- Daily challenges, listening milestones, and XP progression handled via background WorkManager tasks.
-
-### Local storage and privacy
-- All listening events, track metadata, and aggregates remain in local SQLite databases via Room.
-- Auth credentials and API tokens reside in Android `EncryptedSharedPreferences`.
-- Optional Google Drive backup exports database snapshots with conflict resolution over HTTPS.
-
----
-
-## Tech stack
-
-| Component | Stack |
-| :--- | :--- |
-| **Language** | Kotlin 2.2 |
-| **UI** | 100% Jetpack Compose (Material 3) |
-| **Architecture** | MVVM, Clean Architecture, Hilt DI |
-| **Persistence** | Room SQLite, DataStore Preferences, EncryptedSharedPreferences |
-| **Background execution** | WorkManager, Foreground Services |
-| **Networking & Serialization** | Retrofit, OkHttp, Moshi |
-| **Charts & Widgets** | Jetpack Glance, Vico, MPAndroidChart |
-| **Image loading** | Coil |
-| **Local sync receiver** | Embedded NanoHTTPD server, ZXing QR pairing, CameraX |
-| **Browser extension** | TypeScript, Manifest V3 (Chrome & Firefox) |
-| **Target platforms** | Android 8.0+ (Min SDK 26, Target SDK 36, Compile SDK 36) |
-
----
-
-## Building the project
+## Building from source
 
 ### Prerequisites
-- Android Studio Ladybug or newer
+- Android Studio Ladybug (2024.2.1) or newer
 - JDK 17
 - Android SDK 36
 
@@ -124,7 +56,7 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
    cd Tempo
    ```
 
-2. (Optional) Configure API credentials in `local.properties` at the project root:
+2. (Optional) Supply API keys in `local.properties` at the project root:
    ```properties
    SPOTIFY_CLIENT_ID=your_spotify_client_id
    LASTFM_API_KEY=your_lastfm_api_key
@@ -143,18 +75,86 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
 
 ### Build the browser extension
 
-1. Navigate to the extension folder:
+1. Enter the extension directory and install dependencies:
    ```bash
    cd browser-extension
    npm install
    ```
 
-2. Compile Chrome and Firefox distributions:
+2. Compile extension bundles for Chrome and Firefox:
    ```bash
    npm run build
    ```
 
-3. Load the unpacked extension from `browser-extension/dist` in `chrome://extensions` (with Developer Mode enabled).
+3. Load the unpacked build from `browser-extension/dist` via `chrome://extensions` or Firefox's `about:debugging`.
+
+---
+
+## Features
+
+### Playback tracking
+- Captures playback via Android `NotificationListenerService` from Spotify, YouTube Music, Apple Music, Poweramp, Tidal, SoundCloud, and players exposing standard media sessions.
+- Filters non-music media events like podcasts, audiobooks, and system alerts.
+- Pauses tracking when media volume is muted, with an optional battery-saver cutoff below 20% battery.
+- Caps repeated loops of short tracks at three times track duration to avoid inflated counts.
+- Survives OEM background process kills via synchronous service shutdown flushes and periodic WorkManager reconciliation.
+
+### Analytics and history
+- Aggregates play counts, total listening time, heatmaps, and timeline trends for tracks, artists, and albums.
+- Calculates a Listening Quality Score (LQS) weighted by completion rates, repeat loops, and skip counts.
+- Visualizes acoustic properties (energy, valence, danceability) from track metadata to map mood distribution.
+- Home screen listening overview sheet displays hourly play volume, period comparisons, and one-tap card export.
+- History view includes persistent text search, source filtering, and custom date range pickers.
+- In-place search drawer on the rankings screen filters songs, artists, and albums with global position badges.
+
+### Spotlight cards and export
+- Renders export cards on Compose Canvas:
+  - 24-hour radial activity distribution (Circadian Rhythm).
+  - Weekday versus weekend comparison (Weekly Pulse).
+  - Inactive tracks with days elapsed since last playback (Forgotten Favorite).
+  - Monthly listening summaries.
+- Six visual export themes (Midnight, Glass, ASCII, Minimum, Daylight, Glitch), including scanlines, chromatic aberration, and artwork blur in Glitch mode.
+
+### Library management
+- Merge duplicate or split albums, preserving track history and scrobble archives under a single target album.
+- Split misassigned tracks from artist profiles into new or existing artist entries.
+- Propagate artist renames across track credits, multi-artist strings, and cached aggregates in a single database transaction.
+- Unicode NFKC normalization and script-aware diacritic folding to prevent multilingual artist names (Japanese, Korean, Cyrillic, Indic, Thai) from collapsing into duplicate records.
+
+### Data imports
+- Imports complete Last.fm scrobble histories into split storage tiers (recent history in the active query set, older history in an indexed archive).
+- Ingests Google Takeout multi-part ZIP exports and localized YouTube Music `watch-history.json` files.
+- Fetches track audio attributes from Spotify Web API, with an optional API polling mode to reduce battery draw when notification listening is turned off.
+- Resolves album cover art, release details, and genre tags from MusicBrainz.
+
+### Browser companion extension
+- Manifest V3 companion for Chrome and Firefox logging web playback from YouTube Music, Spotify Web, SoundCloud, Bandcamp, Apple Music Web, Deezer, and Tidal Web.
+- Measures listen time directly from HTML media element playback positions rather than wall-clock timers.
+- Queues plays locally in IndexedDB during network disconnections.
+- Syncs to the phone over local Wi-Fi via `POST /api/plays`, authenticated with HMAC-SHA256 signatures.
+
+### Privacy and backup
+- Stores listening events, metadata, and computed statistics locally in Room SQLite databases.
+- Secures authentication keys and API credentials in Android `EncryptedSharedPreferences`.
+- Supports automated local database exports as well as Google Drive backups via Android Credential Manager.
+
+---
+
+## Tech stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Language** | Kotlin 2.2.10 |
+| **UI** | Jetpack Compose (Material 3, Compose BOM 2025.12.01) |
+| **Architecture** | MVVM, Clean Architecture, Hilt DI |
+| **Persistence** | Room SQLite 2.8.4, DataStore, EncryptedSharedPreferences |
+| **Background jobs** | WorkManager 2.11.0, Foreground Services |
+| **Networking** | Retrofit 3.0.0, OkHttp 4.12.0, Moshi |
+| **Visualizations & Widgets** | Jetpack Glance 1.1.1, Vico 2.0.0, MPAndroidChart 3.1.0 |
+| **Image loading** | Coil 3.3.0 |
+| **Sync server** | Embedded NanoHTTPD, ZXing QR pairing, CameraX |
+| **Browser extension** | TypeScript 5.4, Manifest V3 (Chrome & Firefox), esbuild |
+| **Target platforms** | Android 8.0+ (Min SDK 26, Target SDK 36, Compile SDK 36) |
 
 ---
 
@@ -162,16 +162,16 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
 
 Contributions fixing bugs, improving translations, or enhancing documentation are welcome.
 
-1. For major changes or new features, open an issue first to discuss the approach.
-2. Ensure new code follows existing architecture patterns and passes `./gradlew build`.
-3. Submit a pull request with a description of the changes, reproduction steps for bug fixes, and screenshots for UI updates.
+1. Open an issue before submitting large architectural changes or new feature proposals.
+2. Follow existing code architecture and confirm `./gradlew test` passes.
+3. Submit a pull request with a concise summary of the change, reproduction steps for fixes, and screenshots for visual updates.
 
-See [CONTRIBUTION.md](CONTRIBUTION.md) for full guidelines.
+Review [CONTRIBUTION.md](CONTRIBUTION.md) for contribution guidelines and coding standards.
 
 ---
 
 ## License
 
-Tempo is released under a modified AGPLv3 license. You may inspect the source code, build and run the app for personal use, audit its security, and contribute improvements back to the repository. Commercial use, monetization, closed-source distribution, and rebranding are prohibited.
+Tempo is licensed under a modified AGPLv3. You may inspect the source code, compile and run the app for personal use, audit security, and contribute improvements back to the upstream repository. Commercial distribution, monetization, closed-source distribution, and rebranding are prohibited.
 
 See [LICENSE](LICENSE) for the full license text.
