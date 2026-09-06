@@ -961,6 +961,16 @@ class MusicTrackingService : NotificationListenerService() {
                 try { manualContentMarkDao.getAllSync() } catch (_: Exception) { emptyList() }
             }
 
+            // Preload app preferences before the first MediaSession/notification scan. Without
+            // this, a statically-known music app that the user explicitly disabled could be
+            // treated as enabled for a brief startup window while the async Room load runs.
+            try {
+                val initialApps = runBlocking(Dispatchers.IO) { appPreferenceDao.getAllSync() }
+                applyAppPreferenceCache(initialApps)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to preload app preferences; falling back to startup defaults", e)
+            }
+
             serviceScope.launch {
                 try {
                     val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
@@ -1035,7 +1045,21 @@ class MusicTrackingService : NotificationListenerService() {
                         (packageName in cachedAllKnownPackages && packageName !in cachedEnabledApps)
                 }
                 packagesToStop.forEach(::cleanupSessionForPackage)
-                withContext(Dispatchers.Main) { rescanActiveMediaSessions() }
+                withContext(Dispatchers.Main) {
+                    rescanActiveMediaSessions()
+
+                    // Re-evaluate active notifications as well as MediaSessions. This makes an
+                    // explicit enable (including default-blocked YouTube) effective immediately
+                    // even when the player does not post a new notification after the toggle.
+                    try {
+                        activeNotifications?.forEach { sbn ->
+                            if (isMusicNotification(sbn)) processNotificationPosted(sbn)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to re-evaluate notifications after app preference change", e)
+                    }
+                    updateServiceLifecycle()
+                }
             }
         }
     }
