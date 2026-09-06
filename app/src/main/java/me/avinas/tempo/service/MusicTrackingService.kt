@@ -1049,6 +1049,32 @@ class MusicTrackingService : NotificationListenerService() {
                         removeRejectedSession(session.packageName, session.title, session.artist)
                     }
                 }
+
+                // Re-evaluate active sources after a manual rule change so an ALWAYS_MUSIC
+                // correction can start tracking immediately, and removing an override also
+                // returns the current media to normal classification without another player event.
+                // The first Room emission can arrive during onCreate before tracking components
+                // are initialized, so only rescan once the manager is ready.
+                if (::trackingManager.isInitialized) {
+                    withContext(Dispatchers.Main) {
+                        rescanActiveMediaSessions()
+                        activeControllers.values.toList().forEach { controller ->
+                            try {
+                                processMediaControllerState(controller)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to re-evaluate MediaSession after manual rule change", e)
+                            }
+                        }
+                        try {
+                            activeNotifications?.forEach { sbn ->
+                                if (isMusicNotification(sbn)) processNotificationPosted(sbn)
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to re-evaluate notifications after manual rule change", e)
+                        }
+                        updateServiceLifecycle()
+                    }
+                }
             }
         }
     }
@@ -1845,10 +1871,18 @@ class MusicTrackingService : NotificationListenerService() {
                 (statsRepository as? RoomStatsRepository)?.onNewListeningEvent(event.timestamp)
                 refreshCoordinator.notifyNewTrackRecorded()
             }
-        } catch (_: Exception) {
-            listeningRepository.insert(event)
-            (statsRepository as? RoomStatsRepository)?.onNewListeningEvent(event.timestamp)
-            refreshCoordinator.notifyNewTrackRecorded()
+        } catch (e: Exception) {
+            Log.w(TAG, "Queue failed; using guarded immediate persistence", e)
+            val immediateResult = trackingManager.saveEventImmediate(event)
+            val savedId = immediateResult.getOrNull() ?: 0L
+            if (savedId > 0L) {
+                (statsRepository as? RoomStatsRepository)?.onNewListeningEvent(event.timestamp)
+                refreshCoordinator.notifyNewTrackRecorded()
+            } else {
+                immediateResult.exceptionOrNull()?.let {
+                    Log.e(TAG, "Guarded immediate persistence failed", it)
+                }
+            }
         }
     }
 
