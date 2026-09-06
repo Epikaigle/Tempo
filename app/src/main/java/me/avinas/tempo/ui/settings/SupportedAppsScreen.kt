@@ -1012,7 +1012,7 @@ private fun ContentOverridesDialog(
             DurationModeRow(
                 selected = type == ContentOverrideType.VIDEO,
                 title = "Video / non-music",
-                subtitle = "Never include matching media in music history or stats",
+                subtitle = "Remove existing matches and exclude future plays from history and stats",
                 onClick = { type = ContentOverrideType.VIDEO }
             )
 

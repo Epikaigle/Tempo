@@ -1109,7 +1109,7 @@ class MusicTrackingService : NotificationListenerService() {
                         if (trackId == null) continue
 
                         val reliableDuration = state.estimatedDurationMs?.takeIf { it > 0L } ?: try {
-                            trackRepository.getById(trackId).first()?.duration
+                            trackRepository.getById(trackId).first()?.duration?.takeIf { it > 0L }
                                 ?: getTrackDurationFromMetadata(trackId)
                         } catch (_: Exception) { null }
 
@@ -1315,6 +1315,9 @@ class MusicTrackingService : NotificationListenerService() {
         val packageName = sbn.packageName
         if (isInBlockedApps(packageName)) return false
         if (isInEnabledApps(packageName)) return true
+        // A package already present in Room but neither enabled nor blocked is explicitly
+        // disabled by the user. Do not let notification heuristics opt it back in.
+        if (isAppPreferenceCacheInitialized && packageName in cachedAllKnownPackages) return false
         val notification = sbn.notification
         val category = notification.category
         if (category == Notification.CATEGORY_TRANSPORT || category == Notification.CATEGORY_SERVICE) {
@@ -1437,7 +1440,7 @@ class MusicTrackingService : NotificationListenerService() {
                         }
                         val track = getOrInsertTrack(title, artist, album)
                         newSession.trackId = track.id
-                        val duration = track.duration ?: getTrackDurationFromMetadata(track.id)
+                        val duration = track.duration?.takeIf { it > 0L } ?: getTrackDurationFromMetadata(track.id)
                         if (duration != null && duration > 0) {
                             if (shouldRejectByTrackingRules(packageName, title, artist, duration)) {
                                 removeRejectedSession(packageName, title, artist)
@@ -1752,7 +1755,7 @@ class MusicTrackingService : NotificationListenerService() {
         // unknown duration merely because it was unknown at session start.
         if (session.estimatedDurationMs == null || session.estimatedDurationMs!! <= 0L) {
             val reliableDuration = try {
-                trackRepository.getById(trackId).first()?.duration
+                trackRepository.getById(trackId).first()?.duration?.takeIf { it > 0L }
                     ?: getTrackDurationFromMetadata(trackId)
             } catch (_: Exception) { null }
             if (reliableDuration != null && reliableDuration > 0L) {

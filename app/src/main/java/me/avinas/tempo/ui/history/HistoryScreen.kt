@@ -1356,6 +1356,30 @@ fun HistoryListItem(
                 }
             )
             
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text("It's video / non-music", color = Color.White)
+                        Text(
+                            "Remove existing plays and block future matches",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                },
+                onClick = {
+                    onMarkContent?.invoke("NON_MUSIC", true)
+                    showMenu = false
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.PlayCircle,
+                        contentDescription = null,
+                        tint = TempoRed
+                    )
+                }
+            )
+
             HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
             
             // Section Header: Block artist
@@ -1407,6 +1431,30 @@ fun HistoryListItem(
                     )
                 }
             )
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text("Treat ${item.artist} as video / non-music", color = TempoRed)
+                        Text(
+                            "Remove all matching history and block future plays",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                },
+                onClick = {
+                    onMarkArtist?.invoke("NON_MUSIC", true)
+                    showMenu = false
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = null,
+                        tint = TempoRed
+                    )
+                }
+            )
+
         }
     }
 }

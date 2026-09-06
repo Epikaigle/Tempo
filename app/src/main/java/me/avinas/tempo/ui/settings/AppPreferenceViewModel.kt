@@ -13,6 +13,9 @@ import me.avinas.tempo.data.local.entities.AppPreference
 import me.avinas.tempo.data.local.entities.ManualContentMark
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences.ContentOverrideType
 import me.avinas.tempo.data.repository.AppPreferenceRepository
+import me.avinas.tempo.data.repository.ListeningRepository
+import me.avinas.tempo.data.repository.StatsRepository
+import me.avinas.tempo.data.repository.TrackRepository
 import javax.inject.Inject
 
 data class AppPreferenceUiState(
@@ -29,6 +32,9 @@ data class AppPreferenceUiState(
 class AppPreferenceViewModel @Inject constructor(
     private val repository: AppPreferenceRepository,
     private val manualContentMarkDao: ManualContentMarkDao,
+    private val trackRepository: TrackRepository,
+    private val listeningRepository: ListeningRepository,
+    private val statsRepository: StatsRepository,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -175,6 +181,37 @@ class AppPreferenceViewModel @Inject constructor(
                     markedAt = System.currentTimeMillis()
                 )
             )
+
+            // NON_MUSIC is a correction, not just a future filter: remove already-recorded
+            // plays that match the same rule so history and statistics immediately agree
+            // with the user's classification.
+            if (type == ContentOverrideType.VIDEO) {
+                removeExistingMatchesFromHistory(cleanTitle, cleanArtist)
+            }
+        }
+    }
+
+    private suspend fun removeExistingMatchesFromHistory(title: String, artist: String) {
+        val matchingTrackIds = trackRepository.all().first()
+            .asSequence()
+            .filter { track ->
+                when {
+                    title.isNotBlank() && artist.isNotBlank() ->
+                        track.title.equals(title, ignoreCase = true) &&
+                            track.artist.equals(artist, ignoreCase = true)
+                    title.isNotBlank() -> track.title.equals(title, ignoreCase = true)
+                    else -> track.artist.equals(artist, ignoreCase = true)
+                }
+            }
+            .map { it.id }
+            .distinct()
+            .toList()
+
+        matchingTrackIds.forEach { trackId ->
+            listeningRepository.deleteByTrackId(trackId)
+        }
+        if (matchingTrackIds.isNotEmpty()) {
+            statsRepository.invalidateCache()
         }
     }
 
