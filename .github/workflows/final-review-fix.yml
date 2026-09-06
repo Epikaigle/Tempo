@@ -1,0 +1,320 @@
+name: Final tracking-rule review fixes
+
+on:
+  push:
+    branches: [feat/configurable-tracking-rules]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-and-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/configurable-tracking-rules
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Apply reviewed fixes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          def replace_all_checked(path, old, new, minimum, label):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count < minimum:
+                  raise SystemExit(f"{label}: expected at least {minimum} matches, found {count}")
+              p.write_text(text.replace(old, new))
+
+          service = 'app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt'
+          replace_once(
+              service,
+              '''        if (isInBlockedApps(packageName)) return false
+        if (isInEnabledApps(packageName)) return true
+        val notification = sbn.notification''',
+              '''        if (isInBlockedApps(packageName)) return false
+        if (isInEnabledApps(packageName)) return true
+        // A package already present in Room but neither enabled nor blocked is explicitly
+        // disabled by the user. Do not let notification heuristics opt it back in.
+        if (isAppPreferenceCacheInitialized && packageName in cachedAllKnownPackages) return false
+        val notification = sbn.notification''',
+              'notification explicit-disable guard'
+          )
+          replace_all_checked(
+              service,
+              'trackRepository.getById(trackId).first()?.duration',
+              'trackRepository.getById(trackId).first()?.duration?.takeIf { it > 0L }',
+              2,
+              'zero-duration DB fallback'
+          )
+          replace_once(
+              service,
+              'val duration = track.duration ?: getTrackDurationFromMetadata(track.id)',
+              'val duration = track.duration?.takeIf { it > 0L } ?: getTrackDurationFromMetadata(track.id)',
+              'notification duration fallback'
+          )
+
+          vm = 'app/src/main/java/me/avinas/tempo/ui/settings/AppPreferenceViewModel.kt'
+          replace_once(
+              vm,
+              '''import me.avinas.tempo.data.repository.AppPreferenceRepository
+import javax.inject.Inject''',
+              '''import me.avinas.tempo.data.repository.AppPreferenceRepository
+import me.avinas.tempo.data.repository.ListeningRepository
+import me.avinas.tempo.data.repository.StatsRepository
+import me.avinas.tempo.data.repository.TrackRepository
+import javax.inject.Inject''',
+              'settings repository imports'
+          )
+          replace_once(
+              vm,
+              '''    private val repository: AppPreferenceRepository,
+    private val manualContentMarkDao: ManualContentMarkDao,
+    @param:ApplicationContext private val context: Context''',
+              '''    private val repository: AppPreferenceRepository,
+    private val manualContentMarkDao: ManualContentMarkDao,
+    private val trackRepository: TrackRepository,
+    private val listeningRepository: ListeningRepository,
+    private val statsRepository: StatsRepository,
+    @param:ApplicationContext private val context: Context''',
+              'settings constructor dependencies'
+          )
+          replace_once(
+              vm,
+              '''            manualContentMarkDao.insertMark(
+                ManualContentMark(
+                    targetTrackId = 0L,
+                    patternType = patternType,
+                    originalTitle = cleanTitle,
+                    originalArtist = cleanArtist,
+                    patternValue = patternValue,
+                    contentType = contentType,
+                    markedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun removeContentOverride''',
+              '''            manualContentMarkDao.insertMark(
+                ManualContentMark(
+                    targetTrackId = 0L,
+                    patternType = patternType,
+                    originalTitle = cleanTitle,
+                    originalArtist = cleanArtist,
+                    patternValue = patternValue,
+                    contentType = contentType,
+                    markedAt = System.currentTimeMillis()
+                )
+            )
+
+            // NON_MUSIC is a correction, not just a future filter: remove already-recorded
+            // plays that match the same exact title/artist rule so history and statistics
+            // immediately agree with the user's classification.
+            if (type == ContentOverrideType.VIDEO) {
+                removeExistingMatchesFromHistory(cleanTitle, cleanArtist)
+            }
+        }
+    }
+
+    private suspend fun removeExistingMatchesFromHistory(title: String, artist: String) {
+        val matchingTrackIds = trackRepository.all().first()
+            .asSequence()
+            .filter { track ->
+                when {
+                    title.isNotBlank() && artist.isNotBlank() ->
+                        track.title.equals(title, ignoreCase = true) &&
+                            track.artist.equals(artist, ignoreCase = true)
+                    title.isNotBlank() -> track.title.equals(title, ignoreCase = true)
+                    else -> track.artist.equals(artist, ignoreCase = true)
+                }
+            }
+            .map { it.id }
+            .distinct()
+            .toList()
+
+        matchingTrackIds.forEach { trackId ->
+            listeningRepository.deleteByTrackId(trackId)
+        }
+        if (matchingTrackIds.isNotEmpty()) {
+            statsRepository.invalidateCache()
+        }
+    }
+
+    fun removeContentOverride''',
+              'retroactive NON_MUSIC cleanup'
+          )
+
+          screen = 'app/src/main/java/me/avinas/tempo/ui/settings/SupportedAppsScreen.kt'
+          replace_once(
+              screen,
+              'subtitle = "Never include matching media in music history or stats",',
+              'subtitle = "Remove existing matches and exclude future plays from history and stats",',
+              'settings NON_MUSIC explanation'
+          )
+
+          history = 'app/src/main/java/me/avinas/tempo/ui/history/HistoryScreen.kt'
+          replace_once(
+              history,
+              '''            )
+            
+            HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))''',
+              '''            )
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text("It's video / non-music", color = Color.White)
+                        Text(
+                            "Remove existing plays and block future matches",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                },
+                onClick = {
+                    onMarkContent?.invoke("NON_MUSIC", true)
+                    showMenu = false
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.PlayCircle,
+                        contentDescription = null,
+                        tint = TempoRed
+                    )
+                }
+            )
+            
+            HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))''',
+              'history track NON_MUSIC action'
+          )
+          replace_once(
+              history,
+              '''            )
+        }
+    }
+}
+
+fun formatRelativeTime''',
+              '''            )
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text("Treat ${item.artist} as video / non-music", color = TempoRed)
+                        Text(
+                            "Remove all matching history and block future plays",
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                },
+                onClick = {
+                    onMarkArtist?.invoke("NON_MUSIC", true)
+                    showMenu = false
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = null,
+                        tint = TempoRed
+                    )
+                }
+            )
+        }
+    }
+}
+
+fun formatRelativeTime''',
+              'history artist NON_MUSIC action'
+          )
+
+          entity = 'app/src/main/java/me/avinas/tempo/data/local/entities/ManualContentMark.kt'
+          replace_once(
+              entity,
+              '''/**
+ * Manual content marks for user-defined podcast/audiobook filtering.
+ * 
+ * When a user manually marks content as podcast or audiobook,
+ * we store a pattern (title/artist/album) that will be used to
+ * auto-filter similar content in the future.
+ * 
+ * Example: User marks "Chapter 5 of The Great Gatsby" as audiobook
+ * -> Store pattern: "Chapter % of The Great Gatsby" (wildcard for chapter numbers)
+ * -> Future chapters of this book are auto-filtered
+ */''',
+              '''/**
+ * Persistent user-defined content classifications.
+ *
+ * Marks can classify an exact title+artist pair, every matching title, or every item from an
+ * artist/channel. They are used both for podcast/audiobook filtering and for the explicit
+ * ALWAYS_MUSIC / NON_MUSIC tracking overrides.
+ */''',
+              'manual mark class docs'
+          )
+          replace_once(
+              entity,
+              '''     * Pattern type: TITLE, ARTIST, or ALBUM.
+     * Determines which field to match against.''',
+              '''     * Pattern type: TITLE_ARTIST, TITLE, or ARTIST.
+     * Determines which fields are matched.''',
+              'manual mark pattern docs'
+          )
+          replace_once(
+              entity,
+              '''     * Content type: PODCAST or AUDIOBOOK.''',
+              '''     * Content type: PODCAST, AUDIOBOOK, ALWAYS_MUSIC, NON_MUSIC, or legacy VIDEO.''',
+              'manual mark content-type docs'
+          )
+
+          # Static assertions for the reviewed edge cases before invoking Gradle.
+          service_text = Path(service).read_text()
+          assert 'if (isAppPreferenceCacheInitialized && packageName in cachedAllKnownPackages) return false' in service_text
+          assert 'track.duration?.takeIf { it > 0L } ?: getTrackDurationFromMetadata(track.id)' in service_text
+          assert 'first()?.duration\n                                ?: getTrackDurationFromMetadata(trackId)' not in service_text
+          assert 'first()?.duration\n                    ?: getTrackDurationFromMetadata(trackId)' not in service_text
+          vm_text = Path(vm).read_text()
+          assert 'removeExistingMatchesFromHistory(cleanTitle, cleanArtist)' in vm_text
+          history_text = Path(history).read_text()
+          assert 'onMarkContent?.invoke("NON_MUSIC", true)' in history_text
+          assert 'onMarkArtist?.invoke("NON_MUSIC", true)' in history_text
+          PY
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+
+      - name: Assemble debug
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Commit verified fixes and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/final-review-fix.yml
+          git add app/src/main/java/me/avinas/tempo/service/MusicTrackingService.kt \
+                  app/src/main/java/me/avinas/tempo/ui/settings/AppPreferenceViewModel.kt \
+                  app/src/main/java/me/avinas/tempo/ui/settings/SupportedAppsScreen.kt \
+                  app/src/main/java/me/avinas/tempo/ui/history/HistoryScreen.kt \
+                  app/src/main/java/me/avinas/tempo/data/local/entities/ManualContentMark.kt
+          git commit -m "fix: harden configurable tracking rules"
+          git push origin HEAD:feat/configurable-tracking-rules
