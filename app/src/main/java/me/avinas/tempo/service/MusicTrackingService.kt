@@ -1008,6 +1008,20 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     private fun applyAppPreferenceCache(apps: List<me.avinas.tempo.data.local.entities.AppPreference>) {
+        lastAppPreferenceFetch = System.currentTimeMillis()
+
+        // On a fresh install the current Room schema creates app_preferences empty; the
+        // Manage Apps screen seeds it later. Treat an empty table as "not initialized" so
+        // the original static music/block lists remain the safe startup fallback instead of
+        // accidentally interpreting zero rows as an explicit decision to disable every app.
+        if (apps.isEmpty()) {
+            cachedEnabledApps = emptySet()
+            cachedBlockedApps = emptySet()
+            cachedAllKnownPackages = emptySet()
+            isAppPreferenceCacheInitialized = false
+            return
+        }
+
         cachedEnabledApps = apps.asSequence()
             .filter { it.isEnabled && !it.isBlocked }
             .map { it.packageName }
@@ -1017,7 +1031,6 @@ class MusicTrackingService : NotificationListenerService() {
             .map { it.packageName }
             .toSet()
         cachedAllKnownPackages = apps.map { it.packageName }.toSet()
-        lastAppPreferenceFetch = System.currentTimeMillis()
         isAppPreferenceCacheInitialized = true
     }
 

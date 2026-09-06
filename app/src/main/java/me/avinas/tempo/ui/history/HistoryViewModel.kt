@@ -676,12 +676,15 @@ class HistoryViewModel @Inject constructor(
                     return@launch
                 }
                 
-                // 1. Save the block pattern for future content
+                // 1. Save the block pattern for future content. "Unknown Artist" is a
+                // transient metadata placeholder, so binding an exact TITLE_ARTIST rule to it
+                // would stop matching as soon as the real artist/channel is discovered.
+                val hasStableArtist = !me.avinas.tempo.utils.ArtistParser.isUnknownArtist(track.artist)
                 val mark = me.avinas.tempo.data.local.entities.ManualContentMark(
                     targetTrackId = trackId,
-                    patternType = "TITLE_ARTIST",
+                    patternType = if (hasStableArtist) "TITLE_ARTIST" else "TITLE",
                     originalTitle = track.title,
-                    originalArtist = track.artist,
+                    originalArtist = if (hasStableArtist) track.artist else "",
                     patternValue = track.title,
                     contentType = contentType,
                     markedAt = System.currentTimeMillis()
@@ -752,6 +755,15 @@ class HistoryViewModel @Inject constructor(
                 }
                 
                 val artistName = track.artist
+                if (me.avinas.tempo.utils.ArtistParser.isUnknownArtist(artistName)) {
+                    _uiState.update {
+                        it.copy(
+                            feedbackMessage = "Artist/channel is unknown — use the track-level correction instead",
+                            isMarking = false
+                        )
+                    }
+                    return@launch
+                }
 
                 // 1. Save the artist-level block pattern for future content
                 val mark = me.avinas.tempo.data.local.entities.ManualContentMark(
@@ -788,15 +800,16 @@ class HistoryViewModel @Inject constructor(
                 // tracking service intentionally keeps.
                 val artistTracks = trackRepository.all().first()
                     .filter { it.artist.equals(artistName, ignoreCase = true) }
+                val allMarks = manualContentMarkDao.getAllSync()
                 var affectedTracks = 0
                 var protectedTracks = 0
 
                 for (artistTrack in artistTracks) {
-                    val effectiveMark = manualContentMarkDao.findMatchingMark(
+                    val effectiveType = resolveEffectiveContentType(
                         artistTrack.title,
-                        artistTrack.artist
+                        artistTrack.artist,
+                        allMarks
                     )
-                    val effectiveType = effectiveMark?.contentType?.uppercase()
 
                     if (effectiveType == "ALWAYS_MUSIC") {
                         protectedTracks++
@@ -842,6 +855,45 @@ class HistoryViewModel @Inject constructor(
         }
     }
     
+    /** Resolve manual content rules exactly like the tracking service. */
+    private fun resolveEffectiveContentType(
+        title: String,
+        artist: String,
+        marks: List<me.avinas.tempo.data.local.entities.ManualContentMark>
+    ): String? {
+        val cleanTitle = title.trim()
+        val cleanArtist = artist.trim()
+
+        return marks.asSequence()
+            .mapNotNull { mark ->
+                val patternType = mark.patternType.uppercase()
+                val matches = when (patternType) {
+                    "TITLE_ARTIST" ->
+                        mark.originalTitle.equals(cleanTitle, ignoreCase = true) &&
+                            mark.originalArtist.equals(cleanArtist, ignoreCase = true)
+                    "TITLE" -> mark.originalTitle.equals(cleanTitle, ignoreCase = true)
+                    "ARTIST" -> mark.originalArtist.equals(cleanArtist, ignoreCase = true)
+                    else -> false
+                }
+                if (!matches) return@mapNotNull null
+
+                val specificity = when (patternType) {
+                    "TITLE_ARTIST" -> 3
+                    "TITLE" -> 2
+                    "ARTIST" -> 1
+                    else -> 0
+                }
+                Triple(mark, specificity, mark.markedAt)
+            }
+            .maxWithOrNull(
+                compareBy<Triple<me.avinas.tempo.data.local.entities.ManualContentMark, Int, Long>> { it.second }
+                    .thenBy { it.third }
+            )
+            ?.first
+            ?.contentType
+            ?.uppercase()
+    }
+
     private suspend fun checkShouldShowCoachMark(history: List<HistoryItem>): Boolean {
         if (history.isEmpty()) {
             Log.d(TAG, "CoachMark: Not showing - history is empty")
