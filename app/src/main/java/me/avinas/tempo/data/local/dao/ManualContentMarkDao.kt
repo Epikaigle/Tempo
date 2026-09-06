@@ -20,21 +20,23 @@ interface ManualContentMarkDao {
     fun getMarksByType(contentType: String): Flow<List<ManualContentMark>>
 
     /**
-     * Check if content matches any manual mark pattern.
-     * Supports:
-     * - TITLE_ARTIST: Exact title + artist match (case-insensitive)
-     * - ARTIST: Any track from a marked artist (case-insensitive)
-     * Returns the matching mark if found.
-     *
-     * The tracking service uses the full ordered rule list because it also supports
-     * title-only rules and specificity precedence.
+     * Resolve the effective matching rule using the same precedence as the service:
+     * TITLE_ARTIST > TITLE > ARTIST, newest rule first for equal specificity.
      */
     @Query("""
         SELECT * FROM manual_content_marks
         WHERE (pattern_type = 'TITLE_ARTIST' AND LOWER(original_title) = LOWER(:title) AND LOWER(original_artist) = LOWER(:artist))
            OR (pattern_type = 'TITLE_ARTIST' AND LOWER(pattern_value) = LOWER(:title) AND LOWER(original_artist) = LOWER(:artist))
+           OR (pattern_type = 'TITLE' AND LOWER(original_title) = LOWER(:title))
            OR (pattern_type = 'ARTIST' AND LOWER(original_artist) = LOWER(:artist))
-        ORDER BY marked_at DESC
+        ORDER BY
+            CASE pattern_type
+                WHEN 'TITLE_ARTIST' THEN 3
+                WHEN 'TITLE' THEN 2
+                WHEN 'ARTIST' THEN 1
+                ELSE 0
+            END DESC,
+            marked_at DESC
         LIMIT 1
     """)
     suspend fun findMatchingMark(title: String, artist: String): ManualContentMark?
