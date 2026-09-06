@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.entities.AppPreference
 import me.avinas.tempo.data.local.entities.ManualContentMark
+import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences.ContentOverrideType
 import me.avinas.tempo.data.repository.AppPreferenceRepository
 import me.avinas.tempo.data.repository.ListeningRepository
@@ -182,26 +183,69 @@ class AppPreferenceViewModel @Inject constructor(
                 )
             )
 
-            // NON_MUSIC is a correction, not just a future filter: remove already-recorded
-            // plays that match the same rule so history and statistics immediately agree
-            // with the user's classification.
-            if (type == ContentOverrideType.VIDEO) {
-                removeExistingMatchesFromHistory(cleanTitle, cleanArtist)
+            // Apply the correction to existing data as well as future plays. We resolve
+            // the effective rule per track so a more-specific exception is never erased
+            // by a broader artist/title rule.
+            val marks = manualContentMarkDao.getAllSync()
+            when (type) {
+                ContentOverrideType.MUSIC -> normalizeExistingMatchesAsMusic(
+                    cleanTitle,
+                    cleanArtist,
+                    marks
+                )
+                ContentOverrideType.VIDEO -> removeExistingMatchesFromHistory(
+                    cleanTitle,
+                    cleanArtist,
+                    marks
+                )
             }
         }
     }
 
-    private suspend fun removeExistingMatchesFromHistory(title: String, artist: String) {
-        val matchingTrackIds = trackRepository.all().first()
+    private suspend fun matchingTracks(title: String, artist: String): List<Track> =
+        trackRepository.all().first().filter { track ->
+            when {
+                title.isNotBlank() && artist.isNotBlank() ->
+                    track.title.equals(title, ignoreCase = true) &&
+                        track.artist.equals(artist, ignoreCase = true)
+                title.isNotBlank() -> track.title.equals(title, ignoreCase = true)
+                else -> track.artist.equals(artist, ignoreCase = true)
+            }
+        }
+
+    private suspend fun normalizeExistingMatchesAsMusic(
+        title: String,
+        artist: String,
+        marks: List<ManualContentMark>
+    ) {
+        var changed = false
+        matchingTracks(title, artist).forEach { track ->
+            if (
+                effectiveContentType(track.title, track.artist, marks) == CONTENT_TYPE_ALWAYS_MUSIC &&
+                track.contentType != "MUSIC"
+            ) {
+                trackRepository.update(track.copy(contentType = "MUSIC"))
+                changed = true
+            }
+        }
+
+        if (changed) {
+            statsRepository.invalidateCache()
+        }
+    }
+
+    private suspend fun removeExistingMatchesFromHistory(
+        title: String,
+        artist: String,
+        marks: List<ManualContentMark>
+    ) {
+        val matchingTrackIds = matchingTracks(title, artist)
             .asSequence()
             .filter { track ->
-                when {
-                    title.isNotBlank() && artist.isNotBlank() ->
-                        track.title.equals(title, ignoreCase = true) &&
-                            track.artist.equals(artist, ignoreCase = true)
-                    title.isNotBlank() -> track.title.equals(title, ignoreCase = true)
-                    else -> track.artist.equals(artist, ignoreCase = true)
-                }
+                effectiveContentType(track.title, track.artist, marks) in setOf(
+                    CONTENT_TYPE_NON_MUSIC,
+                    CONTENT_TYPE_LEGACY_VIDEO
+                )
             }
             .map { it.id }
             .distinct()
@@ -213,6 +257,48 @@ class AppPreferenceViewModel @Inject constructor(
         if (matchingTrackIds.isNotEmpty()) {
             statsRepository.invalidateCache()
         }
+    }
+
+    /**
+     * Resolve the same manual-rule precedence used by the tracking service:
+     * TITLE_ARTIST > TITLE > ARTIST, then newest rule for equal specificity.
+     */
+    private fun effectiveContentType(
+        title: String,
+        artist: String,
+        marks: List<ManualContentMark>
+    ): String? {
+        val cleanTitle = title.trim()
+        val cleanArtist = artist.trim()
+
+        return marks.asSequence()
+            .mapNotNull { mark ->
+                val patternType = mark.patternType.uppercase()
+                val matches = when (patternType) {
+                    "TITLE_ARTIST" ->
+                        mark.originalTitle.equals(cleanTitle, ignoreCase = true) &&
+                            mark.originalArtist.equals(cleanArtist, ignoreCase = true)
+                    "TITLE" -> mark.originalTitle.equals(cleanTitle, ignoreCase = true)
+                    "ARTIST" -> mark.originalArtist.equals(cleanArtist, ignoreCase = true)
+                    else -> false
+                }
+                if (!matches) return@mapNotNull null
+
+                val specificity = when (patternType) {
+                    "TITLE_ARTIST" -> 3
+                    "TITLE" -> 2
+                    "ARTIST" -> 1
+                    else -> 0
+                }
+                Triple(mark, specificity, mark.markedAt)
+            }
+            .maxWithOrNull(
+                compareBy<Triple<ManualContentMark, Int, Long>> { it.second }
+                    .thenBy { it.third }
+            )
+            ?.first
+            ?.contentType
+            ?.uppercase()
     }
 
     fun removeContentOverride(mark: ManualContentMark) {
