@@ -26,6 +26,7 @@ import androidx.core.graphics.drawable.toBitmap
 import me.avinas.tempo.MainActivity
 import me.avinas.tempo.R
 import me.avinas.tempo.data.local.entities.ListeningEvent
+import me.avinas.tempo.data.local.entities.ManualContentMark
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences.ContentOverrideType
@@ -580,6 +581,7 @@ class MusicTrackingService : NotificationListenerService() {
     @Volatile private var cachedBlockedApps: Set<String> = emptySet()
     @Volatile private var cachedAllKnownPackages: Set<String> = emptySet()
     @Volatile private var isAppPreferenceCacheInitialized: Boolean = false
+    @Volatile private var cachedManualContentMarks: List<ManualContentMark> = emptyList()
     private var lastAppPreferenceFetch: Long = 0
     private val APP_PREFERENCE_CACHE_TTL_MS = 30_000L
 
@@ -587,8 +589,39 @@ class MusicTrackingService : NotificationListenerService() {
         if (::trackingRules.isInitialized) trackingRules.minimumPlayDurationMs
         else TrackingRulesPreferences.DEFAULT_MIN_PLAY_DURATION_MS
 
+    private fun findManualContentMark(title: String, artist: String): ManualContentMark? {
+        val cleanTitle = title.trim()
+        val cleanArtist = artist.trim()
+        if (cleanTitle.isBlank() && cleanArtist.isBlank()) return null
+
+        return cachedManualContentMarks
+            .asSequence()
+            .mapNotNull { mark ->
+                val matches = when (mark.patternType.uppercase()) {
+                    "TITLE_ARTIST" ->
+                        mark.originalTitle.equals(cleanTitle, ignoreCase = true) &&
+                            mark.originalArtist.equals(cleanArtist, ignoreCase = true)
+                    "TITLE" -> mark.originalTitle.equals(cleanTitle, ignoreCase = true)
+                    "ARTIST" -> mark.originalArtist.equals(cleanArtist, ignoreCase = true)
+                    else -> false
+                }
+                if (!matches) null else mark to when (mark.patternType.uppercase()) {
+                    "TITLE_ARTIST" -> 3
+                    "TITLE" -> 2
+                    "ARTIST" -> 1
+                    else -> 0
+                }
+            }
+            .maxByOrNull { it.second }
+            ?.first
+    }
+
     private fun manualContentOverride(title: String, artist: String): ContentOverrideType? =
-        if (::trackingRules.isInitialized) trackingRules.findContentOverride(title, artist) else null
+        when (findManualContentMark(title, artist)?.contentType?.uppercase()) {
+            "ALWAYS_MUSIC" -> ContentOverrideType.MUSIC
+            "NON_MUSIC", "VIDEO" -> ContentOverrideType.VIDEO
+            else -> null
+        }
 
     private fun shouldRejectByTrackingRules(
         packageName: String,
@@ -654,11 +687,9 @@ class MusicTrackingService : NotificationListenerService() {
         val filterPodcasts = cachedFilterPodcasts
         val filterAudiobooks = cachedFilterAudiobooks
 
-        if (cachedSpotifyApiOnlyMode && packageName == "com.spotify.music") {
-            Log.d(TAG, "Filtering Spotify notification (Spotify-API-Only mode enabled)")
-            return true
-        }
-
+        // Manual classification wins before source-mode, duration/content heuristics and
+        // podcast/audiobook filtering. The duration rule itself is evaluated separately
+        // by shouldRejectByTrackingRules before this function is called.
         when (manualContentOverride(title, artist)) {
             ContentOverrideType.VIDEO -> {
                 Log.d(TAG, "Filtering manual video/non-music override: '$title' by '$artist'")
@@ -671,17 +702,25 @@ class MusicTrackingService : NotificationListenerService() {
             null -> Unit
         }
 
+        if (cachedSpotifyApiOnlyMode && packageName == "com.spotify.music") {
+            Log.d(TAG, "Filtering Spotify notification (Spotify-API-Only mode enabled)")
+            return true
+        }
+
         if (filterPodcasts && packageName in PODCAST_APPS) return true
         if (filterAudiobooks && packageName in AUDIOBOOK_APPS) return true
         if (metadata != null) {
             if (filterPodcasts && metadata.isPodcast()) return true
             if (filterAudiobooks && metadata.isAudiobook()) return true
         }
-        val manualMark = manualContentMarkDao.findMatchingMark(title, artist)
+
+        val manualMark = findManualContentMark(title, artist)
         if (manualMark != null) {
-            val shouldFilter = when (manualMark.contentType) {
+            val shouldFilter = when (manualMark.contentType.uppercase()) {
                 "PODCAST" -> filterPodcasts
                 "AUDIOBOOK" -> filterAudiobooks
+                "NON_MUSIC", "VIDEO" -> true
+                "ALWAYS_MUSIC" -> false
                 else -> false
             }
             if (shouldFilter) return true
@@ -915,19 +954,29 @@ class MusicTrackingService : NotificationListenerService() {
             manualContentMarkDao = entryPoint.manualContentMarkDao()
             appPreferenceDao = entryPoint.appPreferenceDao()
             refreshCoordinator = entryPoint.refreshCoordinator()
+
+            // Manual overrides participate in synchronous MediaSession decisions, so load the
+            // small Room table once before any session scan. A Flow keeps it fresh afterwards.
+            cachedManualContentMarks = runBlocking(Dispatchers.IO) {
+                try { manualContentMarkDao.getAllSync() } catch (_: Exception) { emptyList() }
+            }
+
             serviceScope.launch {
                 try {
                     val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
                     cachedMergeAlternateVersions = prefs.mergeAlternateVersions
+                    cachedFilterPodcasts = prefs.filterPodcasts
+                    cachedFilterAudiobooks = prefs.filterAudiobooks
+                    cachedSpotifyApiOnlyMode = prefs.spotifyApiOnlyMode
                     lastPreferencesFetch = System.currentTimeMillis()
                     refreshAppPreferenceCache()
-                    cachedAllKnownPackages = appPreferenceDao.getAllApps().first().map { it.packageName }.toSet()
-                    isAppPreferenceCacheInitialized = true
                     withContext(Dispatchers.Main) { rescanActiveMediaSessions() }
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to load initial preferences, using defaults", e)
                 }
             }
+            watchAppPreferences()
+            watchManualContentMarks()
             watchBatteryPreference()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize dependencies", e)
@@ -945,11 +994,23 @@ class MusicTrackingService : NotificationListenerService() {
         }
     }
 
+    private fun applyAppPreferenceCache(apps: List<me.avinas.tempo.data.local.entities.AppPreference>) {
+        cachedEnabledApps = apps.asSequence()
+            .filter { it.isEnabled && !it.isBlocked }
+            .map { it.packageName }
+            .toSet()
+        cachedBlockedApps = apps.asSequence()
+            .filter { it.isBlocked }
+            .map { it.packageName }
+            .toSet()
+        cachedAllKnownPackages = apps.map { it.packageName }.toSet()
+        lastAppPreferenceFetch = System.currentTimeMillis()
+        isAppPreferenceCacheInitialized = true
+    }
+
     private suspend fun refreshAppPreferenceCache() {
         try {
-            cachedEnabledApps = appPreferenceDao.getEnabledPackageNames().toSet()
-            cachedBlockedApps = appPreferenceDao.getBlockedPackageNames().toSet()
-            lastAppPreferenceFetch = System.currentTimeMillis()
+            applyAppPreferenceCache(appPreferenceDao.getAllSync())
         } catch (e: Exception) {
             Log.w(TAG, "Failed to refresh app preferences, using cached values", e)
         }
@@ -958,6 +1019,37 @@ class MusicTrackingService : NotificationListenerService() {
     private suspend fun ensureAppPreferenceCacheValid() {
         if (System.currentTimeMillis() - lastAppPreferenceFetch > APP_PREFERENCE_CACHE_TTL_MS) {
             refreshAppPreferenceCache()
+        }
+    }
+
+    private fun watchAppPreferences() {
+        serviceScope.launch {
+            appPreferenceDao.getAllApps().collect { apps ->
+                applyAppPreferenceCache(apps)
+
+                // Stop already-running sessions that the user just disabled or blocked.
+                // Conversely, an explicitly enabled app (including YouTube) immediately
+                // disappears from the static block fallback and can be picked up by rescan.
+                val packagesToStop = playbackStates.keys.filter { packageName ->
+                    packageName in cachedBlockedApps ||
+                        (packageName in cachedAllKnownPackages && packageName !in cachedEnabledApps)
+                }
+                packagesToStop.forEach(::cleanupSessionForPackage)
+                withContext(Dispatchers.Main) { rescanActiveMediaSessions() }
+            }
+        }
+    }
+
+    private fun watchManualContentMarks() {
+        serviceScope.launch {
+            manualContentMarkDao.getAllMarks().collect { marks ->
+                cachedManualContentMarks = marks
+                playbackStates.values.toList().forEach { session ->
+                    if (manualContentOverride(session.title, session.artist) == ContentOverrideType.VIDEO) {
+                        removeRejectedSession(session.packageName, session.title, session.artist)
+                    }
+                }
+            }
         }
     }
 
@@ -1006,25 +1098,49 @@ class MusicTrackingService : NotificationListenerService() {
                             listeningRepository.getEventsBySessionId(state.sessionId).isNotEmpty()
                         } catch (_: Exception) { false }
                         if (alreadySaved) continue
+
                         val estimatedPlayTime = state.totalPlayedMs
                         val cappedPlayTime = estimatedPlayTime.coerceAtMost(MAX_PLAY_DURATION_MS)
                         if (cappedPlayTime < minimumPlayDurationMs()) continue
+
                         val trackId = state.trackId ?: try {
                             getOrInsertTrack(state.trackTitle, state.trackArtist, state.trackAlbum).id
                         } catch (_: Exception) { null }
                         if (trackId == null) continue
-                        val finalPlayTime = if (state.estimatedDurationMs != null && state.estimatedDurationMs > 0) {
-                            cappedPlayTime.coerceAtMost(state.estimatedDurationMs * 3)
+
+                        val reliableDuration = state.estimatedDurationMs?.takeIf { it > 0L } ?: try {
+                            trackRepository.getById(trackId).first()?.duration
+                                ?: getTrackDurationFromMetadata(trackId)
+                        } catch (_: Exception) { null }
+
+                        if (shouldRejectByTrackingRules(
+                                state.packageName,
+                                state.trackTitle,
+                                state.trackArtist,
+                                reliableDuration ?: 0L
+                            )) continue
+
+                        val localMetadata = localMetadataCache.get(trackId)
+                        if (shouldFilterContent(
+                                state.packageName,
+                                localMetadata,
+                                state.trackTitle,
+                                state.trackArtist
+                            )) continue
+
+                        val finalPlayTime = if (reliableDuration != null && reliableDuration > 0) {
+                            cappedPlayTime.coerceAtMost(reliableDuration * 3)
                         } else cappedPlayTime
+
                         val event = ListeningEvent(
                             track_id = trackId,
                             timestamp = state.startTimestamp,
                             playDuration = finalPlayTime,
-                            completionPercentage = durationEstimator.calculateCompletionPercent(finalPlayTime, state.estimatedDurationMs, false),
+                            completionPercentage = durationEstimator.calculateCompletionPercent(finalPlayTime, reliableDuration, false),
                             source = state.packageName,
                             wasSkipped = false,
                             isReplay = false,
-                            estimatedDurationMs = state.estimatedDurationMs,
+                            estimatedDurationMs = reliableDuration,
                             pauseCount = state.pauseCount,
                             sessionId = state.sessionId,
                             endTimestamp = System.currentTimeMillis(),
@@ -1313,6 +1429,12 @@ class MusicTrackingService : NotificationListenerService() {
                 val localArtUrl = albumArtBitmap?.let { saveAlbumArtToStorage(it, title, artist) }
                 serviceScope.launch {
                     try {
+                        if (shouldFilterContent(packageName, null, title, artist)) {
+                            removeRejectedSession(packageName, title, artist)
+                            updateTrackingNotification(null, null)
+                            updateServiceLifecycle()
+                            return@launch
+                        }
                         val track = getOrInsertTrack(title, artist, album)
                         newSession.trackId = track.id
                         val duration = track.duration ?: getTrackDurationFromMetadata(track.id)
@@ -1605,6 +1727,15 @@ class MusicTrackingService : NotificationListenerService() {
             Log.d(TAG, "Skipping short play: ${playDuration}ms for '${session.title}'")
             return
         }
+
+        // Apply any rule that can already be decided before resolving the track row.
+        if (shouldRejectByTrackingRules(
+                session.packageName,
+                session.title,
+                session.artist,
+                session.estimatedDurationMs ?: 0L
+            )) return
+
         var trackId = session.trackId
         if (trackId == null) {
             var retries = 0
@@ -1615,6 +1746,34 @@ class MusicTrackingService : NotificationListenerService() {
                 catch (_: Exception) { return }
             }
         }
+
+        // A notification-only session can start with an unknown duration. Resolve a reliable
+        // DB/enrichment duration at save time and re-apply the maximum then; never reject an
+        // unknown duration merely because it was unknown at session start.
+        if (session.estimatedDurationMs == null || session.estimatedDurationMs!! <= 0L) {
+            val reliableDuration = try {
+                trackRepository.getById(trackId).first()?.duration
+                    ?: getTrackDurationFromMetadata(trackId)
+            } catch (_: Exception) { null }
+            if (reliableDuration != null && reliableDuration > 0L) {
+                session.estimatedDurationMs = reliableDuration
+            }
+        }
+
+        if (shouldRejectByTrackingRules(
+                session.packageName,
+                session.title,
+                session.artist,
+                session.estimatedDurationMs ?: 0L
+            )) return
+
+        if (shouldFilterContent(
+                session.packageName,
+                localMetadataCache.get(trackId),
+                session.title,
+                session.artist
+            )) return
+
         insertListeningEvent(trackId, session)
     }
 
