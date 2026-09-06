@@ -77,8 +77,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.data.local.entities.AppPreference
+import me.avinas.tempo.data.local.entities.ManualContentMark
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences
-import me.avinas.tempo.data.preferences.TrackingRulesPreferences.ContentOverrideRule
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences.ContentOverrideType
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences.DurationMode
 import me.avinas.tempo.ui.components.DeepOceanBackground
@@ -120,11 +120,12 @@ fun SupportedAppsScreen(
     var durationApp by remember { mutableStateOf<AppPreference?>(null) }
     var rulesRevision by remember { mutableIntStateOf(0) }
 
-    // Reading SharedPreferences is cheap; revision makes the summaries refresh immediately
-    // after a dialog saves a new rule.
+    // Reading the duration SharedPreferences is cheap; revision makes summaries refresh
+    // immediately after a duration dialog saves a new rule. Content overrides are observed
+    // directly from Room through the ViewModel.
     val minimumPlayDurationMs = remember(rulesRevision) { trackingRules.minimumPlayDurationMs }
     val defaultMaxMusicDurationMs = remember(rulesRevision) { trackingRules.defaultMaxMusicDurationMs }
-    val overrideCount = remember(rulesRevision) { trackingRules.getContentOverrides().size }
+    val overrideCount = uiState.contentOverrides.size
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -401,11 +402,10 @@ fun SupportedAppsScreen(
 
     if (showContentOverridesDialog) {
         ContentOverridesDialog(
-            trackingRules = trackingRules,
-            onDismiss = {
-                rulesRevision++
-                showContentOverridesDialog = false
-            }
+            rules = uiState.contentOverrides,
+            onAdd = viewModel::addContentOverride,
+            onDelete = viewModel::removeContentOverride,
+            onDismiss = { showContentOverridesDialog = false }
         )
     }
 }
@@ -953,13 +953,14 @@ private fun DurationFields(
 
 @Composable
 private fun ContentOverridesDialog(
-    trackingRules: TrackingRulesPreferences,
+    rules: List<ManualContentMark>,
+    onAdd: (String, String, ContentOverrideType) -> Unit,
+    onDelete: (ManualContentMark) -> Unit,
     onDismiss: () -> Unit
 ) {
     var title by remember { mutableStateOf("") }
     var artist by remember { mutableStateOf("") }
     var type by remember { mutableStateOf(ContentOverrideType.MUSIC) }
-    var rules by remember { mutableStateOf(trackingRules.getContentOverrides()) }
     val canAdd = title.isNotBlank() || artist.isNotBlank()
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
@@ -1022,11 +1023,9 @@ private fun ContentOverridesDialog(
                 TextButton(
                     enabled = canAdd,
                     onClick = {
-                        if (trackingRules.putContentOverride(title, artist, type)) {
-                            title = ""
-                            artist = ""
-                            rules = trackingRules.getContentOverrides()
-                        }
+                        onAdd(title, artist, type)
+                        title = ""
+                        artist = ""
                     }
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
@@ -1044,14 +1043,11 @@ private fun ContentOverridesDialog(
                 ) {
                     items(
                         items = rules,
-                        key = { "${it.type}:${it.title}:${it.artist}" }
+                        key = { it.id }
                     ) { rule ->
                         ContentOverrideItem(
                             rule = rule,
-                            onDelete = {
-                                trackingRules.removeContentOverride(rule)
-                                rules = trackingRules.getContentOverrides()
-                            }
+                            onDelete = { onDelete(rule) }
                         )
                     }
                 }
@@ -1070,9 +1066,10 @@ private fun ContentOverridesDialog(
 
 @Composable
 private fun ContentOverrideItem(
-    rule: ContentOverrideRule,
+    rule: ManualContentMark,
     onDelete: () -> Unit
 ) {
+    val isAlwaysMusic = rule.contentType == AppPreferenceViewModel.CONTENT_TYPE_ALWAYS_MUSIC
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1083,15 +1080,15 @@ private fun ContentOverrideItem(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                if (rule.type == ContentOverrideType.MUSIC) "Always music" else "Video / non-music",
+                if (isAlwaysMusic) "Always music" else "Video / non-music",
                 style = MaterialTheme.typography.labelMedium,
-                color = if (rule.type == ContentOverrideType.MUSIC) TempoPrimary else TextSecondary
+                color = if (isAlwaysMusic) TempoPrimary else TextSecondary
             )
             Text(
                 buildString {
-                    append(if (rule.title.isBlank()) "Any title" else rule.title)
+                    append(if (rule.originalTitle.isBlank()) "Any title" else rule.originalTitle)
                     append(" • ")
-                    append(if (rule.artist.isBlank()) "Any artist" else rule.artist)
+                    append(if (rule.originalArtist.isBlank()) "Any artist" else rule.originalArtist)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = TextPrimary,
