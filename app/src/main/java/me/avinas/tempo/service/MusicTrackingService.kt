@@ -1094,6 +1094,20 @@ class MusicTrackingService : NotificationListenerService() {
                 if (sessionPersistence.wasUncleanShutdown()) {
                     val recoveredSessions = sessionPersistence.loadSessions()
                     for (state in recoveredSessions) {
+                        // Recovery must respect the CURRENT app preference, not the state that
+                        // existed before the process died. This direct Room read avoids a race
+                        // with the asynchronously populated in-memory app cache.
+                        val appPreference = try {
+                            appPreferenceDao.getAppPreference(state.packageName)
+                        } catch (_: Exception) { null }
+                        val disabledOrBlocked = appPreference?.let { !it.isEnabled || it.isBlocked } == true
+                        val staticallyBlockedWithoutExplicitEnable =
+                            appPreference == null && state.packageName in BLOCKED_APPS
+                        if (disabledOrBlocked || staticallyBlockedWithoutExplicitEnable) {
+                            Log.d(TAG, "Skipping recovered session from disabled/blocked app: ${state.packageName}")
+                            continue
+                        }
+
                         val alreadySaved = try {
                             listeningRepository.getEventsBySessionId(state.sessionId).isNotEmpty()
                         } catch (_: Exception) { false }
