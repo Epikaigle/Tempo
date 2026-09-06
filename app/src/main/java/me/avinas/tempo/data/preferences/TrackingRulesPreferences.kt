@@ -1,15 +1,15 @@
 package me.avinas.tempo.data.preferences
 
 import android.content.Context
-import android.util.Base64
 
 /**
- * Lightweight persistent settings for tracking rules that need to be read directly
- * by [me.avinas.tempo.service.MusicTrackingService].
+ * Synchronous runtime preferences for duration-based tracking gates.
  *
- * These settings intentionally live in SharedPreferences instead of the Room user
- * preferences row so changing a threshold never requires a database migration and
- * the notification-listener service can read an updated value synchronously.
+ * Tempo's app enable/block state and manual content classifications already live in Room.
+ * Duration gates remain in a dedicated SharedPreferences file because the notification and
+ * MediaSession callbacks need to read their latest value synchronously on a hot path. This
+ * class is therefore the single source of truth only for duration rules; manual content
+ * overrides deliberately use ManualContentMark/Room instead of a second preference store.
  */
 class TrackingRulesPreferences(context: Context) {
 
@@ -19,16 +19,11 @@ class TrackingRulesPreferences(context: Context) {
         CUSTOM
     }
 
+    /** Runtime result of resolving a Room-backed manual content mark. */
     enum class ContentOverrideType {
         MUSIC,
         VIDEO
     }
-
-    data class ContentOverrideRule(
-        val title: String,
-        val artist: String,
-        val type: ContentOverrideType
-    )
 
     private val prefs = context.applicationContext.getSharedPreferences(
         PREFS_NAME,
@@ -104,117 +99,8 @@ class TrackingRulesPreferences(context: Context) {
             .apply()
     }
 
-    fun getContentOverrides(): List<ContentOverrideRule> {
-        return prefs.getStringSet(KEY_CONTENT_OVERRIDES, emptySet())
-            .orEmpty()
-            .mapNotNull(::decodeRule)
-            .sortedWith(
-                compareBy<ContentOverrideRule> { it.type.name }
-                    .thenBy { it.artist.lowercase() }
-                    .thenBy { it.title.lowercase() }
-            )
-    }
-
-    /**
-     * Adds or replaces a manual override. Empty title means "all titles" and empty
-     * artist means "all artists"; both cannot be empty at the same time.
-     */
-    fun putContentOverride(
-        title: String,
-        artist: String,
-        type: ContentOverrideType
-    ): Boolean {
-        val cleanTitle = title.trim()
-        val cleanArtist = artist.trim()
-        if (cleanTitle.isBlank() && cleanArtist.isBlank()) return false
-
-        val existing = getContentOverrides().filterNot {
-            normalized(it.title) == normalized(cleanTitle) &&
-                normalized(it.artist) == normalized(cleanArtist)
-        }
-        val updated = existing + ContentOverrideRule(cleanTitle, cleanArtist, type)
-        prefs.edit()
-            .putStringSet(KEY_CONTENT_OVERRIDES, updated.map(::encodeRule).toSet())
-            .apply()
-        return true
-    }
-
-    fun removeContentOverride(rule: ContentOverrideRule) {
-        val updated = getContentOverrides().filterNot {
-            normalized(it.title) == normalized(rule.title) &&
-                normalized(it.artist) == normalized(rule.artist) &&
-                it.type == rule.type
-        }
-        prefs.edit()
-            .putStringSet(KEY_CONTENT_OVERRIDES, updated.map(::encodeRule).toSet())
-            .apply()
-    }
-
-    /**
-     * Resolves the best manual override for a media item.
-     * Priority: exact title+artist, title-only, then artist-only.
-     */
-    fun findContentOverride(title: String, artist: String): ContentOverrideType? {
-        val titleNorm = normalized(title)
-        val artistNorm = normalized(artist)
-        if (titleNorm.isBlank() && artistNorm.isBlank()) return null
-
-        var best: Pair<Int, ContentOverrideType>? = null
-        for (rule in getContentOverrides()) {
-            val ruleTitle = normalized(rule.title)
-            val ruleArtist = normalized(rule.artist)
-
-            val titleMatches = ruleTitle.isBlank() || ruleTitle == titleNorm
-            val artistMatches = ruleArtist.isBlank() || ruleArtist == artistNorm
-            if (!titleMatches || !artistMatches) continue
-
-            val score = when {
-                ruleTitle.isNotBlank() && ruleArtist.isNotBlank() -> 3
-                ruleTitle.isNotBlank() -> 2
-                ruleArtist.isNotBlank() -> 1
-                else -> 0
-            }
-            if (best == null || score > best.first) {
-                best = score to rule.type
-            }
-        }
-        return best?.second
-    }
-
     private fun appDurationKey(packageName: String): String =
         KEY_APP_MAX_DURATION_PREFIX + packageName.trim()
-
-    private fun encodeRule(rule: ContentOverrideRule): String = buildString {
-        append(rule.type.name)
-        append('|')
-        append(encode(rule.title))
-        append('|')
-        append(encode(rule.artist))
-    }
-
-    private fun decodeRule(raw: String): ContentOverrideRule? {
-        val parts = raw.split('|', limit = 3)
-        if (parts.size != 3) return null
-        val type = runCatching { ContentOverrideType.valueOf(parts[0]) }.getOrNull() ?: return null
-        val title = decode(parts[1]) ?: return null
-        val artist = decode(parts[2]) ?: return null
-        if (title.isBlank() && artist.isBlank()) return null
-        return ContentOverrideRule(title, artist, type)
-    }
-
-    private fun encode(value: String): String = Base64.encodeToString(
-        value.toByteArray(Charsets.UTF_8),
-        Base64.NO_WRAP or Base64.URL_SAFE
-    )
-
-    private fun decode(value: String): String? = runCatching {
-        String(
-            Base64.decode(value, Base64.NO_WRAP or Base64.URL_SAFE),
-            Charsets.UTF_8
-        )
-    }.getOrNull()
-
-    private fun normalized(value: String): String = value.trim().lowercase()
 
     companion object {
         const val DEFAULT_MIN_PLAY_DURATION_MS = 25_000L
@@ -224,7 +110,6 @@ class TrackingRulesPreferences(context: Context) {
         private const val KEY_MIN_PLAY_DURATION_MS = "minimum_play_duration_ms"
         private const val KEY_DEFAULT_MAX_MUSIC_DURATION_MS = "default_max_music_duration_ms"
         private const val KEY_APP_MAX_DURATION_PREFIX = "app_max_music_duration_ms:"
-        private const val KEY_CONTENT_OVERRIDES = "content_overrides"
         private const val NO_LIMIT_VALUE = 0L
 
         private const val MIN_ALLOWED_PLAY_DURATION_MS = 1_000L
