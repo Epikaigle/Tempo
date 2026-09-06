@@ -5,6 +5,7 @@ import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
+import me.avinas.tempo.data.local.entities.ManualContentMark
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,7 +19,7 @@ class RoomListeningRepository @Inject constructor(
     override fun all(): Flow<List<ListeningEvent>> = dao.all()
     override fun recentEvents(limit: Int): Flow<List<ListeningEvent>> = dao.recentEvents(limit)
     override fun eventsInRange(startTime: Long, endTime: Long): Flow<List<ListeningEvent>> = dao.eventsInRange(startTime, endTime)
-    
+
     override suspend fun insert(event: ListeningEvent): Long = dao.insert(event)
     override suspend fun insertAll(events: List<ListeningEvent>): List<Long> = dao.insertAll(events)
     override suspend fun delete(event: ListeningEvent) = dao.delete(event)
@@ -29,50 +30,66 @@ class RoomListeningRepository @Inject constructor(
     override suspend fun getEventsInRange(startTime: Long, endTime: Long): List<ListeningEvent> = dao.getEventsInRange(startTime, endTime)
 
     /**
-     * Resolve the current Room-backed manual override using the same specificity order as
-     * MusicTrackingService. Reading synchronously here is intentional: this is the final
-     * persistence boundary for events that may have been queued before a rule changed.
+     * Resolve the current Room-backed manual override at the final persistence boundary.
+     * Events can wait in the manager's batch/offline queues, so the rule must be re-read
+     * immediately before the database write rather than relying only on the service cache.
      */
     override suspend fun shouldPersist(event: ListeningEvent): Boolean {
-        val track = trackDao.getTrackById(event.track_id) ?: return true
+        // A listening event cannot be valid without its parent track (foreign key). This also
+        // cleanly discards an event that was queued before NON_MUSIC removed the track.
+        val track = trackDao.getTrackById(event.track_id) ?: return false
         val cleanTitle = track.title.trim()
         val cleanArtist = track.artist.trim()
         if (cleanTitle.isBlank() && cleanArtist.isBlank()) return true
 
         val matchingMark = manualContentMarkDao.getAllSync()
             .asSequence()
-            .mapNotNull { mark ->
-                val patternType = mark.patternType.uppercase()
-                val matches = when (patternType) {
-                    "TITLE_ARTIST" ->
-                        mark.originalTitle.equals(cleanTitle, ignoreCase = true) &&
-                            mark.originalArtist.equals(cleanArtist, ignoreCase = true)
-                    "TITLE" -> mark.originalTitle.equals(cleanTitle, ignoreCase = true)
-                    "ARTIST" -> mark.originalArtist.equals(cleanArtist, ignoreCase = true)
-                    else -> false
-                }
-
-                if (!matches) {
-                    null
-                } else {
-                    val specificity = when (patternType) {
-                        "TITLE_ARTIST" -> 3
-                        "TITLE" -> 2
-                        "ARTIST" -> 1
-                        else -> 0
-                    }
-                    mark to specificity
-                }
-            }
-            .maxByOrNull { it.second }
+            .mapNotNull { mark -> matchingMark(mark, cleanTitle, cleanArtist) }
+            .maxWithOrNull(
+                compareBy<Triple<ManualContentMark, Int, Long>> { it.second }
+                    .thenBy { it.third }
+            )
             ?.first
 
         return when (matchingMark?.contentType?.uppercase()) {
             "NON_MUSIC", "VIDEO" -> false
+            "ALWAYS_MUSIC" -> {
+                // Stats/history also filter by Track.contentType. Normalize the track itself
+                // so an old PODCAST/AUDIOBOOK classification cannot hide an allowed play.
+                if (track.contentType != "MUSIC") {
+                    trackDao.update(track.copy(contentType = "MUSIC"))
+                }
+                true
+            }
             else -> true
         }
     }
-    
+
+    private fun matchingMark(
+        mark: ManualContentMark,
+        title: String,
+        artist: String
+    ): Triple<ManualContentMark, Int, Long>? {
+        val patternType = mark.patternType.uppercase()
+        val matches = when (patternType) {
+            "TITLE_ARTIST" ->
+                mark.originalTitle.equals(title, ignoreCase = true) &&
+                    mark.originalArtist.equals(artist, ignoreCase = true)
+            "TITLE" -> mark.originalTitle.equals(title, ignoreCase = true)
+            "ARTIST" -> mark.originalArtist.equals(artist, ignoreCase = true)
+            else -> false
+        }
+        if (!matches) return null
+
+        val specificity = when (patternType) {
+            "TITLE_ARTIST" -> 3
+            "TITLE" -> 2
+            "ARTIST" -> 1
+            else -> 0
+        }
+        return Triple(mark, specificity, mark.markedAt)
+    }
+
     // Enhanced engagement queries
     override suspend fun getSkipCountForTrack(trackId: Long): Int = dao.getSkipCountForTrack(trackId)
     override suspend fun getReplayCountForTrack(trackId: Long): Int = dao.getReplayCountForTrack(trackId)
