@@ -41,55 +41,6 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
 
 ---
 
-## Building from source
-
-### Prerequisites
-- Android Studio Ladybug (2024.2.1) or newer
-- JDK 17
-- Android SDK 36
-
-### Build the Android app
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/avinaxhroy/Tempo.git
-   cd Tempo
-   ```
-
-2. (Optional) Supply API keys in `local.properties` at the project root:
-   ```properties
-   SPOTIFY_CLIENT_ID=your_spotify_client_id
-   LASTFM_API_KEY=your_lastfm_api_key
-   GOOGLE_WEB_CLIENT_ID=your_google_client_id
-   ```
-
-3. Build the debug APK:
-   ```bash
-   ./gradlew assembleDebug
-   ```
-
-4. Run unit tests:
-   ```bash
-   ./gradlew test
-   ```
-
-### Build the browser extension
-
-1. Enter the extension directory and install dependencies:
-   ```bash
-   cd browser-extension
-   npm install
-   ```
-
-2. Compile extension bundles for Chrome and Firefox:
-   ```bash
-   npm run build
-   ```
-
-3. Load the unpacked build from `browser-extension/dist` via `chrome://extensions` or Firefox's `about:debugging`.
-
----
-
 ## Features
 
 ### Playback tracking
@@ -137,6 +88,55 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
 - Stores listening events, metadata, and computed statistics locally in Room SQLite databases.
 - Secures authentication keys and API credentials in Android `EncryptedSharedPreferences`.
 - Supports automated local database exports as well as Google Drive backups via Android Credential Manager.
+
+---
+
+## Building from source
+
+### Prerequisites
+- Android Studio Ladybug (2024.2.1) or newer
+- JDK 17
+- Android SDK 36
+
+### Build the Android app
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/avinaxhroy/Tempo.git
+   cd Tempo
+   ```
+
+2. (Optional) Supply API keys in `local.properties` at the project root:
+   ```properties
+   SPOTIFY_CLIENT_ID=your_spotify_client_id
+   LASTFM_API_KEY=your_lastfm_api_key
+   GOOGLE_WEB_CLIENT_ID=your_google_client_id
+   ```
+
+3. Build the debug APK:
+   ```bash
+   ./gradlew assembleDebug
+   ```
+
+4. Run unit tests:
+   ```bash
+   ./gradlew test
+   ```
+
+### Build the browser extension
+
+1. Enter the extension directory and install dependencies:
+   ```bash
+   cd browser-extension
+   npm install
+   ```
+
+2. Compile extension bundles for Chrome and Firefox:
+   ```bash
+   npm run build
+   ```
+
+3. Load the unpacked build from `browser-extension/dist` via `chrome://extensions` or Firefox's `about:debugging`.
 
 ---
 
