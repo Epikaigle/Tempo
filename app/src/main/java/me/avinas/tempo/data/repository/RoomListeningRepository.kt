@@ -1,11 +1,15 @@
 package me.avinas.tempo.data.repository
 
+import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
-import me.avinas.tempo.data.local.entities.ManualContentMark
+import me.avinas.tempo.data.preferences.TrackingRulesPreferences
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -13,8 +17,11 @@ import javax.inject.Singleton
 class RoomListeningRepository @Inject constructor(
     private val dao: ListeningEventDao,
     private val trackDao: TrackDao,
-    private val manualContentMarkDao: ManualContentMarkDao
+    private val manualContentMarkDao: ManualContentMarkDao,
+    private val enrichedMetadataDao: EnrichedMetadataDao,
+    @param:ApplicationContext context: Context
 ) : ListeningRepository {
+    private val trackingRules = TrackingRulesPreferences(context)
     override fun eventsForTrack(trackId: Long): Flow<List<ListeningEvent>> = dao.eventsForTrack(trackId)
     override fun all(): Flow<List<ListeningEvent>> = dao.all()
     override fun recentEvents(limit: Int): Flow<List<ListeningEvent>> = dao.recentEvents(limit)
@@ -38,21 +45,12 @@ class RoomListeningRepository @Inject constructor(
         // A listening event cannot be valid without its parent track (foreign key). This also
         // cleanly discards an event that was queued before NON_MUSIC removed the track.
         val track = trackDao.getTrackById(event.track_id) ?: return false
-        val cleanTitle = track.title.trim()
-        val cleanArtist = track.artist.trim()
-        if (cleanTitle.isBlank() && cleanArtist.isBlank()) return true
+        val matchingMark = ManualContentRuleResolver.resolve(
+            manualContentMarkDao.getAllSync(), track.title, track.artist
+        )
 
-        val matchingMark = manualContentMarkDao.getAllSync()
-            .asSequence()
-            .mapNotNull { mark -> matchingMark(mark, cleanTitle, cleanArtist) }
-            .maxWithOrNull(
-                compareBy<Triple<ManualContentMark, Int, Long>> { it.second }
-                    .thenBy { it.third }
-            )
-            ?.first
-
-        return when (matchingMark?.contentType?.uppercase()) {
-            "NON_MUSIC", "VIDEO" -> false
+        val isAlwaysMusic = when (matchingMark?.contentType?.uppercase()) {
+            "NON_MUSIC", "VIDEO" -> return false
             "ALWAYS_MUSIC" -> {
                 // Stats/history also filter by Track.contentType. Normalize the track itself
                 // so an old PODCAST/AUDIOBOOK classification cannot hide an allowed play.
@@ -61,33 +59,27 @@ class RoomListeningRepository @Inject constructor(
                 }
                 true
             }
-            else -> true
-        }
-    }
-
-    private fun matchingMark(
-        mark: ManualContentMark,
-        title: String,
-        artist: String
-    ): Triple<ManualContentMark, Int, Long>? {
-        val patternType = mark.patternType.uppercase()
-        val matches = when (patternType) {
-            "TITLE_ARTIST" ->
-                mark.originalTitle.equals(title, ignoreCase = true) &&
-                    mark.originalArtist.equals(artist, ignoreCase = true)
-            "TITLE" -> mark.originalTitle.equals(title, ignoreCase = true)
-            "ARTIST" -> mark.originalArtist.equals(artist, ignoreCase = true)
             else -> false
         }
-        if (!matches) return null
 
-        val specificity = when (patternType) {
-            "TITLE_ARTIST" -> 3
-            "TITLE" -> 2
-            "ARTIST" -> 1
-            else -> 0
+        // Minimum listening time is a counting rule, not a content-classification rule;
+        // Always Music therefore still has to meet it.
+        if (event.playDuration < trackingRules.minimumPlayDurationMs) return false
+
+        // Only use a reliable persisted/enriched duration here. event.estimatedDurationMs may
+        // come from SmartDurationEstimator and must never be treated as proof that media is long.
+        // The pre/post persistence calls around batch/offline writes mean a duration discovered
+        // while an insert is in flight is still caught.
+        if (!isAlwaysMusic) {
+            val reliableDuration = track.duration?.takeIf { it > 0L }
+                ?: enrichedMetadataDao.forTrackSync(event.track_id)?.trackDurationMs?.takeIf { it > 0L }
+            if (reliableDuration != null) {
+                val maxDuration = trackingRules.getMaxMusicDurationMs(event.source)
+                if (maxDuration != null && reliableDuration > maxDuration) return false
+            }
         }
-        return Triple(mark, specificity, mark.markedAt)
+
+        return true
     }
 
     // Enhanced engagement queries

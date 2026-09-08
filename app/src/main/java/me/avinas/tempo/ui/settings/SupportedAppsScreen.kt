@@ -1006,7 +1006,7 @@ private fun ContentOverridesDialog(
             DurationModeRow(
                 selected = type == ContentOverrideType.MUSIC,
                 title = "Always music",
-                subtitle = "Bypass duration and podcast/audiobook filtering",
+                subtitle = "Bypass maximum duration and content filters; minimum listening still applies",
                 onClick = { type = ContentOverrideType.MUSIC }
             )
             DurationModeRow(
@@ -1280,9 +1280,9 @@ private fun AddAppDialog(
 }
 
 private fun durationFieldsToMs(minutesText: String, secondsText: String): Long? {
-    val minutes = minutesText.toLongOrNull() ?: 0L
-    val seconds = secondsText.toLongOrNull() ?: 0L
-    if (minutes < 0L || seconds !in 0L..59L) return null
+    val minutes = if (minutesText.isBlank()) 0L else minutesText.toLongOrNull() ?: return null
+    val seconds = if (secondsText.isBlank()) 0L else secondsText.toLongOrNull() ?: return null
+    if (minutes !in 0L..1440L || seconds !in 0L..59L) return null
     val totalSeconds = minutes * 60L + seconds
     if (totalSeconds <= 0L) return null
     return totalSeconds * 1000L

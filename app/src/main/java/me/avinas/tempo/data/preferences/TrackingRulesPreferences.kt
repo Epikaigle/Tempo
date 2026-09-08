@@ -1,6 +1,7 @@
 package me.avinas.tempo.data.preferences
 
 import android.content.Context
+import android.content.SharedPreferences
 
 /**
  * Synchronous runtime preferences for duration-based tracking gates.
@@ -11,7 +12,11 @@ import android.content.Context
  * class is therefore the single source of truth only for duration rules; manual content
  * overrides deliberately use ManualContentMark/Room instead of a second preference store.
  */
-class TrackingRulesPreferences(context: Context) {
+class TrackingRulesPreferences internal constructor(private val prefs: SharedPreferences) {
+    constructor(context: Context) : this(
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    )
+
 
     enum class DurationMode {
         GLOBAL,
@@ -24,11 +29,6 @@ class TrackingRulesPreferences(context: Context) {
         MUSIC,
         VIDEO
     }
-
-    private val prefs = context.applicationContext.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
 
     /** Minimum accumulated listening time required before a play is stored. */
     var minimumPlayDurationMs: Long
@@ -101,6 +101,12 @@ class TrackingRulesPreferences(context: Context) {
 
     private fun appDurationKey(packageName: String): String =
         KEY_APP_MAX_DURATION_PREFIX + packageName.trim()
+
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
 
     companion object {
         const val DEFAULT_MIN_PLAY_DURATION_MS = 25_000L

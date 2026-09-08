@@ -1306,6 +1306,21 @@ fun HistoryListItem(
                 .background(Color(0xFF2D2A32))
                 .widthIn(max = 280.dp)
         ) {
+            DropdownMenuItem(
+                text = { Text("Always Music — this track", color = Color.White) },
+                onClick = {
+                    onMarkContent?.invoke("ALWAYS_MUSIC", false)
+                    showMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Always Music — ${item.artist}", color = Color.White) },
+                onClick = {
+                    onMarkArtist?.invoke("ALWAYS_MUSIC", false)
+                    showMenu = false
+                },
+                enabled = !me.avinas.tempo.utils.ArtistParser.isUnknownArtist(item.artist)
+            )
             // Section Header: Block this track
             Text(
                 text = stringResource(R.string.history_block_track),

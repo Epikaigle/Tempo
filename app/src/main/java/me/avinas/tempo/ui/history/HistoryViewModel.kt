@@ -1,5 +1,6 @@
 package me.avinas.tempo.ui.history
 
+import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -659,14 +660,7 @@ class HistoryViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Mark a track as a specific content type (PODCAST/AUDIOBOOK).
-     * This will:
-     * 1. Save the pattern to block future content from this title+artist
-     * 2. Delete all listening events for this track
-     * 3. Delete the track itself from database
-     * 4. Enable the corresponding filter if not already enabled
-     */
+    /** Save a title exception and correct matching history without deleting the track or rule. */
     fun markContent(trackId: Long, contentType: String, deleteFromHistory: Boolean) {
         viewModelScope.launch {
             _uiState.update { it.copy(isMarking = true) }
@@ -708,22 +702,28 @@ class HistoryViewModel @Inject constructor(
                 }
                 userPreferencesDao.upsert(finalPrefs)
                 
-                // 3. Delete all listening events for this track
-                val deletedEvents = listeningRepository.getEventsForTrack(trackId)
-                deletedEvents.forEach { event ->
-                    listeningRepository.deleteById(event.id)
+                val marks = manualContentMarkDao.getAllSync()
+                trackRepository.all().first()
+                    .filter { ManualContentRuleResolver.matches(mark, it.title, it.artist) }
+                    .forEach { matchingTrack ->
+                        val effectiveType = resolveEffectiveContentType(matchingTrack.title, matchingTrack.artist, marks)
+                        if (effectiveType == "ALWAYS_MUSIC") {
+                            trackRepository.update(matchingTrack.copy(contentType = "MUSIC"))
+                        } else if (deleteFromHistory) {
+                            listeningRepository.deleteByTrackId(matchingTrack.id)
+                        } else {
+                            trackRepository.update(matchingTrack.copy(contentType = effectiveType ?: contentType))
+                        }
+                    }
+                val feedbackMsg = if (contentType == "ALWAYS_MUSIC") {
+                    "Always Music saved for \"${track.title}\""
+                } else if (deleteFromHistory) {
+                    "Blocked \"${track.title}\" - removed matching plays from history & stats"
+                } else {
+                    "Classification updated for \"${track.title}\""
                 }
-                Log.d(TAG, "Deleted ${deletedEvents.size} listening events for track $trackId")
-                
-                // 4. Delete the track itself
-                trackRepository.deleteById(trackId)
-                Log.d(TAG, "Deleted track $trackId from database")
-                
-                // Show success feedback
-                val contentTypeName = contentType.lowercase().replaceFirstChar { it.uppercase() }
-                val feedbackMsg = "Blocked \"${track.title}\" - removed from history & stats"
                 _uiState.update { it.copy(showCoachMark = false, feedbackMessage = feedbackMsg, isMarking = false) }
-                
+
                 // Invalidate stats cache
                 statsRepository.invalidateCache()
                 
@@ -737,14 +737,7 @@ class HistoryViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Mark an artist as a specific content type (PODCAST/AUDIOBOOK).
-     * This will:
-     * 1. Save the pattern to block ALL future content from this artist
-     * 2. Delete ALL listening events from this artist
-     * 3. Delete ALL tracks from this artist
-     * 4. Enable the corresponding filter if not already enabled
-     */
+    /** Apply an artist correction while preserving more-specific Always Music exceptions. */
     fun markArtistContent(trackId: Long, contentType: String, deleteFromHistory: Boolean) {
         viewModelScope.launch {
             _uiState.update { it.copy(isMarking = true) }
@@ -799,7 +792,7 @@ class HistoryViewModel @Inject constructor(
                 // deleting every row by artist here would otherwise destroy history that the
                 // tracking service intentionally keeps.
                 val artistTracks = trackRepository.all().first()
-                    .filter { it.artist.equals(artistName, ignoreCase = true) }
+                    .filter { ManualContentRuleResolver.matches(mark, it.title, it.artist) }
                 val allMarks = manualContentMarkDao.getAllSync()
                 var affectedTracks = 0
                 var protectedTracks = 0
@@ -812,13 +805,13 @@ class HistoryViewModel @Inject constructor(
                     )
 
                     if (effectiveType == "ALWAYS_MUSIC") {
+                        trackRepository.update(artistTrack.copy(contentType = "MUSIC"))
                         protectedTracks++
                         continue
                     }
 
                     if (deleteFromHistory) {
                         listeningRepository.deleteByTrackId(artistTrack.id)
-                        trackRepository.deleteById(artistTrack.id)
                     } else {
                         trackRepository.update(
                             artistTrack.copy(contentType = effectiveType ?: contentType)
@@ -834,8 +827,11 @@ class HistoryViewModel @Inject constructor(
                 )
                 
                 // Show success feedback
-                val contentTypeName = contentType.lowercase().replaceFirstChar { it.uppercase() }
-                val feedbackMsg = if (protectedTracks > 0) {
+                val feedbackMsg = if (contentType == "ALWAYS_MUSIC") {
+                    "Always Music saved for \"$artistName\"; more-specific exceptions kept"
+                } else if (!deleteFromHistory) {
+                    "Classification updated for \"$artistName\""
+                } else if (protectedTracks > 0) {
                     "Blocked \"$artistName\" - kept $protectedTracks specific Always Music exception${if (protectedTracks == 1) "" else "s"}"
                 } else {
                     "Blocked \"$artistName\" - removed all matching content from history & stats"
@@ -860,39 +856,7 @@ class HistoryViewModel @Inject constructor(
         title: String,
         artist: String,
         marks: List<me.avinas.tempo.data.local.entities.ManualContentMark>
-    ): String? {
-        val cleanTitle = title.trim()
-        val cleanArtist = artist.trim()
-
-        return marks.asSequence()
-            .mapNotNull { mark ->
-                val patternType = mark.patternType.uppercase()
-                val matches = when (patternType) {
-                    "TITLE_ARTIST" ->
-                        mark.originalTitle.equals(cleanTitle, ignoreCase = true) &&
-                            mark.originalArtist.equals(cleanArtist, ignoreCase = true)
-                    "TITLE" -> mark.originalTitle.equals(cleanTitle, ignoreCase = true)
-                    "ARTIST" -> mark.originalArtist.equals(cleanArtist, ignoreCase = true)
-                    else -> false
-                }
-                if (!matches) return@mapNotNull null
-
-                val specificity = when (patternType) {
-                    "TITLE_ARTIST" -> 3
-                    "TITLE" -> 2
-                    "ARTIST" -> 1
-                    else -> 0
-                }
-                Triple(mark, specificity, mark.markedAt)
-            }
-            .maxWithOrNull(
-                compareBy<Triple<me.avinas.tempo.data.local.entities.ManualContentMark, Int, Long>> { it.second }
-                    .thenBy { it.third }
-            )
-            ?.first
-            ?.contentType
-            ?.uppercase()
-    }
+    ): String? = ManualContentRuleResolver.resolve(marks, title, artist)?.contentType?.uppercase()
 
     private suspend fun checkShouldShowCoachMark(history: List<HistoryItem>): Boolean {
         if (history.isEmpty()) {

@@ -1,5 +1,6 @@
 package me.avinas.tempo.ui.settings
 
+import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -206,10 +207,10 @@ class AppPreferenceViewModel @Inject constructor(
         trackRepository.all().first().filter { track ->
             when {
                 title.isNotBlank() && artist.isNotBlank() ->
-                    track.title.equals(title, ignoreCase = true) &&
-                        track.artist.equals(artist, ignoreCase = true)
-                title.isNotBlank() -> track.title.equals(title, ignoreCase = true)
-                else -> track.artist.equals(artist, ignoreCase = true)
+                    track.title.trim().equals(title.trim(), ignoreCase = true) &&
+                        track.artist.trim().equals(artist.trim(), ignoreCase = true)
+                title.isNotBlank() -> track.title.trim().equals(title.trim(), ignoreCase = true)
+                else -> track.artist.trim().equals(artist.trim(), ignoreCase = true)
             }
         }
 
@@ -266,44 +267,38 @@ class AppPreferenceViewModel @Inject constructor(
     private fun effectiveContentType(
         title: String,
         artist: String,
-        marks: List<ManualContentMark>
-    ): String? {
-        val cleanTitle = title.trim()
-        val cleanArtist = artist.trim()
-
-        return marks.asSequence()
-            .mapNotNull { mark ->
-                val patternType = mark.patternType.uppercase()
-                val matches = when (patternType) {
-                    "TITLE_ARTIST" ->
-                        mark.originalTitle.equals(cleanTitle, ignoreCase = true) &&
-                            mark.originalArtist.equals(cleanArtist, ignoreCase = true)
-                    "TITLE" -> mark.originalTitle.equals(cleanTitle, ignoreCase = true)
-                    "ARTIST" -> mark.originalArtist.equals(cleanArtist, ignoreCase = true)
-                    else -> false
-                }
-                if (!matches) return@mapNotNull null
-
-                val specificity = when (patternType) {
-                    "TITLE_ARTIST" -> 3
-                    "TITLE" -> 2
-                    "ARTIST" -> 1
-                    else -> 0
-                }
-                Triple(mark, specificity, mark.markedAt)
-            }
-            .maxWithOrNull(
-                compareBy<Triple<ManualContentMark, Int, Long>> { it.second }
-                    .thenBy { it.third }
-            )
-            ?.first
-            ?.contentType
-            ?.uppercase()
-    }
+        marks: List<me.avinas.tempo.data.local.entities.ManualContentMark>
+    ): String? = ManualContentRuleResolver.resolve(marks, title, artist)?.contentType?.uppercase()
 
     fun removeContentOverride(mark: ManualContentMark) {
         viewModelScope.launch {
             manualContentMarkDao.deleteMark(mark)
+
+            // Deleting a specific exception can reveal a broader rule underneath it.
+            // Re-apply that effective rule to existing local data immediately so history/stats
+            // and future tracking do not disagree until the next play.
+            val remainingMarks = manualContentMarkDao.getAllSync()
+            val affectedTracks = trackRepository.all().first().filter { track ->
+                ManualContentRuleResolver.matches(mark, track.title, track.artist)
+            }
+
+            var changed = false
+            affectedTracks.forEach { track ->
+                when (effectiveContentType(track.title, track.artist, remainingMarks)) {
+                    CONTENT_TYPE_NON_MUSIC, CONTENT_TYPE_LEGACY_VIDEO -> {
+                        listeningRepository.deleteByTrackId(track.id)
+                        changed = true
+                    }
+                    CONTENT_TYPE_ALWAYS_MUSIC -> {
+                        if (track.contentType != "MUSIC") {
+                            trackRepository.update(track.copy(contentType = "MUSIC"))
+                            changed = true
+                        }
+                    }
+                }
+            }
+
+            if (changed) statsRepository.invalidateCache()
         }
     }
 
