@@ -68,6 +68,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,6 +78,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import me.avinas.tempo.R
 import me.avinas.tempo.data.local.entities.AppPreference
 import me.avinas.tempo.data.local.entities.ManualContentMark
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences
@@ -226,7 +229,7 @@ fun SupportedAppsScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         item(key = "header_tracking_rules") {
-                            SettingsSectionHeader("Tracking Rules")
+                            SettingsSectionHeader(stringResource(R.string.tracking_rules_section))
                         }
                         item(key = "tracking_rules") {
                             TrackingRulesCard(
@@ -342,7 +345,7 @@ fun SupportedAppsScreen(
                         item(key = "help_text") {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Enable apps to track music listening. Use the timer button to give an app its own maximum music duration. Block apps to exclude them completely.",
+                                text = stringResource(R.string.tracking_rules_help),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.5f),
                                 modifier = Modifier.padding(horizontal = 8.dp)
@@ -426,25 +429,26 @@ private fun TrackingRulesCard(
         Column {
             TrackingRuleRow(
                 icon = Icons.Default.HourglassBottom,
-                title = "Count a listen after",
+                title = stringResource(R.string.tracking_count_listen_after),
                 subtitle = formatDuration(minimumPlayDurationMs),
                 onClick = onMinimumPlayClick
             )
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
             TrackingRuleRow(
                 icon = Icons.Default.Timer,
-                title = "Default maximum music duration",
-                subtitle = defaultMaxMusicDurationMs?.let(::formatDuration) ?: "No limit",
+                title = stringResource(R.string.tracking_default_max_duration),
+                subtitle = defaultMaxMusicDurationMs?.let(::formatDuration)
+                    ?: stringResource(R.string.tracking_no_limit),
                 onClick = onDefaultMaxClick
             )
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
             TrackingRuleRow(
                 icon = Icons.Default.FilterAlt,
-                title = "Content exceptions",
+                title = stringResource(R.string.tracking_content_exceptions),
                 subtitle = if (overrideCount == 0) {
-                    "Always music / Video & non-music"
+                    stringResource(R.string.tracking_content_exception_types)
                 } else {
-                    "$overrideCount saved rule${if (overrideCount == 1) "" else "s"}"
+                    pluralStringResource(R.plurals.tracking_saved_rules, overrideCount, overrideCount)
                 },
                 onClick = onOverridesClick
             )
@@ -555,7 +559,7 @@ private fun AppPreferenceItem(
             IconButton(onClick = onDurationClick) {
                 Icon(
                     Icons.Default.Timer,
-                    contentDescription = "Duration limit",
+                    contentDescription = stringResource(R.string.tracking_duration_limit),
                     tint = TempoPrimary.copy(alpha = 0.9f)
                 )
             }
@@ -709,16 +713,16 @@ private fun MinimumPlayDurationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Minimum listening time") },
+        title = { Text(stringResource(R.string.tracking_minimum_listening_time)) },
         text = {
             Column {
-                Text("A play is saved only after this much actual listening time.")
+                Text(stringResource(R.string.tracking_minimum_listening_description))
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = secondsText,
                     onValueChange = { secondsText = it.filter(Char::isDigit).take(3) },
-                    label = { Text("Seconds") },
-                    supportingText = { Text("1 to 600 seconds • Default: 25") },
+                    label = { Text(stringResource(R.string.tracking_seconds)) },
+                    supportingText = { Text(stringResource(R.string.tracking_minimum_range)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
@@ -731,11 +735,11 @@ private fun MinimumPlayDurationDialog(
                 enabled = isValid,
                 onClick = { onSave(seconds!! * 1000L) }
             ) {
-                Text("Save")
+                Text(stringResource(R.string.tracking_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.tracking_cancel)) }
         }
     )
 }
@@ -759,10 +763,10 @@ private fun DefaultMaxDurationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Default maximum music duration") },
+        title = { Text(stringResource(R.string.tracking_default_max_duration)) },
         text = {
             Column {
-                Text("Media longer than this is treated as non-music. Individual apps can override it.")
+                Text(stringResource(R.string.tracking_default_max_description))
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -773,7 +777,7 @@ private fun DefaultMaxDurationDialog(
                 ) {
                     Switch(checked = noLimit, onCheckedChange = { noLimit = it })
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("No maximum duration")
+                    Text(stringResource(R.string.tracking_no_maximum_duration))
                 }
                 if (!noLimit) {
                     DurationFields(
@@ -783,7 +787,7 @@ private fun DefaultMaxDurationDialog(
                         onSecondsChange = { secondsText = it }
                     )
                     Text(
-                        "Default: 20 min 00 s",
+                        stringResource(R.string.tracking_default_twenty_minutes),
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary
                     )
@@ -795,11 +799,11 @@ private fun DefaultMaxDurationDialog(
                 enabled = isValid,
                 onClick = { onSave(if (noLimit) null else customMs) }
             ) {
-                Text("Save")
+                Text(stringResource(R.string.tracking_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.tracking_cancel)) }
         }
     )
 }
@@ -830,25 +834,26 @@ private fun AppDurationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("${app.displayName} duration limit") },
+        title = { Text(stringResource(R.string.tracking_app_duration_limit, app.displayName)) },
         text = {
             Column {
                 DurationModeRow(
                     selected = mode == DurationMode.GLOBAL,
-                    title = "Use global limit",
-                    subtitle = trackingRules.defaultMaxMusicDurationMs?.let(::formatDuration) ?: "No limit",
+                    title = stringResource(R.string.tracking_use_global_limit),
+                    subtitle = trackingRules.defaultMaxMusicDurationMs?.let(::formatDuration)
+                        ?: stringResource(R.string.tracking_no_limit),
                     onClick = { mode = DurationMode.GLOBAL }
                 )
                 DurationModeRow(
                     selected = mode == DurationMode.NO_LIMIT,
-                    title = "No limit",
-                    subtitle = "Never reject media from this app because it is long",
+                    title = stringResource(R.string.tracking_no_limit),
+                    subtitle = stringResource(R.string.tracking_no_limit_app_description),
                     onClick = { mode = DurationMode.NO_LIMIT }
                 )
                 DurationModeRow(
                     selected = mode == DurationMode.CUSTOM,
-                    title = "Custom limit",
-                    subtitle = "Set an exact duration for this app",
+                    title = stringResource(R.string.tracking_custom_limit),
+                    subtitle = stringResource(R.string.tracking_custom_limit_description),
                     onClick = { mode = DurationMode.CUSTOM }
                 )
                 if (mode == DurationMode.CUSTOM) {
@@ -877,11 +882,11 @@ private fun AppDurationDialog(
                     onSaved()
                 }
             ) {
-                Text("Save")
+                Text(stringResource(R.string.tracking_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.tracking_cancel)) }
         }
     )
 }
@@ -928,7 +933,7 @@ private fun DurationFields(
             value = minutesText,
             onValueChange = { onMinutesChange(it.filter(Char::isDigit).take(4)) },
             modifier = Modifier.weight(1f),
-            label = { Text("Minutes") },
+            label = { Text(stringResource(R.string.tracking_minutes)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
@@ -942,7 +947,7 @@ private fun DurationFields(
                 if (parsed == null || parsed <= 59) onSecondsChange(digits)
             },
             modifier = Modifier.weight(1f),
-            label = { Text("Seconds") },
+            label = { Text(stringResource(R.string.tracking_seconds)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
@@ -973,14 +978,14 @@ private fun ContentOverridesDialog(
                 .padding(20.dp)
         ) {
             Text(
-                "Content exceptions",
+                stringResource(R.string.tracking_content_exceptions),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                "Force matching media to always count as music, or always be excluded as video/non-music. Leave one field empty to match every title or every artist.",
+                stringResource(R.string.tracking_content_exceptions_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary
             )
@@ -990,7 +995,7 @@ private fun ContentOverridesDialog(
                 value = title,
                 onValueChange = { title = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Title (optional)") },
+                label = { Text(stringResource(R.string.tracking_title_optional)) },
                 singleLine = true
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -998,21 +1003,21 @@ private fun ContentOverridesDialog(
                 value = artist,
                 onValueChange = { artist = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Artist / channel (optional)") },
+                label = { Text(stringResource(R.string.tracking_artist_optional)) },
                 singleLine = true
             )
 
             Spacer(modifier = Modifier.height(8.dp))
             DurationModeRow(
                 selected = type == ContentOverrideType.MUSIC,
-                title = "Always music",
-                subtitle = "Bypass maximum duration and content filters; minimum listening still applies",
+                title = stringResource(R.string.tracking_always_music),
+                subtitle = stringResource(R.string.tracking_always_music_description),
                 onClick = { type = ContentOverrideType.MUSIC }
             )
             DurationModeRow(
                 selected = type == ContentOverrideType.VIDEO,
-                title = "Video / non-music",
-                subtitle = "Remove existing matches and exclude future plays from history and stats",
+                title = stringResource(R.string.tracking_video_non_music),
+                subtitle = stringResource(R.string.tracking_video_non_music_description),
                 onClick = { type = ContentOverrideType.VIDEO }
             )
 
@@ -1030,7 +1035,7 @@ private fun ContentOverridesDialog(
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Add rule")
+                    Text(stringResource(R.string.tracking_add_rule))
                 }
             }
 
@@ -1058,7 +1063,7 @@ private fun ContentOverridesDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(onClick = onDismiss) { Text("Done") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.tracking_done)) }
             }
         }
     }
@@ -1070,6 +1075,8 @@ private fun ContentOverrideItem(
     onDelete: () -> Unit
 ) {
     val isAlwaysMusic = rule.contentType == AppPreferenceViewModel.CONTENT_TYPE_ALWAYS_MUSIC
+    val anyTitle = stringResource(R.string.tracking_any_title)
+    val anyArtist = stringResource(R.string.tracking_any_artist)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1080,15 +1087,19 @@ private fun ContentOverrideItem(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                if (isAlwaysMusic) "Always music" else "Video / non-music",
+                if (isAlwaysMusic) {
+                    stringResource(R.string.tracking_always_music)
+                } else {
+                    stringResource(R.string.tracking_video_non_music)
+                },
                 style = MaterialTheme.typography.labelMedium,
                 color = if (isAlwaysMusic) TempoPrimary else TextSecondary
             )
             Text(
                 buildString {
-                    append(if (rule.originalTitle.isBlank()) "Any title" else rule.originalTitle)
+                    append(if (rule.originalTitle.isBlank()) anyTitle else rule.originalTitle)
                     append(" • ")
-                    append(if (rule.originalArtist.isBlank()) "Any artist" else rule.originalArtist)
+                    append(if (rule.originalArtist.isBlank()) anyArtist else rule.originalArtist)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = TextPrimary,
@@ -1099,7 +1110,7 @@ private fun ContentOverrideItem(
         IconButton(onClick = onDelete) {
             Icon(
                 Icons.Default.Delete,
-                contentDescription = "Delete rule",
+                contentDescription = stringResource(R.string.tracking_delete_rule),
                 tint = TextTertiary
             )
         }
@@ -1300,6 +1311,7 @@ private fun formatDuration(durationMs: Long): String {
     }
 }
 
+@Composable
 private fun appDurationSummary(
     trackingRules: TrackingRulesPreferences,
     packageName: String
@@ -1307,12 +1319,18 @@ private fun appDurationSummary(
     return when (trackingRules.getAppDurationMode(packageName)) {
         DurationMode.GLOBAL -> {
             val global = trackingRules.defaultMaxMusicDurationMs
-            "Music limit: Global (${global?.let(::formatDuration) ?: "No limit"})"
+            stringResource(
+                R.string.tracking_music_limit_global,
+                global?.let(::formatDuration) ?: stringResource(R.string.tracking_no_limit)
+            )
         }
-        DurationMode.NO_LIMIT -> "Music limit: No limit"
+        DurationMode.NO_LIMIT -> stringResource(R.string.tracking_music_limit_no_limit)
         DurationMode.CUSTOM -> {
             val custom = trackingRules.getAppCustomMaxMusicDurationMs(packageName)
-            "Music limit: ${custom?.let(::formatDuration) ?: "Global"}"
+            stringResource(
+                R.string.tracking_music_limit_custom,
+                custom?.let(::formatDuration) ?: stringResource(R.string.tracking_global)
+            )
         }
     }
 }

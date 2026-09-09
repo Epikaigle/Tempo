@@ -1,6 +1,7 @@
 package me.avinas.tempo.ui.settings
 
 import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
+import me.avinas.tempo.data.local.DatabaseTransactionRunner
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -37,6 +38,7 @@ class AppPreferenceViewModel @Inject constructor(
     private val trackRepository: TrackRepository,
     private val listeningRepository: ListeningRepository,
     private val statsRepository: StatsRepository,
+    private val transactionRunner: DatabaseTransactionRunner,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -172,33 +174,35 @@ class AppPreferenceViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            manualContentMarkDao.insertMark(
-                ManualContentMark(
-                    targetTrackId = 0L,
-                    patternType = patternType,
-                    originalTitle = cleanTitle,
-                    originalArtist = cleanArtist,
-                    patternValue = patternValue,
-                    contentType = contentType,
-                    markedAt = System.currentTimeMillis()
+            transactionRunner.run {
+                manualContentMarkDao.insertMark(
+                    ManualContentMark(
+                        targetTrackId = 0L,
+                        patternType = patternType,
+                        originalTitle = cleanTitle,
+                        originalArtist = cleanArtist,
+                        patternValue = patternValue,
+                        contentType = contentType,
+                        markedAt = System.currentTimeMillis()
+                    )
                 )
-            )
 
-            // Apply the correction to existing data as well as future plays. We resolve
-            // the effective rule per track so a more-specific exception is never erased
-            // by a broader artist/title rule.
-            val marks = manualContentMarkDao.getAllSync()
-            when (type) {
-                ContentOverrideType.MUSIC -> normalizeExistingMatchesAsMusic(
-                    cleanTitle,
-                    cleanArtist,
-                    marks
-                )
-                ContentOverrideType.VIDEO -> removeExistingMatchesFromHistory(
-                    cleanTitle,
-                    cleanArtist,
-                    marks
-                )
+                // Apply the correction to existing data as well as future plays. We resolve
+                // the effective rule per track so a more-specific exception is never erased
+                // by a broader artist/title rule.
+                val marks = manualContentMarkDao.getAllSync()
+                when (type) {
+                    ContentOverrideType.MUSIC -> normalizeExistingMatchesAsMusic(
+                        cleanTitle,
+                        cleanArtist,
+                        marks
+                    )
+                    ContentOverrideType.VIDEO -> removeExistingMatchesFromHistory(
+                        cleanTitle,
+                        cleanArtist,
+                        marks
+                    )
+                }
             }
         }
     }
@@ -272,27 +276,29 @@ class AppPreferenceViewModel @Inject constructor(
 
     fun removeContentOverride(mark: ManualContentMark) {
         viewModelScope.launch {
-            manualContentMarkDao.deleteMark(mark)
-
-            // Deleting a specific exception can reveal a broader rule underneath it.
-            // Re-apply that effective rule to existing local data immediately so history/stats
-            // and future tracking do not disagree until the next play.
-            val remainingMarks = manualContentMarkDao.getAllSync()
-            val affectedTracks = trackRepository.all().first().filter { track ->
-                ManualContentRuleResolver.matches(mark, track.title, track.artist)
-            }
-
             var changed = false
-            affectedTracks.forEach { track ->
-                when (effectiveContentType(track.title, track.artist, remainingMarks)) {
-                    CONTENT_TYPE_NON_MUSIC, CONTENT_TYPE_LEGACY_VIDEO -> {
-                        listeningRepository.deleteByTrackId(track.id)
-                        changed = true
-                    }
-                    CONTENT_TYPE_ALWAYS_MUSIC -> {
-                        if (track.contentType != "MUSIC") {
-                            trackRepository.update(track.copy(contentType = "MUSIC"))
+            transactionRunner.run {
+                manualContentMarkDao.deleteMark(mark)
+
+                // Deleting a specific exception can reveal a broader rule underneath it.
+                // Re-apply that effective rule to existing local data immediately so history/stats
+                // and future tracking do not disagree until the next play.
+                val remainingMarks = manualContentMarkDao.getAllSync()
+                val affectedTracks = trackRepository.all().first().filter { track ->
+                    ManualContentRuleResolver.matches(mark, track.title, track.artist)
+                }
+
+                affectedTracks.forEach { track ->
+                    when (effectiveContentType(track.title, track.artist, remainingMarks)) {
+                        CONTENT_TYPE_NON_MUSIC, CONTENT_TYPE_LEGACY_VIDEO -> {
+                            listeningRepository.deleteByTrackId(track.id)
                             changed = true
+                        }
+                        CONTENT_TYPE_ALWAYS_MUSIC -> {
+                            if (track.contentType != "MUSIC") {
+                                trackRepository.update(track.copy(contentType = "MUSIC"))
+                                changed = true
+                            }
                         }
                     }
                 }

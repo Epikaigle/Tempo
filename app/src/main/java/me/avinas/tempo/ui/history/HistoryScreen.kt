@@ -1307,14 +1307,19 @@ fun HistoryListItem(
                 .widthIn(max = 280.dp)
         ) {
             DropdownMenuItem(
-                text = { Text("Always Music — this track", color = Color.White) },
+                text = { Text(stringResource(R.string.history_always_music_track), color = Color.White) },
                 onClick = {
                     onMarkContent?.invoke("ALWAYS_MUSIC", false)
                     showMenu = false
                 }
             )
             DropdownMenuItem(
-                text = { Text("Always Music — ${item.artist}", color = Color.White) },
+                text = {
+                    Text(
+                        stringResource(R.string.history_always_music_artist, item.artist),
+                        color = Color.White
+                    )
+                },
                 onClick = {
                     onMarkArtist?.invoke("ALWAYS_MUSIC", false)
                     showMenu = false
@@ -1374,9 +1379,9 @@ fun HistoryListItem(
             DropdownMenuItem(
                 text = {
                     Column {
-                        Text("It's video / non-music", color = Color.White)
+                        Text(stringResource(R.string.history_video_non_music_track), color = Color.White)
                         Text(
-                            "Remove existing plays and block future matches",
+                            stringResource(R.string.history_video_non_music_track_description),
                             color = Color.Gray,
                             style = MaterialTheme.typography.labelSmall
                         )
@@ -1449,9 +1454,12 @@ fun HistoryListItem(
             DropdownMenuItem(
                 text = {
                     Column {
-                        Text("Treat ${item.artist} as video / non-music", color = TempoRed)
                         Text(
-                            "Remove all matching history and block future plays",
+                            stringResource(R.string.history_video_non_music_artist, item.artist),
+                            color = TempoRed
+                        )
+                        Text(
+                            stringResource(R.string.history_video_non_music_artist_description),
                             color = Color.Gray,
                             style = MaterialTheme.typography.labelSmall
                         )

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.*
 import me.avinas.tempo.data.local.dao.*
+import me.avinas.tempo.data.local.DatabaseTransactionRunner
 import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.repository.*
 import me.avinas.tempo.data.stats.PaginatedResult
@@ -58,7 +59,10 @@ class HistoryContentCorrectionTest {
         } },
         fake<LastFmImportMetadataDao> { name, _ -> if (name == "getLatestCompleted") null else error(name) },
         fake<ScrobbleArchiveDao> { name, _ -> error(name) },
-        RefreshCoordinator()
+        RefreshCoordinator(),
+        object : DatabaseTransactionRunner {
+            override suspend fun <T> run(block: suspend () -> T): T = block()
+        }
     )
 
     private fun checkCorrection(block: suspend TestScope.(HistoryViewModel) -> Unit) = runTest {
