@@ -36,7 +36,7 @@ data class ManualContentMark(
     
     /**
      * Reference to the original track that was marked.
-     * Used for deletion cascade.
+     * Zero is used for rules created directly from settings.
      */
     @ColumnInfo(name = "target_track_id")
     val targetTrackId: Long,
@@ -63,9 +63,8 @@ data class ManualContentMark(
     val originalArtist: String,
     
     /**
-     * Pattern value for matching similar content.
-     * May contain SQL wildcards (%) for flexible matching.
-     * Example: "Chapter % of Book Name" matches "Chapter 1 of Book Name", "Chapter 2 of Book Name", etc.
+     * Legacy value retained for database and archive compatibility.
+     * Current matching uses [originalTitle], [originalArtist], and [patternType].
      */
     @ColumnInfo(name = "pattern_value")
     val patternValue: String,

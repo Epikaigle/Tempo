@@ -979,6 +979,7 @@
     <string name="tracking_content_exception_types">Toujours musique / Vidéo et non musical</string>
     <plurals name="tracking_saved_rules">
         <item quantity="one">%1$d règle enregistrée</item>
+        <item quantity="many">%1$d règles enregistrées</item>
         <item quantity="other">%1$d règles enregistrées</item>
     </plurals>
     <string name="tracking_duration_limit">Limite de durée</string>

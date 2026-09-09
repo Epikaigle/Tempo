@@ -2,6 +2,7 @@ package me.avinas.tempo.data.preferences
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 
 /**
  * Synchronous runtime preferences for duration-based tracking gates.
@@ -16,7 +17,6 @@ class TrackingRulesPreferences internal constructor(private val prefs: SharedPre
     constructor(context: Context) : this(
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     )
-
 
     enum class DurationMode {
         GLOBAL,
@@ -35,12 +35,12 @@ class TrackingRulesPreferences internal constructor(private val prefs: SharedPre
         get() = prefs.getLong(KEY_MIN_PLAY_DURATION_MS, DEFAULT_MIN_PLAY_DURATION_MS)
             .coerceIn(MIN_ALLOWED_PLAY_DURATION_MS, MAX_ALLOWED_PLAY_DURATION_MS)
         set(value) {
-            prefs.edit()
-                .putLong(
+            prefs.edit {
+                putLong(
                     KEY_MIN_PLAY_DURATION_MS,
                     value.coerceIn(MIN_ALLOWED_PLAY_DURATION_MS, MAX_ALLOWED_PLAY_DURATION_MS)
                 )
-                .apply()
+            }
         }
 
     /**
@@ -51,13 +51,13 @@ class TrackingRulesPreferences internal constructor(private val prefs: SharedPre
         get() = prefs.getLong(KEY_DEFAULT_MAX_MUSIC_DURATION_MS, DEFAULT_MAX_MUSIC_DURATION_MS)
             .takeIf { it > 0L }
         set(value) {
-            prefs.edit()
-                .putLong(
+            prefs.edit {
+                putLong(
                     KEY_DEFAULT_MAX_MUSIC_DURATION_MS,
                     value?.coerceIn(MIN_ALLOWED_MAX_MEDIA_DURATION_MS, MAX_ALLOWED_MAX_MEDIA_DURATION_MS)
                         ?: NO_LIMIT_VALUE
                 )
-                .apply()
+            }
         }
 
     /** Effective maximum duration for one app, after applying its override. */
@@ -83,20 +83,20 @@ class TrackingRulesPreferences internal constructor(private val prefs: SharedPre
     }
 
     fun setAppUseGlobal(packageName: String) {
-        prefs.edit().remove(appDurationKey(packageName)).apply()
+        prefs.edit { remove(appDurationKey(packageName)) }
     }
 
     fun setAppNoLimit(packageName: String) {
-        prefs.edit().putLong(appDurationKey(packageName), NO_LIMIT_VALUE).apply()
+        prefs.edit { putLong(appDurationKey(packageName), NO_LIMIT_VALUE) }
     }
 
     fun setAppCustomMaxMusicDurationMs(packageName: String, durationMs: Long) {
-        prefs.edit()
-            .putLong(
+        prefs.edit {
+            putLong(
                 appDurationKey(packageName),
                 durationMs.coerceIn(MIN_ALLOWED_MAX_MEDIA_DURATION_MS, MAX_ALLOWED_MAX_MEDIA_DURATION_MS)
             )
-            .apply()
+        }
     }
 
     private fun appDurationKey(packageName: String): String =

@@ -1,6 +1,5 @@
 package me.avinas.tempo.data.repository
 
-import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -9,6 +8,7 @@ import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
+import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,7 +19,7 @@ class RoomListeningRepository @Inject constructor(
     private val trackDao: TrackDao,
     private val manualContentMarkDao: ManualContentMarkDao,
     private val enrichedMetadataDao: EnrichedMetadataDao,
-    @param:ApplicationContext context: Context
+    @ApplicationContext context: Context
 ) : ListeningRepository {
     private val trackingRules = TrackingRulesPreferences(context)
     override fun eventsForTrack(trackId: Long): Flow<List<ListeningEvent>> = dao.eventsForTrack(trackId)
