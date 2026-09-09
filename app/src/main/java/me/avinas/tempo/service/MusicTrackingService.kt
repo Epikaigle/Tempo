@@ -1619,7 +1619,7 @@ class MusicTrackingService : NotificationListenerService() {
                                 wasInterrupted = true  // Mark as recovered/interrupted session
                             )
 
-                            trackingManager.queueEvent(event, state.sessionId)
+                        trackingManager.queueEvent(event, state.sessionId)
                     }
                 }
 
