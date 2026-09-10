@@ -1306,6 +1306,26 @@ fun HistoryListItem(
                 .background(Color(0xFF2D2A32))
                 .widthIn(max = 280.dp)
         ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.history_always_music_track), color = Color.White) },
+                onClick = {
+                    onMarkContent?.invoke("ALWAYS_MUSIC", false)
+                    showMenu = false
+                }
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(R.string.history_always_music_artist, item.artist),
+                        color = Color.White
+                    )
+                },
+                onClick = {
+                    onMarkArtist?.invoke("ALWAYS_MUSIC", false)
+                    showMenu = false
+                },
+                enabled = !me.avinas.tempo.utils.ArtistParser.isUnknownArtist(item.artist)
+            )
             // Section Header: Block this track
             Text(
                 text = stringResource(R.string.history_block_track),
@@ -1356,6 +1376,30 @@ fun HistoryListItem(
                 }
             )
             
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(stringResource(R.string.history_video_non_music_track), color = Color.White)
+                        Text(
+                            stringResource(R.string.history_video_non_music_track_description),
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                },
+                onClick = {
+                    onMarkContent?.invoke("NON_MUSIC", true)
+                    showMenu = false
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.PlayCircle,
+                        contentDescription = null,
+                        tint = TempoRed
+                    )
+                }
+            )
+
             HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
             
             // Section Header: Block artist
@@ -1407,6 +1451,33 @@ fun HistoryListItem(
                     )
                 }
             )
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(
+                            stringResource(R.string.history_video_non_music_artist, item.artist),
+                            color = TempoRed
+                        )
+                        Text(
+                            stringResource(R.string.history_video_non_music_artist_description),
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                },
+                onClick = {
+                    onMarkArtist?.invoke("NON_MUSIC", true)
+                    showMenu = false
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = null,
+                        tint = TempoRed
+                    )
+                }
+            )
+
         }
     }
 }
