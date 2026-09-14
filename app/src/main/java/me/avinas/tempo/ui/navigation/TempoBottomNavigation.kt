@@ -51,6 +51,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 
@@ -65,6 +66,7 @@ fun TempoBottomNavigation(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .zIndex(1f)
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(horizontal = 24.dp, vertical = 24.dp)
             .shadow(
@@ -119,7 +121,10 @@ fun TempoBottomNavigation(
                 onClick = onNavigateToHome,
                 icon = Icons.Rounded.Home,
                 unselectedIcon = Icons.Outlined.Home,
-                label = stringResource(R.string.nav_home)
+                label = stringResource(R.string.nav_home),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
             )
             
             TempoNavItem(
@@ -127,7 +132,10 @@ fun TempoBottomNavigation(
                 onClick = onNavigateToStats,
                 icon = Icons.Rounded.Leaderboard,
                 unselectedIcon = Icons.Outlined.Leaderboard,
-                label = stringResource(R.string.nav_stats)
+                label = stringResource(R.string.nav_stats),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
             )
             
             TempoNavItem(
@@ -135,7 +143,10 @@ fun TempoBottomNavigation(
                 onClick = onNavigateToHistory,
                 icon = Icons.Rounded.History,
                 unselectedIcon = Icons.Outlined.History,
-                label = stringResource(R.string.nav_history)
+                label = stringResource(R.string.nav_history),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
             )
         }
     }
@@ -147,7 +158,8 @@ private fun TempoNavItem(
     onClick: () -> Unit,
     icon: ImageVector,
     unselectedIcon: ImageVector,
-    label: String
+    label: String,
+    modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val haptics = LocalHapticFeedback.current
@@ -185,8 +197,7 @@ private fun TempoNavItem(
     )
 
     Box(
-        modifier = Modifier
-            .clip(CircleShape)
+        modifier = modifier
             .clickable(
                 interactionSource = interactionSource,
                 indication = null, // Scale press feedback instead of ripple
@@ -198,26 +209,32 @@ private fun TempoNavItem(
             .semantics {
                 role = Role.Tab
                 this.selected = isSelected
-            }
-            .padding(12.dp)
-            .scale(selectionScale * pressScale),
+            },
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = if (selected) icon else unselectedIcon,
-            contentDescription = label,
-            tint = iconColor,
-            modifier = Modifier.size(26.dp)
-        )
-
-        // Selection indicator dot positioned cleanly below without displacing the icon
         Box(
             modifier = Modifier
-                .align(Alignment.Center)
-                .offset(y = 18.dp)
-                .size(4.dp)
-                .graphicsLayer { alpha = dotAlpha }
-                .background(selectedColor, CircleShape)
-        )
+                .size(50.dp)
+                .clip(CircleShape)
+                .scale(selectionScale * pressScale),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (selected) icon else unselectedIcon,
+                contentDescription = label,
+                tint = iconColor,
+                modifier = Modifier.size(26.dp)
+            )
+
+            // Selection indicator dot positioned cleanly below without displacing the icon
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = 18.dp)
+                    .size(4.dp)
+                    .graphicsLayer { alpha = dotAlpha }
+                    .background(selectedColor, CircleShape)
+            )
+        }
     }
 }
