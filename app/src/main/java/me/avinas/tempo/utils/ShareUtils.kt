@@ -10,6 +10,10 @@ import android.net.Uri
 import android.view.View
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.FileProvider
+import dagger.hilt.android.EntryPointAccessors
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
+import me.avinas.tempo.di.AnalyticsEntryPoint
 import java.io.File
 import java.io.FileOutputStream
 import java.io.BufferedOutputStream
@@ -18,7 +22,31 @@ import kotlinx.coroutines.withContext
 
 object ShareUtils {
 
-    suspend fun shareBitmap(context: Context, bitmap: Bitmap): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * Resolves the analytics tracker without an injection point.
+     *
+     * Sharing happens inside plain composables and this stateless object, so there is nowhere
+     * to take a constructor dependency. Failures are swallowed: a share must never break
+     * because reporting could not be set up (for example under a unit test with no Hilt
+     * application).
+     *
+     * Reported when the system share sheet opens, not when a target is chosen — Android does
+     * not tell us which app the user picked, or whether they picked one at all.
+     */
+    private fun reportShare(context: Context, feature: TempoFeature) {
+        runCatching {
+            EntryPointAccessors
+                .fromApplication(context.applicationContext, AnalyticsEntryPoint::class.java)
+                .analyticsTracker()
+                .track(FeatureUsed(feature))
+        }
+    }
+
+    suspend fun shareBitmap(
+        context: Context,
+        bitmap: Bitmap,
+        feature: TempoFeature = TempoFeature.SHARE_CARD
+    ): Boolean = withContext(Dispatchers.IO) {
         try {
             android.util.Log.d("ShareUtils", "Starting share process. Bitmap: ${bitmap.width}x${bitmap.height}")
             val file = saveBitmapToCache(context, bitmap)

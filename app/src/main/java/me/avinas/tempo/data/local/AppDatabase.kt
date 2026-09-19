@@ -7,8 +7,8 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import me.avinas.tempo.data.local.dao.*
-import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.local.dao.DesktopPairingDao
+import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.local.entities.DesktopPairingSession
 
 @Database(
@@ -19,104 +19,127 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         Album::class,
         EnrichedMetadata::class,
         UserPreferences::class,
-        TrackArtist::class,  // Track-Artist junction table
-        TrackAlias::class,   // Smart metadata aliases for tracks
-        ManualContentMark::class,  // Content filtering marks
-        ArtistAlias::class,  // Artist merge aliases
+        TrackArtist::class, // Track-Artist junction table
+        TrackAlias::class, // Smart metadata aliases for tracks
+        ManualContentMark::class, // Content filtering marks
+        ArtistAlias::class, // Artist merge aliases
         AppPreference::class, // User-controlled app tracking preferences
         LastFmImportMetadata::class, // Last.fm import session tracking
         ScrobbleArchive::class, // Compressed archive for long-tail scrobbles
-        UserLevel::class,    // Gamification: user level & XP
-        Badge::class,         // Gamification: achievement badges
+        UserLevel::class, // Gamification: user level & XP
+        Badge::class, // Gamification: achievement badges
         UserKnownArtist::class, // User-defined known artist names (anti-split)
         DailyChallenge::class, // Gamification: daily challenges
-        DesktopPairingSession::class // Desktop Satellite pairing sessions
+        DesktopPairingSession::class, // Desktop Satellite pairing sessions
     ],
-    version = 52, // Migration 52: Reconcile divergent schema-51 lineages (see MIGRATION_51_52)
-    exportSchema = true  // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
+    version = 53, // Migration 53: index tracks.musicbrainz_id (Last.fm/mbid track resolution)
+    exportSchema = true, // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun trackDao(): TrackDao
+
     abstract fun listeningEventDao(): ListeningEventDao
+
     abstract fun artistDao(): ArtistDao
+
     abstract fun albumDao(): AlbumDao
+
     abstract fun enrichedMetadataDao(): EnrichedMetadataDao
+
     abstract fun userPreferencesDao(): UserPreferencesDao
+
     abstract fun statsDao(): StatsDao
+
     abstract fun trackArtistDao(): TrackArtistDao
+
     abstract fun trackAliasDao(): TrackAliasDao
-    abstract fun manualContentMarkDao(): ManualContentMarkDao  // Content filtering DAO
-    abstract fun artistAliasDao(): ArtistAliasDao  // Artist merge DAO
-    abstract fun appPreferenceDao(): AppPreferenceDao  // User app preferences DAO
-    abstract fun lastFmImportMetadataDao(): LastFmImportMetadataDao  // Last.fm import tracking
-    abstract fun scrobbleArchiveDao(): ScrobbleArchiveDao  // Scrobble archive DAO
-    abstract fun gamificationDao(): GamificationDao  // Gamification: levels & badges
-    abstract fun userKnownArtistDao(): UserKnownArtistDao  // User-defined known artists
-    abstract fun desktopPairingDao(): DesktopPairingDao     // Desktop Satellite pairing sessions
+
+    abstract fun manualContentMarkDao(): ManualContentMarkDao // Content filtering DAO
+
+    abstract fun artistAliasDao(): ArtistAliasDao // Artist merge DAO
+
+    abstract fun appPreferenceDao(): AppPreferenceDao // User app preferences DAO
+
+    abstract fun lastFmImportMetadataDao(): LastFmImportMetadataDao // Last.fm import tracking
+
+    abstract fun scrobbleArchiveDao(): ScrobbleArchiveDao // Scrobble archive DAO
+
+    abstract fun gamificationDao(): GamificationDao // Gamification: levels & badges
+
+    abstract fun userKnownArtistDao(): UserKnownArtistDao // User-defined known artists
+
+    abstract fun desktopPairingDao(): DesktopPairingDao // Desktop Satellite pairing sessions
 
     companion object {
         private const val TAG = "AppDatabase"
-        
+
         /** Current Room schema version — keep in sync with the @Database(version = ...) annotation. */
-        const val VERSION = 52
-        
+        const val VERSION = 53
+
         /**
          * Migration from version 6 to 7: Add enhanced tracking columns to listening_events.
          */
-        val MIGRATION_6_7 = object : Migration(6, 7) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                // Add new columns with default values for backward compatibility
-                db.execSQL("ALTER TABLE listening_events ADD COLUMN was_skipped INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE listening_events ADD COLUMN is_replay INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE listening_events ADD COLUMN estimated_duration_ms INTEGER DEFAULT NULL")
-                db.execSQL("ALTER TABLE listening_events ADD COLUMN pause_count INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE listening_events ADD COLUMN session_id TEXT DEFAULT NULL")
-                db.execSQL("ALTER TABLE listening_events ADD COLUMN end_timestamp INTEGER DEFAULT NULL")
-                
-                // Create indices for efficient queries on the new columns
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_session_id ON listening_events(session_id)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_was_skipped ON listening_events(was_skipped)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_is_replay ON listening_events(is_replay)")
+        val MIGRATION_6_7 =
+            object : Migration(6, 7) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    // Add new columns with default values for backward compatibility
+                    db.execSQL("ALTER TABLE listening_events ADD COLUMN was_skipped INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("ALTER TABLE listening_events ADD COLUMN is_replay INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("ALTER TABLE listening_events ADD COLUMN estimated_duration_ms INTEGER DEFAULT NULL")
+                    db.execSQL("ALTER TABLE listening_events ADD COLUMN pause_count INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("ALTER TABLE listening_events ADD COLUMN session_id TEXT DEFAULT NULL")
+                    db.execSQL("ALTER TABLE listening_events ADD COLUMN end_timestamp INTEGER DEFAULT NULL")
+
+                    // Create indices for efficient queries on the new columns
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_session_id ON listening_events(session_id)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_was_skipped ON listening_events(was_skipped)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_is_replay ON listening_events(is_replay)")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 7 to 8: Add proper relational schema.
-         * 
+         *
          * Changes:
          * 1. Add normalized_name, country, artist_type columns to artists table
          * 2. Add primary_artist_id foreign key to tracks table
          * 3. Create track_artists junction table for many-to-many relationship
          * 4. Migrate existing data to create artist records and link them
          */
-        val MIGRATION_7_8 = object : Migration(7, 8) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 7 to 8")
-                
-                // Step 1: Add new columns to artists table
-                db.execSQL("ALTER TABLE artists ADD COLUMN normalized_name TEXT NOT NULL DEFAULT ''")
-                db.execSQL("ALTER TABLE artists ADD COLUMN country TEXT DEFAULT NULL")
-                db.execSQL("ALTER TABLE artists ADD COLUMN artist_type TEXT DEFAULT NULL")
-                
-                // Update normalized_name for existing artists
-                db.execSQL("""
+        val MIGRATION_7_8 =
+            object : Migration(7, 8) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 7 to 8")
+
+                    // Step 1: Add new columns to artists table
+                    db.execSQL("ALTER TABLE artists ADD COLUMN normalized_name TEXT NOT NULL DEFAULT ''")
+                    db.execSQL("ALTER TABLE artists ADD COLUMN country TEXT DEFAULT NULL")
+                    db.execSQL("ALTER TABLE artists ADD COLUMN artist_type TEXT DEFAULT NULL")
+
+                    // Update normalized_name for existing artists
+                    db.execSQL(
+                        """
                     UPDATE artists SET normalized_name = LOWER(TRIM(name))
                     WHERE normalized_name = ''
-                """)
-                
-                // Create index on normalized_name (can't be unique during migration due to potential duplicates)
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_artists_normalized_name ON artists(normalized_name)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_artists_name ON artists(name)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_artists_spotify_id ON artists(spotify_id)")
-                
-                // Step 2: Add primary_artist_id column to tracks table
-                db.execSQL("ALTER TABLE tracks ADD COLUMN primary_artist_id INTEGER DEFAULT NULL REFERENCES artists(id) ON DELETE SET NULL")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_tracks_primary_artist_id ON tracks(primary_artist_id)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_tracks_title_artist ON tracks(title, artist)")
-                
-                // Step 3: Create track_artists junction table
-                db.execSQL("""
+                """,
+                    )
+
+                    // Create index on normalized_name (can't be unique during migration due to potential duplicates)
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_artists_normalized_name ON artists(normalized_name)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_artists_name ON artists(name)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_artists_spotify_id ON artists(spotify_id)")
+
+                    // Step 2: Add primary_artist_id column to tracks table
+                    db.execSQL(
+                        "ALTER TABLE tracks ADD COLUMN primary_artist_id INTEGER DEFAULT NULL REFERENCES artists(id) ON DELETE SET NULL",
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_tracks_primary_artist_id ON tracks(primary_artist_id)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_tracks_title_artist ON tracks(title, artist)")
+
+                    // Step 3: Create track_artists junction table
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS track_artists (
                         track_id INTEGER NOT NULL,
                         artist_id INTEGER NOT NULL,
@@ -126,17 +149,19 @@ abstract class AppDatabase : RoomDatabase() {
                         FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE,
                         FOREIGN KEY(artist_id) REFERENCES artists(id) ON DELETE CASCADE
                     )
-                """)
-                
-                // Create indices on track_artists
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_track_artists_track_id ON track_artists(track_id)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_track_artists_artist_id ON track_artists(artist_id)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_track_artists_track_id_role ON track_artists(track_id, role)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_track_artists_artist_id_role ON track_artists(artist_id, role)")
-                
-                // Step 4: Migrate existing data
-                // Create artists from unique artist names in tracks table
-                db.execSQL("""
+                """,
+                    )
+
+                    // Create indices on track_artists
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_track_artists_track_id ON track_artists(track_id)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_track_artists_artist_id ON track_artists(artist_id)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_track_artists_track_id_role ON track_artists(track_id, role)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_track_artists_artist_id_role ON track_artists(artist_id, role)")
+
+                    // Step 4: Migrate existing data
+                    // Create artists from unique artist names in tracks table
+                    db.execSQL(
+                        """
                     INSERT OR IGNORE INTO artists (name, normalized_name, image_url, musicbrainz_id, spotify_id)
                     SELECT DISTINCT 
                         artist, 
@@ -149,10 +174,12 @@ abstract class AppDatabase : RoomDatabase() {
                     AND NOT EXISTS (
                         SELECT 1 FROM artists WHERE LOWER(TRIM(name)) = LOWER(TRIM(tracks.artist))
                     )
-                """)
-                
-                // Link tracks to their primary artists
-                db.execSQL("""
+                """,
+                    )
+
+                    // Link tracks to their primary artists
+                    db.execSQL(
+                        """
                     UPDATE tracks 
                     SET primary_artist_id = (
                         SELECT id FROM artists 
@@ -161,10 +188,12 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     WHERE primary_artist_id IS NULL
                     AND artist IS NOT NULL AND artist != ''
-                """)
-                
-                // Create track_artists relationships for primary artists
-                db.execSQL("""
+                """,
+                    )
+
+                    // Create track_artists relationships for primary artists
+                    db.execSQL(
+                        """
                     INSERT OR IGNORE INTO track_artists (track_id, artist_id, role, credit_order)
                     SELECT 
                         tracks.id,
@@ -174,441 +203,537 @@ abstract class AppDatabase : RoomDatabase() {
                     FROM tracks
                     INNER JOIN artists ON tracks.primary_artist_id = artists.id
                     WHERE tracks.primary_artist_id IS NOT NULL
-                """)
-                
-                Log.i(TAG, "Migration from version 7 to 8 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 7 to 8 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 8 to 9: Add performance optimization indexes.
-         * 
+         *
          * These composite indexes significantly improve query performance for:
          * - Time-range queries on listening_events
          * - Top tracks/artists queries
          * - Stats calculations
          */
-        val MIGRATION_8_9 = object : Migration(8, 9) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 8 to 9 - Adding performance indexes")
-                
-                // Composite indexes for listening_events time-range queries
-                db.execSQL("""
+        val MIGRATION_8_9 =
+            object : Migration(8, 9) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 8 to 9 - Adding performance indexes")
+
+                    // Composite indexes for listening_events time-range queries
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_timestamp_track_id 
                     ON listening_events(timestamp, track_id)
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_track_id_timestamp 
                     ON listening_events(track_id, timestamp DESC)
-                """)
-                
-                // Covering index for common stats queries
-                db.execSQL("""
+                """,
+                    )
+
+                    // Covering index for common stats queries
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_stats 
                     ON listening_events(timestamp, track_id, playDuration, completionPercentage)
-                """)
-                
-                // Index for enriched_metadata lookups
-                db.execSQL("""
+                """,
+                    )
+
+                    // Index for enriched_metadata lookups
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_enriched_metadata_status_timestamp 
                     ON enriched_metadata(enrichment_status, last_enrichment_attempt)
-                """)
-                
-                // Index for track title search
-                db.execSQL("""
+                """,
+                    )
+
+                    // Index for track title search
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_tracks_title_lower 
                     ON tracks(title COLLATE NOCASE)
-                """)
-                
-                Log.i(TAG, "Migration from version 8 to 9 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 8 to 9 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 9 to 10: Add ReccoBeats audio features support.
-         * 
-         * ReccoBeats is a FREE API that provides audio features similar to Spotify's 
+         *
+         * ReccoBeats is a FREE API that provides audio features similar to Spotify's
          * deprecated endpoint. This migration adds:
          * - reccobeats_id column to store ReccoBeats track ID
          * - audio_features_source column to track where audio features came from
          */
-        val MIGRATION_9_10 = object : Migration(9, 10) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 9 to 10 - Adding ReccoBeats support")
-                
-                // Add ReccoBeats ID column
-                db.execSQL("""
+        val MIGRATION_9_10 =
+            object : Migration(9, 10) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 9 to 10 - Adding ReccoBeats support")
+
+                    // Add ReccoBeats ID column
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN reccobeats_id TEXT DEFAULT NULL
-                """)
-                
-                // Add audio features source column
-                // Values: NONE, SPOTIFY, RECCOBEATS, RECCOBEATS_ANALYSIS, LOCAL_ANALYSIS
-                db.execSQL("""
+                """,
+                    )
+
+                    // Add audio features source column
+                    // Values: NONE, SPOTIFY, RECCOBEATS, RECCOBEATS_ANALYSIS, LOCAL_ANALYSIS
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN audio_features_source TEXT NOT NULL DEFAULT 'NONE'
-                """)
-                
-                // Update existing records that have audio features from Spotify
-                db.execSQL("""
+                """,
+                    )
+
+                    // Update existing records that have audio features from Spotify
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET audio_features_source = 'SPOTIFY' 
                     WHERE audio_features_json IS NOT NULL 
                     AND spotify_id IS NOT NULL
-                """)
-                
-                // Create index for ReccoBeats ID lookups
-                db.execSQL("""
+                """,
+                    )
+
+                    // Create index for ReccoBeats ID lookups
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_enriched_metadata_reccobeats_id 
                     ON enriched_metadata(reccobeats_id)
-                """)
-                
-                Log.i(TAG, "Migration from version 9 to 10 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 9 to 10 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 10 to 11.
-         * 
+         *
          * Adds spotify_preview_url column to store Spotify 30-second preview URL.
          * This is used for ReccoBeats audio analysis fallback when database lookup fails.
          */
-        val MIGRATION_10_11 = object : Migration(10, 11) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 10 to 11 - Adding Spotify preview URL")
-                
-                // Add Spotify preview URL column
-                db.execSQL("""
+        val MIGRATION_10_11 =
+            object : Migration(10, 11) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 10 to 11 - Adding Spotify preview URL")
+
+                    // Add Spotify preview URL column
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN spotify_preview_url TEXT DEFAULT NULL
-                """)
-                
-                Log.i(TAG, "Migration from version 10 to 11 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 10 to 11 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 11 to 12.
-         * 
+         *
          * Adds enhanced robustness tracking fields to listening_events:
          * - total_pause_duration_ms: Total time the track was paused
          * - seek_count: Number of seek operations (forward/backward)
          * - position_updates_count: Number of position updates (for validation)
          * - was_interrupted: Whether the session was interrupted (app kill, crash)
          */
-        val MIGRATION_11_12 = object : Migration(11, 12) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 11 to 12 - Adding enhanced tracking fields")
-                
-                // Add robustness tracking columns to listening_events
-                db.execSQL("""
+        val MIGRATION_11_12 =
+            object : Migration(11, 12) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 11 to 12 - Adding enhanced tracking fields")
+
+                    // Add robustness tracking columns to listening_events
+                    db.execSQL(
+                        """
                     ALTER TABLE listening_events 
                     ADD COLUMN total_pause_duration_ms INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     ALTER TABLE listening_events 
                     ADD COLUMN seek_count INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     ALTER TABLE listening_events 
                     ADD COLUMN position_updates_count INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     ALTER TABLE listening_events 
                     ADD COLUMN was_interrupted INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                Log.i(TAG, "Migration from version 11 to 12 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 11 to 12 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 12 to 13.
-         * 
+         *
          * Adds iTunes and music streaming enhancements:
          * - itunes_artist_image_url: Artist images from iTunes (fallback for Spotify/Last.fm)
          * - apple_music_url: Direct link to track on Apple Music
          * - spotify_track_url: Direct link to track on Spotify
          * - release_date_full: Full ISO 8601 release date (not just year)
          */
-        val MIGRATION_12_13 = object : Migration(12, 13) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 12 to 13 - Adding iTunes and music links")
-                
-                // Add iTunes artist image URL
-                db.execSQL("""
+        val MIGRATION_12_13 =
+            object : Migration(12, 13) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 12 to 13 - Adding iTunes and music links")
+
+                    // Add iTunes artist image URL
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN itunes_artist_image_url TEXT DEFAULT NULL
-                """)
-                
-                // Add Apple Music URL
-                db.execSQL("""
+                """,
+                    )
+
+                    // Add Apple Music URL
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN apple_music_url TEXT DEFAULT NULL
-                """)
-                
-                // Add Spotify track URL
-                db.execSQL("""
+                """,
+                    )
+
+                    // Add Spotify track URL
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN spotify_track_url TEXT DEFAULT NULL
-                """)
-                
-                // Add full release date (ISO 8601 format)
-                db.execSQL("""
+                """,
+                    )
+
+                    // Add full release date (ISO 8601 format)
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN release_date_full TEXT DEFAULT NULL
-                """)
-                
-                // Populate release_date_full from existing release_date where available
-                // release_date already contains partial ISO format in many cases
-                db.execSQL("""
+                """,
+                    )
+
+                    // Populate release_date_full from existing release_date where available
+                    // release_date already contains partial ISO format in many cases
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET release_date_full = release_date 
                     WHERE release_date IS NOT NULL 
                     AND LENGTH(release_date) >= 10
-                """)
-                
-                Log.i(TAG, "Migration from version 12 to 13 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 12 to 13 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 13 to 14.
-         * 
+         *
          * Adds preview_url column to enriched_metadata table.
-         * This stores the direct audio stream URL (usually .m4a from iTunes) 
+         * This stores the direct audio stream URL (usually .m4a from iTunes)
          * for 30-second song previews.
          */
-        val MIGRATION_13_14 = object : Migration(13, 14) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 13 to 14 - Adding preview_url")
-                
-                db.execSQL("""
+        val MIGRATION_13_14 =
+            object : Migration(13, 14) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 13 to 14 - Adding preview_url")
+
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN preview_url TEXT DEFAULT NULL
-                """)
-                
-                Log.i(TAG, "Migration from version 13 to 14 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 13 to 14 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 14 to 15.
-         * 
+         *
          * Adds Deezer and Last.fm artist image URL columns for comprehensive
          * artist image fallback chain: Spotify > iTunes > Last.fm > Deezer
          */
-        val MIGRATION_14_15 = object : Migration(14, 15) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 14 to 15 - Adding Deezer/Last.fm artist images")
-                
-                // Add Deezer artist image URL
-                db.execSQL("""
+        val MIGRATION_14_15 =
+            object : Migration(14, 15) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 14 to 15 - Adding Deezer/Last.fm artist images")
+
+                    // Add Deezer artist image URL
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN deezer_artist_image_url TEXT DEFAULT NULL
-                """)
-                
-                // Add Last.fm artist image URL
-                db.execSQL("""
+                """,
+                    )
+
+                    // Add Last.fm artist image URL
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN lastfm_artist_image_url TEXT DEFAULT NULL
-                """)
-                
-                Log.i(TAG, "Migration from version 14 to 15 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 14 to 15 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 15 to 16.
-         * 
+         *
          * Adds album_art_source column to track where album art came from.
          * This enables priority-based replacement where API sources can replace
          * local device-extracted art, but local art won't replace higher quality API art.
-         * 
+         *
          * Priority: SPOTIFY > MUSICBRAINZ > ITUNES > DEEZER > LOCAL > NONE
          */
-        val MIGRATION_15_16 = object : Migration(15, 16) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 15 to 16 - Adding album art source tracking")
-                
-                // Add album_art_source column with default value
-                db.execSQL("""
+        val MIGRATION_15_16 =
+            object : Migration(15, 16) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 15 to 16 - Adding album art source tracking")
+
+                    // Add album_art_source column with default value
+                    db.execSQL(
+                        """
                     ALTER TABLE enriched_metadata 
                     ADD COLUMN album_art_source TEXT NOT NULL DEFAULT 'NONE'
-                """)
-                
-                // For existing records with album art, infer the source:
-                // - If has MusicBrainz release ID, assume MUSICBRAINZ
-                // - If URL starts with http(s) (API source), mark as ITUNES (safe default)
-                // - If URL starts with file:// (local), mark as LOCAL
-                
-                // Mark MusicBrainz sourced art
-                db.execSQL("""
+                """,
+                    )
+
+                    // For existing records with album art, infer the source:
+                    // - If has MusicBrainz release ID, assume MUSICBRAINZ
+                    // - If URL starts with http(s) (API source), mark as ITUNES (safe default)
+                    // - If URL starts with file:// (local), mark as LOCAL
+
+                    // Mark MusicBrainz sourced art
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_source = 'MUSICBRAINZ' 
                     WHERE album_art_url IS NOT NULL 
                     AND musicbrainz_release_id IS NOT NULL
-                """)
-                
-                // Mark Spotify sourced art
-                db.execSQL("""
+                """,
+                    )
+
+                    // Mark Spotify sourced art
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_source = 'SPOTIFY' 
                     WHERE album_art_url IS NOT NULL 
                     AND spotify_id IS NOT NULL
                     AND album_art_source = 'NONE'
-                """)
-                
-                // Mark local file art
-                db.execSQL("""
+                """,
+                    )
+
+                    // Mark local file art
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_source = 'LOCAL' 
                     WHERE album_art_url IS NOT NULL 
                     AND album_art_url LIKE 'file://%'
                     AND album_art_source = 'NONE'
-                """)
-                
-                // Mark remaining API art as ITUNES (safe default for http URLs)
-                db.execSQL("""
+                """,
+                    )
+
+                    // Mark remaining API art as ITUNES (safe default for http URLs)
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_source = 'ITUNES' 
                     WHERE album_art_url IS NOT NULL 
                     AND (album_art_url LIKE 'http://%' OR album_art_url LIKE 'https://%')
                     AND album_art_source = 'NONE'
-                """)
-                
-                Log.i(TAG, "Migration from version 15 to 16 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 15 to 16 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 16 to 17.
-         * 
+         *
          * Fix HTTP URLs to HTTPS for Cover Art Archive images.
          * Cover Art Archive returns HTTP URLs but HTTPS works better and avoids redirect issues.
          * This migration updates all existing album art URLs to use HTTPS.
          */
-        val MIGRATION_16_17 = object : Migration(16, 17) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 16 to 17 - Fixing HTTP URLs to HTTPS")
-                
-                // Fix Cover Art Archive URLs in enriched_metadata table
-                db.execSQL("""
+        val MIGRATION_16_17 =
+            object : Migration(16, 17) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 16 to 17 - Fixing HTTP URLs to HTTPS")
+
+                    // Fix Cover Art Archive URLs in enriched_metadata table
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_url = REPLACE(album_art_url, 'http://coverartarchive.org', 'https://coverartarchive.org')
                     WHERE album_art_url LIKE 'http://coverartarchive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_url_small = REPLACE(album_art_url_small, 'http://coverartarchive.org', 'https://coverartarchive.org')
                     WHERE album_art_url_small LIKE 'http://coverartarchive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_url_large = REPLACE(album_art_url_large, 'http://coverartarchive.org', 'https://coverartarchive.org')
                     WHERE album_art_url_large LIKE 'http://coverartarchive.org%'
-                """)
-                
-                // Fix Internet Archive URLs (used by Cover Art Archive)
-                db.execSQL("""
+                """,
+                    )
+
+                    // Fix Internet Archive URLs (used by Cover Art Archive)
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_url = REPLACE(album_art_url, 'http://archive.org', 'https://archive.org')
                     WHERE album_art_url LIKE 'http://archive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_url_small = REPLACE(album_art_url_small, 'http://archive.org', 'https://archive.org')
                     WHERE album_art_url_small LIKE 'http://archive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_url_large = REPLACE(album_art_url_large, 'http://archive.org', 'https://archive.org')
                     WHERE album_art_url_large LIKE 'http://archive.org%'
-                """)
-                
-                // Fix Internet Archive CDN URLs (ia*.us.archive.org)
-                // These use HTTP by default but support HTTPS
-                db.execSQL("""
+                """,
+                    )
+
+                    // Fix Internet Archive CDN URLs (ia*.us.archive.org)
+                    // These use HTTP by default but support HTTPS
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_url = 'https' || SUBSTR(album_art_url, 5)
                     WHERE album_art_url LIKE 'http://ia%.us.archive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_url_small = 'https' || SUBSTR(album_art_url_small, 5)
                     WHERE album_art_url_small LIKE 'http://ia%.us.archive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE enriched_metadata 
                     SET album_art_url_large = 'https' || SUBSTR(album_art_url_large, 5)
                     WHERE album_art_url_large LIKE 'http://ia%.us.archive.org%'
-                """)
-                
-                // Also fix URLs in the tracks table
-                db.execSQL("""
+                """,
+                    )
+
+                    // Also fix URLs in the tracks table
+                    db.execSQL(
+                        """
                     UPDATE tracks 
                     SET album_art_url = REPLACE(album_art_url, 'http://coverartarchive.org', 'https://coverartarchive.org')
                     WHERE album_art_url LIKE 'http://coverartarchive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE tracks 
                     SET album_art_url = REPLACE(album_art_url, 'http://archive.org', 'https://archive.org')
                     WHERE album_art_url LIKE 'http://archive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE tracks 
                     SET album_art_url = 'https' || SUBSTR(album_art_url, 5)
                     WHERE album_art_url LIKE 'http://ia%.us.archive.org%'
-                """)
-                
-                // Also fix URLs in albums table if present
-                db.execSQL("""
+                """,
+                    )
+
+                    // Also fix URLs in albums table if present
+                    db.execSQL(
+                        """
                     UPDATE albums 
                     SET artwork_url = REPLACE(artwork_url, 'http://coverartarchive.org', 'https://coverartarchive.org')
                     WHERE artwork_url LIKE 'http://coverartarchive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE albums 
                     SET artwork_url = REPLACE(artwork_url, 'http://archive.org', 'https://archive.org')
                     WHERE artwork_url LIKE 'http://archive.org%'
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     UPDATE albums 
                     SET artwork_url = 'https' || SUBSTR(artwork_url, 5)
                     WHERE artwork_url LIKE 'http://ia%.us.archive.org%'
-                """)
-                
-                Log.i(TAG, "Migration from version 16 to 17 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 16 to 17 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 17 to 18.
-         * 
+         *
          * Adds track_aliases table for smart metadata deduplication.
          * This allows users to manually merge duplicate tracks and have the system
          * remember the mapping for future plays.
          */
-        val MIGRATION_17_18 = object : Migration(17, 18) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 17 to 18 - Adding track_aliases table")
-                
-                // Step 1: Create track_aliases table for manual merge tracking
-                db.execSQL("""
+        val MIGRATION_17_18 =
+            object : Migration(17, 18) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 17 to 18 - Adding track_aliases table")
+
+                    // Step 1: Create track_aliases table for manual merge tracking
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS track_aliases (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         target_track_id INTEGER NOT NULL,
@@ -617,57 +742,70 @@ abstract class AppDatabase : RoomDatabase() {
                         created_at INTEGER NOT NULL,
                         FOREIGN KEY(target_track_id) REFERENCES tracks(id) ON DELETE CASCADE
                     )
-                """)
-                
-                // Step 2: Create indices for efficient lookups
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_track_aliases_original_title_original_artist ON track_aliases(original_title, original_artist)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_track_aliases_target_track_id ON track_aliases(target_track_id)")
-                
-                // Step 3: Add mergeAlternateVersions column to user_preferences
-                // Default to 1 (true) for cleaner library experience
-                db.execSQL("ALTER TABLE user_preferences ADD COLUMN mergeAlternateVersions INTEGER NOT NULL DEFAULT 1")
-                
-                Log.i(TAG, "Migration from version 17 to 18 completed successfully")
+                """,
+                    )
+
+                    // Step 2: Create indices for efficient lookups
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS index_track_aliases_original_title_original_artist ON track_aliases(original_title, original_artist)",
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_track_aliases_target_track_id ON track_aliases(target_track_id)")
+
+                    // Step 3: Add mergeAlternateVersions column to user_preferences
+                    // Default to 1 (true) for cleaner library experience
+                    db.execSQL("ALTER TABLE user_preferences ADD COLUMN mergeAlternateVersions INTEGER NOT NULL DEFAULT 1")
+
+                    Log.i(TAG, "Migration from version 17 to 18 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 18 to 19.
-         * 
+         *
          * Adds comprehensive content filtering support:
          * 1. Add content_type column to tracks table (MUSIC, PODCAST, AUDIOBOOK)
          * 2. Add filterPodcasts and filterAudiobooks to user_preferences
          * 3. Create manual_content_marks table for user-defined filtering patterns
          */
-        val MIGRATION_18_19 = object : Migration(18, 19) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 18 to 19 - Adding content filtering")
-                
-                // Step 1: Add content_type column to tracks table
-                db.execSQL("""
+        val MIGRATION_18_19 =
+            object : Migration(18, 19) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 18 to 19 - Adding content filtering")
+
+                    // Step 1: Add content_type column to tracks table
+                    db.execSQL(
+                        """
                     ALTER TABLE tracks 
                     ADD COLUMN content_type TEXT NOT NULL DEFAULT 'MUSIC'
-                """)
-                
-                // Create index for content type filtering
-                db.execSQL("""
+                """,
+                    )
+
+                    // Create index for content type filtering
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_tracks_content_type 
                     ON tracks(content_type)
-                """)
-                
-                // Step 2: Add filter preferences to user_preferences
-                db.execSQL("""
+                """,
+                    )
+
+                    // Step 2: Add filter preferences to user_preferences
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN filterPodcasts INTEGER NOT NULL DEFAULT 1
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN filterAudiobooks INTEGER NOT NULL DEFAULT 1
-                """)
-                
-                // Step 3: Create manual_content_marks table
-                db.execSQL("""
+                """,
+                    )
+
+                    // Step 3: Create manual_content_marks table
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS manual_content_marks (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         target_track_id INTEGER NOT NULL,
@@ -679,70 +817,82 @@ abstract class AppDatabase : RoomDatabase() {
                         marked_at INTEGER NOT NULL,
                         FOREIGN KEY(target_track_id) REFERENCES tracks(id) ON DELETE CASCADE
                     )
-                """)
-                
-                // Create indices for efficient pattern matching
-                db.execSQL("""
+                """,
+                    )
+
+                    // Create indices for efficient pattern matching
+                    db.execSQL(
+                        """
                     CREATE UNIQUE INDEX IF NOT EXISTS index_manual_content_marks_original_title_original_artist 
                     ON manual_content_marks(original_title, original_artist)
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_manual_content_marks_target_track_id 
                     ON manual_content_marks(target_track_id)
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_manual_content_marks_content_type 
                     ON manual_content_marks(content_type)
-                """)
-                
-                Log.i(TAG, "Migration from version 18 to 19 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 18 to 19 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 19 to 20.
-         * 
+         *
          * Adds 'hasSeenHistoryCoachMark' to user_preferences to track
          * if the user has been shown the history long-press tutorial.
          */
-        val MIGRATION_19_20 = object : Migration(19, 20) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 19 to 20")
-                
-                // Add column with default false (0)
-                db.execSQL("""
+        val MIGRATION_19_20 =
+            object : Migration(19, 20) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 19 to 20")
+
+                    // Add column with default false (0)
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN hasSeenHistoryCoachMark INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                Log.i(TAG, "Migration from version 19 to 20 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 19 to 20 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 20 to 21.
-         * 
+         *
          * Removes foreign key from manual_content_marks table.
          * Artist-level marks should persist even after the original track is deleted,
          * as they are meant to filter FUTURE content from that artist.
          * With CASCADE delete, deleting an orphaned track would also delete
          * the artist block, defeating the purpose.
          */
-        val MIGRATION_20_21 = object : Migration(20, 21) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 20 to 21")
-                
-                // Check if the old table exists (it should from migration 18->19)
-                val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='manual_content_marks'")
-                val tableExists = cursor.moveToFirst()
-                cursor.close()
-                
-                if (!tableExists) {
-                    // Table doesn't exist - create it fresh without foreign key
-                    Log.i(TAG, "manual_content_marks table not found, creating fresh")
-                    db.execSQL("""
+        val MIGRATION_20_21 =
+            object : Migration(20, 21) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 20 to 21")
+
+                    // Check if the old table exists (it should from migration 18->19)
+                    val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='manual_content_marks'")
+                    val tableExists = cursor.moveToFirst()
+                    cursor.close()
+
+                    if (!tableExists) {
+                        // Table doesn't exist - create it fresh without foreign key
+                        Log.i(TAG, "manual_content_marks table not found, creating fresh")
+                        db.execSQL(
+                            """
                         CREATE TABLE IF NOT EXISTS manual_content_marks (
                             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                             target_track_id INTEGER NOT NULL,
@@ -753,16 +903,18 @@ abstract class AppDatabase : RoomDatabase() {
                             content_type TEXT NOT NULL,
                             marked_at INTEGER NOT NULL DEFAULT 0
                         )
-                    """)
-                } else {
-                    // Table exists - migrate it to remove foreign key
-                    // SQLite doesn't support dropping foreign keys directly.
-                    // We need to recreate the table without the foreign key.
-                    
-                    Log.i(TAG, "Migrating manual_content_marks to remove foreign key")
-                    
-                    // 1. Create new table without foreign key
-                    db.execSQL("""
+                    """,
+                        )
+                    } else {
+                        // Table exists - migrate it to remove foreign key
+                        // SQLite doesn't support dropping foreign keys directly.
+                        // We need to recreate the table without the foreign key.
+
+                        Log.i(TAG, "Migrating manual_content_marks to remove foreign key")
+
+                        // 1. Create new table without foreign key
+                        db.execSQL(
+                            """
                         CREATE TABLE manual_content_marks_new (
                             id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                             target_track_id INTEGER NOT NULL,
@@ -773,77 +925,95 @@ abstract class AppDatabase : RoomDatabase() {
                             content_type TEXT NOT NULL,
                             marked_at INTEGER NOT NULL DEFAULT 0
                         )
-                    """)
-                    
-                    // 2. Copy data from old table (preserving all user marks!)
-                    db.execSQL("""
+                    """,
+                        )
+
+                        // 2. Copy data from old table (preserving all user marks!)
+                        db.execSQL(
+                            """
                         INSERT INTO manual_content_marks_new 
                         SELECT id, target_track_id, pattern_type, original_title, 
                                original_artist, pattern_value, content_type, marked_at
                         FROM manual_content_marks
-                    """)
-                    
-                    // 3. Drop old table
-                    db.execSQL("DROP TABLE manual_content_marks")
-                    
-                    // 4. Rename new table
-                    db.execSQL("ALTER TABLE manual_content_marks_new RENAME TO manual_content_marks")
+                    """,
+                        )
+
+                        // 3. Drop old table
+                        db.execSQL("DROP TABLE manual_content_marks")
+
+                        // 4. Rename new table
+                        db.execSQL("ALTER TABLE manual_content_marks_new RENAME TO manual_content_marks")
+                    }
+
+                    // 5. Recreate indices (safe with IF NOT EXISTS)
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS index_manual_content_marks_original_title_original_artist ON manual_content_marks(original_title, original_artist)",
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_manual_content_marks_target_track_id ON manual_content_marks(target_track_id)",
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_manual_content_marks_content_type ON manual_content_marks(content_type)")
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_manual_content_marks_pattern_type_original_artist ON manual_content_marks(pattern_type, original_artist)",
+                    )
+
+                    Log.i(TAG, "Migration from version 20 to 21 completed successfully")
                 }
-                
-                // 5. Recreate indices (safe with IF NOT EXISTS)
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_manual_content_marks_original_title_original_artist ON manual_content_marks(original_title, original_artist)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_manual_content_marks_target_track_id ON manual_content_marks(target_track_id)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_manual_content_marks_content_type ON manual_content_marks(content_type)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_manual_content_marks_pattern_type_original_artist ON manual_content_marks(pattern_type, original_artist)")
-                
-                Log.i(TAG, "Migration from version 20 to 21 completed successfully")
             }
-        }
 
         /**
          * Migration from version 21 to 22.
-         * 
+         *
          * Adds boolean flags for the new "Passive Game" Walkthrough system:
          * - hasSeenSpotlightTutorial
          * - hasSeenStatsSortTutorial
          * - hasSeenStatsItemClickTutorial
          */
-        val MIGRATION_21_22 = object : Migration(21, 22) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 21 to 22")
-                
-                db.execSQL("""
+        val MIGRATION_21_22 =
+            object : Migration(21, 22) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 21 to 22")
+
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN hasSeenSpotlightTutorial INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN hasSeenStatsSortTutorial INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN hasSeenStatsItemClickTutorial INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                Log.i(TAG, "Migration from version 21 to 22 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 21 to 22 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 22 to 23.
-         * 
+         *
          * Adds artist_aliases table for artist merging feature.
          * This allows users to merge duplicate artists (e.g., "Billie Eilish - Topic" into "Billie Eilish")
          * and has the system remember the mapping for future plays.
          */
-        val MIGRATION_22_23 = object : Migration(22, 23) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 22 to 23 - Adding artist_aliases table")
-                
-                // Create artist_aliases table
-                db.execSQL("""
+        val MIGRATION_22_23 =
+            object : Migration(22, 23) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 22 to 23 - Adding artist_aliases table")
+
+                    // Create artist_aliases table
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS artist_aliases (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         target_artist_id INTEGER NOT NULL,
@@ -852,61 +1022,71 @@ abstract class AppDatabase : RoomDatabase() {
                         created_at INTEGER NOT NULL DEFAULT 0,
                         FOREIGN KEY(target_artist_id) REFERENCES artists(id) ON DELETE CASCADE
                     )
-                """)
-                
-                // Create indices for efficient lookups
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_artist_aliases_original_name_normalized ON artist_aliases(original_name_normalized)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_artist_aliases_target_artist_id ON artist_aliases(target_artist_id)")
-                
-                Log.i(TAG, "Migration from version 22 to 23 completed successfully")
+                """,
+                    )
+
+                    // Create indices for efficient lookups
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS index_artist_aliases_original_name_normalized ON artist_aliases(original_name_normalized)",
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_artist_aliases_target_artist_id ON artist_aliases(target_artist_id)")
+
+                    Log.i(TAG, "Migration from version 22 to 23 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 23 to 24.
-         * 
+         *
          * Adds Spotlight Story reminder tracking fields to user_preferences:
          * - lastMonthlyReminderShown: Date when monthly reminder was last displayed (YYYY-MM-DD)
          * - lastYearlyReminderShown: Date when yearly reminder was last displayed (YYYY-MM-DD)
          */
-        val MIGRATION_23_24 = object : Migration(23, 24) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 23 to 24 - Adding Spotlight reminder tracking")
-                
-                // Add Spotlight reminder tracking columns
-                db.execSQL("""
+        val MIGRATION_23_24 =
+            object : Migration(23, 24) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 23 to 24 - Adding Spotlight reminder tracking")
+
+                    // Add Spotlight reminder tracking columns
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN lastMonthlyReminderShown TEXT DEFAULT NULL
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN lastYearlyReminderShown TEXT DEFAULT NULL
-                """)
-                
-                Log.i(TAG, "Migration from version 23 to 24 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 23 to 24 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 24 to 25.
-         * 
+         *
          * Adds app_preferences table for user-controlled app selection.
          * Seeds the table with ALL apps from the original hardcoded sets to ensure
          * existing users don't lose tracking for any apps they were using.
-         * 
+         *
          * DATA PRESERVATION: This migration ONLY creates a new table - it does NOT
          * modify or delete any existing data (tracks, listening_events, etc.).
          */
-        val MIGRATION_24_25 = object : Migration(24, 25) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 24 to 25 - Adding app_preferences table")
-                
-                // Create app_preferences table
-                // NOTE: Do NOT use DEFAULT clauses or create indices here - the entity
-                // class doesn't declare @ColumnInfo(defaultValue=...) or @Index annotations,
-                // so Room's schema validation will fail if these are present in the table.
-                db.execSQL("""
+        val MIGRATION_24_25 =
+            object : Migration(24, 25) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 24 to 25 - Adding app_preferences table")
+
+                    // Create app_preferences table
+                    // NOTE: Do NOT use DEFAULT clauses or create indices here - the entity
+                    // class doesn't declare @ColumnInfo(defaultValue=...) or @Index annotations,
+                    // so Room's schema validation will fail if these are present in the table.
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS app_preferences (
                         packageName TEXT NOT NULL PRIMARY KEY,
                         displayName TEXT NOT NULL,
@@ -916,280 +1096,297 @@ abstract class AppDatabase : RoomDatabase() {
                         category TEXT NOT NULL,
                         addedAt INTEGER NOT NULL
                     )
-                """)
-                
+                """,
+                    )
 
-                val currentTime = System.currentTimeMillis()
-                
-                // MUSIC APPS - ALL apps from the original MUSIC_APPS set (enabled)
-                // This ensures existing users can continue tracking all apps they used
-                val musicApps = listOf(
-                    // Major Streaming Services
-                    Pair("com.spotify.music", "Spotify"),
-                    Pair("com.google.android.apps.youtube.music", "YouTube Music"),
-                    Pair("com.apple.android.music", "Apple Music"),
-                    Pair("com.amazon.mp3", "Amazon Music"),
-                    Pair("com.soundcloud.android", "SoundCloud"),
-                    Pair("deezer.android.app", "Deezer"),
-                    Pair("com.pandora.android", "Pandora"),
-                    Pair("com.aspiro.tidal", "Tidal"),
-                    Pair("com.tidal.android", "Tidal (Old)"),
-                    Pair("com.qobuz.music", "Qobuz"),
-                    Pair("ru.yandex.music", "Yandex Music"),
-                    
-                    // Indian Music Services
-                    Pair("com.jio.media.jiobeats", "JioSaavn"),
-                    Pair("com.gaana", "Gaana"),
-                    Pair("com.bsbportal.music", "Wynk Music"),
-                    Pair("com.hungama.myplay.activity", "Hungama Music"),
-                    Pair("in.startv.hotstar.music", "Hotstar Music"),
-                    Pair("com.moonvideo.android.resso", "Resso"),
-                    
-                    // Device Manufacturers
-                    Pair("com.samsung.android.app.music", "Samsung Music"),
-                    Pair("com.sec.android.app.music", "Samsung Music (Old)"),
-                    Pair("com.miui.player", "Mi Music"),
-                    
-                    // Revanced/Vanced Variants
-                    Pair("app.revanced.android.youtube.music", "YouTube Music ReVanced"),
-                    Pair("app.revanced.android.apps.youtube.music", "YouTube Music ReVanced"),
-                    Pair("com.vanced.android.youtube.music", "YouTube Music Vanced"),
-                    
-                    // Other Streaming
-                    Pair("com.audiomack", "Audiomack"),
-                    Pair("com.mmm.trebelmusic", "Trebel"),
-                    Pair("nugs.net", "Nugs.net"),
-                    Pair("net.nugs.multiband", "Nugs.net (Multiband)"),
-                    
-                    // Open Source / FOSS Music Clients
-                    Pair("com.dd3boh.outertune", "OuterTune"),
-                    Pair("com.zionhuang.music", "InnerTune"),
-                    Pair("it.vfsfitvnm.vimusic", "ViMusic"),
-                    Pair("oss.krtirtho.spotube", "Spotube"),
-                    Pair("com.shadow.blackhole", "BlackHole"),
-                    Pair("com.anandnet.harmonymusic", "Harmony Music"),
-                    Pair("it.fast4x.rimusic", "RiMusic"),
-                    Pair("com.msob7y.namida", "Namida"),
-                    Pair("com.metrolist.music", "Metrolist"),
-                    Pair("com.gokadzev.musify", "Musify"),
-                    Pair("com.gokadzev.musify.fdroid", "Musify (F-Droid)"),
-                    Pair("ls.bloomee.musicplayer", "BloomeeTunes"),
-                    Pair("com.maxrave.simpmusic", "SimpMusic"),
-                    Pair("it.ncaferra.pixelplayerfree", "Pixel Player"),
-                    Pair("com.theveloper.pixelplay", "PixelPlay"),
-                    Pair("com.singularity.gramophone", "Gramophone"),
-                    Pair("player.phonograph.plus", "Phonograph Plus"),
-                    Pair("org.oxycblt.auxio", "Auxio"),
-                    Pair("com.maloy.muzza", "Muzza"),
-                    Pair("uk.co.projectneon.echo", "Echo"),
-                    Pair("com.shabinder.spotiflyer", "SpotiFlyer"),
-                    Pair("com.kapp.youtube.final", "YMusic"),
-                    Pair("org.schabi.newpipe", "NewPipe"),
-                    Pair("org.polymorphicshade.newpipe", "NewPipe (Fork)"),
-                    
-                    // Popular Offline Players
-                    Pair("com.maxmpz.audioplayer", "Poweramp"),
-                    Pair("in.krosbits.musicolet", "Musicolet"),
-                    Pair("com.kodarkooperativet.blackplayerfree", "BlackPlayer Free"),
-                    Pair("com.kodarkooperativet.blackplayerex", "BlackPlayer EX"),
-                    Pair("com.rhmsoft.pulsar", "Pulsar"),
-                    Pair("com.neutroncode.mp", "Neutron Player"),
-                    Pair("gonemad.gmmp", "GoneMad"),
-                    Pair("code.name.monkey.retromusic", "Retro Music Player"),
-                    Pair("com.piyush.music", "Oto Music"),
-                    Pair("com.simplecity.amp_pro", "Shuttle+"),
-                    Pair("ru.stellio.player", "Stellio"),
-                    Pair("io.stellio.music", "Stellio (Alt)"),
-                    Pair("com.frolo.musp", "Frolomuse"),
-                    Pair("com.rhmsoft.omnia", "Omnia")
-                )
-                
-                musicApps.forEach { (pkg, name) ->
-                    db.execSQL("""
+                    val currentTime = System.currentTimeMillis()
+
+                    // MUSIC APPS - ALL apps from the original MUSIC_APPS set (enabled)
+                    // This ensures existing users can continue tracking all apps they used
+                    val musicApps =
+                        listOf(
+                            // Major Streaming Services
+                            Pair("com.spotify.music", "Spotify"),
+                            Pair("com.google.android.apps.youtube.music", "YouTube Music"),
+                            Pair("com.apple.android.music", "Apple Music"),
+                            Pair("com.amazon.mp3", "Amazon Music"),
+                            Pair("com.soundcloud.android", "SoundCloud"),
+                            Pair("deezer.android.app", "Deezer"),
+                            Pair("com.pandora.android", "Pandora"),
+                            Pair("com.aspiro.tidal", "Tidal"),
+                            Pair("com.tidal.android", "Tidal (Old)"),
+                            Pair("com.qobuz.music", "Qobuz"),
+                            Pair("ru.yandex.music", "Yandex Music"),
+                            // Indian Music Services
+                            Pair("com.jio.media.jiobeats", "JioSaavn"),
+                            Pair("com.gaana", "Gaana"),
+                            Pair("com.bsbportal.music", "Wynk Music"),
+                            Pair("com.hungama.myplay.activity", "Hungama Music"),
+                            Pair("in.startv.hotstar.music", "Hotstar Music"),
+                            Pair("com.moonvideo.android.resso", "Resso"),
+                            // Device Manufacturers
+                            Pair("com.samsung.android.app.music", "Samsung Music"),
+                            Pair("com.sec.android.app.music", "Samsung Music (Old)"),
+                            Pair("com.miui.player", "Mi Music"),
+                            // Revanced/Vanced Variants
+                            Pair("app.revanced.android.youtube.music", "YouTube Music ReVanced"),
+                            Pair("app.revanced.android.apps.youtube.music", "YouTube Music ReVanced"),
+                            Pair("com.vanced.android.youtube.music", "YouTube Music Vanced"),
+                            // Other Streaming
+                            Pair("com.audiomack", "Audiomack"),
+                            Pair("com.mmm.trebelmusic", "Trebel"),
+                            Pair("nugs.net", "Nugs.net"),
+                            Pair("net.nugs.multiband", "Nugs.net (Multiband)"),
+                            // Open Source / FOSS Music Clients
+                            Pair("com.dd3boh.outertune", "OuterTune"),
+                            Pair("com.zionhuang.music", "InnerTune"),
+                            Pair("it.vfsfitvnm.vimusic", "ViMusic"),
+                            Pair("oss.krtirtho.spotube", "Spotube"),
+                            Pair("com.shadow.blackhole", "BlackHole"),
+                            Pair("com.anandnet.harmonymusic", "Harmony Music"),
+                            Pair("it.fast4x.rimusic", "RiMusic"),
+                            Pair("com.msob7y.namida", "Namida"),
+                            Pair("com.metrolist.music", "Metrolist"),
+                            Pair("com.gokadzev.musify", "Musify"),
+                            Pair("com.gokadzev.musify.fdroid", "Musify (F-Droid)"),
+                            Pair("ls.bloomee.musicplayer", "BloomeeTunes"),
+                            Pair("com.maxrave.simpmusic", "SimpMusic"),
+                            Pair("it.ncaferra.pixelplayerfree", "Pixel Player"),
+                            Pair("com.theveloper.pixelplay", "PixelPlay"),
+                            Pair("com.singularity.gramophone", "Gramophone"),
+                            Pair("player.phonograph.plus", "Phonograph Plus"),
+                            Pair("org.oxycblt.auxio", "Auxio"),
+                            Pair("com.maloy.muzza", "Muzza"),
+                            Pair("uk.co.projectneon.echo", "Echo"),
+                            Pair("com.shabinder.spotiflyer", "SpotiFlyer"),
+                            Pair("com.kapp.youtube.final", "YMusic"),
+                            Pair("org.schabi.newpipe", "NewPipe"),
+                            Pair("org.polymorphicshade.newpipe", "NewPipe (Fork)"),
+                            // Popular Offline Players
+                            Pair("com.maxmpz.audioplayer", "Poweramp"),
+                            Pair("in.krosbits.musicolet", "Musicolet"),
+                            Pair("com.kodarkooperativet.blackplayerfree", "BlackPlayer Free"),
+                            Pair("com.kodarkooperativet.blackplayerex", "BlackPlayer EX"),
+                            Pair("com.rhmsoft.pulsar", "Pulsar"),
+                            Pair("com.neutroncode.mp", "Neutron Player"),
+                            Pair("gonemad.gmmp", "GoneMad"),
+                            Pair("code.name.monkey.retromusic", "Retro Music Player"),
+                            Pair("com.piyush.music", "Oto Music"),
+                            Pair("com.simplecity.amp_pro", "Shuttle+"),
+                            Pair("ru.stellio.player", "Stellio"),
+                            Pair("io.stellio.music", "Stellio (Alt)"),
+                            Pair("com.frolo.musp", "Frolomuse"),
+                            Pair("com.rhmsoft.omnia", "Omnia"),
+                        )
+
+                    musicApps.forEach { (pkg, name) ->
+                        db.execSQL(
+                            """
                         INSERT OR IGNORE INTO app_preferences 
                         (packageName, displayName, isEnabled, isUserAdded, isBlocked, category, addedAt)
                         VALUES ('$pkg', '$name', 1, 0, 0, 'MUSIC', $currentTime)
-                    """)
-                }
-                
-                // PODCAST APPS - Seed as enabled (user can disable if they don't want)
-                val podcastApps = listOf(
-                    Pair("com.google.android.apps.podcasts", "Google Podcasts"),
-                    Pair("fm.player", "Player FM"),
-                    Pair("au.com.shiftyjelly.pocketcasts", "Pocket Casts"),
-                    Pair("com.bambuna.podcastaddict", "Podcast Addict"),
-                    Pair("com.clearchannel.iheartradio.controller", "iHeartRadio"),
-                    Pair("app.tunein.player", "TuneIn Radio"),
-                    Pair("com.stitcher.app", "Stitcher"),
-                    Pair("com.castbox.player", "Castbox"),
-                    Pair("com.apple.android.podcasts", "Apple Podcasts"),
-                    Pair("fm.castbox.audiobook.radio.podcast", "Castbox Variant")
-                )
-                
-                podcastApps.forEach { (pkg, name) ->
-                    db.execSQL("""
+                    """,
+                        )
+                    }
+
+                    // PODCAST APPS - Seed as enabled (user can disable if they don't want)
+                    val podcastApps =
+                        listOf(
+                            Pair("com.google.android.apps.podcasts", "Google Podcasts"),
+                            Pair("fm.player", "Player FM"),
+                            Pair("au.com.shiftyjelly.pocketcasts", "Pocket Casts"),
+                            Pair("com.bambuna.podcastaddict", "Podcast Addict"),
+                            Pair("com.clearchannel.iheartradio.controller", "iHeartRadio"),
+                            Pair("app.tunein.player", "TuneIn Radio"),
+                            Pair("com.stitcher.app", "Stitcher"),
+                            Pair("com.castbox.player", "Castbox"),
+                            Pair("com.apple.android.podcasts", "Apple Podcasts"),
+                            Pair("fm.castbox.audiobook.radio.podcast", "Castbox Variant"),
+                        )
+
+                    podcastApps.forEach { (pkg, name) ->
+                        db.execSQL(
+                            """
                         INSERT OR IGNORE INTO app_preferences 
                         (packageName, displayName, isEnabled, isUserAdded, isBlocked, category, addedAt)
                         VALUES ('$pkg', '$name', 1, 0, 0, 'PODCAST', $currentTime)
-                    """)
-                }
-                
-                // AUDIOBOOK APPS - Seed as enabled 
-                val audiobookApps = listOf(
-                    Pair("com.audible.application", "Audible"),
-                    Pair("com.google.android.apps.books", "Google Play Books"),
-                    Pair("com.audiobooks.android.audiobooks", "Audiobooks.com"),
-                    Pair("com.scribd.app.reader0", "Scribd"),
-                    Pair("com.storytel", "Storytel"),
-                    Pair("fm.libro", "Libro.fm"),
-                    Pair("com.kobo.books.ereader", "Kobo Books")
-                )
-                
-                audiobookApps.forEach { (pkg, name) ->
-                    db.execSQL("""
+                    """,
+                        )
+                    }
+
+                    // AUDIOBOOK APPS - Seed as enabled
+                    val audiobookApps =
+                        listOf(
+                            Pair("com.audible.application", "Audible"),
+                            Pair("com.google.android.apps.books", "Google Play Books"),
+                            Pair("com.audiobooks.android.audiobooks", "Audiobooks.com"),
+                            Pair("com.scribd.app.reader0", "Scribd"),
+                            Pair("com.storytel", "Storytel"),
+                            Pair("fm.libro", "Libro.fm"),
+                            Pair("com.kobo.books.ereader", "Kobo Books"),
+                        )
+
+                    audiobookApps.forEach { (pkg, name) ->
+                        db.execSQL(
+                            """
                         INSERT OR IGNORE INTO app_preferences 
                         (packageName, displayName, isEnabled, isUserAdded, isBlocked, category, addedAt)
                         VALUES ('$pkg', '$name', 1, 0, 0, 'AUDIOBOOK', $currentTime)
-                    """)
-                }
-                
-                // BLOCKED APPS - Video apps, social media, browsers (blocked by default)
-                // These were always blocked and should remain blocked
-                val blockedApps = listOf(
-                    // Video Streaming
-                    Triple("com.google.android.youtube", "YouTube", "VIDEO"),
-                    Triple("com.google.android.apps.youtube", "YouTube", "VIDEO"),
-                    Triple("app.revanced.android.youtube", "YouTube ReVanced", "VIDEO"),
-                    Triple("com.netflix.mediaclient", "Netflix", "VIDEO"),
-                    Triple("com.amazon.avod.thirdpartyclient", "Prime Video", "VIDEO"),
-                    Triple("com.disney.disneyplus", "Disney+", "VIDEO"),
-                    Triple("in.startv.hotstar", "Hotstar", "VIDEO"),
-                    Triple("com.hotstar.android", "Hotstar", "VIDEO"),
-                    Triple("tv.twitch.android.app", "Twitch", "VIDEO"),
-                    
-                    // Social Media
-                    Triple("com.zhiliaoapp.musically", "TikTok", "VIDEO"),
-                    Triple("com.ss.android.ugc.trill", "TikTok", "VIDEO"),
-                    Triple("com.instagram.android", "Instagram", "VIDEO"),
-                    Triple("com.facebook.katana", "Facebook", "VIDEO"),
-                    Triple("com.snapchat.android", "Snapchat", "VIDEO"),
-                    
-                    // Video Players
-                    Triple("com.vimeo.android.videoapp", "Vimeo", "VIDEO"),
-                    Triple("com.mxtech.videoplayer.ad", "MX Player", "VIDEO"),
-                    Triple("com.mxtech.videoplayer.pro", "MX Player Pro", "VIDEO"),
-                    Triple("org.videolan.vlc", "VLC", "VIDEO"),
-                    Triple("com.google.android.apps.photos", "Google Photos", "VIDEO"),
-                    Triple("com.whatsapp", "WhatsApp", "VIDEO"),
-                    Triple("org.telegram.messenger", "Telegram", "VIDEO"),
-                    Triple("com.google.android.gm", "Gmail", "OTHER"),
-                    
-                    // Browsers
-                    Triple("com.android.chrome", "Chrome", "OTHER"),
-                    Triple("com.chrome.beta", "Chrome Beta", "OTHER"),
-                    Triple("com.chrome.dev", "Chrome Dev", "OTHER"),
-                    Triple("org.mozilla.firefox", "Firefox", "OTHER"),
-                    Triple("org.mozilla.firefox_beta", "Firefox Beta", "OTHER"),
-                    Triple("com.opera.browser", "Opera", "OTHER"),
-                    Triple("com.brave.browser", "Brave", "OTHER"),
-                    Triple("com.microsoft.edge", "Microsoft Edge", "OTHER"),
-                    Triple("com.sec.android.app.sbrowser", "Samsung Browser", "OTHER"),
-                    
-                    // Device Gallery/Video Apps
-                    Triple("com.samsung.android.video", "Samsung Video", "VIDEO"),
-                    Triple("com.miui.videoplayer", "Mi Video", "VIDEO"),
-                    Triple("com.miui.gallery", "Mi Gallery", "VIDEO"),
-                    Triple("com.google.android.videos", "Google Play Movies", "VIDEO"),
-                    Triple("com.google.android.apps.youtube.kids", "YouTube Kids", "VIDEO")
-                )
-                
-                blockedApps.forEach { (pkg, name, category) ->
-                    db.execSQL("""
+                    """,
+                        )
+                    }
+
+                    // BLOCKED APPS - Video apps, social media, browsers (blocked by default)
+                    // These were always blocked and should remain blocked
+                    val blockedApps =
+                        listOf(
+                            // Video Streaming
+                            Triple("com.google.android.youtube", "YouTube", "VIDEO"),
+                            Triple("com.google.android.apps.youtube", "YouTube", "VIDEO"),
+                            Triple("app.revanced.android.youtube", "YouTube ReVanced", "VIDEO"),
+                            Triple("com.netflix.mediaclient", "Netflix", "VIDEO"),
+                            Triple("com.amazon.avod.thirdpartyclient", "Prime Video", "VIDEO"),
+                            Triple("com.disney.disneyplus", "Disney+", "VIDEO"),
+                            Triple("in.startv.hotstar", "Hotstar", "VIDEO"),
+                            Triple("com.hotstar.android", "Hotstar", "VIDEO"),
+                            Triple("tv.twitch.android.app", "Twitch", "VIDEO"),
+                            // Social Media
+                            Triple("com.zhiliaoapp.musically", "TikTok", "VIDEO"),
+                            Triple("com.ss.android.ugc.trill", "TikTok", "VIDEO"),
+                            Triple("com.instagram.android", "Instagram", "VIDEO"),
+                            Triple("com.facebook.katana", "Facebook", "VIDEO"),
+                            Triple("com.snapchat.android", "Snapchat", "VIDEO"),
+                            // Video Players
+                            Triple("com.vimeo.android.videoapp", "Vimeo", "VIDEO"),
+                            Triple("com.mxtech.videoplayer.ad", "MX Player", "VIDEO"),
+                            Triple("com.mxtech.videoplayer.pro", "MX Player Pro", "VIDEO"),
+                            Triple("org.videolan.vlc", "VLC", "VIDEO"),
+                            Triple("com.google.android.apps.photos", "Google Photos", "VIDEO"),
+                            Triple("com.whatsapp", "WhatsApp", "VIDEO"),
+                            Triple("org.telegram.messenger", "Telegram", "VIDEO"),
+                            Triple("com.google.android.gm", "Gmail", "OTHER"),
+                            // Browsers
+                            Triple("com.android.chrome", "Chrome", "OTHER"),
+                            Triple("com.chrome.beta", "Chrome Beta", "OTHER"),
+                            Triple("com.chrome.dev", "Chrome Dev", "OTHER"),
+                            Triple("org.mozilla.firefox", "Firefox", "OTHER"),
+                            Triple("org.mozilla.firefox_beta", "Firefox Beta", "OTHER"),
+                            Triple("com.opera.browser", "Opera", "OTHER"),
+                            Triple("com.brave.browser", "Brave", "OTHER"),
+                            Triple("com.microsoft.edge", "Microsoft Edge", "OTHER"),
+                            Triple("com.sec.android.app.sbrowser", "Samsung Browser", "OTHER"),
+                            // Device Gallery/Video Apps
+                            Triple("com.samsung.android.video", "Samsung Video", "VIDEO"),
+                            Triple("com.miui.videoplayer", "Mi Video", "VIDEO"),
+                            Triple("com.miui.gallery", "Mi Gallery", "VIDEO"),
+                            Triple("com.google.android.videos", "Google Play Movies", "VIDEO"),
+                            Triple("com.google.android.apps.youtube.kids", "YouTube Kids", "VIDEO"),
+                        )
+
+                    blockedApps.forEach { (pkg, name, category) ->
+                        db.execSQL(
+                            """
                         INSERT OR IGNORE INTO app_preferences 
                         (packageName, displayName, isEnabled, isUserAdded, isBlocked, category, addedAt)
                         VALUES ('$pkg', '$name', 0, 0, 1, '$category', $currentTime)
-                    """)
+                    """,
+                        )
+                    }
+
+                    Log.i(
+                        TAG,
+                        "Migration from version 24 to 25 completed successfully - seeded ${musicApps.size} music, ${podcastApps.size} podcast, ${audiobookApps.size} audiobook, ${blockedApps.size} blocked apps",
+                    )
                 }
-                
-                Log.i(TAG, "Migration from version 24 to 25 completed successfully - seeded ${musicApps.size} music, ${podcastApps.size} podcast, ${audiobookApps.size} audiobook, ${blockedApps.size} blocked apps")
             }
-        }
 
         /**
          * Migration from version 25 to 26.
-         * 
+         *
          * Adds Spotify Import feature support:
          * - spotifyApiOnlyMode: Boolean flag for using Spotify API instead of notifications
          * - spotifyImportCursor: Cursor for incremental polling
          * - lastSpotifyImportTimestamp: Timestamp of last successful import
          */
-        val MIGRATION_25_26 = object : Migration(25, 26) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 25 to 26 - Adding Spotify Import fields")
-                
-                // Add Spotify-API-Only mode flag
-                // Default 0 (false) = use notification tracking for all apps including Spotify
-                db.execSQL("""
+        val MIGRATION_25_26 =
+            object : Migration(25, 26) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 25 to 26 - Adding Spotify Import fields")
+
+                    // Add Spotify-API-Only mode flag
+                    // Default 0 (false) = use notification tracking for all apps including Spotify
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN spotifyApiOnlyMode INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                // Add cursor for incremental polling
-                db.execSQL("""
+                """,
+                    )
+
+                    // Add cursor for incremental polling
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN spotifyImportCursor TEXT DEFAULT NULL
-                """)
-                
-                // Add last import timestamp
-                db.execSQL("""
+                """,
+                    )
+
+                    // Add last import timestamp
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN lastSpotifyImportTimestamp INTEGER DEFAULT NULL
-                """)
-                
-                Log.i(TAG, "Migration from version 25 to 26 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 25 to 26 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 26 to 27.
-         * 
+         *
          * Adds All-Time Story reminder tracking to user_preferences:
          * - lastAllTimeReminderShown: Date when all-time story notification was sent (YYYY-MM-DD)
          *   This tracks when the 6-month milestone notification was shown to avoid duplicate notifications.
          */
-        val MIGRATION_26_27 = object : Migration(26, 27) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 26 to 27 - Adding All-Time story reminder tracking")
-                
-                // Add All-Time story reminder tracking column
-                db.execSQL("""
+        val MIGRATION_26_27 =
+            object : Migration(26, 27) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 26 to 27 - Adding All-Time story reminder tracking")
+
+                    // Add All-Time story reminder tracking column
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN lastAllTimeReminderShown TEXT DEFAULT NULL
-                """)
-                
-                Log.i(TAG, "Migration from version 26 to 27 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 26 to 27 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 27 to 28.
-         * 
+         *
          * Adds Last.fm import support:
          * 1. lastfm_import_metadata table - Tracks import sessions and progress
          * 2. scrobbles_archive table - Compressed storage for long-tail scrobbles
          * 3. New columns in user_preferences for Last.fm settings
-         * 
+         *
          * The two-tier architecture (active + archive) allows importing massive
          * Last.fm histories (200K+ scrobbles) without impacting query performance.
          */
-        val MIGRATION_27_28 = object : Migration(27, 28) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 27 to 28 - Adding Last.fm import support")
-                
-                // Step 1: Create lastfm_import_metadata table
-                // NOTE: Do NOT use DEFAULT clauses - the entity class doesn't declare
-                // @ColumnInfo(defaultValue=...) so Room expects no defaults in schema
-                db.execSQL("""
+        val MIGRATION_27_28 =
+            object : Migration(27, 28) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 27 to 28 - Adding Last.fm import support")
+
+                    // Step 1: Create lastfm_import_metadata table
+                    // NOTE: Do NOT use DEFAULT clauses - the entity class doesn't declare
+                    // @ColumnInfo(defaultValue=...) so Room expects no defaults in schema
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS lastfm_import_metadata (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         lastfm_username TEXT NOT NULL,
@@ -1214,13 +1411,15 @@ abstract class AppDatabase : RoomDatabase() {
                         import_completed_at INTEGER,
                         error_message TEXT
                     )
-                """)
-                
-                // NOTE: Do NOT create indices here - the entity class doesn't declare
-                // @Index annotations, so Room expects no indices in schema validation
-                
-                // Step 2: Create scrobbles_archive table
-                db.execSQL("""
+                """,
+                    )
+
+                    // NOTE: Do NOT create indices here - the entity class doesn't declare
+                    // @Index annotations, so Room expects no indices in schema validation
+
+                    // Step 2: Create scrobbles_archive table
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS scrobbles_archive (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         track_hash TEXT NOT NULL,
@@ -1239,152 +1438,184 @@ abstract class AppDatabase : RoomDatabase() {
                         created_at INTEGER NOT NULL,
                         updated_at INTEGER NOT NULL
                     )
-                """)
-                
-                // Create indices for scrobbles_archive (matching @Index annotations in entity)
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_scrobbles_archive_track_hash ON scrobbles_archive(track_hash)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_artist_name_normalized ON scrobbles_archive(artist_name_normalized)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_first_scrobble ON scrobbles_archive(first_scrobble)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_last_scrobble ON scrobbles_archive(last_scrobble)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_play_count ON scrobbles_archive(play_count)")
-                
-                // Step 3: Add Last.fm columns to user_preferences
-                // NOTE: These use DEFAULT because the entity has default values in Kotlin
-                // and Room handles this differently for ALTER TABLE vs CREATE TABLE
-                
-                // Last.fm username for syncing
-                db.execSQL("""
+                """,
+                    )
+
+                    // Create indices for scrobbles_archive (matching @Index annotations in entity)
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_scrobbles_archive_track_hash ON scrobbles_archive(track_hash)")
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_scrobbles_archive_artist_name_normalized ON scrobbles_archive(artist_name_normalized)",
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_first_scrobble ON scrobbles_archive(first_scrobble)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_last_scrobble ON scrobbles_archive(last_scrobble)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_play_count ON scrobbles_archive(play_count)")
+
+                    // Step 3: Add Last.fm columns to user_preferences
+                    // NOTE: These use DEFAULT because the entity has default values in Kotlin
+                    // and Room handles this differently for ALTER TABLE vs CREATE TABLE
+
+                    // Last.fm username for syncing
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN lastfmUsername TEXT
-                """)
-                
-                // Whether Last.fm is connected
-                db.execSQL("""
+                """,
+                    )
+
+                    // Whether Last.fm is connected
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN lastfmConnected INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                // Auto-sync frequency: NONE, DAILY, WEEKLY
-                db.execSQL("""
+                """,
+                    )
+
+                    // Auto-sync frequency: NONE, DAILY, WEEKLY
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN lastfmSyncFrequency TEXT NOT NULL DEFAULT 'NONE'
-                """)
-                
-                Log.i(TAG, "Migration from version 27 to 28 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 27 to 28 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration from version 28 to 29: Add source index for Last.fm query performance.
-         * 
+         *
          * The new History screen filters by source to separate:
          * - Recent Activity (source != 'fm.last.import')
          * - Last.fm History (source = 'fm.last.import')
-         * 
+         *
          * Without an index on source, these queries cause full table scans which
          * severely impacts performance on large listening_events tables.
          */
-        val MIGRATION_28_29 = object : Migration(28, 29) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 28 to 29 - Adding listening_events indices")
-                
-                // Index for filtering by source (Last.fm vs live tracking)
-                db.execSQL("""
+        val MIGRATION_28_29 =
+            object : Migration(28, 29) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 28 to 29 - Adding listening_events indices")
+
+                    // Index for filtering by source (Last.fm vs live tracking)
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_source 
                     ON listening_events(source)
-                """)
-                
-                // Composite index for source + timestamp queries (must be ASC,ASC to match entity)
-                // DROP first in case an older version created it with wrong order (ASC,DESC)
-                db.execSQL("DROP INDEX IF EXISTS index_listening_events_source_timestamp")
-                db.execSQL("""
+                """,
+                    )
+
+                    // Composite index for source + timestamp queries (must be ASC,ASC to match entity)
+                    // DROP first in case an older version created it with wrong order (ASC,DESC)
+                    db.execSQL("DROP INDEX IF EXISTS index_listening_events_source_timestamp")
+                    db.execSQL(
+                        """
                     CREATE INDEX index_listening_events_source_timestamp 
                     ON listening_events(source ASC, timestamp ASC)
-                """)
+                """,
+                    )
 
-                
-                // Composite index for timestamp + track_id queries
-                db.execSQL("""
+                    // Composite index for timestamp + track_id queries
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_timestamp_track_id 
                     ON listening_events(timestamp ASC, track_id ASC)
-                """)
-                
-                // Composite index for track_id + timestamp queries
-                db.execSQL("""
+                """,
+                    )
+
+                    // Composite index for track_id + timestamp queries
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_track_id_timestamp 
                     ON listening_events(track_id ASC, timestamp ASC)
-                """)
-                
-                // Composite index for stats queries
-                db.execSQL("""
+                """,
+                    )
+
+                    // Composite index for stats queries
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_stats 
                     ON listening_events(timestamp ASC, track_id ASC, playDuration ASC, completionPercentage ASC)
-                """)
-                
-                Log.i(TAG, "Migration from version 28 to 29 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 28 to 29 completed successfully")
+                }
             }
-        }
-        
+
         /**
          * Migration 29 -> 30: Repair indices for existing users.
-         * 
+         *
          * This migration fixes users who ran the broken 28->29 migration that created
          * the source_timestamp index with wrong order (ASC,DESC instead of ASC,ASC)
          * and was missing several required indices.
-         * 
+         *
          * This is a repair migration - it drops and recreates all affected indices
          * to ensure schema consistency without data loss.
          */
-        val MIGRATION_29_30 = object : Migration(29, 30) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 29 to 30 - Repairing listening_events indices")
-                
-                // Drop potentially broken source_timestamp index and recreate with correct order
-                db.execSQL("DROP INDEX IF EXISTS index_listening_events_source_timestamp")
-                db.execSQL("""
+        val MIGRATION_29_30 =
+            object : Migration(29, 30) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 29 to 30 - Repairing listening_events indices")
+
+                    // Drop potentially broken source_timestamp index and recreate with correct order
+                    db.execSQL("DROP INDEX IF EXISTS index_listening_events_source_timestamp")
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_source_timestamp 
                     ON listening_events(source ASC, timestamp ASC)
-                """)
-                
-                // Ensure source index exists
-                db.execSQL("""
+                """,
+                    )
+
+                    // Ensure source index exists
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_source 
                     ON listening_events(source)
-                """)
-                
-                // Add any missing composite indices (these were missing in broken 28->29)
-                db.execSQL("""
+                """,
+                    )
+
+                    // Add any missing composite indices (these were missing in broken 28->29)
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_timestamp_track_id 
                     ON listening_events(timestamp ASC, track_id ASC)
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_track_id_timestamp 
                     ON listening_events(track_id ASC, timestamp ASC)
-                """)
-                
-                db.execSQL("""
+                """,
+                    )
+
+                    db.execSQL(
+                        """
                     CREATE INDEX IF NOT EXISTS index_listening_events_stats 
                     ON listening_events(timestamp ASC, track_id ASC, playDuration ASC, completionPercentage ASC)
-                """)
-                
-                Log.i(TAG, "Migration from version 29 to 30 completed successfully - Indices repaired")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 29 to 30 completed successfully - Indices repaired")
+                }
             }
-        }
 
         /**
          * Migration from version 30 to 31.
-         * 
+         *
          * Adds gamification tables:
          * - user_level: Single-row table for XP and level tracking
          * - badges: Achievement badges with progress tracking
          */
-        val MIGRATION_30_31 = object : Migration(30, 31) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 30 to 31 - Adding gamification")
-                
-                // Create user_level table
-                db.execSQL("""
+        val MIGRATION_30_31 =
+            object : Migration(30, 31) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 30 to 31 - Adding gamification")
+
+                    // Create user_level table
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS user_level (
                         id INTEGER NOT NULL PRIMARY KEY,
                         total_xp INTEGER NOT NULL DEFAULT 0,
@@ -1396,10 +1627,12 @@ abstract class AppDatabase : RoomDatabase() {
                         longest_streak INTEGER NOT NULL DEFAULT 0,
                         last_streak_date TEXT NOT NULL DEFAULT ''
                     )
-                """)
-                
-                // Create badges table
-                db.execSQL("""
+                """,
+                    )
+
+                    // Create badges table
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS badges (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         badge_id TEXT NOT NULL,
@@ -1412,16 +1645,17 @@ abstract class AppDatabase : RoomDatabase() {
                         max_progress INTEGER NOT NULL DEFAULT 1,
                         is_earned INTEGER NOT NULL DEFAULT 0
                     )
-                """)
-                
-                // Create indices for badges
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_badges_badge_id ON badges(badge_id)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_badges_category ON badges(category)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_badges_is_earned ON badges(is_earned)")
-                
-                Log.i(TAG, "Migration from version 30 to 31 completed successfully")
+                """,
+                    )
+
+                    // Create indices for badges
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_badges_badge_id ON badges(badge_id)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_badges_category ON badges(category)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_badges_is_earned ON badges(is_earned)")
+
+                    Log.i(TAG, "Migration from version 30 to 31 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 31 to 32.
@@ -1430,15 +1664,16 @@ abstract class AppDatabase : RoomDatabase() {
          * - stars: 0 = locked, 1-5 = earned star count
          * Each badge has 5 star tiers at 1x, 2x, 3x, 5x, 10x the base threshold.
          */
-        val MIGRATION_31_32 = object : Migration(31, 32) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 31 to 32 - Badge star tiers")
-                db.execSQL("ALTER TABLE badges ADD COLUMN stars INTEGER NOT NULL DEFAULT 0")
-                // Migrate existing earned badges to 1 star
-                db.execSQL("UPDATE badges SET stars = 1 WHERE is_earned = 1")
-                Log.i(TAG, "Migration from version 31 to 32 completed successfully")
+        val MIGRATION_31_32 =
+            object : Migration(31, 32) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 31 to 32 - Badge star tiers")
+                    db.execSQL("ALTER TABLE badges ADD COLUMN stars INTEGER NOT NULL DEFAULT 0")
+                    // Migrate existing earned badges to 1 star
+                    db.execSQL("UPDATE badges SET stars = 1 WHERE is_earned = 1")
+                    Log.i(TAG, "Migration from version 31 to 32 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 32 to 33.
@@ -1447,37 +1682,44 @@ abstract class AppDatabase : RoomDatabase() {
          * that should not be split by the ArtistParser.
          * This is additive-only — no existing data is modified or deleted.
          */
-        val MIGRATION_32_33 = object : Migration(32, 33) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 32 to 33 - User known artists")
+        val MIGRATION_32_33 =
+            object : Migration(32, 33) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 32 to 33 - User known artists")
 
-                // Create user_known_artists table
-                db.execSQL("""
+                    // Create user_known_artists table
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS user_known_artists (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         name TEXT NOT NULL,
                         normalized_name TEXT NOT NULL,
                         created_at INTEGER NOT NULL DEFAULT 0
                     )
-                """)
+                """,
+                    )
 
-                // Create unique index on normalized_name for deduplication & fast lookup
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_user_known_artists_normalized_name ON user_known_artists(normalized_name)")
+                    // Create unique index on normalized_name for deduplication & fast lookup
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS index_user_known_artists_normalized_name ON user_known_artists(normalized_name)",
+                    )
 
-                Log.i(TAG, "Migration from version 32 to 33 completed successfully")
+                    Log.i(TAG, "Migration from version 32 to 33 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 33 to 34.
          *
          * Adds daily_challenges table for the gamification challenges feature.
          */
-        val MIGRATION_33_34 = object : Migration(33, 34) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 33 to 34 - Daily Challenges")
+        val MIGRATION_33_34 =
+            object : Migration(33, 34) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 33 to 34 - Daily Challenges")
 
-                db.execSQL("""
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS daily_challenges (
                         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         challenge_id TEXT NOT NULL,
@@ -1493,62 +1735,73 @@ abstract class AppDatabase : RoomDatabase() {
                         difficulty TEXT NOT NULL,
                         target_metadata TEXT
                     )
-                """)
+                """,
+                    )
 
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_daily_challenges_date ON daily_challenges(date)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_daily_challenges_date_is_completed ON daily_challenges(date, is_completed)")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_daily_challenges_date ON daily_challenges(date)")
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_daily_challenges_date_is_completed ON daily_challenges(date, is_completed)",
+                    )
 
-                Log.i(TAG, "Migration from version 33 to 34 completed successfully")
+                    Log.i(TAG, "Migration from version 33 to 34 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 34 to 35: Anti-gaming volume tracking.
-         * 
+         *
          * Adds a nullable volume_level column to listening_events.
          * - NULL  = legacy record (treated as audible, included in XP).
          * - 0    = device music stream was muted; these rows are excluded from XP.
          * - 1+   = normal audible play.
          */
-        val MIGRATION_34_35 = object : Migration(34, 35) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 34 to 35 - Anti-gaming volume tracking")
+        val MIGRATION_34_35 =
+            object : Migration(34, 35) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 34 to 35 - Anti-gaming volume tracking")
 
-                db.execSQL("""
+                    db.execSQL(
+                        """
                     ALTER TABLE listening_events 
                     ADD COLUMN volume_level INTEGER DEFAULT NULL
-                """)
+                """,
+                    )
 
-                Log.i(TAG, "Migration from version 34 to 35 completed successfully")
+                    Log.i(TAG, "Migration from version 34 to 35 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 35 to 36.
-         * 
+         *
          * Adds is_acknowledged column to badges table to track whether the user
          * has seen the congratulation for a newly earned star tier.
          */
-        val MIGRATION_35_36 = object : Migration(35, 36) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 35 to 36 - Adding is_acknowledged to badges")
-                
-                db.execSQL("""
+        val MIGRATION_35_36 =
+            object : Migration(35, 36) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 35 to 36 - Adding is_acknowledged to badges")
+
+                    db.execSQL(
+                        """
                     ALTER TABLE badges 
                     ADD COLUMN is_acknowledged INTEGER NOT NULL DEFAULT 0
-                """)
-                
-                // Existing earned badges should be marked as acknowledged so 
-                // users aren't flooded with old notifications
-                db.execSQL("""
+                """,
+                    )
+
+                    // Existing earned badges should be marked as acknowledged so
+                    // users aren't flooded with old notifications
+                    db.execSQL(
+                        """
                     UPDATE badges 
                     SET is_acknowledged = 1 
                     WHERE is_earned = 1
-                """)
-                
-                Log.i(TAG, "Migration from version 35 to 36 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 35 to 36 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 36 to 37.
@@ -1558,39 +1811,44 @@ abstract class AppDatabase : RoomDatabase() {
          * migration, which would cause a crash for existing users on app update.
          * Defaults to 'NONE' for all existing rows.
          */
-        val MIGRATION_36_37 = object : Migration(36, 37) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 36 to 37 - Adding genre_source to enriched_metadata")
+        val MIGRATION_36_37 =
+            object : Migration(36, 37) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 36 to 37 - Adding genre_source to enriched_metadata")
 
-                // Inspect the current state of the genre_source column (if any).
-                var genreSourceExists = false
-                var genreSourceHasCorrectDefault = false
-                db.query("PRAGMA table_info(enriched_metadata)").use { cursor ->
-                    val nameIndex = cursor.getColumnIndex("name")
-                    val dfltValueIndex = cursor.getColumnIndex("dflt_value")
-                    while (cursor.moveToNext()) {
-                        if (cursor.getString(nameIndex) == "genre_source") {
-                            genreSourceExists = true
-                            genreSourceHasCorrectDefault = cursor.getString(dfltValueIndex) == "'NONE'"
-                            break
+                    // Inspect the current state of the genre_source column (if any).
+                    var genreSourceExists = false
+                    var genreSourceHasCorrectDefault = false
+                    db.query("PRAGMA table_info(enriched_metadata)").use { cursor ->
+                        val nameIndex = cursor.getColumnIndex("name")
+                        val dfltValueIndex = cursor.getColumnIndex("dflt_value")
+                        while (cursor.moveToNext()) {
+                            if (cursor.getString(nameIndex) == "genre_source") {
+                                genreSourceExists = true
+                                genreSourceHasCorrectDefault = cursor.getString(dfltValueIndex) == "'NONE'"
+                                break
+                            }
                         }
                     }
-                }
 
-                when {
-                    !genreSourceExists -> {
-                        // Happy path: column missing, add it with the correct default.
-                        db.execSQL("""
+                    when {
+                        !genreSourceExists -> {
+                            // Happy path: column missing, add it with the correct default.
+                            db.execSQL(
+                                """
                             ALTER TABLE enriched_metadata
                             ADD COLUMN genre_source TEXT NOT NULL DEFAULT 'NONE'
-                        """)
-                    }
-                    !genreSourceHasCorrectDefault -> {
-                        // Column exists but was added without DEFAULT 'NONE'.
-                        // SQLite cannot change a column's default in-place, so recreate the table.
-                        db.execSQL("PRAGMA foreign_keys = OFF")
+                        """,
+                            )
+                        }
 
-                        db.execSQL("""
+                        !genreSourceHasCorrectDefault -> {
+                            // Column exists but was added without DEFAULT 'NONE'.
+                            // SQLite cannot change a column's default in-place, so recreate the table.
+                            db.execSQL("PRAGMA foreign_keys = OFF")
+
+                            db.execSQL(
+                                """
                             CREATE TABLE `enriched_metadata_new` (
                                 `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                                 `track_id` INTEGER NOT NULL,
@@ -1642,9 +1900,11 @@ abstract class AppDatabase : RoomDatabase() {
                                 `cache_version` INTEGER NOT NULL,
                                 FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
                             )
-                        """)
+                        """,
+                            )
 
-                        db.execSQL("""
+                            db.execSQL(
+                                """
                             INSERT INTO `enriched_metadata_new` (
                                 `id`, `track_id`, `musicbrainz_recording_id`, `musicbrainz_artist_id`,
                                 `musicbrainz_release_id`, `musicbrainz_release_group_id`, `album_title`,
@@ -1675,23 +1935,28 @@ abstract class AppDatabase : RoomDatabase() {
                                 `deezer_artist_image_url`, `lastfm_artist_image_url`, `spotify_track_url`,
                                 `preview_url`, `album_art_source`, `cache_timestamp`, `cache_version`
                             FROM `enriched_metadata`
-                        """)
+                        """,
+                            )
 
-                        db.execSQL("DROP TABLE `enriched_metadata`")
-                        db.execSQL("ALTER TABLE `enriched_metadata_new` RENAME TO `enriched_metadata`")
+                            db.execSQL("DROP TABLE `enriched_metadata`")
+                            db.execSQL("ALTER TABLE `enriched_metadata_new` RENAME TO `enriched_metadata`")
 
-                        db.execSQL("CREATE UNIQUE INDEX `index_enriched_metadata_track_id` ON `enriched_metadata` (`track_id`)")
-                        db.execSQL("CREATE INDEX `index_enriched_metadata_musicbrainz_recording_id` ON `enriched_metadata` (`musicbrainz_recording_id`)")
-                        db.execSQL("CREATE INDEX `index_enriched_metadata_enrichment_status` ON `enriched_metadata` (`enrichment_status`)")
+                            db.execSQL("CREATE UNIQUE INDEX `index_enriched_metadata_track_id` ON `enriched_metadata` (`track_id`)")
+                            db.execSQL(
+                                "CREATE INDEX `index_enriched_metadata_musicbrainz_recording_id` ON `enriched_metadata` (`musicbrainz_recording_id`)",
+                            )
+                            db.execSQL(
+                                "CREATE INDEX `index_enriched_metadata_enrichment_status` ON `enriched_metadata` (`enrichment_status`)",
+                            )
 
-                        db.execSQL("PRAGMA foreign_keys = ON")
+                            db.execSQL("PRAGMA foreign_keys = ON")
+                        }
+                        // else: column exists with correct default — nothing to do
                     }
-                    // else: column exists with correct default — nothing to do
-                }
 
-                Log.i(TAG, "Migration from version 36 to 37 completed successfully")
+                    Log.i(TAG, "Migration from version 36 to 37 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 37 to 38: Add Desktop Satellite pairing sessions table.
@@ -1699,10 +1964,12 @@ abstract class AppDatabase : RoomDatabase() {
          * Introduces the [DesktopPairingSession] entity that stores the auth token and
          * metadata for the phone's built-in NanoHTTPD pairing server.
          */
-        val MIGRATION_37_38 = object : Migration(37, 38) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 37 to 38 - Adding desktop_pairing_sessions")
-                db.execSQL("""
+        val MIGRATION_37_38 =
+            object : Migration(37, 38) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 37 to 38 - Adding desktop_pairing_sessions")
+                    db.execSQL(
+                        """
                     CREATE TABLE IF NOT EXISTS `desktop_pairing_sessions` (
                         `id` TEXT NOT NULL PRIMARY KEY,
                         `auth_token` TEXT NOT NULL,
@@ -1711,12 +1978,17 @@ abstract class AppDatabase : RoomDatabase() {
                         `last_seen_ms` INTEGER DEFAULT NULL,
                         `is_active` INTEGER NOT NULL DEFAULT 1
                     )
-                """)
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_desktop_pairing_sessions_auth_token` ON `desktop_pairing_sessions` (`auth_token`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_desktop_pairing_sessions_is_active` ON `desktop_pairing_sessions` (`is_active`)")
-                Log.i(TAG, "Migration from version 37 to 38 completed successfully")
+                """,
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_desktop_pairing_sessions_auth_token` ON `desktop_pairing_sessions` (`auth_token`)",
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_desktop_pairing_sessions_is_active` ON `desktop_pairing_sessions` (`is_active`)",
+                    )
+                    Log.i(TAG, "Migration from version 37 to 38 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 38 to 39: Add desktop coordinates to desktop_pairing_sessions.
@@ -1725,13 +1997,14 @@ abstract class AppDatabase : RoomDatabase() {
          * and the phone scans it. The phone stores the desktop's IP and port so the
          * connection details can be displayed to the user.
          */
-        val MIGRATION_38_39 = object : Migration(38, 39) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN desktop_ip TEXT DEFAULT NULL")
-                db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN desktop_port INTEGER DEFAULT NULL")
-                Log.i(TAG, "Migration from version 38 to 39 completed successfully")
+        val MIGRATION_38_39 =
+            object : Migration(38, 39) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN desktop_ip TEXT DEFAULT NULL")
+                    db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN desktop_port INTEGER DEFAULT NULL")
+                    Log.i(TAG, "Migration from version 38 to 39 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 39 to 40: Add smart challenge notification columns to user_preferences.
@@ -1740,14 +2013,15 @@ abstract class AppDatabase : RoomDatabase() {
          * feature but a matching ALTER TABLE migration was never written, causing a schema mismatch
          * for users upgrading from any version below 40.
          */
-        val MIGRATION_39_40 = object : Migration(39, 40) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 39 to 40 - Adding smart challenge notification columns to user_preferences")
-                db.execSQL("ALTER TABLE user_preferences ADD COLUMN smartChallengeNotifHour INTEGER DEFAULT NULL")
-                db.execSQL("ALTER TABLE user_preferences ADD COLUMN smartChallengeNotifCalcTime INTEGER DEFAULT NULL")
-                Log.i(TAG, "Migration from version 39 to 40 completed successfully")
+        val MIGRATION_39_40 =
+            object : Migration(39, 40) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 39 to 40 - Adding smart challenge notification columns to user_preferences")
+                    db.execSQL("ALTER TABLE user_preferences ADD COLUMN smartChallengeNotifHour INTEGER DEFAULT NULL")
+                    db.execSQL("ALTER TABLE user_preferences ADD COLUMN smartChallengeNotifCalcTime INTEGER DEFAULT NULL")
+                    Log.i(TAG, "Migration from version 39 to 40 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 40 to 41: Fix three long-standing schema mismatches.
@@ -1763,25 +2037,29 @@ abstract class AppDatabase : RoomDatabase() {
          *    but the entity fields are non-nullable (List<String>). Fix: full table rebuild
          *    with COALESCE safe-copy so no data is lost.
          */
-        val MIGRATION_40_41 = object : Migration(40, 41) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 40 to 41 - Fixing schema mismatches")
+        val MIGRATION_40_41 =
+            object : Migration(40, 41) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 40 to 41 - Fixing schema mismatches")
 
-                // Fix 1: artists.normalized_name → UNIQUE index
-                // Before recreating the unique index, collapse any duplicate normalized names
-                // by keeping the artist with the lowest id and deleting the rest.
-                db.execSQL("""
+                    // Fix 1: artists.normalized_name → UNIQUE index
+                    // Before recreating the unique index, collapse any duplicate normalized names
+                    // by keeping the artist with the lowest id and deleting the rest.
+                    db.execSQL(
+                        """
                     DELETE FROM artists
                     WHERE id NOT IN (
                         SELECT MIN(id) FROM artists GROUP BY normalized_name
                     )
-                """)
-                db.execSQL("DROP INDEX IF EXISTS index_artists_normalized_name")
-                db.execSQL("CREATE UNIQUE INDEX index_artists_normalized_name ON artists(normalized_name)")
+                """,
+                    )
+                    db.execSQL("DROP INDEX IF EXISTS index_artists_normalized_name")
+                    db.execSQL("CREATE UNIQUE INDEX index_artists_normalized_name ON artists(normalized_name)")
 
-                // Fix 2: albums.musicbrainz_id → UNIQUE index
-                // Keep the album with the lowest id for each musicbrainz_id duplicate.
-                db.execSQL("""
+                    // Fix 2: albums.musicbrainz_id → UNIQUE index
+                    // Keep the album with the lowest id for each musicbrainz_id duplicate.
+                    db.execSQL(
+                        """
                     DELETE FROM albums
                     WHERE musicbrainz_id IS NOT NULL
                       AND id NOT IN (
@@ -1789,13 +2067,15 @@ abstract class AppDatabase : RoomDatabase() {
                         WHERE musicbrainz_id IS NOT NULL
                         GROUP BY musicbrainz_id
                     )
-                """)
-                db.execSQL("DROP INDEX IF EXISTS index_albums_musicbrainz_id")
-                db.execSQL("CREATE UNIQUE INDEX index_albums_musicbrainz_id ON albums(musicbrainz_id)")
+                """,
+                    )
+                    db.execSQL("DROP INDEX IF EXISTS index_albums_musicbrainz_id")
+                    db.execSQL("CREATE UNIQUE INDEX index_albums_musicbrainz_id ON albums(musicbrainz_id)")
 
-                // Fix 3: enriched_metadata.tags / .genres → NOT NULL via table rebuild
-                db.execSQL("PRAGMA foreign_keys = OFF")
-                db.execSQL("""
+                    // Fix 3: enriched_metadata.tags / .genres → NOT NULL via table rebuild
+                    db.execSQL("PRAGMA foreign_keys = OFF")
+                    db.execSQL(
+                        """
                     CREATE TABLE enriched_metadata_v41 (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         `track_id` INTEGER NOT NULL,
@@ -1847,8 +2127,10 @@ abstract class AppDatabase : RoomDatabase() {
                         `cache_version` INTEGER NOT NULL DEFAULT 1,
                         FOREIGN KEY(`track_id`) REFERENCES `tracks`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
                     )
-                """)
-                db.execSQL("""
+                """,
+                    )
+                    db.execSQL(
+                        """
                     INSERT INTO enriched_metadata_v41
                     SELECT
                         id, track_id, musicbrainz_recording_id, musicbrainz_artist_id,
@@ -1867,35 +2149,41 @@ abstract class AppDatabase : RoomDatabase() {
                         release_date_full, deezer_artist_image_url, lastfm_artist_image_url,
                         spotify_track_url, preview_url, album_art_source, cache_timestamp, cache_version
                     FROM enriched_metadata
-                """)
-                db.execSQL("DROP TABLE enriched_metadata")
-                db.execSQL("ALTER TABLE enriched_metadata_v41 RENAME TO enriched_metadata")
-                db.execSQL("CREATE UNIQUE INDEX `index_enriched_metadata_track_id` ON `enriched_metadata` (`track_id`)")
-                db.execSQL("CREATE INDEX `index_enriched_metadata_musicbrainz_recording_id` ON `enriched_metadata` (`musicbrainz_recording_id`)")
-                db.execSQL("CREATE INDEX `index_enriched_metadata_enrichment_status` ON `enriched_metadata` (`enrichment_status`)")
-                db.execSQL("PRAGMA foreign_keys = ON")
+                """,
+                    )
+                    db.execSQL("DROP TABLE enriched_metadata")
+                    db.execSQL("ALTER TABLE enriched_metadata_v41 RENAME TO enriched_metadata")
+                    db.execSQL("CREATE UNIQUE INDEX `index_enriched_metadata_track_id` ON `enriched_metadata` (`track_id`)")
+                    db.execSQL(
+                        "CREATE INDEX `index_enriched_metadata_musicbrainz_recording_id` ON `enriched_metadata` (`musicbrainz_recording_id`)",
+                    )
+                    db.execSQL("CREATE INDEX `index_enriched_metadata_enrichment_status` ON `enriched_metadata` (`enrichment_status`)")
+                    db.execSQL("PRAGMA foreign_keys = ON")
 
-                Log.i(TAG, "Migration from version 40 to 41 completed successfully")
+                    Log.i(TAG, "Migration from version 40 to 41 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 41 to 42.
-         * 
+         *
          * Adds isGamificationEnabled to user_preferences.
          */
-        val MIGRATION_41_42 = object : Migration(41, 42) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 41 to 42 - Adding isGamificationEnabled")
-                
-                db.execSQL("""
+        val MIGRATION_41_42 =
+            object : Migration(41, 42) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 41 to 42 - Adding isGamificationEnabled")
+
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences 
                     ADD COLUMN isGamificationEnabled INTEGER NOT NULL DEFAULT 1
-                """)
-                
-                Log.i(TAG, "Migration from version 41 to 42 completed successfully")
+                """,
+                    )
+
+                    Log.i(TAG, "Migration from version 41 to 42 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 42 to 43.
@@ -1909,27 +2197,34 @@ abstract class AppDatabase : RoomDatabase() {
          * Apps added in this migration:
          * - com.vivi.vivimusic  (Vivi Music — open-source YouTube Music client)
          */
-        val MIGRATION_42_43 = object : Migration(42, 43) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 42 to 43 - Backfilling new music apps")
-                val currentTime = System.currentTimeMillis()
+        val MIGRATION_42_43 =
+            object : Migration(42, 43) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 42 to 43 - Backfilling new music apps")
+                    val currentTime = System.currentTimeMillis()
 
-                val newApps = listOf(
-                    Triple("com.vivi.vivimusic",   "Vivi Music",  "MUSIC")
-                    // Add future new apps here in subsequent migrations
-                )
+                    val newApps =
+                        listOf(
+                            Triple("com.vivi.vivimusic", "Vivi Music", "MUSIC"),
+                            // Add future new apps here in subsequent migrations
+                        )
 
-                newApps.forEach { (pkg, name, cat) ->
-                    db.execSQL("""
+                    newApps.forEach { (pkg, name, cat) ->
+                        db.execSQL(
+                            """
                         INSERT OR IGNORE INTO app_preferences
                         (packageName, displayName, isEnabled, isUserAdded, isBlocked, category, addedAt)
                         VALUES ('$pkg', '$name', 1, 0, 0, '$cat', $currentTime)
-                    """)
-                }
+                    """,
+                        )
+                    }
 
-                Log.i(TAG, "Migration from version 42 to 43 completed — inserted ${newApps.size} new app(s) (skipped if already present)")
+                    Log.i(
+                        TAG,
+                        "Migration from version 42 to 43 completed — inserted ${newApps.size} new app(s) (skipped if already present)",
+                    )
+                }
             }
-        }
 
         /**
          * Migration from version 43 to 44.
@@ -1946,33 +2241,42 @@ abstract class AppDatabase : RoomDatabase() {
          *    - desktop_public_key : desktop's P-256 public key received from QR
          *    - token_version      : rotation counter, starts at 0
          */
-        val MIGRATION_43_44 = object : Migration(43, 44) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 43 to 44")
+        val MIGRATION_43_44 =
+            object : Migration(43, 44) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 43 to 44")
 
-                // 1. user_preferences: add pauseTrackingOnLowBattery
-                db.execSQL("""
+                    // 1. user_preferences: add pauseTrackingOnLowBattery
+                    db.execSQL(
+                        """
                     ALTER TABLE user_preferences
                     ADD COLUMN pauseTrackingOnLowBattery INTEGER NOT NULL DEFAULT 1
-                """)
+                """,
+                    )
 
-                // 2. desktop_pairing_sessions: add ECDH key columns
-                db.execSQL("""
+                    // 2. desktop_pairing_sessions: add ECDH key columns
+                    db.execSQL(
+                        """
                     ALTER TABLE desktop_pairing_sessions
                     ADD COLUMN phone_public_key TEXT DEFAULT NULL
-                """)
-                db.execSQL("""
+                """,
+                    )
+                    db.execSQL(
+                        """
                     ALTER TABLE desktop_pairing_sessions
                     ADD COLUMN desktop_public_key TEXT DEFAULT NULL
-                """)
-                db.execSQL("""
+                """,
+                    )
+                    db.execSQL(
+                        """
                     ALTER TABLE desktop_pairing_sessions
                     ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0
-                """)
+                """,
+                    )
 
-                Log.i(TAG, "Migration from version 43 to 44 completed successfully")
+                    Log.i(TAG, "Migration from version 43 to 44 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 44 to 45.
@@ -1983,71 +2287,80 @@ abstract class AppDatabase : RoomDatabase() {
          * whether each column already exists before attempting to add it, preventing
          * "duplicate column name" crashes for users upgrading through 43→44→45.
          */
-        val MIGRATION_44_45 = object : Migration(44, 45) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 44 to 45 - ECDH key exchange fields (idempotent)")
+        val MIGRATION_44_45 =
+            object : Migration(44, 45) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 44 to 45 - ECDH key exchange fields (idempotent)")
 
-                val existingColumns = mutableSetOf<String>()
-                db.query("PRAGMA table_info(desktop_pairing_sessions)").use { cursor ->
-                    val nameIndex = cursor.getColumnIndex("name")
-                    while (cursor.moveToNext()) {
-                        existingColumns.add(cursor.getString(nameIndex))
+                    val existingColumns = mutableSetOf<String>()
+                    db.query("PRAGMA table_info(desktop_pairing_sessions)").use { cursor ->
+                        val nameIndex = cursor.getColumnIndex("name")
+                        while (cursor.moveToNext()) {
+                            existingColumns.add(cursor.getString(nameIndex))
+                        }
                     }
-                }
 
-                if (!existingColumns.contains("phone_public_key")) {
-                    db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN phone_public_key TEXT DEFAULT NULL")
-                }
-                if (!existingColumns.contains("desktop_public_key")) {
-                    db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN desktop_public_key TEXT DEFAULT NULL")
-                }
-                if (!existingColumns.contains("token_version")) {
-                    db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0")
-                }
+                    if (!existingColumns.contains("phone_public_key")) {
+                        db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN phone_public_key TEXT DEFAULT NULL")
+                    }
+                    if (!existingColumns.contains("desktop_public_key")) {
+                        db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN desktop_public_key TEXT DEFAULT NULL")
+                    }
+                    if (!existingColumns.contains("token_version")) {
+                        db.execSQL("ALTER TABLE desktop_pairing_sessions ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0")
+                    }
 
-                Log.i(TAG, "Migration from version 44 to 45 completed successfully")
+                    Log.i(TAG, "Migration from version 44 to 45 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 45 to 46.
          * Add indexes on enriched_metadata for spotify_id, spotify_artist_id,
          * and spotify_enrichment_status to speed up enrichment lookups.
          */
-        val MIGRATION_45_46 = object : Migration(45, 46) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 45 to 46 - Add spotify indexes to enriched_metadata")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_enriched_metadata_spotify_id ON enriched_metadata(spotify_id)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_enriched_metadata_spotify_artist_id ON enriched_metadata(spotify_artist_id)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_enriched_metadata_spotify_enrichment_status ON enriched_metadata(spotify_enrichment_status)")
-                Log.i(TAG, "Migration from version 45 to 46 completed successfully")
+        val MIGRATION_45_46 =
+            object : Migration(45, 46) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 45 to 46 - Add spotify indexes to enriched_metadata")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_enriched_metadata_spotify_id ON enriched_metadata(spotify_id)")
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_enriched_metadata_spotify_artist_id ON enriched_metadata(spotify_artist_id)",
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_enriched_metadata_spotify_enrichment_status ON enriched_metadata(spotify_enrichment_status)",
+                    )
+                    Log.i(TAG, "Migration from version 45 to 46 completed successfully")
+                }
             }
-        }
 
-        val MIGRATION_46_47 = object : Migration(46, 47) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 46 to 47 - Remove redundant timestamp index")
-                db.execSQL("DROP INDEX IF EXISTS index_listening_events_timestamp")
-                Log.i(TAG, "Migration from version 46 to 47 completed successfully")
+        val MIGRATION_46_47 =
+            object : Migration(46, 47) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 46 to 47 - Remove redundant timestamp index")
+                    db.execSQL("DROP INDEX IF EXISTS index_listening_events_timestamp")
+                    Log.i(TAG, "Migration from version 46 to 47 completed successfully")
+                }
             }
-        }
 
-        val MIGRATION_47_48 = object : Migration(47, 48) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 47 to 48 - Add lastWeeklyReminderShown to user_preferences")
-                db.execSQL("ALTER TABLE user_preferences ADD COLUMN lastWeeklyReminderShown TEXT")
-                Log.i(TAG, "Migration from version 47 to 48 completed successfully")
+        val MIGRATION_47_48 =
+            object : Migration(47, 48) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 47 to 48 - Add lastWeeklyReminderShown to user_preferences")
+                    db.execSQL("ALTER TABLE user_preferences ADD COLUMN lastWeeklyReminderShown TEXT")
+                    Log.i(TAG, "Migration from version 47 to 48 completed successfully")
+                }
             }
-        }
 
-        val MIGRATION_48_49 = object : Migration(48, 49) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 48 to 49 - Add youtube_id column to tracks")
-                db.execSQL("ALTER TABLE tracks ADD COLUMN youtube_id TEXT")
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_tracks_youtube_id ON tracks(youtube_id)")
-                Log.i(TAG, "Migration from version 48 to 49 completed successfully")
+        val MIGRATION_48_49 =
+            object : Migration(48, 49) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 48 to 49 - Add youtube_id column to tracks")
+                    db.execSQL("ALTER TABLE tracks ADD COLUMN youtube_id TEXT")
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_tracks_youtube_id ON tracks(youtube_id)")
+                    Log.i(TAG, "Migration from version 48 to 49 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 49 to 50.
@@ -2062,42 +2375,65 @@ abstract class AppDatabase : RoomDatabase() {
          * dedup fallback (Layer 2). New inserts compute the fingerprint
          * automatically inside the dedup insert path.
          */
-        val MIGRATION_49_50 = object : Migration(49, 50) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 49 to 50 - Add content_fingerprint to listening_events")
-                db.execSQL("ALTER TABLE listening_events ADD COLUMN content_fingerprint TEXT DEFAULT NULL")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_content_fingerprint ON listening_events(content_fingerprint)")
-                Log.i(TAG, "Migration from version 49 to 50 completed successfully")
+        val MIGRATION_49_50 =
+            object : Migration(49, 50) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 49 to 50 - Add content_fingerprint to listening_events")
+                    db.execSQL("ALTER TABLE listening_events ADD COLUMN content_fingerprint TEXT DEFAULT NULL")
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_listening_events_content_fingerprint ON listening_events(content_fingerprint)",
+                    )
+                    Log.i(TAG, "Migration from version 49 to 50 completed successfully")
+                }
             }
-        }
 
         /**
          * Migration from version 50 to 51: Add lastSpotlightStoryViewed to user_preferences.
          * Tracks which Spotlight story period the user has already viewed, so the
          * home-screen ring can switch from colored (new) to gray (viewed).
          */
-        val MIGRATION_50_51 = object : Migration(50, 51) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 50 to 51 - Add lastSpotlightStoryViewed to user_preferences")
-                db.execSQL("ALTER TABLE user_preferences ADD COLUMN lastSpotlightStoryViewed TEXT DEFAULT NULL")
-                Log.i(TAG, "Migration from version 50 to 51 completed successfully")
+        val MIGRATION_50_51 =
+            object : Migration(50, 51) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 50 to 51 - Add lastSpotlightStoryViewed to user_preferences")
+                    db.execSQL("ALTER TABLE user_preferences ADD COLUMN lastSpotlightStoryViewed TEXT DEFAULT NULL")
+                    Log.i(TAG, "Migration from version 50 to 51 completed successfully")
+                }
             }
-        }
 
         /**
          * Column list shared by every schema-51 variant of user_preferences.
          * Used by MIGRATION_51_52 to copy data across the table rebuild.
          */
-        private val USER_PREFERENCES_SHARED_COLUMNS = listOf(
-            "id", "theme", "notifications", "spotifyLinked", "extendedAudioAnalysis",
-            "mergeAlternateVersions", "filterPodcasts", "filterAudiobooks",
-            "hasSeenHistoryCoachMark", "hasSeenSpotlightTutorial", "hasSeenStatsSortTutorial",
-            "hasSeenStatsItemClickTutorial", "lastWeeklyReminderShown", "lastMonthlyReminderShown",
-            "lastYearlyReminderShown", "lastAllTimeReminderShown", "spotifyApiOnlyMode",
-            "spotifyImportCursor", "lastSpotifyImportTimestamp", "lastfmUsername",
-            "lastfmConnected", "lastfmSyncFrequency", "smartChallengeNotifHour",
-            "smartChallengeNotifCalcTime", "isGamificationEnabled", "pauseTrackingOnLowBattery"
-        )
+        private val USER_PREFERENCES_SHARED_COLUMNS =
+            listOf(
+                "id",
+                "theme",
+                "notifications",
+                "spotifyLinked",
+                "extendedAudioAnalysis",
+                "mergeAlternateVersions",
+                "filterPodcasts",
+                "filterAudiobooks",
+                "hasSeenHistoryCoachMark",
+                "hasSeenSpotlightTutorial",
+                "hasSeenStatsSortTutorial",
+                "hasSeenStatsItemClickTutorial",
+                "lastWeeklyReminderShown",
+                "lastMonthlyReminderShown",
+                "lastYearlyReminderShown",
+                "lastAllTimeReminderShown",
+                "spotifyApiOnlyMode",
+                "spotifyImportCursor",
+                "lastSpotifyImportTimestamp",
+                "lastfmUsername",
+                "lastfmConnected",
+                "lastfmSyncFrequency",
+                "smartChallengeNotifHour",
+                "smartChallengeNotifCalcTime",
+                "isGamificationEnabled",
+                "pauseTrackingOnLowBattery",
+            )
 
         /**
          * Migration from version 51 to 52: Reconcile the two divergent schema-51 lineages.
@@ -2117,35 +2453,39 @@ abstract class AppDatabase : RoomDatabase() {
          * Rebuild = CREATE + INSERT…SELECT + DROP + RENAME because minSdk-26 SQLite has
          * no DROP COLUMN. Runs inside Room's migration transaction (crash = rollback).
          */
-        val MIGRATION_51_52 = object : Migration(51, 52) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "Starting migration from version 51 to 52 - Reconcile schema-51 lineages (user_preferences)")
+        val MIGRATION_51_52 =
+            object : Migration(51, 52) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 51 to 52 - Reconcile schema-51 lineages (user_preferences)")
 
-                val columns = mutableListOf<String>()
-                db.query("PRAGMA table_info(user_preferences)").use { cursor ->
-                    val nameIndex = cursor.getColumnIndex("name")
-                    while (cursor.moveToNext()) {
-                        columns.add(cursor.getString(nameIndex))
+                    val columns = mutableListOf<String>()
+                    db.query("PRAGMA table_info(user_preferences)").use { cursor ->
+                        val nameIndex = cursor.getColumnIndex("name")
+                        while (cursor.moveToNext()) {
+                            columns.add(cursor.getString(nameIndex))
+                        }
                     }
-                }
 
-                val hasPublicColumn = "lastViewedSpotlightPeriod" in columns
-                val hasCanonicalColumn = "lastSpotlightStoryViewed" in columns
-                Log.i(TAG, "Schema-51 shape probe: columns=${columns.size}, " +
-                        "lastViewedSpotlightPeriod=$hasPublicColumn, " +
-                        "lastSpotlightStoryViewed=$hasCanonicalColumn")
+                    val hasPublicColumn = "lastViewedSpotlightPeriod" in columns
+                    val hasCanonicalColumn = "lastSpotlightStoryViewed" in columns
+                    Log.i(
+                        TAG,
+                        "Schema-51 shape probe: columns=${columns.size}, " +
+                            "lastViewedSpotlightPeriod=$hasPublicColumn, " +
+                            "lastSpotlightStoryViewed=$hasCanonicalColumn",
+                    )
 
-                if (hasCanonicalColumn && !hasPublicColumn) {
-                    // Internal lineage: already the canonical 52 shape — no-op.
-                    Log.i(TAG, "Canonical shape detected; migration 51→52 is a no-op")
-                } else {
-                    // Public 4.8.2 lineage or unknown shape: rebuild into canonical.
-                    Log.i(TAG, "Rebuilding user_preferences into canonical schema-52 shape")
-                    rebuildUserPreferencesToCanonical(db)
+                    if (hasCanonicalColumn && !hasPublicColumn) {
+                        // Internal lineage: already the canonical 52 shape — no-op.
+                        Log.i(TAG, "Canonical shape detected; migration 51→52 is a no-op")
+                    } else {
+                        // Public 4.8.2 lineage or unknown shape: rebuild into canonical.
+                        Log.i(TAG, "Rebuilding user_preferences into canonical schema-52 shape")
+                        rebuildUserPreferencesToCanonical(db)
+                    }
+                    Log.i(TAG, "Migration from version 51 to 52 completed successfully")
                 }
-                Log.i(TAG, "Migration from version 51 to 52 completed successfully")
             }
-        }
 
         /**
          * Rebuilds user_preferences into the canonical schema-52 shape (CREATE statement
@@ -2155,62 +2495,87 @@ abstract class AppDatabase : RoomDatabase() {
          */
         private fun rebuildUserPreferencesToCanonical(db: SupportSQLiteDatabase) {
             val sharedColumns = USER_PREFERENCES_SHARED_COLUMNS.joinToString(", ")
-            db.execSQL("CREATE TABLE IF NOT EXISTS `user_preferences_new` (`id` INTEGER NOT NULL, `theme` TEXT NOT NULL, `notifications` INTEGER NOT NULL, `spotifyLinked` INTEGER NOT NULL, `extendedAudioAnalysis` INTEGER NOT NULL, `mergeAlternateVersions` INTEGER NOT NULL, `filterPodcasts` INTEGER NOT NULL, `filterAudiobooks` INTEGER NOT NULL, `hasSeenHistoryCoachMark` INTEGER NOT NULL, `hasSeenSpotlightTutorial` INTEGER NOT NULL, `hasSeenStatsSortTutorial` INTEGER NOT NULL, `hasSeenStatsItemClickTutorial` INTEGER NOT NULL, `lastWeeklyReminderShown` TEXT, `lastMonthlyReminderShown` TEXT, `lastYearlyReminderShown` TEXT, `lastAllTimeReminderShown` TEXT, `spotifyApiOnlyMode` INTEGER NOT NULL, `spotifyImportCursor` TEXT, `lastSpotifyImportTimestamp` INTEGER, `lastfmUsername` TEXT, `lastfmConnected` INTEGER NOT NULL, `lastfmSyncFrequency` TEXT NOT NULL, `smartChallengeNotifHour` INTEGER, `smartChallengeNotifCalcTime` INTEGER, `isGamificationEnabled` INTEGER NOT NULL, `pauseTrackingOnLowBattery` INTEGER NOT NULL, `lastSpotlightStoryViewed` TEXT, PRIMARY KEY(`id`))")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `user_preferences_new` (`id` INTEGER NOT NULL, `theme` TEXT NOT NULL, `notifications` INTEGER NOT NULL, `spotifyLinked` INTEGER NOT NULL, `extendedAudioAnalysis` INTEGER NOT NULL, `mergeAlternateVersions` INTEGER NOT NULL, `filterPodcasts` INTEGER NOT NULL, `filterAudiobooks` INTEGER NOT NULL, `hasSeenHistoryCoachMark` INTEGER NOT NULL, `hasSeenSpotlightTutorial` INTEGER NOT NULL, `hasSeenStatsSortTutorial` INTEGER NOT NULL, `hasSeenStatsItemClickTutorial` INTEGER NOT NULL, `lastWeeklyReminderShown` TEXT, `lastMonthlyReminderShown` TEXT, `lastYearlyReminderShown` TEXT, `lastAllTimeReminderShown` TEXT, `spotifyApiOnlyMode` INTEGER NOT NULL, `spotifyImportCursor` TEXT, `lastSpotifyImportTimestamp` INTEGER, `lastfmUsername` TEXT, `lastfmConnected` INTEGER NOT NULL, `lastfmSyncFrequency` TEXT NOT NULL, `smartChallengeNotifHour` INTEGER, `smartChallengeNotifCalcTime` INTEGER, `isGamificationEnabled` INTEGER NOT NULL, `pauseTrackingOnLowBattery` INTEGER NOT NULL, `lastSpotlightStoryViewed` TEXT, PRIMARY KEY(`id`))",
+            )
             db.execSQL("INSERT INTO user_preferences_new ($sharedColumns) SELECT $sharedColumns FROM user_preferences")
             db.execSQL("DROP TABLE user_preferences")
             db.execSQL("ALTER TABLE user_preferences_new RENAME TO user_preferences")
         }
 
         /**
+         * Migration from version 52 to 53: index tracks.musicbrainz_id.
+         *
+         * [me.avinas.tempo.data.repository.TrackResolver] looks tracks up by
+         * musicbrainz_id before falling back to title/artist. Without this index
+         * that lookup is a full scan of `tracks`, and it runs once per unique
+         * track during a Last.fm import (tens of thousands of times for a large
+         * history).
+         *
+         * Index-only change: no data is touched. `IF NOT EXISTS` keeps it
+         * idempotent if a device already has the index from a partial upgrade.
+         */
+        val MIGRATION_52_53 =
+            object : Migration(52, 53) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 52 to 53 - index tracks.musicbrainz_id")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS index_tracks_musicbrainz_id ON tracks(musicbrainz_id)")
+                    Log.i(TAG, "Migration from version 52 to 53 completed successfully")
+                }
+            }
+
+        /**
          * All migrations in order.
          */
-        val ALL_MIGRATIONS = arrayOf(
-            MIGRATION_6_7,
-            MIGRATION_7_8,
-            MIGRATION_8_9,
-            MIGRATION_9_10,
-            MIGRATION_10_11,
-            MIGRATION_11_12,
-            MIGRATION_12_13,
-            MIGRATION_13_14,
-            MIGRATION_14_15,
-            MIGRATION_15_16,
-            MIGRATION_16_17,
-            MIGRATION_17_18,
-            MIGRATION_18_19,
-            MIGRATION_19_20,
-            MIGRATION_20_21,
-            MIGRATION_21_22,
-            MIGRATION_22_23,
-            MIGRATION_23_24,
-            MIGRATION_24_25,
-            MIGRATION_25_26,
-            MIGRATION_26_27,
-            MIGRATION_27_28,
-            MIGRATION_28_29,
-            MIGRATION_29_30,
-            MIGRATION_30_31,
-            MIGRATION_31_32,
-            MIGRATION_32_33,  // User known artists for smart rename
-            MIGRATION_33_34,  // Daily challenges gamification
-            MIGRATION_34_35,   // Anti-gaming: volume_level on listening_events
-            MIGRATION_35_36,   // Gamification: add is_acknowledged to badges
-            MIGRATION_36_37,   // Fix: add genre_source column to enriched_metadata
-            MIGRATION_37_38,   // Desktop Satellite: add desktop_pairing_sessions table
-            MIGRATION_38_39,   // Desktop Satellite v2: add desktop_ip / desktop_port
-            MIGRATION_39_40,   // Fix: add smartChallengeNotifHour / smartChallengeNotifCalcTime to user_preferences
-            MIGRATION_40_41,   // Fix: non-UNIQUE indices on artists/albums, nullable tags/genres in enriched_metadata
-            MIGRATION_41_42,   // Add isGamificationEnabled to user_preferences
-            MIGRATION_42_43,   // Backfill Vivi Music & new open-source apps into app_preferences
-            MIGRATION_43_44,    // Add pauseTrackingOnLowBattery to user_preferences
-            MIGRATION_44_45,     // ECDH key exchange: add phone_public_key, desktop_public_key, token_version
-            MIGRATION_45_46,     // Add spotify indexes on enriched_metadata
-            MIGRATION_46_47,     // Remove redundant timestamp index
-            MIGRATION_47_48,     // Add lastWeeklyReminderShown to user_preferences
-            MIGRATION_48_49,     // Add youtube_id column to tracks
-            MIGRATION_49_50,     // Add content_fingerprint to listening_events (import idempotency)
-            MIGRATION_50_51,     // Add lastSpotlightStoryViewed to user_preferences (spotlight ring viewed state)
-            MIGRATION_51_52      // Reconcile divergent schema-51 lineages (public 4.8.2 vs internal)
-        )
+        val ALL_MIGRATIONS =
+            arrayOf(
+                MIGRATION_6_7,
+                MIGRATION_7_8,
+                MIGRATION_8_9,
+                MIGRATION_9_10,
+                MIGRATION_10_11,
+                MIGRATION_11_12,
+                MIGRATION_12_13,
+                MIGRATION_13_14,
+                MIGRATION_14_15,
+                MIGRATION_15_16,
+                MIGRATION_16_17,
+                MIGRATION_17_18,
+                MIGRATION_18_19,
+                MIGRATION_19_20,
+                MIGRATION_20_21,
+                MIGRATION_21_22,
+                MIGRATION_22_23,
+                MIGRATION_23_24,
+                MIGRATION_24_25,
+                MIGRATION_25_26,
+                MIGRATION_26_27,
+                MIGRATION_27_28,
+                MIGRATION_28_29,
+                MIGRATION_29_30,
+                MIGRATION_30_31,
+                MIGRATION_31_32,
+                MIGRATION_32_33, // User known artists for smart rename
+                MIGRATION_33_34, // Daily challenges gamification
+                MIGRATION_34_35, // Anti-gaming: volume_level on listening_events
+                MIGRATION_35_36, // Gamification: add is_acknowledged to badges
+                MIGRATION_36_37, // Fix: add genre_source column to enriched_metadata
+                MIGRATION_37_38, // Desktop Satellite: add desktop_pairing_sessions table
+                MIGRATION_38_39, // Desktop Satellite v2: add desktop_ip / desktop_port
+                MIGRATION_39_40, // Fix: add smartChallengeNotifHour / smartChallengeNotifCalcTime to user_preferences
+                MIGRATION_40_41, // Fix: non-UNIQUE indices on artists/albums, nullable tags/genres in enriched_metadata
+                MIGRATION_41_42, // Add isGamificationEnabled to user_preferences
+                MIGRATION_42_43, // Backfill Vivi Music & new open-source apps into app_preferences
+                MIGRATION_43_44, // Add pauseTrackingOnLowBattery to user_preferences
+                MIGRATION_44_45, // ECDH key exchange: add phone_public_key, desktop_public_key, token_version
+                MIGRATION_45_46, // Add spotify indexes on enriched_metadata
+                MIGRATION_46_47, // Remove redundant timestamp index
+                MIGRATION_47_48, // Add lastWeeklyReminderShown to user_preferences
+                MIGRATION_48_49, // Add youtube_id column to tracks
+                MIGRATION_49_50, // Add content_fingerprint to listening_events (import idempotency)
+                MIGRATION_50_51, // Add lastSpotlightStoryViewed to user_preferences (spotlight ring viewed state)
+                MIGRATION_51_52, // Reconcile divergent schema-51 lineages (public 4.8.2 vs internal)
+                MIGRATION_52_53, // Index tracks.musicbrainz_id (Last.fm/mbid track resolution)
+            )
     }
 }

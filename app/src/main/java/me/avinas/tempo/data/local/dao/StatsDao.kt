@@ -1,14 +1,14 @@
 package me.avinas.tempo.data.local.dao
 
-import androidx.room.Dao
 import androidx.room.ColumnInfo
+import androidx.room.Dao
 import androidx.room.Embedded
 import androidx.room.Query
 import me.avinas.tempo.data.stats.*
 
 /**
  * DAO for computing listening statistics using optimized SQLite queries.
- * 
+ *
  * All queries are designed for efficiency with proper use of:
  * - Indexed columns (timestamp, track_id, artist)
  * - Aggregations pushed to database layer
@@ -18,14 +18,14 @@ import me.avinas.tempo.data.stats.*
  */
 @Dao
 interface StatsDao {
-
     // Combined Stats Query (Single Round Trip)
-    
+
     /**
      * Get all basic stats in a single query to reduce database round trips.
      * Returns total time, play count, unique tracks, unique artists, and unique albums.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             COALESCE(SUM(le.playDuration), 0) as total_time_ms,
             COUNT(le.id) as play_count,
@@ -35,51 +35,75 @@ interface StatsDao {
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
-    """)
-    suspend fun getCombinedBasicStats(startTime: Long, endTime: Long): CombinedBasicStats
+    """,
+    )
+    suspend fun getCombinedBasicStats(
+        startTime: Long,
+        endTime: Long,
+    ): CombinedBasicStats
 
     // Basic Stats Queries
 
     /**
      * Get total listening time in milliseconds for a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(SUM(playDuration), 0) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getTotalListeningTime(startTime: Long, endTime: Long): Long
+    """,
+    )
+    suspend fun getTotalListeningTime(
+        startTime: Long,
+        endTime: Long,
+    ): Long
 
     /**
      * Get total play count for a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getTotalPlayCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getTotalPlayCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get unique tracks count for a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT track_id) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getUniqueTracksCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getUniqueTracksCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get unique artists count for a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT t.artist) 
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
-    """)
-    suspend fun getUniqueArtistsCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getUniqueArtistsCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get unique albums count for a time range.
@@ -87,7 +111,8 @@ interface StatsDao {
      * Also requires an album to have 2+ distinct tracked songs, so a best-of
      * or compilation that only captured 1 of your scrobbled songs doesn't count.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) FROM (
             SELECT t.album
             FROM listening_events le
@@ -99,8 +124,12 @@ interface StatsDao {
             GROUP BY t.album
             HAVING COUNT(DISTINCT t.id) > 1
         )
-    """)
-    suspend fun getUniqueAlbumsCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getUniqueAlbumsCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     // Top Charts - Tracks
 
@@ -108,7 +137,8 @@ interface StatsDao {
      * Get top tracks by play count with pagination.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -128,19 +158,21 @@ interface StatsDao {
         GROUP BY t.id
         ORDER BY play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopTracksByPlayCount(
         startTime: Long,
         endTime: Long,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopTrack>
 
     /**
      * Get top tracks by total listening time.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -160,21 +192,23 @@ interface StatsDao {
         GROUP BY t.id
         ORDER BY total_time_ms DESC, play_count DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopTracksByTime(
         startTime: Long,
         endTime: Long,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopTrack>
-    
+
     /**
      * Get top tracks by combined score (play count + time played).
      * Uses 50/50 weighting: normalized play_count + normalized total_time.
      * This provides a balanced ranking that considers both frequency and duration.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.id as track_id,
@@ -213,23 +247,29 @@ interface StatsDao {
         CROSS JOIN max_values
         ORDER BY combined_score DESC, play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopTracksByCombinedScore(
         startTime: Long,
         endTime: Long,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopTrack>
 
     /**
      * Get total count of unique tracks played (for pagination).
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT track_id) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getUniqueTracksPlayedCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getUniqueTracksPlayedCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     // Top Charts - Artists
 
@@ -237,12 +277,13 @@ interface StatsDao {
      * Get top artists by play count with image and country.
      * Uses proper JOIN through track_artists junction table when available,
      * falls back to string matching for unmigrated tracks.
-     * 
+     *
      * Image URL priority:
      * 1. artists.image_url (always correct for specific artist)
      * 2. enriched_metadata fallback ONLY when artist is PRIMARY (prevents featured artist getting main artist's image)
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             a.id as artist_id,
             a.name as artist,
@@ -272,23 +313,25 @@ interface StatsDao {
         GROUP BY a.id
         ORDER BY play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopArtistsByPlayCount(
         startTime: Long,
         endTime: Long,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopArtist>
 
     /**
      * Get top artists by total listening time with image and country.
      * Uses proper JOIN through track_artists junction table when available.
-     * 
+     *
      * Image URL priority:
      * 1. artists.image_url (always correct for specific artist)
      * 2. enriched_metadata fallback ONLY when artist is PRIMARY (prevents featured artist getting main artist's image)
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             a.id as artist_id,
             a.name as artist,
@@ -318,33 +361,40 @@ interface StatsDao {
         GROUP BY a.id
         ORDER BY total_time_ms DESC, play_count DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopArtistsByTime(
         startTime: Long,
         endTime: Long,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopArtist>
 
     /**
      * Get total count of unique artists (for pagination).
      * Uses track_artists junction table for proper count.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT a.id) 
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         INNER JOIN track_artists ta ON ta.track_id = t.id
         INNER JOIN artists a ON ta.artist_id = a.id
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
-    """)
-    suspend fun getUniqueArtistsPlayedCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getUniqueArtistsPlayedCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get all artist stats for post-processing (splitting multi-artist entries).
      * Returns all artist entries without pagination so they can be split and re-aggregated.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.artist,
             COUNT(le.id) as play_count,
@@ -356,13 +406,18 @@ interface StatsDao {
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
         GROUP BY t.artist
-    """)
-    suspend fun getAllArtistStatsRaw(startTime: Long, endTime: Long): List<RawArtistStats>
-    
+    """,
+    )
+    suspend fun getAllArtistStatsRaw(
+        startTime: Long,
+        endTime: Long,
+    ): List<RawArtistStats>
+
     /**
      * Get stats for a specific artist by ID.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             a.id as artist_id,
             a.name as artist,
@@ -380,14 +435,20 @@ interface StatsDao {
         WHERE a.id = :artistId
         AND le.timestamp >= :startTime AND le.timestamp <= :endTime
         GROUP BY a.id
-    """)
-    suspend fun getArtistStatsById(artistId: Long, startTime: Long, endTime: Long): TopArtist?
-    
+    """,
+    )
+    suspend fun getArtistStatsById(
+        artistId: Long,
+        startTime: Long,
+        endTime: Long,
+    ): TopArtist?
+
     /**
      * Get tracks for an artist by artist ID with play stats.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -409,17 +470,24 @@ interface StatsDao {
         GROUP BY t.id
         ORDER BY play_count DESC
         LIMIT :limit
-    """)
-    suspend fun getTracksByArtistId(artistId: Long, startTime: Long, endTime: Long, limit: Int): List<TopTrack>
-    
+    """,
+    )
+    suspend fun getTracksByArtistId(
+        artistId: Long,
+        startTime: Long,
+        endTime: Long,
+        limit: Int,
+    ): List<TopTrack>
+
     /**
      * Get all albums by an artist ID.
      */
-    @Query("""
+    @Query(
+        """
         SELECT DISTINCT 
             t.album,
             t.artist,
-            COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+            COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT t.id) as unique_tracks
@@ -434,8 +502,14 @@ interface StatsDao {
         HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC
         LIMIT :limit
-    """)
-    suspend fun getAlbumsByArtistId(artistId: Long, startTime: Long, endTime: Long, limit: Int): List<TopAlbum>
+    """,
+    )
+    suspend fun getAlbumsByArtistId(
+        artistId: Long,
+        startTime: Long,
+        endTime: Long,
+        limit: Int,
+    ): List<TopAlbum>
 
     // Top Charts - Albums
 
@@ -443,11 +517,12 @@ interface StatsDao {
      * Get top albums by play count.
      * Excludes Singles - only includes releases marked as Album, EP, or unknown/null release types.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.album,
             t.artist,
-            COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+            COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT t.id) as unique_tracks
@@ -461,12 +536,13 @@ interface StatsDao {
         HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopAlbums(
         startTime: Long,
         endTime: Long,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopAlbum>
 
     // Top Charts - Genres (from MusicBrainz tags)
@@ -477,7 +553,8 @@ interface StatsDao {
      * Prefers genres over tags since Spotify genre data is more reliable.
      * Both fields are stored as |||-delimited strings.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             COALESCE(
                 NULLIF(em.genres, ''),
@@ -497,11 +574,12 @@ interface StatsDao {
         GROUP BY genre
         ORDER BY play_count DESC
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun getTopGenresRaw(
         startTime: Long,
         endTime: Long,
-        limit: Int
+        limit: Int,
     ): List<TopGenre>
 
     // Temporal Analysis - Hour of Day
@@ -510,7 +588,8 @@ interface StatsDao {
      * Get listening distribution by hour of day.
      * Uses SQLite strftime to extract hour from timestamp.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             CAST(strftime('%H', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour,
             COUNT(*) as play_count,
@@ -519,13 +598,18 @@ interface StatsDao {
         WHERE timestamp >= :startTime AND timestamp <= :endTime
         GROUP BY hour
         ORDER BY hour ASC
-    """)
-    suspend fun getHourlyDistribution(startTime: Long, endTime: Long): List<HourlyDistribution>
+    """,
+    )
+    suspend fun getHourlyDistribution(
+        startTime: Long,
+        endTime: Long,
+    ): List<HourlyDistribution>
 
     /**
      * Get the most active hour of day.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             CAST(strftime('%H', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour,
             COUNT(*) as play_count,
@@ -535,8 +619,12 @@ interface StatsDao {
         GROUP BY hour
         ORDER BY play_count DESC
         LIMIT 1
-    """)
-    suspend fun getMostActiveHour(startTime: Long, endTime: Long): HourlyDistribution?
+    """,
+    )
+    suspend fun getMostActiveHour(
+        startTime: Long,
+        endTime: Long,
+    ): HourlyDistribution?
 
     /**
      * Get the typical hour the user *starts* listening each day.
@@ -544,7 +632,8 @@ interface StatsDao {
      * first-listen hours across all days. This tells us when the user typically begins
      * their listening session rather than when they are most active overall.
      */
-    @Query("""
+    @Query(
+        """
         SELECT
             CAST(AVG(first_hour) AS INTEGER) as hour,
             COUNT(*) as play_count,
@@ -556,8 +645,12 @@ interface StatsDao {
             WHERE timestamp >= :startTime AND timestamp <= :endTime
             GROUP BY strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime'))
         )
-    """)
-    suspend fun getTypicalStartHour(startTime: Long, endTime: Long): HourlyDistribution?
+    """,
+    )
+    suspend fun getTypicalStartHour(
+        startTime: Long,
+        endTime: Long,
+    ): HourlyDistribution?
 
     // Temporal Analysis - Day of Week
 
@@ -565,7 +658,8 @@ interface StatsDao {
      * Get listening distribution by day of week.
      * SQLite strftime %w returns 0-6 (Sunday-Saturday), we convert to 1-7 (Monday-Sunday).
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             CASE 
                 WHEN CAST(strftime('%w', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) = 0 THEN 7
@@ -577,13 +671,18 @@ interface StatsDao {
         WHERE timestamp >= :startTime AND timestamp <= :endTime
         GROUP BY day_of_week
         ORDER BY day_of_week ASC
-    """)
-    suspend fun getDayOfWeekDistribution(startTime: Long, endTime: Long): List<DayOfWeekDistribution>
+    """,
+    )
+    suspend fun getDayOfWeekDistribution(
+        startTime: Long,
+        endTime: Long,
+    ): List<DayOfWeekDistribution>
 
     /**
      * Get the most active day of week.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             CASE 
                 WHEN CAST(strftime('%w', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) = 0 THEN 7
@@ -596,15 +695,20 @@ interface StatsDao {
         GROUP BY day_of_week
         ORDER BY play_count DESC
         LIMIT 1
-    """)
-    suspend fun getMostActiveDay(startTime: Long, endTime: Long): DayOfWeekDistribution?
+    """,
+    )
+    suspend fun getMostActiveDay(
+        startTime: Long,
+        endTime: Long,
+    ): DayOfWeekDistribution?
 
     // Temporal Analysis - Daily Aggregations
 
     /**
      * Get daily listening aggregations.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             strftime('%Y-%m-%d', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) as date,
             COUNT(le.id) as play_count,
@@ -617,15 +721,21 @@ interface StatsDao {
         GROUP BY date
         ORDER BY date DESC
         LIMIT :limit
-    """)
-    suspend fun getDailyListening(startTime: Long, endTime: Long, limit: Int): List<DailyListening>
+    """,
+    )
+    suspend fun getDailyListening(
+        startTime: Long,
+        endTime: Long,
+        limit: Int,
+    ): List<DailyListening>
 
     // Temporal Analysis - Monthly Aggregations
 
     /**
      * Get monthly listening aggregations.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             CAST(strftime('%Y', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as year,
             CAST(strftime('%m', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as month,
@@ -638,50 +748,67 @@ interface StatsDao {
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
         GROUP BY year, month
         ORDER BY year DESC, month DESC
-    """)
-    suspend fun getMonthlyListening(startTime: Long, endTime: Long): List<MonthlyListening>
+    """,
+    )
+    suspend fun getMonthlyListening(
+        startTime: Long,
+        endTime: Long,
+    ): List<MonthlyListening>
 
     // Listening Streaks
 
     /**
      * Get all unique listening dates for streak calculation.
      */
-    @Query("""
+    @Query(
+        """
         SELECT DISTINCT strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime')) as date
         FROM listening_events
         ORDER BY date ASC
-    """)
+    """,
+    )
     suspend fun getAllListeningDates(): List<String>
 
     /**
      * Get total number of active listening days.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime')))
         FROM listening_events
         WHERE timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getActiveDaysCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getActiveDaysCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get peak daily listening duration in milliseconds within a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT SUM(playDuration)
         FROM listening_events
         WHERE timestamp >= :startTime AND timestamp <= :endTime
         GROUP BY strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime'))
         ORDER BY SUM(playDuration) DESC
         LIMIT 1
-    """)
-    suspend fun getPeakDayListeningMs(startTime: Long, endTime: Long): Long?
+    """,
+    )
+    suspend fun getPeakDayListeningMs(
+        startTime: Long,
+        endTime: Long,
+    ): Long?
 
     // Discovery Metrics
 
     /**
      * Get first listen timestamp for each artist.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.artist as name,
             MIN(le.timestamp) as first_listen_timestamp,
@@ -690,13 +817,15 @@ interface StatsDao {
         INNER JOIN tracks t ON le.track_id = t.id
         GROUP BY t.artist
         ORDER BY first_listen_timestamp DESC
-    """)
+    """,
+    )
     suspend fun getArtistFirstListens(): List<FirstListen>
 
     /**
      * Get new artists discovered in a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT t.artist)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
@@ -707,13 +836,18 @@ interface StatsDao {
             INNER JOIN tracks t2 ON le2.track_id = t2.id
             WHERE le2.timestamp < :startTime
         )
-    """)
-    suspend fun getNewArtistsCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getNewArtistsCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get new tracks discovered in a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT le.track_id)
         FROM listening_events le
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
@@ -722,13 +856,18 @@ interface StatsDao {
             FROM listening_events
             WHERE timestamp < :startTime
         )
-    """)
-    suspend fun getNewTracksCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getNewTracksCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get repeat listens count (tracks played more than once in period).
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*)
         FROM (
             SELECT track_id, COUNT(*) as cnt
@@ -737,13 +876,18 @@ interface StatsDao {
             GROUP BY track_id
             HAVING cnt > 1
         )
-    """)
-    suspend fun getRepeatTracksCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getRepeatTracksCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get artist loyalty metrics.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.artist,
             COUNT(le.id) as total_plays,
@@ -763,19 +907,21 @@ interface StatsDao {
         HAVING total_plays >= :minPlays
         ORDER BY total_plays DESC
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun getArtistLoyalty(
         startTime: Long,
         endTime: Long,
         minPlays: Int,
-        limit: Int
+        limit: Int,
     ): List<ArtistLoyalty>
 
     /**
      * Get count of artists with play count greater than the specified value.
      * Used for calculating local percentile rank.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) 
         FROM (
             SELECT COUNT(le.id) as play_count 
@@ -785,14 +931,20 @@ interface StatsDao {
             GROUP BY t.artist
             HAVING play_count > :playCount
         )
-    """)
-    suspend fun countArtistsWithPlayCountMoreThan(playCount: Int, startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun countArtistsWithPlayCountMoreThan(
+        playCount: Int,
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get track rank based on play count (All Time).
      * Returns the rank (1-based).
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) + 1
         FROM (
             SELECT COUNT(le.id) as play_count
@@ -800,18 +952,21 @@ interface StatsDao {
             GROUP BY le.track_id
             HAVING play_count > :playCount
         )
-    """)
+    """,
+    )
     suspend fun getTrackRankAllTime(playCount: Int): Int
 
     /**
      * Get the exact timestamp of the first listen for a specific artist.
      */
-    @Query("""
+    @Query(
+        """
         SELECT MIN(le.timestamp)
         FROM listening_events le
         INNER JOIN track_artists ta ON le.track_id = ta.track_id
         WHERE ta.artist_id = :artistId
-    """)
+    """,
+    )
     suspend fun getArtistDiscoveryDate(artistId: Long): Long?
 
     // Engagement Metrics
@@ -819,54 +974,75 @@ interface StatsDao {
     /**
      * Get average completion rate for a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT AVG(completionPercentage) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getAverageCompletionRate(startTime: Long, endTime: Long): Double?
+    """,
+    )
+    suspend fun getAverageCompletionRate(
+        startTime: Long,
+        endTime: Long,
+    ): Double?
 
     /**
      * Get count of full listens (>80% completion).
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
         AND completionPercentage >= 80
-    """)
-    suspend fun getFullListensCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getFullListensCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get count of skips using the new was_skipped column (more accurate).
      * Falls back to completion < 30% for older events.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
         AND (was_skipped = 1 OR completionPercentage < 30)
-    """)
-    suspend fun getSkipsCount(startTime: Long, endTime: Long): Int
-    
+    """,
+    )
+    suspend fun getSkipsCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
+
     /**
      * Get count of replays using the new is_replay column.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
         AND is_replay = 1
-    """)
-    suspend fun getReplayCount(startTime: Long, endTime: Long): Int
-    
+    """,
+    )
+    suspend fun getReplayCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
+
     // Insights Queries
 
     /**
      * Binge Listening: Find artists played repeatedly in a short session.
      * Groups consecutive plays of the same artist within 3 hours.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.artist,
             COUNT(*) as session_play_count,
@@ -885,14 +1061,19 @@ interface StatsDao {
         HAVING session_play_count >= 5 -- Minimum plays to count as binge
         ORDER BY session_play_count DESC
         LIMIT 5
-    """)
-    suspend fun getBingeListeningSessions(startTime: Long, endTime: Long): List<BingeSession>
+    """,
+    )
+    suspend fun getBingeListeningSessions(
+        startTime: Long,
+        endTime: Long,
+    ): List<BingeSession>
 
     /**
      * Mood Analysis: Fetches audio features JSONs for aggregation.
      * We process this in the repository because SQLite JSON support varies.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             em.audio_features_json,
             em.tags,
@@ -906,14 +1087,19 @@ interface StatsDao {
             OR (em.tags IS NOT NULL AND em.tags != '' AND em.tags != '[]')
             OR (em.genres IS NOT NULL AND em.genres != '' AND em.genres != '[]')
         )
-    """)
-    suspend fun getMoodRawData(startTime: Long, endTime: Long): List<MoodRawData>
+    """,
+    )
+    suspend fun getMoodRawData(
+        startTime: Long,
+        endTime: Long,
+    ): List<MoodRawData>
 
     /**
      * Discovery Rate: Calculates new artist discovery over time periods.
      * Groups by month for long-term trend.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             strftime('%Y-%m', datetime(min_timestamps.first_listen/1000, 'unixepoch', 'localtime')) as month,
             COUNT(min_timestamps.artist) as new_artists_count
@@ -927,46 +1113,65 @@ interface StatsDao {
         AND min_timestamps.first_listen <= :endTime
         GROUP BY month
         ORDER BY month DESC
-    """)
-    suspend fun getNewArtistDiscoveryTrend(startTime: Long, endTime: Long): List<DiscoveryTrend>
+    """,
+    )
+    suspend fun getNewArtistDiscoveryTrend(
+        startTime: Long,
+        endTime: Long,
+    ): List<DiscoveryTrend>
 
-    
     /**
      * Get partial plays count (30-80% completion).
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
         AND completionPercentage >= 30 AND completionPercentage < 80
-    """)
-    suspend fun getPartialPlaysCount(startTime: Long, endTime: Long): Int
-    
+    """,
+    )
+    suspend fun getPartialPlaysCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
+
     /**
      * Get average pause count per play.
      */
-    @Query("""
+    @Query(
+        """
         SELECT AVG(CAST(pause_count AS FLOAT)) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getAveragePauseCount(startTime: Long, endTime: Long): Float?
-    
+    """,
+    )
+    suspend fun getAveragePauseCount(
+        startTime: Long,
+        endTime: Long,
+    ): Float?
+
     /**
      * Get count of unique sessions.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT session_id) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
         AND session_id IS NOT NULL
-    """)
-    suspend fun getUniqueSessionsCount(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getUniqueSessionsCount(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Get track completion statistics with enhanced metrics.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -982,18 +1187,20 @@ interface StatsDao {
         HAVING total_plays >= :minPlays
         ORDER BY average_completion DESC
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun getTrackCompletionStats(
         startTime: Long,
         endTime: Long,
         minPlays: Int,
-        limit: Int
+        limit: Int,
     ): List<TrackCompletion>
 
     /**
      * Get most skipped tracks using the new was_skipped column.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -1009,17 +1216,19 @@ interface StatsDao {
         HAVING skips > 0
         ORDER BY skips DESC, average_completion ASC
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun getMostSkippedTracks(
         startTime: Long,
         endTime: Long,
-        limit: Int
+        limit: Int,
     ): List<TrackCompletion>
-    
+
     /**
      * Get most replayed tracks.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -1034,29 +1243,36 @@ interface StatsDao {
         HAVING replay_count > 0
         ORDER BY replay_count DESC
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun getMostReplayedTracks(
         startTime: Long,
         endTime: Long,
-        limit: Int
+        limit: Int,
     ): List<ReplayedTrackStats>
 
     /**
      * Get listening events ordered for binge detection.
      */
-    @Query("""
+    @Query(
+        """
         SELECT le.id, le.track_id, le.timestamp, t.artist, t.album
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
         ORDER BY le.timestamp ASC
-    """)
-    suspend fun getEventsForBingeDetection(startTime: Long, endTime: Long): List<BingeDetectionEvent>
-    
+    """,
+    )
+    suspend fun getEventsForBingeDetection(
+        startTime: Long,
+        endTime: Long,
+    ): List<BingeDetectionEvent>
+
     /**
      * Get hourly completion stats for engagement analysis.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             CAST(strftime('%H', datetime(timestamp / 1000, 'unixepoch', 'localtime')) AS INTEGER) as hour,
             AVG(completionPercentage) as avg_completion,
@@ -1065,15 +1281,20 @@ interface StatsDao {
         WHERE timestamp >= :startTime AND timestamp <= :endTime
         GROUP BY hour
         ORDER BY hour
-    """)
-    suspend fun getHourlyCompletionStats(startTime: Long, endTime: Long): List<HourlyCompletionStats>
+    """,
+    )
+    suspend fun getHourlyCompletionStats(
+        startTime: Long,
+        endTime: Long,
+    ): List<HourlyCompletionStats>
 
     // Year-over-Year Comparison
 
     /**
      * Get stats for a specific year.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
@@ -1081,7 +1302,8 @@ interface StatsDao {
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE strftime('%Y', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) = :year
-    """)
+    """,
+    )
     suspend fun getYearStats(year: String): YearStatsRaw
 
     // Spotify Audio Features Stats
@@ -1089,7 +1311,8 @@ interface StatsDao {
     /**
      * Get average audio features for tracks in a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             AVG(CAST(json_extract(em.audio_features_json, '$.energy') AS REAL)) as avg_energy,
             AVG(CAST(json_extract(em.audio_features_json, '$.danceability') AS REAL)) as avg_danceability,
@@ -1104,13 +1327,18 @@ interface StatsDao {
         INNER JOIN enriched_metadata em ON le.track_id = em.track_id
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
         AND em.audio_features_json IS NOT NULL
-    """)
-    suspend fun getAverageAudioFeatures(startTime: Long, endTime: Long): AudioFeaturesRaw?
+    """,
+    )
+    suspend fun getAverageAudioFeatures(
+        startTime: Long,
+        endTime: Long,
+    ): AudioFeaturesRaw?
 
     /**
      * Get mood trends over time (daily averages).
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             strftime('%Y-%m-%d', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) as date,
             AVG(CAST(json_extract(em.audio_features_json, '$.valence') AS REAL)) as avg_valence,
@@ -1123,13 +1351,18 @@ interface StatsDao {
         AND em.audio_features_json IS NOT NULL
         GROUP BY date
         ORDER BY date ASC
-    """)
-    suspend fun getMoodTrends(startTime: Long, endTime: Long): List<MoodTrend>
+    """,
+    )
+    suspend fun getMoodTrends(
+        startTime: Long,
+        endTime: Long,
+    ): List<MoodTrend>
 
     /**
      * Get tempo distribution.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             CASE 
                 WHEN CAST(json_extract(em.audio_features_json, '$.tempo') AS REAL) < 80 THEN 'Slow (<80 BPM)'
@@ -1146,20 +1379,24 @@ interface StatsDao {
         AND em.audio_features_json IS NOT NULL
         GROUP BY bucket_label
         ORDER BY track_count DESC
-    """)
-    suspend fun getTempoDistributionRaw(startTime: Long, endTime: Long): List<TempoDistributionRaw>
-
+    """,
+    )
+    suspend fun getTempoDistributionRaw(
+        startTime: Long,
+        endTime: Long,
+    ): List<TempoDistributionRaw>
 
     // History
 
     /**
      * Get listening history with track metadata.
      * Filters out podcast/audiobook content based on user preferences.
-     * 
+     *
      * @param filterPodcasts If true, exclude tracks with content_type = 'PODCAST'
      * @param filterAudiobooks If true, exclude tracks with content_type = 'AUDIOBOOK'
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             le.id,
             le.track_id,
@@ -1187,7 +1424,8 @@ interface StatsDao {
             (:filterAudiobooks = 0 OR t.content_type != 'AUDIOBOOK')
         ORDER BY le.timestamp DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getHistory(
         searchQuery: String? = null,
         startTime: Long? = null,
@@ -1196,15 +1434,16 @@ interface StatsDao {
         filterPodcasts: Boolean = true,
         filterAudiobooks: Boolean = true,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<HistoryItem>
-    
+
     /**
      * Get listening history EXCLUDING Last.fm imported events.
      * This shows only "live" activity from Spotify/notification tracking.
      * Used for the "Recent Activity" section when Last.fm import exists.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             le.id,
             le.track_id,
@@ -1233,7 +1472,8 @@ interface StatsDao {
             (:filterAudiobooks = 0 OR t.content_type != 'AUDIOBOOK')
         ORDER BY le.timestamp DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getHistoryExcludingLastFm(
         searchQuery: String? = null,
         startTime: Long? = null,
@@ -1242,15 +1482,16 @@ interface StatsDao {
         filterPodcasts: Boolean = true,
         filterAudiobooks: Boolean = true,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<HistoryItem>
-    
+
     /**
      * Get listening history ONLY from Last.fm imported events.
      * This shows the "active set" of Last.fm imports (top/loved tracks).
      * Used for the "Last.fm History" section.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             le.id,
             le.track_id,
@@ -1279,7 +1520,8 @@ interface StatsDao {
             (:filterAudiobooks = 0 OR t.content_type != 'AUDIOBOOK')
         ORDER BY le.timestamp DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getHistoryLastFmOnly(
         searchQuery: String? = null,
         startTime: Long? = null,
@@ -1288,13 +1530,14 @@ interface StatsDao {
         filterPodcasts: Boolean = true,
         filterAudiobooks: Boolean = true,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<HistoryItem>
-    
+
     /**
      * Count total Last.fm imported events (for pagination info).
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE 
@@ -1305,17 +1548,19 @@ interface StatsDao {
                 t.title LIKE '%' || :searchQuery || '%' OR 
                 t.artist LIKE '%' || :searchQuery || '%' OR 
                 t.album LIKE '%' || :searchQuery || '%')
-    """)
+    """,
+    )
     suspend fun countLastFmHistory(
         searchQuery: String? = null,
         startTime: Long? = null,
-        endTime: Long? = null
+        endTime: Long? = null,
     ): Int
-    
+
     /**
      * Count non-Last.fm events (live activity count).
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE 
@@ -1326,11 +1571,12 @@ interface StatsDao {
                 t.title LIKE '%' || :searchQuery || '%' OR 
                 t.artist LIKE '%' || :searchQuery || '%' OR 
                 t.album LIKE '%' || :searchQuery || '%')
-    """)
+    """,
+    )
     suspend fun countLiveHistory(
         searchQuery: String? = null,
         startTime: Long? = null,
-        endTime: Long? = null
+        endTime: Long? = null,
     ): Int
 
     // Single Entity Stats
@@ -1346,14 +1592,15 @@ interface StatsDao {
 
     @Query("SELECT MAX(timestamp) FROM listening_events WHERE track_id = :trackId")
     suspend fun getTrackLastPlayed(trackId: Long): Long?
-    
+
     // Optimized Track Engagement Queries
-    
+
     /**
      * Get full engagement metrics for a track in a single optimized query.
      * Uses indexed columns (was_skipped, is_replay, pause_count) for efficiency.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             :trackId as track_id,
             COUNT(*) as play_count,
@@ -1370,46 +1617,48 @@ interface StatsDao {
             COUNT(DISTINCT session_id) as unique_sessions_count
         FROM listening_events 
         WHERE track_id = :trackId
-    """)
+    """,
+    )
     suspend fun getTrackEngagementStats(trackId: Long): TrackEngagementStats?
-    
+
     /**
      * Get skip count for a track using the new was_skipped column.
      */
     @Query("SELECT COUNT(*) FROM listening_events WHERE track_id = :trackId AND (was_skipped = 1 OR completionPercentage < 30)")
     suspend fun getTrackSkipCount(trackId: Long): Int
-    
+
     /**
      * Get replay count for a track using the new is_replay column.
      */
     @Query("SELECT COUNT(*) FROM listening_events WHERE track_id = :trackId AND is_replay = 1")
     suspend fun getTrackReplayCount(trackId: Long): Int
-    
+
     /**
      * Get full plays count (>80% completion) for a track.
      */
     @Query("SELECT COUNT(*) FROM listening_events WHERE track_id = :trackId AND completionPercentage >= 80")
     suspend fun getTrackFullPlaysCount(trackId: Long): Int
-    
+
     /**
      * Get average completion percentage for a track.
      */
     @Query("SELECT AVG(completionPercentage) FROM listening_events WHERE track_id = :trackId")
     suspend fun getTrackAverageCompletion(trackId: Long): Float?
-    
+
     /**
      * Get average pause count for a track.
      */
     @Query("SELECT AVG(CAST(pause_count AS FLOAT)) FROM listening_events WHERE track_id = :trackId")
     suspend fun getTrackAveragePauseCount(trackId: Long): Float?
-    
+
     /**
      * Get total pause count for a track.
      */
     @Query("SELECT COALESCE(SUM(pause_count), 0) FROM listening_events WHERE track_id = :trackId")
     suspend fun getTrackTotalPauseCount(trackId: Long): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT 
             strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime')) as date,
             COUNT(*) as play_count,
@@ -1420,27 +1669,37 @@ interface StatsDao {
         WHERE track_id = :trackId AND timestamp >= :startTime AND timestamp <= :endTime
         GROUP BY date
         ORDER BY date ASC
-    """)
-    suspend fun getTrackListeningHistory(trackId: Long, startTime: Long, endTime: Long): List<DailyListening>
+    """,
+    )
+    suspend fun getTrackListeningHistory(
+        trackId: Long,
+        startTime: Long,
+        endTime: Long,
+    ): List<DailyListening>
 
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(le.id) 
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE t.artist = :artistName
-    """)
+    """,
+    )
     suspend fun getArtistPlayCount(artistName: String): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(SUM(le.playDuration), 0)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE t.artist = :artistName
-    """)
+    """,
+    )
     suspend fun getArtistTotalTime(artistName: String): Long
 
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -1460,10 +1719,15 @@ interface StatsDao {
         GROUP BY t.id
         ORDER BY play_count DESC
         LIMIT :limit
-    """)
-    suspend fun getTopTracksForArtist(artistName: String, limit: Int): List<TopTrack>
+    """,
+    )
+    suspend fun getTopTracksForArtist(
+        artistName: String,
+        limit: Int,
+    ): List<TopTrack>
 
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.artist as name,
             MIN(le.timestamp) as first_listen_timestamp,
@@ -1471,7 +1735,8 @@ interface StatsDao {
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE t.artist = :artistName
-    """)
+    """,
+    )
     suspend fun getArtistFirstListen(artistName: String): FirstListen?
 
     // Extended Artist Stats
@@ -1482,7 +1747,8 @@ interface StatsDao {
      * Also requires an album to have 2+ distinct tracked songs, so a best-of
      * or compilation that only captured 1 of your scrobbled songs doesn't count.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) FROM (
             SELECT t.album
             FROM listening_events le
@@ -1493,24 +1759,28 @@ interface StatsDao {
             GROUP BY t.album
             HAVING COUNT(DISTINCT t.id) > 1
         )
-    """)
+    """,
+    )
     suspend fun getArtistUniqueAlbumsPlayed(artistName: String): Int
 
     /**
      * Get unique tracks played for an artist.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT t.id)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE t.artist = :artistName
-    """)
+    """,
+    )
     suspend fun getArtistUniqueTracksPlayed(artistName: String): Int
 
     /**
      * Get average audio features for an artist's tracks.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             AVG(CAST(json_extract(em.audio_features_json, '$.energy') AS REAL)) as avg_energy,
             AVG(CAST(json_extract(em.audio_features_json, '$.danceability') AS REAL)) as avg_danceability,
@@ -1524,24 +1794,28 @@ interface StatsDao {
         FROM enriched_metadata em
         INNER JOIN tracks t ON em.track_id = t.id
         WHERE t.artist = :artistName AND em.audio_features_json IS NOT NULL
-    """)
+    """,
+    )
     suspend fun getArtistAudioFeatures(artistName: String): AudioFeaturesRaw?
 
     /**
      * Get first and last listened dates for an artist.
      */
-    @Query("""
+    @Query(
+        """
         SELECT MIN(le.timestamp) as first_listened, MAX(le.timestamp) as last_listened
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE t.artist = :artistName
-    """)
+    """,
+    )
     suspend fun getArtistListeningDates(artistName: String): ArtistListeningDates?
 
     /**
      * Get peak listening hour for an artist.
      */
-    @Query("""
+    @Query(
+        """
         SELECT CAST(strftime('%H', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
@@ -1549,7 +1823,8 @@ interface StatsDao {
         GROUP BY hour
         ORDER BY COUNT(*) DESC
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getArtistPeakListeningHour(artistName: String): Int?
 
     /**
@@ -1557,16 +1832,18 @@ interface StatsDao {
      * Searches for the artist name within multi-artist strings using LIKE.
      * Uses case-insensitive matching.
      */
-    @Query("""
+    @Query(
+        """
         SELECT em.artist_country
         FROM enriched_metadata em
         INNER JOIN tracks t ON em.track_id = t.id
         WHERE (LOWER(t.artist) = LOWER(:artistName) OR LOWER(t.artist) LIKE '%' || LOWER(:artistName) || '%') 
               AND em.artist_country IS NOT NULL AND em.artist_country != ''
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getArtistCountry(artistName: String): String?
-    
+
     /**
      * Get artist image URL from enriched metadata for PRIMARY artist.
      * Looks for tracks where this artist is the main/solo artist (not featured).
@@ -1575,7 +1852,8 @@ interface StatsDao {
      * Uses case-insensitive matching.
      * Checks all artist image sources in priority order: Spotify > iTunes > Last.fm > Deezer
      */
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(
             NULLIF(em.spotify_artist_image_url, ''),
             NULLIF(em.itunes_artist_image_url, ''),
@@ -1591,9 +1869,10 @@ interface StatsDao {
               AND (em.spotify_artist_image_url IS NOT NULL OR em.itunes_artist_image_url IS NOT NULL 
                    OR em.lastfm_artist_image_url IS NOT NULL OR em.deezer_artist_image_url IS NOT NULL)
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getArtistImageAsPrimaryArtist(artistName: String): String?
-    
+
     /**
      * Get artist image URL from enriched metadata where artist is listed first.
      * Uses track_artists junction table to ensure we only get images from tracks
@@ -1601,7 +1880,8 @@ interface StatsDao {
      * Uses case-insensitive matching.
      * Checks all artist image sources in priority order: Spotify > iTunes > Last.fm > Deezer
      */
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(
             NULLIF(em.spotify_artist_image_url, ''),
             NULLIF(em.itunes_artist_image_url, ''),
@@ -1628,16 +1908,18 @@ interface StatsDao {
         AND (em.spotify_artist_image_url IS NOT NULL OR em.itunes_artist_image_url IS NOT NULL 
              OR em.lastfm_artist_image_url IS NOT NULL OR em.deezer_artist_image_url IS NOT NULL)
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getArtistImageAsFirstArtist(artistName: String): String?
-    
+
     /**
      * Get artist image URL from enriched metadata (fallback - any track containing artist).
      * Uses track_artists junction table with PRIMARY role to ensure correct artist images.
      * This prevents multi-artist tracks from returning the wrong artist's image.
      * Checks all artist image sources in priority order: Spotify > iTunes > Last.fm > Deezer
      */
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(
             NULLIF(em.spotify_artist_image_url, ''),
             NULLIF(em.itunes_artist_image_url, ''),
@@ -1653,21 +1935,23 @@ interface StatsDao {
               AND (em.spotify_artist_image_url IS NOT NULL OR em.itunes_artist_image_url IS NOT NULL 
                    OR em.lastfm_artist_image_url IS NOT NULL OR em.deezer_artist_image_url IS NOT NULL)
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getArtistImageFromEnrichedMetadata(artistName: String): String?
-    
+
     /**
      * Get artist image URL by artist ID from enriched metadata.
      * Uses the track_artists junction table to find tracks linked to this artist.
-     * 
+     *
      * IMPORTANT: Only returns images from tracks where this artist is PRIMARY
      * AND where the enriched_metadata's spotify_artist_id matches the artist's spotify_id.
      * This prevents returning the wrong artist's image when enriched_metadata stores
      * a different artist's image (e.g., Spotify returns KR$NA as primary for a KARMA track).
-     * 
+     *
      * Checks all artist image sources in priority order: Spotify > iTunes > Last.fm > Deezer
      */
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(
             NULLIF(em.spotify_artist_image_url, ''),
             NULLIF(em.itunes_artist_image_url, ''),
@@ -1689,18 +1973,20 @@ interface StatsDao {
               AND (em.spotify_artist_image_url IS NOT NULL OR em.itunes_artist_image_url IS NOT NULL 
                    OR em.lastfm_artist_image_url IS NOT NULL OR em.deezer_artist_image_url IS NOT NULL)
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getArtistImageByArtistId(artistId: Long): String?
 
     /**
      * Get top albums for an artist.
      * Excludes singles - only returns actual albums and EPs.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.album,
             t.artist,
-            COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+            COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT t.id) as unique_tracks
@@ -1713,26 +1999,45 @@ interface StatsDao {
         HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC
         LIMIT :limit
-    """)
-    suspend fun getTopAlbumsForArtist(artistName: String, limit: Int): List<TopAlbum>
+    """,
+    )
+    suspend fun getTopAlbumsForArtist(
+        artistName: String,
+        limit: Int,
+    ): List<TopAlbum>
 
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(le.id)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
-        WHERE t.album = :albumName AND t.artist = :artistName
-    """)
-    suspend fun getAlbumPlayCount(albumName: String, artistName: String): Int
+        WHERE t.album = :albumName
+        AND (t.primary_artist_id = :artistId OR LOWER(t.artist) = LOWER(:artistName))
+    """,
+    )
+    suspend fun getAlbumPlayCount(
+        albumName: String,
+        artistName: String,
+        artistId: Long,
+    ): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(SUM(le.playDuration), 0)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
-        WHERE t.album = :albumName AND t.artist = :artistName
-    """)
-    suspend fun getAlbumTotalTime(albumName: String, artistName: String): Long
+        WHERE t.album = :albumName
+        AND (t.primary_artist_id = :artistId OR LOWER(t.artist) = LOWER(:artistName))
+    """,
+    )
+    suspend fun getAlbumTotalTime(
+        albumName: String,
+        artistName: String,
+        artistId: Long,
+    ): Long
 
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id,
             t.title,
@@ -1750,16 +2055,23 @@ interface StatsDao {
         FROM tracks t
         LEFT JOIN listening_events le ON t.id = le.track_id
         LEFT JOIN enriched_metadata em ON t.id = em.track_id
-        WHERE t.album = :albumName AND t.artist = :artistName
+        WHERE t.album = :albumName
+        AND (t.primary_artist_id = :artistId OR LOWER(t.artist) = LOWER(:artistName))
         GROUP BY t.id
         ORDER BY t.title ASC
-    """)
-    suspend fun getTracksForAlbumWithStats(albumName: String, artistName: String): List<TrackWithStatsRaw>
+    """,
+    )
+    suspend fun getTracksForAlbumWithStats(
+        albumName: String,
+        artistName: String,
+        artistId: Long,
+    ): List<TrackWithStatsRaw>
 
     /**
      * Get audio features for a specific track.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             CAST(json_extract(em.audio_features_json, '$.energy') AS REAL) as energy,
             CAST(json_extract(em.audio_features_json, '$.danceability') AS REAL) as danceability,
@@ -1777,34 +2089,40 @@ interface StatsDao {
         WHERE em.track_id = :trackId
         AND em.audio_features_json IS NOT NULL
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getTrackAudioFeaturesRaw(trackId: Long): TrackAudioFeaturesRaw?
-    
+
     // Partial Match Artist Queries (for split multi-artist entries)
-    
+
     /**
      * Get play count for artist using partial match (LIKE).
      * Matches artists in multi-artist strings like "Artist1, Artist2".
      * Uses case-insensitive matching.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(le.id) 
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE LOWER(t.artist) = LOWER(:artistName) OR LOWER(t.artist) LIKE '%' || LOWER(:artistName) || '%'
-    """)
+    """,
+    )
     suspend fun getArtistPlayCountByPartialMatch(artistName: String): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(SUM(le.playDuration), 0)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE LOWER(t.artist) = LOWER(:artistName) OR LOWER(t.artist) LIKE '%' || LOWER(:artistName) || '%'
-    """)
+    """,
+    )
     suspend fun getArtistTotalTimeByPartialMatch(artistName: String): Long
 
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -1824,10 +2142,15 @@ interface StatsDao {
         GROUP BY t.id
         ORDER BY play_count DESC
         LIMIT :limit
-    """)
-    suspend fun getTopTracksForArtistPartialMatch(artistName: String, limit: Int): List<TopTrack>
+    """,
+    )
+    suspend fun getTopTracksForArtistPartialMatch(
+        artistName: String,
+        limit: Int,
+    ): List<TopTrack>
 
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.artist as name,
             MIN(le.timestamp) as first_listen_timestamp,
@@ -1835,14 +2158,16 @@ interface StatsDao {
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE LOWER(t.artist) = LOWER(:artistName) OR LOWER(t.artist) LIKE '%' || LOWER(:artistName) || '%'
-    """)
+    """,
+    )
     suspend fun getArtistFirstListenPartialMatch(artistName: String): FirstListen?
 
     /**
      * Excludes singles - only counts actual albums and EPs.
      * Uses case-insensitive matching.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT t.album)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
@@ -1850,26 +2175,32 @@ interface StatsDao {
         WHERE (LOWER(t.artist) = LOWER(:artistName) OR LOWER(t.artist) LIKE '%' || LOWER(:artistName) || '%')
               AND t.album IS NOT NULL AND t.album != ''
               AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
-    """)
+    """,
+    )
     suspend fun getArtistUniqueAlbumsPlayedPartialMatch(artistName: String): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT t.id)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE LOWER(t.artist) = LOWER(:artistName) OR LOWER(t.artist) LIKE '%' || LOWER(:artistName) || '%'
-    """)
+    """,
+    )
     suspend fun getArtistUniqueTracksPlayedPartialMatch(artistName: String): Int
 
-    @Query("""
+    @Query(
+        """
         SELECT MIN(le.timestamp) as first_listened, MAX(le.timestamp) as last_listened
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE LOWER(t.artist) = LOWER(:artistName) OR LOWER(t.artist) LIKE '%' || LOWER(:artistName) || '%'
-    """)
+    """,
+    )
     suspend fun getArtistListeningDatesPartialMatch(artistName: String): ArtistListeningDates?
 
-    @Query("""
+    @Query(
+        """
         SELECT CAST(strftime('%H', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
@@ -1877,18 +2208,20 @@ interface StatsDao {
         GROUP BY hour
         ORDER BY COUNT(*) DESC
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getArtistPeakListeningHourPartialMatch(artistName: String): Int?
 
     /**
      * Excludes singles - only returns actual albums and EPs.
      * Uses case-insensitive matching.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.album,
             t.artist,
-            COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+            COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT t.id) as unique_tracks
@@ -1902,54 +2235,65 @@ interface StatsDao {
         HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC
         LIMIT :limit
-    """)
-    suspend fun getTopAlbumsForArtistPartialMatch(artistName: String, limit: Int): List<TopAlbum>
-    
+    """,
+    )
+    suspend fun getTopAlbumsForArtistPartialMatch(
+        artistName: String,
+        limit: Int,
+    ): List<TopAlbum>
+
     // ARTIST ID-BASED QUERIES (using track_artists junction table)
     // These provide proper relational lookups using artist IDs
 
     /**
      * Get play count for an artist by ID using track_artists junction table.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(le.id) 
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         INNER JOIN track_artists ta ON ta.track_id = t.id
         WHERE ta.artist_id = :artistId
-    """)
+    """,
+    )
     suspend fun getArtistPlayCountById(artistId: Long): Int
-    
+
     /**
      * Get play counts for multiple artists by ID in a single batch query.
      */
-    @Query("""
+    @Query(
+        """
         SELECT ta.artist_id AS artistId, COUNT(le.id) AS playCount
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         INNER JOIN track_artists ta ON ta.track_id = t.id
         WHERE ta.artist_id IN (:artistIds)
         GROUP BY ta.artist_id
-    """)
+    """,
+    )
     suspend fun getArtistPlayCountsByIds(artistIds: List<Long>): List<ArtistPlayCountResult>
-    
+
     /**
      * Get total listening time for an artist by ID.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(SUM(le.playDuration), 0)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         INNER JOIN track_artists ta ON ta.track_id = t.id
         WHERE ta.artist_id = :artistId
-    """)
+    """,
+    )
     suspend fun getArtistTotalTimeById(artistId: Long): Long
-    
+
     /**
      * Get top tracks for an artist by ID.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -1970,13 +2314,18 @@ interface StatsDao {
         GROUP BY t.id
         ORDER BY play_count DESC
         LIMIT :limit
-    """)
-    suspend fun getTopTracksForArtistById(artistId: Long, limit: Int): List<TopTrack>
-    
+    """,
+    )
+    suspend fun getTopTracksForArtistById(
+        artistId: Long,
+        limit: Int,
+    ): List<TopTrack>
+
     /**
      * Get first listen info for an artist by ID.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.title as name,
             MIN(le.timestamp) as first_listen_timestamp,
@@ -1986,13 +2335,15 @@ interface StatsDao {
         INNER JOIN track_artists ta ON ta.track_id = t.id
         INNER JOIN artists a ON ta.artist_id = a.id
         WHERE ta.artist_id = :artistId
-    """)
+    """,
+    )
     suspend fun getArtistFirstListenById(artistId: Long): FirstListen?
-    
+
     /**
      * Get unique albums played for an artist by ID.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT t.album)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
@@ -2000,37 +2351,43 @@ interface StatsDao {
         LEFT JOIN enriched_metadata em ON t.id = em.track_id
         WHERE ta.artist_id = :artistId AND t.album IS NOT NULL AND t.album != ''
         AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
-    """)
+    """,
+    )
     suspend fun getArtistUniqueAlbumsPlayedById(artistId: Long): Int
-    
+
     /**
      * Get unique tracks played for an artist by ID.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT t.id)
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         INNER JOIN track_artists ta ON ta.track_id = t.id
         WHERE ta.artist_id = :artistId
-    """)
+    """,
+    )
     suspend fun getArtistUniqueTracksPlayedById(artistId: Long): Int
-    
+
     /**
      * Get listening date range for an artist by ID.
      */
-    @Query("""
+    @Query(
+        """
         SELECT MIN(le.timestamp) as first_listened, MAX(le.timestamp) as last_listened
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         INNER JOIN track_artists ta ON ta.track_id = t.id
         WHERE ta.artist_id = :artistId
-    """)
+    """,
+    )
     suspend fun getArtistListeningDatesById(artistId: Long): ArtistListeningDates?
-    
+
     /**
      * Get peak listening hour for an artist by ID.
      */
-    @Query("""
+    @Query(
+        """
         SELECT CAST(strftime('%H', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
@@ -2039,17 +2396,19 @@ interface StatsDao {
         GROUP BY hour
         ORDER BY COUNT(*) DESC
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getArtistPeakListeningHourById(artistId: Long): Int?
-    
+
     /**
      * Get top albums for an artist by ID.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.album,
             t.artist,
-            COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+            COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT t.id) as unique_tracks
@@ -2063,8 +2422,12 @@ interface StatsDao {
         HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC
         LIMIT :limit
-    """)
-    suspend fun getTopAlbumsForArtistById(artistId: Long, limit: Int): List<TopAlbum>
+    """,
+    )
+    suspend fun getTopAlbumsForArtistById(
+        artistId: Long,
+        limit: Int,
+    ): List<TopAlbum>
 
     // Content-Type Filtered Stats Queries
     // These exclude podcasts/audiobooks from stats when user has marked them
@@ -2073,7 +2436,8 @@ interface StatsDao {
      * Get top tracks by play count with content type filtering.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -2095,21 +2459,23 @@ interface StatsDao {
         GROUP BY t.id
         ORDER BY play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopTracksByPlayCountFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopTrack>
 
     /**
      * Get top tracks by time with content type filtering.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.id as track_id,
             t.title,
@@ -2131,21 +2497,23 @@ interface StatsDao {
         GROUP BY t.id
         ORDER BY total_time_ms DESC, play_count DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopTracksByTimeFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopTrack>
 
     /**
      * Get top tracks by combined score with content type filtering.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.id as track_id,
@@ -2184,32 +2552,35 @@ interface StatsDao {
         CROSS JOIN max_values
         ORDER BY combined_score DESC, play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopTracksByCombinedScoreFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopTrack>
 
     /**
      * Get unique tracks count with content type filtering.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT t.id) 
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
             AND (:filterPodcasts = 0 OR t.content_type IS NULL OR t.content_type != 'PODCAST')
             AND (:filterAudiobooks = 0 OR t.content_type IS NULL OR t.content_type != 'AUDIOBOOK')
-    """)
+    """,
+    )
     suspend fun getUniqueTracksPlayedCountFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
-        filterAudiobooks: Boolean
+        filterAudiobooks: Boolean,
     ): Int
 
     /**
@@ -2217,7 +2588,8 @@ interface StatsDao {
      * Used for splitting multi-artist entries and aggregation.
      * Limited to top N artists by play count to optimize performance.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.artist,
             COUNT(le.id) as play_count,
@@ -2233,23 +2605,25 @@ interface StatsDao {
         GROUP BY t.artist
         ORDER BY play_count DESC
         LIMIT :maxArtists
-    """)
+    """,
+    )
     suspend fun getAllArtistStatsRawFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
-        maxArtists: Int = 500
+        maxArtists: Int = 500,
     ): List<RawArtistStats>
 
     /**
      * Get top albums with content type filtering ordered by play count.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.album,
             t.artist,
-            COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+            COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT t.id) as unique_tracks
@@ -2265,24 +2639,26 @@ interface StatsDao {
         HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopAlbumsByPlayCountFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopAlbum>
 
     /**
      * Legacy alias for getTopAlbumsByPlayCountFiltered.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.album,
             t.artist,
-            COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+            COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT t.id) as unique_tracks
@@ -2298,24 +2674,26 @@ interface StatsDao {
         HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY play_count DESC, total_time_ms DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopAlbumsFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopAlbum>
 
     /**
      * Get top albums by total listening time with content type filtering.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             t.album,
             t.artist,
-            COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+            COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT t.id) as unique_tracks
@@ -2331,26 +2709,28 @@ interface StatsDao {
         HAVING COUNT(DISTINCT t.id) > 1
         ORDER BY total_time_ms DESC, play_count DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopAlbumsByTimeFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopAlbum>
 
     /**
      * Get top albums by combined score with content type filtering.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.album,
                 t.artist,
-                COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+                COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
                 COUNT(le.id) as play_count,
                 SUM(le.playDuration) as total_time_ms,
                 COUNT(DISTINCT t.id) as unique_tracks
@@ -2385,20 +2765,22 @@ interface StatsDao {
             stats.play_count DESC,
             stats.total_time_ms DESC
         LIMIT :limit OFFSET :offset
-    """)
+    """,
+    )
     suspend fun getTopAlbumsByCombinedScoreFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         limit: Int,
-        offset: Int
+        offset: Int,
     ): List<TopAlbum>
 
     /**
      * Get unique albums count with content type filtering.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(DISTINCT t.album) 
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
@@ -2408,18 +2790,20 @@ interface StatsDao {
         AND (em.release_type IS NULL OR LOWER(em.release_type) != 'single')
         AND (:filterPodcasts = 0 OR t.content_type IS NULL OR t.content_type != 'PODCAST')
         AND (:filterAudiobooks = 0 OR t.content_type IS NULL OR t.content_type != 'AUDIOBOOK')
-    """)
+    """,
+    )
     suspend fun getUniqueAlbumsCountFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
-        filterAudiobooks: Boolean
+        filterAudiobooks: Boolean,
     ): Int
 
     /**
      * Get combined basic stats with content type filtering.
      */
-    @Query("""
+    @Query(
+        """
         SELECT 
             COALESCE(SUM(le.playDuration), 0) as total_time_ms,
             COUNT(le.id) as play_count,
@@ -2431,12 +2815,13 @@ interface StatsDao {
         WHERE le.timestamp >= :startTime AND le.timestamp <= :endTime
             AND (:filterPodcasts = 0 OR t.content_type IS NULL OR t.content_type != 'PODCAST')
             AND (:filterAudiobooks = 0 OR t.content_type IS NULL OR t.content_type != 'AUDIOBOOK')
-    """)
+    """,
+    )
     suspend fun getCombinedBasicStatsFiltered(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
-        filterAudiobooks: Boolean
+        filterAudiobooks: Boolean,
     ): CombinedBasicStats
 
     // Ranking Search Queries
@@ -2450,7 +2835,8 @@ interface StatsDao {
      * Rows are ordered by rank ascending; the caller assigns rank = position + 1.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.id as track_id,
@@ -2488,21 +2874,23 @@ interface StatsDao {
         FROM ranked
         ORDER BY ranked.global_rank
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun searchTopTracksByPlayCount(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         query: String,
-        limit: Int
+        limit: Int,
     ): List<RankedTopTrack>
 
     /**
      * Search the track ranking by total listening time, returning matches with their global rank.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.id as track_id,
@@ -2540,14 +2928,15 @@ interface StatsDao {
         FROM ranked
         ORDER BY ranked.global_rank
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun searchTopTracksByTime(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         query: String,
-        limit: Int
+        limit: Int,
     ): List<RankedTopTrack>
 
     /**
@@ -2556,7 +2945,8 @@ interface StatsDao {
      * so a match's score/rank agrees with what the unfiltered chart shows.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.id as track_id,
@@ -2612,14 +3002,15 @@ interface StatsDao {
         SELECT * FROM ranked
         ORDER BY ranked.global_rank
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun searchTopTracksByCombinedScore(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         query: String,
-        limit: Int
+        limit: Int,
     ): List<RankedTopTrack>
 
     /**
@@ -2627,12 +3018,13 @@ interface StatsDao {
      * Applies the same album eligibility rules as getTopAlbumsFiltered.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.album,
                 t.artist,
-                COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+                COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
                 COUNT(le.id) as play_count,
                 SUM(le.playDuration) as total_time_ms,
                 COUNT(DISTINCT t.id) as unique_tracks
@@ -2662,26 +3054,28 @@ interface StatsDao {
         SELECT * FROM ranked
         ORDER BY ranked.global_rank
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun searchTopAlbumsByPlayCount(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         query: String,
-        limit: Int
+        limit: Int,
     ): List<RankedTopAlbum>
 
     /**
      * Legacy alias for searchTopAlbumsByPlayCount.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.album,
                 t.artist,
-                COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+                COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
                 COUNT(le.id) as play_count,
                 SUM(le.playDuration) as total_time_ms,
                 COUNT(DISTINCT t.id) as unique_tracks
@@ -2711,26 +3105,28 @@ interface StatsDao {
         SELECT * FROM ranked
         ORDER BY ranked.global_rank
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun searchTopAlbums(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         query: String,
-        limit: Int
+        limit: Int,
     ): List<RankedTopAlbum>
 
     /**
      * Search the album ranking by total listening time, returning matches with their global rank.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.album,
                 t.artist,
-                COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+                COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
                 COUNT(le.id) as play_count,
                 SUM(le.playDuration) as total_time_ms,
                 COUNT(DISTINCT t.id) as unique_tracks
@@ -2760,26 +3156,28 @@ interface StatsDao {
         SELECT * FROM ranked
         ORDER BY ranked.global_rank
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun searchTopAlbumsByTime(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         query: String,
-        limit: Int
+        limit: Int,
     ): List<RankedTopAlbum>
 
     /**
      * Search the album ranking by combined score, returning matches with their global rank.
      */
     @SuppressWarnings("RoomWarnings.QUERY_MISMATCH")
-    @Query("""
+    @Query(
+        """
         WITH stats AS (
             SELECT 
                 t.album,
                 t.artist,
-                COALESCE(NULLIF(em.album_art_url, ''), NULLIF(t.album_art_url, '')) as album_art_url,
+                COALESCE(MAX(NULLIF(em.album_art_url, '')), MAX(NULLIF(t.album_art_url, ''))) as album_art_url,
                 COUNT(le.id) as play_count,
                 SUM(le.playDuration) as total_time_ms,
                 COUNT(DISTINCT t.id) as unique_tracks
@@ -2836,21 +3234,22 @@ interface StatsDao {
         FROM ranked
         ORDER BY ranked.global_rank
         LIMIT :limit
-    """)
+    """,
+    )
     suspend fun searchTopAlbumsByCombinedScore(
         startTime: Long,
         endTime: Long,
         filterPodcasts: Boolean,
         filterAudiobooks: Boolean,
         query: String,
-        limit: Int
+        limit: Int,
     ): List<RankedTopAlbum>
 }
 
 data class TrackWithStatsRaw(
     @Embedded val track: me.avinas.tempo.data.local.entities.Track,
     val play_count: Int,
-    val total_time_ms: Long
+    val total_time_ms: Long,
 )
 
 /**
@@ -2860,7 +3259,7 @@ data class TrackWithStatsRaw(
  */
 data class RankedTopTrack(
     @Embedded val item: TopTrack,
-    @ColumnInfo(name = "global_rank") val globalRank: Int
+    @ColumnInfo(name = "global_rank") val globalRank: Int,
 )
 
 /**
@@ -2868,7 +3267,7 @@ data class RankedTopTrack(
  */
 data class RankedTopAlbum(
     @Embedded val item: TopAlbum,
-    @ColumnInfo(name = "global_rank") val globalRank: Int
+    @ColumnInfo(name = "global_rank") val globalRank: Int,
 )
 
 /**
@@ -2879,7 +3278,7 @@ data class BingeDetectionEvent(
     val track_id: Long,
     val timestamp: Long,
     val artist: String,
-    val album: String?
+    val album: String?,
 ) {
     val trackId: Long get() = track_id
 }
@@ -2890,7 +3289,7 @@ data class BingeDetectionEvent(
 data class HourlyCompletionStats(
     val hour: Int,
     val avg_completion: Float,
-    val skip_count: Int
+    val skip_count: Int,
 ) {
     val avgCompletion: Float get() = avg_completion
     val skipCount: Int get() = skip_count
@@ -2910,7 +3309,7 @@ data class HistoryItem(
     val album: String?,
     val content_type: String = "MUSIC",
     val album_art_url: String?,
-    val source: String = ""
+    val source: String = "",
 )
 
 /**
@@ -2919,7 +3318,7 @@ data class HistoryItem(
 data class YearStatsRaw(
     val play_count: Int,
     val total_time_ms: Long,
-    val unique_artists: Int
+    val unique_artists: Int,
 )
 
 /**
@@ -2934,7 +3333,7 @@ data class AudioFeaturesRaw(
     val avg_instrumentalness: Float?,
     val avg_speechiness: Float?,
     val avg_loudness: Float?,
-    val tracks_count: Int
+    val tracks_count: Int,
 )
 
 /**
@@ -2943,7 +3342,7 @@ data class AudioFeaturesRaw(
 data class TempoDistributionRaw(
     val bucket_label: String,
     val track_count: Int,
-    val total_plays: Int
+    val total_plays: Int,
 )
 
 /**
@@ -2961,7 +3360,7 @@ data class TrackAudioFeaturesRaw(
     val loudness: Float?,
     val key: Int?,
     val mode: Int?,
-    val timeSignature: Int?
+    val timeSignature: Int?,
 )
 
 /**
@@ -2969,7 +3368,7 @@ data class TrackAudioFeaturesRaw(
  */
 data class ArtistListeningDates(
     val first_listened: Long?,
-    val last_listened: Long?
+    val last_listened: Long?,
 )
 
 /**
@@ -2977,5 +3376,5 @@ data class ArtistListeningDates(
  */
 data class ArtistPlayCountResult(
     val artistId: Long,
-    val playCount: Int
+    val playCount: Int,
 )

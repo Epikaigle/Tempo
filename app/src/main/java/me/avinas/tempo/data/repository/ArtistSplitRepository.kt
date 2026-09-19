@@ -14,6 +14,9 @@ import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.local.entities.TrackArtist
 import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
 /**
@@ -45,7 +48,8 @@ class ArtistSplitRepository @Inject constructor(
     private val artistAliasDao: ArtistAliasDao,
     private val artistLinkingService: ArtistLinkingService,
     private val statsRepository: StatsRepository,
-    private val database: AppDatabase
+    private val database: AppDatabase,
+    private val tracker: AnalyticsTracker
 ) {
     companion object {
         private const val TAG = "ArtistSplitRepository"
@@ -119,6 +123,12 @@ class ArtistSplitRepository @Inject constructor(
      * @return [SplitResult] on success, null on failure.
      */
     suspend fun splitArtist(sourceArtistId: Long, moves: List<SplitMove>): SplitResult? {
+        val result = splitArtistInternal(sourceArtistId, moves)
+        if (result != null) tracker.track(FeatureUsed(TempoFeature.ARTIST_SPLIT))
+        return result
+    }
+
+    private suspend fun splitArtistInternal(sourceArtistId: Long, moves: List<SplitMove>): SplitResult? {
         val source = artistDao.getArtistById(sourceArtistId)
         if (source == null) {
             Log.w(TAG, "Source artist $sourceArtistId not found")
@@ -156,6 +166,16 @@ class ArtistSplitRepository @Inject constructor(
 
                     maybeCreateSplitAlias(source, target, move.rawName)
                 }
+            }
+
+            if (moved == 0) {
+                // Every move resolved to the source artist (e.g. the group's
+                // default target name equals the source name, which is exactly
+                // what happens when one raw-name group owns all tracks).
+                // Returning a success result here made the dialog close with
+                // nothing changed — the "split does nothing" reports. Fail loudly.
+                Log.w(TAG, "Split executed no moves — every target resolved to source artist '${source.name}'")
+                return null
             }
 
             // Clean up a fully drained source artist

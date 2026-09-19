@@ -1,5 +1,7 @@
 package me.avinas.tempo.data.repository
 
+import me.avinas.tempo.data.analytics.NoOpAnalyticsTracker
+
 import kotlinx.coroutines.test.runTest
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.dao.AlbumDao
@@ -229,7 +231,12 @@ class AlbumMergeRepositoryTest {
             createProxy { _, _ -> null },
             createProxy { _, _ -> null },
             createFakeDatabase(),
-            createProxy { _, _ -> null }
+            createProxy { _, _ -> null },
+            // ArtistLinkingService is a concrete class (not proxyable); an
+            // unconstructed instance is safe because mergeTracks is overridden
+            // and linking is never reached in this test.
+            allocateInstance(ArtistLinkingService::class.java),
+            NoOpAnalyticsTracker()
         ) {
             override suspend fun mergeTracks(sourceTrackId: Long, targetTrackId: Long): Boolean {
                 mergedSourceTrackId = sourceTrackId

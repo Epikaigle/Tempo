@@ -22,6 +22,11 @@ import me.avinas.tempo.data.importexport.ImportConflictStrategy
 import me.avinas.tempo.data.importexport.ImportExportManager
 import me.avinas.tempo.data.importexport.ImportExportProgress
 import me.avinas.tempo.data.importexport.ImportExportResult
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.BackupRun
+import me.avinas.tempo.data.analytics.BackupTarget
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.profile.ProfileIdentityManager
 import me.avinas.tempo.ui.onboarding.dataStore
@@ -51,7 +56,8 @@ class BackupRestoreViewModel @Inject constructor(
     private val googleAuthManager: GoogleAuthManager,
     private val driveService: GoogleDriveService,
     private val backupSettingsManager: BackupSettingsManager,
-    private val applicationScope: CoroutineScope
+    private val applicationScope: CoroutineScope,
+    private val tracker: AnalyticsTracker
 ) : ViewModel() {
     
     companion object {
@@ -374,6 +380,11 @@ class BackupRestoreViewModel @Inject constructor(
      * Export all data to a ZIP file.
      */
     fun exportData(uri: Uri) {
+        tracker.track(FeatureUsed(TempoFeature.LOCAL_BACKUP))
+        exportDataInternal(uri)
+    }
+
+    private fun exportDataInternal(uri: Uri) {
         // Application scope: an export must survive the user navigating away
         // mid-operation; progress is observed via the singleton manager's flow.
         applicationScope.launch {
@@ -688,7 +699,32 @@ class BackupRestoreViewModel @Inject constructor(
     /**
      * Backup to Google Drive NOW.
      */
+    /**
+     * Reports the run that just finished. A cancelled run leaves the operation Idle, which is
+     * not a failure and is deliberately not reported.
+     */
+    private fun reportDriveBackup(operation: DriveOperationState, sizeBytes: Long, startedAt: Long) {
+        val success = when (operation) {
+            is DriveOperationState.Success -> true
+            is DriveOperationState.Error -> false
+            else -> return
+        }
+        tracker.track(
+            BackupRun(
+                target = BackupTarget.DRIVE,
+                success = success,
+                sizeBytes = sizeBytes,
+                durationMillis = System.currentTimeMillis() - startedAt
+            )
+        )
+    }
+
     fun backupToDrive() {
+        tracker.track(FeatureUsed(TempoFeature.DRIVE_BACKUP))
+        backupToDriveInternal()
+    }
+
+    private fun backupToDriveInternal() {
         // Reserve the operation synchronously so rapid taps cannot start two
         // exports that race on UI state or temporary files.
         if (!_driveOperation.compareAndSet(
@@ -711,6 +747,7 @@ class BackupRestoreViewModel @Inject constructor(
                 "temp_drive_backup_${UUID.randomUUID()}.tempo"
             )
             var statusStarted = false
+            val startedAt = System.currentTimeMillis()
             
             try {
                 updateLastBackupSafely(BackupStatus.IN_PROGRESS)
@@ -751,6 +788,10 @@ class BackupRestoreViewModel @Inject constructor(
                 _driveOperation.value = DriveOperationState.Error("Backup failed: ${e.message}")
             } finally {
                 // Always cleanup temp file
+                // Captured before deletion, and reported once here rather than at each of the
+                // four exit paths above so a run can never be counted twice.
+                val uploadedBytes = if (tempFile.exists()) tempFile.length() else 0L
+                reportDriveBackup(_driveOperation.value, uploadedBytes, startedAt)
                 if (tempFile.exists()) tempFile.delete()
             }
         }

@@ -10,6 +10,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -69,7 +71,11 @@ fun HistoryScreen(
     onNavigateToTrack: (Long) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val listState = remember(uiState.viewMode, uiState.startDate, uiState.endDate, uiState.showSkips) { LazyListState() }
+    // New search = new list: reset scroll synchronously via state recreation
+    // (parent remember includes searchQuery). No manual scroll-to-item here:
+    // issuing a scroll request mid-fling fights the fling's own remeasure and
+    // was itself a trigger for the subcompose IllegalArgumentException.
+    val listState = remember(uiState.viewMode, uiState.startDate, uiState.endDate, uiState.showSkips, uiState.searchQuery) { LazyListState() }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
@@ -802,37 +808,12 @@ fun HistoryListContent(
     searchQuery: String = "",
     onClearSearch: () -> Unit = {}
 ) {
-    // Workaround for LazyColumn crash when item count drops below current scroll index
-    val totalItemCount = remember(
-        groupedItems, lastFmGroupedItems, archiveItems,
-        viewMode, hasArchiveData, isLoading,
-        isLoadingMore, isLoadingMoreLastFm
-    ) {
-        var count = 0
-        if (hasArchiveData && viewMode == HistoryViewMode.SEPARATED) count += 1
-        val allEmpty = groupedItems.isEmpty() && lastFmGroupedItems.isEmpty() && archiveItems.isEmpty()
-        if (!isLoading && allEmpty) count += 1
-        if (viewMode == HistoryViewMode.SEPARATED && groupedItems.isNotEmpty()) count += 1
-        groupedItems.values.forEach { count += it.size + 1 }
-        if (isLoadingMore) count += 1
-        if (viewMode == HistoryViewMode.SEPARATED && (lastFmGroupedItems.isNotEmpty() || archiveItems.isNotEmpty())) {
-            count += 1
-            lastFmGroupedItems.values.forEach { count += it.size + 1 }
-            if (isLoadingMoreLastFm) count += 1
-            if (archiveItems.isNotEmpty()) {
-                count += 1 + archiveItems.size
-            }
-        }
-        if (viewMode == HistoryViewMode.UNIFIED && archiveItems.isNotEmpty()) {
-            count += 1 + archiveItems.size
-        }
-        count
-    }
-    LaunchedEffect(totalItemCount) {
-        if (totalItemCount > 0 && listState.firstVisibleItemIndex >= totalItemCount) {
-            listState.requestScrollToItem(totalItemCount - 1)
-        }
-    }
+    // NOTE: no manual scroll-to-item clamp here. The previous workaround
+    // computed its own item count and issued requestScrollToItem() mid-fling,
+    // fighting the fling's remeasure and triggering the subcompose
+    // IllegalArgumentException it was meant to prevent. With stable item keys
+    // Lazy clamps an out-of-range index internally; filter/search resets
+    // recreate listState (see HistoryScreen remember keys) so the index is 0.
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -885,12 +866,16 @@ fun HistoryListContent(
                     HistorySectionHeader(header)
                 }
 
-                items(
-                    count = itemsList.size,
-                    key = { index -> itemsList[index].id },
-                    contentType = { "history_item" }
-                ) { index ->
-                    val item = itemsList[index]
+                // itemsIndexed with an item-derived key (never items(count) with
+                // itemsList[index] lookup): index-lookup keys resolve to a
+                // different id when pagination/live inserts swap the list
+                // mid-fling, reusing a slot twice -> subcompose
+                // IllegalArgumentException (play-store crash).
+                itemsIndexed(
+                    items = itemsList,
+                    key = { _, item -> item.id },
+                    contentType = { _, _ -> "history_item" }
+                ) { index, item ->
                     val isFirstItem = groupIndex == 0 && index == 0
                     
                     // Walkthrough Integration
@@ -964,12 +949,11 @@ fun HistoryListContent(
                         HistorySectionHeader(header, isLastFmSection = true)
                     }
 
-                    items(
-                        count = itemsList.size,
-                        key = { index -> "lastfm_${itemsList[index].id}" },
-                        contentType = { "history_item" }
-                    ) { index ->
-                        val item = itemsList[index]
+                    itemsIndexed(
+                        items = itemsList,
+                        key = { _, item -> "lastfm_${item.id}" },
+                        contentType = { _, _ -> "history_item" }
+                    ) { index, item ->
                         Box(modifier = Modifier.fillMaxWidth()) {
                             SwipeToDeleteHistoryItem(
                                 item = item,
@@ -1010,12 +994,11 @@ fun HistoryListContent(
                         )
                     }
                     
-                    items(
-                        count = archiveItems.size,
-                        key = { index -> "archive_sep_${archiveItems[index].archiveId}" },
-                        contentType = { "archive_item" }
-                    ) { index ->
-                        val archiveItem = archiveItems[index]
+                    itemsIndexed(
+                        items = archiveItems,
+                        key = { _, item -> "archive_sep_${item.archiveId}" },
+                        contentType = { _, _ -> "archive_item" }
+                    ) { _, archiveItem ->
                         ArchiveHistoryListItem(item = archiveItem)
                     }
                 }
@@ -1030,12 +1013,11 @@ fun HistoryListContent(
                     )
                 }
                 
-                items(
-                    count = archiveItems.size,
-                    key = { index -> "archive_uni_${archiveItems[index].archiveId}" },
-                    contentType = { "archive_item" }
-                ) { index ->
-                    val archiveItem = archiveItems[index]
+                itemsIndexed(
+                    items = archiveItems,
+                    key = { _, item -> "archive_uni_${item.archiveId}" },
+                    contentType = { _, _ -> "archive_item" }
+                ) { _, archiveItem ->
                     ArchiveHistoryListItem(item = archiveItem)
                 }
             }

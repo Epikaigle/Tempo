@@ -26,10 +26,14 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.theme.TempoDarkBackground
@@ -47,6 +51,7 @@ import me.avinas.tempo.ui.utils.scaledSize
 import me.avinas.tempo.ui.utils.rememberClampedHeightPercentage
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
+import me.avinas.tempo.ui.clay.ClayTokens
 
 /**
  * Privacy-focused onboarding screen that reassures users about data safety.
@@ -57,18 +62,6 @@ fun PrivacyExplainerScreen(
     onNext: () -> Unit,
     onSkip: () -> Unit
 ) {
-    // Pulsing animation for shield
-    val infiniteTransition = rememberInfiniteTransition(label = "shield")
-    val shieldScale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "shieldScale"
-    )
-
     me.avinas.tempo.ui.components.DeepOceanBackground(
         modifier = Modifier
             .fillMaxSize()
@@ -88,8 +81,12 @@ fun PrivacyExplainerScreen(
                     ),
                 contentAlignment = Alignment.CenterEnd
             ) {
+                val haptic = LocalHapticFeedback.current
                 TextButton(
-                    onClick = onSkip,
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSkip()
+                    },
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
@@ -117,38 +114,35 @@ fun PrivacyExplainerScreen(
                 )
                 Spacer(modifier = Modifier.height(topSpacing))
 
-                // Shield Icon with clamped sizing
+                // Shield — the trust hook: settles in once on a soft spring,
+                // then breathes almost imperceptibly (±3%). Still under
+                // reduced motion. The calm is what makes it magnetic, not a loop.
+                // ponytail perf: breath State held unread — only the shield
+                // leaf subscribes, so the screen body composes once. No loop
+                // at all under reduced motion.
                 val shieldContainerSize = rememberClampedHeightPercentage(0.10f, 70.dp, 95.dp)
-                val shieldGlowSize = rememberClampedHeightPercentage(0.09f, 60.dp, 85.dp)
-                val shieldIconSize = rememberClampedHeightPercentage(0.06f, 42.dp, 58.dp)
-                
-                Box(
-                    modifier = Modifier
-                        .size(shieldContainerSize)
-                        .scale(shieldScale),
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Glow effect
-                    Box(
-                        modifier = Modifier
-                            .size(shieldGlowSize)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        Color(0xFF22C55E).copy(alpha = 0.3f),
-                                        Color.Transparent
-                                    )
-                                ),
-                                shape = CircleShape
-                            )
-                    )
-                    Icon(
-                        imageVector = Icons.Default.Shield,
-                        contentDescription = null,
-                        modifier = Modifier.size(shieldIconSize),
-                        tint = Color(0xFF22C55E)
-                    )
+                val reducedMotion = me.avinas.tempo.ui.theme.rememberReducedMotion()
+                val shieldEntry = remember { Animatable(if (reducedMotion) 1f else 0f) }
+                val breathState: State<Float> =
+                    if (reducedMotion) {
+                        remember { mutableFloatStateOf(0f) }
+                    } else {
+                        rememberInfiniteTransition(label = "shield_breath").animateFloat(
+                            0f, 1f,
+                            infiniteRepeatable(tween(3200, easing = LinearEasing)),
+                            label = "breath"
+                        )
+                    }
+                LaunchedEffect(reducedMotion) {
+                    if (reducedMotion) shieldEntry.snapTo(1f)
+                    else shieldEntry.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy))
                 }
+
+                ShieldWithBreath(
+                    size = shieldContainerSize,
+                    entry = shieldEntry.value,
+                    breath = breathState
+                )
 
                 Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.025f)))
 
@@ -184,8 +178,8 @@ fun PrivacyExplainerScreen(
                     // Item 1
                     AnimatedOpacity(delay = 200, visible = listVisible.value) {
                         PrivacyPoint(
-                            icon = Icons.Default.PhoneAndroid,
-                            iconColor = Color(0xFF3B82F6),
+                            kind = ClayKind.Phone,
+                            iconColor = ClayTokens.Sky,
                             title = stringResource(R.string.privacy_local_title),
                             description = stringResource(R.string.privacy_local_desc)
                         )
@@ -194,8 +188,8 @@ fun PrivacyExplainerScreen(
                     // Item 2
                     AnimatedOpacity(delay = 400, visible = listVisible.value) {
                         PrivacyPoint(
-                            icon = Icons.Default.CloudOff,
-                            iconColor = Color(0xFFF59E0B),
+                            kind = ClayKind.CloudOff,
+                            iconColor = ClayTokens.Peach,
                             title = stringResource(R.string.privacy_no_cloud_title),
                             description = stringResource(R.string.privacy_no_cloud_desc)
                         )
@@ -204,8 +198,8 @@ fun PrivacyExplainerScreen(
                     // Item 3
                     AnimatedOpacity(delay = 600, visible = listVisible.value) {
                         PrivacyPoint(
-                            icon = Icons.Default.Visibility,
-                            iconColor = MaterialTheme.colorScheme.primary,
+                            kind = ClayKind.Bell,
+                            iconColor = ClayTokens.Lavender,
                             title = stringResource(R.string.privacy_notif_title),
                             description = stringResource(R.string.privacy_notif_desc)
                         )
@@ -214,8 +208,8 @@ fun PrivacyExplainerScreen(
                     // Item 4
                     AnimatedOpacity(delay = 800, visible = listVisible.value) {
                         PrivacyPoint(
-                            icon = Icons.Default.Code,
-                            iconColor = Color(0xFF22C55E),
+                            kind = ClayKind.Code,
+                            iconColor = ClayTokens.Pink,
                             title = stringResource(R.string.privacy_open_source_title),
                             description = stringResource(R.string.privacy_open_source_desc)
                         )
@@ -224,65 +218,74 @@ fun PrivacyExplainerScreen(
 
                 Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
 
-                // Bottom quote - flat white pill (no glassmorphism) for strong contrast
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color.White)
-                        .padding(
-                            horizontal = adaptiveSizeByCategory(18.dp, 16.dp, 14.dp),
-                            vertical = adaptiveSizeByCategory(14.dp, 12.dp, 10.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = stringResource(R.string.privacy_quote),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        color = TempoDarkBackground,
-                        modifier = Modifier.fillMaxWidth(),
-                        fontSize = adaptiveTextUnitByCategory(15.sp, 13.sp, 12.sp)
-                    )
+                // Bottom quote - flat white pill (no glassmorphism) for strong contrast.
+                // Last in the stagger so the eye ends on the promise.
+                AnimatedOpacity(delay = 1000, visible = listVisible.value) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.White)
+                            .padding(
+                                horizontal = adaptiveSizeByCategory(18.dp, 16.dp, 14.dp),
+                                vertical = adaptiveSizeByCategory(14.dp, 12.dp, 10.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.privacy_quote),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            color = TempoDarkBackground,
+                            modifier = Modifier.fillMaxWidth(),
+                            fontSize = adaptiveTextUnitByCategory(15.sp, 13.sp, 12.sp)
+                        )
+                    }
                 }
 
-                // Spacer before button
-                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.035f)))
-
-                // CTA Button
-                Button(
-                    onClick = onNext,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(scaledSize(54.dp, 0.85f, 1.1f)),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = TempoPrimary,
-                        contentColor = TextOnAccent
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 8.dp,
-                        pressedElevation = 4.dp
-                    )
-                ) {
-                    Text(
-                        text = stringResource(R.string.privacy_got_it),
-                        fontSize = adaptiveTextUnitByCategory(18.sp, 17.sp, 16.sp),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                // Bottom padding
-                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
+                Spacer(modifier = Modifier.height(16.dp))
             }
+
+            // Pinned CTA — same rect as every other step, never scrolled away.
+            OnboardingFooter(
+                text = stringResource(R.string.privacy_got_it),
+                onClick = onNext
+            )
         }
     }
 }
 
 @Composable
+private fun ShieldWithBreath(
+    size: Dp,
+    entry: Float,
+    breath: State<Float>
+) {
+    // This leaf alone re-enters composition on every breath frame.
+    val b = breath.value
+    val breathScale = 1f + 0.03f * kotlin.math.sin(b * 2f * kotlin.math.PI).toFloat()
+    Box(
+        modifier = Modifier
+            .size(size)
+            .graphicsLayer {
+                alpha = entry
+                val s = (0.85f + 0.15f * entry) * breathScale
+                scaleX = s; scaleY = s
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        ClayObject(
+            kind = ClayKind.Shield,
+            base = ClayTokens.Mint,
+            size = size
+        )
+    }
+}
+
+@Composable
 private fun PrivacyPoint(
-    icon: ImageVector,
+    kind: ClayKind,
     iconColor: Color,
     title: String,
     description: String
@@ -290,7 +293,6 @@ private fun PrivacyPoint(
     // Clamped card height for consistency
     val cardVerticalPadding = rememberClampedHeightPercentage(0.012f, 8.dp, 12.dp)
     val checkboxSize = rememberClampedHeightPercentage(0.044f, 32.dp, 40.dp)
-    val checkIconSize = rememberClampedHeightPercentage(0.022f, 16.dp, 22.dp)
     
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -300,23 +302,12 @@ private fun PrivacyPoint(
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Checkmark with colored background
-            Box(
-                modifier = Modifier
-                    .size(checkboxSize)
-                    .background(
-                        color = iconColor.copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(10.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(checkIconSize),
-                    tint = iconColor
-                )
-            }
+            // Clay object — same slot, a thing, not a glyph on a tile
+            ClayObject(
+                kind = kind,
+                base = iconColor,
+                size = checkboxSize
+            )
 
             Spacer(modifier = Modifier.width(adaptiveSizeByCategory(14.dp, 12.dp, 10.dp)))
 

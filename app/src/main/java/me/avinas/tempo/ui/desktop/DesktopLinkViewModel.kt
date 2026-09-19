@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.entities.DesktopPairingSession
 import me.avinas.tempo.desktop.DesktopPairingCallbackClient
@@ -83,7 +86,8 @@ class DesktopLinkViewModel @Inject constructor(
     private val server: DesktopSatelliteServer,
     private val mdnsManager: DesktopMdnsManager,
     private val listeningEventDao: ListeningEventDao,
-    private val pairingCallbackClient: DesktopPairingCallbackClient
+    private val pairingCallbackClient: DesktopPairingCallbackClient,
+    private val tracker: AnalyticsTracker
 ) : ViewModel() {
 
     companion object {
@@ -213,6 +217,15 @@ class DesktopLinkViewModel @Inject constructor(
     // Internal
 
     private suspend fun completePairing(qrData: DesktopQrData) {
+        completePairingInternal(qrData)
+        // Only a genuinely completed pairing counts as having used desktop sync; a failed QR
+        // scan or a refused desktop callback must not.
+        if (_uiState.value.phase == PairingPhase.PAIRED) {
+            tracker.track(FeatureUsed(TempoFeature.DESKTOP_LINK))
+        }
+    }
+
+    private suspend fun completePairingInternal(qrData: DesktopQrData) {
         // Show processing state so user knows something is happening
         _uiState.update { it.copy(phase = PairingPhase.PROCESSING, errorMessage = null) }
         

@@ -72,6 +72,8 @@ fun SettingsScreen(
     onNavigateToYouTubeMusicImport: (() -> Unit)? = null,
     onNavigateToDesktop: () -> Unit = {},
     onNavigateToEnrichmentReport: (() -> Unit)? = null,
+    onNavigateToWhatWeCollect: (() -> Unit)? = null,
+    onNavigateToDiagnostics: (() -> Unit)? = null,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -613,6 +615,26 @@ fun SettingsScreen(
                     variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
                 ) {
                     Column {
+                        // The opt-out for anonymous app-health reporting lives here, at the
+                        // top of "Your Data" next to backup/restore rather than buried in
+                        // About. Hidden entirely in builds that cannot report (no Aptabase
+                        // key, or debug), since a switch for collection that cannot happen
+                        // would be misleading.
+                        if (uiState.analyticsConfigured) {
+                            SettingsSwitch(
+                                title = stringResource(R.string.settings_analytics_toggle),
+                                subtitle = stringResource(R.string.settings_analytics_toggle_desc),
+                                checked = uiState.analyticsEnabled,
+                                onCheckedChange = viewModel::setAnalyticsEnabled
+                            )
+                            HorizontalDivider(color = GlassBorderSoft)
+                            SettingsOption(
+                                title = stringResource(R.string.settings_what_we_collect),
+                                subtitle = stringResource(R.string.settings_what_we_collect_desc),
+                                onClick = { onNavigateToWhatWeCollect?.invoke() }
+                            )
+                            HorizontalDivider(color = GlassBorderSoft)
+                        }
                         SettingsSwitch(
                             title = stringResource(R.string.settings_smart_merge),
                             subtitle = stringResource(R.string.settings_smart_merge_desc),
@@ -624,6 +646,12 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_backup_restore),
                             subtitle = stringResource(R.string.settings_backup_restore_desc),
                             onClick = { onNavigateToBackup?.invoke() }
+                        )
+                        HorizontalDivider(color = GlassBorderSoft)
+                        SettingsOption(
+                            title = stringResource(R.string.settings_diagnostics),
+                            subtitle = stringResource(R.string.settings_diagnostics_desc),
+                            onClick = { onNavigateToDiagnostics?.invoke() }
                         )
                         HorizontalDivider(color = GlassBorderSoft)
                         SettingsOption(

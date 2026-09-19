@@ -1,5 +1,7 @@
 package me.avinas.tempo.ui.details
 
+import me.avinas.tempo.data.analytics.NoOpAnalyticsTracker
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -84,7 +86,8 @@ class MergeArtistViewModelTest {
             createProxy { _, _ -> null },
             createProxy { _, _ -> null },
             createFakeDatabase(),
-            createProxy { _, _ -> null }
+            createProxy { _, _ -> null },
+            NoOpAnalyticsTracker()
         ) {
             override suspend fun searchArtists(query: String, excludeArtistId: Long?): List<Artist> {
                 return artistsList.filter { it.id != excludeArtistId }
@@ -119,7 +122,8 @@ class MergeArtistViewModelTest {
             createProxy { _, _ -> null },
             createProxy { _, _ -> null },
             createFakeDatabase(),
-            createProxy { _, _ -> null }
+            createProxy { _, _ -> null },
+            NoOpAnalyticsTracker()
         ) {}
 
         val viewModel = MergeArtistViewModel(customRepo)

@@ -20,7 +20,7 @@
 
 </div>
 
-Tempo is a local-first music journal and scrobbler for Android. It monitors playback across media players, writes listening history to a local SQLite database, and computes listening analytics, heatmaps, and exportable stat cards on device without remote tracking servers.
+Tempo is a local-first music journal and scrobbler for Android. It monitors playback across media players, writes listening history to a local SQLite database, and computes listening analytics, heatmaps, and exportable stat cards on device. Tempo runs no server of its own: your listening history never leaves your phone, and the only thing it reports is anonymous app-health data you can turn off in Settings.
 
 ---
 
@@ -85,9 +85,12 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
 - Syncs to the phone over local Wi-Fi via `POST /api/plays`, authenticated with HMAC-SHA256 signatures.
 
 ### Privacy and backup
+- Lists every analytics event the app can send, and the exact data attached to each, at **Settings → Your Data → What we collect**.
+- Generates a shareable **diagnostics report** (versions, library counts, tracking health, background work) on request, so a bug report can be detailed without the app collecting anything automatically.
 - Stores listening events, metadata, and computed statistics locally in Room SQLite databases.
 - Secures authentication keys and API credentials in Android `EncryptedSharedPreferences`.
 - Supports automated local database exports as well as Google Drive backups via Android Credential Manager.
+- Reports only anonymous app-health statistics — crashes, errors and feature usage, with no account and no identifiers. Never your listening history. On by default, off in one tap at **Settings → Your Data**, and inert in any build compiled from source. See [docs/ANALYTICS.md](docs/ANALYTICS.md).
 
 ---
 
@@ -112,6 +115,8 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
    LASTFM_API_KEY=your_lastfm_api_key
    GOOGLE_WEB_CLIENT_ID=your_google_client_id
    ```
+
+   Analytics is deliberately absent from that list: leaving `APTABASE_APP_KEY` unset means the app reports nothing at all, which is the intended state for a build from source. See [docs/ANALYTICS.md](docs/ANALYTICS.md).
 
 3. Build the debug APK:
    ```bash

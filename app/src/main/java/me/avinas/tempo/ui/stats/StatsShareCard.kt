@@ -204,7 +204,6 @@ private fun StatsShareBackground(
             palette.usesArtwork &&
             palette.backdrop != ShareBackdropStyle.ASCII_ARTWORK &&
             palette.backdrop != ShareBackdropStyle.FLUTED_GLASS &&
-            palette.backdrop != ShareBackdropStyle.GLITCH_MOTION &&
             !imageUrl.isNullOrBlank()
         ) {
             CachedAsyncImage(

@@ -6,7 +6,9 @@ Contributions to Tempo are welcome. This guide covers how to set up your develop
 
 Tempo is a local-first music companion and scrobbler for Android. Every change must adhere to these core constraints:
 
-- **Local storage first:** Listening history, statistics, and metadata stay on device in local SQLite databases via Room. The app does not transmit user data to remote analytics servers or telemetry services.
+- **Local storage first:** Listening history, statistics, and metadata stay on device in local SQLite databases via Room. The app never transmits listening content, search queries, notification text, or device identifiers to any server.
+- **Anonymous app-health only:** The one thing that leaves the device is anonymous crash, error and feature-usage statistics, and they are constrained by a **closed schema**. Every event and property is defined in `data/analytics/AnalyticsEvent.kt`; there are no free-form string properties, so a caller cannot pass a track title, artist name or file path. Adding a property that could carry listening content or an identifier is prohibited, and `AnalyticsSchemaTest` fails the build if one appears. Reporting is on by default with a one-tap opt-out in Settings, requires an in-app notice before the first event is sent, and is inert in any build without an `APTABASE_APP_KEY`. See [docs/ANALYTICS.md](docs/ANALYTICS.md).
+- **Use the diagnostics report instead of expanding telemetry:** when you need more detail to debug something, add it to `DiagnosticsInput` (rendered at **Settings → Your Data → Diagnostics report**), not to the analytics schema. The report is user-initiated and reviewable, so it may carry detail the automatic events never should.
 - **Offline operation:** Core tracking, stats generation, and library browsing must work without network access. External API calls (Last.fm, Spotify, MusicBrainz, Deezer) are strictly opt-in for metadata enrichment and imports.
 - **No commercial features:** The project is released under a modified AGPLv3 license that prohibits monetization, advertisements, paid subscriptions, and rebranding.
 
@@ -28,6 +30,8 @@ SPOTIFY_CLIENT_ID=your_spotify_client_id
 LASTFM_API_KEY=your_lastfm_api_key
 GOOGLE_WEB_CLIENT_ID=your_google_client_id
 ```
+
+**Leave `APTABASE_APP_KEY` unset unless you are specifically testing analytics.** With no key the app reports nothing at all and no analytics UI is shown, which is the intended state for a development build — and for anyone building Tempo from source. Debug builds never report even when a key is present.
 
 ## Building and testing
 
@@ -60,6 +64,16 @@ Room entity definitions export database schemas to `app/schemas/`. When adding o
 2. Add migration test cases in `app/src/test/java/me/avinas/tempo/data/local/` to verify forward compatibility.
 3. Commit the updated JSON schema files alongside the migration code.
 
+### Release builds and crash symbolication
+
+Release builds are obfuscated by R8. Crash reports produced by the app deliberately contain only an obfuscated class name and one frame with a line number, so they can only be read with the `mapping.txt` for that exact version:
+
+```bash
+./gradlew assembleRelease archiveReleaseMapping
+```
+
+This writes `mappings/mapping-<version>.txt`. That directory is gitignored — copy the file somewhere durable, or the crash reports become unreadable and you would have to rely on Play Console instead.
+
 ### Browser companion extension
 
 The browser companion lives in `browser-extension/`:
@@ -84,6 +98,7 @@ Open an issue to discuss your proposal before writing code for:
 - Database schema changes or structural refactoring
 - UI navigation changes or visual redesigns
 - Adding new third-party dependencies
+- **Adding an analytics event or property** — the schema is a privacy commitment that is published to users, so it changes deliberately
 
 You do not need to open an issue before submitting pull requests for:
 - Bug fixes and crash resolutions
@@ -110,6 +125,7 @@ You do not need to open an issue before submitting pull requests for:
 - **Background work:** Use `WorkManager` for periodic or deferrable background tasks (enrichment, daily stats). Use foreground services only where continuous playback listening requires Android service lifecycle management.
 - **Memory and performance:** Downsample large cover art bitmaps before writing to SQLite to prevent `TransactionTooLargeException` and memory pressure. Release broadcast receivers, database cursors, and coroutine scopes on component teardown.
 - **Dependencies:** Avoid adding new dependencies unless the functionality cannot be reasonably implemented with existing libraries or platform APIs.
+- **Analytics:** Never call an analytics SDK directly. Inject `AnalyticsTracker` and pass one of the events from `data/analytics/AnalyticsEvent.kt`. Never add a free-form `String` property, and bucket any count rather than sending an exact number.
 
 ## Localization
 
@@ -126,6 +142,8 @@ When adding user-facing UI text:
 1. Add the string to `values/strings.xml` using a descriptive key.
 2. Reference the string via `stringResource(R.string.your_key)` in Compose instead of hardcoding text.
 3. If providing translations for existing keys, update the corresponding `values-*/strings.xml` file.
+
+**Privacy-related copy must be accurate in every language.** If you change a string that makes a privacy claim, remove the now-stale translations for that key in `values-*/` rather than leaving a claim that is no longer true — falling back to English is better than telling users something false.
 
 ## License terms for contributions
 

@@ -72,8 +72,8 @@
     <string name="level_reached">Você atingiu o nível %1$d</string>
 
     <!-- Onboarding: Welcome screen -->
-    <string name="welcome_headline_1">Conheça sua música,</string>
-    <string name="welcome_headline_2">Ame suas estatísticas</string>
+    <string name="welcome_headline_1">Cada audição,</string>
+    <string name="welcome_headline_2">um pouco mais você</string>
     <string name="welcome_description">O Tempo rastreia automaticamente o que você ouve e mostra belos insights sobre seus hábitos auditivos.</string>
     <string name="welcome_get_started">Comece</string>
     <string name="welcome_skip">Pular</string>
@@ -86,9 +86,7 @@
     <string name="how_it_works_step2_title">A notificação aparece</string>
     <string name="how_it_works_step2_subtitle">Tempo lê apenas informações da música</string>
     <string name="how_it_works_step3_title">Estatísticas salvas localmente</string>
-    <string name="how_it_works_step3_subtitle">No seu telefone, em nenhum outro lugar</string>
     <string name="how_it_works_badge_apps">Mais de 20 aplicativos</string>
-    <string name="how_it_works_badge_local">100% local</string>
     <string name="how_it_works_badge_auto">Rastreamento automático</string>
     <string name="how_it_works_next">Próximo</string>
 
@@ -97,8 +95,6 @@
     <string name="privacy_subtitle">Privacidade não é um recurso. É a base.</string>
     <string name="privacy_local_title">Armazenamento 100% local</string>
     <string name="privacy_local_desc">Todos os dados permanecem no seu telefone. Sempre.</string>
-    <string name="privacy_no_cloud_title">Sem servidores, sem nuvem</string>
-    <string name="privacy_no_cloud_desc">Não temos back-end. Nenhum dado carregado.</string>
     <string name="privacy_notif_title">Apenas notificações de música</string>
     <string name="privacy_notif_desc">Lemos Spotify, YouTube Music, etc. Nunca mensagens.</string>
     <string name="privacy_open_source_title">Código aberto</string>

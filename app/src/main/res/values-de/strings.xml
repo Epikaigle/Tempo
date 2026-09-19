@@ -72,8 +72,8 @@
     <string name="level_reached">Du hast Level %1$d erreicht</string>
 
     <!-- Onboarding: Welcome screen -->
-    <string name="welcome_headline_1">Kenne deine Musik,</string>
-    <string name="welcome_headline_2">Liebe deine Stats</string>
+    <string name="welcome_headline_1">Jedes Hören,</string>
+    <string name="welcome_headline_2">ein bisschen mehr du</string>
     <string name="welcome_description">Tempo erfasst automatisch, was du hörst, und zeigt dir wunderschöne Einblicke in deine Hörgewohnheiten.</string>
     <string name="welcome_get_started">Loslegen</string>
     <string name="welcome_skip">Überspringen</string>
@@ -86,9 +86,7 @@
     <string name="how_it_works_step2_title">Benachrichtigung erscheint</string>
     <string name="how_it_works_step2_subtitle">Tempo liest nur Musik-Infos</string>
     <string name="how_it_works_step3_title">Stats lokal gespeichert</string>
-    <string name="how_it_works_step3_subtitle">Auf deinem Handy, nirgendwo sonst</string>
     <string name="how_it_works_badge_apps">20+ Apps</string>
-    <string name="how_it_works_badge_local">100% lokal</string>
     <string name="how_it_works_badge_auto">Auto-Erfassung</string>
     <string name="how_it_works_next">Weiter</string>
 
@@ -97,8 +95,6 @@
     <string name="privacy_subtitle">Datenschutz ist kein Feature. Es ist die Basis.</string>
     <string name="privacy_local_title">100% lokale Speicherung</string>
     <string name="privacy_local_desc">Alle Daten bleiben auf deinem Handy. Immer.</string>
-    <string name="privacy_no_cloud_title">Keine Server, keine Cloud</string>
-    <string name="privacy_no_cloud_desc">Wir haben kein Backend. Null Daten hochgeladen.</string>
     <string name="privacy_notif_title">Nur Musikbenachrichtigungen</string>
     <string name="privacy_notif_desc">Wir lesen Spotify, YouTube Music, etc. Niemals Nachrichten.</string>
     <string name="privacy_open_source_title">Open Source</string>

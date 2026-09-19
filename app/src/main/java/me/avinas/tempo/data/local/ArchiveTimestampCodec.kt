@@ -20,6 +20,11 @@ import java.io.IOException
  * the layout ever diverging between call sites.
  */
 object ArchiveTimestampCodec {
+    /** Long base timestamp + Int count, i.e. the bytes before the first delta. */
+    private const val HEADER_BYTES = 12
+
+    /** Each delta is one Int. */
+    private const val DELTA_BYTES = 4
 
     /**
      * Compress timestamps using delta encoding.
@@ -52,6 +57,17 @@ object ArchiveTimestampCodec {
     /**
      * Decompress timestamps from an archive blob.
      * Returns an empty list for empty or malformed blobs (never throws).
+     *
+     * Blobs are not necessarily ours: they also arrive inside user-supplied backup files
+     * (`ImportExportManager.replayStagedArchive`), so the header is not taken on faith.
+     * A 12-byte blob claiming `Int.MAX_VALUE` timestamps used to size the result list from
+     * the header alone, so the count is now checked against what the payload can hold.
+     *
+     * Only structural checks live here. Anything that second-guesses the *values* (clock
+     * skew, plausible date range) would reject a valid archive written by a device whose
+     * clock was wrong, and the callers persist the empty result - so a bad guard loses real
+     * history. Magnitude checks are also worthless against a deliberate forger, who can
+     * always pick plausible timestamps.
      */
     fun decompress(blob: ByteArray): List<Long> {
         if (blob.isEmpty()) return emptyList()
@@ -66,12 +82,20 @@ object ArchiveTimestampCodec {
 
             if (count <= 1) return listOf(baseTimestamp)
 
+            // A valid blob carries DELTA_BYTES per delta, so `count` cannot exceed what the
+            // payload can hold.
+            if (count - 1 > (blob.size - HEADER_BYTES) / DELTA_BYTES) return emptyList()
+
             // Read deltas and reconstruct timestamps
             val timestamps = mutableListOf(baseTimestamp)
             var current = baseTimestamp
 
             repeat(count - 1) {
                 val deltaSec = input.readInt()
+                // Every producer sorts ascending before compressing, so a negative delta can
+                // only come from corruption or tampering - and it would put the reconstructed
+                // instants out of order for consumers that rely on the ascending invariant.
+                if (deltaSec < 0) return emptyList()
                 current += deltaSec * 1000L
                 timestamps.add(current)
             }

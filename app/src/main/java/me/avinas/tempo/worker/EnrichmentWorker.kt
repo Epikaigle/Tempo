@@ -18,6 +18,9 @@ import me.avinas.tempo.data.enrichment.ReccoBeatsEnrichmentService
 import me.avinas.tempo.data.enrichment.SpotifyEnrichmentService
 import me.avinas.tempo.data.enrichment.ITunesEnrichmentService
 import me.avinas.tempo.data.enrichment.DeezerEnrichmentService
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.EnrichmentProvider
+import me.avinas.tempo.data.analytics.EnrichmentRun
 import me.avinas.tempo.data.enrichment.EnrichmentSource
 import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.TrackDao
@@ -50,7 +53,8 @@ class EnrichmentWorker @AssistedInject constructor(
     private val enrichedMetadataDao: EnrichedMetadataDao,
     private val trackDao: TrackDao,
     private val statsRepository: StatsRepository,
-    private val artistLinkingService: me.avinas.tempo.data.repository.ArtistLinkingService
+    private val artistLinkingService: me.avinas.tempo.data.repository.ArtistLinkingService,
+    private val tracker: AnalyticsTracker
 ) : CoroutineWorker(appContext, workerParams) {
 
     private val strategies: List<EnrichmentSource> = listOf(
@@ -63,6 +67,49 @@ class EnrichmentWorker @AssistedInject constructor(
         reccoBeatsEnrichmentSource,
         spotifyArtistFeaturesSource
     ).sortedBy { it.priority }
+
+    // Per-run enrichment outcomes, flushed once when the run ends. Accumulated rather than
+    // reported per track so a 10-track batch does not emit 80 events.
+    private val enrichmentAttempts = mutableMapOf<EnrichmentProvider, Int>()
+    private val enrichmentSuccesses = mutableMapOf<EnrichmentProvider, Int>()
+
+    private fun recordStrategyOutcome(strategy: EnrichmentSource, producedUpdate: Boolean) {
+        val provider = enrichmentProviderFor(strategy) ?: return
+        enrichmentAttempts[provider] = (enrichmentAttempts[provider] ?: 0) + 1
+        if (producedUpdate) {
+            enrichmentSuccesses[provider] = (enrichmentSuccesses[provider] ?: 0) + 1
+        }
+    }
+
+    private fun flushEnrichmentStats() {
+        enrichmentAttempts.forEach { (provider, attempts) ->
+            tracker.track(
+                EnrichmentRun(
+                    provider = provider,
+                    attempts = attempts,
+                    successes = enrichmentSuccesses[provider] ?: 0
+                )
+            )
+        }
+        enrichmentAttempts.clear()
+        enrichmentSuccesses.clear()
+    }
+
+    /**
+     * Matched by type rather than by display name, so renaming or removing a source breaks the
+     * build instead of silently mis-attributing every outcome.
+     */
+    private fun enrichmentProviderFor(strategy: EnrichmentSource): EnrichmentProvider? = when (strategy) {
+        is me.avinas.tempo.data.enrichment.SpotifyEnrichmentSource -> EnrichmentProvider.SPOTIFY
+        is me.avinas.tempo.data.enrichment.LastFmMbidPreEnrichmentSource -> EnrichmentProvider.LASTFM_MBID
+        is me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentSource -> EnrichmentProvider.MUSICBRAINZ
+        is me.avinas.tempo.data.enrichment.LastFmEnrichmentSource -> EnrichmentProvider.LASTFM
+        is me.avinas.tempo.data.enrichment.ITunesEnrichmentSource -> EnrichmentProvider.ITUNES
+        is me.avinas.tempo.data.enrichment.DeezerEnrichmentSource -> EnrichmentProvider.DEEZER
+        is me.avinas.tempo.data.enrichment.ReccoBeatsEnrichmentSource -> EnrichmentProvider.RECCOBEATS
+        is me.avinas.tempo.data.enrichment.SpotifyArtistFeaturesSource -> EnrichmentProvider.SPOTIFY_ARTIST_FEATURES
+        else -> null
+    }
 
     companion object {
         private const val TAG = "EnrichmentWorker"
@@ -286,6 +333,14 @@ class EnrichmentWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result {
+        return try {
+            doWorkInternal()
+        } finally {
+            flushEnrichmentStats()
+        }
+    }
+
+    private suspend fun doWorkInternal(): Result {
         Log.i(TAG, "Starting enrichment work")
 
         // Check if specific track ID was provided
@@ -454,6 +509,7 @@ class EnrichmentWorker @AssistedInject constructor(
             if (strategy.canProvide(currentGap)) {
                 Log.d(TAG, "Applying strategy ${strategy.name} for track $trackId (Gap: $currentGap)")
                 val updated = strategy.enrich(track, metadata)
+                recordStrategyOutcome(strategy, updated != null)
                 if (updated != null) {
                     metadata = updated
                     Log.d(TAG, "Strategy ${strategy.name} updated metadata for $trackId")

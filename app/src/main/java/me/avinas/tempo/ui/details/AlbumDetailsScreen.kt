@@ -307,6 +307,7 @@ private fun AlbumDetailsContent(
                 isEditMode = isEditMode,
                 onNavigateBack = onNavigateBack,
                 onToggleEdit = onToggleEdit,
+                onAddClick = onAddClick,
                 onMenuClick = { showMenu = true },
             )
 
@@ -360,6 +361,7 @@ private fun AlbumTopBar(
     isEditMode: Boolean,
     onNavigateBack: () -> Unit,
     onToggleEdit: () -> Unit,
+    onAddClick: () -> Unit,
     onMenuClick: () -> Unit,
 ) {
     Row(
@@ -411,6 +413,13 @@ private fun AlbumTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // ponytail: direct one-tap entry to Add Song; edit mode still gates
+            // the inline pill, this just skips the two-step dance.
+            AlbumTopBarAction(
+                icon = Icons.Rounded.Add,
+                contentDescription = stringResource(R.string.album_add_song),
+                onClick = onAddClick,
+            )
             AlbumTopBarAction(
                 icon = if (isEditMode) Icons.Rounded.Check else Icons.Rounded.Edit,
                 contentDescription = stringResource(

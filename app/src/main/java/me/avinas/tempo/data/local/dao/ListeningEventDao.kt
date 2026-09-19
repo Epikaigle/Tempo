@@ -1,18 +1,17 @@
 package me.avinas.tempo.data.local.dao
 
 import androidx.room.*
+import kotlinx.coroutines.flow.Flow
 import me.avinas.tempo.data.local.EventFingerprint
 import me.avinas.tempo.data.local.SourceAuthority
 import me.avinas.tempo.data.local.entities.ListeningEvent
-import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ListeningEventDao {
-    
     companion object {
         // SQLite variable limit is 999, ListeningEvent has ~12 columns
         const val BATCH_SIZE = 80
-        
+
         // Timestamp tolerance for deduplication (5 seconds)
         // Two events within 5 seconds for the same track are considered duplicates
         const val DUPLICATE_TOLERANCE_MS = 5000L
@@ -26,70 +25,91 @@ interface ListeningEventDao {
         // are never merged.
         const val RECONCILIATION_WINDOW_MS = 60_000L
     }
-    
+
     @Query("SELECT * FROM listening_events WHERE id = :id")
     fun getById(id: Long): Flow<ListeningEvent?>
 
     @Query("SELECT * FROM listening_events WHERE track_id = :trackId ORDER BY timestamp DESC")
     fun eventsForTrack(trackId: Long): Flow<List<ListeningEvent>>
-    
+
     @Query("SELECT * FROM listening_events WHERE track_id = :trackId ORDER BY timestamp DESC")
     suspend fun getEventsForTrack(trackId: Long): List<ListeningEvent>
 
     @Query("SELECT * FROM listening_events ORDER BY timestamp DESC")
     fun all(): Flow<List<ListeningEvent>>
-    
+
     @Query("SELECT * FROM listening_events ORDER BY timestamp DESC LIMIT :limit")
     fun recentEvents(limit: Int): Flow<List<ListeningEvent>>
-    
+
     @Query("SELECT * FROM listening_events WHERE timestamp >= :startTime AND timestamp <= :endTime ORDER BY timestamp DESC")
-    fun eventsInRange(startTime: Long, endTime: Long): Flow<List<ListeningEvent>>
-    
+    fun eventsInRange(
+        startTime: Long,
+        endTime: Long,
+    ): Flow<List<ListeningEvent>>
+
     @Query("SELECT * FROM listening_events WHERE timestamp >= :startTime AND timestamp <= :endTime ORDER BY timestamp DESC")
-    suspend fun getEventsInRange(startTime: Long, endTime: Long): List<ListeningEvent>
+    suspend fun getEventsInRange(
+        startTime: Long,
+        endTime: Long,
+    ): List<ListeningEvent>
 
     /**
      * Get only timestamps and durations for session calculation (memory efficient).
      */
-    @Query("SELECT timestamp, playDuration FROM listening_events WHERE timestamp >= :startTime AND timestamp <= :endTime ORDER BY timestamp ASC")
-    suspend fun getSessionPointsInRange(startTime: Long, endTime: Long): List<me.avinas.tempo.data.stats.SessionPoint>
+    @Query(
+        "SELECT timestamp, playDuration FROM listening_events WHERE timestamp >= :startTime AND timestamp <= :endTime ORDER BY timestamp ASC",
+    )
+    suspend fun getSessionPointsInRange(
+        startTime: Long,
+        endTime: Long,
+    ): List<me.avinas.tempo.data.stats.SessionPoint>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(event: ListeningEvent): Long
-    
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(events: List<ListeningEvent>): List<Long>
-    
+
     /**
      * Check if an event already exists for this track within the tolerance window.
      * Used for deduplication during imports.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) FROM listening_events 
         WHERE track_id = :trackId 
         AND timestamp BETWEEN :timestampMin AND :timestampMax
-    """)
-    suspend fun countEventsNearTimestamp(trackId: Long, timestampMin: Long, timestampMax: Long): Int
-    
+    """,
+    )
+    suspend fun countEventsNearTimestamp(
+        trackId: Long,
+        timestampMin: Long,
+        timestampMax: Long,
+    ): Int
+
     /**
      * Get all existing timestamps for a set of tracks (for batch deduplication).
      * Returns pairs of (track_id, timestamp) for efficient lookup.
      */
-    @Query("""
+    @Query(
+        """
         SELECT track_id, timestamp FROM listening_events 
         WHERE track_id IN (:trackIds)
         ORDER BY track_id, timestamp
-    """)
+    """,
+    )
     suspend fun getTimestampsForTracks(trackIds: List<Long>): List<TrackTimestamp>
 
     /**
      * Layer 1: return the set of content fingerprints already present for the
      * given fingerprints. Used to drop exact re-import duplicates in O(1) per hit.
      */
-    @Query("""
+    @Query(
+        """
         SELECT DISTINCT content_fingerprint FROM listening_events
         WHERE content_fingerprint IN (:fingerprints)
-    """)
+    """,
+    )
     suspend fun getExistingFingerprints(fingerprints: List<String>): List<String>
 
     /**
@@ -97,16 +117,18 @@ interface ListeningEventDao {
      * time range, for cross-source temporal reconciliation. Bounded by the
      * (track_id, timestamp) index so it stays cheap even for large libraries.
      */
-    @Query("""
+    @Query(
+        """
         SELECT id, track_id, timestamp, playDuration, source, content_fingerprint, end_timestamp
         FROM listening_events
         WHERE track_id = :trackId
         AND timestamp BETWEEN :tsMin AND :tsMax
-    """)
+    """,
+    )
     suspend fun getEventsForReconciliation(
         trackId: Long,
         tsMin: Long,
-        tsMax: Long
+        tsMax: Long,
     ): List<ExistingEventRef>
 
     /**
@@ -115,7 +137,7 @@ interface ListeningEventDao {
      */
     @Query("DELETE FROM listening_events WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>): Int
-    
+
     /**
      * Batch insert with automatic, source-aware deduplication. This is the single
      * chokepoint every import path (Spotify JSON, Last.fm, YouTube Music, ZIP
@@ -144,14 +166,22 @@ interface ListeningEventDao {
         if (events.isEmpty()) return InsertResult(0, 0)
 
         // ── Layer 1: fingerprint every incoming event ──────────────────────
-        val withFp = events.map { e ->
-            if (e.contentFingerprint != null) e
-            else e.copy(contentFingerprint = EventFingerprint.compute(e))
-        }
+        val withFp =
+            events.map { e ->
+                if (e.contentFingerprint != null) {
+                    e
+                } else {
+                    e.copy(contentFingerprint = EventFingerprint.compute(e))
+                }
+            }
 
         val incomingFps = withFp.mapNotNull { it.contentFingerprint }.distinct()
-        val existingFps: Set<String> = if (incomingFps.isEmpty()) emptySet()
-            else incomingFps.chunked(900).flatMap { getExistingFingerprints(it) }.toSet()
+        val existingFps: Set<String> =
+            if (incomingFps.isEmpty()) {
+                emptySet()
+            } else {
+                incomingFps.chunked(900).flatMap { getExistingFingerprints(it) }.toSet()
+            }
 
         // Drop exact-fingerprint duplicates (DB or earlier in this batch).
         val seenFp = HashSet<String>(incomingFps.size)
@@ -183,16 +213,17 @@ interface ListeningEventDao {
             val existingAlive = existing.filter { it.id !in toDelete }.toMutableList()
 
             // Incoming events for this track, most authoritative first (tie → earliest).
-            val sortedIncoming = trackEvents.sortedWith(
-                compareByDescending<ListeningEvent> { SourceAuthority.rank(it.source) }
-                    .thenBy { it.timestamp }
-            )
+            val sortedIncoming =
+                trackEvents.sortedWith(
+                    compareByDescending<ListeningEvent> { SourceAuthority.rank(it.source) }
+                        .thenBy { it.timestamp },
+                )
 
             // Timestamps already accepted (existing-kept + incoming-accepted) for
             // same-play conflict checks on this track.
             val acceptedSlots = ArrayList<Slot>(existingAlive.size + sortedIncoming.size)
             for (ex in existingAlive) {
-                acceptedSlots.add(Slot(ex.timestamp, ex.end_timestamp, ex.playDuration, ex.source, true))
+                acceptedSlots.add(Slot(ex.timestamp, ex.end_timestamp, ex.playDuration, ex.source, true, ex.id))
             }
 
             for (incoming in sortedIncoming) {
@@ -203,7 +234,7 @@ interface ListeningEventDao {
                     // No conflict → accept the incoming event.
                     toInsert.add(incoming)
                     acceptedSlots.add(
-                        Slot(incoming.timestamp, incoming.endTimestamp, incoming.playDuration, incoming.source, false)
+                        Slot(incoming.timestamp, incoming.endTimestamp, incoming.playDuration, incoming.source, false),
                     )
                     continue
                 }
@@ -211,19 +242,22 @@ interface ListeningEventDao {
                 val conflict = acceptedSlots[conflictIdx]
                 if (conflict.isExisting && incomingAuth > SourceAuthority.rank(conflict.source)) {
                     // Incoming is more authoritative → it replaces the existing event.
-                    // Find the ExistingEventRef this slot came from and mark it for deletion.
-                    val ref = existingAlive.first { ref ->
-                        ref.timestamp == conflict.timestamp &&
-                            ref.end_timestamp == conflict.endTimestamp &&
-                            ref.source == conflict.source
-                    }
+                    // Match by primary key, not by (timestamp, endTimestamp, source): two
+                    // legacy rows can share all three, and `first {}` would then delete the
+                    // wrong one. Every isExisting slot carries the id it came from.
+                    val ref = existingAlive.first { it.id == conflict.existingId }
                     toDelete.add(ref.id)
                     existingAlive.remove(ref)
                     // Replace the slot with the incoming event so later comparisons
                     // see the new (higher-authority) representation.
-                    acceptedSlots[conflictIdx] = Slot(
-                        incoming.timestamp, incoming.endTimestamp, incoming.playDuration, incoming.source, false
-                    )
+                    acceptedSlots[conflictIdx] =
+                        Slot(
+                            incoming.timestamp,
+                            incoming.endTimestamp,
+                            incoming.playDuration,
+                            incoming.source,
+                            false,
+                        )
                     toInsert.add(incoming)
                 } else {
                     // Existing/equal authority wins, or the slot was already taken
@@ -239,8 +273,12 @@ interface ListeningEventDao {
         }
 
         // Insert the survivors (fingerprint already set on each).
-        val inserted = if (toInsert.isEmpty()) 0
-            else toInsert.chunked(BATCH_SIZE).sumOf { batch -> insertAll(batch).size }
+        val inserted =
+            if (toInsert.isEmpty()) {
+                0
+            } else {
+                toInsert.chunked(BATCH_SIZE).sumOf { batch -> insertAll(batch).size }
+            }
 
         return InsertResult(inserted = inserted, skipped = skipped, replaced = toDelete.size)
     }
@@ -251,7 +289,9 @@ interface ListeningEventDao {
         val endTimestamp: Long?,
         val playDuration: Long,
         val source: String,
-        val isExisting: Boolean
+        val isExisting: Boolean,
+        /** listening_events.id when this slot came from the database; null for incoming events. */
+        val existingId: Long? = null,
     )
 
     /**
@@ -260,17 +300,21 @@ interface ListeningEventDao {
      * legitimate back-to-back plays); different sources use a generous window that
      * absorbs cross-source timestamp drift.
      */
-    private fun isSamePlay(slot: Slot, incoming: ListeningEvent): Boolean {
+    private fun isSamePlay(
+        slot: Slot,
+        incoming: ListeningEvent,
+    ): Boolean {
         val sameSource = slot.source == incoming.source
-        val window: Long = if (sameSource) {
-            DUPLICATE_TOLERANCE_MS
-        } else {
-            val half = maxOf(slot.playDuration, incoming.playDuration) / 2L
-            if (half < RECONCILIATION_WINDOW_MS) RECONCILIATION_WINDOW_MS else half
-        }
+        val window: Long =
+            if (sameSource) {
+                DUPLICATE_TOLERANCE_MS
+            } else {
+                val half = maxOf(slot.playDuration, incoming.playDuration) / 2L
+                if (half < RECONCILIATION_WINDOW_MS) RECONCILIATION_WINDOW_MS else half
+            }
         return kotlin.math.abs(slot.timestamp - incoming.timestamp) <= window
     }
-    
+
     /**
      * Batch insert with chunking for large imports.
      */
@@ -282,7 +326,7 @@ interface ListeningEventDao {
         }
         return results
     }
-    
+
     /**
      * Result of a deduplicating insert operation.
      *
@@ -296,17 +340,17 @@ interface ListeningEventDao {
     data class InsertResult(
         val inserted: Int,
         val skipped: Int,
-        val replaced: Int = 0
+        val replaced: Int = 0,
     ) {
         val total: Int get() = inserted + skipped
     }
-    
+
     /**
      * Simple data class for timestamp lookup.
      */
     data class TrackTimestamp(
         val track_id: Long,
-        val timestamp: Long
+        val timestamp: Long,
     )
 
     /**
@@ -320,38 +364,36 @@ interface ListeningEventDao {
         val playDuration: Long,
         val source: String,
         val content_fingerprint: String?,
-        val end_timestamp: Long?
+        val end_timestamp: Long?,
     )
 
     /** Desktop source → count breakdown. */
     data class SourceCount(
         val source: String,
-        val cnt: Int
+        val cnt: Int,
     )
 
     /** Artist name → count. */
     data class ArtistCount(
         val artist: String,
-        val cnt: Int
+        val cnt: Int,
     )
 
     /** Track title + artist → count. */
     data class TrackCount(
         val title: String,
         val artist: String,
-        val cnt: Int
+        val cnt: Int,
     )
 
     @Delete
     suspend fun delete(event: ListeningEvent)
-    
+
     @Query("DELETE FROM listening_events WHERE id = :id")
     suspend fun deleteById(id: Long): Int
-    
+
     @Query("DELETE FROM listening_events WHERE track_id = :trackId")
     suspend fun deleteByTrackId(trackId: Long)
-    
-
 
     /**
      * Delete all listening events for one track.
@@ -360,6 +402,7 @@ interface ListeningEventDao {
      */
     @Query("DELETE FROM listening_events WHERE track_id = :trackId")
     suspend fun deleteEventsForTrack(trackId: Long): Int
+
     /**
      * Keyset page of events for backup export. Rows are fetched in id order,
      * page after page, so the full history is never materialized in memory at
@@ -372,108 +415,130 @@ interface ListeningEventDao {
      * restore).
      */
     @Query("SELECT * FROM listening_events WHERE id > :afterId AND id <= :maxId ORDER BY id ASC LIMIT :limit")
-    suspend fun getEventsPage(afterId: Long, maxId: Long, limit: Int): List<ListeningEvent>
+    suspend fun getEventsPage(
+        afterId: Long,
+        maxId: Long,
+        limit: Int,
+    ): List<ListeningEvent>
 
     /** Highest event id at the moment of the call — export snapshot boundary. */
     @Query("SELECT COALESCE(MAX(id), 0) FROM listening_events")
     suspend fun getMaxEventId(): Long
-    
+
     // Enhanced Engagement Queries
-    
+
     /**
      * Get total skip count for a track.
      */
     @Query("SELECT COUNT(*) FROM listening_events WHERE track_id = :trackId AND was_skipped = 1")
     suspend fun getSkipCountForTrack(trackId: Long): Int
-    
+
     /**
      * Get total replay count for a track.
      */
     @Query("SELECT COUNT(*) FROM listening_events WHERE track_id = :trackId AND is_replay = 1")
     suspend fun getReplayCountForTrack(trackId: Long): Int
-    
+
     /**
      * Get average completion percentage for a track.
      */
     @Query("SELECT AVG(completionPercentage) FROM listening_events WHERE track_id = :trackId")
     suspend fun getAverageCompletionForTrack(trackId: Long): Float?
-    
+
     /**
      * Get full play count for a track (completion >= 80%).
      */
     @Query("SELECT COUNT(*) FROM listening_events WHERE track_id = :trackId AND completionPercentage >= 80")
     suspend fun getFullPlayCountForTrack(trackId: Long): Int
-    
+
     /**
      * Get last play timestamp for a track.
      */
     @Query("SELECT MAX(timestamp) FROM listening_events WHERE track_id = :trackId")
     suspend fun getLastPlayTimestampForTrack(trackId: Long): Long?
-    
+
     /**
      * Get first play timestamp for a track.
      */
     @Query("SELECT MIN(timestamp) FROM listening_events WHERE track_id = :trackId")
     suspend fun getFirstPlayTimestampForTrack(trackId: Long): Long?
-    
+
     /**
      * Get total play count for a specific track.
      */
     @Query("SELECT COUNT(*) FROM listening_events WHERE track_id = :trackId")
     suspend fun countByTrackId(trackId: Long): Int
-    
+
     /**
      * Check if a track was recently played (within specified milliseconds).
      * Used for replay detection.
      */
-    @Query("""
+    @Query(
+        """
         SELECT EXISTS(
             SELECT 1 FROM listening_events 
             WHERE track_id = :trackId 
             AND timestamp >= :sinceTimestamp
         )
-    """)
-    suspend fun wasRecentlyPlayed(trackId: Long, sinceTimestamp: Long): Boolean
-    
+    """,
+    )
+    suspend fun wasRecentlyPlayed(
+        trackId: Long,
+        sinceTimestamp: Long,
+    ): Boolean
+
     /**
      * Get events by session ID.
      */
     @Query("SELECT * FROM listening_events WHERE session_id = :sessionId ORDER BY timestamp ASC")
     suspend fun getEventsBySessionId(sessionId: String): List<ListeningEvent>
-    
+
     /**
      * Get total listening time in a time range.
      */
     @Query("SELECT COALESCE(SUM(playDuration), 0) FROM listening_events WHERE timestamp >= :startTime AND timestamp <= :endTime")
-    suspend fun getTotalListeningTime(startTime: Long, endTime: Long): Long
-    
+    suspend fun getTotalListeningTime(
+        startTime: Long,
+        endTime: Long,
+    ): Long
+
     /**
      * Get skip rate for a time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT CAST(SUM(CASE WHEN was_skipped = 1 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) 
         FROM listening_events 
         WHERE timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getSkipRate(startTime: Long, endTime: Long): Float?
-    
+    """,
+    )
+    suspend fun getSkipRate(
+        startTime: Long,
+        endTime: Long,
+    ): Float?
+
     /**
      * Get average completion for a time range.
      */
     @Query("SELECT AVG(completionPercentage) FROM listening_events WHERE timestamp >= :startTime AND timestamp <= :endTime")
-    suspend fun getAverageCompletion(startTime: Long, endTime: Long): Float?
-    
+    suspend fun getAverageCompletion(
+        startTime: Long,
+        endTime: Long,
+    ): Float?
+
     @Query("SELECT COUNT(*) FROM listening_events")
     suspend fun getCount(): Int
-    
+
     /**
      * Delete all listening events for tracks belonging to a specific artist.
      * Returns the number of deleted rows.
      */
-    @Query("""
+    @Query(
+        """
         DELETE FROM listening_events 
         WHERE track_id IN (SELECT id FROM tracks WHERE LOWER(artist) = LOWER(:artistName))
-    """)
+    """,
+    )
     suspend fun deleteByArtist(artistName: String): Int
 
     /**
@@ -481,26 +546,53 @@ interface ListeningEventDao {
      */
     @Query("SELECT MIN(timestamp) FROM listening_events")
     suspend fun getEarliestEventTimestamp(): Long?
-    
+
     /**
      * Get total listening time excluding imported events.
      * Only counts events from actual app usage (real-time tracking).
      */
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(SUM(playDuration), 0) FROM listening_events 
         WHERE source NOT LIKE '%import%'
-    """)
+    """,
+    )
     suspend fun getRealListeningTimeMs(): Long
-    
+
     /**
      * Get total play count excluding imported events.
      * Only counts events from actual app usage (real-time tracking).
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) FROM listening_events 
         WHERE source NOT LIKE '%import%'
-    """)
+    """,
+    )
     suspend fun getRealPlayCount(): Int
+
+    /**
+     * Counts for the anonymous daily listening-activity aggregate.
+     *
+     * Both return numbers only — never which track, artist or app — so the aggregate cannot
+     * carry listening content even by accident. Imported history is excluded so the figure
+     * reflects tracked listening rather than a one-off bulk import.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM listening_events
+        WHERE timestamp >= :sinceMillis AND source NOT LIKE '%import%'
+    """,
+    )
+    suspend fun getTrackedPlayCountSince(sinceMillis: Long): Int
+
+    @Query(
+        """
+        SELECT COUNT(DISTINCT source) FROM listening_events
+        WHERE timestamp >= :sinceMillis AND source NOT LIKE '%import%'
+    """,
+    )
+    suspend fun getDistinctTrackedSourcesSince(sinceMillis: Long): Int
 
     // ─── Desktop-specific stats queries ──────────────────────────────────────
 
@@ -520,19 +612,22 @@ interface ListeningEventDao {
      * Breakdown of desktop plays grouped by source app (e.g., "desktop:Spotify Desktop").
      * Returns source → count pairs, ordered by count descending.
      */
-    @Query("""
+    @Query(
+        """
         SELECT source, COUNT(*) as cnt 
         FROM listening_events 
         WHERE source LIKE 'desktop:%'
         GROUP BY source 
         ORDER BY cnt DESC
-    """)
+    """,
+    )
     suspend fun getDesktopSourceBreakdown(): List<SourceCount>
 
     /**
      * Top artist played from desktop, by count.
      */
-    @Query("""
+    @Query(
+        """
         SELECT t.artist, COUNT(*) as cnt
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
@@ -540,13 +635,15 @@ interface ListeningEventDao {
         GROUP BY t.artist
         ORDER BY cnt DESC
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getDesktopTopArtist(): ArtistCount?
 
     /**
      * Top track played from desktop, by count.
      */
-    @Query("""
+    @Query(
+        """
         SELECT t.title, t.artist, COUNT(*) as cnt
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
@@ -554,26 +651,37 @@ interface ListeningEventDao {
         GROUP BY t.title, t.artist
         ORDER BY cnt DESC
         LIMIT 1
-    """)
+    """,
+    )
     suspend fun getDesktopTopTrack(): TrackCount?
 
     /**
      * Count of desktop plays in a given time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COUNT(*) FROM listening_events 
         WHERE source LIKE 'desktop:%' 
         AND timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getDesktopPlayCountInRange(startTime: Long, endTime: Long): Int
+    """,
+    )
+    suspend fun getDesktopPlayCountInRange(
+        startTime: Long,
+        endTime: Long,
+    ): Int
 
     /**
      * Total desktop listening time (ms) in a given time range.
      */
-    @Query("""
+    @Query(
+        """
         SELECT COALESCE(SUM(playDuration), 0) FROM listening_events 
         WHERE source LIKE 'desktop:%' 
         AND timestamp >= :startTime AND timestamp <= :endTime
-    """)
-    suspend fun getDesktopListeningTimeMsInRange(startTime: Long, endTime: Long): Long
+    """,
+    )
+    suspend fun getDesktopListeningTimeMsInRange(
+        startTime: Long,
+        endTime: Long,
+    ): Long
 }

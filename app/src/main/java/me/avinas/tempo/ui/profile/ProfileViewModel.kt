@@ -20,6 +20,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 import androidx.compose.runtime.Immutable
 
 @HiltViewModel
@@ -27,7 +30,8 @@ class ProfileViewModel @Inject constructor(
     private val gamificationRepository: GamificationRepository,
     private val challengeRepository: ChallengeRepository,
     private val refreshCoordinator: RefreshCoordinator,
-    private val profileIdentityManager: ProfileIdentityManager
+    private val profileIdentityManager: ProfileIdentityManager,
+    private val tracker: AnalyticsTracker
 ) : ViewModel() {
     
     
@@ -200,6 +204,7 @@ class ProfileViewModel @Inject constructor(
     
     fun acknowledgeBadges(badgeIds: List<String>) {
         if (badgeIds.isEmpty()) return
+        tracker.track(FeatureUsed(TempoFeature.GAMIFICATION_PROFILE))
         viewModelScope.launch {
             gamificationRepository.markBadgesAsAcknowledged(badgeIds)
         }

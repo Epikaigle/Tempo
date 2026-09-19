@@ -72,15 +72,14 @@ fun ShareCardBackground(
             .background(brush = Brush.verticalGradient(palette.gradient))
     ) {
         // Blurred artwork backdrop or single custom canvas acting like image.
-        // On ASCII, fallback ascii simple is used.
-        // On MINIMUM and DAYLIGHT (warm), they stay untouched as they have no relation with image.
+        // ASCII and FLUTED_GLASS paint their own blurred base inside their
+        // backdrops, so they skip this layer and avoid a double overlay.
+        // On MINIMUM, DAYLIGHT and GRAIN (warm), they stay untouched as they have no relation with image.
         // On FLUTED_GLASS, the backdropBitmap is refracted via the authentic renderFlutedGlass pass.
-        // On GLITCH, the backdrop uses authentic motion blur + glitch effect on the album art.
         if (
             palette.usesArtwork &&
             palette.backdrop != ShareBackdropStyle.ASCII_ARTWORK &&
-            palette.backdrop != ShareBackdropStyle.FLUTED_GLASS &&
-            palette.backdrop != ShareBackdropStyle.GLITCH_MOTION
+            palette.backdrop != ShareBackdropStyle.FLUTED_GLASS
         ) {
             if (!imageUrl.isNullOrBlank()) {
                 CachedAsyncImage(
@@ -107,21 +106,9 @@ fun ShareCardBackground(
                         .background(brush = Brush.verticalGradient(palette.overlay))
                 )
             }
-        } else if (
-            palette.backdrop == ShareBackdropStyle.GLITCH_MOTION &&
-            customBackdrop != null &&
-            backdropBitmap == null &&
-            imageUrl.isNullOrBlank()
-        ) {
-            customBackdrop()
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(brush = Brush.verticalGradient(palette.overlay))
-            )
         }
 
-        // Theme-specific backdrop decoration (glow orbs, fluted glass, glitch, ascii, rings, sun wash)
+        // Theme-specific backdrop decoration (glow orbs, fluted glass, ascii, rings, sun wash, grain)
         ShareThemeDecorations(
             palette = palette,
             imageUrl = imageUrl,

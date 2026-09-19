@@ -23,6 +23,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.R
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.BackupRun
+import me.avinas.tempo.data.analytics.BackupTarget
 import me.avinas.tempo.data.drive.BackupInterval
 import me.avinas.tempo.data.drive.BackupSettingsManager
 import me.avinas.tempo.data.drive.LocalBackupStorage
@@ -48,7 +51,8 @@ class LocalBackupWorker @AssistedInject constructor(
     @Assisted private val context: Context,
     @Assisted params: WorkerParameters,
     private val importExportManager: ImportExportManager,
-    private val settingsManager: BackupSettingsManager
+    private val settingsManager: BackupSettingsManager,
+    private val tracker: AnalyticsTracker
 ) : CoroutineWorker(context, params) {
 
     companion object {
@@ -110,6 +114,7 @@ class LocalBackupWorker @AssistedInject constructor(
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val startedAt = System.currentTimeMillis()
         val runStateDir = runStateDir()
 
         try {
@@ -131,6 +136,7 @@ class LocalBackupWorker @AssistedInject constructor(
                     "Device Backup Folder Needed",
                     "Open Tempo and choose an automatic backup folder"
                 )
+                reportBackup(success = false, sizeBytes = 0L, startedAt = startedAt)
                 cleanupRunState()
                 return@withContext Result.success()
             }
@@ -170,7 +176,7 @@ class LocalBackupWorker @AssistedInject constructor(
                     } else {
                         "Backup archive was not created correctly"
                     }
-                    return@withContext retryOrFinish(runStateDir, message)
+                    return@withContext retryOrFinish(runStateDir, message, startedAt)
                 }
 
                 // ImportExportManager validates the ZIP before returning success.
@@ -179,6 +185,9 @@ class LocalBackupWorker @AssistedInject constructor(
             } else {
                 Log.i(TAG, "Reusing device archive from an earlier attempt of this WorkManager run")
             }
+
+            // Captured before persist: persisting may move the archive out of the cache.
+            val archiveSize = tempFile.length()
 
             val location = LocalBackupStorage.persist(
                 context = context,
@@ -191,6 +200,7 @@ class LocalBackupWorker @AssistedInject constructor(
                 "Your Tempo data has been saved to the selected device folder"
             )
             runStateDir.deleteRecursively()
+            reportBackup(success = true, sizeBytes = archiveSize, startedAt = startedAt)
             Result.success()
         } catch (e: CancellationException) {
             // A provider copy may have completed just before WorkManager stopped
@@ -203,9 +213,25 @@ class LocalBackupWorker @AssistedInject constructor(
             Log.e(TAG, "Automatic device backup failed", e)
             retryOrFinish(
                 runStateDir,
-                e.message ?: "Could not save the automatic device backup"
+                e.message ?: "Could not save the automatic device backup",
+                startedAt
             )
         }
+    }
+
+    /**
+     * Reported only for a terminal outcome. Reporting every retry would triple-count a single
+     * failure and make the success rate look worse than it is.
+     */
+    private fun reportBackup(success: Boolean, sizeBytes: Long, startedAt: Long) {
+        tracker.track(
+            BackupRun(
+                target = BackupTarget.LOCAL,
+                success = success,
+                sizeBytes = sizeBytes,
+                durationMillis = System.currentTimeMillis() - startedAt
+            )
+        )
     }
 
     private fun getOrCreateBackupRunId(runStateDir: File): String {
@@ -230,7 +256,7 @@ class LocalBackupWorker @AssistedInject constructor(
         File(context.cacheDir, "tempo_local_backup_runs/$id").deleteRecursively()
     }
 
-    private fun retryOrFinish(runStateDir: File, message: String): Result {
+    private fun retryOrFinish(runStateDir: File, message: String, startedAt: Long): Result {
         return if (shouldRetryFailure(runAttemptCount)) {
             Log.w(TAG, "Retrying device backup after failure (attempt=$runAttemptCount): $message")
             Result.retry()
@@ -238,6 +264,7 @@ class LocalBackupWorker @AssistedInject constructor(
             // Returning success here is intentional for PeriodicWorkRequest: it
             // preserves the next Daily/Weekly/Monthly occurrence instead of leaving
             // this one broken run in an endless retry state.
+            reportBackup(success = false, sizeBytes = 0L, startedAt = startedAt)
             notifyTerminalFailure("Device Backup Failed", message)
             runStateDir.deleteRecursively()
             Result.success()

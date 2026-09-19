@@ -72,8 +72,8 @@
     <string name="level_reached">Elérted a(z) %1$d. szintet</string>
 
     <!-- Onboarding: Welcome screen -->
-    <string name="welcome_headline_1">Ismerd a Zenéd,</string>
-    <string name="welcome_headline_2">Szeresd a Statisztikáid</string>
+    <string name="welcome_headline_1">Minden hallgatás,</string>
+    <string name="welcome_headline_2">egy kicsit több belőled</string>
     <string name="welcome_description">A Tempo automatikusan követi, mit hallgatsz, és gyönyörű betekintést nyújt a hallgatási szokásaidba.</string>
     <string name="welcome_get_started">Kezdés</string>
     <string name="welcome_skip">Kihagyás</string>
@@ -86,9 +86,7 @@
     <string name="how_it_works_step2_title">Egy értesítés jelenik meg</string>
     <string name="how_it_works_step2_subtitle">A Tempo csak a zenei információkat olvassa</string>
     <string name="how_it_works_step3_title">Minden statisztika helyben van mentve</string>
-    <string name="how_it_works_step3_subtitle">A telefonodon, sehol máshol</string>
     <string name="how_it_works_badge_apps">20+ alkalmazás</string>
-    <string name="how_it_works_badge_local">100% helyi</string>
     <string name="how_it_works_badge_auto">Automatikus követés</string>
     <string name="how_it_works_next">Tovább</string>
 
@@ -97,8 +95,6 @@
     <string name="privacy_subtitle">A magánélet nem funkció. Ez az alap.</string>
     <string name="privacy_local_title">100% Helyi Tárolás</string>
     <string name="privacy_local_desc">Minden adatod a telefonodon marad. Mindig.</string>
-    <string name="privacy_no_cloud_title">Nincsenek Szerverek, Nincs Felhő</string>
-    <string name="privacy_no_cloud_desc">Nincs háttérrendszerünk. Nulla adatot töltünk fel.</string>
     <string name="privacy_notif_title">Csak Zenei Értesítések</string>
     <string name="privacy_notif_desc">A Spotify-t, YouTube Music-ot, stb. olvassuk. Soha az üzeneteket.</string>
     <string name="privacy_open_source_title">Nyílt Forráskód</string>

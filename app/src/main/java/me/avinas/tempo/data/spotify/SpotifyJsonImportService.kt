@@ -22,6 +22,8 @@ import me.avinas.tempo.data.repository.ArtistLinkingService
 import me.avinas.tempo.data.repository.TrackResolver
 import okio.buffer
 import okio.source
+import java.io.FilterInputStream
+import java.io.IOException
 import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,6 +44,11 @@ class SpotifyJsonImportService @Inject constructor(
         private const val MAX_MS_PLAYED = 86_400_000L
         private const val MAX_STRING_LENGTH = 500
         private const val CANCELLATION_CHECK_INTERVAL = 100
+        // ponytail: flush + caps only; full streaming parse if this still OOMs on huge exports.
+        private const val FLUSH_BATCH_SIZE = 500
+        private const val MAX_FILES_PER_IMPORT = 50
+        private const val MAX_ERRORS = 20
+        private const val MAX_CACHE_SIZE = 50_000
         const val IMPORT_SOURCE = "com.spotify.music.import.json"
 
         // Plays shorter than this are treated as noise (loading errors, misclicks)
@@ -99,6 +106,10 @@ class SpotifyJsonImportService @Inject constructor(
         _importState.value = ImportState.Parsing("", 0, uris.size)
 
         val errors = mutableListOf<String>()
+        if (uris.size > MAX_FILES_PER_IMPORT) {
+            errors.add("Too many files selected (${uris.size}), importing first $MAX_FILES_PER_IMPORT")
+        }
+        val boundedUris = uris.take(MAX_FILES_PER_IMPORT)
         var filesProcessed = 0
         var totalEntries = 0
         var tracksImported = 0
@@ -112,32 +123,36 @@ class SpotifyJsonImportService @Inject constructor(
         // is reused in later files without re-querying the database.
         val trackCache = mutableMapOf<String, Long>()
 
-        for ((index, uri) in uris.withIndex()) {
+        for ((index, uri) in boundedUris.withIndex()) {
             coroutineContext.ensureActive()
 
             val fileName = getFileName(context, uri) ?: "file_${index + 1}"
-            _importState.value = ImportState.Parsing(fileName, index, uris.size)
+            _importState.value = ImportState.Parsing(fileName, index, boundedUris.size)
 
             try {
                 val fileSize = getFileSize(context, uri)
                 if (fileSize != null && fileSize > MAX_FILE_SIZE_BYTES) {
-                    errors.add("File too large (${fileSize / 1_048_576}MB): $fileName")
+                    addCappedError(errors, "File too large (${fileSize / 1_048_576}MB): $fileName")
                     continue
                 }
 
-                val parseResult = context.contentResolver.openInputStream(uri)?.use { stream ->
-                    parseJsonStream(stream, fileName)
+                // ponytail: byte cap enforced during read — OpenableColumns.SIZE is
+                // null/spoofable on some providers, so the pre-check above is advisory only.
+                val parseResult = context.contentResolver.openInputStream(uri)?.use { raw ->
+                    CappedInputStream(raw, MAX_FILE_SIZE_BYTES).use { capped ->
+                        parseJsonStream(capped, fileName)
+                    }
                 } ?: ParseResult(emptyList(), 0).also {
-                    errors.add("Could not open: $fileName")
+                    addCappedError(errors, "Could not open: $fileName")
                 }
 
                 if (parseResult.malformedCount > 0) {
-                    errors.add("Skipped ${parseResult.malformedCount} malformed entries in $fileName")
+                    addCappedError(errors, "Skipped ${parseResult.malformedCount} malformed entries in $fileName")
                 }
 
                 if (parseResult.entries.isEmpty() && parseResult.malformedCount == 0 &&
                     !errors.any { it.contains(fileName) }) {
-                    errors.add("No valid entries in: $fileName")
+                    addCappedError(errors, "No valid entries in: $fileName")
                     continue
                 }
 
@@ -168,7 +183,8 @@ class SpotifyJsonImportService @Inject constructor(
                 Log.i(TAG, "Processed ${parseResult.entries.size} entries from $fileName")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to parse $fileName", e)
-                errors.add("Failed to parse $fileName: ${e.message}")
+                // ponytail: no e.message — exception text can carry paths/SQL internals.
+                addCappedError(errors, "Failed to parse $fileName")
             }
         }
 
@@ -213,6 +229,18 @@ class SpotifyJsonImportService @Inject constructor(
         var duplicatesSkipped = 0
         var lowQualitySkipped = 0
 
+        suspend fun flush() {
+            if (pendingEvents.isEmpty()) return
+            val r = insertPendingBatch(pendingEvents)
+            eventsCreated += r.inserted
+            duplicatesSkipped += r.skipped
+            for ((trackId, entry) in pendingEnrichedMetadata) {
+                createEnrichedMetadata(trackId, entry)
+            }
+            pendingEvents.clear()
+            pendingEnrichedMetadata.clear()
+        }
+
         musicEntries.forEachIndexed { index, entry ->
             if (index % CANCELLATION_CHECK_INTERVAL == 0) {
                 coroutineContext.ensureActive()
@@ -224,51 +252,76 @@ class SpotifyJsonImportService @Inject constructor(
 
             try {
                 when (processEntry(entry, trackCache, pendingEvents, pendingEnrichedMetadata)) {
-                    ProcessResult.NewTrack -> { tracksImported++; eventsCreated++ }
-                    ProcessResult.ExistingTrack -> eventsCreated++
+                    ProcessResult.NewTrack -> tracksImported++
+                    ProcessResult.ExistingTrack -> {}
                     ProcessResult.Duplicate -> duplicatesSkipped++
                     ProcessResult.LowQuality -> lowQualitySkipped++
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to import: ${entry.trackName}", e)
-                errors.add("Failed: ${entry.trackName}")
+                // ponytail: track titles are PII — never into logcat or the errors list.
+                Log.e(TAG, "Failed to import entry", e)
+                addCappedError(errors, "Failed to import an entry")
             }
+
+            // ponytail: incremental flush bounds peak memory to one FLUSH_BATCH_SIZE
+            // instead of one whole file; event counts come from the batch result.
+            if (pendingEvents.size >= FLUSH_BATCH_SIZE) flush()
         }
 
-        if (pendingEvents.isNotEmpty()) {
-            try {
-                val insertResult = listeningEventDao.insertAllBatchedWithDedup(pendingEvents)
-                eventsCreated = insertResult.inserted
-                duplicatesSkipped += insertResult.skipped
-                Log.i(TAG, "Batch inserted ${insertResult.inserted} events, skipped ${insertResult.skipped} duplicates, replaced ${insertResult.replaced} lower-authority")
-            } catch (e: Exception) {
-                Log.e(TAG, "Batch insert failed, falling back to individual inserts", e)
-                eventsCreated = 0
-                for (event in pendingEvents) {
-                    try {
-                        val count = listeningEventDao.countEventsNearTimestamp(
-                            event.track_id,
-                            event.timestamp - ListeningEventDao.DUPLICATE_TOLERANCE_MS,
-                            event.timestamp + ListeningEventDao.DUPLICATE_TOLERANCE_MS
-                        )
-                        if (count == 0) {
-                            listeningEventDao.insert(event)
-                            eventsCreated++
-                        } else {
-                            duplicatesSkipped++
-                        }
-                    } catch (e2: Exception) {
-                        Log.e(TAG, "Failed to insert event for track ${event.track_id}", e2)
-                    }
-                }
-            }
-        }
-
-        for ((trackId, entry) in pendingEnrichedMetadata) {
-            createEnrichedMetadata(trackId, entry)
-        }
+        flush()
 
         return EntryProcessCounts(tracksImported, eventsCreated, duplicatesSkipped, lowQualitySkipped)
+    }
+
+    private data class FlushResult(val inserted: Int, val skipped: Int)
+
+    private suspend fun insertPendingBatch(pendingEvents: List<ListeningEvent>): FlushResult {
+        try {
+            val insertResult = listeningEventDao.insertAllBatchedWithDedup(pendingEvents)
+            Log.i(TAG, "Batch inserted ${insertResult.inserted} events, skipped ${insertResult.skipped} duplicates, replaced ${insertResult.replaced} lower-authority")
+            return FlushResult(insertResult.inserted, insertResult.skipped)
+        } catch (e: Exception) {
+            Log.e(TAG, "Batch insert failed, falling back to individual inserts", e)
+            var inserted = 0
+            var skipped = 0
+            for (event in pendingEvents) {
+                try {
+                    val count = listeningEventDao.countEventsNearTimestamp(
+                        event.track_id,
+                        event.timestamp - ListeningEventDao.DUPLICATE_TOLERANCE_MS,
+                        event.timestamp + ListeningEventDao.DUPLICATE_TOLERANCE_MS
+                    )
+                    if (count == 0) {
+                        listeningEventDao.insert(event)
+                        inserted++
+                    } else {
+                        skipped++
+                    }
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Failed to insert event for track ${event.track_id}", e2)
+                }
+            }
+            return FlushResult(inserted, skipped)
+        }
+    }
+
+    private fun addCappedError(errors: MutableList<String>, message: String) {
+        // ponytail: a hostile file can produce one error per entry — cap the list so it
+        // can't OOM the process or blow the WorkManager input-data limit downstream.
+        if (errors.size < MAX_ERRORS) errors.add(message)
+        else if (errors.size == MAX_ERRORS) errors.add("…and more (capped at $MAX_ERRORS)")
+    }
+
+    // ponytail: hard byte cap for providers whose OpenableColumns.SIZE is null/wrong.
+    private class CappedInputStream(stream: InputStream, private val maxBytes: Long) : FilterInputStream(stream) {
+        private var bytesRead = 0L
+        private fun count(n: Int) {
+            if (n <= 0) return
+            bytesRead += n
+            if (bytesRead > maxBytes) throw IOException("File exceeds ${maxBytes / 1_048_576}MB limit")
+        }
+        override fun read(): Int = super.read().also { if (it >= 0) count(1) }
+        override fun read(b: ByteArray, off: Int, len: Int): Int = super.read(b, off, len).also { count(it) }
     }
 
     private data class ParseResult(val entries: List<ParsedEntry>, val malformedCount: Int)
@@ -586,6 +639,9 @@ class SpotifyJsonImportService @Inject constructor(
             )
             trackId = resolution.trackId
             trackCache[cacheKey] = trackId
+            // ponytail: adversarial files with unique junk per row could grow this without
+            // bound; clearing only costs re-resolution, never correctness.
+            if (trackCache.size > MAX_CACHE_SIZE) trackCache.clear()
             isNewTrack = resolution.isNewTrack
 
             if (isNewTrack) {
@@ -661,7 +717,7 @@ class SpotifyJsonImportService @Inject constructor(
 
     private fun getFileSize(context: Context, uri: Uri): Long? {
         return try {
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
                     if (sizeIndex >= 0) cursor.getLong(sizeIndex) else null
@@ -675,7 +731,7 @@ class SpotifyJsonImportService @Inject constructor(
 
     private fun getFileName(context: Context, uri: Uri): String? {
         return try {
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                     if (nameIndex >= 0) cursor.getString(nameIndex) else null

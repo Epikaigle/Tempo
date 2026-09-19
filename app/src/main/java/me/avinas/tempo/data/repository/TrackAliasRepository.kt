@@ -11,7 +11,11 @@ import me.avinas.tempo.data.local.dao.TrackAliasDao
 import me.avinas.tempo.data.local.entities.ScrobbleArchive
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.local.entities.TrackAlias
+import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
 /**
@@ -33,7 +37,9 @@ open class TrackAliasRepository @Inject constructor(
     private val trackDao: TrackDao,
     private val scrobbleArchiveDao: ScrobbleArchiveDao,
     private val database: AppDatabase,
-    private val statsRepository: StatsRepository
+    private val statsRepository: StatsRepository,
+    private val artistLinkingService: ArtistLinkingService,
+    private val tracker: AnalyticsTracker
 ) {
     companion object {
         private const val TAG = "TrackAliasRepository"
@@ -51,6 +57,15 @@ open class TrackAliasRepository @Inject constructor(
      * Create a new alias mapping (originalTitle, originalArtist) -> targetTrackId.
      */
     suspend fun createAlias(targetTrackId: Long, originalTitle: String, originalArtist: String) {
+        createAliasInternal(targetTrackId, originalTitle, originalArtist)
+        tracker.track(FeatureUsed(TempoFeature.ALIAS_RENAME))
+    }
+
+    private suspend fun createAliasInternal(
+        targetTrackId: Long,
+        originalTitle: String,
+        originalArtist: String
+    ) {
         val alias = TrackAlias(
             targetTrackId = targetTrackId,
             originalTitle = originalTitle,
@@ -81,6 +96,12 @@ open class TrackAliasRepository @Inject constructor(
      * @return true if merge succeeded, false otherwise
      */
     open suspend fun mergeTracks(sourceTrackId: Long, targetTrackId: Long): Boolean {
+        val merged = mergeTracksInternal(sourceTrackId, targetTrackId)
+        if (merged) tracker.track(FeatureUsed(TempoFeature.TRACK_MERGE))
+        return merged
+    }
+
+    private suspend fun mergeTracksInternal(sourceTrackId: Long, targetTrackId: Long): Boolean {
         if (sourceTrackId == targetTrackId) {
             Log.w(TAG, "Cannot merge track into itself")
             return false
@@ -134,10 +155,33 @@ open class TrackAliasRepository @Inject constructor(
                 }
                 
                 // 3. Merge metadata from source into target (fill missing fields)
-                val updatedTarget = mergeTrackMetadata(sourceTrack, targetTrack)
+                var updatedTarget = mergeTrackMetadata(sourceTrack, targetTrack)
+                // A merge target whose artist is a structural placeholder label
+                // (e.g. the Takeout "Release" artifact) must not keep it — the
+                // surviving track would stay pooled under the bogus artist and
+                // stats would never recognize the real one. Adopt the source's
+                // real artist instead, then re-run the linking pipeline so
+                // artist junctions / primary_artist_id follow the fix.
+                val artistOverridden = ArtistParser.isPlaceholderArtistName(targetTrack.artist) &&
+                    !ArtistParser.isPlaceholderArtistName(sourceTrack.artist)
+                if (artistOverridden) {
+                    updatedTarget = updatedTarget.copy(artist = sourceTrack.artist)
+                }
                 if (updatedTarget != targetTrack) {
                     trackDao.update(updatedTarget)
                     Log.d(TAG, "Updated target track metadata")
+                }
+                if (artistOverridden) {
+                    try {
+                        artistLinkingService.linkArtistsForTrack(updatedTarget)
+                        Log.i(
+                            TAG,
+                            "Replaced placeholder artist '${targetTrack.artist}' with " +
+                                "'${sourceTrack.artist}' on merged track '${updatedTarget.title}'"
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to re-link merged track ${targetTrackId}", e)
+                    }
                 }
                 
                 // 4. Move listening history through the dedup pipeline.

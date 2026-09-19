@@ -5,12 +5,11 @@ import java.util.Calendar
 
 /**
  * Engine for generating smart, personalized daily challenges.
- * 
+ *
  * Challenges auto-calibrate based on the user's recent listening history
  * and have strict maximum limits to ensure they remain practical.
  */
 object ChallengeEngine {
-
     object Category {
         const val VOLUME = "VOLUME"
         const val DISCOVERY = "DISCOVERY"
@@ -35,11 +34,11 @@ object ChallengeEngine {
     private const val MAX_EXPLORATION_SONGS = 10
 
     // Fallback Defaults (New Users)
-    
+
     private const val DEFAULT_SONGS_EASY = 5
     private const val DEFAULT_SONGS_MEDIUM = 15
     private const val DEFAULT_SONGS_HARD = 25
-    
+
     private const val DEFAULT_MINS_EASY = 15
     private const val DEFAULT_MINS_MEDIUM = 45
     private const val DEFAULT_MINS_HARD = 90
@@ -52,7 +51,7 @@ object ChallengeEngine {
         val avgMinutesPerDay: Int,
         val avgUniqueArtistsPerDay: Int,
         val topGenres: List<String>,
-        val topArtists: List<String>
+        val topArtists: List<String>,
     )
 
     /**
@@ -60,9 +59,12 @@ object ChallengeEngine {
      * @param dateString YYYY-MM-DD
      * @param metrics The user's recent 7-day average metrics
      */
-    fun generateChallenges(dateString: String, metrics: UserHistoryMetrics?): List<DailyChallenge> {
+    fun generateChallenges(
+        dateString: String,
+        metrics: UserHistoryMetrics?,
+    ): List<DailyChallenge> {
         val challenges = mutableListOf<DailyChallenge>()
-        
+
         // Base metrics (use defaults if history is null/empty)
         val baseSongs = if (metrics != null && metrics.avgSongsPerDay > 0) metrics.avgSongsPerDay else DEFAULT_SONGS_MEDIUM
         val baseMins = if (metrics != null && metrics.avgMinutesPerDay > 0) metrics.avgMinutesPerDay else DEFAULT_MINS_MEDIUM
@@ -76,11 +78,11 @@ object ChallengeEngine {
         val easyMinsTarget = calibrate(baseMins, 0.8f, MAX_MINUTES_PER_DAY).coerceAtLeast(10)
         val medMinsTarget = calibrate(baseMins, 1.2f, MAX_MINUTES_PER_DAY).coerceAtLeast(30)
         val hardMinsTarget = calibrate(baseMins, 1.5f, MAX_MINUTES_PER_DAY).coerceAtLeast(60)
-        
+
         val medArtistsTarget = calibrate(baseArtists, 1.2f, MAX_UNIQUE_ARTISTS).coerceAtLeast(5)
 
         // Generate 1 EASY, 2 MEDIUM, 1 HARD (4 challenges total)
-        
+
         // EASY Challenge
         // Alternate between songs and minutes based on day of year
         val dayOfYear = getDayOfYear(dateString)
@@ -136,134 +138,163 @@ object ChallengeEngine {
     /**
      * Applies a multiplier to a base value, and safely caps it.
      */
-    private fun calibrate(base: Int, multiplier: Float, maxCap: Int): Int {
-        return (base * multiplier).toInt().coerceAtMost(maxCap)
-    }
+    private fun calibrate(
+        base: Int,
+        multiplier: Float,
+        maxCap: Int,
+    ): Int = (base * multiplier).toInt().coerceAtMost(maxCap)
 
-    private fun getDayOfYear(dateString: String): Int {
-        return try {
+    private fun getDayOfYear(dateString: String): Int =
+        try {
             val parts = dateString.split("-")
             if (parts.size == 3) {
                 val cal = Calendar.getInstance()
                 cal.set(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt())
                 cal.get(Calendar.DAY_OF_YEAR)
-            } else 1
-        } catch (e: Exception) { 1 }
-    }
+            } else {
+                1
+            }
+        } catch (e: Exception) {
+            1
+        }
 
     // Challenge Factories
 
-    private fun getReward(difficulty: String): Int = when (difficulty) {
-        Difficulty.EASY -> listOf(15, 20, 25).random()
-        Difficulty.MEDIUM -> listOf(30, 40, 50).random()
-        Difficulty.HARD -> listOf(60, 80, 100).random()
-        else -> 20
-    }
+    private fun getReward(difficulty: String): Int =
+        when (difficulty) {
+            Difficulty.EASY -> listOf(15, 20, 25).random()
+            Difficulty.MEDIUM -> listOf(30, 40, 50).random()
+            Difficulty.HARD -> listOf(60, 80, 100).random()
+            else -> 20
+        }
 
-    private fun createVolumeSongsChallenge(date: String, difficulty: String, target: Int): DailyChallenge {
-        return DailyChallenge(
+    private fun createVolumeSongsChallenge(
+        date: String,
+        difficulty: String,
+        target: Int,
+    ): DailyChallenge =
+        DailyChallenge(
             challengeId = "volume_songs_$difficulty",
             date = date,
-            title = "🎶 $target-Song Sprint",
+            title = "$target-Song Sprint",
             description = "Listen to $target songs today.",
             xpReward = getReward(difficulty),
             targetValue = target,
             category = Category.VOLUME,
-            difficulty = difficulty
+            difficulty = difficulty,
         )
-    }
 
-    private fun createVolumeMinsChallenge(date: String, difficulty: String, target: Int): DailyChallenge {
-        return DailyChallenge(
+    private fun createVolumeMinsChallenge(
+        date: String,
+        difficulty: String,
+        target: Int,
+    ): DailyChallenge =
+        DailyChallenge(
             challengeId = "volume_mins_$difficulty",
             date = date,
-            title = "🎧 Audio Immersion",
+            title = "Audio Immersion",
             description = "Listen for a total of $target minutes today.",
             xpReward = getReward(difficulty),
             targetValue = target,
             category = Category.VOLUME,
-            difficulty = difficulty
+            difficulty = difficulty,
         )
-    }
 
-    private fun createVarietyArtistsChallenge(date: String, difficulty: String, target: Int): DailyChallenge {
-        return DailyChallenge(
+    private fun createVarietyArtistsChallenge(
+        date: String,
+        difficulty: String,
+        target: Int,
+    ): DailyChallenge =
+        DailyChallenge(
             challengeId = "variety_artists_$difficulty",
             date = date,
-            title = "🌍 Broad Horizons",
+            title = "Broad Horizons",
             description = "Listen to $target different artists today.",
             xpReward = getReward(difficulty),
             targetValue = target,
             category = Category.VARIETY,
-            difficulty = difficulty
+            difficulty = difficulty,
         )
-    }
 
-    private fun createDiscoveryArtistsChallenge(date: String, difficulty: String, target: Int): DailyChallenge {
-        return DailyChallenge(
+    private fun createDiscoveryArtistsChallenge(
+        date: String,
+        difficulty: String,
+        target: Int,
+    ): DailyChallenge =
+        DailyChallenge(
             challengeId = "discovery_artists_$difficulty",
             date = date,
-            title = "🔭 Talent Scout",
+            title = "Talent Scout",
             description = "Discover and listen to $target new artists.",
             xpReward = getReward(difficulty),
             targetValue = target,
             category = Category.DISCOVERY,
-            difficulty = difficulty
+            difficulty = difficulty,
         )
-    }
 
-    private fun createDiscoveryGenresChallenge(date: String, difficulty: String, target: Int): DailyChallenge {
-        return DailyChallenge(
+    private fun createDiscoveryGenresChallenge(
+        date: String,
+        difficulty: String,
+        target: Int,
+    ): DailyChallenge =
+        DailyChallenge(
             challengeId = "discovery_genres_$difficulty",
             date = date,
-            title = "🎵 Sound Explorer",
+            title = "Sound Explorer",
             description = "Explore $target different genres.",
             xpReward = getReward(difficulty),
             targetValue = target,
             category = Category.DISCOVERY,
-            difficulty = difficulty
+            difficulty = difficulty,
         )
-    }
 
-    private fun createExplorationArtistChallenge(date: String, difficulty: String, target: Int, artist: String): DailyChallenge {
-        return DailyChallenge(
+    private fun createExplorationArtistChallenge(
+        date: String,
+        difficulty: String,
+        target: Int,
+        artist: String,
+    ): DailyChallenge =
+        DailyChallenge(
             challengeId = "explore_artist_${artist.hashCode()}",
             date = date,
-            title = "⭐ Deep Dive: $artist",
+            title = "Deep Dive: $artist",
             description = "Listen to $target songs by $artist.",
             xpReward = getReward(difficulty),
             targetValue = target,
             category = Category.EXPLORATION,
             difficulty = difficulty,
-            targetMetadata = artist
+            targetMetadata = artist,
         )
-    }
 
-    private fun createExplorationGenreChallenge(date: String, difficulty: String, target: Int, genre: String): DailyChallenge {
+    private fun createExplorationGenreChallenge(
+        date: String,
+        difficulty: String,
+        target: Int,
+        genre: String,
+    ): DailyChallenge {
         val displayGenre = genre.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
         return DailyChallenge(
             challengeId = "explore_genre_${genre.hashCode()}",
             date = date,
-            title = "🎸 Genre Focus: $displayGenre",
+            title = "Genre Focus: $displayGenre",
             description = "Vibe out to $target $displayGenre songs.",
             xpReward = getReward(difficulty),
             targetValue = target,
             category = Category.EXPLORATION,
             difficulty = difficulty,
-            targetMetadata = genre
+            targetMetadata = genre,
         )
     }
 
-    private fun createTimeEarlyBirdChallenge(date: String): DailyChallenge {
-        return DailyChallenge(
+    private fun createTimeEarlyBirdChallenge(date: String): DailyChallenge =
+        DailyChallenge(
             challengeId = "time_early_bird",
             date = date,
-            title = "🌅 Early Bird",
+            title = "Early Bird",
             description = "Listen to 5 songs between 5 AM and 9 AM.",
             xpReward = getReward(Difficulty.MEDIUM),
             targetValue = 5,
             category = Category.TIME,
-            difficulty = Difficulty.MEDIUM
+            difficulty = Difficulty.MEDIUM,
         )
-    }
 }

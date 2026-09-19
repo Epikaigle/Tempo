@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  German translations for the data-transparency copy.
+
+  Carries the translations for both values/strings_analytics.xml and
+  values/strings_diagnostics.xml, plus the four privacy strings that were removed from
+  values-de/strings.xml rather than left stating something untrue.
+-->
+<resources>
+
+    <!-- Consent notice and Settings toggle -->
+    <string name="analytics_disclosure_title">Anonyme App-Gesundheitsdaten</string>
+    <string name="analytics_disclosure_body">Tempo sendet anonyme App-Gesundheitsdaten – Abstürze, Fehler und welche Funktionen genutzt werden. Kein Konto, keine Kennungen und niemals dein Hörverlauf.</string>
+    <string name="analytics_disclosure_settings_hint">Du kannst das jederzeit unter Einstellungen → Deine Daten ändern.</string>
+    <string name="analytics_disclosure_turn_off">Ausschalten</string>
+    <string name="analytics_disclosure_got_it">Verstanden</string>
+
+    <string name="settings_analytics_toggle">Anonyme App-Gesundheitsdaten</string>
+    <string name="settings_analytics_toggle_desc">Anonyme Absturz-, Fehler- und Nutzungsdaten teilen. Kein Konto, keine Kennungen, niemals dein Hörverlauf.</string>
+    <string name="settings_what_we_collect">Was wir erfassen</string>
+    <string name="settings_what_we_collect_desc">Die genaue Liste der anonymisierten Ereignisse, die Tempo sendet</string>
+
+    <!-- What we collect screen -->
+    <string name="what_we_collect_title">Was wir erfassen</string>
+    <string name="what_we_collect_intro">Dies ist die vollständige Liste dessen, was Tempo sendet. Alles ist anonym: kein Konto, keine Kennungen und niemals dein Hörverlauf.</string>
+    <string name="what_we_collect_properties">Wird mit jedem Ereignis gesendet</string>
+    <string name="what_we_collect_footer">Nichts wird erfasst, bevor dieser Hinweis angezeigt wurde, und du kannst alles jederzeit unter Einstellungen → Deine Daten ausschalten. Aus dem Quellcode erstellte Versionen senden überhaupt nichts.</string>
+
+    <!-- Diagnostics report -->
+    <string name="settings_diagnostics">Diagnosebericht</string>
+    <string name="settings_diagnostics_desc">Einen Bericht für eine Fehlermeldung erstellen</string>
+    <string name="diagnostics_title">Diagnosebericht</string>
+    <string name="diagnostics_intro">Eine Übersicht darüber, wie Tempo auf diesem Gerät läuft – Versionen, Bibliothekszahlen, Zustand der Erkennung und Hintergrundarbeit. Nichts wird hochgeladen: Der Bericht entsteht hier und verlässt dein Telefon nur, wenn du ihn teilst.</string>
+    <string name="diagnostics_share">Bericht teilen</string>
+    <string name="diagnostics_refresh">Aktualisieren</string>
+    <string name="diagnostics_gathering">Wird erfasst…</string>
+    <string name="diagnostics_failed">Bericht konnte nicht erstellt werden.</string>
+    <string name="diagnostics_share_subject">Tempo-Diagnosebericht</string>
+
+    <!-- Onboarding privacy strings, restored with accurate wording -->
+    <string name="privacy_no_cloud_title">Keine Tempo-Server</string>
+    <string name="privacy_no_cloud_desc">Wir betreiben kein Backend und haben kein Konto für dich. Das Einzige, was dein Telefon verlässt, sind anonyme App-Gesundheitsdaten, die du jederzeit in den Einstellungen ausschalten kannst.</string>
+    <string name="how_it_works_badge_local">Lokal zuerst</string>
+    <string name="how_it_works_step3_subtitle">Dein Hörverlauf bleibt hier</string>
+
+</resources>

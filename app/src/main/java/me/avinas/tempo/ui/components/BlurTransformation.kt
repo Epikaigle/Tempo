@@ -44,10 +44,13 @@ class BlurTransformation(private val radiusPx: Float) : Transformation() {
             filterPaint
         )
 
-        // Draw the tiny bitmap back up to the original size — the bilinear upscale
-        // produces the soft, blurred look. Reuse the input when it is mutable so we
-        // don't allocate an extra full-size bitmap.
-        val target = if (input.isMutable) input else input.copy(Bitmap.Config.ARGB_8888, true)
+        // Draw the tiny bitmap back up to a NEW bitmap at the original size —
+        // the bilinear upscale produces the soft, blurred look. Never mutate
+        // or recycle `input`: Coil may pool/share it, so touching it corrupts
+        // other requests and crashes on draw with "trying to use a recycled
+        // bitmap" (DisplayListCanvas.throwIfCannotDraw via BitmapPainter).
+        // Coil owns the input's lifecycle; only `small` is ours to recycle.
+        val target = Bitmap.createBitmap(input.width, input.height, Bitmap.Config.ARGB_8888)
         Canvas(target).drawBitmap(
             small,
             Rect(0, 0, smallW, smallH),
@@ -56,9 +59,6 @@ class BlurTransformation(private val radiusPx: Float) : Transformation() {
         )
 
         small.recycle()
-        if (target !== input) {
-            input.recycle()
-        }
         return target
     }
 }

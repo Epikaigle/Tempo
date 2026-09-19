@@ -2,6 +2,25 @@
 
 All notable changes to Tempo are documented in this file.
 
+## [Unreleased]
+
+### Added
+- Anonymous app-health statistics, so crashes and broken features can actually be found and fixed. They cover crashes, errors, which screens and features are used, and whether background tracking is alive. Counts are sent as ranges rather than exact figures, and there is no account, no device identifier, and never any track, artist or listening history. On by default, off in one tap at **Settings → Your Data**, and completely inert in any build compiled from source.
+- **Settings → Your Data → What we collect**, listing every event Tempo can send and the exact data attached to each one.
+- **Settings → Your Data → Diagnostics report**, a user-initiated summary of how Tempo is running on your device — versions, library counts, tracking health and background work. It is produced on the device and only leaves it if you choose to share it, which is why it can be far more detailed than the anonymous statistics and why it is the most useful thing to attach to a bug report.
+
+### Changed
+- The privacy policy now describes app-health reporting in full, including that a coarse country/region is derived from the request IP, and that the app never sends an identifier of any kind.
+
+### Fixed
+- YouTube Music Takeout imports mis-reading the newer watch-history layout: the first subtitle — the release link literally named "Release" — was stored as the artist for hundreds of songs (making "Release" a top-3 artist), albums were lost ("unknown"), and plays split across duplicate track rows so all-time counts stayed wrong. Artists and albums are now resolved by link role (channel URLs vs. playlist/release URLs) with a `details` fallback, and placeholder labels ("Release", "Song", "Playlist", etc.) can never be stored as an artist.
+- Repairs for installs already affected by the "Release" artifact: re-importing the same Takeout ZIP now detects those rows, fixes their artist/album in place (or merges them into the correct-artist track row), re-queues them for album/artwork/genre enrichment, and reports the count as "Tracks repaired" in the import summary. Already-imported plays are deduplicated by content fingerprint, so nothing is double-counted.
+- Split Artist silently doing nothing when the only group's default target name resolved to the source artist itself: the split now fails with a clear message instead of reporting a success with zero moves, and the source artist's name is no longer pre-filled as the move target.
+- Manual song merges keeping the bogus artist when merging into a placeholder-artist row (e.g. the "Release" copy): the surviving track now adopts the source track's real artist and is re-linked through the artist pipeline so stats, details, and junction rows all follow.
+- Albums showing no cover art in rankings, artist pages and album search even though their songs had artwork. The album-grouped stats queries read the art column without an aggregate, so SQLite resolved it from an arbitrary song in the group — an album whose first-scanned song had no art reported none, and an album whose first-scanned song had only local art hid the richer online cover. Artwork is now aggregated across the album, preferring the enriched URL over the on-device fallback.
+- Album details showing a blank cover while its own track list showed art, for albums that were never enriched at album level (imports, Takeout, desktop scrobbles). The header now falls back to a cover from the album's songs, preferring an online URL over a local file.
+- Cover art extraction blocking the UI thread on every new track: the bitmap downscale, JPEG encode and file write for the local fallback ran inline in the notification and MediaSession callbacks, which could stutter or ANR when skipping tracks quickly. That work now runs off the main thread.
+
 ## [4.8.7] - 2026-09-04
 
 ### Added

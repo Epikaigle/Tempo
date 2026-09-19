@@ -42,6 +42,11 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 !gradle/wrapper/gradle-wrapper.properties
 
+# R8 mapping files archived by the archiveReleaseMapping task. These deobfuscate release
+# crash reports, so they must never be published — keep them somewhere durable locally
+# (and out of this repo), or release stack traces become unreadable.
+/mappings/
+
 # MacOS / Windows OS files
 .DS_Store
 Thumbs.db
@@ -66,3 +71,5 @@ desktop/src-tauri/target/
 desktop/Tempo Desktop/
 browser-extension/dist/
 
+# Python bytecode from .github/scripts
+__pycache__/

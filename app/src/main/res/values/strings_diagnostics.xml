@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copy for the user-initiated diagnostics report. Kept separate from strings_analytics.xml
+  because this feature never uploads anything: the user generates the report and decides
+  whether to share it.
+-->
+<resources>
+
+    <string name="settings_diagnostics">Diagnostics report</string>
+    <string name="settings_diagnostics_desc">Generate a report to attach to a bug report</string>
+
+    <string name="diagnostics_title">Diagnostics report</string>
+    <string name="diagnostics_intro">A summary of how Tempo is running on this device — versions, library counts, tracking health and background work. Nothing is uploaded: it is generated here and only leaves your phone if you share it.</string>
+    <string name="diagnostics_share">Share report</string>
+    <string name="diagnostics_refresh">Refresh</string>
+    <string name="diagnostics_gathering">Gathering…</string>
+    <string name="diagnostics_failed">Could not build the report.</string>
+    <string name="diagnostics_share_subject">Tempo diagnostics report</string>
+
+</resources>

@@ -985,16 +985,17 @@ class RoomStatsRepository @Inject constructor(
         timeRange: TimeRange,
         sortBy: SortBy,
         page: Int,
-        pageSize: Int
+        pageSize: Int,
+        withLeeway: Boolean
     ): PaginatedResult<TopAlbum> {
         // Get user content filtering preferences
         val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
         val filterPodcasts = prefs.filterPodcasts
         val filterAudiobooks = prefs.filterAudiobooks
-        val key = "top_albums_${timeRange.name}_${sortBy.name}_${page}_${pageSize}_pod${if (filterPodcasts) 1 else 0}_audio${if (filterAudiobooks) 1 else 0}"
+        val key = "top_albums_${timeRange.name}_${sortBy.name}_${page}_${pageSize}_pod${if (filterPodcasts) 1 else 0}_audio${if (filterAudiobooks) 1 else 0}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
-            val startTime = timeRange.getStartTimestamp()
-            val endTime = timeRange.getEndTimestamp()
+            val startTime = timeRange.getStartTimestamp(withLeeway = withLeeway)
+            val endTime = timeRange.getEndTimestamp(withLeeway = withLeeway)
             val offset = page * pageSize
 
             val items = when (sortBy) {
@@ -1075,16 +1076,17 @@ class RoomStatsRepository @Inject constructor(
         timeRange: TimeRange,
         sortBy: SortBy,
         query: String,
-        limit: Int
+        limit: Int,
+        withLeeway: Boolean
     ): List<TopTrack> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return emptyList()
 
         val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
-        val key = "search_tracks_${timeRange.name}_${sortBy.name}_${trimmed.lowercase()}_${limit}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}"
+        val key = "search_tracks_${timeRange.name}_${sortBy.name}_${trimmed.lowercase()}_${limit}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
-            val startTime = timeRange.getStartTimestamp()
-            val endTime = timeRange.getEndTimestamp()
+            val startTime = timeRange.getStartTimestamp(withLeeway = withLeeway)
+            val endTime = timeRange.getEndTimestamp(withLeeway = withLeeway)
             val rows = when (sortBy) {
                 SortBy.PLAY_COUNT -> statsDao.searchTopTracksByPlayCount(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
                 SortBy.TOTAL_TIME -> statsDao.searchTopTracksByTime(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
@@ -1108,16 +1110,17 @@ class RoomStatsRepository @Inject constructor(
         timeRange: TimeRange,
         sortBy: SortBy,
         query: String,
-        limit: Int
+        limit: Int,
+        withLeeway: Boolean
     ): List<TopArtist> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return emptyList()
 
         val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
-        val key = "search_artists_${timeRange.name}_${sortBy.name}_${trimmed.lowercase()}_${limit}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}"
+        val key = "search_artists_${timeRange.name}_${sortBy.name}_${trimmed.lowercase()}_${limit}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
-            val startTime = timeRange.getStartTimestamp()
-            val endTime = timeRange.getEndTimestamp()
+            val startTime = timeRange.getStartTimestamp(withLeeway = withLeeway)
+            val endTime = timeRange.getEndTimestamp(withLeeway = withLeeway)
 
             // Bounded scan: top 1000 raw artist strings by play count
             val rawStats = statsDao.getAllArtistStatsRawFiltered(
@@ -1145,16 +1148,17 @@ class RoomStatsRepository @Inject constructor(
         timeRange: TimeRange,
         sortBy: SortBy,
         query: String,
-        limit: Int
+        limit: Int,
+        withLeeway: Boolean
     ): List<TopAlbum> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return emptyList()
 
         val prefs = userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities.UserPreferences()
-        val key = "search_albums_${timeRange.name}_${sortBy.name}_${trimmed.lowercase()}_${limit}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}"
+        val key = "search_albums_${timeRange.name}_${sortBy.name}_${trimmed.lowercase()}_${limit}_pod${if (prefs.filterPodcasts) 1 else 0}_audio${if (prefs.filterAudiobooks) 1 else 0}_leeway${if (withLeeway) 1 else 0}"
         return getCached(key) {
-            val startTime = timeRange.getStartTimestamp()
-            val endTime = timeRange.getEndTimestamp()
+            val startTime = timeRange.getStartTimestamp(withLeeway = withLeeway)
+            val endTime = timeRange.getEndTimestamp(withLeeway = withLeeway)
             val rows = when (sortBy) {
                 SortBy.PLAY_COUNT -> statsDao.searchTopAlbumsByPlayCount(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
                 SortBy.TOTAL_TIME -> statsDao.searchTopAlbumsByTime(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
@@ -2191,21 +2195,33 @@ class RoomStatsRepository @Inject constructor(
             val album = albumDao.getAlbumById(albumId) ?: throw NoSuchElementException("Album not found")
             val artist = artistDao.getArtistById(album.artistId) ?: throw NoSuchElementException("Artist not found")
             
-            val playCount = statsDao.getAlbumPlayCount(album.title, artist.name)
-            val totalTime = statsDao.getAlbumTotalTime(album.title, artist.name)
+            val playCount = statsDao.getAlbumPlayCount(album.title, artist.name, artist.id)
+            val totalTime = statsDao.getAlbumTotalTime(album.title, artist.name, artist.id)
             
-            val rawTracks = statsDao.getTracksForAlbumWithStats(album.title, artist.name)
+            val rawTracks = statsDao.getTracksForAlbumWithStats(album.title, artist.name, artist.id)
             val tracks = rawTracks.map { 
                 TrackWithStats(it.track, it.play_count, it.total_time_ms) 
             }
-            
+
+            // albums.artwork_url is only filled by album-level enrichment/imports, so an
+            // album can have no artwork while its tracks do. Fall back to a track's art
+            // (remote preferred over a local file backup), matching the stats queries.
+            val albumWithArt =
+                if (album.artworkUrl.isNullOrBlank()) {
+                    val trackArt = tracks.mapNotNull { it.track.albumArtUrl?.takeIf(String::isNotBlank) }
+                    val fallback = trackArt.firstOrNull { it.startsWith("http") } ?: trackArt.firstOrNull()
+                    if (fallback != null) album.copy(artworkUrl = fallback) else album
+                } else {
+                    album
+                }
+
             val completionRate = if (tracks.isNotEmpty()) {
                 val playedTracks = tracks.count { it.playCount > 0 }
                 (playedTracks.toDouble() / tracks.size) * 100
             } else 0.0
 
             AlbumDetails(
-                album = album,
+                album = albumWithArt,
                 artistName = artist.name,
                 totalPlayCount = playCount,
                 totalTimeMs = totalTime,
@@ -2219,9 +2235,9 @@ class RoomStatsRepository @Inject constructor(
         val album = albumDao.getAlbumById(albumId) ?: return
         val artist = artistDao.getArtistById(album.artistId) ?: return
         val track = trackDao.getTrackById(trackId) ?: return
-        // Only same-artist tracks surface in album stats (matched on exact artist name),
-        // so reassigning a different-artist track would be invisible — skip it.
-        if (track.artist == artist.name) {
+        // Feat. tracks keep the album artist as primary_artist_id even though their
+        // raw artist string differs ("Caskets feat. X"), so match on that first.
+        if (track.primaryArtistId == artist.id || track.artist.equals(artist.name, ignoreCase = true)) {
             trackDao.setTrackAlbum(trackId, album.title)
             invalidateCache()
             notifyMetadataUpdate()
@@ -2240,7 +2256,7 @@ class RoomStatsRepository @Inject constructor(
     ): List<Track> {
         val album = albumDao.getAlbumById(albumId) ?: return emptyList()
         val artist = artistDao.getArtistById(album.artistId) ?: return emptyList()
-        return trackDao.getCandidateTracksForAlbum(artist.name, album.title, query.trim())
+        return trackDao.getCandidateTracksForAlbum(artist.name, album.title, query.trim(), artist.id)
     }
 
     override suspend fun getTrackListeningHistory(trackId: Long, timeRange: TimeRange): List<DailyListening> {

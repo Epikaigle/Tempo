@@ -1,13 +1,14 @@
 package me.avinas.tempo.data.enrichment
 
 import android.util.Log
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import me.avinas.tempo.BuildConfig
 import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.remote.lastfm.LastFmApi
 import me.avinas.tempo.utils.ArtistParser
-import kotlinx.coroutines.delay
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -15,520 +16,615 @@ import javax.inject.Singleton
  * Enriches track metadata with Last.fm artist tags, genres, and artist image fallbacks.
  */
 @Singleton
-class LastFmEnrichmentService @Inject constructor(
-    private val lastFmApi: LastFmApi,
-    private val enrichedMetadataDao: EnrichedMetadataDao
-) {
-    companion object {
-        private const val TAG = "LastFmEnrichment"
-        private const val RATE_LIMIT_DELAY_MS = 200L
-        
-        // Minimum tag count to consider a tag relevant
-        private const val MIN_TAG_COUNT = 10
-        
-        // Maximum tags to store
-        private const val MAX_TAGS = 10
-    }
+class LastFmEnrichmentService
+    @Inject
+    constructor(
+        private val lastFmApi: LastFmApi,
+        private val enrichedMetadataDao: EnrichedMetadataDao,
+    ) {
+        companion object {
+            private const val TAG = "LastFmEnrichment"
+            private const val RATE_LIMIT_DELAY_MS = 200L
 
-    /**
-     * Result of Last.fm enrichment attempt.
-     */
-    sealed class LastFmResult {
-        data class Success(
-            val tags: List<String>,
-            val genres: List<String>,
-            val albumArtUrl: String? = null,
-            val albumTitle: String? = null,
-            val musicbrainzId: String? = null
-        ) : LastFmResult()
-        
-        object NotConfigured : LastFmResult()
-        object TrackNotFound : LastFmResult()
-        object AlreadyHasData : LastFmResult()
-        data class Error(val message: String) : LastFmResult()
-    }
+            // Minimum tag count to consider a tag relevant
+            private const val MIN_TAG_COUNT = 10
 
-    /**
-     * Check if Last.fm enrichment is available.
-     * Returns true if API key is configured.
-     */
-    fun isAvailable(): Boolean {
-        return getApiKey().isNotBlank()
-    }
-    
-    private fun getApiKey(): String {
-        return try {
-            BuildConfig.LASTFM_API_KEY
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    /**
-     * Supplement existing metadata with Last.fm ARTIST-LEVEL tag/genre data.
-     * 
-     * IMPORTANT: This method fetches ARTIST genres only - not track-level genres.
-     * This is intentional because:
-     * 1. Most music APIs don't reliably provide track-level genre data
-     * 2. iTunes is the exception and handles track-level genres
-     * 3. Artist genres are more reliable and consistent
-     * 
-     * @param track The track to enrich
-     * @param existingMetadata The existing metadata to supplement
-     * @return LastFmResult indicating what was added
-     */
-    suspend fun supplementMetadata(
-        track: Track,
-        existingMetadata: EnrichedMetadata
-    ): LastFmResult {
-        if (!isAvailable()) {
-            Log.d(TAG, "Last.fm API key not configured")
-            return LastFmResult.NotConfigured
+            // Maximum tags to store
+            private const val MAX_TAGS = 10
         }
 
-        // Skip if we already have good genre/tag data
-        if (existingMetadata.genres.isNotEmpty() && existingMetadata.tags.isNotEmpty()) {
-            Log.d(TAG, "Track ${track.id} already has genre/tag data")
-            return LastFmResult.AlreadyHasData
+        /**
+         * Result of Last.fm enrichment attempt.
+         */
+        sealed class LastFmResult {
+            data class Success(
+                val tags: List<String>,
+                val genres: List<String>,
+                val albumArtUrl: String? = null,
+                val albumTitle: String? = null,
+                val musicbrainzId: String? = null,
+            ) : LastFmResult()
+
+            object NotConfigured : LastFmResult()
+
+            object TrackNotFound : LastFmResult()
+
+            object AlreadyHasData : LastFmResult()
+
+            data class Error(
+                val message: String,
+            ) : LastFmResult()
         }
 
-        Log.d(TAG, "Fetching ARTIST-LEVEL genres for track ${track.id}: '${track.title}' by '${track.artist}'")
+        /**
+         * Check if Last.fm enrichment is available.
+         * Returns true if API key is configured.
+         */
+        fun isAvailable(): Boolean = getApiKey().isNotBlank()
 
-        // Skip if artist is unknown
-        if (ArtistParser.isUnknownArtist(track.artist)) {
-            Log.d(TAG, "Skipping Last.fm for track ${track.id}: artist is unknown")
-            return LastFmResult.Error("Artist unknown")
+        private fun getApiKey(): String =
+            try {
+                BuildConfig.LASTFM_API_KEY
+            } catch (e: Exception) {
+                ""
+            }
+
+        /**
+         * Supplement existing metadata with Last.fm ARTIST-LEVEL tag/genre data.
+         *
+         * IMPORTANT: This method fetches ARTIST genres only - not track-level genres.
+         * This is intentional because:
+         * 1. Most music APIs don't reliably provide track-level genre data
+         * 2. iTunes is the exception and handles track-level genres
+         * 3. Artist genres are more reliable and consistent
+         *
+         * @param track The track to enrich
+         * @param existingMetadata The existing metadata to supplement
+         * @return LastFmResult indicating what was added
+         */
+        suspend fun supplementMetadata(
+            track: Track,
+            existingMetadata: EnrichedMetadata,
+        ): LastFmResult {
+            if (!isAvailable()) {
+                Log.d(TAG, "Last.fm API key not configured")
+                return LastFmResult.NotConfigured
+            }
+
+            // Skip if we already have good genre/tag data
+            if (existingMetadata.genres.isNotEmpty() && existingMetadata.tags.isNotEmpty()) {
+                Log.d(TAG, "Track ${track.id} already has genre/tag data")
+                return LastFmResult.AlreadyHasData
+            }
+
+            Log.d(TAG, "Fetching ARTIST-LEVEL genres for track ${track.id}: '${track.title}' by '${track.artist}'")
+
+            // Skip if artist is unknown
+            if (ArtistParser.isUnknownArtist(track.artist)) {
+                Log.d(TAG, "Skipping Last.fm for track ${track.id}: artist is unknown")
+                return LastFmResult.Error("Artist unknown")
+            }
+
+            val apiKey = getApiKey()
+
+            try {
+                // Directly fetch artist tags - skip track-level lookup
+                // Track-level genre data is unreliable; use iTunes for that instead
+                val artistResult = fetchArtistTags(track.artist, apiKey)
+
+                if (artistResult is LastFmResult.Success) {
+                    updateMetadataWithLastFm(track.id, existingMetadata, artistResult)
+                    return artistResult
+                }
+
+                return LastFmResult.TrackNotFound
+            } catch (e: CancellationException) {
+                // Same rule as the import service: a broad catch must not turn a cancelled coroutine
+                // into an ordinary error result, or the caller keeps working after cancellation.
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching Last.fm artist data", e)
+                return LastFmResult.Error(e.message ?: "Unknown error")
+            }
         }
 
-        val apiKey = getApiKey()
+        /**
+         * Fetch track info from Last.fm.
+         */
+        private suspend fun fetchTrackInfo(
+            title: String,
+            artist: String,
+            apiKey: String,
+        ): LastFmResult {
+            try {
+                val response =
+                    lastFmApi.getTrackInfo(
+                        track = title,
+                        artist = artist,
+                        apiKey = apiKey,
+                    )
 
-        try {
-            // Directly fetch artist tags - skip track-level lookup
-            // Track-level genre data is unreliable; use iTunes for that instead
-            val artistResult = fetchArtistTags(track.artist, apiKey)
-            
-            if (artistResult is LastFmResult.Success) {
-                updateMetadataWithLastFm(track.id, existingMetadata, artistResult)
-                return artistResult
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Last.fm track info failed: ${response.code()}")
+                    return LastFmResult.Error("API error: ${response.code()}")
+                }
+
+                val trackResponse = response.body()
+
+                // Check for error in response body
+                if (trackResponse?.error != null) {
+                    Log.d(TAG, "Last.fm error: ${trackResponse.message}")
+                    return LastFmResult.TrackNotFound
+                }
+
+                val trackInfo = trackResponse?.track
+                if (trackInfo == null) {
+                    Log.d(TAG, "No track info returned for '$title' by '$artist'")
+                    return LastFmResult.TrackNotFound
+                }
+
+                // Extract tags and classify into genres vs general tags
+                val allTags = trackInfo.getTagNames()
+                val (genres, tags) = classifyTags(allTags)
+
+                // Get album art if available
+                val albumArtUrl = trackInfo.album?.getBestImageUrl()
+                val albumTitle = trackInfo.album?.title
+
+                Log.d(TAG, "Found Last.fm data for '$title': ${genres.size} genres, ${tags.size} tags")
+
+                return LastFmResult.Success(
+                    tags = tags.take(MAX_TAGS),
+                    genres = genres.take(5),
+                    albumArtUrl = albumArtUrl,
+                    albumTitle = albumTitle,
+                    musicbrainzId = trackInfo.mbid,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching track info", e)
+                return LastFmResult.Error(e.message ?: "Unknown error")
+            }
+        }
+
+        /**
+         * Fetch artist tags from Last.fm as a fallback.
+         * Iterates through all individual artists until one returns valid tags.
+         */
+        private suspend fun fetchArtistTags(
+            artistString: String,
+            apiKey: String,
+        ): LastFmResult {
+            val allArtists = ArtistParser.getAllArtists(artistString)
+            Log.d(TAG, "Fetching artist tags for artists: $allArtists")
+
+            for (artist in allArtists) {
+                val cleanArtist = ArtistParser.normalizeArtistName(artist)
+                if (cleanArtist.isBlank()) continue
+
+                try {
+                    // Add rate limit delay between attempts
+                    delay(RATE_LIMIT_DELAY_MS)
+
+                    Log.d(TAG, "Trying artist tags for: '$cleanArtist'")
+
+                    val response =
+                        lastFmApi.getArtistTopTags(
+                            artist = cleanArtist,
+                            apiKey = apiKey,
+                        )
+
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "Last.fm artist tags failed for '$cleanArtist': ${response.code()}")
+                        continue
+                    }
+
+                    val tagsResponse = response.body()
+
+                    if (tagsResponse?.error != null) {
+                        Log.d(TAG, "Last.fm artist error for '$cleanArtist': ${tagsResponse.message}")
+                        continue
+                    }
+
+                    val tagList =
+                        tagsResponse
+                            ?.toptags
+                            ?.tag
+                            ?.filter { (it.count ?: 0) >= MIN_TAG_COUNT }
+                            ?.mapNotNull { it.name }
+                            ?: emptyList()
+
+                    if (tagList.isNotEmpty()) {
+                        val (genres, tags) = classifyTags(tagList)
+                        Log.d(TAG, "Found Last.fm artist tags for '$cleanArtist': ${genres.size} genres, ${tags.size} tags")
+
+                        return LastFmResult.Success(
+                            tags = tags.take(MAX_TAGS),
+                            genres = genres.take(5),
+                            albumArtUrl = null,
+                            albumTitle = null,
+                            musicbrainzId = null,
+                        )
+                    }
+                } catch (e: CancellationException) {
+                    // Inside the per-artist loop: swallowing here would keep issuing requests
+                    // after the coroutine was cancelled.
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error fetching artist tags for '$cleanArtist'", e)
+                }
             }
 
             return LastFmResult.TrackNotFound
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching Last.fm artist data", e)
-            return LastFmResult.Error(e.message ?: "Unknown error")
         }
-    }
 
-    /**
-     * Fetch track info from Last.fm.
-     */
-    private suspend fun fetchTrackInfo(
-        title: String,
-        artist: String,
-        apiKey: String
-    ): LastFmResult {
-        try {
-            val response = lastFmApi.getTrackInfo(
-                track = title,
-                artist = artist,
-                apiKey = apiKey
-            )
-
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Last.fm track info failed: ${response.code()}")
-                return LastFmResult.Error("API error: ${response.code()}")
-            }
-
-            val trackResponse = response.body()
-            
-            // Check for error in response body
-            if (trackResponse?.error != null) {
-                Log.d(TAG, "Last.fm error: ${trackResponse.message}")
-                return LastFmResult.TrackNotFound
-            }
-
-            val trackInfo = trackResponse?.track
-            if (trackInfo == null) {
-                Log.d(TAG, "No track info returned for '$title' by '$artist'")
-                return LastFmResult.TrackNotFound
-            }
-
-            // Extract tags and classify into genres vs general tags
-            val allTags = trackInfo.getTagNames()
-            val (genres, tags) = classifyTags(allTags)
-
-            // Get album art if available
-            val albumArtUrl = trackInfo.album?.getBestImageUrl()
-            val albumTitle = trackInfo.album?.title
-
-            Log.d(TAG, "Found Last.fm data for '$title': ${genres.size} genres, ${tags.size} tags")
-
-            return LastFmResult.Success(
-                tags = tags.take(MAX_TAGS),
-                genres = genres.take(5),
-                albumArtUrl = albumArtUrl,
-                albumTitle = albumTitle,
-                musicbrainzId = trackInfo.mbid
-            )
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error fetching track info", e)
-            return LastFmResult.Error(e.message ?: "Unknown error")
-        }
-    }
-
-    /**
-     * Fetch artist tags from Last.fm as a fallback.
-     * Iterates through all individual artists until one returns valid tags.
-     */
-    private suspend fun fetchArtistTags(
-        artistString: String,
-        apiKey: String
-    ): LastFmResult {
-        val allArtists = ArtistParser.getAllArtists(artistString)
-        Log.d(TAG, "Fetching artist tags for artists: $allArtists")
-
-        for (artist in allArtists) {
-            val cleanArtist = ArtistParser.normalizeArtistName(artist)
-            if (cleanArtist.isBlank()) continue
-
-            try {
-                // Add rate limit delay between attempts
-                delay(RATE_LIMIT_DELAY_MS)
-                
-                Log.d(TAG, "Trying artist tags for: '$cleanArtist'")
-                
-                val response = lastFmApi.getArtistTopTags(
-                    artist = cleanArtist,
-                    apiKey = apiKey
+        /**
+         * Classify tags into genres and general tags.
+         *
+         * Last.fm tags include both proper genres (rock, hip-hop) and
+         * descriptive tags (chill, female vocalist). This separates them.
+         */
+        private fun classifyTags(tags: List<String>): Pair<List<String>, List<String>> {
+            val genreKeywords =
+                setOf(
+                    // Main genres
+                    "rock",
+                    "pop",
+                    "hip-hop",
+                    "hip hop",
+                    "rap",
+                    "r&b",
+                    "rnb",
+                    "jazz",
+                    "blues",
+                    "country",
+                    "folk",
+                    "classical",
+                    "electronic",
+                    "edm",
+                    "house",
+                    "techno",
+                    "metal",
+                    "punk",
+                    "indie",
+                    "alternative",
+                    "soul",
+                    "funk",
+                    "reggae",
+                    "latin",
+                    "world",
+                    "ambient",
+                    "new age",
+                    "soundtrack",
+                    "gospel",
+                    // Sub-genres
+                    "indie rock",
+                    "indie pop",
+                    "alt-rock",
+                    "alternative rock",
+                    "hard rock",
+                    "classic rock",
+                    "progressive rock",
+                    "psychedelic rock",
+                    "grunge",
+                    "trap",
+                    "lo-fi",
+                    "lofi",
+                    "drill",
+                    "grime",
+                    "boom bap",
+                    "conscious hip-hop",
+                    "deep house",
+                    "progressive house",
+                    "trance",
+                    "dubstep",
+                    "drum and bass",
+                    "death metal",
+                    "black metal",
+                    "thrash metal",
+                    "heavy metal",
+                    "nu metal",
+                    "post-punk",
+                    "hardcore punk",
+                    "pop punk",
+                    "emo",
+                    "neo-soul",
+                    "contemporary r&b",
+                    "quiet storm",
+                    "bossa nova",
+                    "samba",
+                    "salsa",
+                    "reggaeton",
+                    "k-pop",
+                    "j-pop",
+                    "bollywood",
+                    "indian",
+                    "desi",
+                    "indian hip-hop",
+                    "desi hip-hop",
+                    // Era/style
+                    "80s",
+                    "90s",
+                    "2000s",
+                    "00s",
+                    "10s",
+                    "oldies",
+                    "retro",
                 )
 
+            val genres = mutableListOf<String>()
+            val generalTags = mutableListOf<String>()
+
+            for (tag in tags) {
+                val normalizedTag = tag.lowercase().trim()
+                if (genreKeywords.any { normalizedTag.contains(it) }) {
+                    genres.add(tag)
+                } else {
+                    generalTags.add(tag)
+                }
+            }
+
+            return Pair(genres, generalTags)
+        }
+
+        /**
+         * Update metadata with Last.fm data, preserving existing data from other sources.
+         */
+        private suspend fun updateMetadataWithLastFm(
+            trackId: Long,
+            existingMetadata: EnrichedMetadata,
+            lastFmResult: LastFmResult.Success,
+        ) {
+            val updatedMetadata =
+                existingMetadata.copy(
+                    // Only update genres if we don't have any
+                    genres =
+                        if (existingMetadata.genres.isEmpty()) {
+                            lastFmResult.genres
+                        } else {
+                            existingMetadata.genres
+                        },
+                    // Only update tags if we don't have any
+                    tags =
+                        if (existingMetadata.tags.isEmpty()) {
+                            lastFmResult.tags
+                        } else {
+                            existingMetadata.tags
+                        },
+                    // Only update album art if we don't have any
+                    albumArtUrl = existingMetadata.albumArtUrl ?: lastFmResult.albumArtUrl,
+                    // Only update album title if we don't have any
+                    albumTitle = existingMetadata.albumTitle ?: lastFmResult.albumTitle,
+                    // MusicBrainz ID from Last.fm (only if we don't have one)
+                    musicbrainzRecordingId = existingMetadata.musicbrainzRecordingId ?: lastFmResult.musicbrainzId,
+                    cacheTimestamp = System.currentTimeMillis(),
+                )
+
+            enrichedMetadataDao.upsert(updatedMetadata)
+
+            // Only log as "Updated" if we actually added useful data
+            if (lastFmResult.genres.isNotEmpty() || lastFmResult.tags.isNotEmpty()) {
+                Log.i(
+                    TAG,
+                    "Updated track $trackId with Last.fm data: " +
+                        "${lastFmResult.genres.size} genres, ${lastFmResult.tags.size} tags",
+                )
+            } else {
+                Log.d(TAG, "Processed track $trackId via Last.fm (no new genres/tags)")
+            }
+        }
+
+        /**
+         * Fetch artist image from Last.fm.
+         * Used as a fallback when Spotify doesn't provide artist images.
+         * Iterates through all individual artists until an image is found.
+         *
+         * @param artistName The raw artist name
+         * @return Artist image URL (extralarge size) or null if not found
+         */
+        suspend fun fetchArtistImage(artistName: String): String? {
+            if (!isAvailable()) {
+                Log.d(TAG, "Last.fm API key not configured")
+                return null
+            }
+
+            if (ArtistParser.isUnknownArtist(artistName)) {
+                Log.d(TAG, "Skipping Last.fm artist image: artist is unknown")
+                return null
+            }
+
+            val apiKey = getApiKey()
+            val allArtists = ArtistParser.getAllArtists(artistName)
+
+            Log.d(TAG, "Fetching artist image for artists: $allArtists")
+
+            for (individualArtist in allArtists) {
+                val cleanArtist = ArtistParser.normalizeArtistName(individualArtist)
+                if (cleanArtist.isBlank()) continue
+
+                Log.d(TAG, "Trying to fetch Last.fm image for: '$cleanArtist'")
+
+                try {
+                    delay(RATE_LIMIT_DELAY_MS)
+
+                    val response =
+                        lastFmApi.getArtistInfo(
+                            artist = cleanArtist,
+                            apiKey = apiKey,
+                        )
+
+                    if (!response.isSuccessful) {
+                        Log.w(TAG, "Last.fm artist info failed for '$cleanArtist': ${response.code()}")
+                        continue
+                    }
+
+                    val artistResponse = response.body()
+
+                    if (artistResponse?.error != null) {
+                        Log.d(TAG, "Last.fm artist error for '$cleanArtist': ${artistResponse.message}")
+                        continue
+                    }
+
+                    val artistInfo = artistResponse?.artist
+                    if (artistInfo == null) {
+                        Log.d(TAG, "No artist info returned for '$cleanArtist'")
+                        continue
+                    }
+
+                    // Get the best quality image
+                    val imageUrl = artistInfo.getBestImageUrl()
+
+                    if (imageUrl != null) {
+                        Log.i(TAG, "Found Last.fm artist image for '$cleanArtist': $imageUrl")
+                        return imageUrl
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error fetching artist image from Last.fm for '$cleanArtist'", e)
+                }
+            }
+
+            Log.d(TAG, "No artist image available for any artist in '$artistName' on Last.fm")
+            return null
+        }
+
+        /**
+         * Result of MBID lookup from Last.fm.
+         * Contains MusicBrainz IDs that can be used for faster/more accurate MusicBrainz lookups.
+         */
+        data class MbidLookupResult(
+            val trackMbid: String? = null,
+            val artistMbid: String? = null,
+            val albumMbid: String? = null,
+            val albumTitle: String? = null,
+        ) {
+            val hasAnyMbid: Boolean get() = trackMbid != null || artistMbid != null || albumMbid != null
+        }
+
+        /**
+         * Fetch MusicBrainz IDs from Last.fm for a track.
+         *
+         * This is useful because:
+         * 1. Last.fm often has MBIDs for tracks (if user has linked accounts or track is popular)
+         * 2. MusicBrainz can fetch by ID instead of searching (faster, more accurate)
+         * 3. This avoids fuzzy matching issues with MusicBrainz search
+         *
+         * Called before MusicBrainz enrichment to improve accuracy.
+         *
+         * @param title Track title
+         * @param artist Artist name
+         * @return MbidLookupResult containing any available MBIDs
+         */
+        suspend fun fetchMbidsForTrack(
+            title: String,
+            artist: String,
+        ): MbidLookupResult {
+            if (!isAvailable()) {
+                return MbidLookupResult()
+            }
+
+            val apiKey = getApiKey()
+            val cleanArtist =
+                ArtistParser.normalizeArtistName(
+                    ArtistParser.getPrimaryArtist(artist),
+                )
+
+            if (cleanArtist.isBlank()) {
+                return MbidLookupResult()
+            }
+
+            try {
+                delay(RATE_LIMIT_DELAY_MS)
+
+                val response =
+                    lastFmApi.getTrackInfo(
+                        track = title,
+                        artist = cleanArtist,
+                        apiKey = apiKey,
+                    )
+
                 if (!response.isSuccessful) {
-                    Log.w(TAG, "Last.fm artist tags failed for '$cleanArtist': ${response.code()}")
-                    continue
+                    Log.d(TAG, "MBID lookup failed for '$title' by '$cleanArtist': ${response.code()}")
+                    return MbidLookupResult()
                 }
 
-                val tagsResponse = response.body()
-                
-                if (tagsResponse?.error != null) {
-                    Log.d(TAG, "Last.fm artist error for '$cleanArtist': ${tagsResponse.message}")
-                    continue
+                val trackResponse = response.body()
+
+                if (trackResponse?.error != null) {
+                    Log.d(TAG, "MBID lookup error: ${trackResponse.message}")
+                    return MbidLookupResult()
                 }
 
-                val tagList = tagsResponse?.toptags?.tag
-                    ?.filter { (it.count ?: 0) >= MIN_TAG_COUNT }
-                    ?.mapNotNull { it.name }
-                    ?: emptyList()
+                val trackInfo = trackResponse?.track
+                if (trackInfo == null) {
+                    Log.d(TAG, "No track info for MBID lookup: '$title' by '$cleanArtist'")
+                    return MbidLookupResult()
+                }
 
-                if (tagList.isNotEmpty()) {
-                    val (genres, tags) = classifyTags(tagList)
-                    Log.d(TAG, "Found Last.fm artist tags for '$cleanArtist': ${genres.size} genres, ${tags.size} tags")
+                val result =
+                    MbidLookupResult(
+                        trackMbid = trackInfo.mbid?.takeIf { it.isNotBlank() },
+                        artistMbid = trackInfo.artist?.mbid?.takeIf { it.isNotBlank() },
+                        albumMbid = trackInfo.album?.mbid?.takeIf { it.isNotBlank() },
+                        albumTitle = trackInfo.album?.title,
+                    )
 
-                    return LastFmResult.Success(
-                        tags = tags.take(MAX_TAGS),
-                        genres = genres.take(5),
-                        albumArtUrl = null,
-                        albumTitle = null,
-                        musicbrainzId = null
+                if (result.hasAnyMbid) {
+                    Log.d(
+                        TAG,
+                        "Found MBIDs from Last.fm for '$title': track=${result.trackMbid}, artist=${result.artistMbid}, album=${result.albumMbid}",
                     )
                 }
+
+                return result
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Error fetching artist tags for '$cleanArtist'", e)
-            }
-        }
-        
-        return LastFmResult.TrackNotFound
-    }
-
-    /**
-     * Classify tags into genres and general tags.
-     * 
-     * Last.fm tags include both proper genres (rock, hip-hop) and
-     * descriptive tags (chill, female vocalist). This separates them.
-     */
-    private fun classifyTags(tags: List<String>): Pair<List<String>, List<String>> {
-        val genreKeywords = setOf(
-            // Main genres
-            "rock", "pop", "hip-hop", "hip hop", "rap", "r&b", "rnb", "jazz", "blues",
-            "country", "folk", "classical", "electronic", "edm", "house", "techno",
-            "metal", "punk", "indie", "alternative", "soul", "funk", "reggae",
-            "latin", "world", "ambient", "new age", "soundtrack", "gospel",
-            
-            // Sub-genres
-            "indie rock", "indie pop", "alt-rock", "alternative rock", "hard rock",
-            "classic rock", "progressive rock", "psychedelic rock", "grunge",
-            "trap", "lo-fi", "lofi", "drill", "grime", "boom bap", "conscious hip-hop",
-            "deep house", "progressive house", "trance", "dubstep", "drum and bass",
-            "death metal", "black metal", "thrash metal", "heavy metal", "nu metal",
-            "post-punk", "hardcore punk", "pop punk", "emo",
-            "neo-soul", "contemporary r&b", "quiet storm",
-            "bossa nova", "samba", "salsa", "reggaeton", "k-pop", "j-pop",
-            "bollywood", "indian", "desi", "indian hip-hop", "desi hip-hop",
-            
-            // Era/style
-            "80s", "90s", "2000s", "00s", "10s", "oldies", "retro"
-        )
-
-        val genres = mutableListOf<String>()
-        val generalTags = mutableListOf<String>()
-
-        for (tag in tags) {
-            val normalizedTag = tag.lowercase().trim()
-            if (genreKeywords.any { normalizedTag.contains(it) }) {
-                genres.add(tag)
-            } else {
-                generalTags.add(tag)
+                Log.w(TAG, "Error fetching MBIDs from Last.fm", e)
+                return MbidLookupResult()
             }
         }
 
-        return Pair(genres, generalTags)
-    }
+        /**
+         * Pre-enrich metadata with MBIDs from Last.fm.
+         *
+         * This method updates the EnrichedMetadata record with MBIDs fetched from Last.fm,
+         * which can then be used by MusicBrainz for faster lookups.
+         *
+         * @param track The track to fetch MBIDs for
+         * @param existingMetadata The existing metadata to update
+         * @return Updated metadata with MBIDs, or null if no MBIDs found
+         */
+        suspend fun preEnrichWithMbids(
+            track: Track,
+            existingMetadata: EnrichedMetadata,
+        ): EnrichedMetadata? {
+            // Skip if we already have MBIDs
+            if (existingMetadata.musicbrainzRecordingId != null) {
+                return null
+            }
 
-    /**
-     * Update metadata with Last.fm data, preserving existing data from other sources.
-     */
-    private suspend fun updateMetadataWithLastFm(
-        trackId: Long,
-        existingMetadata: EnrichedMetadata,
-        lastFmResult: LastFmResult.Success
-    ) {
-        val updatedMetadata = existingMetadata.copy(
-            // Only update genres if we don't have any
-            genres = if (existingMetadata.genres.isEmpty()) {
-                lastFmResult.genres
-            } else {
-                existingMetadata.genres
-            },
-            
-            // Only update tags if we don't have any
-            tags = if (existingMetadata.tags.isEmpty()) {
-                lastFmResult.tags
-            } else {
-                existingMetadata.tags
-            },
-            
-            // Only update album art if we don't have any
-            albumArtUrl = existingMetadata.albumArtUrl ?: lastFmResult.albumArtUrl,
-            
-            // Only update album title if we don't have any
-            albumTitle = existingMetadata.albumTitle ?: lastFmResult.albumTitle,
-            
-            // MusicBrainz ID from Last.fm (only if we don't have one)
-            musicbrainzRecordingId = existingMetadata.musicbrainzRecordingId ?: lastFmResult.musicbrainzId,
-            
-            cacheTimestamp = System.currentTimeMillis()
-        )
+            val mbids = fetchMbidsForTrack(track.title, track.artist)
 
-        enrichedMetadataDao.upsert(updatedMetadata)
-        
-        // Only log as "Updated" if we actually added useful data
-        if (lastFmResult.genres.isNotEmpty() || lastFmResult.tags.isNotEmpty()) {
-            Log.i(TAG, "Updated track $trackId with Last.fm data: " +
-                    "${lastFmResult.genres.size} genres, ${lastFmResult.tags.size} tags")
-        } else {
-            Log.d(TAG, "Processed track $trackId via Last.fm (no new genres/tags)")
-        }
-    }
+            if (!mbids.hasAnyMbid) {
+                return null
+            }
 
-    /**
-     * Fetch artist image from Last.fm.
-     * Used as a fallback when Spotify doesn't provide artist images.
-     * Iterates through all individual artists until an image is found.
-     * 
-     * @param artistName The raw artist name
-     * @return Artist image URL (extralarge size) or null if not found
-     */
-    suspend fun fetchArtistImage(artistName: String): String? {
-        if (!isAvailable()) {
-            Log.d(TAG, "Last.fm API key not configured")
-            return null
-        }
-
-        if (ArtistParser.isUnknownArtist(artistName)) {
-            Log.d(TAG, "Skipping Last.fm artist image: artist is unknown")
-            return null
-        }
-
-        val apiKey = getApiKey()
-        val allArtists = ArtistParser.getAllArtists(artistName)
-        
-        Log.d(TAG, "Fetching artist image for artists: $allArtists")
-
-        for (individualArtist in allArtists) {
-            val cleanArtist = ArtistParser.normalizeArtistName(individualArtist)
-            if (cleanArtist.isBlank()) continue
-            
-            Log.d(TAG, "Trying to fetch Last.fm image for: '$cleanArtist'")
-
-            try {
-                delay(RATE_LIMIT_DELAY_MS)
-                
-                val response = lastFmApi.getArtistInfo(
-                    artist = cleanArtist,
-                    apiKey = apiKey
+            // Update metadata with found MBIDs
+            val updatedMetadata =
+                existingMetadata.copy(
+                    musicbrainzRecordingId = mbids.trackMbid ?: existingMetadata.musicbrainzRecordingId,
+                    musicbrainzArtistId = mbids.artistMbid ?: existingMetadata.musicbrainzArtistId,
+                    musicbrainzReleaseId = mbids.albumMbid ?: existingMetadata.musicbrainzReleaseId,
+                    albumTitle = mbids.albumTitle ?: existingMetadata.albumTitle,
                 )
 
-                if (!response.isSuccessful) {
-                    Log.w(TAG, "Last.fm artist info failed for '$cleanArtist': ${response.code()}")
-                    continue
-                }
+            // Save the updated metadata
+            enrichedMetadataDao.upsert(updatedMetadata)
 
-                val artistResponse = response.body()
-                
-                if (artistResponse?.error != null) {
-                    Log.d(TAG, "Last.fm artist error for '$cleanArtist': ${artistResponse.message}")
-                    continue
-                }
-
-                val artistInfo = artistResponse?.artist
-                if (artistInfo == null) {
-                    Log.d(TAG, "No artist info returned for '$cleanArtist'")
-                    continue
-                }
-
-                // Get the best quality image
-                val imageUrl = artistInfo.getBestImageUrl()
-                
-                if (imageUrl != null) {
-                    Log.i(TAG, "Found Last.fm artist image for '$cleanArtist': $imageUrl")
-                    return imageUrl
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error fetching artist image from Last.fm for '$cleanArtist'", e)
-            }
-        }
-        
-        Log.d(TAG, "No artist image available for any artist in '$artistName' on Last.fm")
-        return null
-    }
-    
-
-    
-    /**
-     * Result of MBID lookup from Last.fm.
-     * Contains MusicBrainz IDs that can be used for faster/more accurate MusicBrainz lookups.
-     */
-    data class MbidLookupResult(
-        val trackMbid: String? = null,
-        val artistMbid: String? = null,
-        val albumMbid: String? = null,
-        val albumTitle: String? = null
-    ) {
-        val hasAnyMbid: Boolean get() = trackMbid != null || artistMbid != null || albumMbid != null
-    }
-    
-    /**
-     * Fetch MusicBrainz IDs from Last.fm for a track.
-     * 
-     * This is useful because:
-     * 1. Last.fm often has MBIDs for tracks (if user has linked accounts or track is popular)
-     * 2. MusicBrainz can fetch by ID instead of searching (faster, more accurate)
-     * 3. This avoids fuzzy matching issues with MusicBrainz search
-     * 
-     * Called before MusicBrainz enrichment to improve accuracy.
-     * 
-     * @param title Track title
-     * @param artist Artist name
-     * @return MbidLookupResult containing any available MBIDs
-     */
-    suspend fun fetchMbidsForTrack(title: String, artist: String): MbidLookupResult {
-        if (!isAvailable()) {
-            return MbidLookupResult()
-        }
-        
-        val apiKey = getApiKey()
-        val cleanArtist = ArtistParser.normalizeArtistName(
-            ArtistParser.getPrimaryArtist(artist)
-        )
-        
-        if (cleanArtist.isBlank()) {
-            return MbidLookupResult()
-        }
-        
-        try {
-            delay(RATE_LIMIT_DELAY_MS)
-            
-            val response = lastFmApi.getTrackInfo(
-                track = title,
-                artist = cleanArtist,
-                apiKey = apiKey
-            )
-            
-            if (!response.isSuccessful) {
-                Log.d(TAG, "MBID lookup failed for '$title' by '$cleanArtist': ${response.code()}")
-                return MbidLookupResult()
-            }
-            
-            val trackResponse = response.body()
-            
-            if (trackResponse?.error != null) {
-                Log.d(TAG, "MBID lookup error: ${trackResponse.message}")
-                return MbidLookupResult()
-            }
-            
-            val trackInfo = trackResponse?.track
-            if (trackInfo == null) {
-                Log.d(TAG, "No track info for MBID lookup: '$title' by '$cleanArtist'")
-                return MbidLookupResult()
-            }
-            
-            val result = MbidLookupResult(
-                trackMbid = trackInfo.mbid?.takeIf { it.isNotBlank() },
-                artistMbid = trackInfo.artist?.mbid?.takeIf { it.isNotBlank() },
-                albumMbid = trackInfo.album?.mbid?.takeIf { it.isNotBlank() },
-                albumTitle = trackInfo.album?.title
-            )
-            
-            if (result.hasAnyMbid) {
-                Log.d(TAG, "Found MBIDs from Last.fm for '$title': track=${result.trackMbid}, artist=${result.artistMbid}, album=${result.albumMbid}")
-            }
-            
-            return result
-            
-        } catch (e: Exception) {
-            Log.w(TAG, "Error fetching MBIDs from Last.fm", e)
-            return MbidLookupResult()
+            Log.i(TAG, "Pre-enriched track ${track.id} with Last.fm MBIDs")
+            return updatedMetadata
         }
     }
-    
-    /**
-     * Pre-enrich metadata with MBIDs from Last.fm.
-     * 
-     * This method updates the EnrichedMetadata record with MBIDs fetched from Last.fm,
-     * which can then be used by MusicBrainz for faster lookups.
-     * 
-     * @param track The track to fetch MBIDs for
-     * @param existingMetadata The existing metadata to update
-     * @return Updated metadata with MBIDs, or null if no MBIDs found
-     */
-    suspend fun preEnrichWithMbids(
-        track: Track,
-        existingMetadata: EnrichedMetadata
-    ): EnrichedMetadata? {
-        // Skip if we already have MBIDs
-        if (existingMetadata.musicbrainzRecordingId != null) {
-            return null
-        }
-        
-        val mbids = fetchMbidsForTrack(track.title, track.artist)
-        
-        if (!mbids.hasAnyMbid) {
-            return null
-        }
-        
-        // Update metadata with found MBIDs
-        val updatedMetadata = existingMetadata.copy(
-            musicbrainzRecordingId = mbids.trackMbid ?: existingMetadata.musicbrainzRecordingId,
-            musicbrainzArtistId = mbids.artistMbid ?: existingMetadata.musicbrainzArtistId,
-            musicbrainzReleaseId = mbids.albumMbid ?: existingMetadata.musicbrainzReleaseId,
-            albumTitle = mbids.albumTitle ?: existingMetadata.albumTitle
-        )
-        
-        // Save the updated metadata
-        enrichedMetadataDao.upsert(updatedMetadata)
-        
-        Log.i(TAG, "Pre-enriched track ${track.id} with Last.fm MBIDs")
-        return updatedMetadata
-    }
-}

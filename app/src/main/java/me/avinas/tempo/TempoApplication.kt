@@ -3,6 +3,8 @@ package me.avinas.tempo
 import android.app.Application
 import android.os.Handler
 import android.os.Looper
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil3.ImageLoader
@@ -13,15 +15,29 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import me.avinas.tempo.data.analytics.AnalyticsConsent
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.AppStartType
+import me.avinas.tempo.data.analytics.AppStarted
+import me.avinas.tempo.data.analytics.CrashSignatureRecorder
+import me.avinas.tempo.data.analytics.DbMigration
+import me.avinas.tempo.data.analytics.TrackingSource
+import me.avinas.tempo.data.analytics.TrackingSourceActive
 import me.avinas.tempo.data.drive.BackupInterval
 import me.avinas.tempo.data.drive.BackupSettingsManager
 import me.avinas.tempo.data.drive.LocalBackupStorage
+import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.dao.UserKnownArtistDao
 import me.avinas.tempo.data.local.dao.UserPreferencesDao
+import me.avinas.tempo.data.repository.AppPreferenceRepository
+import me.avinas.tempo.service.TrackingServiceHeartbeat
+import me.avinas.tempo.ui.onboarding.dataStore
 import me.avinas.tempo.utils.ArtistParser
+import me.avinas.tempo.worker.AnalyticsFlushWorker
 import me.avinas.tempo.worker.ChallengeWorker
 import me.avinas.tempo.worker.DriveBackupWorker
 import me.avinas.tempo.worker.EnrichmentWorker
+import me.avinas.tempo.worker.ListeningActivityWorker
 import me.avinas.tempo.worker.LocalBackupWorker
 import me.avinas.tempo.worker.ServiceHealthWorker
 import me.avinas.tempo.worker.SpotifyPollingWorker
@@ -34,8 +50,10 @@ import javax.inject.Inject
  * and Coil SingletonImageLoader.
  */
 @HiltAndroidApp
-class TempoApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
-
+class TempoApplication :
+    Application(),
+    Configuration.Provider,
+    SingletonImageLoader.Factory {
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
@@ -49,6 +67,9 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     lateinit var userKnownArtistDao: UserKnownArtistDao
 
     @Inject
+    lateinit var appPreferenceRepository: AppPreferenceRepository
+
+    @Inject
     lateinit var artistRepairService: me.avinas.tempo.data.repository.ArtistRepairService
 
     @Inject
@@ -57,24 +78,124 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     @Inject
     lateinit var backupSettingsManager: BackupSettingsManager
 
+    @Inject
+    lateinit var crashSignatureRecorder: CrashSignatureRecorder
+
+    @Inject
+    lateinit var analyticsTracker: AnalyticsTracker
+
+    @Inject
+    lateinit var analyticsConsent: AnalyticsConsent
+
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .build()
+    private val lastSeenDbVersionKey = intPreferencesKey("last_seen_db_version")
 
-    override fun newImageLoader(context: android.content.Context): ImageLoader {
-        return imageLoader
-    }
+    override val workManagerConfiguration: Configuration
+        get() =
+            Configuration
+                .Builder()
+                .setWorkerFactory(workerFactory)
+                .build()
+
+    override fun newImageLoader(context: android.content.Context): ImageLoader = imageLoader
 
     override fun onCreate() {
         super.onCreate()
 
+        val initStartedAt = System.currentTimeMillis()
+
+        // Installed before anything else so a crash during start-up is still captured, then
+        // any signature left by the previous run is reported.
+        crashSignatureRecorder.install()
+        crashSignatureRecorder.reportPending()
+
         loadUserKnownArtists()
+        seedDefaultAppPreferences()
         reconcileAutomaticBackupSchedules()
         scheduleBackgroundWorkDeferred()
+        observeAnalyticsConsent()
+
+        reportAppStarted(initStartedAt)
+        reportDatabaseVersionChange()
+    }
+
+    /**
+     * Seeds `app_preferences` with the default app lists on every process start.
+     *
+     * `seedDefaultAppsIfNeeded` was previously only invoked from the Supported Apps
+     * settings screen, so users who never opened that screen ran with an empty table —
+     * every curated music app then read as "not enabled" once the tracking service's
+     * preference cache initialised, and tracking silently stopped for them.
+     *
+     * INSERT OR IGNORE keeps this a no-op after the first run and never touches rows
+     * the user has customised (enabled, disabled, blocked).
+     */
+    private fun seedDefaultAppPreferences() {
+        applicationScope.launch {
+            try {
+                appPreferenceRepository.seedDefaultAppsIfNeeded()
+            } catch (e: Exception) {
+                // Bookkeeping must never affect start-up.
+                android.util.Log.w("TempoApplication", "Failed to seed default app preferences", e)
+            }
+        }
+    }
+
+    /**
+     * `Application.onCreate` runs exactly once per process, so a start observed here is always
+     * a cold start.
+     *
+     * `startupMillis` measures Tempo's own synchronous start-up work — a regression guard for
+     * anything blocking added to `onCreate` — rather than time-to-first-frame, which this
+     * lifecycle callback genuinely cannot see. `listenerReady` is the more valuable signal:
+     * it reports whether tracking was actually alive when the user opened the app, reusing the
+     * heartbeat the health worker already relies on instead of duplicating permission checks.
+     */
+    private fun reportAppStarted(initStartedAt: Long) {
+        // Measured on the main thread before anything async: this is exactly Tempo's own
+        // synchronous start-up work, which is what the metric guards — the heartbeat read
+        // below must not be counted into it.
+        val startupMillis = System.currentTimeMillis() - initStartedAt
+        applicationScope.launch {
+            // The heartbeat read is disk I/O, so it stays off the main thread; the value
+            // still reflects the state at open time.
+            val heartbeat = TrackingServiceHeartbeat.snapshot(this@TempoApplication)
+            analyticsTracker.track(
+                AppStarted(
+                    startType = AppStartType.COLD,
+                    startupMillis = startupMillis,
+                    listenerReady = heartbeat.hasEverStarted() && !heartbeat.shouldRequestRebind(),
+                ),
+            )
+        }
+    }
+
+    /**
+     * Reports when the on-disk schema version advances.
+     *
+     * This is the honest signal available without instrumenting every Room migration
+     * individually, and it answers the question that actually matters when shipping one: how
+     * many users have run it. Only the version pair is reported — a migration's duration and
+     * success are not knowable from here, and guessing at them would put numbers in the
+     * dashboard that nothing measured.
+     */
+    private fun reportDatabaseVersionChange() {
+        applicationScope.launch {
+            try {
+                val lastSeen = dataStore.data.first()[lastSeenDbVersionKey]
+                if (lastSeen != null && lastSeen != AppDatabase.VERSION) {
+                    analyticsTracker.track(
+                        DbMigration(fromVersion = lastSeen, toVersion = AppDatabase.VERSION),
+                    )
+                }
+                dataStore.edit { it[lastSeenDbVersionKey] = AppDatabase.VERSION }
+            } catch (e: Exception) {
+                // Bookkeeping must never affect start-up.
+                android.util.Log.w("TempoApplication", "Failed to record schema version", e)
+            }
+        }
     }
 
     private fun loadUserKnownArtists() {
@@ -129,7 +250,7 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
                 if (LocalBackupStorage.hasSelectedDirectory(this@TempoApplication)) {
                     LocalBackupWorker.schedule(
                         this@TempoApplication,
-                        settings.backupInterval.hours
+                        settings.backupInterval.hours,
                     )
                 } else {
                     if (LocalBackupStorage.getSelectedDirectoryUri(this@TempoApplication) != null) {
@@ -142,7 +263,7 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
                     DriveBackupWorker.schedule(
                         this@TempoApplication,
                         settings.backupInterval.hours,
-                        settings.wifiOnly
+                        settings.wifiOnly,
                     )
                 } else {
                     DriveBackupWorker.cancel(this@TempoApplication)
@@ -153,7 +274,7 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
                 android.util.Log.w(
                     "TempoApplication",
                     "Failed to reconcile automatic backup schedules",
-                    e
+                    e,
                 )
             }
         }
@@ -172,7 +293,8 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
         // Self-heal: if a previous listener-restart attempt left the tracking
         // component DISABLED (process died mid-toggle), re-enable it now so
         // tracking recovers without a reinstall.
-        me.avinas.tempo.service.MusicTrackingService.ensureComponentEnabled(this)
+        me.avinas.tempo.service.MusicTrackingService
+            .ensureComponentEnabled(this)
 
         ServiceHealthWorker.schedule(this)
 
@@ -180,8 +302,13 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
 
         EnrichmentWorker.enqueueImmediate(this)
 
-        me.avinas.tempo.worker.GamificationWorker.enqueuePeriodicRefresh(this)
-        me.avinas.tempo.worker.GamificationWorker.enqueueImmediateRefresh(this)
+        me.avinas.tempo.worker.GamificationWorker
+            .enqueuePeriodicRefresh(this)
+        me.avinas.tempo.worker.GamificationWorker
+            .enqueueImmediateRefresh(this)
+
+        // Local-only read; the resulting aggregate is queued and uploaded by the flush worker.
+        ListeningActivityWorker.schedule(this)
 
         scheduleSpotifyPollingIfEnabled()
 
@@ -192,6 +319,28 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
     }
 
     /**
+     * Owns the upload worker's lifecycle from the single source of truth: the consent flag.
+     *
+     * Every path that flips the flag — the Settings toggle, the Home disclosure card's
+     * turn-off, a data wipe — gets the same treatment here: opting out drops anything
+     * buffered and cancels the uploader immediately, and re-enabling re-registers it.
+     * Scheduling here rather than in [scheduleBackgroundWork] is also what stops every
+     * app start from resurrecting a worker that the user's opt-out had cancelled.
+     */
+    private fun observeAnalyticsConsent() {
+        applicationScope.launch {
+            analyticsConsent.isEnabled.collect { enabled ->
+                if (enabled) {
+                    AnalyticsFlushWorker.schedule(this@TempoApplication)
+                } else {
+                    analyticsTracker.purge()
+                    AnalyticsFlushWorker.cancel(this@TempoApplication)
+                }
+            }
+        }
+    }
+
+    /**
      * Check if Spotify-API-Only mode is enabled and schedule polling if so.
      * This ensures the worker resumes after app restart.
      */
@@ -199,7 +348,15 @@ class TempoApplication : Application(), Configuration.Provider, SingletonImageLo
         applicationScope.launch {
             try {
                 val prefs = userPreferencesDao.getSync()
-                if (prefs?.spotifyApiOnlyMode == true) {
+                // Reported here because this is where the process already resolves whether
+                // Spotify polling is the active detection path. Once per app start.
+                val spotifyOnly = prefs?.spotifyApiOnlyMode == true
+                analyticsTracker.track(
+                    TrackingSourceActive(
+                        if (spotifyOnly) TrackingSource.SPOTIFY_API else TrackingSource.NOTIFICATION,
+                    ),
+                )
+                if (spotifyOnly) {
                     Handler(Looper.getMainLooper()).post {
                         SpotifyPollingWorker.schedule(this@TempoApplication)
                     }

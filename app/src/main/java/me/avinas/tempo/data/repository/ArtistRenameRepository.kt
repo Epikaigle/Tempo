@@ -10,6 +10,9 @@ import me.avinas.tempo.data.local.entities.UserKnownArtist
 import me.avinas.tempo.utils.ArtistNameReplacer
 import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
 /**
@@ -28,7 +31,8 @@ class ArtistRenameRepository @Inject constructor(
     private val artistMergeRepository: ArtistMergeRepository,
     private val trackDao: TrackDao,
     private val statsRepository: me.avinas.tempo.data.repository.StatsRepository,
-    private val database: AppDatabase
+    private val database: AppDatabase,
+    private val tracker: AnalyticsTracker
 ) {
     companion object {
         private const val TAG = "ArtistRenameRepository"
@@ -108,6 +112,16 @@ class ArtistRenameRepository @Inject constructor(
         artistId: Long,
         newName: String,
         mergeArtistIds: List<Long> = emptyList()
+    ): Long? {
+        val renamed = renameAndMergeInternal(artistId, newName, mergeArtistIds)
+        if (renamed != null) tracker.track(FeatureUsed(TempoFeature.ARTIST_RENAME))
+        return renamed
+    }
+
+    private suspend fun renameAndMergeInternal(
+        artistId: Long,
+        newName: String,
+        mergeArtistIds: List<Long>
     ): Long? {
         val artist = artistDao.getArtistById(artistId)
         if (artist == null) {

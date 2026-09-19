@@ -43,10 +43,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -54,11 +54,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.res.stringResource
-import me.avinas.tempo.R
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.delay
+import me.avinas.tempo.R
 import me.avinas.tempo.data.youtube.YouTubeMusicImportService
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
@@ -68,7 +68,7 @@ import me.avinas.tempo.ui.theme.*
 @Composable
 fun YouTubeMusicImportScreen(
     onNavigateBack: () -> Unit,
-    viewModel: YouTubeMusicImportViewModel = hiltViewModel()
+    viewModel: YouTubeMusicImportViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val importState by viewModel.importState.collectAsState()
@@ -85,14 +85,15 @@ fun YouTubeMusicImportScreen(
         }
     }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        selectedUris = uris
-        if (uris.isNotEmpty()) {
-            viewModel.importFiles(context, uris)
+    val filePickerLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenMultipleDocuments(),
+        ) { uris ->
+            selectedUris = uris
+            if (uris.isNotEmpty()) {
+                viewModel.importFiles(context, uris)
+            }
         }
-    }
 
     DeepOceanBackground {
         Scaffold(
@@ -100,20 +101,20 @@ fun YouTubeMusicImportScreen(
                 TopAppBar(
                     title = {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
                                 imageVector = Icons.Default.VideoLibrary,
                                 contentDescription = null,
                                 tint = YouTubeRed,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(24.dp),
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = stringResource(R.string.settings_import_youtube_music),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = TextPrimary
+                                color = TextPrimary,
                             )
                         }
                     },
@@ -122,24 +123,26 @@ fun YouTubeMusicImportScreen(
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = stringResource(R.string.settings_back),
-                                tint = TextPrimary
+                                tint = TextPrimary,
                             )
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent
-                    )
+                    colors =
+                        TopAppBarDefaults.topAppBarColors(
+                            containerColor = Color.Transparent,
+                        ),
                 )
             },
-            containerColor = Color.Transparent
+            containerColor = Color.Transparent,
         ) { padding ->
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(horizontal = 16.dp)
+                        .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -147,8 +150,10 @@ fun YouTubeMusicImportScreen(
                     is YouTubeMusicImportUiState.Idle -> {
                         IdleContent(
                             onSelectFiles = {
-                                filePickerLauncher.launch(arrayOf("application/zip", "application/x-zip", "application/json", "text/plain", "*/*"))
-                            }
+                                filePickerLauncher.launch(
+                                    arrayOf("application/zip", "application/x-zip", "application/json", "text/plain", "*/*"),
+                                )
+                            },
                         )
                     }
 
@@ -158,7 +163,7 @@ fun YouTubeMusicImportScreen(
 
                     is YouTubeMusicImportUiState.Completed -> {
                         CompletedContent(
-                            result = (uiState as YouTubeMusicImportUiState.Completed).result
+                            result = (uiState as YouTubeMusicImportUiState.Completed).result,
                         )
                     }
 
@@ -168,7 +173,7 @@ fun YouTubeMusicImportScreen(
                             onRetry = {
                                 viewModel.resetState()
                             },
-                            onNavigateBack = onNavigateBack
+                            onNavigateBack = onNavigateBack,
                         )
                     }
                 }
@@ -180,21 +185,19 @@ fun YouTubeMusicImportScreen(
 }
 
 @Composable
-private fun IdleContent(
-    onSelectFiles: () -> Unit
-) {
+private fun IdleContent(onSelectFiles: () -> Unit) {
     GlassCard(
-        contentPadding = PaddingValues(20.dp)
+        contentPadding = PaddingValues(20.dp),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(
                 imageVector = Icons.Default.FileOpen,
                 contentDescription = null,
                 tint = YouTubeRed,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -204,37 +207,41 @@ private fun IdleContent(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = buildAnnotatedString {
-                    append("Export your data from ")
-                    withLink(
-                        LinkAnnotation.Url(
-                            url = "https://takeout.google.com",
-                            styles = TextLinkStyles(style = SpanStyle(color = YouTubeRed, textDecoration = TextDecoration.Underline))
+                text =
+                    buildAnnotatedString {
+                        append("Export your data from ")
+                        withLink(
+                            LinkAnnotation.Url(
+                                url = "https://takeout.google.com",
+                                styles = TextLinkStyles(style = SpanStyle(color = YouTubeRed, textDecoration = TextDecoration.Underline)),
+                            ),
+                        ) {
+                            append("takeout.google.com")
+                        }
+                        append(
+                            " — the animated walkthrough below shows exactly what to click. Both JSON and HTML formats work, and you don't need to extract the ZIP.",
                         )
-                    ) {
-                        append("takeout.google.com")
-                    }
-                    append(", choosing \"YouTube and YouTube Music\" → only \"history\". Both JSON and HTML formats work. Select the downloaded ZIP here (no need to extract) — if Takeout split your export into several ZIPs, select all of them.")
-                },
+                    },
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(20.dp))
 
             Button(
                 onClick = onSelectFiles,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = YouTubeRed
-                ),
-                modifier = Modifier.fillMaxWidth()
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = YouTubeRed,
+                    ),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
@@ -246,68 +253,48 @@ private fun IdleContent(
     Spacer(modifier = Modifier.height(16.dp))
 
     GlassCard(
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(16.dp),
     ) {
         Column {
             Text(
-                text = "How to get your YouTube Music data",
+                text = "How to get your file from Google Takeout",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = TextPrimary,
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            val steps = listOf(
-                buildAnnotatedString {
-                    append("1. Go to ")
-                    withLink(
-                        LinkAnnotation.Url(
-                            url = "https://takeout.google.com",
-                            styles = TextLinkStyles(style = SpanStyle(color = YouTubeRed, textDecoration = TextDecoration.Underline))
-                        )
-                    ) {
-                        append("takeout.google.com")
-                    }
-                },
-                buildAnnotatedString { append("2. Click \"Deselect all\" to avoid a massive export") },
-                buildAnnotatedString { append("3. Select only \"YouTube and YouTube Music\"") },
-                buildAnnotatedString { append("4. Click \"All YouTube data included\" → deselect all → select only \"history\"") },
-                buildAnnotatedString { append("5. Optionally click \"Multiple formats\" → set History to JSON for richer data (HTML also works)") },
-                buildAnnotatedString { append("6. Create export and download the ZIP (large exports are split into several ZIPs — download all of them)") },
-                buildAnnotatedString { append("7. Select the ZIP file(s) here — no need to extract") }
-            )
-
-            steps.forEach { step ->
-                Text(
-                    text = step,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                    modifier = Modifier.padding(vertical = 2.dp)
-                )
-            }
+            TakeoutTutorial()
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Large exports are split into several ZIPs — download all of them and select them together.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextTertiary,
+                modifier = Modifier.padding(vertical = 2.dp),
+            )
 
             Text(
                 text = "Only YouTube Music entries are imported; regular YouTube videos are filtered out.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary,
-                modifier = Modifier.padding(vertical = 2.dp)
+                modifier = Modifier.padding(vertical = 2.dp),
             )
 
             Text(
                 text = "Takeout only includes plays recorded while Watch history was on, and exports sometimes cut off older data. If a play count looks too low, that's why.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary,
-                modifier = Modifier.padding(vertical = 2.dp)
+                modifier = Modifier.padding(vertical = 2.dp),
             )
 
             Text(
                 text = "Albums, album art and genres aren't in the Takeout file. Tempo fills them in automatically in the background, which can take a few hours for large libraries.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary,
-                modifier = Modifier.padding(vertical = 2.dp)
+                modifier = Modifier.padding(vertical = 2.dp),
             )
         }
     }
@@ -316,15 +303,15 @@ private fun IdleContent(
 @Composable
 private fun ImportingContent(importState: YouTubeMusicImportService.ImportState) {
     GlassCard(
-        contentPadding = PaddingValues(24.dp)
+        contentPadding = PaddingValues(24.dp),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             CircularProgressIndicator(
                 color = YouTubeRed,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -333,29 +320,34 @@ private fun ImportingContent(importState: YouTubeMusicImportService.ImportState)
                 text = "Importing...",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = TextPrimary,
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            val (message, progress) = when (importState) {
-                is YouTubeMusicImportService.ImportState.Parsing -> {
-                    "Parsing ${importState.fileName}..." to
-                        (importState.filesProcessed.toFloat() / importState.totalFiles.coerceAtLeast(1))
+            val (message, progress) =
+                when (importState) {
+                    is YouTubeMusicImportService.ImportState.Parsing -> {
+                        "Parsing ${importState.fileName}..." to
+                            (importState.filesProcessed.toFloat() / importState.totalFiles.coerceAtLeast(1))
+                    }
+
+                    is YouTubeMusicImportService.ImportState.Importing -> {
+                        "Importing ${importState.current}/${importState.total} entries\n" +
+                            "${importState.tracksImported} tracks, ${importState.eventsCreated} events" to
+                            (importState.current.toFloat() / importState.total.coerceAtLeast(1))
+                    }
+
+                    else -> {
+                        "Preparing..." to 0f
+                    }
                 }
-                is YouTubeMusicImportService.ImportState.Importing -> {
-                    "Importing ${importState.current}/${importState.total} entries\n" +
-                        "${importState.tracksImported} tracks, ${importState.eventsCreated} events" to
-                        (importState.current.toFloat() / importState.total.coerceAtLeast(1))
-                }
-                else -> "Preparing..." to 0f
-            }
 
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -364,28 +356,26 @@ private fun ImportingContent(importState: YouTubeMusicImportService.ImportState)
                 progress = { progress.coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
                 color = YouTubeRed,
-                trackColor = GlassFrostSoft
+                trackColor = GlassFrostSoft,
             )
         }
     }
 }
 
 @Composable
-private fun CompletedContent(
-    result: YouTubeMusicImportService.ImportResult
-) {
+private fun CompletedContent(result: YouTubeMusicImportService.ImportResult) {
     GlassCard(
-        contentPadding = PaddingValues(24.dp)
+        contentPadding = PaddingValues(24.dp),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = null,
                 tint = YouTubeRed,
-                modifier = Modifier.size(56.dp)
+                modifier = Modifier.size(56.dp),
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -394,7 +384,7 @@ private fun CompletedContent(
                 text = "Import Complete!",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = TextPrimary,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -412,7 +402,7 @@ private fun CompletedContent(
                 Text(
                     text = "${result.errors.size} warnings",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TempoWarningBright
+                    color = TempoWarningBright,
                 )
             }
 
@@ -421,30 +411,34 @@ private fun CompletedContent(
             Text(
                 text = "Continuing automatically...",
                 style = MaterialTheme.typography.bodySmall,
-                color = TextTertiary
+                color = TextTertiary,
             )
         }
     }
 }
 
 @Composable
-private fun StatRow(label: String, value: Int) {
+private fun StatRow(
+    label: String,
+    value: Int,
+) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary
+            color = TextSecondary,
         )
         Text(
             text = value.toString(),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary
+            color = TextPrimary,
         )
     }
 }
@@ -453,20 +447,20 @@ private fun StatRow(label: String, value: Int) {
 private fun ErrorContent(
     message: String,
     onRetry: () -> Unit,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
 ) {
     GlassCard(
-        contentPadding = PaddingValues(24.dp)
+        contentPadding = PaddingValues(24.dp),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(
                 imageVector = Icons.Default.Error,
                 contentDescription = null,
                 tint = TempoError,
-                modifier = Modifier.size(56.dp)
+                modifier = Modifier.size(56.dp),
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -475,7 +469,7 @@ private fun ErrorContent(
                 text = "Import Failed",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary
+                color = TextPrimary,
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -484,28 +478,29 @@ private fun ErrorContent(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(
                     onClick = onNavigateBack,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     Text("Cancel")
                 }
 
                 Button(
                     onClick = onRetry,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = YouTubeRed
-                    ),
-                    modifier = Modifier.weight(1f)
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = YouTubeRed,
+                        ),
+                    modifier = Modifier.weight(1f),
                 ) {
                     Text("Retry")
                 }

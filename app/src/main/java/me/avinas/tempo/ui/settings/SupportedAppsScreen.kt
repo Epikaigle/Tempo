@@ -479,27 +479,44 @@ private fun AddAppDialog(
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
 
-    // Get installed apps
-    // Get installed apps
-    val installedApps = remember {
-        val pm = context.packageManager
-        val mainIntent = android.content.Intent(android.content.Intent.ACTION_MAIN, null).apply {
-            addCategory(android.content.Intent.CATEGORY_LAUNCHER)
-        }
-        pm.queryIntentActivities(mainIntent, 0)
-            .map { resolveInfo ->
-                Pair(
-                    resolveInfo.activityInfo.packageName,
-                    resolveInfo.loadLabel(pm).toString()
-                )
+    // PackageManager queries + loadLabel() do binder calls and APK asset loads
+    // per app; running them in remember{} on the main thread during composition
+    // blocks input for seconds on app-heavy devices (ANR "Input dispatching
+    // timed out" at ResolveInfo.loadLabel). Load once on IO, show a spinner.
+    var installedApps by remember { mutableStateOf<List<Pair<String, String>>?>(null) }
+    LaunchedEffect(Unit) {
+        val apps = withContext(Dispatchers.IO) {
+            try {
+                val pm = context.packageManager
+                val mainIntent = android.content.Intent(
+                    android.content.Intent.ACTION_MAIN, null
+                ).apply {
+                    addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                }
+                pm.queryIntentActivities(mainIntent, 0)
+                    .mapNotNull { resolveInfo ->
+                        try {
+                            Pair(
+                                resolveInfo.activityInfo.packageName,
+                                resolveInfo.loadLabel(pm).toString()
+                            )
+                        } catch (_: Exception) {
+                            null // one bad app must not kill the whole list
+                        }
+                    }
+                    .distinctBy { it.first } // Remove duplicates if any
+                    .sortedBy { it.second }
+            } catch (_: Exception) {
+                emptyList()
             }
-            .distinctBy { it.first } // Remove duplicates if any
-            .sortedBy { it.second }
+        }
+        installedApps = apps
     }
 
-    val filteredApps = remember(searchQuery) {
-        if (searchQuery.isBlank()) installedApps.take(30)
-        else installedApps.filter {
+    val filteredApps = remember(searchQuery, installedApps) {
+        val apps = installedApps.orEmpty()
+        if (searchQuery.isBlank()) apps.take(30)
+        else apps.filter {
             it.first.contains(searchQuery, ignoreCase = true) ||
             it.second.contains(searchQuery, ignoreCase = true)
         }
@@ -614,7 +631,20 @@ private fun AddAppDialog(
                         }
                     }
 
-                    if (filteredApps.isEmpty()) {
+                    if (installedApps == null) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = TempoPrimary,
+                                    modifier = Modifier.size(28.dp),
+                                    strokeWidth = 3.dp
+                                )
+                            }
+                        }
+                    } else if (filteredApps.isEmpty()) {
                         item {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(16.dp),

@@ -72,8 +72,8 @@
     <string name="level_reached">You reached Level %1$d</string>
 
     <!-- Onboarding: Welcome screen -->
-    <string name="welcome_headline_1">Know Your Music,</string>
-    <string name="welcome_headline_2">Love Your Stats</string>
+    <string name="welcome_headline_1">Every listen,</string>
+    <string name="welcome_headline_2">a little more you</string>
     <string name="welcome_description">Tempo automatically tracks what you listen to and shows you beautiful insights about your listening habits.</string>
     <string name="welcome_get_started">Get Started</string>
     <string name="welcome_skip">Skip</string>
@@ -86,9 +86,9 @@
     <string name="how_it_works_step2_title">Notification appears</string>
     <string name="how_it_works_step2_subtitle">Tempo reads only music info</string>
     <string name="how_it_works_step3_title">Stats saved locally</string>
-    <string name="how_it_works_step3_subtitle">On your phone, nowhere else</string>
+    <string name="how_it_works_step3_subtitle">Your listening history stays here</string>
     <string name="how_it_works_badge_apps">20+ apps</string>
-    <string name="how_it_works_badge_local">100% local</string>
+    <string name="how_it_works_badge_local">Local-first</string>
     <string name="how_it_works_badge_auto">Auto-tracks</string>
     <string name="how_it_works_next">Next</string>
 
@@ -97,8 +97,8 @@
     <string name="privacy_subtitle">Privacy isn\'t a feature. It\'s the foundation.</string>
     <string name="privacy_local_title">100% Local Storage</string>
     <string name="privacy_local_desc">All data stays on your phone. Always.</string>
-    <string name="privacy_no_cloud_title">No Servers, No Cloud</string>
-    <string name="privacy_no_cloud_desc">We have no backend. Zero data uploaded.</string>
+    <string name="privacy_no_cloud_title">No Tempo Servers</string>
+    <string name="privacy_no_cloud_desc">We run no backend and have no account for you. The only thing that leaves your phone is anonymous app-health stats, which you can turn off any time in Settings.</string>
     <string name="privacy_notif_title">Music Notifications Only</string>
     <string name="privacy_notif_desc">We read Spotify, YouTube Music, etc. Never messages.</string>
     <string name="privacy_open_source_title">Open Source</string>

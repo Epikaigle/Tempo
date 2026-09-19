@@ -54,6 +54,7 @@ import me.avinas.tempo.utils.ReviewUtils
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
+    analyticsDisclosureViewModel: AnalyticsDisclosureViewModel = hiltViewModel(),
     onNavigateToStats: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToSettings: () -> Unit,
@@ -65,6 +66,7 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val flags by viewModel.flagsState.collectAsState()
+    val analyticsDisclosure by analyticsDisclosureViewModel.uiState.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     var isLaunchingReview by remember { mutableStateOf(false) }
     var showTodaysOverview by remember { mutableStateOf(false) }
@@ -107,6 +109,18 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    // One-time notice that Tempo reports anonymous app-health stats.
+                    // Gated here rather than inside the card so an acknowledged notice
+                    // leaves no empty slot behind in the spaced column.
+                    if (analyticsDisclosure.shouldShow) {
+                        item(key = "analytics_disclosure") {
+                            AnalyticsDisclosureCard(
+                                viewModel = analyticsDisclosureViewModel,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+                    }
+
                     item(key = "header") {
                         VibeHeader(
                             energy = uiState.audioFeatures?.averageEnergy ?: 0.5f,
@@ -203,6 +217,8 @@ fun HomeScreen(
                                         viewModel.onSpotlightViewed()
                                         if (directStoryTimeRange != null) {
                                             onNavigateToSpotlight(directStoryTimeRange, true)
+                                        } else {
+                                            onNavigateToSpotlight(null, true)
                                         }
                                     },
                                     albumArtUrl = uiState.spotlightTopTrack?.albumArtUrl,

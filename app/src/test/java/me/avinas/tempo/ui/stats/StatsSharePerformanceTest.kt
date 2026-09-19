@@ -124,6 +124,6 @@ class StatsSharePerformanceTest {
         }
         assertEquals(ShareBackdropStyle.FLUTED_GLASS, ShareTheme.GLASS.palette.backdrop)
         assertEquals(ShareBackdropStyle.ASCII_ARTWORK, ShareTheme.ASCII.palette.backdrop)
-        assertEquals(ShareBackdropStyle.GLITCH_MOTION, ShareTheme.GLITCH.palette.backdrop)
+        assertEquals(ShareBackdropStyle.GRAIN_GRADIENT, ShareTheme.GRAIN.palette.backdrop)
     }
 }

@@ -45,6 +45,7 @@ import me.avinas.tempo.ui.components.CaptureWrapper
 import me.avinas.tempo.ui.components.rememberCaptureController
 import me.avinas.tempo.ui.spotlight.SpotlightCardData
 import me.avinas.tempo.ui.theme.*
+import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.utils.ShareUtils
 
 /**
@@ -137,7 +138,7 @@ fun ShareCanvasScreen(
     // Handle share capture
     LaunchedEffect(Unit) {
         captureController.capturedBitmap.collect { bitmap ->
-            val success = ShareUtils.shareBitmap(context, bitmap)
+            val success = ShareUtils.shareBitmap(context, bitmap, TempoFeature.SHARE_CANVAS)
             if (!success) {
                 android.widget.Toast.makeText(
                     context,

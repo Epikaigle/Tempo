@@ -26,10 +26,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -65,9 +65,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -106,7 +103,10 @@ fun StatsScreen(
     onNavigateToSupportedApps: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val listState = remember(uiState.selectedTab, uiState.selectedTimeRange, uiState.selectedSortBy) { LazyListState() }
+    // New tab/range/sort/search = new list: recreate state so scroll resets to
+    // 0 synchronously before the next measure. The old manual scroll-to-item
+    // clamp fought flings mid-measure (subcompose crash trigger) and is gone.
+    val listState = remember(uiState.selectedTab, uiState.selectedTimeRange, uiState.selectedSortBy, uiState.searchQuery) { LazyListState() }
     val scope = rememberCoroutineScope()
     var showShareDialog by remember { mutableStateOf(false) }
 
@@ -128,23 +128,10 @@ fun StatsScreen(
         searchOpen = false
     }
 
-    // Workaround for LazyColumn crash when item count drops below current scroll index
-    val totalItemCount = remember(uiState.isLoading, uiState.items, uiState.isLoadingMore) {
-        var count = 1 // sticky tab selector
-        count += 1 // sort selector
-        if (!uiState.isLoading && uiState.items.isEmpty()) {
-            count += 1 // empty state
-        } else if (!uiState.isLoading && uiState.items.isNotEmpty()) {
-            count += uiState.items.size // hero + remaining items
-        }
-        if (uiState.isLoadingMore) count += 1
-        count
-    }
-    LaunchedEffect(totalItemCount) {
-        if (totalItemCount > 0 && listState.firstVisibleItemIndex >= totalItemCount) {
-            listState.scrollToItem(totalItemCount - 1)
-        }
-    }
+    // NOTE: the old totalItemCount + scrollToItem workaround was removed: it
+    // issued a scroll during flings, fighting remeasure and triggering the
+    // subcompose IllegalArgumentException. Stable keys + state recreation
+    // above make it unnecessary (Lazy clamps internally).
     val walkthroughController = me.avinas.tempo.ui.components.LocalWalkthroughController.current
 
     // Pagination Logic - simplified for better scroll performance
@@ -325,14 +312,16 @@ fun StatsScreen(
                     listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
                 }
             }
-            StatsTopBar(
-                isScrolled = isScrolled,
-                hasItems = uiState.items.isNotEmpty(),
-                isSearchActive = uiState.searchQuery.isNotBlank(),
-                onOpenSearch = { searchOpen = true },
-                onOpenShare = { showShareDialog = true },
-                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
-            )
+            if (!searchOpen) {
+                StatsTopBar(
+                    isScrolled = isScrolled,
+                    hasItems = uiState.items.isNotEmpty(),
+                    isSearchActive = uiState.searchQuery.isNotBlank(),
+                    onOpenSearch = { searchOpen = true },
+                    onOpenShare = { showShareDialog = true },
+                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                )
+            }
 
             // Time Period Filter
             Box(
@@ -353,38 +342,27 @@ fun StatsScreen(
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = TempoPrimary)
             }
 
-            // Search drawer: unfurls from the top edge when the search icon is tapped.
-            // Expand/shrink (clip reveal) instead of a full-height slide — the drawer
-            // grows out of the top edge in place, so nothing "arrives from somewhere".
+            // Search drawer: reveals horizontally from the search-icon side (End)
+            // instead of dropping from the top, and stays minimal — just the
+            // field itself, no full-width background block covering content.
             // Declared last so it draws above the top bar and list content.
             AnimatedVisibility(
                 visible = searchOpen,
-                enter = expandVertically(
-                    expandFrom = Alignment.Top,
+                enter = expandHorizontally(
+                    expandFrom = Alignment.End,
                     animationSpec = tween(280, easing = FastOutSlowInEasing)
                 ) + fadeIn(animationSpec = tween(220)),
-                exit = shrinkVertically(
-                    shrinkTowards = Alignment.Top,
+                exit = shrinkHorizontally(
+                    shrinkTowards = Alignment.End,
                     animationSpec = tween(220, easing = FastOutSlowInEasing)
                 ) + fadeOut(animationSpec = tween(160)),
                 modifier = Modifier.align(Alignment.TopCenter)
             ) {
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(TempoDarkBackground)
-                        .drawBehind {
-                            // Soft shadow bleeding below the drawer so it reads as a layer.
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(Color.Black.copy(alpha = 0.30f), Color.Transparent)
-                                ),
-                                topLeft = Offset(0f, size.height),
-                                size = Size(size.width, 24.dp.toPx())
-                            )
-                        }
                         .statusBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
                     StatsSearchField(
                         query = uiState.searchQuery,
@@ -739,8 +717,8 @@ private fun StatsSearchField(
             .height(46.dp),
         shape = RoundedCornerShape(23.dp),
         contentPadding = PaddingValues(horizontal = 14.dp),
-        backgroundColor = Color.Black.copy(alpha = 0.5f),
-        variant = me.avinas.tempo.ui.components.GlassCardVariant.LowProminence
+        variant = me.avinas.tempo.ui.components.GlassCardVariant.Obsidian,
+        shadowElevation = 8.dp
     ) {
         val focusManager = LocalFocusManager.current
         Row(

@@ -72,8 +72,8 @@
     <string name="level_reached">Вы достигли Уровня %1$d</string>
 
     <!-- Onboarding: Welcome screen -->
-    <string name="welcome_headline_1">Понимайте музыку,</string>
-    <string name="welcome_headline_2">любите статистику</string>
+    <string name="welcome_headline_1">Каждое прослушивание,</string>
+    <string name="welcome_headline_2">чуть больше тебя</string>
     <string name="welcome_description">Tempo автоматически отслеживает то, что вы слушаете, и показывает красивую статистику ваших музыкаческих привычек.</string>
     <string name="welcome_get_started">Начать</string>
     <string name="welcome_skip">Пропустить</string>
@@ -86,9 +86,7 @@
     <string name="how_it_works_step2_title">Появляется уведомление</string>
     <string name="how_it_works_step2_subtitle">Tempo считывает только информацию о треке</string>
     <string name="how_it_works_step3_title">Статистика сохраняется локально</string>
-    <string name="how_it_works_step3_subtitle">На вашем телефоне и больше нигде</string>
     <string name="how_it_works_badge_apps">20+ приложений</string>
-    <string name="how_it_works_badge_local">100% локально</string>
     <string name="how_it_works_badge_auto">Автоотслеживание</string>
     <string name="how_it_works_next">Далее</string>
 
@@ -97,8 +95,6 @@
     <string name="privacy_subtitle">Конфиденциальность — это не функция. Это фундамент.</string>
     <string name="privacy_local_title">100% локальное хранение</string>
     <string name="privacy_local_desc">Все данные остаются на вашем телефоне. Всегда.</string>
-    <string name="privacy_no_cloud_title">Никаких серверов и облаков</string>
-    <string name="privacy_no_cloud_desc">У нас нет бэкенда. Данные никуда не загружаются.</string>
     <string name="privacy_notif_title">Только музыкальные уведомления</string>
     <string name="privacy_notif_desc">Мы читаем уведомления Spotify, YouTube Music и т. д. Личные сообщения никогда не считываются.</string>
     <string name="privacy_open_source_title">Открытый исходный код</string>

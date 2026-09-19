@@ -62,7 +62,16 @@ class SpotifyTokenStorage @Inject constructor(
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
+            ).also {
+                // ponytail: wipe any cleartext fallback left by a past Keystore failure.
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        context.deleteSharedPreferences("${PREFS_NAME}_fallback")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to delete fallback prefs", e)
+                }
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to open encrypted prefs, clearing and retrying", e)
             return resetEncryptedPrefs()

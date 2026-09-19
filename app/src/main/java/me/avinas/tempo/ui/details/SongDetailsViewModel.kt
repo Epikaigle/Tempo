@@ -37,6 +37,9 @@ import me.avinas.tempo.worker.EnrichmentWorker
 import java.time.Instant
 import java.time.ZoneId
 import javax.inject.Inject
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 
 /**
  * ViewModel for Song Details screen.
@@ -56,6 +59,7 @@ class SongDetailsViewModel @Inject constructor(
     private val trackRepository: TrackRepository,
     private val trackAliasRepository: TrackAliasRepository,
     private val listeningEventDao: ListeningEventDao,
+    private val tracker: AnalyticsTracker,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -131,6 +135,12 @@ class SongDetailsViewModel @Inject constructor(
                         TagBasedMoodAnalyzer.getMoodSummary(tags, genres)
                     } else null
                 } else null
+
+                // Reported only when a mood was actually derived, and not on the quiet reload that
+                // fires when metadata arrives late, so a user reading this track is counted once.
+                if (!quiet && moodSummary != null) {
+                    tracker.track(FeatureUsed(TempoFeature.MOOD_ANALYSIS))
+                }
 
                 // Compute peak binge day
                 val peakBinge = history.maxByOrNull { it.playCount }?.let {

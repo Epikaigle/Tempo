@@ -49,11 +49,11 @@ interface TrackDao {
     @Query("UPDATE tracks SET album = :albumTitle WHERE id = :trackId")
     suspend fun setTrackAlbum(trackId: Long, albumTitle: String?)
 
-    // ponytail: exact-artist match only (album stats match on exact artist string),
-    // so featured/multi-artist tracks whose `artist` differs won't surface as candidates.
+    // ponytail: match on primary_artist_id (feat. tracks keep the main artist as
+    // primary) with exact-string fallback for legacy unlinked tracks.
     @Query("""
         SELECT * FROM tracks
-        WHERE artist = :artistName
+        WHERE (primary_artist_id = :artistId OR LOWER(artist) = LOWER(:artistName))
         AND (album IS NULL OR album != :albumTitle)
         AND (:query = '' OR INSTR(LOWER(title), LOWER(:query)) > 0)
         ORDER BY title ASC
@@ -62,7 +62,8 @@ interface TrackDao {
     suspend fun getCandidateTracksForAlbum(
         artistName: String,
         albumTitle: String,
-        query: String
+        query: String,
+        artistId: Long
     ): List<Track>
 
     /**

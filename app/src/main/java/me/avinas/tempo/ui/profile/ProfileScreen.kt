@@ -51,11 +51,11 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,18 +67,19 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import me.avinas.tempo.R
 import me.avinas.tempo.data.local.entities.Badge
 import me.avinas.tempo.data.local.entities.DailyChallenge
 import me.avinas.tempo.data.local.entities.UserLevel
 import me.avinas.tempo.data.stats.GamificationEngine
 import me.avinas.tempo.ui.components.ArtAtmosphereLayer
+import me.avinas.tempo.ui.components.BadgeShareCard
 import me.avinas.tempo.ui.components.CachedAsyncImage
+import me.avinas.tempo.ui.components.CelebrationParticlesCanvas
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.FrostedIconButton
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
-import me.avinas.tempo.ui.components.BadgeShareCard
-import me.avinas.tempo.ui.components.CelebrationParticlesCanvas
 import me.avinas.tempo.ui.components.MilestoneShareCard
 import me.avinas.tempo.ui.components.SharePreviewDialog
 import me.avinas.tempo.ui.theme.*
@@ -96,53 +97,125 @@ import kotlin.math.sin
 private val ProfileMaxContentWidth = 660.dp
 
 // ── Level tier palette — connects visual radiance directly to listener rank ──
-internal fun getLevelTierAccent(level: Int): Color = when {
-    level >= 100 -> Color(0xFFEC4899) // Mythic Pink
-    level >= 75 -> Color(0xFFF43F5E)  // Rose
-    level >= 50 -> TempoWarningBright // Gold (#FBBF24)
-    level >= 35 -> Color(0xFFA855F7)  // Purple
-    level >= 20 -> TempoInfo          // Electric Blue (#3B82F6)
-    level >= 10 -> TempoAccent        // Cyan (#5EEAD4)
-    level >= 5  -> TempoSuccessBright // Emerald (#4ADE80)
-    else        -> TempoPrimary       // Studio Teal (#2FDBB8)
-}
+internal fun getLevelTierAccent(level: Int): Color =
+    when {
+        level >= 100 -> Color(0xFFEC4899)
+
+        // Mythic Pink
+        level >= 75 -> Color(0xFFF43F5E)
+
+        // Rose
+        level >= 50 -> TempoWarningBright
+
+        // Gold (#FBBF24)
+        level >= 35 -> Color(0xFFA855F7)
+
+        // Purple
+        level >= 20 -> TempoInfo
+
+        // Electric Blue (#3B82F6)
+        level >= 10 -> TempoAccent
+
+        // Cyan (#5EEAD4)
+        level >= 5 -> TempoSuccessBright
+
+        // Emerald (#4ADE80)
+        else -> TempoPrimary // Studio Teal (#2FDBB8)
+    }
 
 // ── Category & difficulty identity — data colormaps, not chrome tokens ──
-internal fun getCategoryColor(category: String): Color = when (category) {
-    "MILESTONE" -> TempoWarning
-    "TIME" -> TempoInfo
-    "STREAK" -> TempoError
-    "DISCOVERY" -> TempoSuccessDeep
-    "ENGAGEMENT" -> InsightDanceability
-    "LEVEL" -> InsightBinge
-    else -> Color.Gray
+internal fun getCategoryColor(category: String): Color =
+    when (category) {
+        "MILESTONE" -> TempoWarning
+        "TIME" -> TempoInfo
+        "STREAK" -> TempoError
+        "DISCOVERY" -> TempoSuccessDeep
+        "ENGAGEMENT" -> InsightDanceability
+        "LEVEL" -> InsightBinge
+        else -> Color.Gray
+    }
+
+internal fun getCategoryLabel(category: String): String =
+    when (category) {
+        "MILESTONE" -> "Milestones"
+        "TIME" -> "Time"
+        "STREAK" -> "Streaks"
+        "DISCOVERY" -> "Discovery"
+        "ENGAGEMENT" -> "Engagement"
+        "LEVEL" -> "Levels"
+        else -> category
+    }
+
+// Challenge titles generated before the custom icon set landed carry a leading emoji.
+// Persisted rows survive until the next daily refresh, so drop it at render time rather
+// than showing the emoji next to its replacement icon for the rest of the day.
+private val LeadingEmoji = Regex("^[^\\p{L}\\p{N}]+")
+
+private fun String.withoutLeadingEmoji(): String = replace(LeadingEmoji, "")
+
+/**
+ * Custom icon for a challenge, keyed on [DailyChallenge.challengeId] rather than category.
+ *
+ * The five categories collapse eight distinct challenge types — VOLUME covers both
+ * song-count and minute-count, DISCOVERY covers artists and genres — and each type has its
+ * own icon. Ids are stable and persisted, so they survive daily title regeneration.
+ */
+private fun getChallengeIcon(challenge: DailyChallenge): Int {
+    val id = challenge.challengeId
+    return when {
+        id.startsWith("volume_songs") -> {
+            R.drawable.ic_challenge_songs
+        }
+
+        id.startsWith("volume_mins") -> {
+            R.drawable.ic_challenge_minutes
+        }
+
+        id.startsWith("variety_artists") -> {
+            R.drawable.ic_challenge_variety
+        }
+
+        id.startsWith("discovery_artists") -> {
+            R.drawable.ic_challenge_discovery_artists
+        }
+
+        id.startsWith("discovery_genres") -> {
+            R.drawable.ic_challenge_discovery_genres
+        }
+
+        id.startsWith("explore_artist") -> {
+            R.drawable.ic_challenge_explore_artist
+        }
+
+        id.startsWith("explore_genre") -> {
+            R.drawable.ic_challenge_explore_genre
+        }
+
+        id.startsWith("time_early_bird") -> {
+            R.drawable.ic_challenge_early_bird
+        }
+
+        // Unrecognised id (e.g. a type added by a newer version) — fall back on category,
+        // matching the previous category-keyed behaviour.
+        else -> {
+            when (challenge.category) {
+                "TIME" -> R.drawable.ic_challenge_early_bird
+                "VARIETY" -> R.drawable.ic_challenge_variety
+                "DISCOVERY" -> R.drawable.ic_challenge_discovery_genres
+                "EXPLORATION" -> R.drawable.ic_challenge_explore_artist
+                else -> R.drawable.ic_challenge_songs
+            }
+        }
+    }
 }
 
-internal fun getCategoryLabel(category: String): String = when (category) {
-    "MILESTONE" -> "Milestones"
-    "TIME" -> "Time"
-    "STREAK" -> "Streaks"
-    "DISCOVERY" -> "Discovery"
-    "ENGAGEMENT" -> "Engagement"
-    "LEVEL" -> "Levels"
-    else -> category
-}
-
-private fun getChallengeCategoryIcon(category: String): ImageVector = when (category) {
-    "VOLUME" -> Icons.Rounded.MusicNote
-    "TIME" -> Icons.Rounded.Schedule
-    "VARIETY" -> Icons.Rounded.Palette
-    "DISCOVERY" -> Icons.Rounded.AutoAwesome
-    "EXPLORATION" -> Icons.Rounded.Explore
-    else -> Icons.Rounded.Star
-}
-
-private fun getDifficultyColor(difficulty: String): Color = when (difficulty) {
-    "EASY" -> TempoSuccessDeep
-    "MEDIUM" -> TempoWarning
-    "HARD" -> TempoError
-    else -> Color.Gray
-}
+private fun getDifficultyColor(difficulty: String): Color =
+    when (difficulty) {
+        "EASY" -> TempoSuccessDeep
+        "MEDIUM" -> TempoWarning
+        "HARD" -> TempoError
+        else -> Color.Gray
+    }
 
 // ──────────────────────────────────────────────────────────────
 // Editorial Section Catalog Kicker & Section Header
@@ -166,10 +239,11 @@ internal fun SectionCatalogKicker(
             color = TextPrimary,
         )
         Box(
-            modifier = Modifier
-                .width(10.dp)
-                .height(0.8.dp)
-                .background(GlassBorderMedium),
+            modifier =
+                Modifier
+                    .width(10.dp)
+                    .height(0.8.dp)
+                    .background(GlassBorderMedium),
         )
         Text(
             text = label.uppercase(Locale.getDefault()),
@@ -187,13 +261,13 @@ private fun EditorialSectionHeader(
     sectionNumber: String,
     title: String,
     subtitle: String,
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             SectionCatalogKicker(number = sectionNumber, label = title)
             if (trailing != null) {
@@ -203,7 +277,7 @@ private fun EditorialSectionHeader(
         Text(
             text = subtitle,
             style = CaptionSmall,
-            color = TextTertiary
+            color = TextTertiary,
         )
     }
 }
@@ -220,16 +294,19 @@ internal fun MastheadHeroMetric(
     accentTint: Color,
 ) {
     val reducedMotion = rememberReducedMotion()
-    val pulseScale by if (reducedMotion) remember { mutableFloatStateOf(1f) } else {
+    val pulseScale by if (reducedMotion) {
+        remember { mutableFloatStateOf(1f) }
+    } else {
         val transition = rememberInfiniteTransition(label = "heroMetricPulse")
         transition.animateFloat(
             initialValue = 0.85f,
             targetValue = 1.35f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1400, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "heroMetricPulseScale"
+            animationSpec =
+                infiniteRepeatable(
+                    animation = tween(1400, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+            label = "heroMetricPulseScale",
         )
     }
 
@@ -239,14 +316,14 @@ internal fun MastheadHeroMetric(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .graphicsLayer {
-                        scaleX = pulseScale
-                        scaleY = pulseScale
-                    }
-                    .clip(CircleShape)
-                    .background(accentTint),
+                modifier =
+                    Modifier
+                        .size(6.dp)
+                        .graphicsLayer {
+                            scaleX = pulseScale
+                            scaleY = pulseScale
+                        }.clip(CircleShape)
+                        .background(accentTint),
             )
             Text(
                 text = label.uppercase(Locale.getDefault()),
@@ -261,10 +338,11 @@ internal fun MastheadHeroMetric(
         ) {
             Text(
                 text = value,
-                style = MaterialTheme.typography.displayMedium.copy(
-                    fontFamily = DisplayFontFamily,
-                    letterSpacing = (-1.5).sp,
-                ),
+                style =
+                    MaterialTheme.typography.displayMedium.copy(
+                        fontFamily = DisplayFontFamily,
+                        letterSpacing = (-1.5).sp,
+                    ),
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
                 lineHeight = 44.sp,
@@ -329,101 +407,114 @@ private fun ProgressTrack(
     color: Color = TempoPrimary,
     brush: Brush? = null,
     trackColor: Color = Color.White.copy(alpha = 0.08f),
-    height: Dp = 6.dp
+    height: Dp = 6.dp,
 ) {
     Box(
-        modifier = modifier
-            .height(height)
-            .clip(CircleShape)
-            .background(trackColor)
-            .drawBehind {
-                val p = progress.coerceIn(0f, 1f)
-                if (p > 0f) {
-                    val fillWidth = size.width * p
-                    val corner = androidx.compose.ui.geometry.CornerRadius(size.height / 2f, size.height / 2f)
-                    if (brush != null) {
-                        drawRoundRect(
-                            brush = brush,
-                            size = Size(fillWidth, size.height),
-                            cornerRadius = corner
-                        )
-                    } else {
-                        drawRoundRect(
-                            color = color,
-                            size = Size(fillWidth, size.height),
-                            cornerRadius = corner
-                        )
+        modifier =
+            modifier
+                .height(height)
+                .clip(CircleShape)
+                .background(trackColor)
+                .drawBehind {
+                    val p = progress.coerceIn(0f, 1f)
+                    if (p > 0f) {
+                        val fillWidth = size.width * p
+                        val corner =
+                            androidx.compose.ui.geometry
+                                .CornerRadius(size.height / 2f, size.height / 2f)
+                        if (brush != null) {
+                            drawRoundRect(
+                                brush = brush,
+                                size = Size(fillWidth, size.height),
+                                cornerRadius = corner,
+                            )
+                        } else {
+                            drawRoundRect(
+                                color = color,
+                                size = Size(fillWidth, size.height),
+                                cornerRadius = corner,
+                            )
+                        }
                     }
-                }
-            }
+                },
     )
 }
 
 @Composable
 private fun XpChip(xp: Int) {
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(TempoWarning.copy(alpha = 0.12f))
-            .border(0.8.dp, TempoWarning.copy(alpha = 0.32f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp),
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(TempoWarning.copy(alpha = 0.12f))
+                .border(0.8.dp, TempoWarning.copy(alpha = 0.32f), RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Icon(
             imageVector = Icons.Rounded.AutoAwesome,
             contentDescription = null,
             tint = TempoWarning,
-            modifier = Modifier.size(13.dp)
+            modifier = Modifier.size(13.dp),
         )
         Text(
             text = "+$xp XP",
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = TempoWarning,
-            letterSpacing = 0.4.sp
+            letterSpacing = 0.4.sp,
         )
     }
 }
 
 @Composable
-private fun StarsChip(total: Int, max: Int) {
+private fun StarsChip(
+    total: Int,
+    max: Int,
+) {
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(TempoWarning.copy(alpha = 0.12f))
-            .border(0.8.dp, TempoWarning.copy(alpha = 0.32f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp),
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(TempoWarning.copy(alpha = 0.12f))
+                .border(0.8.dp, TempoWarning.copy(alpha = 0.32f), RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Icon(
             imageVector = Icons.Rounded.Star,
             contentDescription = null,
             tint = TempoWarning,
-            modifier = Modifier.size(13.dp)
+            modifier = Modifier.size(13.dp),
         )
         Text(
             text = "$total / $max",
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = TempoWarning,
-            letterSpacing = 0.4.sp
+            letterSpacing = 0.4.sp,
         )
     }
 }
 
 /** Compact identity shown in the top bar once the hero identity scrolls out of view. */
 @Composable
-private fun CollapsingProfileTitle(visible: Boolean, userName: String, level: Int, title: String) {
+private fun CollapsingProfileTitle(
+    visible: Boolean,
+    userName: String,
+    level: Int,
+    title: String,
+) {
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { -10 },
-        exit = fadeOut(tween(140)) + slideOutVertically(tween(140)) { -10 }
+        exit = fadeOut(tween(140)) + slideOutVertically(tween(140)) { -10 },
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(1.dp)
+            verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             Text(
                 text = userName,
@@ -431,7 +522,7 @@ private fun CollapsingProfileTitle(visible: Boolean, userName: String, level: In
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "Level $level · $title",
@@ -439,7 +530,7 @@ private fun CollapsingProfileTitle(visible: Boolean, userName: String, level: In
                 color = getLevelTierAccent(level),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -453,14 +544,14 @@ private fun CollapsingProfileTitle(visible: Boolean, userName: String, level: In
 internal fun SkeletonBlock(
     modifier: Modifier,
     cornerRadius: Dp,
-    alpha: Float = 0.65f
+    alpha: Float = 0.65f,
 ) {
     Box(
         modifier
             .graphicsLayer { this.alpha = alpha }
             .clip(RoundedCornerShape(cornerRadius))
             .background(GlassFrostMedium)
-            .border(0.8.dp, GlassBorderSoft, RoundedCornerShape(cornerRadius))
+            .border(0.8.dp, GlassBorderSoft, RoundedCornerShape(cornerRadius)),
     )
 }
 
@@ -471,15 +562,17 @@ private fun ProfileLoadingSkeleton(
     heroTopClearance: Dp,
 ) {
     val reducedMotion = rememberReducedMotion()
-    val pulse = rememberInfiniteTransition(label = "profileSkeleton").animateFloat(
-        initialValue = 0.40f,
-        targetValue = 0.85f,
-        animationSpec = infiniteRepeatable(
-            tween(900, easing = FastOutSlowInEasing),
-            RepeatMode.Reverse,
-        ),
-        label = "profileSkeletonAlpha",
-    )
+    val pulse =
+        rememberInfiniteTransition(label = "profileSkeleton").animateFloat(
+            initialValue = 0.40f,
+            targetValue = 0.85f,
+            animationSpec =
+                infiniteRepeatable(
+                    tween(900, easing = FastOutSlowInEasing),
+                    RepeatMode.Reverse,
+                ),
+            label = "profileSkeletonAlpha",
+        )
     val currentAlpha = if (reducedMotion) 0.65f else pulse.value
 
     Column(
@@ -492,12 +585,12 @@ private fun ProfileLoadingSkeleton(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp)
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp),
         ) {
             SkeletonBlock(modifier = Modifier.size(avatarSize), cornerRadius = avatarSize / 2, alpha = currentAlpha)
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SkeletonBlock(modifier = Modifier.size(160.dp, 24.dp), cornerRadius = 8.dp, alpha = currentAlpha)
                 SkeletonBlock(modifier = Modifier.size(120.dp, 14.dp), cornerRadius = 7.dp, alpha = currentAlpha)
@@ -521,7 +614,7 @@ private fun ProfileLoadingSkeleton(
 fun ProfileScreen(
     viewModel: ProfileViewModel = hiltViewModel(),
     onBack: () -> Unit,
-    onNavigateToSettings: () -> Unit = {}
+    onNavigateToSettings: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -535,24 +628,34 @@ fun ProfileScreen(
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
 
-    val tierAccent = remember(uiState.userLevel.currentLevel) {
-        getLevelTierAccent(uiState.userLevel.currentLevel)
-    }
+    val tierAccent =
+        remember(uiState.userLevel.currentLevel) {
+            getLevelTierAccent(uiState.userLevel.currentLevel)
+        }
 
     DeepOceanBackground {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             val compact = maxWidth < 380.dp
             val expanded = maxWidth >= 600.dp
-            val sidePadding = if (compact) 16.dp else if (expanded) 24.dp else 20.dp
-            val contentModifier = Modifier
-                .fillMaxWidth()
-                .then(if (expanded) Modifier.widthIn(max = ProfileMaxContentWidth) else Modifier)
-                .padding(horizontal = sidePadding)
-            val badgeColumns = when {
-                maxWidth >= 840.dp -> 4
-                expanded -> 3
-                else -> 2
-            }
+            val sidePadding =
+                if (compact) {
+                    16.dp
+                } else if (expanded) {
+                    24.dp
+                } else {
+                    20.dp
+                }
+            val contentModifier =
+                Modifier
+                    .fillMaxWidth()
+                    .then(if (expanded) Modifier.widthIn(max = ProfileMaxContentWidth) else Modifier)
+                    .padding(horizontal = sidePadding)
+            val badgeColumns =
+                when {
+                    maxWidth >= 840.dp -> 4
+                    expanded -> 3
+                    else -> 2
+                }
             val tabs = if (compact) listOf("Quests", "Badges") else listOf("Challenges", "Badges")
             val heroTopClearance = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp
 
@@ -561,27 +664,27 @@ fun ProfileScreen(
                 if (!uiState.profileImagePath.isNullOrBlank()) {
                     ArtAtmosphereLayer(
                         artUrl = uiState.profileImagePath,
-                        tint = tierAccent
+                        tint = tierAccent,
                     )
                 }
 
                 PullToRefreshBox(
                     isRefreshing = uiState.isRefreshing,
                     onRefresh = { scope.launch { viewModel.refresh() } },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
                 ) {
                     if (uiState.isLoading) {
                         ProfileLoadingSkeleton(
                             compact = compact,
                             contentModifier = contentModifier,
-                            heroTopClearance = heroTopClearance
+                            heroTopClearance = heroTopClearance,
                         )
                     } else {
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 132.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             item(key = "hero") {
                                 Column(modifier = contentModifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -592,7 +695,7 @@ fun ProfileScreen(
                                         userName = uiState.userName,
                                         profileImagePath = uiState.profileImagePath,
                                         tierAccent = tierAccent,
-                                        compact = compact
+                                        compact = compact,
                                     )
                                     Spacer(modifier = Modifier.height(20.dp))
                                 }
@@ -601,12 +704,12 @@ fun ProfileScreen(
                             item(key = "stats_tabs") {
                                 Column(
                                     modifier = contentModifier,
-                                    verticalArrangement = Arrangement.spacedBy(22.dp)
+                                    verticalArrangement = Arrangement.spacedBy(22.dp),
                                 ) {
                                     if (uiState.streakAtRisk) {
                                         StreakRiskBanner(
                                             streakDurationMinutes = uiState.streakDurationMinutes,
-                                            timeRemaining = uiState.streakTimeRemaining
+                                            timeRemaining = uiState.streakTimeRemaining,
                                         )
                                     }
 
@@ -618,13 +721,13 @@ fun ProfileScreen(
                                         streakAtRisk = uiState.streakAtRisk,
                                         timeRemaining = uiState.streakTimeRemaining,
                                         tierAccent = tierAccent,
-                                        compact = compact
+                                        compact = compact,
                                     )
 
                                     TabSwitcher(
                                         tabs = tabs,
                                         selectedTab = selectedTab,
-                                        onTabSelected = { selectedTab = it }
+                                        onTabSelected = { selectedTab = it },
                                     )
                                 }
                             }
@@ -634,7 +737,7 @@ fun ProfileScreen(
                                     challengesSection(
                                         challenges = uiState.challenges,
                                         totalXpAvailable = uiState.challengeXpTotal,
-                                        contentModifier = contentModifier
+                                        contentModifier = contentModifier,
                                     )
                                 } else {
                                     item(key = "empty_challenges") {
@@ -660,7 +763,7 @@ fun ProfileScreen(
                                         showBadgeDetails = true
                                     },
                                     contentModifier = contentModifier,
-                                    badgeColumns = badgeColumns
+                                    badgeColumns = badgeColumns,
                                 )
                             }
                         }
@@ -669,32 +772,33 @@ fun ProfileScreen(
 
                 // Top Bar Navigation (matching SongDetails frosted action spec)
                 Row(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .then(if (expanded) Modifier.widthIn(max = ProfileMaxContentWidth) else Modifier)
-                        .statusBarsPadding()
-                        .padding(horizontal = sidePadding, vertical = 8.dp),
+                    modifier =
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .then(if (expanded) Modifier.widthIn(max = ProfileMaxContentWidth) else Modifier)
+                            .statusBarsPadding()
+                            .padding(horizontal = sidePadding, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     FrostedIconButton(
                         icon = Icons.AutoMirrored.Rounded.ArrowBack,
                         contentDescription = "Back",
-                        onClick = onBack
+                        onClick = onBack,
                     )
                     Box(modifier = Modifier.weight(1f).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
                         CollapsingProfileTitle(
                             visible = heroScrolledPast,
                             userName = uiState.userName,
                             level = uiState.userLevel.currentLevel,
-                            title = uiState.userTitle
+                            title = uiState.userTitle,
                         )
                     }
                     FrostedIconButton(
                         icon = Icons.Rounded.Settings,
                         contentDescription = "Settings",
-                        onClick = onNavigateToSettings
+                        onClick = onNavigateToSettings,
                     )
                 }
             }
@@ -708,7 +812,7 @@ fun ProfileScreen(
                     totalXp = uiState.userLevel.totalXp,
                     currentStreak = uiState.userLevel.currentStreak,
                     onDismiss = viewModel::dismissLevelUpCelebration,
-                    onShareMilestone = { showMilestoneShare = true }
+                    onShareMilestone = { showMilestoneShare = true },
                 )
             }
 
@@ -718,7 +822,7 @@ fun ProfileScreen(
                     userName = uiState.userName,
                     profileImagePath = uiState.profileImagePath,
                     onDismiss = { viewModel.acknowledgeBadges(uiState.unacknowledgedBadges.map { it.badgeId }) },
-                    onShareBadge = { badgeToShare -> shareBadgeTarget = badgeToShare }
+                    onShareBadge = { badgeToShare -> shareBadgeTarget = badgeToShare },
                 )
             }
 
@@ -731,26 +835,26 @@ fun ProfileScreen(
                         showBadgeDetails = false
                         selectedBadge = null
                     },
-                    onShareBadge = { badgeToShare -> shareBadgeTarget = badgeToShare }
+                    onShareBadge = { badgeToShare -> shareBadgeTarget = badgeToShare },
                 )
             }
 
             if (shareBadgeTarget != null) {
                 SharePreviewDialog(
-                    onDismiss = { shareBadgeTarget = null }
+                    onDismiss = { shareBadgeTarget = null },
                 ) { theme ->
                     BadgeShareCard(
                         badge = shareBadgeTarget!!,
                         userName = uiState.userName,
                         profileImagePath = uiState.profileImagePath,
-                        theme = theme
+                        theme = theme,
                     )
                 }
             }
 
             if (showMilestoneShare) {
                 SharePreviewDialog(
-                    onDismiss = { showMilestoneShare = false }
+                    onDismiss = { showMilestoneShare = false },
                 ) { theme ->
                     MilestoneShareCard(
                         level = uiState.userLevel.currentLevel,
@@ -759,7 +863,7 @@ fun ProfileScreen(
                         profileImagePath = uiState.profileImagePath,
                         totalXp = uiState.userLevel.totalXp,
                         streak = uiState.userLevel.currentStreak,
-                        theme = theme
+                        theme = theme,
                     )
                 }
             }
@@ -778,26 +882,27 @@ private fun HeroProfileSection(
     userName: String,
     profileImagePath: String?,
     tierAccent: Color,
-    compact: Boolean = false
+    compact: Boolean = false,
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = userLevel.levelProgress,
         animationSpec = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
-        label = "levelProgress"
+        label = "levelProgress",
     )
-    val progressBrush = remember {
-        Brush.horizontalGradient(
-            listOf(LevelRingSweepStart, LevelRingSweepMid, LevelRingSweepEnd)
-        )
-    }
+    val progressBrush =
+        remember {
+            Brush.horizontalGradient(
+                listOf(LevelRingSweepStart, LevelRingSweepMid, LevelRingSweepEnd),
+            )
+        }
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp)
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 18.dp),
         ) {
             HeroAvatar(
                 progress = animatedProgress,
@@ -805,32 +910,34 @@ private fun HeroProfileSection(
                 userName = userName,
                 profileImagePath = profileImagePath,
                 tierAccent = tierAccent,
-                compact = compact
+                compact = compact,
             )
 
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 // User Name in Display Font
                 Text(
                     text = userName,
-                    style = (if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium).copy(
-                        fontFamily = DisplayFontFamily,
-                        letterSpacing = (-0.5).sp
-                    ),
+                    style =
+                        (if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium).copy(
+                            fontFamily = DisplayFontFamily,
+                            letterSpacing = (-0.5).sp,
+                        ),
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
 
                 // Editorial Subtitle Kicker
-                val levelKicker = if (userTitle.isNotBlank()) {
-                    "LEVEL ${userLevel.currentLevel}  ·  ${userTitle.uppercase(Locale.getDefault())}"
-                } else {
-                    "LEVEL ${userLevel.currentLevel}"
-                }
+                val levelKicker =
+                    if (userTitle.isNotBlank()) {
+                        "LEVEL ${userLevel.currentLevel}  ·  ${userTitle.uppercase(Locale.getDefault())}"
+                    } else {
+                        "LEVEL ${userLevel.currentLevel}"
+                    }
                 Text(
                     text = levelKicker,
                     style = KickerSmall,
@@ -838,7 +945,7 @@ private fun HeroProfileSection(
                     letterSpacing = 1.2.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -852,22 +959,22 @@ private fun HeroProfileSection(
             variant = GlassCardVariant.Obsidian,
             borderColor = GlassBorderSoft,
             borderWidth = 0.8.dp,
-            contentPadding = PaddingValues(16.dp)
+            contentPadding = PaddingValues(16.dp),
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = "LEVEL ${userLevel.currentLevel} PROGRESS",
                         style = KickerSmall,
                         color = TextTertiary,
-                        letterSpacing = 1.1.sp
+                        letterSpacing = 1.1.sp,
                     )
                     ProgressPercentLabel(progress = animatedProgress, tierAccent = tierAccent)
                 }
@@ -876,36 +983,40 @@ private fun HeroProfileSection(
                     progress = animatedProgress,
                     modifier = Modifier.fillMaxWidth(),
                     brush = progressBrush,
-                    height = 6.dp
+                    height = 6.dp,
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = String.format(Locale.getDefault(), "%,d XP total", userLevel.totalXp),
                         style = CaptionSmall,
-                        color = TextSecondary
+                        color = TextSecondary,
                     )
                     Text(
                         text = String.format(Locale.getDefault(), "%,d XP to next level", userLevel.xpRemaining),
                         style = CaptionSmall,
-                        color = TextTertiary
+                        color = TextTertiary,
                     )
                 }
             }
         }
     }
 }
+
 @Composable
-private fun ProgressPercentLabel(progress: Float, tierAccent: Color) {
+private fun ProgressPercentLabel(
+    progress: Float,
+    tierAccent: Color,
+) {
     val percent = (progress * 100).roundToInt()
     Text(
         text = "$percent%",
         style = KickerSmall,
         color = tierAccent,
-        fontWeight = FontWeight.Bold
+        fontWeight = FontWeight.Bold,
     )
 }
 
@@ -914,42 +1025,42 @@ private fun InnerAvatarCircle(
     innerSize: Dp,
     tierAccent: Color,
     userName: String,
-    profileImagePath: String?
+    profileImagePath: String?,
 ) {
     Box(
-        modifier = Modifier
-            .size(innerSize)
-            .shadow(
-                elevation = 16.dp,
-                shape = CircleShape,
-                ambientColor = GlassShadowTeal,
-                spotColor = tierAccent.copy(alpha = 0.25f)
-            )
-            .clip(CircleShape)
-            .background(TempoDarkSurfaceSunken)
-            .border(1.dp, GlassBorderStrong, CircleShape),
-        contentAlignment = Alignment.Center
+        modifier =
+            Modifier
+                .size(innerSize)
+                .shadow(
+                    elevation = 16.dp,
+                    shape = CircleShape,
+                    ambientColor = GlassShadowTeal,
+                    spotColor = tierAccent.copy(alpha = 0.25f),
+                ).clip(CircleShape)
+                .background(TempoDarkSurfaceSunken)
+                .border(1.dp, GlassBorderStrong, CircleShape),
+        contentAlignment = Alignment.Center,
     ) {
         if (profileImagePath.isNullOrBlank()) {
             Text(
                 text = userName.firstOrNull()?.toString()?.uppercase() ?: "U",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontFamily = DisplayFontFamily,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = TextPrimary
+                style =
+                    MaterialTheme.typography.headlineMedium.copy(
+                        fontFamily = DisplayFontFamily,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                color = TextPrimary,
             )
         } else {
             CachedAsyncImage(
                 imageUrl = profileImagePath,
                 contentDescription = "Avatar",
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
             )
         }
     }
 }
-
 
 @Composable
 private fun HeroAvatar(
@@ -958,7 +1069,7 @@ private fun HeroAvatar(
     userName: String,
     profileImagePath: String?,
     tierAccent: Color,
-    compact: Boolean = false
+    compact: Boolean = false,
 ) {
     val ringSize = if (compact) 84.dp else 96.dp
     val innerSize = if (compact) 66.dp else 76.dp
@@ -967,17 +1078,20 @@ private fun HeroAvatar(
     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(haloSize)) {
         // Soft atmospheric radial glow halo — inspired by SongDetails' artwork halo
         Box(
-            modifier = Modifier
-                .size(haloSize)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            tierAccent.copy(alpha = 0.22f),
-                            tierAccent.copy(alpha = 0.0f),
-                        )
+            modifier =
+                Modifier
+                    .size(haloSize)
+                    .background(
+                        brush =
+                            Brush.radialGradient(
+                                colors =
+                                    listOf(
+                                        tierAccent.copy(alpha = 0.22f),
+                                        tierAccent.copy(alpha = 0.0f),
+                                    ),
+                            ),
+                        shape = CircleShape,
                     ),
-                    shape = CircleShape
-                )
         )
 
         // Progress arc ring
@@ -995,28 +1109,30 @@ private fun HeroAvatar(
                 useCenter = false,
                 topLeft = topLeft,
                 size = arcSize,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
             )
             val sweep = 360f * progress.coerceIn(0f, 1f)
             if (sweep > 0.5f) {
                 drawArc(
-                    brush = Brush.sweepGradient(
-                        listOf(LevelRingSweepStart, LevelRingSweepMid, LevelRingSweepEnd),
-                        center
-                    ),
+                    brush =
+                        Brush.sweepGradient(
+                            listOf(LevelRingSweepStart, LevelRingSweepMid, LevelRingSweepEnd),
+                            center,
+                        ),
                     startAngle = -90f,
                     sweepAngle = sweep,
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
                 )
             }
             val angle = Math.toRadians((-90f + sweep).toDouble())
-            val dotCenter = Offset(
-                center.x + radius * cos(angle).toFloat(),
-                center.y + radius * sin(angle).toFloat()
-            )
+            val dotCenter =
+                Offset(
+                    center.x + radius * cos(angle).toFloat(),
+                    center.y + radius * sin(angle).toFloat(),
+                )
             drawCircle(color = LevelRingSweepEnd, radius = 5.5.dp.toPx(), center = dotCenter)
             drawCircle(color = Color.White, radius = 2.dp.toPx(), center = dotCenter)
         }
@@ -1025,17 +1141,18 @@ private fun HeroAvatar(
             innerSize = innerSize,
             tierAccent = tierAccent,
             userName = userName,
-            profileImagePath = profileImagePath
+            profileImagePath = profileImagePath,
         )
         // Anchored level pill badge
         Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(y = (-2).dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(TempoDarkSurface)
-                .border(0.8.dp, tierAccent.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 9.dp, vertical = 3.dp)
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = (-2).dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(TempoDarkSurface)
+                    .border(0.8.dp, tierAccent.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 9.dp, vertical = 3.dp),
         ) {
             Text(
                 text = "LVL $level",
@@ -1043,7 +1160,7 @@ private fun HeroAvatar(
                 fontWeight = FontWeight.Bold,
                 color = tierAccent,
                 letterSpacing = 0.8.sp,
-                fontSize = 10.sp
+                fontSize = 10.sp,
             )
         }
     }
@@ -1068,24 +1185,25 @@ private fun MasterStatMasthead(
     val animatedStreak by animateIntAsState(
         targetValue = currentStreak,
         animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
-        label = "streakCounter"
+        label = "streakCounter",
     )
     val animatedXp by animateIntAsState(
         targetValue = userLevel.totalXp.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
         animationSpec = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
-        label = "xpCounter"
+        label = "xpCounter",
     )
     val animatedEarnedBadges by animateIntAsState(
         targetValue = earnedCount,
         animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
-        label = "badgeCounter"
+        label = "badgeCounter",
     )
 
-    val suffix = when {
-        streakAtRisk -> "days  ·  ends in $timeRemaining"
-        currentStreak == 1 -> "day in motion  ·  safe today"
-        else -> "days in motion  ·  safe today"
-    }
+    val suffix =
+        when {
+            streakAtRisk -> "days  ·  ends in $timeRemaining"
+            currentStreak == 1 -> "day in motion  ·  safe today"
+            else -> "days in motion  ·  safe today"
+        }
     val accentTint = if (streakAtRisk) TempoErrorSoft else tierAccent
 
     GlassCard(
@@ -1097,9 +1215,10 @@ private fun MasterStatMasthead(
         contentPadding = PaddingValues(0.dp),
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = 20.dp)
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = 20.dp),
         ) {
             // Hero metric
             MastheadHeroMetric(
@@ -1111,18 +1230,20 @@ private fun MasterStatMasthead(
 
             Spacer(modifier = Modifier.height(16.dp))
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(0.8.dp)
-                    .background(GlassBorderSoft)
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(0.8.dp)
+                        .background(GlassBorderSoft),
             )
             Spacer(modifier = Modifier.height(14.dp))
 
             // Secondary metrics row with vertical hairline dividers
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 MastheadSecondaryStat(
@@ -1133,35 +1254,39 @@ private fun MasterStatMasthead(
                 )
 
                 Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(0.8.dp)
-                        .background(GlassBorderSoft),
+                    modifier =
+                        Modifier
+                            .fillMaxHeight()
+                            .width(0.8.dp)
+                            .background(GlassBorderSoft),
                 )
 
                 MastheadSecondaryStat(
                     label = "Total XP",
                     value = String.format(Locale.getDefault(), "%,d", animatedXp),
                     subtext = "Rank: Level ${userLevel.currentLevel}",
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = if (compact) 10.dp else 16.dp),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .padding(start = if (compact) 10.dp else 16.dp),
                 )
 
                 Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(0.8.dp)
-                        .background(GlassBorderSoft),
+                    modifier =
+                        Modifier
+                            .fillMaxHeight()
+                            .width(0.8.dp)
+                            .background(GlassBorderSoft),
                 )
 
                 MastheadSecondaryStat(
                     label = "Badges",
                     value = "$animatedEarnedBadges / $totalCount",
                     subtext = if (totalStars > 0) "$totalStars stars" else "Unlocked",
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(start = if (compact) 10.dp else 16.dp),
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .padding(start = if (compact) 10.dp else 16.dp),
                     valueColor = if (earnedCount > 0) TempoWarning else TextPrimary,
                 )
             }
@@ -1170,38 +1295,43 @@ private fun MasterStatMasthead(
 }
 
 @Composable
-private fun StreakRiskBanner(streakDurationMinutes: Long, timeRemaining: String) {
-    val riskColor = when {
-        streakDurationMinutes > 360 -> TempoErrorSoft
-        streakDurationMinutes > 180 -> TempoError
-        else -> TempoErrorDeep
-    }
+private fun StreakRiskBanner(
+    streakDurationMinutes: Long,
+    timeRemaining: String,
+) {
+    val riskColor =
+        when {
+            streakDurationMinutes > 360 -> TempoErrorSoft
+            streakDurationMinutes > 180 -> TempoError
+            else -> TempoErrorDeep
+        }
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         variant = GlassCardVariant.Obsidian,
         borderColor = riskColor.copy(alpha = 0.40f),
         borderWidth = 0.8.dp,
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(16.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(riskColor.copy(alpha = 0.14f))
-                    .border(0.8.dp, riskColor.copy(alpha = 0.32f), CircleShape),
-                contentAlignment = Alignment.Center
+                modifier =
+                    Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(riskColor.copy(alpha = 0.14f))
+                        .border(0.8.dp, riskColor.copy(alpha = 0.32f), CircleShape),
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Rounded.LocalFireDepartment,
                     contentDescription = null,
                     tint = riskColor,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(22.dp),
                 )
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -1209,12 +1339,12 @@ private fun StreakRiskBanner(streakDurationMinutes: Long, timeRemaining: String)
                     text = "Streak at risk",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+                    color = TextPrimary,
                 )
                 Text(
                     text = "Play a track in the next $timeRemaining to keep your streak alive.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
+                    color = TextSecondary,
                 )
             }
         }
@@ -1229,36 +1359,37 @@ private fun StreakRiskBanner(streakDurationMinutes: Long, timeRemaining: String)
 private fun TabSwitcher(
     tabs: List<String>,
     selectedTab: Int,
-    onTabSelected: (Int) -> Unit
+    onTabSelected: (Int) -> Unit,
 ) {
     BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(TempoDarkSurfaceSunken)
-            .border(0.8.dp, GlassBorderSoft, RoundedCornerShape(16.dp))
-            .padding(4.dp)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(TempoDarkSurfaceSunken)
+                .border(0.8.dp, GlassBorderSoft, RoundedCornerShape(16.dp))
+                .padding(4.dp),
     ) {
         val tabWidth = maxWidth / tabs.size
         val indicatorPosition by animateFloatAsState(
             targetValue = selectedTab.toFloat(),
             animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-            label = "tabIndicator"
+            label = "tabIndicator",
         )
         Box(modifier = Modifier.matchParentSize()) {
             Box(
-                modifier = Modifier
-                    .offset {
-                        IntOffset(
-                            x = (tabWidth.toPx() * indicatorPosition).roundToInt(),
-                            y = 0
-                        )
-                    }
-                    .width(tabWidth)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(TempoPrimary.copy(alpha = 0.16f))
-                    .border(0.8.dp, TempoPrimary.copy(alpha = 0.42f), RoundedCornerShape(12.dp))
+                modifier =
+                    Modifier
+                        .offset {
+                            IntOffset(
+                                x = (tabWidth.toPx() * indicatorPosition).roundToInt(),
+                                y = 0,
+                            )
+                        }.width(tabWidth)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(TempoPrimary.copy(alpha = 0.16f))
+                        .border(0.8.dp, TempoPrimary.copy(alpha = 0.42f), RoundedCornerShape(12.dp)),
             )
         }
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -1271,11 +1402,12 @@ private fun TabSwitcher(
                     color = if (selected) TextPrimary else TextTertiary,
                     maxLines = 1,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onTabSelected(index) }
-                        .padding(vertical = 11.dp, horizontal = 8.dp)
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onTabSelected(index) }
+                            .padding(vertical = 11.dp, horizontal = 8.dp),
                 )
             }
         }
@@ -1289,31 +1421,37 @@ private fun TabSwitcher(
 private fun LazyListScope.challengesSection(
     challenges: List<DailyChallenge>,
     totalXpAvailable: Int,
-    contentModifier: Modifier
+    contentModifier: Modifier,
 ) {
     val completedCount = challenges.count { it.isCompleted }
     item(key = "challenges_header") {
-        val resetLabel = remember {
-            val midnight = LocalDate.now().plusDays(1)
-                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-            val diffMs = midnight - System.currentTimeMillis()
-            val h = (diffMs / (1000 * 60 * 60)).toInt()
-            val m = ((diffMs % (1000 * 60 * 60)) / (1000 * 60)).toInt()
-            if (h > 0) "resets in ${h}h ${m}m" else "resets in ${m}m"
-        }
+        val resetLabel =
+            remember {
+                val midnight =
+                    LocalDate
+                        .now()
+                        .plusDays(1)
+                        .atStartOfDay(ZoneId.systemDefault())
+                        .toInstant()
+                        .toEpochMilli()
+                val diffMs = midnight - System.currentTimeMillis()
+                val h = (diffMs / (1000 * 60 * 60)).toInt()
+                val m = ((diffMs % (1000 * 60 * 60)) / (1000 * 60)).toInt()
+                if (h > 0) "resets in ${h}h ${m}m" else "resets in ${m}m"
+            }
         Column(modifier = contentModifier) {
             Spacer(modifier = Modifier.height(24.dp))
             EditorialSectionHeader(
                 sectionNumber = "01",
                 title = "Daily quests",
                 subtitle = "$completedCount of ${challenges.size} complete · $resetLabel",
-                trailing = { XpChip(xp = totalXpAvailable) }
+                trailing = { XpChip(xp = totalXpAvailable) },
             )
             Spacer(modifier = Modifier.height(14.dp))
             ProgressTrack(
                 progress = if (challenges.isEmpty()) 0f else completedCount.toFloat() / challenges.size,
                 modifier = Modifier.fillMaxWidth(),
-                color = TempoPrimary
+                color = TempoPrimary,
             )
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -1321,7 +1459,7 @@ private fun LazyListScope.challengesSection(
     itemsIndexed(challenges, key = { _, c -> "challenge_${c.id}" }) { _, challenge ->
         Column(modifier = contentModifier) {
             ChallengeCard(
-                challenge = challenge
+                challenge = challenge,
             )
             Spacer(modifier = Modifier.height(12.dp))
         }
@@ -1336,64 +1474,66 @@ private fun EmptyChallengesState(modifier: Modifier = Modifier) {
         shape = RoundedCornerShape(20.dp),
         borderColor = GlassBorderSoft,
         borderWidth = 0.8.dp,
-        contentPadding = PaddingValues(28.dp)
+        contentPadding = PaddingValues(28.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(TempoDarkSurfaceSunken)
-                    .border(0.8.dp, GlassBorderSoft, CircleShape),
-                contentAlignment = Alignment.Center
+                modifier =
+                    Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(TempoDarkSurfaceSunken)
+                        .border(0.8.dp, GlassBorderSoft, CircleShape),
+                contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Schedule,
                     contentDescription = null,
                     tint = TextTertiary,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(26.dp),
                 )
             }
             Text(
                 text = "Nothing queued yet",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = TextSecondary
+                color = TextSecondary,
             )
             Text(
                 text = "Pull to refresh or continue listening — new daily quests will appear here.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
     }
 }
+
 @Composable
-private fun ChallengePercentText(progress: Float, accent: Color) {
+private fun ChallengePercentText(
+    progress: Float,
+    accent: Color,
+) {
     Text(
         text = "${(progress * 100).toInt()}%",
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
-        color = accent
+        color = accent,
     )
 }
 
-
 @Composable
-private fun ChallengeCard(
-    challenge: DailyChallenge
-) {
+private fun ChallengeCard(challenge: DailyChallenge) {
     val isCompleted = challenge.isCompleted
     val accent = if (isCompleted) TempoSuccessDeep else getDifficultyColor(challenge.difficulty)
     val animatedProgress by animateFloatAsState(
         targetValue = challenge.progressFraction,
         animationSpec = tween(900, easing = FastOutSlowInEasing),
-        label = "challengeProgress"
+        label = "challengeProgress",
     )
 
     GlassCard(
@@ -1402,28 +1542,29 @@ private fun ChallengeCard(
         variant = GlassCardVariant.Obsidian,
         borderColor = if (isCompleted) TempoSuccessDeep.copy(alpha = 0.25f) else GlassBorderSoft,
         borderWidth = 0.8.dp,
-        contentPadding = PaddingValues(18.dp)
+        contentPadding = PaddingValues(18.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             // Top metadata row: Difficulty tag, category label, and XP reward pill
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(accent.copy(alpha = 0.12f))
-                            .border(0.8.dp, accent.copy(alpha = 0.30f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(accent.copy(alpha = 0.12f))
+                                .border(0.8.dp, accent.copy(alpha = 0.30f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 7.dp, vertical = 3.dp),
                     ) {
                         Text(
                             text = challenge.difficulty.uppercase(Locale.getDefault()),
@@ -1431,13 +1572,13 @@ private fun ChallengeCard(
                             fontWeight = FontWeight.Bold,
                             color = accent,
                             letterSpacing = 0.8.sp,
-                            fontSize = 10.sp
+                            fontSize = 10.sp,
                         )
                     }
                     Text(
                         text = "·",
                         style = MaterialTheme.typography.labelSmall,
-                        color = TextQuaternary
+                        color = TextQuaternary,
                     )
                     Text(
                         text = challenge.category.replace("_", " ").uppercase(Locale.getDefault()),
@@ -1445,35 +1586,35 @@ private fun ChallengeCard(
                         fontWeight = FontWeight.Medium,
                         color = TextTertiary,
                         letterSpacing = 0.8.sp,
-                        fontSize = 10.sp
+                        fontSize = 10.sp,
                     )
                 }
 
                 Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isCompleted) TempoSuccessDeep.copy(alpha = 0.12f) else TempoWarning.copy(alpha = 0.10f))
-                        .border(
-                            0.8.dp,
-                            if (isCompleted) TempoSuccessDeep.copy(alpha = 0.30f) else TempoWarning.copy(alpha = 0.25f),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isCompleted) TempoSuccessDeep.copy(alpha = 0.12f) else TempoWarning.copy(alpha = 0.10f))
+                            .border(
+                                0.8.dp,
+                                if (isCompleted) TempoSuccessDeep.copy(alpha = 0.30f) else TempoWarning.copy(alpha = 0.25f),
+                                RoundedCornerShape(8.dp),
+                            ).padding(horizontal = 8.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.AutoAwesome,
                         contentDescription = null,
                         tint = if (isCompleted) TempoSuccessDeep else TempoWarning,
-                        modifier = Modifier.size(11.dp)
+                        modifier = Modifier.size(11.dp),
                     )
                     Text(
                         text = "+${challenge.xpReward} XP",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (isCompleted) TempoSuccessDeep else TempoWarning,
-                        letterSpacing = 0.4.sp
+                        letterSpacing = 0.4.sp,
                     )
                 }
             }
@@ -1482,38 +1623,39 @@ private fun ChallengeCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(TempoDarkSurfaceSunken)
-                        .border(0.8.dp, accent.copy(alpha = if (isCompleted) 0.40f else 0.20f), RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center
+                    modifier =
+                        Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(TempoDarkSurfaceSunken)
+                            .border(0.8.dp, accent.copy(alpha = if (isCompleted) 0.40f else 0.20f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = getChallengeCategoryIcon(challenge.category),
+                        painter = painterResource(getChallengeIcon(challenge)),
                         contentDescription = null,
                         tint = accent,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(20.dp),
                     )
                 }
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Text(
-                        text = challenge.title,
+                        text = challenge.title.withoutLeadingEmoji(),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary
+                        color = TextPrimary,
                     )
                     Text(
                         text = challenge.description,
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary,
-                        lineHeight = 18.sp
+                        lineHeight = 18.sp,
                     )
                 }
             }
@@ -1523,43 +1665,44 @@ private fun ChallengeCard(
                 progress = animatedProgress,
                 modifier = Modifier.fillMaxWidth(),
                 color = accent,
-                height = 5.dp
+                height = 5.dp,
             )
 
             // Bottom row: numeric progress & status/action
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = "${challenge.currentProgress} / ${challenge.targetValue}",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isCompleted) TempoSuccessDeep else TextSecondary
+                    color = if (isCompleted) TempoSuccessDeep else TextSecondary,
                 )
 
                 if (isCompleted) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(TempoSuccessDeep.copy(alpha = 0.12f))
-                            .border(0.8.dp, TempoSuccessDeep.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 9.dp, vertical = 4.dp)
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(TempoSuccessDeep.copy(alpha = 0.12f))
+                                .border(0.8.dp, TempoSuccessDeep.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 9.dp, vertical = 4.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.CheckCircle,
                             contentDescription = null,
                             tint = TempoSuccessDeep,
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(13.dp),
                         )
                         Text(
                             text = "Completed",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = TempoSuccessDeep
+                            color = TempoSuccessDeep,
                         )
                     }
                 } else {
@@ -1586,21 +1729,27 @@ private fun LazyListScope.badgeSection(
     onCategorySelected: (String?) -> Unit,
     onBadgeClick: (Badge) -> Unit,
     contentModifier: Modifier,
-    badgeColumns: Int = 2
+    badgeColumns: Int = 2,
 ) {
     val collectionProgress = if (totalCount == 0) 0f else earnedCount.toFloat() / totalCount
     item(key = "badges_header") {
         val beginnerIds = GamificationEngine.BEGINNER_BADGES
-        val almostThereBadge = remember(allBadges) {
-            allBadges.filter { !it.isEarned && !it.isMaxed && it.badgeId !in beginnerIds && it.progressFraction >= 0.5f }
-                .maxByOrNull { it.progressFraction }
-        }
-        val nextStarBadge = remember(allBadges) {
-            if (almostThereBadge != null) null else {
-                allBadges.filter { it.isEarned && !it.isMaxed && it.badgeId !in beginnerIds && it.progressFraction >= 0.5f }
+        val almostThereBadge =
+            remember(allBadges) {
+                allBadges
+                    .filter { !it.isEarned && !it.isMaxed && it.badgeId !in beginnerIds && it.progressFraction >= 0.5f }
                     .maxByOrNull { it.progressFraction }
             }
-        }
+        val nextStarBadge =
+            remember(allBadges) {
+                if (almostThereBadge != null) {
+                    null
+                } else {
+                    allBadges
+                        .filter { it.isEarned && !it.isMaxed && it.badgeId !in beginnerIds && it.progressFraction >= 0.5f }
+                        .maxByOrNull { it.progressFraction }
+                }
+            }
         val spotlightBadge = almostThereBadge ?: nextStarBadge
 
         Column(modifier = contentModifier) {
@@ -1609,7 +1758,7 @@ private fun LazyListScope.badgeSection(
                 sectionNumber = "02",
                 title = "Trophy room",
                 subtitle = "$earnedCount of $totalCount badges earned.",
-                trailing = if (totalStars > 0) ({ StarsChip(total = totalStars, max = maxPossibleStars) }) else null
+                trailing = if (totalStars > 0) ({ StarsChip(total = totalStars, max = maxPossibleStars) }) else null,
             )
             Spacer(modifier = Modifier.height(14.dp))
             ProgressTrack(progress = collectionProgress, modifier = Modifier.fillMaxWidth(), color = TempoWarning)
@@ -1617,45 +1766,50 @@ private fun LazyListScope.badgeSection(
 
             // Category Filter Chips
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilterChip(
                     selected = selectedCategory == null,
                     onClick = { onCategorySelected(null) },
                     label = { Text("All") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = TempoPrimary.copy(alpha = 0.14f),
-                        containerColor = Color.Transparent,
-                        labelColor = TextSecondary,
-                        selectedLabelColor = TextPrimary
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        borderColor = GlassBorderMedium,
-                        selectedBorderColor = TempoPrimary.copy(alpha = 0.40f),
-                        enabled = true,
-                        selected = selectedCategory == null
-                    )
+                    colors =
+                        FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = TempoPrimary.copy(alpha = 0.14f),
+                            containerColor = Color.Transparent,
+                            labelColor = TextSecondary,
+                            selectedLabelColor = TextPrimary,
+                        ),
+                    border =
+                        FilterChipDefaults.filterChipBorder(
+                            borderColor = GlassBorderMedium,
+                            selectedBorderColor = TempoPrimary.copy(alpha = 0.40f),
+                            enabled = true,
+                            selected = selectedCategory == null,
+                        ),
                 )
                 categories.forEach { category ->
                     FilterChip(
                         selected = selectedCategory == category,
                         onClick = { onCategorySelected(category) },
                         label = { Text(getCategoryLabel(category)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = TempoPrimary.copy(alpha = 0.14f),
-                            containerColor = Color.Transparent,
-                            labelColor = TextSecondary,
-                            selectedLabelColor = TextPrimary
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = GlassBorderMedium,
-                            selectedBorderColor = TempoPrimary.copy(alpha = 0.40f),
-                            enabled = true,
-                            selected = selectedCategory == category
-                        )
+                        colors =
+                            FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = TempoPrimary.copy(alpha = 0.14f),
+                                containerColor = Color.Transparent,
+                                labelColor = TextSecondary,
+                                selectedLabelColor = TextPrimary,
+                            ),
+                        border =
+                            FilterChipDefaults.filterChipBorder(
+                                borderColor = GlassBorderMedium,
+                                selectedBorderColor = TempoPrimary.copy(alpha = 0.40f),
+                                enabled = true,
+                                selected = selectedCategory == category,
+                            ),
                     )
                 }
             }
@@ -1667,7 +1821,7 @@ private fun LazyListScope.badgeSection(
                 SpotlightBadgeCard(
                     badge = spotlightBadge,
                     isAlmostThere = almostThereBadge != null,
-                    onClick = { onBadgeClick(spotlightBadge) }
+                    onClick = { onBadgeClick(spotlightBadge) },
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -1675,7 +1829,7 @@ private fun LazyListScope.badgeSection(
     }
     itemsIndexed(
         filteredBadges.chunked(badgeColumns),
-        key = { _, rowBadges -> rowBadges.joinToString("-") { it.badgeId } }
+        key = { _, rowBadges -> rowBadges.joinToString("-") { it.badgeId } },
     ) { _, rowBadges ->
         Column(modifier = contentModifier) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1704,58 +1858,63 @@ private fun SpotlightBadgeCard(
     val animatedProgress by animateFloatAsState(
         targetValue = badge.progressFraction,
         animationSpec = tween(1200, easing = FastOutSlowInEasing),
-        label = "spotlightProgress"
+        label = "spotlightProgress",
     )
 
     val reducedMotion = rememberReducedMotion()
-    val pulseAlpha by if (reducedMotion) remember { mutableFloatStateOf(0.35f) } else {
+    val pulseAlpha by if (reducedMotion) {
+        remember { mutableFloatStateOf(0.35f) }
+    } else {
         val transition = rememberInfiniteTransition(label = "spotlightPulse")
         transition.animateFloat(
             initialValue = 0.28f,
             targetValue = 0.55f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1500, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "spotlightPulseAlpha"
+            animationSpec =
+                infiniteRepeatable(
+                    animation = tween(1500, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+            label = "spotlightPulseAlpha",
         )
     }
 
     val haptic = LocalHapticFeedback.current
     GlassCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .premiumClickable(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onClick()
-                },
-                pressedScale = 0.96f
-            ),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .premiumClickable(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onClick()
+                    },
+                    pressedScale = 0.96f,
+                ),
         shape = RoundedCornerShape(20.dp),
         variant = GlassCardVariant.Obsidian,
         borderColor = accent.copy(alpha = pulseAlpha),
         borderWidth = 0.8.dp,
-        contentPadding = PaddingValues(18.dp)
+        contentPadding = PaddingValues(18.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(accent)
+                        modifier =
+                            Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(accent),
                     )
                     Text(
                         text = if (isAlmostThere) "FEATURED · ALMOST UNLOCKED" else "FEATURED · NEXT TIER",
@@ -1763,30 +1922,30 @@ private fun SpotlightBadgeCard(
                         fontWeight = FontWeight.Bold,
                         color = accent,
                         letterSpacing = 1.2.sp,
-                        fontSize = 10.sp
+                        fontSize = 10.sp,
                     )
                 }
                 Text(
                     text = progressLabel,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = TextSecondary
+                    color = TextSecondary,
                 )
             }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 BadgeEmblem(
                     badge = badge,
                     intrinsicColor = getUniqueBadgeColor(badge.badgeId),
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(56.dp),
                 )
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Text(
                         text = badge.name,
@@ -1794,20 +1953,24 @@ private fun SpotlightBadgeCard(
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = badge.description,
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = if (isAlmostThere) "$remainingLabel to go — keep the rhythm going."
-                               else "Tier achieved — push for the next star.",
+                        text =
+                            if (isAlmostThere) {
+                                "$remainingLabel to go — keep the rhythm going."
+                            } else {
+                                "Tier achieved — push for the next star."
+                            },
                         style = CaptionSmall,
-                        color = TextTertiary
+                        color = TextTertiary,
                     )
                 }
             }
@@ -1816,14 +1979,18 @@ private fun SpotlightBadgeCard(
                 progress = animatedProgress,
                 modifier = Modifier.fillMaxWidth(),
                 color = accent,
-                height = 5.dp
+                height = 5.dp,
             )
         }
     }
 }
 
 @Composable
-private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun BadgeCard(
+    badge: Badge,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val isEarned = badge.isEarned
     val intrinsicColor = getUniqueBadgeColor(badge.badgeId)
     val rarity = GamificationEngine.getRarity(badge.badgeId)
@@ -1832,35 +1999,39 @@ private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Mo
     val animatedProgress by animateFloatAsState(
         targetValue = badge.progressFraction,
         animationSpec = tween(1200, easing = FastOutSlowInEasing),
-        label = "badgeProgress"
+        label = "badgeProgress",
     )
-    val earnedDate = remember(badge.earnedAt) {
-        if (badge.isEarned && badge.earnedAt > 0L) {
-            SimpleDateFormat("MMM yyyy", Locale.getDefault())
-                .format(Date(badge.earnedAt))
-        } else null
-    }
+    val earnedDate =
+        remember(badge.earnedAt) {
+            if (badge.isEarned && badge.earnedAt > 0L) {
+                SimpleDateFormat("MMM yyyy", Locale.getDefault())
+                    .format(Date(badge.earnedAt))
+            } else {
+                null
+            }
+        }
 
     val haptic = LocalHapticFeedback.current
     GlassCard(
-        modifier = modifier.premiumClickable(
-            onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onClick()
-            },
-            pressedScale = 0.95f
-        ),
+        modifier =
+            modifier.premiumClickable(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                },
+                pressedScale = 0.95f,
+            ),
         shape = RoundedCornerShape(18.dp),
         variant = if (isEarned) GlassCardVariant.TintedSolid else GlassCardVariant.Obsidian,
         accentColor = if (isEarned) intrinsicColor else null,
         borderColor = if (isEarned) intrinsicColor.copy(alpha = 0.32f) else GlassBorderSoft,
         borderWidth = 0.8.dp,
-        contentPadding = PaddingValues(14.dp)
+        contentPadding = PaddingValues(14.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             BadgeEmblem(badge = badge, intrinsicColor = intrinsicColor, modifier = Modifier.size(64.dp))
             Text(
@@ -1871,7 +2042,7 @@ private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Mo
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.heightIn(min = 36.dp)
+                modifier = Modifier.heightIn(min = 36.dp),
             )
             Text(
                 text = badge.description,
@@ -1880,7 +2051,7 @@ private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Mo
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.heightIn(min = 32.dp)
+                modifier = Modifier.heightIn(min = 32.dp),
             )
             Text(
                 text = rarity.label.uppercase(Locale.getDefault()),
@@ -1888,7 +2059,7 @@ private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Mo
                 fontWeight = FontWeight.Bold,
                 color = if (isEarned) rarityColor else rarityColor.copy(alpha = 0.55f),
                 letterSpacing = 1.sp,
-                fontSize = 10.sp
+                fontSize = 10.sp,
             )
             if (isEarned) {
                 if (isBeginner) {
@@ -1898,19 +2069,22 @@ private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Mo
                         fontWeight = FontWeight.Bold,
                         color = intrinsicColor,
                         letterSpacing = 1.sp,
-                        fontSize = 10.sp
+                        fontSize = 10.sp,
                     )
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         for (i in 1..5) {
-                            val starColor = if (i <= badge.stars) {
-                                if (badge.isMaxed) intrinsicColor else TempoWarningBright
-                            } else Color.White.copy(alpha = 0.12f)
+                            val starColor =
+                                if (i <= badge.stars) {
+                                    if (badge.isMaxed) intrinsicColor else TempoWarningBright
+                                } else {
+                                    Color.White.copy(alpha = 0.12f)
+                                }
                             Icon(
                                 imageVector = if (i <= badge.stars) Icons.Rounded.Star else Icons.Rounded.StarOutline,
                                 contentDescription = null,
                                 tint = starColor,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(14.dp),
                             )
                         }
                     }
@@ -1921,21 +2095,21 @@ private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Mo
                             fontWeight = FontWeight.Bold,
                             color = TempoWarningBright,
                             letterSpacing = 1.sp,
-                            fontSize = 10.sp
+                            fontSize = 10.sp,
                         )
                     } else {
                         ProgressTrack(
                             progress = animatedProgress,
                             modifier = Modifier.fillMaxWidth(),
                             color = intrinsicColor,
-                            height = 4.dp
+                            height = 4.dp,
                         )
                         Text(
                             text = "${badge.progress} / ${badge.maxProgress}  →  ★${badge.stars + 1}",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextTertiary,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 9.sp
+                            fontSize = 9.sp,
                         )
                     }
                 }
@@ -1946,7 +2120,7 @@ private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Mo
                         fontWeight = FontWeight.Bold,
                         fontSize = 8.sp,
                         letterSpacing = 1.5.sp,
-                        color = intrinsicColor.copy(alpha = 0.85f)
+                        color = intrinsicColor.copy(alpha = 0.85f),
                     )
                 }
             } else {
@@ -1954,22 +2128,27 @@ private fun BadgeCard(badge: Badge, onClick: () -> Unit, modifier: Modifier = Mo
                     progress = animatedProgress,
                     modifier = Modifier.fillMaxWidth(),
                     color = intrinsicColor.copy(alpha = 0.55f),
-                    height = 4.dp
+                    height = 4.dp,
                 )
                 Text(
                     text = "${badge.progress} / ${badge.maxProgress}",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextTertiary,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 9.sp
+                    fontSize = 9.sp,
                 )
             }
         }
     }
 }
+
 // Custom silhouette badge emblem with rarity metallic rim and enamel gradient face.
 @Composable
-internal fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier = Modifier) {
+internal fun BadgeEmblem(
+    badge: Badge,
+    intrinsicColor: Color,
+    modifier: Modifier = Modifier,
+) {
     val isEarned = badge.isEarned
     val rarity = remember(badge.badgeId) { GamificationEngine.getRarity(badge.badgeId) }
     val rarityColor = remember(rarity) { getRarityColor(rarity) }
@@ -1990,51 +2169,55 @@ internal fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier
             if (glowAlpha > 0f) {
                 drawPath(
                     path = outerPath,
-                    brush = Brush.radialGradient(
-                        colors = listOf(rarityColor.copy(alpha = glowAlpha), Color.Transparent),
-                        center = center,
-                        radius = radius * 1.15f
-                    )
+                    brush =
+                        Brush.radialGradient(
+                            colors = listOf(rarityColor.copy(alpha = glowAlpha), Color.Transparent),
+                            center = center,
+                            radius = radius * 1.15f,
+                        ),
                 )
             }
 
             // Metallic rim
-            val rimBrush = if (rarity == GamificationEngine.BadgeRarity.MYTHIC && isEarned) {
-                Brush.sweepGradient(metal, center)
-            } else {
-                Brush.linearGradient(
-                    colors = metal,
-                    start = Offset(size.width * 0.15f, 0f),
-                    end = Offset(size.width * 0.85f, size.height)
-                )
-            }
+            val rimBrush =
+                if (rarity == GamificationEngine.BadgeRarity.MYTHIC && isEarned) {
+                    Brush.sweepGradient(metal, center)
+                } else {
+                    Brush.linearGradient(
+                        colors = metal,
+                        start = Offset(size.width * 0.15f, 0f),
+                        end = Offset(size.width * 0.85f, size.height),
+                    )
+                }
             drawPath(path = outerPath, brush = rimBrush)
 
             // Badge face gradient fill
-            val faceBrush = if (isEarned) {
-                Brush.radialGradient(
-                    colors = listOf(
-                        lerp(intrinsicColor, Color.White, 0.38f),
-                        intrinsicColor,
-                        lerp(intrinsicColor, Color.Black, 0.42f)
-                    ),
-                    center = Offset(center.x - radius * 0.3f, center.y - radius * 0.38f),
-                    radius = radius * 1.35f
-                )
-            } else {
-                Brush.radialGradient(
-                    colors = listOf(Color(0xFF2B2B31), Color(0xFF131317)),
-                    center = Offset(center.x - radius * 0.25f, center.y - radius * 0.3f),
-                    radius = radius * 1.2f
-                )
-            }
+            val faceBrush =
+                if (isEarned) {
+                    Brush.radialGradient(
+                        colors =
+                            listOf(
+                                lerp(intrinsicColor, Color.White, 0.38f),
+                                intrinsicColor,
+                                lerp(intrinsicColor, Color.Black, 0.42f),
+                            ),
+                        center = Offset(center.x - radius * 0.3f, center.y - radius * 0.38f),
+                        radius = radius * 1.35f,
+                    )
+                } else {
+                    Brush.radialGradient(
+                        colors = listOf(Color(0xFF2B2B31), Color(0xFF131317)),
+                        center = Offset(center.x - radius * 0.25f, center.y - radius * 0.3f),
+                        radius = radius * 1.2f,
+                    )
+                }
             drawPath(path = facePath, brush = faceBrush)
 
             // Inner hairline border
             drawPath(
                 path = hairlinePath,
                 color = Color.White.copy(alpha = if (isEarned) 0.25f else 0.08f),
-                style = Stroke(width = 1.dp.toPx())
+                style = Stroke(width = 1.dp.toPx()),
             )
 
             // Static diagonal sheen highlight
@@ -2042,15 +2225,17 @@ internal fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier
                 clipPath(facePath) {
                     rotate(degrees = -24f, pivot = center) {
                         drawRect(
-                            brush = Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.White.copy(alpha = 0.16f),
-                                    Color.Transparent
-                                )
-                            ),
+                            brush =
+                                Brush.horizontalGradient(
+                                    colors =
+                                        listOf(
+                                            Color.Transparent,
+                                            Color.White.copy(alpha = 0.16f),
+                                            Color.Transparent,
+                                        ),
+                                ),
                             topLeft = Offset(center.x - radius * 0.8f, center.y - radius * 1.6f),
-                            size = Size(radius * 0.65f, radius * 3.2f)
+                            size = Size(radius * 0.65f, radius * 3.2f),
                         )
                     }
                 }
@@ -2061,88 +2246,107 @@ internal fun BadgeEmblem(badge: Badge, intrinsicColor: Color, modifier: Modifier
             imageVector = art,
             contentDescription = badge.name,
             tint = if (isEarned) Color.White.copy(alpha = 0.96f) else Color.White.copy(alpha = 0.22f),
-            modifier = Modifier.fillMaxSize(0.40f)
+            modifier = Modifier.fillMaxSize(0.40f),
         )
     }
 }
 
 // Maps badge IDs to their base theme colors
-internal fun getUniqueBadgeColor(badgeId: String): Color = when (badgeId) {
-    "first_play" -> Color(0xFF10B981)
-    "plays_100" -> Color(0xFF3B82F6)
-    "plays_500" -> Color(0xFF8B5CF6)
-    "plays_1000" -> Color(0xFFEC4899)
-    "plays_5000" -> Color(0xFFF43F5E)
-    "plays_10000" -> Color(0xFFEAB308)
-    "time_1h" -> Color(0xFF06B6D4)
-    "time_24h" -> Color(0xFF0EA5E9)
-    "time_100h" -> Color(0xFF6366F1)
-    "time_500h" -> Color(0xFFD946EF)
-    "streak_7" -> Color(0xFFF97316)
-    "streak_30" -> Color(0xFFEF4444)
-    "streak_100" -> Color(0xFFDC2626)
-    "streak_365" -> Color(0xFF991B1B)
-    "artists_10" -> Color(0xFF14B8A6)
-    "artists_50" -> Color(0xFF22C55E)
-    "artists_100" -> Color(0xFF84CC16)
-    "genres_10" -> Color(0xFFF59E0B)
-    "genres_25" -> Color(0xFFD97706)
-    "night_owl" -> Color(0xFF312E81)
-    "early_bird" -> Color(0xFFFBBF24)
-    "marathon" -> Color(0xFF4F46E5)
-    "level_5" -> Color(0xFF6EE7B7)
-    "level_10" -> Color(0xFF34D399)
-    "level_25" -> Color(0xFF10B981)
-    "level_50" -> Color(0xFF059669)
-    "level_75" -> Color(0xFF047857)
-    "level_100" -> Color(0xFF064E3B)
-    else -> Color(0xFFA855F7)
-}
+internal fun getUniqueBadgeColor(badgeId: String): Color =
+    when (badgeId) {
+        "first_play" -> Color(0xFF10B981)
+        "plays_100" -> Color(0xFF3B82F6)
+        "plays_500" -> Color(0xFF8B5CF6)
+        "plays_1000" -> Color(0xFFEC4899)
+        "plays_5000" -> Color(0xFFF43F5E)
+        "plays_10000" -> Color(0xFFEAB308)
+        "time_1h" -> Color(0xFF06B6D4)
+        "time_24h" -> Color(0xFF0EA5E9)
+        "time_100h" -> Color(0xFF6366F1)
+        "time_500h" -> Color(0xFFD946EF)
+        "streak_7" -> Color(0xFFF97316)
+        "streak_30" -> Color(0xFFEF4444)
+        "streak_100" -> Color(0xFFDC2626)
+        "streak_365" -> Color(0xFF991B1B)
+        "artists_10" -> Color(0xFF14B8A6)
+        "artists_50" -> Color(0xFF22C55E)
+        "artists_100" -> Color(0xFF84CC16)
+        "genres_10" -> Color(0xFFF59E0B)
+        "genres_25" -> Color(0xFFD97706)
+        "night_owl" -> Color(0xFF312E81)
+        "early_bird" -> Color(0xFFFBBF24)
+        "marathon" -> Color(0xFF4F46E5)
+        "level_5" -> Color(0xFF6EE7B7)
+        "level_10" -> Color(0xFF34D399)
+        "level_25" -> Color(0xFF10B981)
+        "level_50" -> Color(0xFF059669)
+        "level_75" -> Color(0xFF047857)
+        "level_100" -> Color(0xFF064E3B)
+        else -> Color(0xFFA855F7)
+    }
 
-internal fun getRarityColor(rarity: GamificationEngine.BadgeRarity): Color = when (rarity) {
-    GamificationEngine.BadgeRarity.COMMON -> Color(0xFF9CA3AF)
-    GamificationEngine.BadgeRarity.RARE -> Color(0xFF3B82F6)
-    GamificationEngine.BadgeRarity.EPIC -> Color(0xFFA855F7)
-    GamificationEngine.BadgeRarity.LEGENDARY -> Color(0xFFF59E0B)
-    GamificationEngine.BadgeRarity.MYTHIC -> Color(0xFFEC4899)
-}
+internal fun getRarityColor(rarity: GamificationEngine.BadgeRarity): Color =
+    when (rarity) {
+        GamificationEngine.BadgeRarity.COMMON -> Color(0xFF9CA3AF)
+        GamificationEngine.BadgeRarity.RARE -> Color(0xFF3B82F6)
+        GamificationEngine.BadgeRarity.EPIC -> Color(0xFFA855F7)
+        GamificationEngine.BadgeRarity.LEGENDARY -> Color(0xFFF59E0B)
+        GamificationEngine.BadgeRarity.MYTHIC -> Color(0xFFEC4899)
+    }
 
 /** The metal gradient of the coin rim, light struck from the upper left. */
-internal fun getRarityMetal(rarity: GamificationEngine.BadgeRarity): List<Color> = when (rarity) {
-    GamificationEngine.BadgeRarity.COMMON ->
-        listOf(Color(0xFFDCDFE4), Color(0xFF9CA3AB), Color(0xFF5F646B), Color(0xFFB9BDC3))
-    GamificationEngine.BadgeRarity.RARE ->
-        listOf(Color(0xFFF4F8FF), Color(0xFFC3D5EE), Color(0xFF8199BE), Color(0xFFE1EBF8))
-    GamificationEngine.BadgeRarity.EPIC ->
-        listOf(Color(0xFFFFF6D9), Color(0xFFF4CF6D), Color(0xFFBA8C20), Color(0xFFF1DE9E))
-    GamificationEngine.BadgeRarity.LEGENDARY ->
-        listOf(Color(0xFFFFEFEE), Color(0xFFF8C3CC), Color(0xFFC57486), Color(0xFFFFDCE1))
-    GamificationEngine.BadgeRarity.MYTHIC ->
-        listOf(Color(0xFFE4D4FF), Color(0xFFAEE9F7), Color(0xFFFBD3E9), Color(0xFFD8F5E3), Color(0xFFFDE9C8))
-}
+internal fun getRarityMetal(rarity: GamificationEngine.BadgeRarity): List<Color> =
+    when (rarity) {
+        GamificationEngine.BadgeRarity.COMMON -> {
+            listOf(Color(0xFFDCDFE4), Color(0xFF9CA3AB), Color(0xFF5F646B), Color(0xFFB9BDC3))
+        }
 
-internal fun getRarityGlowAlpha(rarity: GamificationEngine.BadgeRarity): Float = when (rarity) {
-    GamificationEngine.BadgeRarity.COMMON -> 0f
-    GamificationEngine.BadgeRarity.RARE -> 0f
-    GamificationEngine.BadgeRarity.EPIC -> 0.20f
-    GamificationEngine.BadgeRarity.LEGENDARY -> 0.30f
-    GamificationEngine.BadgeRarity.MYTHIC -> 0.42f
-}
+        GamificationEngine.BadgeRarity.RARE -> {
+            listOf(Color(0xFFF4F8FF), Color(0xFFC3D5EE), Color(0xFF8199BE), Color(0xFFE1EBF8))
+        }
+
+        GamificationEngine.BadgeRarity.EPIC -> {
+            listOf(Color(0xFFFFF6D9), Color(0xFFF4CF6D), Color(0xFFBA8C20), Color(0xFFF1DE9E))
+        }
+
+        GamificationEngine.BadgeRarity.LEGENDARY -> {
+            listOf(Color(0xFFFFEFEE), Color(0xFFF8C3CC), Color(0xFFC57486), Color(0xFFFFDCE1))
+        }
+
+        GamificationEngine.BadgeRarity.MYTHIC -> {
+            listOf(Color(0xFFE4D4FF), Color(0xFFAEE9F7), Color(0xFFFBD3E9), Color(0xFFD8F5E3), Color(0xFFFDE9C8))
+        }
+    }
+
+internal fun getRarityGlowAlpha(rarity: GamificationEngine.BadgeRarity): Float =
+    when (rarity) {
+        GamificationEngine.BadgeRarity.COMMON -> 0f
+        GamificationEngine.BadgeRarity.RARE -> 0f
+        GamificationEngine.BadgeRarity.EPIC -> 0.20f
+        GamificationEngine.BadgeRarity.LEGENDARY -> 0.30f
+        GamificationEngine.BadgeRarity.MYTHIC -> 0.42f
+    }
 
 // Delegated celebration composables for backwards compatibility
 @Composable
-fun LevelUpCelebration(level: Int, onDismiss: () -> Unit) {
+fun LevelUpCelebration(
+    level: Int,
+    onDismiss: () -> Unit,
+) {
     LevelUpCelebrationOverlay(
         level = level,
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
     )
 }
 
 @Composable
-fun NewBadgeCelebrationOverlay(badges: List<Badge>, onDismiss: () -> Unit) {
+fun NewBadgeCelebrationOverlay(
+    badges: List<Badge>,
+    onDismiss: () -> Unit,
+) {
     BadgeCelebrationOverlay(
         badges = badges,
-        onDismiss = onDismiss
+        onDismiss = onDismiss,
     )
 }
 
@@ -2156,26 +2360,30 @@ fun ConfettiEffect() {
 fun BadgeDetailsOverlay(
     badge: Badge,
     onDismiss: () -> Unit,
-    onShareBadge: ((Badge) -> Unit)? = null
+    onShareBadge: ((Badge) -> Unit)? = null,
 ) {
     val intrinsicColor = getUniqueBadgeColor(badge.badgeId)
     val rarity = GamificationEngine.getRarity(badge.badgeId)
     val rarityColor = getRarityColor(rarity)
     val isBeginner = badge.badgeId in GamificationEngine.BEGINNER_BADGES
-    val def = remember(badge.badgeId) {
-        GamificationEngine.ALL_BADGE_DEFINITIONS.firstOrNull { it.badgeId == badge.badgeId }
-    }
+    val def =
+        remember(badge.badgeId) {
+            GamificationEngine.ALL_BADGE_DEFINITIONS.firstOrNull { it.badgeId == badge.badgeId }
+        }
     val animatedProgress by animateFloatAsState(
         targetValue = badge.progressFraction,
         animationSpec = tween(1200, easing = FastOutSlowInEasing),
-        label = "badgeDetailProgress"
+        label = "badgeDetailProgress",
     )
-    val earnedDate = remember(badge.earnedAt) {
-        if (badge.isEarned && badge.earnedAt > 0L) {
-            SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
-                .format(Date(badge.earnedAt))
-        } else null
-    }
+    val earnedDate =
+        remember(badge.earnedAt) {
+            if (badge.isEarned && badge.earnedAt > 0L) {
+                SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+                    .format(Date(badge.earnedAt))
+            } else {
+                null
+            }
+        }
     val xpEarned = GamificationEngine.getBadgeXpContribution(badge.badgeId, badge.stars)
 
     val reducedMotion = rememberReducedMotion()
@@ -2227,19 +2435,21 @@ fun BadgeDetailsOverlay(
         launch {
             glowScale.animateTo(
                 targetValue = 1.18f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
+                animationSpec =
+                    spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessLow,
+                    ),
             )
         }
         launch {
             emblemScale.animateTo(
                 targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = if (reducedMotion) 1f else 0.62f,
-                    stiffness = if (reducedMotion) 400f else 340f
-                )
+                animationSpec =
+                    spring(
+                        dampingRatio = if (reducedMotion) 1f else 0.62f,
+                        stiffness = if (reducedMotion) 400f else 340f,
+                    ),
             )
         }
         launch {
@@ -2250,70 +2460,78 @@ fun BadgeDetailsOverlay(
             launch {
                 contentOffsetY.animateTo(
                     targetValue = 0f,
-                    animationSpec = spring(dampingRatio = 0.78f, stiffness = 420f)
+                    animationSpec = spring(dampingRatio = 0.78f, stiffness = 420f),
                 )
             }
         }
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .drawBehind {
-                drawRect(Color.Black.copy(alpha = 0.88f * scrimAlpha.value))
-            }
-            .clickable(
-                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                indication = null
-            ) { dismissSmoothly() }
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    drawRect(Color.Black.copy(alpha = 0.88f * scrimAlpha.value))
+                }.clickable(
+                    interactionSource =
+                        remember {
+                            androidx.compose.foundation.interaction
+                                .MutableInteractionSource()
+                        },
+                    indication = null,
+                ) { dismissSmoothly() },
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 32.dp)
+            modifier =
+                Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 32.dp),
         ) {
             // Badge emblem
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = 8.dp),
             ) {
                 // Ambient glow behind emblem
                 Box(
-                    modifier = Modifier
-                        .size(176.dp)
-                        .graphicsLayer {
-                            scaleX = glowScale.value
-                            scaleY = glowScale.value
-                            alpha = (0.50f * emblemAlpha.value).coerceIn(0f, 0.50f)
-                        }
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    intrinsicColor.copy(alpha = 0.45f),
-                                    intrinsicColor.copy(alpha = 0.0f)
-                                )
+                    modifier =
+                        Modifier
+                            .size(176.dp)
+                            .graphicsLayer {
+                                scaleX = glowScale.value
+                                scaleY = glowScale.value
+                                alpha = (0.50f * emblemAlpha.value).coerceIn(0f, 0.50f)
+                            }.background(
+                                brush =
+                                    Brush.radialGradient(
+                                        colors =
+                                            listOf(
+                                                intrinsicColor.copy(alpha = 0.45f),
+                                                intrinsicColor.copy(alpha = 0.0f),
+                                            ),
+                                    ),
+                                shape = CircleShape,
                             ),
-                            shape = CircleShape
-                        )
                 )
 
                 // Scaled badge emblem
                 Box(
-                    modifier = Modifier.graphicsLayer {
-                        scaleX = emblemScale.value
-                        scaleY = emblemScale.value
-                        alpha = emblemAlpha.value
-                        cameraDistance = 12f * density
-                    }
+                    modifier =
+                        Modifier.graphicsLayer {
+                            scaleX = emblemScale.value
+                            scaleY = emblemScale.value
+                            alpha = emblemAlpha.value
+                            cameraDistance = 12f * density
+                        },
                 ) {
                     BadgeEmblem(
                         badge = badge,
                         intrinsicColor = intrinsicColor,
-                        modifier = Modifier.size(124.dp)
+                        modifier = Modifier.size(124.dp),
                     )
                 }
             }
@@ -2322,41 +2540,43 @@ fun BadgeDetailsOverlay(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        alpha = contentAlpha.value
-                        translationY = contentOffsetY.value * density
-                    }
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            alpha = contentAlpha.value
+                            translationY = contentOffsetY.value * density
+                        },
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = badge.name,
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            fontFamily = DisplayFontFamily,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.5).sp
-                        ),
+                        style =
+                            MaterialTheme.typography.headlineSmall.copy(
+                                fontFamily = DisplayFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-0.5).sp,
+                            ),
                         color = TextPrimary,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                     Text(
                         text = badge.description,
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
                     )
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         DetailsChip(text = rarity.label.uppercase(Locale.getDefault()), color = rarityColor)
                         DetailsChip(
                             text = getCategoryLabel(badge.category).uppercase(Locale.getDefault()),
-                            color = getCategoryColor(badge.category)
+                            color = getCategoryColor(badge.category),
                         )
                         if (badge.isMaxed) DetailsChip(text = "MAXED", color = TempoWarningBright)
                     }
@@ -2368,18 +2588,18 @@ fun BadgeDetailsOverlay(
                     accentColor = intrinsicColor,
                     borderColor = intrinsicColor.copy(alpha = 0.32f),
                     borderWidth = 0.8.dp,
-                    contentPadding = PaddingValues(20.dp)
+                    contentPadding = PaddingValues(20.dp),
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         Text(
                             text = "STAR TIERS",
                             style = KickerSmall,
                             fontWeight = FontWeight.Bold,
                             color = TextTertiary,
-                            letterSpacing = 1.4.sp
+                            letterSpacing = 1.4.sp,
                         )
 
                         if (isBeginner) {
@@ -2389,24 +2609,24 @@ fun BadgeDetailsOverlay(
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = intrinsicColor,
-                                    letterSpacing = 1.sp
+                                    letterSpacing = 1.sp,
                                 )
                                 Text(
                                     text = "A participation badge — yours from the first moment.",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = TextTertiary
+                                    color = TextTertiary,
                                 )
                             } else {
                                 Text(
                                     text = "${badge.progress} / ${badge.maxProgress}",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
+                                    color = TextPrimary,
                                 )
                                 ProgressTrack(
                                     progress = animatedProgress,
                                     modifier = Modifier.fillMaxWidth(),
-                                    color = intrinsicColor
+                                    color = intrinsicColor,
                                 )
                             }
                         } else if (def != null) {
@@ -2416,28 +2636,29 @@ fun BadgeDetailsOverlay(
                                     val threshold = GamificationEngine.getStarThreshold(def.threshold, tier)
                                     val achieved = badge.stars >= tier
                                     val isNext = !achieved && badge.stars + 1 == tier
-                                    val tierColor = when {
-                                        achieved -> intrinsicColor
-                                        isNext -> TempoWarningBright
-                                        else -> Color.White.copy(alpha = 0.15f)
-                                    }
+                                    val tierColor =
+                                        when {
+                                            achieved -> intrinsicColor
+                                            isNext -> TempoWarningBright
+                                            else -> Color.White.copy(alpha = 0.15f)
+                                        }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Icon(
                                             imageVector = if (achieved) Icons.Rounded.Star else Icons.Rounded.StarOutline,
                                             contentDescription = null,
                                             tint = tierColor,
-                                            modifier = Modifier.size(18.dp)
+                                            modifier = Modifier.size(18.dp),
                                         )
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = "Star $tier",
                                                 style = MaterialTheme.typography.labelMedium,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = if (achieved || isNext) TextPrimary else TextSecondary
+                                                color = if (achieved || isNext) TextPrimary else TextSecondary,
                                             )
                                             if (isNext) {
                                                 val remaining = (threshold - badge.progress).coerceAtLeast(0)
@@ -2445,7 +2666,7 @@ fun BadgeDetailsOverlay(
                                                     text = "%,d %s to go".format(remaining, unit),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = TempoWarningBright,
-                                                    fontWeight = FontWeight.Bold
+                                                    fontWeight = FontWeight.Bold,
                                                 )
                                             }
                                         }
@@ -2453,7 +2674,7 @@ fun BadgeDetailsOverlay(
                                             text = "%,d".format(threshold),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (achieved) intrinsicColor else TextTertiary
+                                            color = if (achieved) intrinsicColor else TextTertiary,
                                         )
                                     }
                                     if (isNext && !badge.isMaxed) {
@@ -2461,7 +2682,7 @@ fun BadgeDetailsOverlay(
                                             progress = animatedProgress,
                                             modifier = Modifier.fillMaxWidth(),
                                             color = intrinsicColor,
-                                            height = 4.dp
+                                            height = 4.dp,
                                         )
                                     }
                                 }
@@ -2472,7 +2693,7 @@ fun BadgeDetailsOverlay(
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (earnedDate != null) DetailsChip(text = "EARNED · $earnedDate", color = intrinsicColor)
                     if (xpEarned > 0) DetailsChip(text = "%,d XP".format(xpEarned), color = TempoWarning)
@@ -2482,64 +2703,66 @@ fun BadgeDetailsOverlay(
 
         // Frosted tactile action bar at bottom: Share + Close
         Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 24.dp)
-                .graphicsLayer { alpha = contentAlpha.value },
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 24.dp)
+                    .graphicsLayer { alpha = contentAlpha.value },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (badge.isEarned && onShareBadge != null) {
                 Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(TempoDarkSurfaceElevated.copy(alpha = 0.85f))
-                        .border(0.8.dp, intrinsicColor.copy(alpha = 0.45f), RoundedCornerShape(50))
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onShareBadge(badge)
-                        }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier =
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(TempoDarkSurfaceElevated.copy(alpha = 0.85f))
+                            .border(0.8.dp, intrinsicColor.copy(alpha = 0.45f), RoundedCornerShape(50))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                onShareBadge(badge)
+                            }.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Share,
                         contentDescription = "Share Trophy",
                         tint = intrinsicColor,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(14.dp),
                     )
                     Text(
                         text = "Share Trophy",
                         style = CaptionSmall,
                         color = TextPrimary,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
 
             Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(TempoDarkSurfaceElevated.copy(alpha = 0.85f))
-                    .border(0.8.dp, GlassBorderSoft, RoundedCornerShape(50))
-                    .clickable { dismissSmoothly() }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(TempoDarkSurfaceElevated.copy(alpha = 0.85f))
+                        .border(0.8.dp, GlassBorderSoft, RoundedCornerShape(50))
+                        .clickable { dismissSmoothly() }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Close,
                     contentDescription = null,
                     tint = TextTertiary,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(14.dp),
                 )
                 Text(
                     text = "Close",
                     style = CaptionSmall,
                     color = TextSecondary,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
                 )
             }
         }
@@ -2547,34 +2770,39 @@ fun BadgeDetailsOverlay(
 }
 
 @Composable
-private fun DetailsChip(text: String, color: Color) {
+private fun DetailsChip(
+    text: String,
+    color: Color,
+) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.Bold,
         color = color,
         letterSpacing = 1.sp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(color.copy(alpha = 0.14f))
-            .border(0.8.dp, color.copy(alpha = 0.35f), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .background(color.copy(alpha = 0.14f))
+                .border(0.8.dp, color.copy(alpha = 0.35f), RoundedCornerShape(50))
+                .padding(horizontal = 10.dp, vertical = 4.dp),
     )
 }
 
 // Unit for star-tier thresholds, derived from the badge id's domain prefix.
-private fun getBadgeUnit(badgeId: String): String = when {
-    badgeId.startsWith("plays_") || badgeId == "first_play" -> "plays"
-    badgeId.startsWith("time_") -> "hours"
-    badgeId.startsWith("streak_") -> "days"
-    badgeId.startsWith("artists_") -> "artists"
-    badgeId.startsWith("genres_") -> "genres"
-    badgeId == "night_owl" -> "late-night plays"
-    badgeId == "early_bird" -> "early plays"
-    badgeId == "marathon" -> "sessions"
-    badgeId.startsWith("level_") -> "level"
-    else -> ""
-}
+private fun getBadgeUnit(badgeId: String): String =
+    when {
+        badgeId.startsWith("plays_") || badgeId == "first_play" -> "plays"
+        badgeId.startsWith("time_") -> "hours"
+        badgeId.startsWith("streak_") -> "days"
+        badgeId.startsWith("artists_") -> "artists"
+        badgeId.startsWith("genres_") -> "genres"
+        badgeId == "night_owl" -> "late-night plays"
+        badgeId == "early_bird" -> "early plays"
+        badgeId == "marathon" -> "sessions"
+        badgeId.startsWith("level_") -> "level"
+        else -> ""
+    }
 
 // Level ring — shared with HomeScreen's compact header ring
 @Composable
@@ -2582,7 +2810,7 @@ fun CompactLevelRing(
     progress: Float,
     level: Int,
     modifier: Modifier = Modifier,
-    size: Dp = 48.dp
+    size: Dp = 48.dp,
 ) {
     Box(modifier = modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -2599,22 +2827,23 @@ fun CompactLevelRing(
                 useCenter = false,
                 topLeft = topLeft,
                 size = arcSize,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
             )
 
             val sweep = 360f * progress.coerceIn(0f, 1f)
             if (sweep > 0.5f) {
                 drawArc(
-                    brush = Brush.sweepGradient(
-                        listOf(LevelRingSweepStart, LevelRingSweepMid, LevelRingSweepEnd),
-                        center
-                    ),
+                    brush =
+                        Brush.sweepGradient(
+                            listOf(LevelRingSweepStart, LevelRingSweepMid, LevelRingSweepEnd),
+                            center,
+                        ),
                     startAngle = -90f,
                     sweepAngle = sweep,
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
                 )
             }
         }
@@ -2622,7 +2851,7 @@ fun CompactLevelRing(
             text = "$level",
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = TextPrimary
+            color = TextPrimary,
         )
     }
 }

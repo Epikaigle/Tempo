@@ -8,11 +8,11 @@ import androidx.room.PrimaryKey
 
 /**
  * Represents a music track in the database.
- * 
+ *
  * The track maintains both:
  * - A denormalized 'artist' string for display and backward compatibility
  * - A foreign key 'primary_artist_id' linking to the Artists table
- * 
+ *
  * For multi-artist tracks, the full artist relationships are stored
  * in the track_artists junction table.
  */
@@ -23,45 +23,39 @@ import androidx.room.PrimaryKey
             entity = Artist::class,
             parentColumns = ["id"],
             childColumns = ["primary_artist_id"],
-            onDelete = ForeignKey.SET_NULL
-        )
+            onDelete = ForeignKey.SET_NULL,
+        ),
     ],
     indices = [
         Index(value = ["spotify_id"], unique = true),
         Index(value = ["youtube_id"], unique = true),
+        Index(value = ["musicbrainz_id"]), // TrackResolver step 2 (mbid lookup)
         Index(value = ["artist"]),
         Index(value = ["album"]),
         Index(value = ["primary_artist_id"]),
         Index(value = ["title", "artist"]), // For duplicate detection
-        Index(value = ["content_type"]) // For content filtering
-    ]
+        Index(value = ["content_type"]), // For content filtering
+    ],
 )
 data class Track(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
-    
     /**
      * Raw artist string as received from music player.
      * Kept for display and backward compatibility.
      * May contain multiple artists like "Artist1, Artist2" or "Artist1 feat. Artist2"
      */
     val artist: String,
-    
     val album: String?,
     val duration: Long?,
-    
-    @ColumnInfo(name = "album_art_url") 
+    @ColumnInfo(name = "album_art_url")
     val albumArtUrl: String?,
-    
-    @ColumnInfo(name = "spotify_id") 
+    @ColumnInfo(name = "spotify_id")
     val spotifyId: String?,
-    
     @ColumnInfo(name = "youtube_id")
     val youtubeId: String? = null,
-    
-    @ColumnInfo(name = "musicbrainz_id") 
+    @ColumnInfo(name = "musicbrainz_id")
     val musicbrainzId: String?,
-    
     /**
      * Foreign key to the primary artist in the Artists table.
      * This is the main/first artist for the track.
@@ -69,12 +63,11 @@ data class Track(
      */
     @ColumnInfo(name = "primary_artist_id")
     val primaryArtistId: Long? = null,
-    
     /**
      * Content type classification: MUSIC, PODCAST, or AUDIOBOOK.
      * Used for filtering non-music content from statistics.
      * Defaults to MUSIC for backward compatibility.
      */
     @ColumnInfo(name = "content_type", defaultValue = "MUSIC")
-    val contentType: String = "MUSIC"
+    val contentType: String = "MUSIC",
 )

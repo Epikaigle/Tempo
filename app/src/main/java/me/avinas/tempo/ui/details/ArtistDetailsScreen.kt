@@ -348,9 +348,13 @@ fun ArtistDetailsContent(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp)
                     ) {
+                        // Stable identity key: the old index-baked key renamed every
+                        // row on insert/reorder, reusing slots mid-scroll ->
+                        // subcompose IllegalArgumentException. Album+artist is the
+                        // identity (matches TopAlbum keying in stats).
                         itemsIndexed(
                             items = artistDetails.topAlbums,
-                            key = { index, album -> "album_${index}_${album.album}" },
+                            key = { _, album -> "album_${album.album}_${album.artist}" },
                             contentType = { _, _ -> "album" }
                         ) { _, album ->
                             TopAlbumCard(album = album, accent = accent)

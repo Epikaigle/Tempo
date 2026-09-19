@@ -76,6 +76,12 @@ class SpotifyJsonImportWorker @AssistedInject constructor(
                 return null
             }
 
+            // ponytail: WorkManager input Data caps at ~10KB — bound the URI list.
+            if (fileUris.size > 50) {
+                Log.w(TAG, "Too many files (${fileUris.size}), refusing to enqueue")
+                return null
+            }
+
             val inputData = workDataOf(
                 KEY_FILE_URIS to fileUris.toTypedArray()
             )
@@ -153,7 +159,9 @@ class SpotifyJsonImportWorker @AssistedInject constructor(
                     KEY_TOTAL_ENTRIES to result.totalEntries
                 ))
             } else {
-                val errorMsg = result.errors.joinToString("; ")
+                // ponytail: errors list is user-file-derived — truncate for the notification
+                // and the WorkManager output Data (Binder limit).
+                val errorMsg = result.errors.take(5).joinToString("; ").take(500)
                 showFailureNotification(errorMsg)
                 Result.failure(workDataOf(
                     KEY_SUCCESS to false,

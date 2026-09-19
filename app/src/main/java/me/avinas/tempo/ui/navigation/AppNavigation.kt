@@ -14,6 +14,8 @@ import me.avinas.tempo.ui.settings.SupportedAppsScreen
 import me.avinas.tempo.ui.settings.BackupRestoreScreen
 import me.avinas.tempo.ui.settings.BackgroundProtectionScreen
 import me.avinas.tempo.ui.settings.EnrichmentReportScreen
+import me.avinas.tempo.ui.settings.WhatWeCollectScreen
+import me.avinas.tempo.ui.settings.DiagnosticsScreen
 import me.avinas.tempo.ui.lastfm.LastFmImportScreen
 import me.avinas.tempo.ui.desktop.DesktopLinkScreen
 import me.avinas.tempo.ui.spotlight.SpotlightScreen
@@ -76,6 +78,8 @@ sealed class Screen(val route: String) {
     data object YouTubeMusicImport : Screen("youtube_music_import")
     data object DesktopLink : Screen("desktop_link")
     data object EnrichmentReport : Screen("enrichment_report")
+    data object WhatWeCollect : Screen("what_we_collect")
+    data object Diagnostics : Screen("diagnostics")
     object ShareCanvas : Screen("share_canvas/{initialCardId}") {
         fun createRoute(initialCardId: String) = "share_canvas/$initialCardId"
         fun createRouteEmpty() = "share_canvas/_empty_"
@@ -94,6 +98,8 @@ fun AppNavigation(
     val currentRoute = navBackStackEntry?.destination?.route
     val currentDestination = navBackStackEntry?.destination
 
+    val analyticsScreens: AnalyticsScreenViewModel = hiltViewModel()
+
     androidx.compose.runtime.LaunchedEffect(navigationTrigger) {
         if (navigationTrigger == "profile_challenges") {
             navController.navigate(Screen.Profile.route) {
@@ -106,10 +112,12 @@ fun AppNavigation(
         }
     }
 
-    // Dismiss any active walkthrough when navigating to a new screen
+    // Dismiss any active walkthrough when navigating to a new screen, and report the
+    // destination for anonymous screen-usage stats.
     androidx.compose.runtime.LaunchedEffect(currentRoute) {
         if (currentRoute != null) {
             walkthroughController.dismissCurrent()
+            analyticsScreens.onRouteChanged(currentRoute)
         }
     }
 
@@ -214,7 +222,9 @@ fun AppNavigation(
                             onNavigateToSpotifyJsonImport = { navController.navigate(Screen.SpotifyJsonImport.route) },
                             onNavigateToYouTubeMusicImport = { navController.navigate(Screen.YouTubeMusicImport.route) },
                             onNavigateToDesktop = { navController.navigate(Screen.DesktopLink.route) },
-                            onNavigateToEnrichmentReport = { navController.navigate(Screen.EnrichmentReport.route) }
+                            onNavigateToEnrichmentReport = { navController.navigate(Screen.EnrichmentReport.route) },
+                            onNavigateToWhatWeCollect = { navController.navigate(Screen.WhatWeCollect.route) },
+                            onNavigateToDiagnostics = { navController.navigate(Screen.Diagnostics.route) }
                         )
                     }
 
@@ -262,6 +272,16 @@ fun AppNavigation(
 
                     composable(Screen.EnrichmentReport.route) {
                         EnrichmentReportScreen(
+                            onNavigateBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable(Screen.Diagnostics.route) {
+                        DiagnosticsScreen(onNavigateBack = { navController.popBackStack() })
+                    }
+
+                    composable(Screen.WhatWeCollect.route) {
+                        WhatWeCollectScreen(
                             onNavigateBack = { navController.popBackStack() }
                         )
                     }
@@ -443,4 +463,3 @@ fun AppNavigation(
         }
     }
 }
-

@@ -151,7 +151,10 @@ object DefaultMusicApps {
         AppInfo("com.miui.videoplayer", "Mi Video", "VIDEO"),
         AppInfo("com.miui.gallery", "Mi Gallery", "VIDEO"),
         AppInfo("com.google.android.videos", "Google Play Movies", "VIDEO"),
-        AppInfo("com.google.android.apps.youtube.kids", "YouTube Kids", "VIDEO")
+        AppInfo("com.google.android.apps.youtube.kids", "YouTube Kids", "VIDEO"),
+
+        // Remote control / mirroring (mirrors MediaSessions, must never be tracked)
+        AppInfo("org.kde.kdeconnect_tp", "KDE Connect", "OTHER")
     )
     
     /**

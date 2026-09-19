@@ -72,8 +72,8 @@
     <string name="level_reached">Vous avez atteint le Niveau %1$d</string>
 
     <!-- Onboarding: Welcome screen -->
-    <string name="welcome_headline_1">Connaissez votre musique,</string>
-    <string name="welcome_headline_2">Adorez vos stats</string>
+    <string name="welcome_headline_1">À chaque écoute,</string>
+    <string name="welcome_headline_2">un peu plus vous-même</string>
     <string name="welcome_description">Tempo suit automatiquement ce que vous écoutez et vous offre de magnifiques aperçus de vos habitudes d\'écoute.</string>
     <string name="welcome_get_started">Commencer</string>
     <string name="welcome_skip">Passer</string>
@@ -86,9 +86,7 @@
     <string name="how_it_works_step2_title">Une notification apparaît</string>
     <string name="how_it_works_step2_subtitle">Tempo ne lit que les infos musicales</string>
     <string name="how_it_works_step3_title">Stats enregistrées localement</string>
-    <string name="how_it_works_step3_subtitle">Sur votre téléphone, nulle part ailleurs</string>
     <string name="how_it_works_badge_apps">+20 applis</string>
-    <string name="how_it_works_badge_local">100 %% local</string>
     <string name="how_it_works_badge_auto">Suivi auto</string>
     <string name="how_it_works_next">Suivant</string>
 
@@ -97,8 +95,6 @@
     <string name="privacy_subtitle">La vie privée n\'est pas une fonctionnalité. C\'est une fondation.</string>
     <string name="privacy_local_title">Stockage 100 %% local</string>
     <string name="privacy_local_desc">Toutes vos données restent sur votre téléphone. Toujours.</string>
-    <string name="privacy_no_cloud_title">Pas de serveur, pas de cloud</string>
-    <string name="privacy_no_cloud_desc">Nous n\'avons aucun serveur. Zéro donnée envoyée.</string>
     <string name="privacy_notif_title">Notifications musicales uniquement</string>
     <string name="privacy_notif_desc">Nous lisons Spotify, YouTube Music, etc. Jamais vos messages.</string>
     <string name="privacy_open_source_title">Open Source</string>

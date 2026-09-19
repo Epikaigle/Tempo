@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -67,7 +68,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
-// In-memory LRU cache for CPU-rendered backdrops (fluted glass, glitch motion, ascii art)
+// In-memory LRU cache for CPU-rendered backdrops (fluted glass, ascii art)
 // Avoids redundant computations across preview and capture view, and speeds up theme toggles.
 private val backdropBitmapCache = LruCache<String, Bitmap>(8)
 
@@ -76,7 +77,7 @@ private val backdropBitmapCache = LruCache<String, Bitmap>(8)
  * not hue swaps of one backdrop: each style builds its own scene from
  * different geometry — scattered bokeh lights, fluted-glass refraction of
  * the artwork itself, a monospace ASCII glyph field, editorial rings, a sun
- * disc, datamosh glitch static. [PHOTO_GLOW] builds on the blurred artwork,
+ * disc, grainy gradient mesh. [PHOTO_GLOW] builds on the blurred artwork,
  * [FLUTED_GLASS] refracts it through a vertical ribbed pane, and
  * [ASCII_ARTWORK] goes further: it converts the artwork itself into true
  * ASCII art and paints that as the backdrop.
@@ -98,8 +99,8 @@ enum class ShareBackdropStyle {
     RINGS_VIGNETTE,
     /** Morning paper: a visible sun disc with halo sinking in from above. */
     SUN_WASH,
-    /** Datamosh: motion blur, RGB-split slices, CRT scanlines, and datamosh tear blocks. */
-    GLITCH_MOTION
+    /** Grainy gradient: warm mesh blobs over the base gradient with film grain. */
+    GRAIN_GRADIENT
 }
 
 /**
@@ -260,27 +261,25 @@ enum class ShareTheme(val palette: ShareThemePalette) {
             thumbShape = RoundedCornerShape(6.dp)
         )
     ),
-    // Datamosh: the base album artwork transformed into a motion-blurred,
-    // datamoshed cyberpunk backdrop — horizontal speed streaks, chromatic
-    // RGB channel splits, datamosh tear slices, CRT scanlines, and neon blocks.
-    GLITCH(
+    // Grain: warm ember mesh with film grain — the only theme that ignores
+    // the artwork entirely, so it reads distinct from every art-based theme.
+    GRAIN(
         ShareThemePalette(
-            gradient = listOf(Color(0xFF07060B), Color(0xFF150A20), Color(0xFF050409)),
+            gradient = listOf(Color(0xFF1B0B1E), Color(0xFF4A1230), Color(0xFF0D0A12)),
             overlay = listOf(
-                Color.Black.copy(alpha = 0.38f),
-                Color(0xFF0A0714).copy(alpha = 0.62f),
-                Color(0xFF050310).copy(alpha = 0.88f)
+                Color.Black.copy(alpha = 0.22f),
+                Color(0xFF1B0B1E).copy(alpha = 0.42f),
+                Color(0xFF0D0A12).copy(alpha = 0.68f)
             ),
-            accent = Color(0xFFE879F9),
-            glowTop = Color(0xFF22D3EE),
-            glowBottom = Color(0xFFE879F9),
-            rank1Tint = Color(0xFFE879F9),
-            backdrop = ShareBackdropStyle.GLITCH_MOTION,
+            accent = Color(0xFFFBBF24),
+            glowTop = Color(0xFFFB7185),
+            glowBottom = Color(0xFFF59E0B),
+            rank1Tint = Color(0xFFFBBF24),
+            backdrop = ShareBackdropStyle.GRAIN_GRADIENT,
             decorationAlpha = 1f,
-            usesArtwork = true,
-            cardShape = RoundedCornerShape(10.dp),
-            thumbShape = RoundedCornerShape(8.dp),
-            badgeShape = RoundedCornerShape(6.dp)
+            cardShape = RoundedCornerShape(16.dp),
+            thumbShape = RoundedCornerShape(10.dp),
+            badgeShape = RoundedCornerShape(8.dp)
         )
     )
 }
@@ -384,16 +383,9 @@ fun ShareThemeDecorations(
                     center = Offset(w * 0.1f, h * 1.02f)
                 )
             }
-            ShareBackdropStyle.GLITCH_MOTION ->
-                if (imageUrl.isNullOrBlank() && backdropBitmap == null) {
-                    Canvas(modifier = Modifier.fillMaxSize()) { drawGlitchStaticFallback(palette) }
-                } else {
-                    GlitchMotionBackdrop(
-                        palette = palette,
-                        imageUrl = imageUrl,
-                        sourceBitmap = backdropBitmap
-                    )
-                }
+            ShareBackdropStyle.GRAIN_GRADIENT -> Canvas(modifier = Modifier.fillMaxSize()) {
+                drawGrainyGradient(palette)
+            }
         }
     }
 }
@@ -482,6 +474,16 @@ private fun AsciiArtworkBackdrop(palette: ShareThemePalette, imageUrl: String) {
             }
             .clipToBounds()
     ) {
+        // ponytail: blurred art is the instant background; glyph art covers it when baked.
+        CachedAsyncImage(
+            imageUrl = imageUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+            targetSizeDp = 180,
+            allowHardware = false,
+            blurRadius = 48.dp
+        )
         Canvas(modifier = Modifier.fillMaxSize()) {
             val art = backdrop
             if (art != null) {
@@ -554,6 +556,18 @@ private fun FlutedGlassBackdrop(
             }
             .clipToBounds()
     ) {
+        // ponytail: blurred art is the instant background; fluted pane covers it when baked.
+        if (!imageUrl.isNullOrBlank() && sourceBitmap == null) {
+            CachedAsyncImage(
+                imageUrl = imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                targetSizeDp = 180,
+                allowHardware = false,
+                blurRadius = 48.dp
+            )
+        }
         Canvas(modifier = Modifier.fillMaxSize()) {
             val art = fluted
             if (art != null) {
@@ -763,290 +777,76 @@ private const val FLUTED_SEAM_FADE = 0.35f
 private const val FLUTED_SHADOW = 0.12f
 private const val FLUTED_HIGHLIGHT = 0.10f
 
-// Glitch motion backdrop parameters: render width of the baked composite
-private const val GLITCH_RENDER_WIDTH = 576
-
-private data class GlitchTearSlice(
-    val yFraction: Float,
-    val hFraction: Float,
-    val shiftPx: Int,
-    val chromaticShift: Int,
-    val sharpness: Float
-)
-
-private val GlitchTearSlices = listOf(
-    GlitchTearSlice(0.08f, 0.038f, 36, 14, 0.75f),
-    GlitchTearSlice(0.19f, 0.026f, -44, 18, 0.60f),
-    GlitchTearSlice(0.33f, 0.046f, 48, 22, 0.85f),
-    GlitchTearSlice(0.46f, 0.028f, -30, 12, 0.50f),
-    GlitchTearSlice(0.59f, 0.052f, 42, 20, 0.80f),
-    GlitchTearSlice(0.72f, 0.022f, -50, 16, 0.65f),
-    GlitchTearSlice(0.84f, 0.040f, 28, 10, 0.55f)
-)
+// Grainy-gradient backdrop seed: deterministic film grain so preview and capture match.
+private const val GRAIN_SEED = 0x6A17
 
 /**
- * Datamosh motion-blur + glitch backdrop: converts the base artwork into a
- * high-speed cybernetic scene — directional horizontal speed blur, RGB
- * channel splits (chromatic aberration), datamoshed tear slices that reveal
- * crisp displaced fragments of the cover art, micro-scanline row jitter, and
- * neon digital corruption blocks.
- *
- * Computed on the CPU into a deterministic ARGB_8888 bitmap so the live Compose
- * preview and the software-canvas share capture stay pixel-identical.
+ * Grainy-gradient backdrop: warm mesh blobs over the base gradient with
+ * deterministic film grain and a soft vignette. Pure Canvas (no artwork, no
+ * CPU bitmaps) so preview and capture match, and cheap enough to redraw.
  */
-@Composable
-private fun GlitchMotionBackdrop(
-    palette: ShareThemePalette,
-    imageUrl: String? = null,
-    sourceBitmap: Bitmap? = null
-) {
-    var aspect by remember { mutableStateOf(9f / 16f) }
-    val context = LocalContext.current
-    val glitched by produceState<Bitmap?>(initialValue = null, imageUrl, sourceBitmap, aspect) {
-        value = withContext(Dispatchers.Default) {
-            runCatching {
-                if (sourceBitmap != null) {
-                    val safeSource = if (sourceBitmap.config == Bitmap.Config.HARDWARE) {
-                        sourceBitmap.copy(Bitmap.Config.ARGB_8888, false)
-                    } else {
-                        sourceBitmap
-                    }
-                    val cropped = safeSource.centerCroppedToAspect(aspect)
-                    val targetH = (GLITCH_RENDER_WIDTH / aspect).roundToInt().coerceAtLeast(64)
-                    cropped.downscaledTo(GLITCH_RENDER_WIDTH, targetH).renderGlitchMotionEffect(palette)
-                } else if (!imageUrl.isNullOrBlank()) {
-                    buildGlitchMotionBitmap(context, imageUrl, aspect, palette)
-                } else null
-            }.getOrNull()
-        }
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onSizeChanged { size ->
-                if (size.width > 0 && size.height > 0) {
-                    val measured = size.width.toFloat() / size.height
-                    if (measured != aspect) aspect = measured
-                }
-            }
-            .clipToBounds()
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val art = glitched
-            if (art != null) {
-                drawImage(
-                    image = art.asImageBitmap(),
-                    dstOffset = IntOffset.Zero,
-                    dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
-                    filterQuality = FilterQuality.Medium
-                )
-            } else {
-                drawGlitchStaticFallback(palette)
-            }
-        }
-        // Readability overlay above the glitch artwork.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(brush = Brush.verticalGradient(palette.overlay))
+private fun DrawScope.drawGrainyGradient(palette: ShareThemePalette) {
+    val w = size.width
+    val h = size.height
+    // Warm mesh: rose top-left, amber bottom-right, soft amber core.
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                palette.glowTop.copy(alpha = 0.55f * palette.decorationAlpha),
+                Color.Transparent
+            ),
+            center = Offset(w * 0.18f, h * 0.16f),
+            radius = w * 0.95f
+        ),
+        radius = w * 0.95f,
+        center = Offset(w * 0.18f, h * 0.16f)
+    )
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                palette.glowBottom.copy(alpha = 0.50f * palette.decorationAlpha),
+                Color.Transparent
+            ),
+            center = Offset(w * 0.85f, h * 0.78f),
+            radius = w * 1.0f
+        ),
+        radius = w * 1.0f,
+        center = Offset(w * 0.85f, h * 0.78f)
+    )
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                palette.accent.copy(alpha = 0.28f * palette.decorationAlpha),
+                Color.Transparent
+            ),
+            center = Offset(w * 0.68f, h * 0.34f),
+            radius = w * 0.55f
+        ),
+        radius = w * 0.55f,
+        center = Offset(w * 0.68f, h * 0.34f)
+    )
+    // Film grain: deterministic speckles, preview and capture stay identical.
+    val rng = Random(GRAIN_SEED)
+    repeat(1100) {
+        val x = rng.nextFloat() * w
+        val y = rng.nextFloat() * h
+        val s = 1f + rng.nextFloat() * 1.6f
+        val light = rng.nextBoolean()
+        drawRect(
+            color = if (light) Color.White.copy(alpha = 0.05f * palette.decorationAlpha)
+            else Color.Black.copy(alpha = 0.09f * palette.decorationAlpha),
+            topLeft = Offset(x, y),
+            size = Size(s, s)
         )
     }
-}
-
-/**
- * Loads the artwork through Coil (sharing the app's memory/disk cache) and
- * converts it into a motion-blur + glitch texture at the card's aspect ratio.
- */
-private suspend fun buildGlitchMotionBitmap(
-    context: Context,
-    imageUrl: String,
-    aspect: Float,
-    palette: ShareThemePalette
-): Bitmap? {
-    val cacheKey = "glitch:$imageUrl:$aspect:${palette.accent.value}"
-    backdropBitmapCache.get(cacheKey)?.let { if (!it.isRecycled) return it }
-    val request = ImageRequest.Builder(context)
-        .data(MusicBrainzEnrichmentService.fixHttpUrl(imageUrl))
-        .size(720, 720)
-        .allowHardware(false)
-        .build()
-    val source = (context.imageLoader.execute(request).image as? BitmapImage)?.bitmap
-        ?: return null
-    val safeSource = if (source.config == Bitmap.Config.HARDWARE) {
-        source.copy(Bitmap.Config.ARGB_8888, false)
-    } else {
-        source
-    }
-    return withContext(Dispatchers.Default) {
-        val cropped = safeSource.centerCroppedToAspect(aspect)
-        val targetH = (GLITCH_RENDER_WIDTH / aspect).roundToInt().coerceAtLeast(64)
-        val result = cropped.downscaledTo(GLITCH_RENDER_WIDTH, targetH).renderGlitchMotionEffect(palette)
-        backdropBitmapCache.put(cacheKey, result)
-        result
-    }
-}
-
-/**
- * Transforms the base artwork into a motion-blur + glitch composition:
- * 1. Motion Blur — two-pass horizontal box blur (radius 34 and 22) plus slight
- *    vertical softening (radius 5) smears the artwork's colors into silky speed trails.
- * 2. Chromatic Aberration — base RGB channel split offsets red and blue channels.
- * 3. Datamosh Tear Slices — horizontal bands shift horizontally, interpolating
- *    between motion blur and crisp raw artwork details with exaggerated RGB divergence.
- * 4. Scanline Jitter — deterministic row micro-displacements emulate CRT sync tears.
- * 5. Raster Interlace — periodic scanline dimming provides analog monitor texture.
- * 6. Digital Noise Blocks — deterministic rectangular corruptions (color inversion,
- *    neon cyan/magenta tints, and highlight sparks).
- */
-private fun Bitmap.renderGlitchMotionEffect(palette: ShareThemePalette): Bitmap {
-    val w = width
-    val h = height
-    val rawPixels = IntArray(w * h)
-    getPixels(rawPixels, 0, w, 0, 0, w, h)
-
-    // Stage 1 — Directional motion blur (2 horizontal rounds + 1 mild vertical round)
-    var motionPixels = blurBoxPass(rawPixels, w, h, radius = 34, horizontal = true)
-    motionPixels = blurBoxPass(motionPixels, w, h, radius = 22, horizontal = true)
-    motionPixels = blurBoxPass(motionPixels, w, h, radius = 5, horizontal = false)
-
-    val outPixels = IntArray(w * h)
-
-    // Stage 2 — Base chromatic aberration on motion blur
-    for (y in 0 until h) {
-        val rowOff = y * w
-        for (x in 0 until w) {
-            val rX = (x + 5).coerceAtMost(w - 1)
-            val bX = (x - 5).coerceAtLeast(0)
-            val rVal = (motionPixels[rowOff + rX] shr 16) and 0xFF
-            val gVal = (motionPixels[rowOff + x] shr 8) and 0xFF
-            val bVal = motionPixels[rowOff + bX] and 0xFF
-            outPixels[rowOff + x] = (0xFF shl 24) or (rVal shl 16) or (gVal shl 8) or bVal
-        }
-    }
-
-    // Stage 3 — Datamosh horizontal tear slices
-    for (slice in GlitchTearSlices) {
-        val yStart = (slice.yFraction * h).roundToInt().coerceIn(0, h - 1)
-        val yEnd = ((slice.yFraction + slice.hFraction) * h).roundToInt().coerceIn(yStart + 1, h)
-        val s = slice.sharpness
-        val invS = 1f - s
-
-        for (y in yStart until yEnd) {
-            val rowOff = y * w
-            for (x in 0 until w) {
-                val rSampleX = (((x - slice.shiftPx + slice.chromaticShift) % w) + w) % w
-                val gSampleX = (((x - slice.shiftPx) % w) + w) % w
-                val bSampleX = (((x - slice.shiftPx - slice.chromaticShift) % w) + w) % w
-
-                val rIdx = rowOff + rSampleX
-                val gIdx = rowOff + gSampleX
-                val bIdx = rowOff + bSampleX
-
-                val rRaw = (rawPixels[rIdx] shr 16) and 0xFF
-                val rMot = (motionPixels[rIdx] shr 16) and 0xFF
-                val rVal = (rRaw * s + rMot * invS).toInt().coerceIn(0, 255)
-
-                val gRaw = (rawPixels[gIdx] shr 8) and 0xFF
-                val gMot = (motionPixels[gIdx] shr 8) and 0xFF
-                val gVal = (gRaw * s + gMot * invS).toInt().coerceIn(0, 255)
-
-                val bRaw = rawPixels[bIdx] and 0xFF
-                val bMot = motionPixels[bIdx] and 0xFF
-                val bVal = (bRaw * s + bMot * invS).toInt().coerceIn(0, 255)
-
-                outPixels[rowOff + x] = (0xFF shl 24) or (rVal shl 16) or (gVal shl 8) or bVal
-            }
-        }
-    }
-
-    // Stage 4 — Scanline micro-jitter (CRT horizontal sync jitter)
-    val rng = Random(GLITCH_SEED)
-    val rowCopy = IntArray(w)
-    for (y in 0 until h) {
-        if (rng.nextFloat() < 0.07f) {
-            val dx = rng.nextInt(-14, 15)
-            if (dx != 0) {
-                val rowOff = y * w
-                System.arraycopy(outPixels, rowOff, rowCopy, 0, w)
-                for (x in 0 until w) {
-                    val sx = ((x - dx) % w + w) % w
-                    outPixels[rowOff + x] = rowCopy[sx]
-                }
-            }
-        }
-    }
-
-    // Stage 5 — CRT Raster scanline darkening
-    for (y in 0 until h step 3) {
-        val rowOff = y * w
-        for (x in 0 until w) {
-            val p = outPixels[rowOff + x]
-            val r = (((p shr 16) and 0xFF) * 82) / 100
-            val g = (((p shr 8) and 0xFF) * 82) / 100
-            val b = ((p and 0xFF) * 82) / 100
-            outPixels[rowOff + x] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-        }
-    }
-
-    // Stage 6 — Digital noise blocks and neon color corruptions
-    val rngBlocks = Random(GLITCH_SEED + 101)
-    val cyanArgb = palette.glowTop.toArgb()
-    val magentaArgb = palette.glowBottom.toArgb()
-    val cyanR = (cyanArgb shr 16) and 0xFF
-    val cyanG = (cyanArgb shr 8) and 0xFF
-    val cyanB = cyanArgb and 0xFF
-    val magR = (magentaArgb shr 16) and 0xFF
-    val magG = (magentaArgb shr 8) and 0xFF
-    val magB = magentaArgb and 0xFF
-
-    repeat(14) {
-        val bw = rngBlocks.nextInt(24, 110)
-        val bh = rngBlocks.nextInt(4, 16)
-        val bx = rngBlocks.nextInt(0, (w - bw).coerceAtLeast(1))
-        val by = rngBlocks.nextInt(0, (h - bh).coerceAtLeast(1))
-        val mode = rngBlocks.nextInt(4)
-        val yLimit = (by + bh).coerceAtMost(h)
-        val xLimit = (bx + bw).coerceAtMost(w)
-        for (iy in by until yLimit) {
-            val rowOff = iy * w
-            for (ix in bx until xLimit) {
-                val cur = outPixels[rowOff + ix]
-                val cr = (cur shr 16) and 0xFF
-                val cg = (cur shr 8) and 0xFF
-                val cb = cur and 0xFF
-                val nr: Int
-                val ng: Int
-                val nb: Int
-                when (mode) {
-                    0 -> {
-                        nr = 255 - cr
-                        ng = 255 - cg
-                        nb = 255 - cb
-                    }
-                    1 -> {
-                        nr = (cr + cyanR) shr 1
-                        ng = (cg + cyanG) shr 1
-                        nb = (cb + cyanB) shr 1
-                    }
-                    2 -> {
-                        nr = (cr + magR) shr 1
-                        ng = (cg + magG) shr 1
-                        nb = (cb + magB) shr 1
-                    }
-                    else -> {
-                        nr = (cr * 4 + 255 * 6) / 10
-                        ng = (cg * 4 + 255 * 6) / 10
-                        nb = (cb * 4 + 255 * 6) / 10
-                    }
-                }
-                outPixels[rowOff + ix] = (0xFF shl 24) or (nr shl 16) or (ng shl 8) or nb
-            }
-        }
-    }
-
-    val result = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-    result.setPixels(outPixels, 0, w, 0, 0, w, h)
-    return result
+    // Soft vignette to seat the content.
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.42f * palette.decorationAlpha)),
+            center = center,
+            radius = maxOf(w, h) * 0.72f
+        )
+    )
 }
 
 // ASCII backdrop parameters: render width of the baked composite, the blurred
@@ -1435,108 +1235,6 @@ private fun DrawScope.drawGlassFluidPools(palette: ShareThemePalette) {
     )
 }
 
-/**
- * The deterministic glitch static canvas fallback: scanlines, chromatic
- * edge fringing, RGB-split slices, and noise blocks on void black. Used when
- * artwork is missing or still decoding.
- */
-private fun DrawScope.drawGlitchStaticFallback(palette: ShareThemePalette) {
-    val w = size.width
-    val h = size.height
-    // CRT scanlines sweeping the whole frame.
-    val lineStep = h * 0.014f
-    var scanY = 0f
-    while (scanY < h) {
-        drawRect(
-            color = Color.Black.copy(alpha = 0.14f * palette.decorationAlpha),
-            topLeft = Offset(0f, scanY),
-            size = Size(w, lineStep * 0.45f)
-        )
-        scanY += lineStep
-    }
-    // Chromatic fringe bleeding in from the edges.
-    drawRect(
-        brush = Brush.horizontalGradient(
-            listOf(palette.glowTop.copy(alpha = 0.10f * palette.decorationAlpha), Color.Transparent)
-        ),
-        size = Size(w * 0.09f, h)
-    )
-    drawRect(
-        brush = Brush.horizontalGradient(
-            listOf(Color.Transparent, palette.glowBottom.copy(alpha = 0.10f * palette.decorationAlpha)),
-            startX = w * 0.91f,
-            endX = w
-        ),
-        topLeft = Offset(w * 0.91f, 0f),
-        size = Size(w * 0.09f, h)
-    )
-    // RGB-split slices: cyan and magenta ghosts flanking a white
-    // core, like a datamoshed frame torn mid-render.
-    GlitchSlices.forEach { slice ->
-        val sx = slice.x * w
-        val sy = slice.y * h
-        val sw = slice.w * w
-        val sh = slice.h * h
-        drawRect(
-            color = palette.glowTop.copy(alpha = slice.alpha * 0.5f * palette.decorationAlpha),
-            topLeft = Offset(sx - sw * 0.035f, sy),
-            size = Size(sw, sh)
-        )
-        drawRect(
-            color = palette.glowBottom.copy(alpha = slice.alpha * 0.5f * palette.decorationAlpha),
-            topLeft = Offset(sx + sw * 0.035f, sy),
-            size = Size(sw, sh)
-        )
-        drawRect(
-            color = Color.White.copy(alpha = slice.alpha * 0.30f * palette.decorationAlpha),
-            topLeft = Offset(sx, sy),
-            size = Size(sw, sh)
-        )
-    }
-    // Scattered noise blocks — deterministic seeded layout so the
-    // preview and the share capture show the same composition.
-    val rng = Random(GLITCH_SEED)
-    repeat(16) {
-        val bw = w * (0.01f + rng.nextFloat() * 0.15f)
-        val bh = h * (0.004f + rng.nextFloat() * 0.011f)
-        val bx = w * rng.nextFloat()
-        val by = h * rng.nextFloat()
-        val color = when (rng.nextInt(3)) {
-            0 -> palette.glowTop
-            1 -> palette.glowBottom
-            else -> Color.White
-        }
-        if (rng.nextBoolean()) {
-            drawRect(
-                color = color.copy(alpha = 0.10f * palette.decorationAlpha),
-                topLeft = Offset(bx, by),
-                size = Size(bw, bh)
-            )
-        } else {
-            drawRect(
-                color = color.copy(alpha = 0.35f * palette.decorationAlpha),
-                topLeft = Offset(bx, by),
-                size = Size(bw, bh),
-                style = Stroke(width = 1.dp.toPx())
-            )
-        }
-    }
-    // One bright tear band cutting across the upper third.
-    drawRect(
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                Color.Transparent,
-                Color.White.copy(alpha = 0.08f * palette.decorationAlpha),
-                Color.Transparent
-            ),
-            startY = h * 0.24f,
-            endY = h * 0.30f
-        ),
-        topLeft = Offset(0f, h * 0.24f),
-        size = Size(w, h * 0.06f)
-    )
-}
-
 /** ContentScale.Crop equivalent: centre-crops the bitmap to [aspect] (w/h). */
 private fun Bitmap.centerCroppedToAspect(aspect: Float): Bitmap {
     val srcAspect = width.toFloat() / height
@@ -1693,20 +1391,6 @@ private val GlassFluidBlobs = listOf(
     GlassFluidBlob(0.38f, 0.96f, 0.45f, 0.22f, 10f, 0, 0.24f),
     GlassFluidBlob(0.52f, 0.42f, 0.35f, 0.18f, -32f, 1, 0.16f)
 )
-
-private data class GlitchSlice(val x: Float, val y: Float, val w: Float, val h: Float, val alpha: Float)
-
-private val GlitchSlices = listOf(
-    GlitchSlice(0.02f, 0.12f, 0.96f, 0.016f, 0.35f),
-    GlitchSlice(0.30f, 0.19f, 0.55f, 0.009f, 0.28f),
-    GlitchSlice(0.10f, 0.34f, 0.80f, 0.022f, 0.30f),
-    GlitchSlice(0.45f, 0.47f, 0.42f, 0.008f, 0.26f),
-    GlitchSlice(0.05f, 0.61f, 0.68f, 0.014f, 0.32f),
-    GlitchSlice(0.38f, 0.73f, 0.52f, 0.018f, 0.28f),
-    GlitchSlice(0.14f, 0.86f, 0.86f, 0.011f, 0.30f)
-)
-
-private const val GLITCH_SEED = 0x1E5A
 
 /**
  * Text color for rank badges, pedestal numbers, and swatch selection dots.

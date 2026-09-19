@@ -15,6 +15,9 @@ import me.avinas.tempo.data.local.entities.ArtistAlias
 import me.avinas.tempo.data.local.entities.ScrobbleArchive
 import me.avinas.tempo.utils.ArtistNameReplacer
 import javax.inject.Inject
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
 /**
@@ -37,7 +40,8 @@ open class ArtistMergeRepository @Inject constructor(
     private val albumDao: AlbumDao,
     private val scrobbleArchiveDao: ScrobbleArchiveDao,
     private val database: AppDatabase,
-    private val statsRepository: StatsRepository
+    private val statsRepository: StatsRepository,
+    private val tracker: AnalyticsTracker
 ) {
     companion object {
         private const val TAG = "ArtistMergeRepository"
@@ -89,6 +93,12 @@ open class ArtistMergeRepository @Inject constructor(
      * @return true if merge succeeded, false otherwise
      */
     suspend fun mergeArtists(sourceArtistId: Long, targetArtistId: Long): Boolean {
+        val merged = mergeArtistsInternal(sourceArtistId, targetArtistId)
+        if (merged) tracker.track(FeatureUsed(TempoFeature.ARTIST_MERGE))
+        return merged
+    }
+
+    private suspend fun mergeArtistsInternal(sourceArtistId: Long, targetArtistId: Long): Boolean {
         if (sourceArtistId == targetArtistId) {
             Log.w(TAG, "Cannot merge artist into itself")
             return false

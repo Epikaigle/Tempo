@@ -1,3 +1,4 @@
+// Load local.properties for API keys
 import java.util.Properties
 
 plugins {
@@ -14,6 +15,12 @@ val localProperties = Properties().apply {
         load(localPropertiesFile.inputStream())
     }
 }
+
+// Declared once so archiveReleaseMapping below names the archived mapping file after the
+// exact version it deobfuscates. Without the matching mapping.txt a release stack trace
+// cannot be read back, so these two must never drift apart.
+val appVersionCode = 488
+val appVersionName = "4.8.8"
 
 android {
     namespace = "me.avinas.tempo"
@@ -35,8 +42,8 @@ android {
         applicationId = "me.avinas.tempo"
         minSdk = 26
         targetSdk = 36
-        versionCode = 487
-        versionName = "4.8.7"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -53,6 +60,13 @@ android {
         buildConfigField("Long", "MUSICBRAINZ_RATE_LIMIT_MS", "1000L")
         buildConfigField("String", "LASTFM_API_KEY", "\"${localProperties.getProperty("LASTFM_API_KEY", "")}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "")}\"")
+
+        // Anonymous app-health analytics. The key is deliberately NOT committed: a blank
+        // key makes AnalyticsGate report the build as unconfigured, so anyone building
+        // Tempo from source gets a tracker-free app with no extra flags. Debug builds
+        // never report either.
+        buildConfigField("String", "APTABASE_APP_KEY", "\"${localProperties.getProperty("APTABASE_APP_KEY", "")}\"")
+        buildConfigField("String", "APTABASE_HOST", "\"${localProperties.getProperty("APTABASE_HOST", "https://eu.aptabase.com")}\"")
     }
     
     buildTypes {
@@ -130,6 +144,28 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
+// R8 obfuscates release stack traces. The anonymous crash signature Tempo reports contains
+// only an obfuscated class name plus one frame with a line number, so it is readable only
+// with the mapping.txt for that exact version.
+//
+// Run this after assembleRelease / bundleRelease and before shipping, then copy the result
+// somewhere durable — `mappings/` is gitignored, and without the file the crash reports are
+// unreadable and you would have to fall back to Play Console Android vitals.
+val releaseMappingArchiveName = "mapping-$appVersionName-$appVersionCode.txt"
+
+tasks.register<Copy>("archiveReleaseMapping") {
+    group = "release"
+    description = "Archives the release R8 mapping file as mappings/mapping-<version>.txt for deobfuscating crash reports."
+    // Lazy match rather than a hardcoded name: resolves to nothing if the release variant
+    // is ever removed, instead of failing configuration.
+    dependsOn(tasks.matching { it.name == "minifyReleaseWithR8" })
+    from(layout.buildDirectory.file("outputs/mapping/release/mapping.txt"))
+    into(rootProject.layout.projectDirectory.dir("mappings"))
+    // Passed as arguments rather than a rename lambda: a closure here would capture the
+    // build script instance and break the configuration cache.
+    rename("mapping.txt", releaseMappingArchiveName)
+}
+
 dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.media3.exoplayer)
@@ -161,6 +197,7 @@ dependencies {
 
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.moshi)
+    implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
 
     implementation(libs.coil)

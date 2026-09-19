@@ -27,6 +27,9 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 import java.util.Locale
 
 private val GroupDateFormatter = DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.getDefault())
@@ -74,7 +77,8 @@ class HistoryViewModel @Inject constructor(
     private val userPreferencesDao: me.avinas.tempo.data.local.dao.UserPreferencesDao,
     private val lastFmImportMetadataDao: LastFmImportMetadataDao,
     private val scrobbleArchiveDao: ScrobbleArchiveDao,
-    private val refreshCoordinator: RefreshCoordinator
+    private val refreshCoordinator: RefreshCoordinator,
+    private val tracker: AnalyticsTracker
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HistoryUiState())
@@ -304,6 +308,8 @@ class HistoryViewModel @Inject constructor(
     }
 
     fun onFilterChanged(startTime: Long?, endTime: Long?, showSkips: Boolean) {
+        // Deliberate (the filter sheet was applied), unlike the per-keystroke search callback.
+        tracker.track(FeatureUsed(TempoFeature.HISTORY_FILTER))
         _uiState.update { it.copy(
             startDate = startTime,
             endDate = endTime,
@@ -326,6 +332,7 @@ class HistoryViewModel @Inject constructor(
      * Switch between RECENT and ALL_TIME view modes.
      */
     fun setViewMode(mode: HistoryViewMode) {
+        tracker.track(FeatureUsed(TempoFeature.HISTORY_FILTER))
         if (_uiState.value.viewMode == mode) return
         
         _uiState.update { it.copy(
@@ -389,11 +396,14 @@ class HistoryViewModel @Inject constructor(
                         page = page
                     )
                     
-                    val newItems = if (currentState.rawItems.isEmpty() || !isLoadMore) 
-                        result.items else currentState.rawItems + result.items
-                    
+                    // Offset pagination shifts under live inserts, so page N+1 can
+                    // overlap page N's tail. Dedup by id: duplicates become
+                    // duplicate Lazy keys -> subcompose crash mid-fling.
+                    val newItems = if (currentState.rawItems.isEmpty() || !isLoadMore)
+                        result.items else (currentState.rawItems + result.items).distinctBy { it.id }
+
                     val shouldShowCoachMark = checkShouldShowCoachMark(newItems)
-                    
+
                     _uiState.update { state ->
                         val grouped = groupHistoryItems(newItems)
                         state.copy(
@@ -406,12 +416,12 @@ class HistoryViewModel @Inject constructor(
                             showCoachMark = shouldShowCoachMark
                         )
                     }
-                    
+
                     // Also load Last.fm history section if first load
                     if (!isLoadMore) {
                         loadLastFmHistory(isLoadMore = false)
                     }
-                    
+
                 } else {
                     // UNIFIED MODE: Load all events combined (original behavior)
                     val result = statsRepository.getHistory(
@@ -424,16 +434,16 @@ class HistoryViewModel @Inject constructor(
                         filterAudiobooks = filterAudiobooks,
                         page = page
                     )
-                    
-                    val newItems = if (currentState.rawItems.isEmpty() || !isLoadMore) 
-                        result.items else currentState.rawItems + result.items
-                    
-                    val shouldShowCoachMark = checkShouldShowCoachMark(newItems)
-                    
+
+                    val newItemsUnified = if (currentState.rawItems.isEmpty() || !isLoadMore)
+                        result.items else (currentState.rawItems + result.items).distinctBy { it.id }
+
+                    val shouldShowCoachMark = checkShouldShowCoachMark(newItemsUnified)
+
                     _uiState.update { state ->
-                        val grouped = groupHistoryItems(newItems)
+                        val grouped = groupHistoryItems(newItemsUnified)
                         state.copy(
-                            rawItems = newItems,
+                            rawItems = newItemsUnified,
                             groupedItems = grouped,
                             isLoading = false,
                             isLoadingMore = false,
@@ -482,8 +492,8 @@ class HistoryViewModel @Inject constructor(
                     page = page
                 )
                 
-                val newLastFmItems = if (currentState.lastFmItems.isEmpty() || !isLoadMore) 
-                    result.items else currentState.lastFmItems + result.items
+                val newLastFmItems = if (currentState.lastFmItems.isEmpty() || !isLoadMore)
+                    result.items else (currentState.lastFmItems + result.items).distinctBy { it.id }
                 
                 // Also load archive items (first page only, grouped by track)
                 var archiveItems = currentState.archiveItems
@@ -671,6 +681,7 @@ class HistoryViewModel @Inject constructor(
      * 4. Enable the corresponding filter if not already enabled
      */
     fun markContent(trackId: Long, contentType: String, deleteFromHistory: Boolean) {
+        tracker.track(FeatureUsed(TempoFeature.MANUAL_CONTENT_MARK))
         viewModelScope.launch {
             _uiState.update { it.copy(isMarking = true) }
             try {
@@ -746,6 +757,7 @@ class HistoryViewModel @Inject constructor(
      * 4. Enable the corresponding filter if not already enabled
      */
     fun markArtistContent(trackId: Long, contentType: String, deleteFromHistory: Boolean) {
+        tracker.track(FeatureUsed(TempoFeature.MANUAL_CONTENT_MARK))
         viewModelScope.launch {
             _uiState.update { it.copy(isMarking = true) }
             try {

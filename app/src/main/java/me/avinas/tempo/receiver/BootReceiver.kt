@@ -7,6 +7,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings
 import android.util.Log
+import dagger.hilt.android.EntryPointAccessors
+import me.avinas.tempo.data.analytics.RecoveryAction
+import me.avinas.tempo.data.analytics.RevivedBy
+import me.avinas.tempo.data.analytics.ServiceRevived
+import me.avinas.tempo.di.AnalyticsEntryPoint
 import me.avinas.tempo.service.MusicTrackingService
 
 /**
@@ -14,23 +19,27 @@ import me.avinas.tempo.service.MusicTrackingService
  * Ignores LOCKED_BOOT_COMPLETED to avoid duplicate bindings before user unlock.
  */
 class BootReceiver : BroadcastReceiver() {
-
     companion object {
         private const val TAG = "BootReceiver"
-        
+
         @Volatile
         private var hasHandledBoot = false
     }
 
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         Log.i(TAG, "Boot completed: ${intent.action}")
 
         when (intent.action) {
             // Only handle BOOT_COMPLETED (not LOCKED_BOOT_COMPLETED) to avoid duplicate bindings
             Intent.ACTION_BOOT_COMPLETED,
-            "android.intent.action.QUICKBOOT_POWERON" -> {
+            "android.intent.action.QUICKBOOT_POWERON",
+            -> {
                 handleBootCompleted(context)
             }
+
             Intent.ACTION_LOCKED_BOOT_COMPLETED -> {
                 // Skip LOCKED_BOOT_COMPLETED - the system will bind the NotificationListenerService
                 // automatically when the user unlocks and we receive BOOT_COMPLETED
@@ -48,7 +57,7 @@ class BootReceiver : BroadcastReceiver() {
             }
             hasHandledBoot = true
         }
-        
+
         // Check if notification listener permission is granted
         if (!isNotificationListenerEnabled(context)) {
             Log.w(TAG, "Notification listener not enabled, skipping service start")
@@ -56,20 +65,21 @@ class BootReceiver : BroadcastReceiver() {
         }
 
         Log.i(TAG, "Ensuring MusicTrackingService is enabled after boot")
-        
+
         try {
             val componentName = ComponentName(context, MusicTrackingService::class.java)
             val currentState = context.packageManager.getComponentEnabledSetting(componentName)
-            
+
             // Only re-enable if the component was disabled
             // The system will automatically bind the NotificationListenerService when enabled
             if (currentState == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
                 context.packageManager.setComponentEnabledSetting(
                     componentName,
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    PackageManager.DONT_KILL_APP
+                    PackageManager.DONT_KILL_APP,
                 )
                 Log.i(TAG, "MusicTrackingService component re-enabled")
+                reportRevived(context)
             } else {
                 Log.d(TAG, "MusicTrackingService component already enabled (state=$currentState)")
             }
@@ -80,10 +90,24 @@ class BootReceiver : BroadcastReceiver() {
 
     private fun isNotificationListenerEnabled(context: Context): Boolean {
         val packageName = context.packageName
-        val flat = Settings.Secure.getString(
-            context.contentResolver,
-            "enabled_notification_listeners"
-        )
+        val flat =
+            Settings.Secure.getString(
+                context.contentResolver,
+                "enabled_notification_listeners",
+            )
         return flat?.contains(packageName) == true
+    }
+
+    /**
+     * A broadcast receiver has no injection point, so the tracker is resolved through an
+     * entry point, and a failure to do so must never break the boot self-heal.
+     */
+    private fun reportRevived(context: Context) {
+        runCatching {
+            EntryPointAccessors
+                .fromApplication(context.applicationContext, AnalyticsEntryPoint::class.java)
+                .analyticsTracker()
+                .track(ServiceRevived(RevivedBy.BOOT, RecoveryAction.COMPONENT_REENABLE))
+        }
     }
 }

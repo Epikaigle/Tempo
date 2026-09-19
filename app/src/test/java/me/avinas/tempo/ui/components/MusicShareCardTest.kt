@@ -221,15 +221,15 @@ class MusicShareCardTest {
         assertEquals("TEMPO • ARTIST SPOTLIGHT", spotlight)
     }
     @Test
-    fun `ShareTheme GLITCH is 6th theme, uses artwork, and sets GLITCH_MOTION backdrop`() {
+    fun `ShareTheme GRAIN is 6th theme, ignores artwork, and sets GRAIN_GRADIENT backdrop`() {
         // Must be the 6th theme (index 5)
-        assertEquals(ShareTheme.GLITCH, ShareTheme.entries[5])
+        assertEquals(ShareTheme.GRAIN, ShareTheme.entries[5])
         assertEquals(6, ShareTheme.entries.size)
 
-        val palette = ShareTheme.GLITCH.palette
-        assertTrue("GLITCH theme must use artwork for base album art", palette.usesArtwork)
-        assertEquals(ShareBackdropStyle.GLITCH_MOTION, palette.backdrop)
-        assertTrue("GLITCH must be a dark theme", palette.isDark)
+        val palette = ShareTheme.GRAIN.palette
+        assertTrue("GRAIN theme must ignore artwork for a distinct non-photo look", !palette.usesArtwork)
+        assertEquals(ShareBackdropStyle.GRAIN_GRADIENT, palette.backdrop)
+        assertTrue("GRAIN must be a dark theme", palette.isDark)
         assertEquals(3, palette.gradient.size)
         assertEquals(3, palette.overlay.size)
         assertNotNull(palette.accent)

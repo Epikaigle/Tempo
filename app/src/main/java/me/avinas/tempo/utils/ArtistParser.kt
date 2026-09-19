@@ -637,6 +637,35 @@ object ArtistParser {
     }
 
     /**
+     * Check if an artist string is a structural *placeholder label* rather than
+     * a real artist name.
+     *
+     * Google Takeout's YouTube watch-history entries describe their links with
+     * generic labels — the album/release link is literally named "Release",
+     * videos are "Video", playlists are "Playlist", and so on. When a parser
+     * grabs one of those labels positionally it ends up storing the label as
+     * the artist, pooling hundreds of unrelated songs under one bogus artist
+     * (imports affected by the newer Takeout layout reported "Release" as a
+     * top-3 artist with 500+ tracks).
+     *
+     * The list is deliberately tight — exact, case-insensitive matches of
+     * clearly structural words — so a real artist name is never rejected.
+     */
+    fun isPlaceholderArtistName(artist: String): Boolean {
+        val normalized = artist.trim().lowercase()
+        if (normalized.isEmpty()) return true
+        return normalized in PLACEHOLDER_ARTIST_NAMES
+    }
+
+    private val PLACEHOLDER_ARTIST_NAMES = setOf(
+        "release", "releases", "song", "songs", "video", "videos",
+        "album", "albums", "single", "ep", "lp", "mixtape", "playlist",
+        "topic", "channel", "artist", "various artists", "unknown artist",
+        "unknown", "official video", "official audio", "official music video",
+        "music video"
+    )
+
+    /**
      * Clean track title by removing artist mentions that are often embedded.
      * Some sources embed "feat. Artist" in the track title.
      * 
