@@ -32,6 +32,10 @@ import kotlinx.coroutines.flow.first
 import me.avinas.tempo.MainActivity
 import me.avinas.tempo.R
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
+import me.avinas.tempo.data.local.entities.ManualContentMark
+import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
+import me.avinas.tempo.data.preferences.TrackingRulesPreferences
+import me.avinas.tempo.data.preferences.TrackingRulesPreferences.ContentOverrideType
 import me.avinas.tempo.data.local.dao.UserPreferencesDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.local.entities.Track
@@ -390,7 +394,6 @@ class MusicTrackingService : NotificationListenerService() {
 
         // Typical music duration range (used for music detection)
         private const val MIN_MUSIC_DURATION_MS = 30_000L // 30 seconds
-        private const val MAX_MUSIC_DURATION_MS = 20 * 60 * 1000L // 20 minutes (for long tracks/mixes)
         private const val TYPICAL_SONG_MIN_MS = 60_000L // 1 minute
         private const val TYPICAL_SONG_MAX_MS = 10 * 60 * 1000L // 10 minutes
 
@@ -420,9 +423,6 @@ class MusicTrackingService : NotificationListenerService() {
         private const val SONG_END_PHASE_MS = 30_000L // Last 30 seconds
         private const val SHORT_TRACK_THRESHOLD_MS = 90_000L // Tracks under 90 seconds
 
-        // Minimum play duration to record (25 seconds)
-        private const val MIN_PLAY_DURATION_MS = 25_000L
-
         // Skip threshold: plays under 30% completion are considered skips
         private const val SKIP_COMPLETION_THRESHOLD = 30
 
@@ -445,7 +445,6 @@ class MusicTrackingService : NotificationListenerService() {
 
         // Position tracking constants
         private const val MAX_POSITION_JUMP_MS = 30_000L // 30 seconds - max seek to still count
-        private const val MAX_PLAY_DURATION_MS = 3_600_000L // 1 hour - max duration per session
 
         // Maximum reasonable position delta in one update (5 minutes worth of playback)
         // This catches cases where polling was delayed for a long time (device sleep, service suspension)
@@ -833,6 +832,23 @@ class MusicTrackingService : NotificationListenerService() {
     private lateinit var manualContentMarkDao: ManualContentMarkDao
     private lateinit var appPreferenceDao: me.avinas.tempo.data.local.dao.AppPreferenceDao
     private lateinit var refreshCoordinator: RefreshCoordinator
+    private lateinit var trackingRules: TrackingRulesPreferences
+
+    /** Set during component init, read by [recoverPersistedSessions] later in onCreate. */
+    private var needsSessionRecovery = false
+
+    /**
+     * Room-backed manual content marks, kept live by [watchManualContentMarks] so the
+     * synchronous MediaSession/notification paths never need a database read.
+     */
+    @Volatile
+    private var cachedManualContentMarks: List<ManualContentMark> = emptyList()
+
+    /** Re-evaluates active sessions whenever a duration rule changes in Settings. */
+    private val durationRulesListener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            serviceScope.launch { reevaluateActiveContent() }
+        }
 
     // Dynamic app lists - cached from database, refreshed periodically
     @Volatile
@@ -1088,10 +1104,13 @@ class MusicTrackingService : NotificationListenerService() {
          * This is the key fix - we use position progress, not wall-clock time.
          */
         fun calculateCurrentPlayDuration(): Long {
-            // Use accumulated position-based duration
-            // This represents actual audio playback time, not wall-clock time
-            // Cap at MAX_PLAY_DURATION_MS to prevent runaway values from bugs
-            return accumulatedPositionMs.coerceAtMost(MAX_PLAY_DURATION_MS)
+            // Use accumulated position-based duration.
+            // This represents actual audio playback time, not wall-clock time.
+            // No fixed cap: long-form content allowed by the user's tracking rules
+            // (ALWAYS_MUSIC, no-limit apps) must count in full. Runaway values are
+            // guarded by MAX_REASONABLE_DELTA_MS in updatePosition() and the
+            // 3x-estimated-duration checks in validatePlayDuration()/insert paths.
+            return accumulatedPositionMs
         }
 
         /**
@@ -1306,12 +1325,6 @@ class MusicTrackingService : NotificationListenerService() {
         fun validatePlayDuration(): Boolean {
             val duration = calculateCurrentPlayDuration()
 
-            // Check for impossibly long duration (max 1 hour per session)
-            if (duration > MAX_PLAY_DURATION_MS) {
-                Log.w("PlaybackSession", "Validation failed: duration ${duration}ms exceeds max ${MAX_PLAY_DURATION_MS}ms for '$title'")
-                return false
-            }
-
             // Check if duration exceeds estimated duration by unreasonable amount
             estimatedDurationMs?.let { estimated ->
                 if (estimated > 0 && duration > estimated * 3) {
@@ -1396,6 +1409,7 @@ class MusicTrackingService : NotificationListenerService() {
         serviceStartTime.set(System.currentTimeMillis())
         TrackingServiceHeartbeat.markServiceCreated(this)
         startHeartbeat()
+        trackingRules = TrackingRulesPreferences(applicationContext)
 
         // Initialize dependencies via Hilt EntryPoint
         // This is necessary because NotificationListenerService is managed by the system
@@ -1404,6 +1418,7 @@ class MusicTrackingService : NotificationListenerService() {
 
         // Initialize enhanced tracking components
         initializeTrackingComponents()
+        trackingRules.registerListener(durationRulesListener)
 
         // Recover any persisted sessions from previous runs
         recoverPersistedSessions()
@@ -1459,6 +1474,22 @@ class MusicTrackingService : NotificationListenerService() {
             appPreferenceDao = entryPoint.appPreferenceDao()
             refreshCoordinator = entryPoint.refreshCoordinator()
 
+            // Manual overrides participate in synchronous MediaSession decisions, so load the
+            // small Room table once before any session scan. A Flow keeps it fresh afterwards.
+            cachedManualContentMarks = runBlocking(Dispatchers.IO) {
+                try { manualContentMarkDao.getAllSync() } catch (_: Exception) { emptyList() }
+            }
+
+            // Preload app preferences synchronously before the first MediaSession/notification
+            // scan. Without this, a statically-known app that the user explicitly disabled
+            // could be treated as enabled for a brief startup window.
+            try {
+                val initialApps = runBlocking(Dispatchers.IO) { appPreferenceDao.getAllApps().first() }
+                applyAppPreferenceCache(initialApps)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to preload app preferences; falling back to startup defaults", e)
+            }
+
             // Load initial preferences for caching
             serviceScope.launch {
                 try {
@@ -1500,6 +1531,9 @@ class MusicTrackingService : NotificationListenerService() {
 
             // Start watching the battery pause preference so the cached flag stays live
             watchBatteryPreference()
+            // Live tracking-rule sources: app enable/block rows and manual content exceptions.
+            watchAppPreferences()
+            watchManualContentMarks()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize dependencies", e)
             throw e
@@ -1614,7 +1648,7 @@ class MusicTrackingService : NotificationListenerService() {
         Log.i(TAG, "Cleaning up session for disabled/blocked app: $packageName (${session.title})")
 
         // Save any accumulated play time before removing
-        if (session.calculateCurrentPlayDuration() > MIN_PLAY_DURATION_MS) {
+        if (session.calculateCurrentPlayDuration() >= minimumPlayDurationMs()) {
             saveListeningEvent(session)
         }
 
@@ -1637,6 +1671,175 @@ class MusicTrackingService : NotificationListenerService() {
         updateServiceLifecycle()
     }
 
+    /** Configured minimum accumulated play time before an event is stored. */
+    private fun minimumPlayDurationMs(): Long =
+        if (::trackingRules.isInitialized) trackingRules.minimumPlayDurationMs
+        else TrackingRulesPreferences.DEFAULT_MIN_PLAY_DURATION_MS
+
+    private fun findManualContentMark(title: String, artist: String): ManualContentMark? =
+        ManualContentRuleResolver.resolve(cachedManualContentMarks, title, artist)
+
+    private fun manualContentOverride(title: String, artist: String): ContentOverrideType? =
+        when (findManualContentMark(title, artist)?.contentType?.uppercase()) {
+            "ALWAYS_MUSIC" -> ContentOverrideType.MUSIC
+            "NON_MUSIC", "VIDEO" -> ContentOverrideType.VIDEO
+            else -> null
+        }
+
+    /**
+     * Applies the user's content exceptions and per-app/global maximum duration rules.
+     * Unknown duration (0) is never rejected here — callers re-check once a reliable
+     * duration is resolved from the track row or enrichment.
+     */
+    private fun shouldRejectByTrackingRules(
+        packageName: String,
+        title: String,
+        artist: String,
+        durationMs: Long
+    ): Boolean {
+        when (manualContentOverride(title, artist)) {
+            ContentOverrideType.VIDEO -> {
+                Log.d(TAG, "Rejecting manual video/non-music override: '$title' by '$artist'")
+                return true
+            }
+            ContentOverrideType.MUSIC -> return false
+            null -> Unit
+        }
+
+        if (durationMs > 0L && ::trackingRules.isInitialized) {
+            val maxDuration = trackingRules.getMaxMusicDurationMs(packageName)
+            if (maxDuration != null && durationMs > maxDuration) {
+                Log.d(
+                    TAG,
+                    "Rejecting content over configured music limit: '$title' by '$artist' " +
+                        "(${durationMs / 1000}s > ${maxDuration / 1000}s) from $packageName"
+                )
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Atomically drops the session for [packageName] when it matches the rejected media.
+     * A different in-flight session is saved instead of discarded.
+     */
+    private fun removeRejectedSession(
+        packageName: String,
+        title: String,
+        artist: String,
+        expectedSession: PlaybackSession? = null
+    ) {
+        val previous = expectedSession ?: playbackStates[packageName] ?: return
+        if (!playbackStates.remove(packageName, previous)) return
+        val sameRejectedMedia = previous.title.equals(title, ignoreCase = true) &&
+            (previous.artist.equals(artist, ignoreCase = true) ||
+                me.avinas.tempo.utils.ArtistParser.isUnknownArtist(previous.artist) ||
+                me.avinas.tempo.utils.ArtistParser.isUnknownArtist(artist))
+        previous.pause()
+        if (!sameRejectedMedia) {
+            saveListeningEvent(previous)
+        }
+    }
+
+    /** Applies a freshly loaded app-preference list to the in-memory caches. */
+    private fun applyAppPreferenceCache(
+        apps: List<me.avinas.tempo.data.local.entities.AppPreference>
+    ) {
+        cachedEnabledApps = apps.filter { it.isEnabled && !it.isBlocked }.map { it.packageName }.toSet()
+        cachedBlockedApps = apps.filter { it.isBlocked }.map { it.packageName }.toSet()
+        cachedAllKnownPackages = apps.map { it.packageName }.toSet()
+        isAppPreferenceCacheInitialized = true
+        lastAppPreferenceFetch = System.currentTimeMillis()
+    }
+
+    /**
+     * Keeps app enable/block state live. Disabling an app stops its running session
+     * immediately; enabling one (including an explicitly enabled YouTube) makes the
+     * static blocklist fallback step aside and rescans active media.
+     */
+    private fun watchAppPreferences() {
+        serviceScope.launch {
+            appPreferenceDao.getAllApps().collect { apps ->
+                applyAppPreferenceCache(apps)
+
+                val packagesToStop = playbackStates.keys.filter { packageName ->
+                    packageName in cachedBlockedApps ||
+                        (packageName in cachedAllKnownPackages && packageName !in cachedEnabledApps)
+                }
+                packagesToStop.forEach(::cleanupSessionForPackage)
+                withContext(Dispatchers.Main) {
+                    rescanActiveMediaSessions()
+                    try {
+                        activeNotifications?.forEach { sbn ->
+                            if (isMusicNotification(sbn)) processNotificationPosted(sbn)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to re-evaluate notifications after app preference change", e)
+                    }
+                    updateServiceLifecycle()
+                }
+            }
+        }
+    }
+
+    /** Keeps manual content exceptions live and re-evaluates anything already playing. */
+    private fun watchManualContentMarks() {
+        serviceScope.launch {
+            manualContentMarkDao.getAllMarks().collect { marks ->
+                cachedManualContentMarks = marks
+                reevaluateActiveContent()
+            }
+        }
+    }
+
+    /**
+     * Re-applies content exceptions and duration rules to active sessions and active
+     * sources, so corrections take effect without waiting for the next player event.
+     */
+    private suspend fun reevaluateActiveContent() {
+        playbackStates.values.toList().forEach { session ->
+            val rejectedByTrackingRule = shouldRejectByTrackingRules(
+                session.packageName,
+                session.title,
+                session.artist,
+                session.estimatedDurationMs ?: 0L
+            )
+            val filteredByContent = if (rejectedByTrackingRule) {
+                false
+            } else {
+                shouldFilterContent(
+                    session.packageName,
+                    session.trackId?.let { localMetadataCache.get(it) },
+                    session.title,
+                    session.artist
+                )
+            }
+            if (rejectedByTrackingRule || filteredByContent) {
+                removeRejectedSession(session.packageName, session.title, session.artist, session)
+            }
+        }
+
+        withContext(Dispatchers.Main) {
+            rescanActiveMediaSessions()
+            activeControllers.values.toList().forEach { controller ->
+                try {
+                    processMediaControllerState(controller)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to re-evaluate MediaSession after rule change", e)
+                }
+            }
+            try {
+                activeNotifications?.forEach { sbn ->
+                    if (isMusicNotification(sbn)) processNotificationPosted(sbn)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to re-evaluate notifications after rule change", e)
+            }
+            updateServiceLifecycle()
+        }
+    }
+
     private fun initializeTrackingComponents() {
         // Durable store for events that failed to reach the database — survives
         // OEM kills, crashes and reboots.
@@ -1652,8 +1855,13 @@ class MusicTrackingService : NotificationListenerService() {
             // Initialize tracking manager for batched event saving
             trackingManager = MusicTrackingManager(listeningRepository, serviceScope, offlineStore)
 
-            // Initialize session persistence for recovery
+            // Initialize session persistence for recovery.
+            // Capture the unclean-shutdown flag BEFORE marking the service active:
+            // markServiceActive() sets the same timestamp wasUncleanShutdown() reads,
+            // so reading it afterwards would always report true and re-recover the
+            // previous run's autosaved sessions, duplicating listening events.
             sessionPersistence = SessionPersistence(applicationContext)
+            needsSessionRecovery = sessionPersistence.wasUncleanShutdown()
             sessionPersistence.markServiceActive()
 
             // Initialize smart duration estimator
@@ -1672,7 +1880,7 @@ class MusicTrackingService : NotificationListenerService() {
     private fun recoverPersistedSessions() {
         serviceScope.launch {
             try {
-                if (sessionPersistence.wasUncleanShutdown()) {
+                if (needsSessionRecovery) {
                     Log.i(TAG, "Detected unclean shutdown, attempting session recovery")
                     val recoveredSessions = sessionPersistence.loadSessions()
 
@@ -1701,16 +1909,12 @@ class MusicTrackingService : NotificationListenerService() {
                             // Using only the persisted play time prevents inflation from device sleep.
                             val estimatedPlayTime = state.totalPlayedMs
 
-                            // Cap recovered sessions at reasonable maximum
-                            val cappedPlayTime = estimatedPlayTime.coerceAtMost(MAX_PLAY_DURATION_MS)
-                            if (estimatedPlayTime != cappedPlayTime) {
-                                Log.w(
-                                    TAG,
-                                    "ANOMALY: Recovered session '${state.trackTitle}' had ${estimatedPlayTime}ms, capped to ${cappedPlayTime}ms",
-                                )
-                            }
+                            // Recovered sessions keep their full accumulated play time; a
+                            // fixed 1-hour cap would silently truncate legitimately long
+                            // content (podcasts, mixes) that the user allows to be tracked.
+                            val cappedPlayTime = estimatedPlayTime.coerceAtLeast(0L)
 
-                            if (cappedPlayTime <= MIN_PLAY_DURATION_MS) continue
+                            if (cappedPlayTime < minimumPlayDurationMs()) continue
 
                             // Resolve the track. Sessions persisted before their
                             // trackId was assigned (track insert still in flight when
@@ -1728,14 +1932,45 @@ class MusicTrackingService : NotificationListenerService() {
                                 continue
                             }
 
-                            // Also cap at 3x estimated duration for sanity
+                            // Resolve a reliable duration and apply the same content/duration
+                            // rules as the live save paths before replaying a recovered session.
+                            val reliableDuration =
+                                state.estimatedDurationMs?.takeIf { it > 0L } ?: try {
+                                    trackRepository.getById(trackId).first()?.duration?.takeIf { it > 0L }
+                                        ?: getTrackDurationFromMetadata(trackId)
+                                } catch (e: Exception) {
+                                    null
+                                }
+
+                            if (shouldRejectByTrackingRules(
+                                    state.packageName,
+                                    state.trackTitle,
+                                    state.trackArtist,
+                                    reliableDuration ?: 0L
+                                )
+                            ) {
+                                continue
+                            }
+
+                            if (shouldFilterContent(
+                                    state.packageName,
+                                    localMetadataCache.get(trackId),
+                                    state.trackTitle,
+                                    state.trackArtist
+                                )
+                            ) {
+                                continue
+                            }
+
+                            // Also cap at 3x the reliable duration for sanity
                             val finalPlayTime =
-                                if (state.estimatedDurationMs != null && state.estimatedDurationMs > 0) {
-                                    val maxReasonable = state.estimatedDurationMs * 3
-                                    cappedPlayTime.coerceAtMost(maxReasonable)
+                                if (reliableDuration != null && reliableDuration > 0) {
+                                    cappedPlayTime.coerceAtMost(reliableDuration * 3)
                                 } else {
                                     cappedPlayTime
                                 }
+
+                            if (finalPlayTime < minimumPlayDurationMs()) continue
 
                             // Create a listening event for the recovered session
                             val event =
@@ -2187,6 +2422,15 @@ class MusicTrackingService : NotificationListenerService() {
                 ?.takeIf { !it.equals(artist, ignoreCase = true) } // Don't use SUB_TEXT if it's the artist
                 ?: extras.getCharSequence(EXTRA_INFO_TEXT)?.toString()?.trim()
 
+        // Manual video/non-music override: never track this content, even from an
+        // otherwise enabled music app (e.g. a podcast episode on a music app).
+        if (manualContentOverride(title, artist) == ContentOverrideType.VIDEO) {
+            removeRejectedSession(packageName, title, artist)
+            updateTrackingNotification(null, null)
+            updateServiceLifecycle()
+            return
+        }
+
         // Extract album art from notification (for fallback use)
         val albumArtBitmap = extractAlbumArtFromNotification(notification)
 
@@ -2309,6 +2553,17 @@ class MusicTrackingService : NotificationListenerService() {
                 val cachedDurationKey = generateHash("$title|$artist")
                 val cachedDuration = durationEstimateCache.get(cachedDurationKey)
 
+                // Reject by rules once a cached duration is known (NON_MUSIC override or over
+                // the configured maximum) before a session is even created for this track.
+                if (cachedDuration != null &&
+                    shouldRejectByTrackingRules(packageName, title, artist, cachedDuration)
+                ) {
+                    Log.d(TAG, "Rejecting content by tracking rules (cached duration): '$title' by '$artist'")
+                    removeRejectedSession(packageName, title, artist)
+                    updateTrackingNotification(null, null)
+                    return
+                }
+
                 // Clear log debounce caches for fresh logging on new track
                 loggedArtistExtractionFailures.clear()
                 loggedAdvertisementSkips.clear()
@@ -2339,7 +2594,7 @@ class MusicTrackingService : NotificationListenerService() {
                         // media path gets a chance to filter them out.
                         if (shouldFilterContent(packageName, null, title, artist)) {
                             Log.d(TAG, "Content filtered via notification: '$title' by '$artist' from $packageName")
-                            playbackStates.remove(packageName)
+                            removeRejectedSession(packageName, title, artist, newSession)
                             updateTrackingNotification(null, null)
                             return@launch
                         }
@@ -2347,8 +2602,16 @@ class MusicTrackingService : NotificationListenerService() {
                         newSession.trackId = track.id
 
                         // Try to get duration from track or enriched metadata
-                        val duration = track.duration ?: getTrackDurationFromMetadata(track.id)
+                        val duration = track.duration?.takeIf { it > 0L } ?: getTrackDurationFromMetadata(track.id)
                         if (duration != null && duration > 0) {
+                            // Duration only became known now — re-apply content/duration rules
+                            // before this session can be saved.
+                            if (shouldRejectByTrackingRules(packageName, title, artist, duration)) {
+                                removeRejectedSession(packageName, title, artist, newSession)
+                                updateTrackingNotification(null, null)
+                                updateServiceLifecycle()
+                                return@launch
+                            }
                             newSession.estimatedDurationMs = duration
                             // Also cache it for future use
                             durationEstimateCache.put(cachedDurationKey, duration)
@@ -3015,11 +3278,19 @@ class MusicTrackingService : NotificationListenerService() {
     private suspend fun saveListeningEventSuspend(session: PlaybackSession) {
         val playDuration = session.calculateCurrentPlayDuration()
 
-        // Don't save very short plays (less than MIN_PLAY_DURATION_MS)
-        if (playDuration < MIN_PLAY_DURATION_MS) {
+        // Don't save plays shorter than the configured minimum.
+        if (playDuration < minimumPlayDurationMs()) {
             Log.d(TAG, "Skipping short play: ${playDuration}ms for '${session.title}'")
             return
         }
+
+        // Apply any rule that can already be decided before resolving the track row.
+        if (shouldRejectByTrackingRules(
+                session.packageName,
+                session.title,
+                session.artist,
+                session.estimatedDurationMs ?: 0L
+            )) return
 
         var trackId = session.trackId
         if (trackId == null) {
@@ -3048,6 +3319,33 @@ class MusicTrackingService : NotificationListenerService() {
             }
         }
 
+        // A notification-only session can start with an unknown duration. Resolve a reliable
+        // DB/enrichment duration at save time and re-apply the maximum then; never reject an
+        // unknown duration merely because it was unknown at session start.
+        if (session.estimatedDurationMs == null || session.estimatedDurationMs!! <= 0L) {
+            val reliableDuration = try {
+                trackRepository.getById(trackId).first()?.duration?.takeIf { it > 0L }
+                    ?: getTrackDurationFromMetadata(trackId)
+            } catch (e: Exception) { null }
+            if (reliableDuration != null && reliableDuration > 0L) {
+                session.estimatedDurationMs = reliableDuration
+            }
+        }
+
+        if (shouldRejectByTrackingRules(
+                session.packageName,
+                session.title,
+                session.artist,
+                session.estimatedDurationMs ?: 0L
+            )) return
+
+        if (shouldFilterContent(
+                session.packageName,
+                localMetadataCache.get(trackId),
+                session.title,
+                session.artist
+            )) return
+
         insertListeningEvent(trackId, session)
     }
 
@@ -3059,19 +3357,9 @@ class MusicTrackingService : NotificationListenerService() {
         val currentTime = System.currentTimeMillis()
 
         // Final check for play duration
-        if (playDuration < MIN_PLAY_DURATION_MS) {
+        if (playDuration < minimumPlayDurationMs()) {
             Log.d(TAG, "Skipping short play in insert: ${playDuration}ms for '${session.title}'")
             return
-        }
-
-        // CRITICAL FIX: Final validation to cap duration and prevent inflated values
-        // This is the last line of defense before saving to database
-        if (playDuration > MAX_PLAY_DURATION_MS) {
-            Log.w(
-                TAG,
-                "ANOMALY: Duration ${playDuration}ms exceeds 1 hour max, capping to ${MAX_PLAY_DURATION_MS}ms for '${session.title}'",
-            )
-            playDuration = MAX_PLAY_DURATION_MS
         }
 
         // Also cap at 3x estimated duration (if available) as sanity check
@@ -3370,6 +3658,30 @@ class MusicTrackingService : NotificationListenerService() {
             return false
         }
 
+        // Manual content exceptions and duration rules apply even to apps the user enabled:
+        // ALWAYS_MUSIC bypasses content heuristics, NON_MUSIC/VIDEO excludes the content,
+        // and the configured maximum duration rejects long-form media.
+        val earlyMetadata = controller.metadata
+        val earlyTitle = earlyMetadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+            ?: earlyMetadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
+        if (!earlyTitle.isNullOrBlank()) {
+            val earlyArtist = earlyMetadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                ?: earlyMetadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+                ?: "Unknown Artist"
+            when (manualContentOverride(earlyTitle, earlyArtist)) {
+                ContentOverrideType.VIDEO -> {
+                    Log.d(TAG, "Rejecting manual video/non-music override: '$earlyTitle' by '$earlyArtist'")
+                    return false
+                }
+                ContentOverrideType.MUSIC -> return true
+                null -> Unit
+            }
+            val earlyDuration = earlyMetadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+            if (shouldRejectByTrackingRules(packageName, earlyTitle, earlyArtist, earlyDuration)) {
+                return false
+            }
+        }
+
         // Known music apps (user-enabled) are always music
         if (isInEnabledApps(packageName)) {
             return true
@@ -3393,11 +3705,9 @@ class MusicTrackingService : NotificationListenerService() {
                 Log.d(TAG, "Rejecting short content ($duration ms): '$title' from $packageName")
                 return false
             }
-            // Very long (> 20 min) = probably video, podcast, audiobook
-            if (duration > MAX_MUSIC_DURATION_MS) {
-                Log.d(TAG, "Rejecting long content ($duration ms, ${duration / 60000} min): '$title' from $packageName")
-                return false
-            }
+            // Long content is no longer rejected unconditionally here: the configurable
+            // maximum-duration rule (checked above, and again at save time once a reliable
+            // duration is known) decides whether long-form media is tracked.
         }
 
         // Check if metadata looks like music (has artist/album)
@@ -3484,6 +3794,13 @@ class MusicTrackingService : NotificationListenerService() {
 
         val album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM)
         val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
+
+        if (shouldRejectByTrackingRules(packageName, title, artist, duration)) {
+            removeRejectedSession(packageName, title, artist)
+            updateTrackingNotification(null, null)
+            updateServiceLifecycle()
+            return
+        }
 
         // Get current playback position for replay detection
         val currentPosition = playbackState?.position ?: 0L
@@ -4036,6 +4353,8 @@ class MusicTrackingService : NotificationListenerService() {
 
     override fun onDestroy() {
         Log.i(TAG, "MusicTrackingService destroyed - saving active sessions")
+
+        if (::trackingRules.isInitialized) trackingRules.unregisterListener(durationRulesListener)
 
         // Cancel auto-save job and position polling so no further state changes arrive
         autoSaveJob?.cancel()
