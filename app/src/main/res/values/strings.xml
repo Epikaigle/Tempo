@@ -711,6 +711,11 @@
     <string name="deezer_import_another">Import another file</string>
     <string name="deezer_import_failed">Deezer Import Failed</string>
     <string name="deezer_import_try_again">Try again</string>
+    <string name="deezer_import_error_missing_history">This file does not contain Deezer listening history.</string>
+    <string name="deezer_import_error_no_entries">No Deezer listening-history entries were found in this export.</string>
+    <string name="deezer_import_error_too_large">This Deezer export is too large to import safely on this device.</string>
+    <string name="deezer_import_error_invalid_xlsx">The selected file is not a valid Deezer XLSX export.</string>
+    <string name="deezer_import_error_generic">Deezer import failed.</string>
     <string name="settings_import_youtube_music">Import YouTube Music Data</string>
     <string name="settings_import_youtube_music_desc">Import listening history from a YouTube Takeout ZIP (JSON or HTML)</string>
     <string name="settings_name_dialog_body">Choose the display name shown in your personal profile and stories.</string>
