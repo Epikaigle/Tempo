@@ -324,6 +324,7 @@ class DeezerDataImportService @Inject constructor(
         trackCache[cacheKey]?.let { return it }
 
         entry.isrc?.let { isrc ->
+            // ISRC is authoritative. Prefer it over all textual matching.
             isrcIndex[isrc]?.let { trackId ->
                 trackRepository.getById(trackId).first()?.let { track ->
                     val resolution = TrackResolver.Resolution(
@@ -336,20 +337,45 @@ class DeezerDataImportService @Inject constructor(
                 }
             }
 
-            // Avoid mutating/merging an exact title+artist row that is already known
-            // to be a different recording.
+            // If Tempo does not know this ISRC yet, an exact title+artist match is
+            // safe enough to backfill it. Do NOT use TrackResolver's fuzzy artist
+            // containment here: an authoritative ISRC must never validate a fuzzy
+            // textual match (e.g. "Queen" vs "Queen Latifah").
             trackRepository.findByTitleAndArtist(entry.trackName, entry.artistName)?.let { exact ->
                 val exactIsrc = enrichedMetadataDao.forTrackSync(exact.id)?.isrc
                     ?.let(::canonicalIsrc)
-                if (exactIsrc != null && exactIsrc != isrc) {
-                    val resolution = createDeezerTrack(entry)
-                    trackCache[cacheKey] = resolution.copy(isNewTrack = false)
+
+                if (exactIsrc == null || exactIsrc == isrc) {
+                    var track = exact
+                    if (track.album.isNullOrBlank() && !entry.albumName.isNullOrBlank()) {
+                        track = track.copy(album = entry.albumName)
+                        trackRepository.update(track)
+                    }
+                    val resolution = TrackResolver.Resolution(
+                        trackId = track.id,
+                        isNewTrack = false,
+                        track = track,
+                    )
+                    trackCache[cacheKey] = resolution
                     return resolution
                 }
+
+                // Same textual identity but a different authoritative ISRC:
+                // keep the recordings separate.
+                val resolution = createDeezerTrack(entry)
+                trackCache[cacheKey] = resolution.copy(isNewTrack = false)
+                return resolution
             }
+
+            // No authoritative or exact textual identity exists. Creating a fresh
+            // row is safer than attaching this ISRC to a fuzzy candidate.
+            val resolution = createDeezerTrack(entry)
+            trackCache[cacheKey] = resolution.copy(isNewTrack = false)
+            return resolution
         }
 
-        var resolution = trackResolver.resolve(
+        // Deezer rows without ISRC fall back to Tempo's normal textual resolver.
+        val resolution = trackResolver.resolve(
             TrackResolver.Query(
                 title = entry.trackName,
                 artist = entry.artistName,
@@ -357,19 +383,6 @@ class DeezerDataImportService @Inject constructor(
             ),
         )
 
-        // ISRC is stronger than a fuzzy/exact title+artist fallback. If the fallback
-        // landed on a track already carrying a different ISRC, these are distinct
-        // recordings (remaster/live/version collisions are common) and must not be merged.
-        val incomingIsrc = entry.isrc
-        if (incomingIsrc != null) {
-            val resolvedIsrc = enrichedMetadataDao.forTrackSync(resolution.trackId)?.isrc
-                ?.let(::canonicalIsrc)
-            if (resolvedIsrc != null && resolvedIsrc != incomingIsrc) {
-                resolution = createDeezerTrack(entry)
-            }
-        }
-
-        // Cache subsequent occurrences as existing so a new track is counted only once.
         trackCache[cacheKey] = resolution.copy(isNewTrack = false)
         if (trackCache.size > MAX_CACHE_SIZE) trackCache.clear()
         return resolution
