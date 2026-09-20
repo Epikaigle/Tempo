@@ -332,8 +332,8 @@ class DeezerDataImportService @Inject constructor(
                     addCappedError(errors, "A listening-history row could not be imported")
                 }
             }
-    
-    
+
+            flush()
         } catch (e: CancellationException) {
             withContext(NonCancellable) {
                 cleanupOrphanedCreatedTracks(createdTrackIds)
@@ -341,7 +341,6 @@ class DeezerDataImportService @Inject constructor(
             throw e
         }
 
-        flush()
         if (errors.isNotEmpty() && createdTrackIds.isNotEmpty()) {
             val removed = cleanupOrphanedCreatedTracks(createdTrackIds)
             tracksImported = (tracksImported - removed).coerceAtLeast(0)
