@@ -9,6 +9,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.ListeningEventDao
@@ -16,6 +17,7 @@ import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.repository.ArtistLinkingService
+import me.avinas.tempo.data.repository.TrackRepository
 import me.avinas.tempo.data.repository.TrackResolver
 import java.io.File
 import java.io.FileOutputStream
@@ -30,6 +32,7 @@ class DeezerDataImportService @Inject constructor(
     private val listeningEventDao: ListeningEventDao,
     private val artistLinkingService: ArtistLinkingService,
     private val enrichedMetadataDao: EnrichedMetadataDao,
+    private val trackRepository: TrackRepository,
 ) {
     companion object {
         private const val TAG = "DeezerDataImport"
@@ -209,24 +212,27 @@ class DeezerDataImportService @Inject constructor(
 
         trackCache[cacheKey]?.let { return it }
 
-        val baseResolution = trackResolver.resolve(
+        entry.isrc?.let { isrc ->
+            enrichedMetadataDao.findByIsrc(isrc)?.let { metadata ->
+                trackRepository.getById(metadata.trackId).first()?.let { track ->
+                    val resolution = TrackResolver.Resolution(
+                        trackId = track.id,
+                        isNewTrack = false,
+                        track = track,
+                    )
+                    trackCache[cacheKey] = resolution
+                    return resolution
+                }
+            }
+        }
+
+        val resolution = trackResolver.resolve(
             TrackResolver.Query(
                 title = entry.trackName,
                 artist = entry.artistName,
                 album = entry.albumName,
             ),
         )
-
-        val resolution = entry.isrc?.let { isrc ->
-            val byIsrc = enrichedMetadataDao.findByIsrc(isrc)
-            if (byIsrc != null && byIsrc.trackId == baseResolution.trackId) {
-                baseResolution
-            } else {
-                // Tempo's track identity is title+artist when no Spotify/MB/YT id exists.
-                // Keep that established identity, while persisting ISRC for future imports.
-                baseResolution
-            }
-        } ?: baseResolution
 
         trackCache[cacheKey] = resolution
         if (trackCache.size > MAX_CACHE_SIZE) trackCache.clear()
