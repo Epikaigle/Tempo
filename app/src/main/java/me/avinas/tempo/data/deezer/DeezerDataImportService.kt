@@ -555,7 +555,9 @@ class DeezerDataImportService @Inject constructor(
 
         var updated = existing
         var changed = false
-        if (updated.isrc.isNullOrBlank() && !entry.isrc.isNullOrBlank()) {
+        val storedIsrc = updated.isrc?.let(::canonicalIsrc)
+        if (storedIsrc == null && entry.isrc != null) {
+            // Repair blank *and invalid* legacy ISRC values with Deezer's validated ISRC.
             updated = updated.copy(isrc = entry.isrc)
             changed = true
         }
@@ -563,7 +565,11 @@ class DeezerDataImportService @Inject constructor(
             updated = updated.copy(albumTitle = entry.albumName)
             changed = true
         }
-        if (updated.artistName.isNullOrBlank()) {
+        if (
+            updated.artistName.isNullOrBlank() ||
+            ArtistParser.isUnknownArtist(updated.artistName.orEmpty()) ||
+            ArtistParser.isPlaceholderArtistName(updated.artistName.orEmpty())
+        ) {
             updated = updated.copy(artistName = entry.artistName)
             changed = true
         }
