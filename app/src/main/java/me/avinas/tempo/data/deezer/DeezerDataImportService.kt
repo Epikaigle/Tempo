@@ -430,18 +430,29 @@ class DeezerDataImportService @Inject constructor(
             return track
         }
 
-        return try {
-            val candidate = track.copy(
-                artist = deezerArtist.trim(),
-                primaryArtistId = null,
-            )
+        val candidate = track.copy(
+            artist = deezerArtist.trim(),
+            primaryArtistId = null,
+        )
+
+        try {
             trackRepository.update(candidate)
-            artistLinkingService.linkArtistsForTrack(candidate)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Failed to replace an unknown artist from Deezer metadata", e)
-            track
+            return track
+        }
+
+        return try {
+            artistLinkingService.linkArtistsForTrack(candidate)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The authoritative artist name is already persisted. Keep it even if
+            // rebuilding the artist junction table must be retried later.
+            Log.w(TAG, "Failed to relink the promoted Deezer artist", e)
+            candidate
         }
     }
 
@@ -484,7 +495,14 @@ class DeezerDataImportService @Inject constructor(
         preparedCredits: MutableSet<String>,
     ) {
         val credited = creditedArtistName.trim()
-        if (credited.isBlank() || credited.equals(primaryArtistName.trim(), ignoreCase = true)) return
+        if (
+            credited.isBlank() ||
+            credited.equals(primaryArtistName.trim(), ignoreCase = true) ||
+            ArtistParser.isUnknownArtist(credited) ||
+            ArtistParser.isPlaceholderArtistName(credited)
+        ) {
+            return
+        }
 
         val cacheKey = trackId.toString() + "|" + credited.lowercase()
         if (cacheKey in preparedCredits) return
