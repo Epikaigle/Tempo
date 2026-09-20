@@ -190,8 +190,8 @@ class DeezerDataImportService @Inject constructor(
         val isrcIndex = HashMap<String, Long>()
         val ambiguousIsrcs = HashSet<String>()
         enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
-            val normalized = canonicalIsrc(ref.isrc)
-            if (normalized.isBlank() || normalized in ambiguousIsrcs) return@forEach
+            val normalized = canonicalIsrc(ref.isrc) ?: return@forEach
+            if (normalized in ambiguousIsrcs) return@forEach
 
             val existingTrackId = isrcIndex[normalized]
             when {
@@ -485,8 +485,10 @@ class DeezerDataImportService @Inject constructor(
         val album: String?,
     )
 
-    private fun canonicalIsrc(value: String): String =
-        value.trim().uppercase().replace("-", "").replace(" ", "")
+    private fun canonicalIsrc(value: String): String? {
+        val normalized = value.trim().uppercase().replace("-", "").replace(" ", "")
+        return normalized.takeIf { it.matches(Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")) }
+    }
 
     private suspend fun preserveDeezerMetadata(
         trackId: Long,
