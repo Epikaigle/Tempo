@@ -28,6 +28,8 @@ object DeezerXlsxParser {
     private const val MAX_SHARED_STRINGS = 2_000_000
     private const val MAX_HISTORY_ROWS = 2_000_000
     private const val MAX_STRING_LENGTH = 500
+    private const val MAX_CELL_TEXT_LENGTH = 100_000
+    private const val MAX_COLUMNS_PER_ROW = 128
     private const val MIN_PARSE_MEMORY_BUDGET_BYTES = 16L * 1024 * 1024
     private const val MAX_PARSE_MEMORY_BUDGET_BYTES = 160L * 1024 * 1024
 
@@ -174,7 +176,11 @@ object DeezerXlsxParser {
 
                 override fun characters(ch: CharArray, start: Int, length: Int) {
                     if (insideItem && insideText) {
-                        builder?.append(ch, start, length)
+                        val target = builder ?: return
+                        if (target.length + length > MAX_CELL_TEXT_LENGTH) {
+                            throw IllegalArgumentException("XLSX text cell exceeds safe size limit")
+                        }
+                        target.append(ch, start, length)
                     }
                 }
 
@@ -231,7 +237,9 @@ object DeezerXlsxParser {
                         currentRow = LinkedHashMap()
                     }
                     "c" -> {
-                        currentCellColumn = columnIndex(attributes.getValue("r").orEmpty())
+                        val column = columnIndex(attributes.getValue("r").orEmpty())
+                        currentCellColumn =
+                            if (column in 0 until MAX_COLUMNS_PER_ROW) column else -1
                         currentCellType = attributes.getValue("t")
                         cellValue = StringBuilder()
                     }
@@ -240,7 +248,12 @@ object DeezerXlsxParser {
             }
 
             override fun characters(ch: CharArray, start: Int, length: Int) {
-                if (collectingValue) cellValue.append(ch, start, length)
+                if (collectingValue) {
+                    if (cellValue.length + length > MAX_CELL_TEXT_LENGTH) {
+                        throw IllegalArgumentException("XLSX text cell exceeds safe size limit")
+                    }
+                    cellValue.append(ch, start, length)
+                }
             }
 
             override fun endElement(uri: String?, localName: String?, qName: String?) {
@@ -414,8 +427,9 @@ object DeezerXlsxParser {
         var letters = 0
         for (char in reference) {
             if (!char.isLetter()) break
-            result = result * 26 + (char.uppercaseChar() - 'A' + 1)
             letters++
+            if (letters > 3) return -1 // XLSX maximum column is XFD.
+            result = result * 26 + (char.uppercaseChar() - 'A' + 1)
         }
         return if (letters == 0) -1 else result - 1
     }
