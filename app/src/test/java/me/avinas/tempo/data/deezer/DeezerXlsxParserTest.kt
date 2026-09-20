@@ -77,6 +77,26 @@ class DeezerXlsxParserTest {
     }
 
     @Test
+    fun parsesRealisticInlineStringsWithAbsoluteWorksheetPath() {
+        val file = createWorkbook(
+            includeHistory = true,
+            inlineStrings = true,
+            absoluteWorksheetTargets = true,
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(1, result.entries.size)
+            val entry = result.entries.single()
+            assertEquals("Never Gonna Give You Up", entry.trackName)
+            assertEquals("Rick Astley", entry.artistName)
+            assertEquals("GBAYE8800243", entry.isrc)
+            assertEquals(213_000L, entry.msPlayed)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun propagatesCancellationCheck() {
         val file = createWorkbook(includeHistory = true)
         try {
@@ -108,6 +128,8 @@ class DeezerXlsxParserTest {
         putHistorySecond: Boolean = false,
         historySheetName: String = "10_listeningHistory",
         frenchHeaders: Boolean = false,
+        inlineStrings: Boolean = false,
+        absoluteWorksheetTargets: Boolean = false,
     ): File {
         val file = kotlin.io.path.createTempFile("deezer-test-", ".xlsx").toFile()
 
@@ -125,7 +147,9 @@ class DeezerXlsxParserTest {
         }.joinToString("")
 
         val relationships = sheets.mapIndexed { index, pair ->
-            "<Relationship Id=\"" + pair.second + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet" + (index + 1) + ".xml\"/>"
+            val targetPrefix = if (absoluteWorksheetTargets) "/xl/worksheets/" else "worksheets/"
+            "<Relationship Id=\"" + pair.second + "\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"" +
+                targetPrefix + "sheet" + (index + 1) + ".xml\"/>"
         }.joinToString("")
 
         ZipOutputStream(FileOutputStream(file)).use { zip ->
@@ -182,49 +206,79 @@ class DeezerXlsxParserTest {
                 "Whenever You Need Somebody",
                 "2024-10-24 23:00:00",
             )
-            writeEntry(
-                zip,
-                "xl/sharedStrings.xml",
-                buildString {
-                    append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
-                    append("<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">")
-                    shared.forEach { value ->
-                        append("<si><t>")
-                        append(value)
-                        append("</t></si>")
-                    }
-                    append("</sst>")
-                },
-            )
+            if (!inlineStrings) {
+                writeEntry(
+                    zip,
+                    "xl/sharedStrings.xml",
+                    buildString {
+                        append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+                        append("<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">")
+                        shared.forEach { value ->
+                            append("<si><t>")
+                            append(value)
+                            append("</t></si>")
+                        }
+                        append("</sst>")
+                    },
+                )
+            }
 
             sheets.forEachIndexed { index, pair ->
                 val xml =
                     if (pair.first.contains("listeningHistory", ignoreCase = true)) {
-                        """
-                                <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-                          <sheetData>
-                            <row r="1">
-                              <c r="A1" t="s"><v>0</v></c>
-                              <c r="B1" t="s"><v>1</v></c>
-                              <c r="C1" t="s"><v>2</v></c>
-                              <c r="D1" t="s"><v>3</v></c>
-                              <c r="E1" t="s"><v>4</v></c>
-                              <c r="F1" t="s"><v>5</v></c>
-                              <c r="G1" t="s"><v>6</v></c>
-                              <c r="H1" t="s"><v>7</v></c>
-                              <c r="I1" t="s"><v>8</v></c>
-                            </row>
-                            <row r="2">
-                              <c r="A2" t="s"><v>9</v></c>
-                              <c r="B2" t="s"><v>10</v></c>
-                              <c r="C2" t="s"><v>11</v></c>
-                              <c r="D2" t="s"><v>12</v></c>
-                              <c r="F2"><v>213</v></c>
-                              <c r="I2" t="s"><v>13</v></c>
-                            </row>
-                          </sheetData>
-                        </worksheet>
-                        """.trimIndent()
+                        if (inlineStrings) {
+                            """
+                            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                              <sheetData>
+                                <row r="1">
+                                  <c r="A1" t="inlineStr"><is><t>${headers[0]}</t></is></c>
+                                  <c r="B1" t="inlineStr"><is><t>${headers[1]}</t></is></c>
+                                  <c r="C1" t="inlineStr"><is><t>${headers[2]}</t></is></c>
+                                  <c r="D1" t="inlineStr"><is><t>${headers[3]}</t></is></c>
+                                  <c r="E1" t="inlineStr"><is><t>${headers[4]}</t></is></c>
+                                  <c r="F1" t="inlineStr"><is><t>${headers[5]}</t></is></c>
+                                  <c r="G1" t="inlineStr"><is><t>${headers[6]}</t></is></c>
+                                  <c r="H1" t="inlineStr"><is><t>${headers[7]}</t></is></c>
+                                  <c r="I1" t="inlineStr"><is><t>${headers[8]}</t></is></c>
+                                </row>
+                                <row r="2">
+                                  <c r="A2" t="inlineStr"><is><t>Never Gonna Give You Up</t></is></c>
+                                  <c r="B2" t="inlineStr"><is><t>Rick Astley</t></is></c>
+                                  <c r="C2" t="inlineStr"><is><t>GBAYE8800243</t></is></c>
+                                  <c r="D2" t="inlineStr"><is><t>Whenever You Need Somebody</t></is></c>
+                                  <c r="F2"><v>213</v></c>
+                                  <c r="I2" t="inlineStr"><is><t>2024-10-24 23:00:00</t></is></c>
+                                </row>
+                              </sheetData>
+                            </worksheet>
+                            """.trimIndent()
+                        } else {
+                            """
+                            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                              <sheetData>
+                                <row r="1">
+                                  <c r="A1" t="s"><v>0</v></c>
+                                  <c r="B1" t="s"><v>1</v></c>
+                                  <c r="C1" t="s"><v>2</v></c>
+                                  <c r="D1" t="s"><v>3</v></c>
+                                  <c r="E1" t="s"><v>4</v></c>
+                                  <c r="F1" t="s"><v>5</v></c>
+                                  <c r="G1" t="s"><v>6</v></c>
+                                  <c r="H1" t="s"><v>7</v></c>
+                                  <c r="I1" t="s"><v>8</v></c>
+                                </row>
+                                <row r="2">
+                                  <c r="A2" t="s"><v>9</v></c>
+                                  <c r="B2" t="s"><v>10</v></c>
+                                  <c r="C2" t="s"><v>11</v></c>
+                                  <c r="D2" t="s"><v>12</v></c>
+                                  <c r="F2"><v>213</v></c>
+                                  <c r="I2" t="s"><v>13</v></c>
+                                </row>
+                              </sheetData>
+                            </worksheet>
+                            """.trimIndent()
+                        }
                     } else {
                         """
                                 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
