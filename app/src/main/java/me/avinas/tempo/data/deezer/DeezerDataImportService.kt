@@ -483,7 +483,14 @@ class DeezerDataImportService @Inject constructor(
         track: Track,
         deezerArtist: String,
     ): Track {
-        if (!ArtistParser.isUnknownArtist(track.artist) || ArtistParser.isUnknownArtist(deezerArtist)) {
+        val existingIsPlaceholder =
+            ArtistParser.isUnknownArtist(track.artist) ||
+                ArtistParser.isPlaceholderArtistName(track.artist)
+        val deezerIsUsable =
+            !ArtistParser.isUnknownArtist(deezerArtist) &&
+                !ArtistParser.isPlaceholderArtistName(deezerArtist)
+
+        if (!existingIsPlaceholder || !deezerIsUsable) {
             return track
         }
 
