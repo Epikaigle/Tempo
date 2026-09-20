@@ -96,8 +96,8 @@ class DeezerDataImportService @Inject constructor(
         try {
             copyUriWithLimit(appContext, uri, tempFile)
             val parsed = DeezerXlsxParser.parse(tempFile)
-            if (parsed.entries.isEmpty() && parsed.malformedRows == 0) {
-                throw IllegalArgumentException("No Deezer listening history entries found")
+            if (parsed.entries.isEmpty()) {
+                throw IllegalArgumentException("No valid Deezer listening history entries found")
             }
             val result = importEntries(parsed, errors)
             _importState.value = ImportState.Completed(result)
@@ -334,7 +334,7 @@ class DeezerDataImportService @Inject constructor(
         return when {
             message.contains("10_listeningHistory", ignoreCase = true) ->
                 "This file does not contain Deezer listening history (10_listeningHistory)"
-            message.contains("No Deezer listening history entries", ignoreCase = true) ->
+            message.contains("No valid Deezer listening history entries", ignoreCase = true) ->
                 "No Deezer listening-history entries were found in this export"
             message.contains("XLSX", ignoreCase = true) || error is java.util.zip.ZipException ->
                 "The selected file is not a valid Deezer XLSX export"
