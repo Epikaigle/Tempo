@@ -47,7 +47,7 @@ class DeezerDataImportService @Inject constructor(
 ) {
     companion object {
         private const val TAG = "DeezerDataImport"
-        private const val MAX_FILE_SIZE_BYTES = 500L * 1024 * 1024
+        private const val MAX_FILE_SIZE_BYTES = 256L * 1024 * 1024
         private const val MIN_MS_PLAYED_FOR_EVENT = 30_000L
         private const val FLUSH_BATCH_SIZE = 500
         private const val MAX_CACHE_SIZE = 50_000
@@ -117,7 +117,7 @@ class DeezerDataImportService @Inject constructor(
                             0,
                             0,
                             0,
-                            listOf("Deezer export is larger than 500 MB"),
+                            listOf("Deezer export is larger than 256 MB"),
                         )
                     _importState.value = ImportState.Error(result.errors.first())
                     return@withContext result
@@ -529,7 +529,7 @@ class DeezerDataImportService @Inject constructor(
                     if (count < 0) break
                     total += count
                     if (total > MAX_FILE_SIZE_BYTES) {
-                        throw IOException("Deezer export is larger than 500 MB")
+                        throw IOException("Deezer export is larger than 256 MB")
                     }
                     output.write(buffer, 0, count)
                 }
@@ -588,6 +588,8 @@ class DeezerDataImportService @Inject constructor(
                 "This file does not contain Deezer listening history (10_listeningHistory)"
             message.contains("No valid Deezer listening history entries", ignoreCase = true) ->
                 "No Deezer listening-history entries were found in this export"
+            message.contains("too large", ignoreCase = true) ->
+                "This Deezer export is too large to import safely on this device"
             message.contains("XLSX", ignoreCase = true) || error is java.util.zip.ZipException ->
                 "The selected file is not a valid Deezer XLSX export"
             else -> "Deezer import failed"
