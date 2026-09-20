@@ -259,12 +259,14 @@ class DeezerDataImportService @Inject constructor(
                 }
 
                 try {
-                    preserveAdditionalDeezerArtistCredit(
-                        resolution.trackId,
-                        resolution.track.artist,
-                        entry.artistName,
-                        artistCreditsPrepared,
-                    )
+                    ArtistParser.getAllArtists(entry.artistName).forEach { creditedArtist ->
+                        preserveAdditionalDeezerArtistCredit(
+                            resolution.trackId,
+                            resolution.track.artist,
+                            creditedArtist,
+                            artistCreditsPrepared,
+                        )
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -409,9 +411,12 @@ class DeezerDataImportService @Inject constructor(
                         val candidateIsrc =
                             enrichedMetadataDao.forTrackSync(candidate.id)?.isrc
                                 ?.let(::canonicalIsrc)
+                        val incomingArtists = ArtistParser.getAllArtists(entry.artistName)
                         candidateIsrc == null &&
                             ArtistParser.getAllArtists(candidate.artist).any { candidateArtist ->
-                                ArtistParser.isStrictSameArtist(candidateArtist, entry.artistName)
+                                incomingArtists.any { incomingArtist ->
+                                    ArtistParser.isStrictSameArtist(candidateArtist, incomingArtist)
+                                }
                             }
                     }
 
