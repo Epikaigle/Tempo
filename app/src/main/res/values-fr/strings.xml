@@ -1016,4 +1016,6 @@
     <string name="history_video_non_music_track_description">Supprimer les écoutes existantes et bloquer les futures correspondances</string>
     <string name="history_video_non_music_artist">Traiter %1$s comme vidéo ou contenu non musical</string>
     <string name="history_video_non_music_artist_description">Supprimer tout l’historique correspondant et bloquer les futures écoutes</string>
+    <string name="settings_import_deezer">Importer les données Deezer</string>
+    <string name="settings_import_deezer_desc">Importer votre historique d’écoute depuis le fichier XLSX de vos données personnelles Deezer</string>
 </resources>
