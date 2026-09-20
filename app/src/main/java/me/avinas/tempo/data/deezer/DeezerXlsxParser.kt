@@ -62,24 +62,35 @@ object DeezerXlsxParser {
             ?: throw IllegalArgumentException("Invalid XLSX: workbook.xml is missing")
         validateEntrySize(workbook.size, workbook.name)
 
-        var relationshipId: String? = null
+        var exactRelationshipId: String? = null
+        var fallbackRelationshipId: String? = null
         zip.getInputStream(workbook).use { raw ->
             parseXml(LimitedInputStream(raw, MAX_XML_ENTRY_BYTES), object : DefaultHandler() {
                 override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes) {
-                    if ((localName == "sheet" || qName == "sheet") &&
-                        attributes.getValue("name") == HISTORY_SHEET
+                    if (localName != "sheet" && qName != "sheet") return
+                    val sheetName = attributes.getValue("name")?.trim().orEmpty()
+                    val id =
+                        attributes.getValue(
+                            "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+                            "id",
+                        ) ?: attributes.getValue("r:id")
+
+                    if (sheetName.equals(HISTORY_SHEET, ignoreCase = true)) {
+                        exactRelationshipId = id
+                    } else if (
+                        fallbackRelationshipId == null &&
+                        sheetName.contains("listeningHistory", ignoreCase = true)
                     ) {
-                        relationshipId =
-                            attributes.getValue(
-                                "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-                                "id",
-                            ) ?: attributes.getValue("r:id")
+                        // Deezer currently calls the sheet 10_listeningHistory. Match the
+                        // semantic suffix too so a future sheet-order change (e.g. 11_) does
+                        // not break otherwise identical official exports.
+                        fallbackRelationshipId = id
                     }
                 }
             })
         }
 
-        val targetId = relationshipId
+        val targetId = exactRelationshipId ?: fallbackRelationshipId
             ?: throw IllegalArgumentException(
                 "This XLSX does not contain Deezer's $HISTORY_SHEET listening-history sheet",
             )
