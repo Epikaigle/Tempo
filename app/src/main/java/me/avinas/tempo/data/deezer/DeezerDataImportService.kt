@@ -27,6 +27,7 @@ import me.avinas.tempo.data.repository.ArtistLinkingService
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.TrackRepository
 import me.avinas.tempo.data.repository.TrackResolver
+import me.avinas.tempo.utils.ArtistParser
 import me.avinas.tempo.worker.EnrichmentWorker
 import java.io.File
 import java.io.FileOutputStream
@@ -359,7 +360,8 @@ class DeezerDataImportService @Inject constructor(
         entry.isrc?.let { isrc ->
             // ISRC is authoritative. Prefer it over all textual matching.
             isrcIndex[isrc]?.let { trackId ->
-                trackRepository.getById(trackId).first()?.let { track ->
+                trackRepository.getById(trackId).first()?.let { existingTrack ->
+                    val track = promoteUnknownArtistFromDeezer(existingTrack, entry.artistName)
                     val resolution = TrackResolver.Resolution(
                         trackId = track.id,
                         isNewTrack = false,
@@ -418,6 +420,29 @@ class DeezerDataImportService @Inject constructor(
 
         cacheTrackResolution(cacheKey, resolution, trackCache)
         return resolution
+    }
+
+    private suspend fun promoteUnknownArtistFromDeezer(
+        track: Track,
+        deezerArtist: String,
+    ): Track {
+        if (!ArtistParser.isUnknownArtist(track.artist) || ArtistParser.isUnknownArtist(deezerArtist)) {
+            return track
+        }
+
+        return try {
+            val candidate = track.copy(
+                artist = deezerArtist.trim(),
+                primaryArtistId = null,
+            )
+            trackRepository.update(candidate)
+            artistLinkingService.linkArtistsForTrack(candidate)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to replace an unknown artist from Deezer metadata", e)
+            track
+        }
     }
 
     private fun cacheTrackResolution(
