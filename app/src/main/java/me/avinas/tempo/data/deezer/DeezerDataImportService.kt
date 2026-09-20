@@ -186,6 +186,7 @@ class DeezerDataImportService @Inject constructor(
     ): ImportResult {
         val trackCache = HashMap<String, TrackResolver.Resolution>()
         val metadataPrepared = HashMap<Long, PreparedMetadata>()
+        val artistCreditsPrepared = HashSet<String>()
         val isrcIndex = HashMap<String, Long>()
         val ambiguousIsrcs = HashSet<String>()
         enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
@@ -260,6 +261,7 @@ class DeezerDataImportService @Inject constructor(
                         resolution.trackId,
                         resolution.track.artist,
                         entry.artistName,
+                        artistCreditsPrepared,
                     )
                 } catch (e: CancellationException) {
                     throw e
@@ -453,23 +455,29 @@ class DeezerDataImportService @Inject constructor(
         trackId: Long,
         primaryArtistName: String,
         creditedArtistName: String,
+        preparedCredits: MutableSet<String>,
     ) {
         val credited = creditedArtistName.trim()
         if (credited.isBlank() || credited.equals(primaryArtistName.trim(), ignoreCase = true)) return
 
-        val artist = artistLinkingService.getOrCreateArtist(credited)
-        if (trackArtistDao.hasRelationship(trackId, artist.id)) return
+        val cacheKey = trackId.toString() + "|" + credited.lowercase()
+        if (cacheKey in preparedCredits) return
 
-        val nextOrder =
-            (trackArtistDao.getRelationshipsForTrack(trackId).maxOfOrNull { it.creditOrder } ?: -1) + 1
-        trackArtistDao.insert(
-            TrackArtist(
-                trackId = trackId,
-                artistId = artist.id,
-                role = ArtistRole.PERFORMER,
-                creditOrder = nextOrder,
-            ),
-        )
+        val artist = artistLinkingService.getOrCreateArtist(credited)
+        if (!trackArtistDao.hasRelationship(trackId, artist.id)) {
+            val nextOrder =
+                (trackArtistDao.getRelationshipsForTrack(trackId).maxOfOrNull { it.creditOrder } ?: -1) + 1
+            trackArtistDao.insert(
+                TrackArtist(
+                    trackId = trackId,
+                    artistId = artist.id,
+                    role = ArtistRole.PERFORMER,
+                    creditOrder = nextOrder,
+                ),
+            )
+        }
+        preparedCredits.add(cacheKey)
+        if (preparedCredits.size > MAX_CACHE_SIZE) preparedCredits.clear()
     }
 
     private data class PreparedMetadata(
