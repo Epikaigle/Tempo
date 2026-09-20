@@ -43,16 +43,24 @@ object DeezerXlsxParser {
         val malformedRows: Int,
     )
 
-    fun parse(file: File): ParseResult {
+    fun parse(
+        file: File,
+        cancellationCheck: (() -> Unit)? = null,
+    ): ParseResult {
         ZipFile(file).use { zip ->
+            cancellationCheck?.invoke()
             val sheetPath = findHistorySheetPath(zip)
-            val sharedStrings = readSharedStrings(zip)
+            val sharedStrings = readSharedStrings(zip, cancellationCheck)
             val sheetEntry = zip.getEntry(sheetPath)
                 ?: throw IllegalArgumentException("Deezer listening-history worksheet is missing")
             validateEntrySize(sheetEntry.size, sheetPath)
 
             zip.getInputStream(sheetEntry).use { raw ->
-                return parseHistorySheet(LimitedInputStream(raw, MAX_XML_ENTRY_BYTES), sharedStrings)
+                return parseHistorySheet(
+                    LimitedInputStream(raw, MAX_XML_ENTRY_BYTES),
+                    sharedStrings,
+                    cancellationCheck,
+                )
             }
         }
     }
@@ -121,7 +129,10 @@ object DeezerXlsxParser {
         return if (normalized.startsWith("xl/")) normalized else "xl/$normalized"
     }
 
-    private fun readSharedStrings(zip: ZipFile): List<String> {
+    private fun readSharedStrings(
+        zip: ZipFile,
+        cancellationCheck: (() -> Unit)?,
+    ): List<String> {
         val entry = zip.getEntry("xl/sharedStrings.xml") ?: return emptyList()
         validateEntrySize(entry.size, entry.name)
 
@@ -135,6 +146,7 @@ object DeezerXlsxParser {
                 override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes) {
                     when (localName ?: qName) {
                         "si" -> {
+                            if (strings.size % 1_000 == 0) cancellationCheck?.invoke()
                             if (strings.size >= MAX_SHARED_STRINGS) {
                                 throw IllegalArgumentException("Deezer XLSX contains too many shared strings")
                             }
@@ -169,6 +181,7 @@ object DeezerXlsxParser {
     private fun parseHistorySheet(
         input: InputStream,
         sharedStrings: List<String>,
+        cancellationCheck: (() -> Unit)?,
     ): ParseResult {
         val entries = ArrayList<Entry>()
         var malformedRows = 0
@@ -186,6 +199,7 @@ object DeezerXlsxParser {
                 when (localName ?: qName) {
                     "row" -> {
                         rowCount++
+                        if (rowCount % 100 == 0) cancellationCheck?.invoke()
                         if (rowCount > MAX_HISTORY_ROWS) {
                             throw IllegalArgumentException("Deezer listening history is too large")
                         }
