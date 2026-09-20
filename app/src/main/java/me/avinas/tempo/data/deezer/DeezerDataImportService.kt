@@ -55,6 +55,7 @@ class DeezerDataImportService @Inject constructor(
         private const val DEFAULT_COMPLETION_PERCENTAGE = 80
         private const val TEMP_FILE_PREFIX = "tempo_deezer_"
         private const val MAX_DISPLAY_NAME_LENGTH = 200
+        private val ISRC_REGEX = Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
         const val IMPORT_SOURCE = "com.deezer.music.import.xlsx"
     }
 
@@ -487,7 +488,7 @@ class DeezerDataImportService @Inject constructor(
 
     private fun canonicalIsrc(value: String): String? {
         val normalized = value.trim().uppercase().replace("-", "").replace(" ", "")
-        return normalized.takeIf { it.matches(Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")) }
+        return normalized.takeIf(ISRC_REGEX::matches)
     }
 
     private suspend fun preserveDeezerMetadata(
