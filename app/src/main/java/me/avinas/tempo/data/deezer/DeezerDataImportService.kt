@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -189,6 +190,7 @@ class DeezerDataImportService @Inject constructor(
         val trackCache = HashMap<String, TrackResolver.Resolution>()
         val metadataPrepared = HashMap<Long, PreparedMetadata>()
         val artistCreditsPrepared = HashSet<String>()
+        val createdTrackIds = LinkedHashSet<Long>()
         val isrcIndex = HashMap<String, Long>()
         val ambiguousIsrcs = HashSet<String>()
         enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
@@ -229,107 +231,121 @@ class DeezerDataImportService @Inject constructor(
             }
         }
 
-        parsed.entries.forEachIndexed { index, entry ->
-            if (index % 100 == 0) {
-                coroutineContext.ensureActive()
-                _importState.value = ImportState.Importing(
-                    current = index,
-                    total = parsed.entries.size,
-                    tracksImported = tracksImported,
-                    eventsCreated = eventsCreated,
-                )
-            }
-
-            if (entry.msPlayed < MIN_MS_PLAYED_FOR_EVENT) {
-                shortPlaysSkipped++
-                return@forEachIndexed
-            }
-
-            try {
-                val resolution = resolveTrack(entry, trackCache, isrcIndex)
-                if (resolution.isNewTrack) {
-                    tracksImported++
+        try {
+            parsed.entries.forEachIndexed { index, entry ->
+                if (index % 100 == 0) {
+                    coroutineContext.ensureActive()
+                    _importState.value = ImportState.Importing(
+                        current = index,
+                        total = parsed.entries.size,
+                        tracksImported = tracksImported,
+                        eventsCreated = eventsCreated,
+                    )
+                }
+    
+                if (entry.msPlayed < MIN_MS_PLAYED_FOR_EVENT) {
+                    shortPlaysSkipped++
+                    return@forEachIndexed
+                }
+    
+                try {
+                    val resolution = resolveTrack(entry, trackCache, isrcIndex)
+                    if (resolution.isNewTrack) {
+                        createdTrackIds.add(resolution.trackId)
+                        tracksImported++
+                        try {
+                            artistLinkingService.linkArtistsForTrack(resolution.track)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to link artists for Deezer track " + resolution.trackId, e)
+                        }
+                    }
+    
                     try {
-                        artistLinkingService.linkArtistsForTrack(resolution.track)
+                        ArtistParser.getAllArtists(entry.artistName).forEach { creditedArtist ->
+                            preserveAdditionalDeezerArtistCredit(
+                                resolution.trackId,
+                                resolution.track.artist,
+                                creditedArtist,
+                                artistCreditsPrepared,
+                            )
+                        }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to link artists for Deezer track " + resolution.trackId, e)
+                        Log.w(TAG, "Failed to preserve an additional Deezer artist credit", e)
+                        addCappedError(errors, "An additional artist credit could not be saved")
                     }
-                }
-
-                try {
-                    ArtistParser.getAllArtists(entry.artistName).forEach { creditedArtist ->
-                        preserveAdditionalDeezerArtistCredit(
-                            resolution.trackId,
-                            resolution.track.artist,
-                            creditedArtist,
-                            artistCreditsPrepared,
-                        )
+    
+                    val prepared = metadataPrepared[resolution.trackId]
+                    val hasNewIsrc = prepared?.isrc == null && entry.isrc != null
+                    val hasNewAlbum = prepared?.album == null && entry.albumName != null
+                    if (prepared == null || hasNewIsrc || hasNewAlbum) {
+                        try {
+                            preserveDeezerMetadata(resolution.trackId, entry)
+                            metadataPrepared[resolution.trackId] = PreparedMetadata(
+                                isrc = prepared?.isrc ?: entry.isrc,
+                                album = prepared?.album ?: entry.albumName,
+                            )
+                            entry.isrc?.let { isrcIndex.putIfAbsent(it, resolution.trackId) }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // Metadata enrichment is secondary: never lose a valid listening
+                            // event solely because ISRC/album persistence failed.
+                            Log.w(TAG, "Failed to preserve Deezer metadata for track " + resolution.trackId, e)
+                            addCappedError(errors, "Metadata for a Deezer track could not be saved")
+                        }
                     }
+    
+                    val endTimestamp = entry.listenedAtMillis
+                    val startTimestamp = (endTimestamp - entry.msPlayed).coerceAtLeast(0L)
+                    val knownDurationMs = resolution.track.duration?.takeIf { it > 0L }
+                    val completionPercentage =
+                        knownDurationMs?.let { duration ->
+                            ((entry.msPlayed * 100L) / duration)
+                                .coerceIn(0L, 100L)
+                                .toInt()
+                        } ?: DEFAULT_COMPLETION_PERCENTAGE
+                    pendingEvents.add(
+                        ListeningEvent(
+                            track_id = resolution.trackId,
+                            timestamp = startTimestamp,
+                            playDuration = entry.msPlayed,
+                            completionPercentage = completionPercentage,
+                            source = IMPORT_SOURCE,
+                            wasSkipped = knownDurationMs != null && completionPercentage < 30,
+                            isReplay = false,
+                            estimatedDurationMs = knownDurationMs,
+                            pauseCount = 0,
+                            sessionId = null,
+                            endTimestamp = endTimestamp,
+                        ),
+                    )
+                    if (metadataPrepared.size > MAX_CACHE_SIZE) metadataPrepared.clear()
+                    if (pendingEvents.size >= FLUSH_BATCH_SIZE) flush()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to preserve an additional Deezer artist credit", e)
-                    addCappedError(errors, "An additional artist credit could not be saved")
+                    Log.e(TAG, "Failed to import a Deezer history row", e)
+                    addCappedError(errors, "A listening-history row could not be imported")
                 }
-
-                val prepared = metadataPrepared[resolution.trackId]
-                val hasNewIsrc = prepared?.isrc == null && entry.isrc != null
-                val hasNewAlbum = prepared?.album == null && entry.albumName != null
-                if (prepared == null || hasNewIsrc || hasNewAlbum) {
-                    try {
-                        preserveDeezerMetadata(resolution.trackId, entry)
-                        metadataPrepared[resolution.trackId] = PreparedMetadata(
-                            isrc = prepared?.isrc ?: entry.isrc,
-                            album = prepared?.album ?: entry.albumName,
-                        )
-                        entry.isrc?.let { isrcIndex.putIfAbsent(it, resolution.trackId) }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        // Metadata enrichment is secondary: never lose a valid listening
-                        // event solely because ISRC/album persistence failed.
-                        Log.w(TAG, "Failed to preserve Deezer metadata for track " + resolution.trackId, e)
-                        addCappedError(errors, "Metadata for a Deezer track could not be saved")
-                    }
-                }
-
-                val endTimestamp = entry.listenedAtMillis
-                val startTimestamp = (endTimestamp - entry.msPlayed).coerceAtLeast(0L)
-                val knownDurationMs = resolution.track.duration?.takeIf { it > 0L }
-                val completionPercentage =
-                    knownDurationMs?.let { duration ->
-                        ((entry.msPlayed * 100L) / duration)
-                            .coerceIn(0L, 100L)
-                            .toInt()
-                    } ?: DEFAULT_COMPLETION_PERCENTAGE
-                pendingEvents.add(
-                    ListeningEvent(
-                        track_id = resolution.trackId,
-                        timestamp = startTimestamp,
-                        playDuration = entry.msPlayed,
-                        completionPercentage = completionPercentage,
-                        source = IMPORT_SOURCE,
-                        wasSkipped = knownDurationMs != null && completionPercentage < 30,
-                        isReplay = false,
-                        estimatedDurationMs = knownDurationMs,
-                        pauseCount = 0,
-                        sessionId = null,
-                        endTimestamp = endTimestamp,
-                    ),
-                )
-                if (metadataPrepared.size > MAX_CACHE_SIZE) metadataPrepared.clear()
-                if (pendingEvents.size >= FLUSH_BATCH_SIZE) flush()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to import a Deezer history row", e)
-                addCappedError(errors, "A listening-history row could not be imported")
             }
+    
+    
+        } catch (e: CancellationException) {
+            withContext(NonCancellable) {
+                cleanupOrphanedCreatedTracks(createdTrackIds)
+            }
+            throw e
         }
 
         flush()
+        if (errors.isNotEmpty() && createdTrackIds.isNotEmpty()) {
+            val removed = cleanupOrphanedCreatedTracks(createdTrackIds)
+            tracksImported = (tracksImported - removed).coerceAtLeast(0)
+        }
         _importState.value = ImportState.Importing(
             current = parsed.entries.size,
             total = parsed.entries.size,
@@ -457,6 +473,29 @@ class DeezerDataImportService @Inject constructor(
 
         cacheTrackResolution(cacheKey, resolution, trackCache)
         return resolution
+    }
+
+    private suspend fun cleanupOrphanedCreatedTracks(
+        createdTrackIds: Set<Long>,
+    ): Int {
+        if (createdTrackIds.isEmpty()) return 0
+
+        val trackIdsWithEvents = HashSet<Long>()
+        createdTrackIds.toList().chunked(900).forEach { chunk ->
+            listeningEventDao.getTimestampsForTracks(chunk)
+                .forEach { row -> trackIdsWithEvents.add(row.track_id) }
+        }
+
+        var removed = 0
+        for (trackId in createdTrackIds) {
+            if (trackId in trackIdsWithEvents) continue
+            val result = trackRepository.deleteTrackWithAllData(trackId)
+            if (result.success) removed++
+        }
+        if (removed > 0) {
+            Log.i(TAG, "Removed $removed orphaned tracks left by an interrupted Deezer import")
+        }
+        return removed
     }
 
     private suspend fun fillMissingAlbumFromDeezer(
