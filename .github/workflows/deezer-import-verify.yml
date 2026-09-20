@@ -28,3 +28,5 @@ jobs:
           fi
       - name: Assemble debug
         run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Android lint
+        run: ./gradlew :app:lintDebug --stacktrace
