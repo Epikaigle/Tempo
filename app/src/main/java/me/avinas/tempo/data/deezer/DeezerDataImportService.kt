@@ -332,7 +332,7 @@ class DeezerDataImportService @Inject constructor(
                         isNewTrack = false,
                         track = track,
                     )
-                    trackCache[cacheKey] = resolution
+                    cacheTrackResolution(cacheKey, resolution, trackCache)
                     return resolution
                 }
             }
@@ -356,21 +356,21 @@ class DeezerDataImportService @Inject constructor(
                         isNewTrack = false,
                         track = track,
                     )
-                    trackCache[cacheKey] = resolution
+                    cacheTrackResolution(cacheKey, resolution, trackCache)
                     return resolution
                 }
 
                 // Same textual identity but a different authoritative ISRC:
                 // keep the recordings separate.
                 val resolution = createDeezerTrack(entry)
-                trackCache[cacheKey] = resolution.copy(isNewTrack = false)
+                cacheTrackResolution(cacheKey, resolution, trackCache)
                 return resolution
             }
 
             // No authoritative or exact textual identity exists. Creating a fresh
             // row is safer than attaching this ISRC to a fuzzy candidate.
             val resolution = createDeezerTrack(entry)
-            trackCache[cacheKey] = resolution.copy(isNewTrack = false)
+            cacheTrackResolution(cacheKey, resolution, trackCache)
             return resolution
         }
 
@@ -383,9 +383,17 @@ class DeezerDataImportService @Inject constructor(
             ),
         )
 
+        cacheTrackResolution(cacheKey, resolution, trackCache)
+        return resolution
+    }
+
+    private fun cacheTrackResolution(
+        cacheKey: String,
+        resolution: TrackResolver.Resolution,
+        trackCache: MutableMap<String, TrackResolver.Resolution>,
+    ) {
         trackCache[cacheKey] = resolution.copy(isNewTrack = false)
         if (trackCache.size > MAX_CACHE_SIZE) trackCache.clear()
-        return resolution
     }
 
     private suspend fun createDeezerTrack(
