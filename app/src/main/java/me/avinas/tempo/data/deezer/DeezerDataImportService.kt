@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.ListeningEventDao
@@ -47,6 +49,8 @@ class DeezerDataImportService @Inject constructor(
         private const val MAX_CACHE_SIZE = 50_000
         private const val MAX_ERRORS = 20
         private const val DEFAULT_COMPLETION_PERCENTAGE = 80
+        private const val TEMP_FILE_PREFIX = "tempo_deezer_"
+        private const val MAX_DISPLAY_NAME_LENGTH = 200
         const val IMPORT_SOURCE = "com.deezer.music.import.xlsx"
     }
 
@@ -81,64 +85,96 @@ class DeezerDataImportService @Inject constructor(
             }
     }
 
+    private val importMutex = Mutex()
+
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
-    suspend fun importFromUri(context: Context, uri: Uri): ImportResult = withContext(Dispatchers.IO) {
-        val appContext = context.applicationContext
-        val fileName = getFileName(appContext, uri) ?: "deezer-data.xlsx"
-        _importState.value = ImportState.Parsing(fileName)
+    suspend fun importFromUri(
+        context: Context,
+        uri: Uri,
+    ): ImportResult =
+        importMutex.withLock {
+            withContext(Dispatchers.IO) {
+                val appContext = context.applicationContext
+                cleanupStaleTempFiles(appContext.cacheDir)
 
-        val errors = mutableListOf<String>()
-        val declaredSize = getFileSize(appContext, uri)
-        if (declaredSize != null && declaredSize > MAX_FILE_SIZE_BYTES) {
-            val result = ImportResult(0, 0, 0, 0, 0, 0, listOf("Deezer export is larger than 500 MB"))
-            _importState.value = ImportState.Error(result.errors.first())
-            return@withContext result
-        }
+                val fileName = sanitizeDisplayName(getFileName(appContext, uri) ?: "deezer-data.xlsx")
+                _importState.value = ImportState.Parsing(fileName)
 
-        val tempFile = File.createTempFile("tempo_deezer_", ".xlsx", appContext.cacheDir)
-        try {
-            copyUriWithLimit(appContext, uri, tempFile)
-            val parsed = DeezerXlsxParser.parse(tempFile) {
-                coroutineContext.ensureActive()
-            }
-            if (parsed.entries.isEmpty()) {
-                throw IllegalArgumentException("No valid Deezer listening history entries found")
-            }
-            val result = importEntries(parsed, errors)
+                val errors = mutableListOf<String>()
+                val declaredSize = getFileSize(appContext, uri)
+                if (declaredSize != null && declaredSize > MAX_FILE_SIZE_BYTES) {
+                    val result =
+                        ImportResult(
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            listOf("Deezer export is larger than 500 MB"),
+                        )
+                    _importState.value = ImportState.Error(result.errors.first())
+                    return@withContext result
+                }
 
-            // Imported events and newly attached metadata must be visible immediately.
-            statsRepository.invalidateCache()
-
-            if (result.tracksImported > 0 || result.eventsCreated > 0 || result.duplicatesSkipped > 0) {
+                var tempFile: File? = null
+                var importStarted = false
                 try {
-                    EnrichmentWorker.schedulePostImportEnrichment(
-                        appContext,
-                        result.tracksImported.toLong(),
-                    )
+                    tempFile = File.createTempFile(TEMP_FILE_PREFIX, ".xlsx", appContext.cacheDir)
+                    copyUriWithLimit(appContext, uri, tempFile)
+                    val parsed =
+                        DeezerXlsxParser.parse(tempFile) {
+                            coroutineContext.ensureActive()
+                        }
+                    if (parsed.entries.isEmpty()) {
+                        throw IllegalArgumentException("No valid Deezer listening history entries found")
+                    }
+
+                    importStarted = true
+                    val result = importEntries(parsed, errors)
+
+                    if (result.tracksImported > 0 || result.eventsCreated > 0 || result.duplicatesSkipped > 0) {
+                        try {
+                            EnrichmentWorker.schedulePostImportEnrichment(
+                                appContext,
+                                result.tracksImported.toLong(),
+                            )
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to schedule post-import enrichment", e)
+                        }
+                    }
+
+                    _importState.value = ImportState.Completed(result)
+                    result
+                } catch (e: CancellationException) {
+                    _importState.value = ImportState.Idle
+                    throw e
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to schedule post-import enrichment", e)
+                    Log.e(TAG, "Deezer import failed", e)
+                    addCappedError(errors, userFacingError(e))
+                    val result = ImportResult(0, 0, 0, 0, 0, 0, errors.toList())
+                    _importState.value = ImportState.Error(errors.firstOrNull() ?: "Deezer import failed")
+                    result
+                } finally {
+                    if (importStarted) {
+                        try {
+                            // A cancelled/partially-failed import may already have committed batches.
+                            statsRepository.invalidateCache()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to invalidate stats after Deezer import", e)
+                        }
+                    }
+
+                    tempFile?.let { file ->
+                        if (file.exists() && !file.delete()) {
+                            Log.w(TAG, "Could not delete temporary Deezer import file")
+                        }
+                    }
                 }
             }
-
-            _importState.value = ImportState.Completed(result)
-            result
-        } catch (e: CancellationException) {
-            _importState.value = ImportState.Idle
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "Deezer import failed", e)
-            addCappedError(errors, userFacingError(e))
-            val result = ImportResult(0, 0, 0, 0, 0, 0, errors.toList())
-            _importState.value = ImportState.Error(errors.firstOrNull() ?: "Deezer import failed")
-            result
-        } finally {
-            if (!tempFile.delete()) {
-                tempFile.deleteOnExit()
-            }
         }
-    }
 
     private suspend fun importEntries(
         parsed: DeezerXlsxParser.ParseResult,
@@ -146,6 +182,11 @@ class DeezerDataImportService @Inject constructor(
     ): ImportResult {
         val trackCache = HashMap<String, TrackResolver.Resolution>()
         val metadataPrepared = HashMap<Long, PreparedMetadata>()
+        val isrcIndex = HashMap<String, Long>()
+        enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
+            val normalized = canonicalIsrc(ref.isrc)
+            if (normalized.isNotBlank()) isrcIndex.putIfAbsent(normalized, ref.trackId)
+        }
         val pendingEvents = ArrayList<ListeningEvent>(FLUSH_BATCH_SIZE)
         var tracksImported = 0
         var eventsCreated = 0
@@ -185,7 +226,7 @@ class DeezerDataImportService @Inject constructor(
             }
 
             try {
-                val resolution = resolveTrack(entry, trackCache)
+                val resolution = resolveTrack(entry, trackCache, isrcIndex)
                 if (resolution.isNewTrack) {
                     tracksImported++
                     try {
@@ -207,6 +248,7 @@ class DeezerDataImportService @Inject constructor(
                             isrc = prepared?.isrc ?: entry.isrc,
                             album = prepared?.album ?: entry.albumName,
                         )
+                        entry.isrc?.let { isrcIndex.putIfAbsent(it, resolution.trackId) }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -241,6 +283,7 @@ class DeezerDataImportService @Inject constructor(
                         endTimestamp = endTimestamp,
                     ),
                 )
+                if (metadataPrepared.size > MAX_CACHE_SIZE) metadataPrepared.clear()
                 if (pendingEvents.size >= FLUSH_BATCH_SIZE) flush()
             } catch (e: CancellationException) {
                 throw e
@@ -272,6 +315,7 @@ class DeezerDataImportService @Inject constructor(
     private suspend fun resolveTrack(
         entry: DeezerXlsxParser.Entry,
         trackCache: MutableMap<String, TrackResolver.Resolution>,
+        isrcIndex: MutableMap<String, Long>,
     ): TrackResolver.Resolution {
         val cacheKey = entry.isrc?.let { "isrc:" + it }
             ?: "meta:" + entry.trackName.lowercase() + "|" + entry.artistName.lowercase() + "|" +
@@ -280,8 +324,8 @@ class DeezerDataImportService @Inject constructor(
         trackCache[cacheKey]?.let { return it }
 
         entry.isrc?.let { isrc ->
-            enrichedMetadataDao.findByIsrc(isrc)?.let { metadata ->
-                trackRepository.getById(metadata.trackId).first()?.let { track ->
+            isrcIndex[isrc]?.let { trackId ->
+                trackRepository.getById(trackId).first()?.let { track ->
                     val resolution = TrackResolver.Resolution(
                         trackId = track.id,
                         isNewTrack = false,
@@ -418,6 +462,28 @@ class DeezerDataImportService @Inject constructor(
             }
         }
     }
+
+    private fun cleanupStaleTempFiles(cacheDir: File) {
+        cacheDir.listFiles()
+            ?.asSequence()
+            ?.filter { file ->
+                file.isFile &&
+                    file.name.startsWith(TEMP_FILE_PREFIX) &&
+                    file.name.endsWith(".xlsx", ignoreCase = true)
+            }
+            ?.forEach { file ->
+                if (!file.delete()) {
+                    Log.w(TAG, "Could not delete stale Deezer import file")
+                }
+            }
+    }
+
+    private fun sanitizeDisplayName(value: String): String =
+        value
+            .replace(Regex("[\\r\\n\\t\\u0000-\\u001F\\u007F]"), " ")
+            .trim()
+            .take(MAX_DISPLAY_NAME_LENGTH)
+            .ifBlank { "deezer-data.xlsx" }
 
     private fun getFileSize(context: Context, uri: Uri): Long? = try {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
