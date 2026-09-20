@@ -240,15 +240,18 @@ interface EnrichedMetadataDao {
     @Query("SELECT * FROM enriched_metadata WHERE spotify_id = :spotifyId LIMIT 1")
     suspend fun findBySpotifyId(spotifyId: String): EnrichedMetadata?
 
-    /** Find a track already identified by an authoritative ISRC (e.g. Deezer export). */
+    /**
+     * Lightweight ISRC index used by bulk imports.
+     * Loading track_id + isrc once avoids one full enriched_metadata scan per unique ISRC.
+     */
     @Query(
         """
-        SELECT * FROM enriched_metadata
-        WHERE REPLACE(REPLACE(UPPER(isrc), '-', ''), ' ', '') = UPPER(:isrc)
-        LIMIT 1
+        SELECT track_id, isrc
+        FROM enriched_metadata
+        WHERE isrc IS NOT NULL AND TRIM(isrc) != ''
         """,
     )
-    suspend fun findByIsrc(isrc: String): EnrichedMetadata?
+    suspend fun getTrackIsrcRefs(): List<TrackIsrcRef>
     
     /**
      * Get tracks that are enriched but tracks table is missing album art.
@@ -515,6 +518,11 @@ interface EnrichedMetadataDao {
     """)
     suspend fun insertPendingForUnqueuedTracks(now: Long): Long
 }
+
+data class TrackIsrcRef(
+    @ColumnInfo(name = "track_id") val trackId: Long,
+    val isrc: String,
+)
 
 data class EnrichmentStatusCount(
     @ColumnInfo(name = "enrichment_status") val status: EnrichmentStatus,
