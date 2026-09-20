@@ -86,7 +86,6 @@ class DeezerXlsxParserTest {
                 zip,
                 "xl/workbook.xml",
                 """
-                <?xml version="1.0" encoding="UTF-8"?>
                 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
                     xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
                     <sheets>""" + workbookSheets + """</sheets>
@@ -97,7 +96,6 @@ class DeezerXlsxParserTest {
                 zip,
                 "xl/_rels/workbook.xml.rels",
                 """
-                <?xml version="1.0" encoding="UTF-8"?>
                 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
                     """ + relationships + """
                 </Relationships>
@@ -139,8 +137,7 @@ class DeezerXlsxParserTest {
                 val xml =
                     if (pair.first == "10_listeningHistory") {
                         """
-                        <?xml version="1.0" encoding="UTF-8"?>
-                        <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                                <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
                           <sheetData>
                             <row r="1">
                               <c r="A1" t="s"><v>0</v></c>
@@ -166,8 +163,7 @@ class DeezerXlsxParserTest {
                         """.trimIndent()
                     } else {
                         """
-                        <?xml version="1.0" encoding="UTF-8"?>
-                        <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                                <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
                           <sheetData/>
                         </worksheet>
                         """.trimIndent()
