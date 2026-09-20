@@ -5,6 +5,10 @@ on:
     branches:
       - feat/deezer-data-import
 
+concurrency:
+  group: deezer-import-verify
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
