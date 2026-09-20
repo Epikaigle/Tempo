@@ -361,7 +361,8 @@ class DeezerDataImportService @Inject constructor(
             // ISRC is authoritative. Prefer it over all textual matching.
             isrcIndex[isrc]?.let { trackId ->
                 trackRepository.getById(trackId).first()?.let { existingTrack ->
-                    val track = promoteUnknownArtistFromDeezer(existingTrack, entry.artistName)
+                    var track = promoteUnknownArtistFromDeezer(existingTrack, entry.artistName)
+                    track = fillMissingAlbumFromDeezer(track, entry.albumName)
                     val resolution = TrackResolver.Resolution(
                         trackId = track.id,
                         isNewTrack = false,
@@ -381,11 +382,7 @@ class DeezerDataImportService @Inject constructor(
                     ?.let(::canonicalIsrc)
 
                 if (exactIsrc == null || exactIsrc == isrc) {
-                    var track = exact
-                    if (track.album.isNullOrBlank() && !entry.albumName.isNullOrBlank()) {
-                        track = track.copy(album = entry.albumName)
-                        trackRepository.update(track)
-                    }
+                    val track = fillMissingAlbumFromDeezer(exact, entry.albumName)
                     val resolution = TrackResolver.Resolution(
                         trackId = track.id,
                         isNewTrack = false,
@@ -402,8 +399,46 @@ class DeezerDataImportService @Inject constructor(
                 return resolution
             }
 
-            // No authoritative or exact textual identity exists. Creating a fresh
-            // row is safer than attaching this ISRC to a fuzzy candidate.
+            // Deezer can emit one row per credited artist for a collaboration,
+            // while an existing Spotify/live track may store all artists in one string.
+            // Match only SAME-TITLE candidates with a strict individual-artist match,
+            // and never candidates carrying a different authoritative ISRC.
+            val strictCandidates =
+                trackRepository.findCandidatesByTitle(entry.trackName)
+                    .filter { candidate ->
+                        val candidateIsrc =
+                            enrichedMetadataDao.forTrackSync(candidate.id)?.isrc
+                                ?.let(::canonicalIsrc)
+                        candidateIsrc == null &&
+                            ArtistParser.getAllArtists(candidate.artist).any { candidateArtist ->
+                                ArtistParser.isStrictSameArtist(candidateArtist, entry.artistName)
+                            }
+                    }
+
+            val candidate =
+                when {
+                    strictCandidates.size == 1 -> strictCandidates.single()
+                    strictCandidates.size > 1 && !entry.albumName.isNullOrBlank() -> {
+                        strictCandidates
+                            .filter { it.album.equals(entry.albumName, ignoreCase = true) }
+                            .singleOrNull()
+                    }
+                    else -> null
+                }
+
+            if (candidate != null) {
+                val track = fillMissingAlbumFromDeezer(candidate, entry.albumName)
+                val resolution = TrackResolver.Resolution(
+                    trackId = track.id,
+                    isNewTrack = false,
+                    track = track,
+                )
+                cacheTrackResolution(cacheKey, resolution, trackCache)
+                return resolution
+            }
+
+            // No authoritative or safely disambiguated textual identity exists.
+            // Creating a fresh row is safer than attaching this ISRC to a fuzzy candidate.
             val resolution = createDeezerTrack(entry)
             cacheTrackResolution(cacheKey, resolution, trackCache)
             return resolution
@@ -420,6 +455,26 @@ class DeezerDataImportService @Inject constructor(
 
         cacheTrackResolution(cacheKey, resolution, trackCache)
         return resolution
+    }
+
+    private suspend fun fillMissingAlbumFromDeezer(
+        track: Track,
+        deezerAlbum: String?,
+    ): Track {
+        val album = deezerAlbum?.trim()?.takeIf { it.isNotEmpty() } ?: return track
+        if (!track.album.isNullOrBlank()) return track
+
+        val updated = track.copy(album = album)
+        return try {
+            trackRepository.update(updated)
+            updated
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Album metadata is useful but secondary; never lose the play for it.
+            Log.w(TAG, "Failed to fill a missing album from Deezer metadata", e)
+            track
+        }
     }
 
     private suspend fun promoteUnknownArtistFromDeezer(
