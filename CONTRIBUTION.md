@@ -45,6 +45,16 @@ Core tracking, stats, and library browsing work offline. Calls to Last.fm, Spoti
 
 The project ships under a modified AGPLv3 license that prohibits monetization, advertisements, paid subscriptions, and rebranding.
 
+## Free core and possible paid extras
+
+Contributions are what keep Tempo moving, and all of them are welcome. The core app stays free forever. Tracking, stats, library browsing, and imports are core, and anything you contribute to core stays free too. Community work will not be moved behind a paywall.
+
+Tempo will not be exploited for cash. No ads, no paywalling existing features, no charging for what contributors built for free.
+
+If small paid extras ever appear in the future, they would only be optional add-ons to help sustain development, kept separate from core. They would add something new without taking anything away from the free app.
+
+If your pull request overlaps with a planned paid extra, we may ask you to reshape it, narrow it to core, or hold it for now. We will explain why in the pull request. For larger features, opening an issue first is the easiest way to check direction before you write code.
+
 ## How to submit a change
 
 It helps to open an issue first when your proposal touches a new major feature or background service, a database schema change or structural refactor, UI navigation or a visual redesign, a new third-party dependency, or an analytics event or property. The analytics schema is a privacy commitment published to users, so thanks for letting it change through discussion.
