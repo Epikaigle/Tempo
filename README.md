@@ -20,7 +20,7 @@
 
 </div>
 
-Tempo is a local-first music journal and scrobbler for Android. It tracks playback across your apps and turns it into heatmaps, trends, and shareable stat cards — all on your phone.
+Tempo is a local-first music journal and scrobbler for Android. It follows playback across Spotify, YouTube Music, and your other players and keeps the full history on your phone. You get timeline trends, heatmaps, and exportable stat cards for tracks, artists, and albums — built on device, ready to share.
 
 ---
 
