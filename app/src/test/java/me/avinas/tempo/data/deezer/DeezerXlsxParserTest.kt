@@ -3,6 +3,7 @@ package me.avinas.tempo.data.deezer
 import java.io.File
 import java.io.FileOutputStream
 import java.time.Instant
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
@@ -47,6 +48,50 @@ class DeezerXlsxParserTest {
     }
 
     @Test
+    fun acceptsRenumberedListeningHistorySheet() {
+        val file = createWorkbook(
+            includeHistory = true,
+            historySheetName = "11_listeningHistory",
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(1, result.entries.size)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun acceptsFrenchListeningHistoryHeaders() {
+        val file = createWorkbook(
+            includeHistory = true,
+            frenchHeaders = true,
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(1, result.entries.size)
+            assertEquals("Never Gonna Give You Up", result.entries.single().trackName)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun propagatesCancellationCheck() {
+        val file = createWorkbook(includeHistory = true)
+        try {
+            val error = runCatching {
+                DeezerXlsxParser.parse(file) {
+                    throw CancellationException("cancelled")
+                }
+            }.exceptionOrNull()
+            assertTrue(error is CancellationException)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun rejectsWorkbookWithoutDeezerListeningHistorySheet() {
         val file = createWorkbook(includeHistory = false)
         try {
@@ -61,14 +106,16 @@ class DeezerXlsxParserTest {
     private fun createWorkbook(
         includeHistory: Boolean,
         putHistorySecond: Boolean = false,
+        historySheetName: String = "10_listeningHistory",
+        frenchHeaders: Boolean = false,
     ): File {
         val file = kotlin.io.path.createTempFile("deezer-test-", ".xlsx").toFile()
 
         val sheets =
             if (includeHistory && putHistorySecond) {
-                listOf("00_userProfile" to "rId1", "10_listeningHistory" to "rId2")
+                listOf("00_userProfile" to "rId1", historySheetName to "rId2")
             } else if (includeHistory) {
-                listOf("10_listeningHistory" to "rId1")
+                listOf(historySheetName to "rId1")
             } else {
                 listOf("00_userProfile" to "rId1")
             }
@@ -102,16 +149,33 @@ class DeezerXlsxParserTest {
                 """.trimIndent(),
             )
 
-            val shared = listOf(
-                "Song Title",
-                "Artist",
-                "ISRC",
-                "Album Title",
-                "IP Address",
-                "Listening Time",
-                "Platform Name",
-                "Platform Model",
-                "Date",
+            val headers =
+                if (frenchHeaders) {
+                    listOf(
+                        "Titre du morceau",
+                        "Artiste",
+                        "ISRC",
+                        "Titre de l'album",
+                        "Adresse IP",
+                        "Durée d'écoute",
+                        "Plateforme",
+                        "Modèle",
+                        "Date d'écoute",
+                    )
+                } else {
+                    listOf(
+                        "Song Title",
+                        "Artist",
+                        "ISRC",
+                        "Album Title",
+                        "IP Address",
+                        "Listening Time",
+                        "Platform Name",
+                        "Platform Model",
+                        "Date",
+                    )
+                }
+            val shared = headers + listOf(
                 "Never Gonna Give You Up",
                 "Rick Astley",
                 "GBAYE8800243",
@@ -135,7 +199,7 @@ class DeezerXlsxParserTest {
 
             sheets.forEachIndexed { index, pair ->
                 val xml =
-                    if (pair.first == "10_listeningHistory") {
+                    if (pair.first.contains("listeningHistory", ignoreCase = true)) {
                         """
                                 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
                           <sheetData>
