@@ -16,6 +16,11 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace
+        run: |
+          if ! ./gradlew :app:testDebugUnitTest --stacktrace; then
+            echo "==== Deezer parser test report ===="
+            cat app/build/test-results/testDebugUnitTest/TEST-me.avinas.tempo.data.deezer.DeezerXlsxParserTest.xml || true
+            exit 1
+          fi
       - name: Assemble debug
         run: ./gradlew :app:assembleDebug --stacktrace
