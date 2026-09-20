@@ -3,6 +3,7 @@ package me.avinas.tempo.data.deezer
 import java.io.FilterInputStream
 import java.io.File
 import java.io.InputStream
+import java.io.StringReader
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -11,6 +12,7 @@ import java.util.zip.ZipFile
 import javax.xml.XMLConstants
 import javax.xml.parsers.SAXParserFactory
 import org.xml.sax.Attributes
+import org.xml.sax.InputSource
 import org.xml.sax.helpers.DefaultHandler
 
 /**
@@ -386,12 +388,19 @@ object DeezerXlsxParser {
     private fun parseXml(input: InputStream, handler: DefaultHandler) {
         val factory = SAXParserFactory.newInstance().apply {
             isNamespaceAware = true
+            runCatching { isXIncludeAware = false }
             runCatching { setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true) }
             runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
             runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
             runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
         }
-        factory.newSAXParser().parse(input, handler)
+        val reader = factory.newSAXParser().xmlReader
+        reader.contentHandler = handler
+        // Defense in depth: never resolve a system/public entity from a user-selected XLSX.
+        reader.entityResolver = org.xml.sax.EntityResolver { _, _ ->
+            InputSource(StringReader(""))
+        }
+        reader.parse(InputSource(input))
     }
 
     private class LimitedInputStream(
