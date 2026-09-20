@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +37,9 @@ class DeezerImportViewModel @Inject constructor(
                             result.errors.firstOrNull() ?: "Deezer import failed",
                         )
                     }
+            } catch (e: CancellationException) {
+                _uiState.value = DeezerImportUiState.Idle
+                throw e
             } catch (e: Exception) {
                 Log.e("DeezerImportVM", "Import failed", e)
                 _uiState.value = DeezerImportUiState.Error("Deezer import failed")
