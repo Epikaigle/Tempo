@@ -321,17 +321,26 @@ class TempoApplication :
     /**
      * Owns the upload worker's lifecycle from the single source of truth: the consent flag.
      *
-     * Every path that flips the flag — the Settings toggle, the Home disclosure card's
-     * turn-off, a data wipe — gets the same treatment here: opting out drops anything
-     * buffered and cancels the uploader immediately, and re-enabling re-registers it.
+     * Every path that flips the gate — the Settings toggle, the Home disclosure card's
+     * turn-off, a data wipe — gets the same treatment here: a closed gate drops anything
+     * buffered and cancels the uploader immediately, and an open one re-registers it.
+     *
+     * This collects [AnalyticsConsent.collectionAllowed] rather than `isEnabled` so that the
+     * disclosure being rendered is what arms the uploader. That matters for first-run
+     * latency: the periodic worker's first execution is scheduled a full flex-adjusted
+     * interval ahead (5h for the 6h/1h configuration), so without the immediate flush below
+     * a new install would show "Waiting for the first event" for hours. See
+     * [AnalyticsFlushWorker.enqueueImmediate].
+     *
      * Scheduling here rather than in [scheduleBackgroundWork] is also what stops every
      * app start from resurrecting a worker that the user's opt-out had cancelled.
      */
     private fun observeAnalyticsConsent() {
         applicationScope.launch {
-            analyticsConsent.isEnabled.collect { enabled ->
-                if (enabled) {
+            analyticsConsent.collectionAllowed.collect { allowed ->
+                if (allowed) {
                     AnalyticsFlushWorker.schedule(this@TempoApplication)
+                    AnalyticsFlushWorker.enqueueImmediate(this@TempoApplication)
                 } else {
                     analyticsTracker.purge()
                     AnalyticsFlushWorker.cancel(this@TempoApplication)

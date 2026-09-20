@@ -66,8 +66,7 @@ enum class AnalyticsScreen {
     ENRICHMENT_REPORT,
     SHARE_CANVAS,
     PROFILE,
-    WHAT_WE_COLLECT,
-    DIAGNOSTICS,
+    YOUR_DATA,
     UNKNOWN,
 }
 

@@ -17,8 +17,11 @@
 
     <string name="settings_analytics_toggle">Анонимная статистика состояния приложения</string>
     <string name="settings_analytics_toggle_desc">Передавать анонимные данные о сбоях, ошибках и использовании функций. Без аккаунта, без идентификаторов, никогда — историю прослушиваний.</string>
-    <string name="settings_what_we_collect">Что мы собираем</string>
-    <string name="settings_what_we_collect_desc">Точный список анонимизированных событий, которые отправляет Tempo</string>
+    <string name="settings_data_diagnostics">Данные и диагностика</string>
+    <string name="settings_data_diagnostics_desc">Что отправляет Tempo и как оно работает на этом устройстве</string>
+
+    <!-- Your data screen -->
+    <string name="your_data_intro">Всё, что Tempo записывает и отправляет, в одном месте. Ничто отсюда не покидает ваш телефон, пока вы сами не решите поделиться.</string>
 
     <!-- What we collect screen -->
     <string name="what_we_collect_title">Что мы собираем</string>
@@ -27,13 +30,10 @@
     <string name="what_we_collect_footer">Ничего не собирается до того, как вам показали это уведомление, и всё можно отключить в любой момент в разделе «Настройки → Ваши данные». Сборки, скомпилированные из исходного кода, не отправляют вообще ничего.</string>
 
     <!-- Diagnostics report -->
-    <string name="settings_diagnostics">Отчёт о диагностике</string>
-    <string name="settings_diagnostics_desc">Создать отчёт для приложения к сообщению об ошибке</string>
     <string name="diagnostics_title">Отчёт о диагностике</string>
-    <string name="diagnostics_intro">Сводка о том, как Tempo работает на этом устройстве: версии, количество элементов, состояние отслеживания и фоновая работа. Ничего не загружается: отчёт создаётся здесь и покидает телефон только если вы сами им поделитесь.</string>
+    <string name="diagnostics_intro">Сводка о том, как Tempo работает на этом устройстве: версии, количество элементов, состояние обнаружения и фоновая работа. Ничего не загружается: отчёт создаётся здесь и покидает телефон только если вы сами им поделитесь.</string>
     <string name="diagnostics_share">Поделиться отчётом</string>
     <string name="diagnostics_refresh">Обновить</string>
-    <string name="diagnostics_gathering">Сбор данных…</string>
     <string name="diagnostics_failed">Не удалось создать отчёт.</string>
     <string name="diagnostics_share_subject">Отчёт о диагностике Tempo</string>
 

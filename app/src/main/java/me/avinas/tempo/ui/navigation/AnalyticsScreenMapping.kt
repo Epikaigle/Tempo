@@ -31,8 +31,7 @@ internal fun routeToAnalyticsScreen(route: String?): AnalyticsScreen {
         "enrichment_report" -> AnalyticsScreen.ENRICHMENT_REPORT
         "share_canvas" -> AnalyticsScreen.SHARE_CANVAS
         "profile" -> AnalyticsScreen.PROFILE
-        "what_we_collect" -> AnalyticsScreen.WHAT_WE_COLLECT
-        "diagnostics" -> AnalyticsScreen.DIAGNOSTICS
+        "your_data" -> AnalyticsScreen.YOUR_DATA
         else -> AnalyticsScreen.UNKNOWN
     }
 }

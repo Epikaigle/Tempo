@@ -221,6 +221,42 @@ class ChallengeArtistAttributionTest {
         }
     }
 
+    @Test
+    fun `unique genres counts each combo segment, not the primary genre or the raw combo`() {
+        // Today's genres, segmented: Pop, dance pop, k-pop, jazz, pop(dup), Shoegaze(tags).
+        // Distinct & lowercased -> pop, dance pop, k-pop, jazz, shoegaze = 5.
+        val sql = daoQuery("getTodayUniqueGenres")
+        assertEquals(5, count(sql, mapOf("startOfDayMs" to "100")))
+
+        // The previous primary-genre-only form under-counted: it saw Pop, k-pop, jazz and
+        // ignored both the secondary "dance pop" segment and the tags-only Shoegaze = 3.
+        val buggy =
+            """
+            SELECT COUNT(DISTINCT LOWER(TRIM(
+                CASE WHEN instr(em.genres, '|||') > 0
+                     THEN substr(em.genres, 1, instr(em.genres, '|||') - 1)
+                     ELSE em.genres
+                END)))
+            FROM listening_events le
+            LEFT JOIN enriched_metadata em ON em.track_id = le.track_id
+            WHERE le.timestamp >= 100 AND (le.volume_level IS NULL OR le.volume_level > 0)
+              AND em.genres IS NOT NULL AND em.genres != ''
+            """.trimIndent()
+        assertEquals(3, count(buggy, emptyMap()))
+    }
+
+    @Test
+    fun `new genres counts only genres never heard before today`() {
+        // Yesterday's only event is track 2 (k-pop). So today: pop, dance pop, jazz and
+        // shoegaze are new; k-pop is not. Distinct new genres today = 4.
+        val sql = daoQuery("getTodayNewGenres")
+        assertEquals(4, count(sql, mapOf("startOfDayMs" to "100")))
+
+        // Sanity: counting ALL of today's genres (the old behaviour) would report 5, wrongly
+        // crediting the already-heard k-pop toward a "discover new genres" challenge.
+        assertEquals(5, count(daoQuery("getTodayUniqueGenres"), mapOf("startOfDayMs" to "100")))
+    }
+
     // --- helpers -----------------------------------------------------------------------------
 
     /** Parses the real @Query SQL out of GamificationDao.kt, keyed by function name. */

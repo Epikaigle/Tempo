@@ -2,7 +2,7 @@ package me.avinas.tempo.data.analytics
 
 /**
  * The user-facing data dictionary: exactly what Tempo reports, rendered by
- * `WhatWeCollectScreen` and mirrored in `docs/ANALYTICS.md`.
+ * `YourDataScreen` and mirrored in `docs/ANALYTICS.md`.
  *
  * It lives in code next to [AnalyticsEvent] on purpose. `AnalyticsCatalogTest` asserts this
  * list matches the events that actually exist — same names, same property keys — so the
@@ -22,7 +22,7 @@ object AnalyticsCatalog {
         listOf(
             AnalyticsCatalogEntry(
                 event = "app_started",
-                what = "That the app opened, how long Tempo's own start-up work took, and whether tracking was alive.",
+                what = "That the app opened, how long Tempo's own start-up work took, and whether music detection was running.",
                 properties = listOf("start_type", "startup", "listener_ready"),
             ),
             AnalyticsCatalogEntry(
@@ -62,12 +62,12 @@ object AnalyticsCatalog {
             ),
             AnalyticsCatalogEntry(
                 event = "tracking_gap",
-                what = "When and why tracking stopped. This is how unreliable tracking gets fixed.",
+                what = "When and why music detection stopped, so listening gaps can be fixed.",
                 properties = listOf("reason", "gap"),
             ),
             AnalyticsCatalogEntry(
                 event = "service_revived",
-                what = "That the tracker recovered after the system killed it, and how forcefully.",
+                what = "That Tempo recovered after the system stopped it, and how forcefully.",
                 properties = listOf("by", "recovery"),
             ),
             AnalyticsCatalogEntry(

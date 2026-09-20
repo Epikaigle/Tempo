@@ -32,7 +32,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         DailyChallenge::class, // Gamification: daily challenges
         DesktopPairingSession::class, // Desktop Satellite pairing sessions
     ],
-    version = 53, // Migration 53: index tracks.musicbrainz_id (Last.fm/mbid track resolution)
+    version = 54, // Migration 54: unique daily_challenges(challenge_id,date) + user_level.banked_challenge_xp
     exportSchema = true, // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
@@ -75,7 +75,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val TAG = "AppDatabase"
 
         /** Current Room schema version — keep in sync with the @Database(version = ...) annotation. */
-        const val VERSION = 53
+        const val VERSION = 54
 
         /**
          * Migration from version 6 to 7: Add enhanced tracking columns to listening_events.
@@ -2525,6 +2525,46 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
+         * Migration from version 53 to 54: enforce one row per challenge per day, and add the
+         * banked_challenge_xp column used to preserve XP when old challenges are pruned.
+         *
+         * daily_challenges previously had no uniqueness on (challenge_id, date), so the
+         * midnight worker / Profile-screen race could insert the same challenge twice and
+         * GamificationRepository would double-count its XP. This dedupes any existing
+         * duplicates (keeping the most-progressed row so completed status/XP are preserved)
+         * and then adds the UNIQUE index that makes generation idempotent.
+         */
+        val MIGRATION_53_54 =
+            object : Migration(53, 54) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 53 to 54 - challenge dedupe + banked_challenge_xp")
+                    db.execSQL(
+                        """
+                        DELETE FROM daily_challenges
+                        WHERE id NOT IN (
+                            SELECT id FROM (
+                                SELECT id,
+                                       ROW_NUMBER() OVER (
+                                           PARTITION BY challenge_id, date
+                                           ORDER BY is_completed DESC, current_progress DESC, id DESC
+                                       ) AS rn
+                                FROM daily_challenges
+                            ) WHERE rn = 1
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS index_daily_challenges_challenge_id_date " +
+                            "ON daily_challenges(challenge_id, date)",
+                    )
+                    db.execSQL(
+                        "ALTER TABLE user_level ADD COLUMN banked_challenge_xp INTEGER NOT NULL DEFAULT 0",
+                    )
+                    Log.i(TAG, "Migration from version 53 to 54 completed successfully")
+                }
+            }
+
+        /**
          * All migrations in order.
          */
         val ALL_MIGRATIONS =
@@ -2576,6 +2616,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_50_51, // Add lastSpotlightStoryViewed to user_preferences (spotlight ring viewed state)
                 MIGRATION_51_52, // Reconcile divergent schema-51 lineages (public 4.8.2 vs internal)
                 MIGRATION_52_53, // Index tracks.musicbrainz_id (Last.fm/mbid track resolution)
+                MIGRATION_53_54, // Unique daily_challenges(challenge_id,date) + user_level.banked_challenge_xp
             )
     }
 }

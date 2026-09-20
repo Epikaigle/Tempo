@@ -2633,7 +2633,7 @@ fun BadgeDetailsOverlay(
                             val unit = getBadgeUnit(badge.badgeId)
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 for (tier in 1..GamificationEngine.MAX_STARS) {
-                                    val threshold = GamificationEngine.getStarThreshold(def.threshold, tier)
+                                    val threshold = GamificationEngine.getStarThreshold(def, tier)
                                     val achieved = badge.stars >= tier
                                     val isNext = !achieved && badge.stars + 1 == tier
                                     val tierColor =

@@ -17,8 +17,11 @@
 
     <string name="settings_analytics_toggle">Anonyme App-Gesundheitsdaten</string>
     <string name="settings_analytics_toggle_desc">Anonyme Absturz-, Fehler- und Nutzungsdaten teilen. Kein Konto, keine Kennungen, niemals dein Hörverlauf.</string>
-    <string name="settings_what_we_collect">Was wir erfassen</string>
-    <string name="settings_what_we_collect_desc">Die genaue Liste der anonymisierten Ereignisse, die Tempo sendet</string>
+    <string name="settings_data_diagnostics">Daten &amp; Diagnose</string>
+    <string name="settings_data_diagnostics_desc">Was Tempo sendet und wie es auf diesem Gerät läuft</string>
+
+    <!-- Your data screen -->
+    <string name="your_data_intro">Alles, was Tempo erfasst und sendet, an einem Ort. Nichts hier verlässt dein Telefon, wenn du es nicht selbst teilst.</string>
 
     <!-- What we collect screen -->
     <string name="what_we_collect_title">Was wir erfassen</string>
@@ -27,13 +30,10 @@
     <string name="what_we_collect_footer">Nichts wird erfasst, bevor dieser Hinweis angezeigt wurde, und du kannst alles jederzeit unter Einstellungen → Deine Daten ausschalten. Aus dem Quellcode erstellte Versionen senden überhaupt nichts.</string>
 
     <!-- Diagnostics report -->
-    <string name="settings_diagnostics">Diagnosebericht</string>
-    <string name="settings_diagnostics_desc">Einen Bericht für eine Fehlermeldung erstellen</string>
     <string name="diagnostics_title">Diagnosebericht</string>
     <string name="diagnostics_intro">Eine Übersicht darüber, wie Tempo auf diesem Gerät läuft – Versionen, Bibliothekszahlen, Zustand der Erkennung und Hintergrundarbeit. Nichts wird hochgeladen: Der Bericht entsteht hier und verlässt dein Telefon nur, wenn du ihn teilst.</string>
     <string name="diagnostics_share">Bericht teilen</string>
     <string name="diagnostics_refresh">Aktualisieren</string>
-    <string name="diagnostics_gathering">Wird erfasst…</string>
     <string name="diagnostics_failed">Bericht konnte nicht erstellt werden.</string>
     <string name="diagnostics_share_subject">Tempo-Diagnosebericht</string>
 

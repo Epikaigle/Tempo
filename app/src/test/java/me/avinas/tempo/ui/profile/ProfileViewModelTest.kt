@@ -10,15 +10,15 @@ import org.junit.Test
 import java.time.LocalDate
 
 class ProfileViewModelTest {
-
     @Test
     fun `test streakAtRisk returns true when streak positive and last streak date not today`() {
         // Given
         val yesterday = LocalDate.now().minusDays(1).toString()
-        val userLevel = UserLevel(
-            currentStreak = 5,
-            lastStreakDate = yesterday
-        )
+        val userLevel =
+            UserLevel(
+                currentStreak = 5,
+                lastStreakDate = yesterday,
+            )
         val state = ProfileUiState(userLevel = userLevel)
 
         // Then
@@ -28,10 +28,11 @@ class ProfileViewModelTest {
     @Test
     fun `test streakAtRisk returns false when streak is 0`() {
         // Given
-        val userLevel = UserLevel(
-            currentStreak = 0,
-            lastStreakDate = "2023-01-01"
-        )
+        val userLevel =
+            UserLevel(
+                currentStreak = 0,
+                lastStreakDate = "2023-01-01",
+            )
         val state = ProfileUiState(userLevel = userLevel)
 
         // Then
@@ -42,10 +43,11 @@ class ProfileViewModelTest {
     fun `test streakAtRisk returns false when last streak date is today`() {
         // Given
         val today = LocalDate.now().toString()
-        val userLevel = UserLevel(
-            currentStreak = 10,
-            lastStreakDate = today
-        )
+        val userLevel =
+            UserLevel(
+                currentStreak = 10,
+                lastStreakDate = today,
+            )
         val state = ProfileUiState(userLevel = userLevel)
 
         // Then
@@ -55,25 +57,57 @@ class ProfileViewModelTest {
     @Test
     fun `test almostUnlockedBadges filters correctly`() {
         // Given
-        val badge1 = Badge(
-            badgeId = "1", name = "B1", description = "D1", iconName = "star", category = "TIME",
-            progress = 8, maxProgress = 10, isEarned = false, stars = 0
-        ) // 80% -> Keep (not earned, close to unlock)
-        
-        val badge2 = Badge(
-            badgeId = "2", name = "B2", description = "D2", iconName = "star", category = "TIME",
-            progress = 3, maxProgress = 10, isEarned = false, stars = 0
-        ) // 30% -> Filter out (too far)
-        
-        val badge3 = Badge(
-            badgeId = "3", name = "B3", description = "D3", iconName = "star", category = "TIME",
-            progress = 10, maxProgress = 10, isEarned = true, stars = 5
-        ) // Maxed at 5 stars -> Filter out
+        val badge1 =
+            Badge(
+                badgeId = "1",
+                name = "B1",
+                description = "D1",
+                iconName = "star",
+                category = "TIME",
+                progress = 8,
+                maxProgress = 10,
+                isEarned = false,
+                stars = 0,
+            ) // 80% -> Keep (not earned, close to unlock)
 
-        val badge4 = Badge(
-            badgeId = "4", name = "B4", description = "D4", iconName = "star", category = "TIME",
-            progress = 18, maxProgress = 20, isEarned = true, stars = 3
-        ) // Earned, 90% toward next star -> Keep
+        val badge2 =
+            Badge(
+                badgeId = "2",
+                name = "B2",
+                description = "D2",
+                iconName = "star",
+                category = "TIME",
+                progress = 3,
+                maxProgress = 10,
+                isEarned = false,
+                stars = 0,
+            ) // 30% -> Filter out (too far)
+
+        val badge3 =
+            Badge(
+                badgeId = "3",
+                name = "B3",
+                description = "D3",
+                iconName = "star",
+                category = "TIME",
+                progress = 10,
+                maxProgress = 10,
+                isEarned = true,
+                stars = 5,
+            ) // Maxed at 5 stars -> Filter out
+
+        val badge4 =
+            Badge(
+                badgeId = "4",
+                name = "B4",
+                description = "D4",
+                iconName = "star",
+                category = "TIME",
+                progress = 18,
+                maxProgress = 20,
+                isEarned = true,
+                stars = 3,
+            ) // Earned, 90% toward next star -> Keep
 
         val state = ProfileUiState(allBadges = listOf(badge1, badge2, badge3, badge4))
 
@@ -88,12 +122,29 @@ class ProfileViewModelTest {
 
     @Test
     fun `test totalStars and maxPossibleStars exclude beginner badges`() {
-        val badges = listOf(
-            Badge(badgeId = "1", name = "B1", description = "D1", iconName = "star", category = "TIME", stars = 3, isEarned = true),
-            Badge(badgeId = "first_play", name = "First Note", description = "D2", iconName = "star", category = "MILESTONE", stars = 1, isEarned = true),
-            Badge(badgeId = "time_1h", name = "First Hour", description = "D3", iconName = "star", category = "TIME", stars = 1, isEarned = true),
-            Badge(badgeId = "3", name = "B3", description = "D4", iconName = "star", category = "TIME", stars = 5, isEarned = true)
-        )
+        val badges =
+            listOf(
+                Badge(badgeId = "1", name = "B1", description = "D1", iconName = "star", category = "TIME", stars = 3, isEarned = true),
+                Badge(
+                    badgeId = "first_play",
+                    name = "First Note",
+                    description = "D2",
+                    iconName = "star",
+                    category = "MILESTONE",
+                    stars = 1,
+                    isEarned = true,
+                ),
+                Badge(
+                    badgeId = "time_1h",
+                    name = "First Hour",
+                    description = "D3",
+                    iconName = "star",
+                    category = "TIME",
+                    stars = 1,
+                    isEarned = true,
+                ),
+                Badge(badgeId = "3", name = "B3", description = "D4", iconName = "star", category = "TIME", stars = 5, isEarned = true),
+            )
         val state = ProfileUiState(allBadges = badges)
 
         // first_play and time_1h are beginner badges, excluded from totals
@@ -102,16 +153,69 @@ class ProfileViewModelTest {
     }
 
     @Test
-    fun `test steeper star multipliers produce correct thresholds`() {
-        // With new multipliers [1, 3, 8, 20, 50]:
-        // Explorer badge (base 10 artists): stars at 10, 30, 80, 200, 500
-        assertEquals(0, GamificationEngine.computeStars(9, 10))   // Below threshold
-        assertEquals(1, GamificationEngine.computeStars(10, 10))  // At base = ★1
-        assertEquals(1, GamificationEngine.computeStars(29, 10))  // Below ★2
-        assertEquals(2, GamificationEngine.computeStars(30, 10))  // 3x = ★2
-        assertEquals(3, GamificationEngine.computeStars(80, 10))  // 8x = ★3
-        assertEquals(4, GamificationEngine.computeStars(200, 10)) // 20x = ★4
-        assertEquals(5, GamificationEngine.computeStars(500, 10)) // 50x = ★5
+    fun `test per-badge star ladders stay reachable`() {
+        // Every badge has its own explicit ★5 target; tiers rise strictly and ★5 is the target.
+        // Beginner badges are exempt: they cap at one star, so their ladder is intentionally flat.
+        for (def in GamificationEngine.ALL_BADGE_DEFINITIONS) {
+            val thresholds = GamificationEngine.starThresholds(def)
+            assertEquals(GamificationEngine.MAX_STARS, thresholds.size)
+            assertEquals(def.threshold, thresholds.first())
+            assertEquals(maxOf(def.fiveStarThreshold, def.threshold), thresholds.last())
+            if (def.badgeId in GamificationEngine.BEGINNER_BADGES) continue
+            for (i in 1 until thresholds.size) {
+                assertTrue(
+                    "${def.badgeId} tiers must strictly increase: ${thresholds.toList()}",
+                    thresholds[i] > thresholds[i - 1],
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `test rebalance never removes an already-earned star`() {
+        // Old uniform ladder was 1x/3x/8x/20x/50x the base. The new per-badge targets must be
+        // no stricter at any tier, so existing users can only keep or gain stars.
+        val oldMultipliers = intArrayOf(1, 3, 8, 20, 50)
+        for (def in GamificationEngine.ALL_BADGE_DEFINITIONS) {
+            val newTiers = GamificationEngine.starThresholds(def)
+            for (i in oldMultipliers.indices) {
+                val oldThreshold = def.threshold * oldMultipliers[i]
+                assertTrue(
+                    "${def.badgeId} ★${i + 1} got harder: ${newTiers[i]} > $oldThreshold",
+                    newTiers[i] <= oldThreshold,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `test no badge demands an impossible five star grind`() {
+        // Regression guard for the old uniform 50x multiplier, which pushed badges like
+        // plays_10000 to 500,000 plays and level_100 to level 5,000.
+        val fiveStar = GamificationEngine.ALL_BADGE_DEFINITIONS.associate { it.badgeId to GamificationEngine.starThresholds(it).last() }
+        assertTrue("plays_10000 ★5 must stay realistic", fiveStar.getValue("plays_10000") <= 50_000)
+        assertTrue("level_100 ★5 must stay realistic", fiveStar.getValue("level_100") <= 300)
+        assertTrue("streak_365 ★5 must be at most ~2 years", fiveStar.getValue("streak_365") <= 730)
+        assertTrue("artists_100 ★5 must stay reachable", fiveStar.getValue("artists_100") <= 500)
+    }
+
+    @Test
+    fun `test computeStars honours per-badge ladder and beginner cap`() {
+        val explorer = GamificationEngine.ALL_BADGE_DEFINITIONS.first { it.badgeId == "artists_10" }
+        val tiers = GamificationEngine.starThresholds(explorer)
+        assertEquals(0, GamificationEngine.computeStars(tiers[0] - 1, explorer))
+        assertEquals(1, GamificationEngine.computeStars(tiers[0], explorer))
+        assertEquals(2, GamificationEngine.computeStars(tiers[1], explorer))
+        assertEquals(3, GamificationEngine.computeStars(tiers[2], explorer))
+        assertEquals(4, GamificationEngine.computeStars(tiers[3], explorer))
+        assertEquals(5, GamificationEngine.computeStars(tiers[4], explorer))
+        assertEquals(5, GamificationEngine.computeStars(tiers[4] * 10, explorer))
+
+        // Beginner badges cap at a single star regardless of raw progress.
+        val firstNote = GamificationEngine.ALL_BADGE_DEFINITIONS.first { it.badgeId == "first_play" }
+        assertEquals(0, GamificationEngine.computeStars(0, firstNote))
+        assertEquals(1, GamificationEngine.computeStars(1, firstNote))
+        assertEquals(1, GamificationEngine.computeStars(10_000, firstNote))
     }
 
     @Test

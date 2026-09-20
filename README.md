@@ -20,7 +20,7 @@
 
 </div>
 
-Tempo is a local-first music journal and scrobbler for Android. It monitors playback across media players, writes listening history to a local SQLite database, and computes listening analytics, heatmaps, and exportable stat cards on device. Tempo runs no server of its own: your listening history never leaves your phone, and the only thing it reports is anonymous app-health data you can turn off in Settings.
+Tempo is a local-first music journal and scrobbler for Android. It tracks playback across your apps and turns it into heatmaps, trends, and shareable stat cards — all on your phone.
 
 ---
 
@@ -70,10 +70,10 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
 - Merge duplicate or split albums, preserving track history and scrobble archives under a single target album.
 - Split misassigned tracks from artist profiles into new or existing artist entries.
 - Propagate artist renames across track credits, multi-artist strings, and cached aggregates in a single database transaction.
-- Unicode NFKC normalization and script-aware diacritic folding to prevent multilingual artist names (Japanese, Korean, Cyrillic, Indic, Thai) from collapsing into duplicate records.
+- Normalizes artist names with Unicode NFKC and script-aware diacritic folding, so Japanese, Korean, Cyrillic, Indic, and Thai names don't split into duplicate records.
 
 ### Data imports
-- Imports complete Last.fm scrobble histories into split storage tiers (recent history in the active query set, older history in an indexed archive).
+- Imports full Last.fm scrobble history. Recent plays stay in the fast query set, older plays move to an indexed archive.
 - Ingests Google Takeout multi-part ZIP exports and localized YouTube Music `watch-history.json` files.
 - Fetches track audio attributes from Spotify Web API, with an optional API polling mode to reduce battery draw when notification listening is turned off.
 - Resolves album cover art, release details, and genre tags from MusicBrainz.
@@ -85,12 +85,12 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
 - Syncs to the phone over local Wi-Fi via `POST /api/plays`, authenticated with HMAC-SHA256 signatures.
 
 ### Privacy and backup
-- Lists every analytics event the app can send, and the exact data attached to each, at **Settings → Your Data → What we collect**.
-- Generates a shareable **diagnostics report** (versions, library counts, tracking health, background work) on request, so a bug report can be detailed without the app collecting anything automatically.
+- Audit what the app can send at **Settings → Your Data → What we collect**. Each event lists the exact fields attached.
+- Tap **diagnostics report** to share versions, library counts, detection health, and background-work status with a bug report. The app sends nothing automatically.
 - Stores listening events, metadata, and computed statistics locally in Room SQLite databases.
 - Secures authentication keys and API credentials in Android `EncryptedSharedPreferences`.
 - Supports automated local database exports as well as Google Drive backups via Android Credential Manager.
-- Reports only anonymous app-health statistics — crashes, errors and feature usage, with no account and no identifiers. Never your listening history. On by default, off in one tap at **Settings → Your Data**, and inert in any build compiled from source. See [docs/ANALYTICS.md](docs/ANALYTICS.md).
+- Reports only anonymous crash, error, and feature-use counts. No account, no identifiers, never your listening history. On by default, off in one tap at **Settings → Your Data**. Source builds report nothing. See [docs/ANALYTICS.md](docs/ANALYTICS.md).
 
 ---
 
@@ -165,7 +165,7 @@ Tempo is a local-first music journal and scrobbler for Android. It monitors play
 
 ## Contributing
 
-Contributions fixing bugs, improving translations, or enhancing documentation are welcome.
+To contribute bug fixes, translations, or docs improvements:
 
 1. Open an issue before submitting large architectural changes or new feature proposals.
 2. Follow existing code architecture and confirm `./gradlew test` passes.

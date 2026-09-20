@@ -100,6 +100,7 @@ class SettingsViewModel
                             AnalyticsGate.isBuildConfigured(
                                 appKey = BuildConfig.APTABASE_APP_KEY,
                                 isDebug = BuildConfig.DEBUG,
+                                debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW,
                             ),
                     )
                 }

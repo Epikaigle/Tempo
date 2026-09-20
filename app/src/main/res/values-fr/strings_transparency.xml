@@ -17,8 +17,11 @@
 
     <string name="settings_analytics_toggle">Statistiques anonymes de santé de l\'app</string>
     <string name="settings_analytics_toggle_desc">Partager des données anonymes de plantage, d\'erreur et d\'utilisation. Aucun compte, aucun identifiant, jamais votre historique d\'écoute.</string>
-    <string name="settings_what_we_collect">Ce que nous collectons</string>
-    <string name="settings_what_we_collect_desc">La liste exacte des événements anonymisés envoyés par Tempo</string>
+    <string name="settings_data_diagnostics">Données et diagnostics</string>
+    <string name="settings_data_diagnostics_desc">Ce que Tempo envoie et comment il fonctionne sur cet appareil</string>
+
+    <!-- Your data screen -->
+    <string name="your_data_intro">Tout ce que Tempo enregistre et envoie, au même endroit. Rien ne quitte votre téléphone à moins que vous choisissiez de le partager.</string>
 
     <!-- What we collect screen -->
     <string name="what_we_collect_title">Ce que nous collectons</string>
@@ -27,13 +30,10 @@
     <string name="what_we_collect_footer">Rien n\'est collecté avant que cet avis ne vous ait été présenté, et vous pouvez tout désactiver à tout moment dans Paramètres → Vos données. Les versions compilées depuis les sources n\'envoient rien du tout.</string>
 
     <!-- Diagnostics report -->
-    <string name="settings_diagnostics">Rapport de diagnostic</string>
-    <string name="settings_diagnostics_desc">Générer un rapport à joindre à un signalement de bug</string>
     <string name="diagnostics_title">Rapport de diagnostic</string>
-    <string name="diagnostics_intro">Un résumé du fonctionnement de Tempo sur cet appareil — versions, nombre d\'éléments, état du suivi et travail en arrière-plan. Rien n\'est téléversé : le rapport est généré ici et ne quitte votre téléphone que si vous le partagez.</string>
+    <string name="diagnostics_intro">Un résumé du fonctionnement de Tempo sur cet appareil — versions, nombre d\'éléments, état de la détection et travail en arrière-plan. Rien n\'est téléversé : le rapport est généré ici et ne quitte votre téléphone que si vous le partagez.</string>
     <string name="diagnostics_share">Partager le rapport</string>
     <string name="diagnostics_refresh">Actualiser</string>
-    <string name="diagnostics_gathering">Collecte…</string>
     <string name="diagnostics_failed">Impossible de générer le rapport.</string>
     <string name="diagnostics_share_subject">Rapport de diagnostic Tempo</string>
 

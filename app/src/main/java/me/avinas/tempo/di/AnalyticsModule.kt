@@ -30,7 +30,7 @@ object AnalyticsModule {
     @Provides
     @Singleton
     fun provideAnalyticsTracker(client: AptabaseClient): AnalyticsTracker =
-        if (AnalyticsGate.isBuildConfigured(appKey = BuildConfig.APTABASE_APP_KEY, isDebug = BuildConfig.DEBUG)) {
+        if (AnalyticsGate.isBuildConfigured(appKey = BuildConfig.APTABASE_APP_KEY, isDebug = BuildConfig.DEBUG, debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW)) {
             client
         } else {
             NoOpAnalyticsTracker()

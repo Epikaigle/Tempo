@@ -17,8 +17,11 @@
 
     <string name="settings_analytics_toggle">Estatísticas anônimas de integridade do app</string>
     <string name="settings_analytics_toggle_desc">Compartilhar dados anônimos de falhas, erros e uso de recursos. Sem conta, sem identificadores, nunca o seu histórico de audição.</string>
-    <string name="settings_what_we_collect">O que coletamos</string>
-    <string name="settings_what_we_collect_desc">A lista exata dos eventos anonimizados que o Tempo envia</string>
+    <string name="settings_data_diagnostics">Dados e diagnósticos</string>
+    <string name="settings_data_diagnostics_desc">O que o Tempo envia e como está funcionando neste dispositivo</string>
+
+    <!-- Your data screen -->
+    <string name="your_data_intro">Tudo o que o Tempo registra e envia, em um só lugar. Nada daqui sai do seu telefone a menos que você escolha compartilhar.</string>
 
     <!-- What we collect screen -->
     <string name="what_we_collect_title">O que coletamos</string>
@@ -27,13 +30,10 @@
     <string name="what_we_collect_footer">Nada é coletado antes que este aviso seja mostrado a você, e você pode desativar tudo a qualquer momento em Configurações → Seus dados. Versões compiladas a partir do código-fonte não enviam absolutamente nada.</string>
 
     <!-- Diagnostics report -->
-    <string name="settings_diagnostics">Relatório de diagnóstico</string>
-    <string name="settings_diagnostics_desc">Gerar um relatório para anexar a um relato de bug</string>
     <string name="diagnostics_title">Relatório de diagnóstico</string>
-    <string name="diagnostics_intro">Um resumo de como o Tempo está funcionando neste dispositivo — versões, contagens da biblioteca, integridade do rastreamento e trabalho em segundo plano. Nada é enviado: o relatório é gerado aqui e só sai do seu telefone se você compartilhá-lo.</string>
+    <string name="diagnostics_intro">Um resumo de como o Tempo está funcionando neste dispositivo — versões, contagens da biblioteca, integridade da detecção e trabalho em segundo plano. Nada é enviado: o relatório é gerado aqui e só sai do seu telefone se você compartilhá-lo.</string>
     <string name="diagnostics_share">Compartilhar relatório</string>
     <string name="diagnostics_refresh">Atualizar</string>
-    <string name="diagnostics_gathering">Coletando…</string>
     <string name="diagnostics_failed">Não foi possível gerar o relatório.</string>
     <string name="diagnostics_share_subject">Relatório de diagnóstico do Tempo</string>
 

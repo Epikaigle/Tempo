@@ -17,8 +17,11 @@
 
     <string name="settings_analytics_toggle">Névtelen alkalmazás-állapot statisztikák</string>
     <string name="settings_analytics_toggle_desc">Névtelen összeomlási, hiba- és használati adatok megosztása. Nincs fiók, nincsenek azonosítók, soha nem a hallgatási előzményeid.</string>
-    <string name="settings_what_we_collect">Mit gyűjtünk</string>
-    <string name="settings_what_we_collect_desc">A Tempo által küldött névtelenített események pontos listája</string>
+    <string name="settings_data_diagnostics">Adatok és diagnosztika</string>
+    <string name="settings_data_diagnostics_desc">Mit küld a Tempo, és hogyan működik ezen az eszközön</string>
+
+    <!-- Your data screen -->
+    <string name="your_data_intro">Minden, amit a Tempo rögzít és küld, egy helyen. Semmi nem hagyja el a telefonodat, hacsak nem osztod meg magad.</string>
 
     <!-- What we collect screen -->
     <string name="what_we_collect_title">Mit gyűjtünk</string>
@@ -27,13 +30,10 @@
     <string name="what_we_collect_footer">Semmi nem kerül gyűjtésre, amíg ez a tájékoztató meg nem jelent, és mindent bármikor kikapcsolhatsz a Beállítások → Adataid menüben. A forrásból fordított verziók egyáltalán nem küldenek semmit.</string>
 
     <!-- Diagnostics report -->
-    <string name="settings_diagnostics">Diagnosztikai jelentés</string>
-    <string name="settings_diagnostics_desc">Jelentés készítése hibajegyhez</string>
     <string name="diagnostics_title">Diagnosztikai jelentés</string>
     <string name="diagnostics_intro">Összefoglaló arról, hogyan működik a Tempo ezen az eszközön – verziók, könyvtári darabszámok, az észlelés állapota és háttérmunka. Semmi nem kerül feltöltésre: a jelentés itt készül, és csak akkor hagyja el a telefonod, ha megosztod.</string>
     <string name="diagnostics_share">Jelentés megosztása</string>
     <string name="diagnostics_refresh">Frissítés</string>
-    <string name="diagnostics_gathering">Gyűjtés…</string>
     <string name="diagnostics_failed">A jelentést nem sikerült elkészíteni.</string>
     <string name="diagnostics_share_subject">Tempo diagnosztikai jelentés</string>
 

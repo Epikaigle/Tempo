@@ -1,7 +1,5 @@
 package me.avinas.tempo.ui.components
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Paint
@@ -9,13 +7,6 @@ import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.util.LruCache
-import coil3.BitmapImage
-import coil3.imageLoader
-import coil3.request.ImageRequest
-import coil3.request.allowHardware
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,8 +18,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,17 +26,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -60,6 +52,14 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.BitmapImage
+import coil3.imageLoader
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+import me.avinas.tempo.ui.theme.TempoDarkBackground
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.ln
@@ -88,19 +88,25 @@ private val backdropBitmapCache = LruCache<String, Bitmap>(8)
 enum class ShareBackdropStyle {
     /** Blurred artwork backdrop with ambient orbs bleeding from two corners. */
     PHOTO_GLOW,
+
     /** Fluted glass: the artwork refracted through a vertical ribbed pane. */
     FLUTED_GLASS,
+
     /** Terminal ASCII: a monospace glyph field shaded by layered waves. */
     ASCII_FIELD,
+
     /** Album art rendered as true ASCII art — brightness-mapped ramp glyphs
      *  tinted with the artwork's own colors on a terminal-dark field. */
     ASCII_ARTWORK,
+
     /** Editorial: flat field, hard vignette, two thin offset ring outlines. */
     RINGS_VIGNETTE,
+
     /** Morning paper: a visible sun disc with halo sinking in from above. */
     SUN_WASH,
+
     /** Grainy gradient: warm mesh blobs over the base gradient with film grain. */
-    GRAIN_GRADIENT
+    GRAIN_GRADIENT,
 }
 
 /**
@@ -134,11 +140,12 @@ data class ShareThemePalette(
     // tracked labels) change the type, so the other themes stay pixel-identical.
     val headlineWeight: FontWeight? = null,
     val labelWeight: FontWeight? = null,
-    val labelTracking: TextUnit? = null
+    val labelTracking: TextUnit? = null,
 ) {
     // Tone-derived slots so every layout stays readable on light and dark themes.
     val textPrimary: Color get() = if (isDark) Color.White else Color(0xFF241C10)
     val textSecondary: Color get() = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF241C10).copy(alpha = 0.62f)
+
     // High-emphasis text; also used where semantic colors (fan badges, stat
     // icons) would lack contrast on a light backdrop.
     val textStrong: Color get() = if (isDark) Color.White else Color(0xFF241C10)
@@ -151,26 +158,30 @@ data class ShareThemePalette(
     val heroGlow: Color get() = if (isDark) Color.White.copy(alpha = 0.25f) else Color(0xFFB45309).copy(alpha = 0.2f)
 }
 
-enum class ShareTheme(val palette: ShareThemePalette) {
+enum class ShareTheme(
+    val palette: ShareThemePalette,
+) {
     // The photo theme: blurred artwork under corner glow orbs. The only theme
-    // whose backdrop is the listener's own art.
+    // whose backdrop is the listener's own art as a plain blurred photo.
     MIDNIGHT(
         ShareThemePalette(
             gradient = listOf(TempoDarkBackground, Color(0xFF1E1B4B), Color(0xFF312E81)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.55f),
-                Color(0xFF0F0F12).copy(alpha = 0.8f),
-                Color(0xFF0D0D10).copy(alpha = 0.95f)
-            ),
+            overlay =
+                listOf(
+                    Color.Black.copy(alpha = 0.55f),
+                    Color(0xFF0F0F12).copy(alpha = 0.8f),
+                    Color(0xFF0D0D10).copy(alpha = 0.95f),
+                ),
             accent = Color(0xFFFBBF24),
             glowTop = Color(0xFFA855F7),
             glowBottom = Color(0xFFEC4899),
             rank1Tint = Color(0xFFF59E0B),
             backdrop = ShareBackdropStyle.PHOTO_GLOW,
-            decorationAlpha = 0.15f,
-            usesArtwork = true
-        )
+            decorationAlpha = 0.4f,
+            usesArtwork = true,
+        ),
     ),
+
     // Fluted glass: the listener's own artwork refracted through vertical
     // glass ribs — the cover is converted into a fluted-glass texture (prism
     // bends, rib shadows, seam highlights) that becomes the card's backdrop,
@@ -178,11 +189,12 @@ enum class ShareTheme(val palette: ShareThemePalette) {
     GLASS(
         ShareThemePalette(
             gradient = listOf(Color(0xFF0B0D14), Color(0xFF1A1330), Color(0xFF0F0B18)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.38f),
-                Color(0xFF0F0C1A).copy(alpha = 0.56f),
-                Color(0xFF0A0812).copy(alpha = 0.84f)
-            ),
+            overlay =
+                listOf(
+                    Color.Black.copy(alpha = 0.38f),
+                    Color(0xFF0F0C1A).copy(alpha = 0.56f),
+                    Color(0xFF0A0812).copy(alpha = 0.84f),
+                ),
             accent = Color(0xFFBAE6FD),
             glowTop = Color(0xFF67E8F9),
             glowBottom = Color(0xFFE879F9),
@@ -191,20 +203,22 @@ enum class ShareTheme(val palette: ShareThemePalette) {
             decorationAlpha = 1f,
             usesArtwork = true,
             cardShape = RoundedCornerShape(24.dp),
-            thumbShape = RoundedCornerShape(14.dp)
-        )
+            thumbShape = RoundedCornerShape(14.dp),
+        ),
     ),
+
     // Terminal: the #1 item's cover art converted into true ASCII art
     // (brightness-mapped ramp glyphs tinted with the artwork's own colors)
     // on near-black, sharp corners, phosphor-green UI accents.
     ASCII(
         ShareThemePalette(
             gradient = listOf(Color(0xFF040704), Color(0xFF08120A), Color(0xFF050A06)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.30f),
-                Color.Black.copy(alpha = 0.42f),
-                Color(0xFF020503).copy(alpha = 0.75f)
-            ),
+            overlay =
+                listOf(
+                    Color.Black.copy(alpha = 0.30f),
+                    Color.Black.copy(alpha = 0.42f),
+                    Color(0xFF020503).copy(alpha = 0.75f),
+                ),
             accent = Color(0xFF4ADE80),
             glowTop = Color(0xFF22C55E),
             glowBottom = Color(0xFF86EFAC),
@@ -214,19 +228,21 @@ enum class ShareTheme(val palette: ShareThemePalette) {
             usesArtwork = true,
             cardShape = RoundedCornerShape(4.dp),
             thumbShape = RoundedCornerShape(4.dp),
-            badgeShape = RoundedCornerShape(4.dp)
-        )
+            badgeShape = RoundedCornerShape(4.dp),
+        ),
     ),
+
     // Minimum: the editorial monochrome field, extended into the type system —
     // light headlines and thin, widely tracked labels instead of heavy black.
     MINIMUM(
         ShareThemePalette(
             gradient = listOf(Color(0xFF161616), Color(0xFF0E0E0E), Color(0xFF1A1A1A)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.5f),
-                Color(0xFF111111).copy(alpha = 0.8f),
-                Color(0xFF0A0A0A).copy(alpha = 0.95f)
-            ),
+            overlay =
+                listOf(
+                    Color.Black.copy(alpha = 0.5f),
+                    Color(0xFF111111).copy(alpha = 0.8f),
+                    Color(0xFF0A0A0A).copy(alpha = 0.95f),
+                ),
             accent = Color(0xFFE5E7EB),
             glowTop = Color(0xFF9CA3AF),
             glowBottom = Color(0xFFD1D5DB),
@@ -238,18 +254,20 @@ enum class ShareTheme(val palette: ShareThemePalette) {
             badgeShape = RoundedCornerShape(3.dp),
             headlineWeight = FontWeight.Light,
             labelWeight = FontWeight.Normal,
-            labelTracking = 2.4.sp
-        )
+            labelTracking = 2.4.sp,
+        ),
     ),
+
     // Morning paper: warm cream under a visible sun disc.
     DAYLIGHT(
         ShareThemePalette(
             gradient = listOf(Color(0xFFFDF6EC), Color(0xFFFDE68A), Color(0xFFFDBA74)),
-            overlay = listOf(
-                Color.White.copy(alpha = 0.62f),
-                Color(0xFFFFFBEB).copy(alpha = 0.85f),
-                Color(0xFFFFF7ED).copy(alpha = 0.95f)
-            ),
+            overlay =
+                listOf(
+                    Color.White.copy(alpha = 0.62f),
+                    Color(0xFFFFFBEB).copy(alpha = 0.85f),
+                    Color(0xFFFFF7ED).copy(alpha = 0.95f),
+                ),
             accent = Color(0xFFB45309),
             glowTop = Color(0xFFF59E0B),
             glowBottom = Color(0xFFFB923C),
@@ -258,19 +276,21 @@ enum class ShareTheme(val palette: ShareThemePalette) {
             backdrop = ShareBackdropStyle.SUN_WASH,
             decorationAlpha = 1f,
             cardShape = RoundedCornerShape(12.dp),
-            thumbShape = RoundedCornerShape(6.dp)
-        )
+            thumbShape = RoundedCornerShape(6.dp),
+        ),
     ),
+
     // Grain: warm ember mesh with film grain — the only theme that ignores
     // the artwork entirely, so it reads distinct from every art-based theme.
     GRAIN(
         ShareThemePalette(
             gradient = listOf(Color(0xFF1B0B1E), Color(0xFF4A1230), Color(0xFF0D0A12)),
-            overlay = listOf(
-                Color.Black.copy(alpha = 0.22f),
-                Color(0xFF1B0B1E).copy(alpha = 0.42f),
-                Color(0xFF0D0A12).copy(alpha = 0.68f)
-            ),
+            overlay =
+                listOf(
+                    Color.Black.copy(alpha = 0.22f),
+                    Color(0xFF1B0B1E).copy(alpha = 0.42f),
+                    Color(0xFF0D0A12).copy(alpha = 0.68f),
+                ),
             accent = Color(0xFFFBBF24),
             glowTop = Color(0xFFFB7185),
             glowBottom = Color(0xFFF59E0B),
@@ -279,14 +299,49 @@ enum class ShareTheme(val palette: ShareThemePalette) {
             decorationAlpha = 1f,
             cardShape = RoundedCornerShape(16.dp),
             thumbShape = RoundedCornerShape(10.dp),
-            badgeShape = RoundedCornerShape(8.dp)
+            badgeShape = RoundedCornerShape(8.dp),
+        ),
+    ),
+}
+
+/**
+ * The one shared blur system every artwork-backed share theme sits on.
+ *
+ * A single heavy, slightly over-scaled blurred cover (creamier 64.dp bake so no
+ * harsh recognizable edges survive, 1.1x zoom so blur fringes never show the
+ * gradient at the card edge). MIDNIGHT uses it as the final background under
+ * its glow orbs; ASCII_ARTWORK and FLUTED_GLASS keep this same base and paint
+ * their effect (glyph art / refracted glass) over it — one blur, elevated
+ * once, shared by all. Readability scrims stay per-backdrop
+ * ([ShareThemePalette.overlay]) so text contrast is untouched.
+ */
+internal val ShareBlurRadius = 64.dp
+
+@Composable
+internal fun ShareBlurBase(
+    imageUrl: String?,
+    modifier: Modifier = Modifier,
+) {
+    if (imageUrl.isNullOrBlank()) return
+    Box(modifier = modifier.fillMaxSize().clipToBounds()) {
+        CachedAsyncImage(
+            imageUrl = imageUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(scaleX = 1.1f, scaleY = 1.1f),
+            targetSizeDp = 240,
+            allowHardware = false,
+            blurRadius = ShareBlurRadius,
         )
-    )
+    }
 }
 
 /**
  * Builds the theme's backdrop scene. Placed above the base gradient (and the
- * blurred artwork overlay when the theme uses artwork) and below the card
+ * shared blurred artwork base when the theme uses artwork) and below the card
  * content. Clipped to its own bounds so light never leaks past the card edge
  * in preview dialogs.
  */
@@ -295,97 +350,138 @@ fun ShareThemeDecorations(
     palette: ShareThemePalette,
     imageUrl: String? = null,
     backdropBitmap: Bitmap? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize().clipToBounds()) {
         when (palette.backdrop) {
             ShareBackdropStyle.PHOTO_GLOW -> {
-                GlowOrb(this, Alignment.TopEnd, x = 50.dp, y = (-50).dp, size = 300.dp,
-                    color = palette.glowTop.copy(alpha = palette.decorationAlpha))
-                GlowOrb(this, Alignment.BottomStart, x = (-50).dp, y = 50.dp, size = 300.dp,
-                    color = palette.glowBottom.copy(alpha = palette.decorationAlpha))
+                GlowOrb(
+                    this,
+                    Alignment.TopEnd,
+                    x = 50.dp,
+                    y = (-50).dp,
+                    size = 300.dp,
+                    color = palette.glowTop.copy(alpha = palette.decorationAlpha),
+                )
+                GlowOrb(
+                    this,
+                    Alignment.BottomStart,
+                    x = (-50).dp,
+                    y = 50.dp,
+                    size = 300.dp,
+                    color = palette.glowBottom.copy(alpha = palette.decorationAlpha),
+                )
             }
+
+            ShareBackdropStyle.ASCII_FIELD -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawAsciiWaveField(palette)
+                }
+            }
+
             // Fluted glass: the artwork refracted into a vertical ribbed pane.
             // The fluid pools keep the smoked pane alive while the artwork
-            // decodes — or when it is missing entirely.
-            ShareBackdropStyle.FLUTED_GLASS ->
+            // decodes — or when it is missing entirely. Never a plain blurred
+            // photo: the glass scene owns the backdrop from the first frame so
+            // it never reads as MIDNIGHT with an overlay on top.
+            ShareBackdropStyle.FLUTED_GLASS -> {
                 if (imageUrl.isNullOrBlank() && backdropBitmap == null) {
                     Canvas(modifier = Modifier.fillMaxSize()) { drawGlassFluidPools(palette) }
                 } else {
                     FlutedGlassBackdrop(
                         palette = palette,
                         imageUrl = imageUrl,
-                        sourceBitmap = backdropBitmap
+                        sourceBitmap = backdropBitmap,
                     )
                 }
-            ShareBackdropStyle.ASCII_FIELD -> Canvas(modifier = Modifier.fillMaxSize()) {
-                drawAsciiWaveField(palette)
             }
+
             // True ASCII art of the cover; the wave field keeps the card alive
             // while the artwork decodes — or when it is missing entirely.
-            ShareBackdropStyle.ASCII_ARTWORK ->
+            ShareBackdropStyle.ASCII_ARTWORK -> {
                 if (imageUrl.isNullOrBlank()) {
                     Canvas(modifier = Modifier.fillMaxSize()) { drawAsciiWaveField(palette) }
                 } else {
                     AsciiArtworkBackdrop(palette = palette, imageUrl = imageUrl)
                 }
-            ShareBackdropStyle.RINGS_VIGNETTE -> Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                // Hard vignette pulling the corners to black.
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f * palette.decorationAlpha)),
-                        center = center,
-                        radius = maxOf(w, h) * 0.72f
+            }
+
+            ShareBackdropStyle.RINGS_VIGNETTE -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    // Hard vignette pulling the corners to black.
+                    drawRect(
+                        brush =
+                            Brush.radialGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f * palette.decorationAlpha)),
+                                center = center,
+                                radius = maxOf(w, h) * 0.72f,
+                            ),
                     )
-                )
-                // Two thin offset rings — the editorial mark.
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.10f * palette.decorationAlpha),
-                    radius = w * 0.42f,
-                    center = Offset(w * 0.84f, h * 0.14f),
-                    style = Stroke(width = w * 0.004f)
-                )
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.06f * palette.decorationAlpha),
-                    radius = w * 0.30f,
-                    center = Offset(w * 0.08f, h * 0.92f),
-                    style = Stroke(width = w * 0.003f)
-                )
+                    // Two thin offset rings — the editorial mark.
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.10f * palette.decorationAlpha),
+                        radius = w * 0.42f,
+                        center = Offset(w * 0.84f, h * 0.14f),
+                        style = Stroke(width = w * 0.004f),
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.06f * palette.decorationAlpha),
+                        radius = w * 0.30f,
+                        center = Offset(w * 0.08f, h * 0.92f),
+                        style = Stroke(width = w * 0.003f),
+                    )
+                }
             }
-            ShareBackdropStyle.SUN_WASH -> Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = size.width
-                val h = size.height
-                val sunCenter = Offset(w * 0.78f, h * 0.10f)
-                // Halo.
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFFFFF7E0).copy(alpha = 0.75f * palette.decorationAlpha),
-                            palette.glowTop.copy(alpha = 0.30f * palette.decorationAlpha),
-                            Color.Transparent
-                        ),
+
+            ShareBackdropStyle.SUN_WASH -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val sunCenter = Offset(w * 0.78f, h * 0.10f)
+                    // Halo.
+                    drawCircle(
+                        brush =
+                            Brush.radialGradient(
+                                colors =
+                                    listOf(
+                                        Color(0xFFFFF7E0).copy(alpha = 0.75f * palette.decorationAlpha),
+                                        palette.glowTop.copy(alpha = 0.30f * palette.decorationAlpha),
+                                        Color.Transparent,
+                                    ),
+                                center = sunCenter,
+                                radius = w * 0.62f,
+                            ),
+                        radius = w * 0.62f,
                         center = sunCenter,
-                        radius = w * 0.62f
-                    ),
-                    radius = w * 0.62f,
-                    center = sunCenter
-                )
-                // Warmth pooling at the bottom edge.
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(palette.glowBottom.copy(alpha = 0.22f * palette.decorationAlpha), Color.Transparent),
+                    )
+                    // Warmth pooling at the bottom edge.
+                    drawCircle(
+                        brush =
+                            Brush.radialGradient(
+                                colors = listOf(palette.glowBottom.copy(alpha = 0.22f * palette.decorationAlpha), Color.Transparent),
+                                center = Offset(w * 0.1f, h * 1.02f),
+                                radius = w * 0.55f,
+                            ),
+                        radius = w * 0.55f,
                         center = Offset(w * 0.1f, h * 1.02f),
-                        radius = w * 0.55f
-                    ),
-                    radius = w * 0.55f,
-                    center = Offset(w * 0.1f, h * 1.02f)
-                )
+                    )
+                }
             }
-            ShareBackdropStyle.GRAIN_GRADIENT -> Canvas(modifier = Modifier.fillMaxSize()) {
-                drawGrainyGradient(palette)
+
+            ShareBackdropStyle.GRAIN_GRADIENT -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawGrainyGradient(palette)
+                }
             }
+        }
+        // Premium finish: a light film-grain + cool top sheen over every scene
+        // except GRAIN (which already carries its own heavy grain). This lifts
+        // flat gradients and blurred photos away from the cheap digital-blur
+        // look and gives all themes a shared frosted texture.
+        if (palette.backdrop != ShareBackdropStyle.GRAIN_GRADIENT) {
+            Canvas(modifier = Modifier.fillMaxSize()) { drawShareFinish(palette) }
         }
     }
 }
@@ -421,12 +517,13 @@ private const val ASCII_RAMP = " .,:;=+*coxm#%@"
 private const val ASCII_DITHER = 0.35f
 
 /** Bayer 4x4 ordered-dither matrix, values 0..15. */
-private val ASCII_BAYER_4X4 = arrayOf(
-    intArrayOf(0, 8, 2, 10),
-    intArrayOf(12, 4, 14, 6),
-    intArrayOf(3, 11, 1, 9),
-    intArrayOf(15, 7, 13, 5)
-)
+private val ASCII_BAYER_4X4 =
+    arrayOf(
+        intArrayOf(0, 8, 2, 10),
+        intArrayOf(12, 4, 14, 6),
+        intArrayOf(3, 11, 1, 9),
+        intArrayOf(15, 7, 13, 5),
+    )
 
 /**
  * Precomputed ASCII conversion of one artwork. All the per-pixel work happens
@@ -442,48 +539,44 @@ private class AsciiArtGrid(
     /** Per-cell brightness after the contrast curve, 0..1 — drives alpha. */
     val brightness: FloatArray,
     /** Per-cell glyph colour (opaque ARGB), sampled from the artwork. */
-    val colors: IntArray
+    val colors: IntArray,
 )
 
 /**
  * Backdrop that renders [imageUrl]'s artwork as ASCII art. The conversion
  * runs once per (url, aspect) on a background dispatcher; until it lands the
- * deterministic wave field keeps the card alive. A readability overlay fades
- * the art behind the card content, same contract as the blurred-artwork
- * themes.
+ * deterministic wave field keeps the card alive over the shared blur base.
+ * Stack is shared blur + glyph effect + readability overlay + finish grain —
+ * the same elevated blur MIDNIGHT sits on, with the terminal scene on top.
  */
 @Composable
-private fun AsciiArtworkBackdrop(palette: ShareThemePalette, imageUrl: String) {
+private fun AsciiArtworkBackdrop(
+    palette: ShareThemePalette,
+    imageUrl: String,
+) {
     // 9:16 until the first layout reports the real card aspect; the backdrop is
     // rebuilt only if the aspect actually differs.
     var aspect by remember { mutableStateOf(9f / 16f) }
     val context = LocalContext.current
     val backdrop by produceState<Bitmap?>(initialValue = null, imageUrl, aspect) {
-        value = runCatching {
-            buildAsciiArtBackdrop(context, imageUrl, aspect)
-        }.getOrNull()
+        value =
+            runCatching {
+                buildAsciiArtBackdrop(context, imageUrl, aspect)
+            }.getOrNull()
     }
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onSizeChanged { size ->
-                if (size.width > 0 && size.height > 0) {
-                    val measured = size.width.toFloat() / size.height
-                    if (measured != aspect) aspect = measured
-                }
-            }
-            .clipToBounds()
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .onSizeChanged { size ->
+                    if (size.width > 0 && size.height > 0) {
+                        val measured = size.width.toFloat() / size.height
+                        if (measured != aspect) aspect = measured
+                    }
+                }.clipToBounds(),
     ) {
-        // ponytail: blurred art is the instant background; glyph art covers it when baked.
-        CachedAsyncImage(
-            imageUrl = imageUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-            targetSizeDp = 180,
-            allowHardware = false,
-            blurRadius = 48.dp
-        )
+        // Shared blur base under the glyphs — one blur system, effect on top.
+        ShareBlurBase(imageUrl = imageUrl)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val art = backdrop
             if (art != null) {
@@ -493,7 +586,7 @@ private fun AsciiArtworkBackdrop(palette: ShareThemePalette, imageUrl: String) {
                     image = art.asImageBitmap(),
                     dstOffset = IntOffset.Zero,
                     dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
-                    filterQuality = FilterQuality.Medium
+                    filterQuality = FilterQuality.Medium,
                 )
             } else {
                 drawAsciiWaveField(palette)
@@ -501,9 +594,10 @@ private fun AsciiArtworkBackdrop(palette: ShareThemePalette, imageUrl: String) {
         }
         // Readability overlay above the glyph art.
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(brush = Brush.verticalGradient(palette.overlay))
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(brush = Brush.verticalGradient(palette.overlay)),
         )
     }
 }
@@ -514,60 +608,57 @@ private fun AsciiArtworkBackdrop(palette: ShareThemePalette, imageUrl: String) {
  * behind card content. The effect is computed on the CPU into a bitmap (prism
  * refraction per rib, rib shadows, seam highlight strokes, one-directional
  * soften) so it renders identically on-screen and in the software-canvas
- * share capture. The fluid pools stand in while the artwork decodes; the
+ * share capture. Stack is shared blur + refracted-glass effect + readability
+ * overlay + finish grain — the same elevated blur MIDNIGHT sits on, with the
+ * glass pane on top. The fluid pools stand in while the artwork decodes. The
  * palette overlay on top keeps card text readable.
  */
 @Composable
 private fun FlutedGlassBackdrop(
     palette: ShareThemePalette,
     imageUrl: String? = null,
-    sourceBitmap: Bitmap? = null
+    sourceBitmap: Bitmap? = null,
 ) {
     // 9:16 until the first layout reports the real card aspect; the texture is
     // rebuilt only if the aspect actually differs.
     var aspect by remember { mutableStateOf(9f / 16f) }
     val context = LocalContext.current
     val fluted by produceState<Bitmap?>(initialValue = null, imageUrl, sourceBitmap, aspect) {
-        value = withContext(Dispatchers.Default) {
-            runCatching {
-                if (sourceBitmap != null) {
-                    val safeSource = if (sourceBitmap.config == Bitmap.Config.HARDWARE) {
-                        sourceBitmap.copy(Bitmap.Config.ARGB_8888, false)
+        value =
+            withContext(Dispatchers.Default) {
+                runCatching {
+                    if (sourceBitmap != null) {
+                        val safeSource =
+                            if (sourceBitmap.config == Bitmap.Config.HARDWARE) {
+                                sourceBitmap.copy(Bitmap.Config.ARGB_8888, false)
+                            } else {
+                                sourceBitmap
+                            }
+                        val cropped = safeSource.centerCroppedToAspect(aspect)
+                        val targetH = (FLUTED_RENDER_WIDTH / aspect).roundToInt().coerceAtLeast(64)
+                        cropped.downscaledTo(FLUTED_RENDER_WIDTH, targetH).renderFlutedGlass()
+                    } else if (!imageUrl.isNullOrBlank()) {
+                        buildFlutedGlassBitmap(context, imageUrl, aspect)
                     } else {
-                        sourceBitmap
+                        null
                     }
-                    val cropped = safeSource.centerCroppedToAspect(aspect)
-                    val targetH = (FLUTED_RENDER_WIDTH / aspect).roundToInt().coerceAtLeast(64)
-                    cropped.downscaledTo(FLUTED_RENDER_WIDTH, targetH).renderFlutedGlass()
-                } else if (!imageUrl.isNullOrBlank()) {
-                    buildFlutedGlassBitmap(context, imageUrl, aspect)
-                } else null
-            }.getOrNull()
-        }
+                }.getOrNull()
+            }
     }
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onSizeChanged { size ->
-                if (size.width > 0 && size.height > 0) {
-                    val measured = size.width.toFloat() / size.height
-                    if (measured != aspect) aspect = measured
-                }
-            }
-            .clipToBounds()
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .onSizeChanged { size ->
+                    if (size.width > 0 && size.height > 0) {
+                        val measured = size.width.toFloat() / size.height
+                        if (measured != aspect) aspect = measured
+                    }
+                }.clipToBounds(),
     ) {
-        // ponytail: blurred art is the instant background; fluted pane covers it when baked.
-        if (!imageUrl.isNullOrBlank() && sourceBitmap == null) {
-            CachedAsyncImage(
-                imageUrl = imageUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                targetSizeDp = 180,
-                allowHardware = false,
-                blurRadius = 48.dp
-            )
-        }
+        // Shared blur base under the glass — one blur system, effect on top.
+        // No-op when only a badge sourceBitmap is provided (no artwork URL).
+        ShareBlurBase(imageUrl = imageUrl)
         Canvas(modifier = Modifier.fillMaxSize()) {
             val art = fluted
             if (art != null) {
@@ -577,7 +668,7 @@ private fun FlutedGlassBackdrop(
                     image = art.asImageBitmap(),
                     dstOffset = IntOffset.Zero,
                     dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
-                    filterQuality = FilterQuality.Medium
+                    filterQuality = FilterQuality.Medium,
                 )
             } else {
                 drawGlassFluidPools(palette)
@@ -585,9 +676,10 @@ private fun FlutedGlassBackdrop(
         }
         // Readability overlay above the glass.
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(brush = Brush.verticalGradient(palette.overlay))
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(brush = Brush.verticalGradient(palette.overlay)),
         )
     }
 }
@@ -599,22 +691,26 @@ private fun FlutedGlassBackdrop(
 private suspend fun buildFlutedGlassBitmap(
     context: Context,
     imageUrl: String,
-    aspect: Float
+    aspect: Float,
 ): Bitmap? {
     val cacheKey = "fluted:$imageUrl:$aspect"
     backdropBitmapCache.get(cacheKey)?.let { if (!it.isRecycled) return it }
-    val request = ImageRequest.Builder(context)
-        .data(MusicBrainzEnrichmentService.fixHttpUrl(imageUrl))
-        .size(720, 720)
-        .allowHardware(false)
-        .build()
-    val source = (context.imageLoader.execute(request).image as? BitmapImage)?.bitmap
-        ?: return null
-    val safeSource = if (source.config == Bitmap.Config.HARDWARE) {
-        source.copy(Bitmap.Config.ARGB_8888, false)
-    } else {
-        source
-    }
+    val request =
+        ImageRequest
+            .Builder(context)
+            .data(MusicBrainzEnrichmentService.fixHttpUrl(imageUrl))
+            .size(720, 720)
+            .allowHardware(false)
+            .build()
+    val source =
+        (context.imageLoader.execute(request).image as? BitmapImage)?.bitmap
+            ?: return null
+    val safeSource =
+        if (source.config == Bitmap.Config.HARDWARE) {
+            source.copy(Bitmap.Config.ARGB_8888, false)
+        } else {
+            source
+        }
     return withContext(Dispatchers.Default) {
         val cropped = safeSource.centerCroppedToAspect(aspect)
         val targetH = (FLUTED_RENDER_WIDTH / aspect).roundToInt().coerceAtLeast(64)
@@ -665,13 +761,15 @@ private fun Bitmap.renderFlutedGlass(): Bitmap {
             val ownX = rib * stripeW + u * compressW + shiftPx
             // Neighbour window across the nearest seam; the crossfade keeps
             // sampling continuous so seams flow instead of snapping.
-            val neighbourX = if (u >= 0f) {
-                (rib + 1) * stripeW + (u - 2f) * compressW + shiftPx
-            } else {
-                (rib - 1) * stripeW + (u + 2f) * compressW + shiftPx
-            }
-            val fadeT = ((abs(u) - (1f - FLUTED_SEAM_FADE)) / FLUTED_SEAM_FADE)
-                .coerceIn(0f, 1f)
+            val neighbourX =
+                if (u >= 0f) {
+                    (rib + 1) * stripeW + (u - 2f) * compressW + shiftPx
+                } else {
+                    (rib - 1) * stripeW + (u + 2f) * compressW + shiftPx
+                }
+            val fadeT =
+                ((abs(u) - (1f - FLUTED_SEAM_FADE)) / FLUTED_SEAM_FADE)
+                    .coerceIn(0f, 1f)
             val fade = fadeT * fadeT * (3f - 2f * fadeT)
             val sampleX = ownX * (1f - fade) + neighbourX * fade
             // Directional smear along the refraction axis.
@@ -709,7 +807,7 @@ private fun blurBoxPass(
     w: Int,
     h: Int,
     radius: Int,
-    horizontal: Boolean
+    horizontal: Boolean,
 ): IntArray {
     val out = IntArray(src.size)
     val lines = if (horizontal) h else w
@@ -745,11 +843,20 @@ private fun blurBoxPass(
     return out
 }
 
-private fun blurIndex(line: Int, i: Int, w: Int, horizontal: Boolean): Int =
-    if (horizontal) line * w + i else i * w + line
+private fun blurIndex(
+    line: Int,
+    i: Int,
+    w: Int,
+    horizontal: Boolean,
+): Int = if (horizontal) line * w + i else i * w + line
 
 /** Horizontal bilinear sample with edge clamping. */
-private fun sampleFlutedColumn(src: IntArray, w: Int, xf: Float, y: Int): Int {
+private fun sampleFlutedColumn(
+    src: IntArray,
+    w: Int,
+    xf: Float,
+    y: Int,
+): Int {
     val x0 = xf.toInt()
     val f = (xf - x0).coerceIn(0f, 1f)
     val xa = x0.coerceIn(0, w - 1)
@@ -790,40 +897,46 @@ private fun DrawScope.drawGrainyGradient(palette: ShareThemePalette) {
     val h = size.height
     // Warm mesh: rose top-left, amber bottom-right, soft amber core.
     drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                palette.glowTop.copy(alpha = 0.55f * palette.decorationAlpha),
-                Color.Transparent
+        brush =
+            Brush.radialGradient(
+                colors =
+                    listOf(
+                        palette.glowTop.copy(alpha = 0.55f * palette.decorationAlpha),
+                        Color.Transparent,
+                    ),
+                center = Offset(w * 0.18f, h * 0.16f),
+                radius = w * 0.95f,
             ),
-            center = Offset(w * 0.18f, h * 0.16f),
-            radius = w * 0.95f
-        ),
         radius = w * 0.95f,
-        center = Offset(w * 0.18f, h * 0.16f)
+        center = Offset(w * 0.18f, h * 0.16f),
     )
     drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                palette.glowBottom.copy(alpha = 0.50f * palette.decorationAlpha),
-                Color.Transparent
+        brush =
+            Brush.radialGradient(
+                colors =
+                    listOf(
+                        palette.glowBottom.copy(alpha = 0.50f * palette.decorationAlpha),
+                        Color.Transparent,
+                    ),
+                center = Offset(w * 0.85f, h * 0.78f),
+                radius = w * 1.0f,
             ),
-            center = Offset(w * 0.85f, h * 0.78f),
-            radius = w * 1.0f
-        ),
         radius = w * 1.0f,
-        center = Offset(w * 0.85f, h * 0.78f)
+        center = Offset(w * 0.85f, h * 0.78f),
     )
     drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                palette.accent.copy(alpha = 0.28f * palette.decorationAlpha),
-                Color.Transparent
+        brush =
+            Brush.radialGradient(
+                colors =
+                    listOf(
+                        palette.accent.copy(alpha = 0.28f * palette.decorationAlpha),
+                        Color.Transparent,
+                    ),
+                center = Offset(w * 0.68f, h * 0.34f),
+                radius = w * 0.55f,
             ),
-            center = Offset(w * 0.68f, h * 0.34f),
-            radius = w * 0.55f
-        ),
         radius = w * 0.55f,
-        center = Offset(w * 0.68f, h * 0.34f)
+        center = Offset(w * 0.68f, h * 0.34f),
     )
     // Film grain: deterministic speckles, preview and capture stay identical.
     val rng = Random(GRAIN_SEED)
@@ -833,20 +946,92 @@ private fun DrawScope.drawGrainyGradient(palette: ShareThemePalette) {
         val s = 1f + rng.nextFloat() * 1.6f
         val light = rng.nextBoolean()
         drawRect(
-            color = if (light) Color.White.copy(alpha = 0.05f * palette.decorationAlpha)
-            else Color.Black.copy(alpha = 0.09f * palette.decorationAlpha),
+            color =
+                if (light) {
+                    Color.White.copy(alpha = 0.05f * palette.decorationAlpha)
+                } else {
+                    Color.Black.copy(alpha = 0.09f * palette.decorationAlpha)
+                },
             topLeft = Offset(x, y),
-            size = Size(s, s)
+            size = Size(s, s),
         )
     }
     // Soft vignette to seat the content.
     drawRect(
-        brush = Brush.radialGradient(
-            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.42f * palette.decorationAlpha)),
-            center = center,
-            radius = maxOf(w, h) * 0.72f
-        )
+        brush =
+            Brush.radialGradient(
+                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.42f * palette.decorationAlpha)),
+                center = center,
+                radius = maxOf(w, h) * 0.72f,
+            ),
     )
+}
+
+/**
+ * Shared premium finish drawn over every backdrop except [ShareBackdropStyle.GRAIN_GRADIENT]
+ * (which already carries heavy grain): a light deterministic film grain that kills
+ * flat-gradient banding, plus a cool white-blue frost washing down from the top edge.
+ * Fixed low alphas — intentionally NOT scaled by decorationAlpha — so MIDNIGHT's faint
+ * glow setting still gets texture. Pure Canvas so preview and capture match.
+ */
+private fun DrawScope.drawShareFinish(palette: ShareThemePalette) {
+    val w = size.width
+    val h = size.height
+    // Cool frost from the top: the white-blue lift that keeps dark scenes from
+    // reading as crushed black blur.
+    if (palette.isDark) {
+        drawRect(
+            brush =
+                Brush.verticalGradient(
+                    colors =
+                        listOf(
+                            Color(0xFFDBEAFE).copy(alpha = 0.07f),
+                            Color.Transparent,
+                        ),
+                    startY = 0f,
+                    endY = h * 0.22f,
+                ),
+        )
+    } else {
+        drawRect(
+            brush =
+                Brush.verticalGradient(
+                    colors =
+                        listOf(
+                            Color.White.copy(alpha = 0.10f),
+                            Color.Transparent,
+                        ),
+                    startY = 0f,
+                    endY = h * 0.22f,
+                ),
+        )
+    }
+    // Light film grain.
+    val rng = Random(GRAIN_SEED + palette.backdrop.ordinal * 0x9E37)
+    repeat(650) {
+        val x = rng.nextFloat() * w
+        val y = rng.nextFloat() * h
+        val s = 1f + rng.nextFloat() * 1.6f
+        val light = rng.nextBoolean()
+        drawRect(
+            color =
+                if (palette.isDark) {
+                    if (light) {
+                        Color.White.copy(alpha = 0.035f)
+                    } else {
+                        Color.Black.copy(alpha = 0.06f)
+                    }
+                } else {
+                    if (light) {
+                        Color.White.copy(alpha = 0.05f)
+                    } else {
+                        Color.Black.copy(alpha = 0.045f)
+                    }
+                },
+            topLeft = Offset(x, y),
+            size = Size(s, s),
+        )
+    }
 }
 
 // ASCII backdrop parameters: render width of the baked composite, the blurred
@@ -869,26 +1054,31 @@ private const val ASCII_BLUR_ROUNDS = 2
 private suspend fun buildAsciiArtGrid(
     context: Context,
     imageUrl: String,
-    aspect: Float
+    aspect: Float,
 ): AsciiArtGrid? {
-    val request = ImageRequest.Builder(context)
-        .data(MusicBrainzEnrichmentService.fixHttpUrl(imageUrl))
-        .size(640, 640)
-        .allowHardware(false)
-        .build()
-    val source = (context.imageLoader.execute(request).image as? BitmapImage)?.bitmap
-        ?: return null
-    val safeSource = if (source.config == Bitmap.Config.HARDWARE) {
-        source.copy(Bitmap.Config.ARGB_8888, false)
-    } else {
-        source
-    }
+    val request =
+        ImageRequest
+            .Builder(context)
+            .data(MusicBrainzEnrichmentService.fixHttpUrl(imageUrl))
+            .size(640, 640)
+            .allowHardware(false)
+            .build()
+    val source =
+        (context.imageLoader.execute(request).image as? BitmapImage)?.bitmap
+            ?: return null
+    val safeSource =
+        if (source.config == Bitmap.Config.HARDWARE) {
+            source.copy(Bitmap.Config.ARGB_8888, false)
+        } else {
+            source
+        }
     return withContext(Dispatchers.Default) {
         // Row density that keeps the artwork undistorted on glyph cells
         // taller than wide: rows/columns must be (colStep/rowStep)/aspect.
-        val rows = (ASCII_COLUMNS * (ASCII_COL_STEP / ASCII_ROW_STEP) / aspect)
-            .roundToInt()
-            .coerceAtLeast(8)
+        val rows =
+            (ASCII_COLUMNS * (ASCII_COL_STEP / ASCII_ROW_STEP) / aspect)
+                .roundToInt()
+                .coerceAtLeast(8)
         val cropped = safeSource.centerCroppedToAspect(aspect)
         val sampled = cropped.downscaledTo(ASCII_COLUMNS, rows)
         val pixels = IntArray(ASCII_COLUMNS * rows)
@@ -965,8 +1155,9 @@ private suspend fun buildAsciiArtGrid(
             // Ordered (Bayer 4x4) dithering before quantization — the
             // ascii-magic retro trick: smooth gradients cross-hatch into
             // glyph texture instead of banding into flat empty bands.
-            val dither = ((ASCII_BAYER_4X4[y and 3][x and 3] + 0.5f) / 16f - 0.5f) *
-                ASCII_DITHER
+            val dither =
+                ((ASCII_BAYER_4X4[y and 3][x and 3] + 0.5f) / 16f - 0.5f) *
+                    ASCII_DITHER
             rampIndices[i] = ((b + dither) * rampMax + 0.5f).toInt().coerceIn(0, rampMax)
             // Richer colour: the artwork's own hue, saturated for the dark
             // field, with the value riding the normalized brightness — but
@@ -1006,17 +1197,19 @@ private suspend fun buildAsciiArtGrid(
 private suspend fun buildAsciiArtBackdrop(
     context: Context,
     imageUrl: String,
-    aspect: Float
+    aspect: Float,
 ): Bitmap? {
     val cacheKey = "ascii:$imageUrl:$aspect"
     backdropBitmapCache.get(cacheKey)?.let { if (!it.isRecycled) return it }
     val grid = buildAsciiArtGrid(context, imageUrl, aspect) ?: return null
     // Separate (cache-served) decode for the blurred colour base.
-    val request = ImageRequest.Builder(context)
-        .data(MusicBrainzEnrichmentService.fixHttpUrl(imageUrl))
-        .size(720, 720)
-        .allowHardware(false)
-        .build()
+    val request =
+        ImageRequest
+            .Builder(context)
+            .data(MusicBrainzEnrichmentService.fixHttpUrl(imageUrl))
+            .size(720, 720)
+            .allowHardware(false)
+            .build()
     val source = (context.imageLoader.execute(request).image as? BitmapImage)?.bitmap
     val palette = ShareTheme.ASCII.palette
     return withContext(Dispatchers.Default) {
@@ -1027,29 +1220,35 @@ private suspend fun buildAsciiArtBackdrop(
 
         // 1 — blurred, dimmed artwork as the colour base.
         if (source != null) {
-            val safeSource = if (source.config == Bitmap.Config.HARDWARE) {
-                source.copy(Bitmap.Config.ARGB_8888, false)
-            } else {
-                source
-            }
-            val base = safeSource.centerCroppedToAspect(aspect)
-                .downscaledTo(w, h)
-                .boxBlurredCopy(ASCII_BASE_BLUR_RADIUS, ASCII_BLUR_ROUNDS)
-                .dimmed(ASCII_BASE_DIM)
+            val safeSource =
+                if (source.config == Bitmap.Config.HARDWARE) {
+                    source.copy(Bitmap.Config.ARGB_8888, false)
+                } else {
+                    source
+                }
+            val base =
+                safeSource
+                    .centerCroppedToAspect(aspect)
+                    .downscaledTo(w, h)
+                    .boxBlurredCopy(ASCII_BASE_BLUR_RADIUS, ASCII_BLUR_ROUNDS)
+                    .dimmed(ASCII_BASE_DIM)
             canvas.drawBitmap(base, 0f, 0f, null)
         }
 
         // 2 — the soft phosphor halo behind the glyph art.
         val halo = Paint().apply { isAntiAlias = true }
-        halo.shader = RadialGradient(
-            w * 0.5f, h * 0.28f, w * 0.9f,
-            intArrayOf(
-                palette.glowTop.copy(alpha = 0.10f * palette.decorationAlpha).toArgb(),
-                Color.Transparent.toArgb()
-            ),
-            floatArrayOf(0f, 1f),
-            Shader.TileMode.CLAMP
-        )
+        halo.shader =
+            RadialGradient(
+                w * 0.5f,
+                h * 0.28f,
+                w * 0.9f,
+                intArrayOf(
+                    palette.glowTop.copy(alpha = 0.10f * palette.decorationAlpha).toArgb(),
+                    Color.Transparent.toArgb(),
+                ),
+                floatArrayOf(0f, 1f),
+                Shader.TileMode.CLAMP,
+            )
         canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), halo)
 
         // 3 — glyph layer: phosphor glow underneath, crisp glyphs on top.
@@ -1074,18 +1273,19 @@ private fun renderAsciiGlyphLayer(
     grid: AsciiArtGrid,
     w: Int,
     h: Int,
-    palette: ShareThemePalette
+    palette: ShareThemePalette,
 ): Bitmap {
     val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bitmap)
     val cellW = w.toFloat() / grid.columns
     val cellH = h.toFloat() / grid.rows
     val textSize = cellW / ASCII_COL_STEP
-    val paint = Paint().apply {
-        isAntiAlias = true
-        typeface = Typeface.MONOSPACE
-        this.textSize = textSize
-    }
+    val paint =
+        Paint().apply {
+            isAntiAlias = true
+            typeface = Typeface.MONOSPACE
+            this.textSize = textSize
+        }
     val ramp = ASCII_RAMP
     // Baseline that visually centres each glyph in its cell.
     var y = cellH * 0.5f + textSize * 0.38f
@@ -1100,8 +1300,9 @@ private fun renderAsciiGlyphLayer(
                 val b = grid.brightness[index]
                 // High visibility floor: every cell keeps its colour so
                 // dark covers still read as a picture, not a void.
-                val alpha = ((0.42f + 0.58f * b) * palette.decorationAlpha)
-                    .coerceIn(0f, 1f)
+                val alpha =
+                    ((0.42f + 0.58f * b) * palette.decorationAlpha)
+                        .coerceIn(0f, 1f)
                 paint.color = (grid.colors[index] and 0x00FFFFFF) or
                     ((alpha * 255f).toInt().coerceIn(0, 255) shl 24)
                 canvas.drawText(ramp[rampIndex].toString(), x, y, paint)
@@ -1132,7 +1333,10 @@ private fun Bitmap.dimmed(factor: Float): Bitmap {
 }
 
 /** Gaussian-approximating box blur (via [blurBoxPass]) as a new bitmap. */
-private fun Bitmap.boxBlurredCopy(radius: Int, rounds: Int): Bitmap {
+private fun Bitmap.boxBlurredCopy(
+    radius: Int,
+    rounds: Int,
+): Bitmap {
     var pixels = IntArray(width * height)
     getPixels(pixels, 0, width, 0, 0, width, height)
     repeat(rounds) {
@@ -1163,14 +1367,14 @@ private fun DrawScope.drawGlassFluidPools(palette: ShareThemePalette) {
             color = Color.Black.copy(alpha = 0.16f * palette.decorationAlpha),
             start = Offset(x, 0f),
             end = Offset(x, h),
-            strokeWidth = 1.dp.toPx()
+            strokeWidth = 1.dp.toPx(),
         )
         // Specular highlight seam on right
         drawLine(
             color = Color.White.copy(alpha = 0.10f * palette.decorationAlpha),
             start = Offset(x + stripeW, 0f),
             end = Offset(x + stripeW, h),
-            strokeWidth = 0.8.dp.toPx()
+            strokeWidth = 0.8.dp.toPx(),
         )
     }
 
@@ -1182,17 +1386,19 @@ private fun DrawScope.drawGlassFluidPools(palette: ShareThemePalette) {
         val radius = maxOf(blob.rx, blob.ry) * w
         rotate(degrees = blob.rot, pivot = center) {
             drawOval(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        color.copy(alpha = blob.alpha * palette.decorationAlpha),
-                        color.copy(alpha = blob.alpha * 0.45f * palette.decorationAlpha),
-                        Color.Transparent
+                brush =
+                    Brush.radialGradient(
+                        colors =
+                            listOf(
+                                color.copy(alpha = blob.alpha * palette.decorationAlpha),
+                                color.copy(alpha = blob.alpha * 0.45f * palette.decorationAlpha),
+                                Color.Transparent,
+                            ),
+                        center = center,
+                        radius = radius,
                     ),
-                    center = center,
-                    radius = radius
-                ),
                 topLeft = Offset(center.x - blob.rx * w, center.y - blob.ry * w),
-                size = Size(blob.rx * 2 * w, blob.ry * 2 * w)
+                size = Size(blob.rx * 2 * w, blob.ry * 2 * w),
             )
         }
     }
@@ -1200,38 +1406,44 @@ private fun DrawScope.drawGlassFluidPools(palette: ShareThemePalette) {
     // the pane-of-glass read.
     rotate(degrees = 26f, pivot = Offset(w * 0.5f, h * 0.5f)) {
         drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    Color.White.copy(alpha = 0.10f * palette.decorationAlpha),
-                    Color.Transparent
-                )
-            ),
+            brush =
+                Brush.verticalGradient(
+                    colors =
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.10f * palette.decorationAlpha),
+                            Color.Transparent,
+                        ),
+                ),
             topLeft = Offset(w * 0.16f, -h * 0.45f),
-            size = Size(w * 0.10f, h * 1.9f)
+            size = Size(w * 0.10f, h * 1.9f),
         )
         drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    Color.White.copy(alpha = 0.06f * palette.decorationAlpha),
-                    Color.Transparent
-                )
-            ),
+            brush =
+                Brush.verticalGradient(
+                    colors =
+                        listOf(
+                            Color.Transparent,
+                            Color.White.copy(alpha = 0.06f * palette.decorationAlpha),
+                            Color.Transparent,
+                        ),
+                ),
             topLeft = Offset(w * 0.62f, -h * 0.45f),
-            size = Size(w * 0.045f, h * 1.9f)
+            size = Size(w * 0.045f, h * 1.9f),
         )
     }
     // Gloss along the top edge, like light catching the rim.
     drawRect(
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                Color.White.copy(alpha = 0.10f * palette.decorationAlpha),
-                Color.Transparent
+        brush =
+            Brush.verticalGradient(
+                colors =
+                    listOf(
+                        Color.White.copy(alpha = 0.10f * palette.decorationAlpha),
+                        Color.Transparent,
+                    ),
+                startY = 0f,
+                endY = h * 0.12f,
             ),
-            startY = 0f,
-            endY = h * 0.12f
-        )
     )
 }
 
@@ -1257,21 +1469,28 @@ private fun Bitmap.centerCroppedToAspect(aspect: Float): Bitmap {
  * halvings keep the cells faithful to the artwork — a single bilinear step
  * this deep would alias most of the detail away.
  */
-private fun Bitmap.downscaledTo(targetW: Int, targetH: Int): Bitmap {
+private fun Bitmap.downscaledTo(
+    targetW: Int,
+    targetH: Int,
+): Bitmap {
     var current = this
     while (current.width > targetW * 2 && current.height > targetH * 2) {
-        current = Bitmap.createScaledBitmap(
-            current,
-            (current.width / 2).coerceAtLeast(targetW),
-            (current.height / 2).coerceAtLeast(targetH),
-            true
-        )
+        current =
+            Bitmap.createScaledBitmap(
+                current,
+                (current.width / 2).coerceAtLeast(targetW),
+                (current.height / 2).coerceAtLeast(targetH),
+                true,
+            )
     }
     return Bitmap.createScaledBitmap(current, targetW, targetH, true)
 }
 
 /** Linear blend of [color] toward white by [fraction] (0..1). */
-private fun mixTowardWhite(color: Int, fraction: Float): Int {
+private fun mixTowardWhite(
+    color: Int,
+    fraction: Float,
+): Int {
     val f = fraction.coerceIn(0f, 1f)
     val r = (color shr 16) and 0xFF
     val g = (color shr 8) and 0xFF
@@ -1294,22 +1513,25 @@ private fun DrawScope.drawAsciiWaveField(palette: ShareThemePalette) {
     val h = size.height
     // Soft phosphor halo behind the glyph field.
     drawCircle(
-        brush = Brush.radialGradient(
-            colors = listOf(
-                palette.glowTop.copy(alpha = 0.12f * palette.decorationAlpha),
-                Color.Transparent
+        brush =
+            Brush.radialGradient(
+                colors =
+                    listOf(
+                        palette.glowTop.copy(alpha = 0.12f * palette.decorationAlpha),
+                        Color.Transparent,
+                    ),
+                center = Offset(w * 0.5f, h * 0.30f),
+                radius = w * 0.85f,
             ),
-            center = Offset(w * 0.5f, h * 0.30f),
-            radius = w * 0.85f
-        ),
         radius = w * 0.85f,
-        center = Offset(w * 0.5f, h * 0.30f)
+        center = Offset(w * 0.5f, h * 0.30f),
     )
-    val paint = Paint().apply {
-        isAntiAlias = true
-        typeface = Typeface.MONOSPACE
-        textSize = w * 0.030f
-    }
+    val paint =
+        Paint().apply {
+            isAntiAlias = true
+            typeface = Typeface.MONOSPACE
+            textSize = w * 0.030f
+        }
     val ramp = " .,:;=+*#%@"
     val cell = paint.textSize
     drawIntoCanvas { canvas ->
@@ -1319,20 +1541,22 @@ private fun DrawScope.drawAsciiWaveField(palette: ShareThemePalette) {
             while (x < w) {
                 val nx = x / w
                 val ny = y / h
-                val wave = sin(nx * 9.4f + sin(ny * 7.3f) * 2.1f) *
-                    cos(ny * 6.1f - sin(nx * 4.2f) * 1.7f)
+                val wave =
+                    sin(nx * 9.4f + sin(ny * 7.3f) * 2.1f) *
+                        cos(ny * 6.1f - sin(nx * 4.2f) * 1.7f)
                 val b = ((wave + 1f) * 0.5f).coerceIn(0f, 1f)
                 val glyph = ramp[(b * (ramp.length - 1)).toInt()]
                 if (glyph != ' ') {
-                    paint.color = if (b > 0.72f) {
-                        palette.accent
-                            .copy(alpha = (0.20f + (b - 0.72f) * 1.1f).coerceAtMost(0.55f) * palette.decorationAlpha)
-                            .toArgb()
-                    } else {
-                        Color.White
-                            .copy(alpha = (0.05f + b * 0.13f) * palette.decorationAlpha)
-                            .toArgb()
-                    }
+                    paint.color =
+                        if (b > 0.72f) {
+                            palette.accent
+                                .copy(alpha = (0.20f + (b - 0.72f) * 1.1f).coerceAtMost(0.55f) * palette.decorationAlpha)
+                                .toArgb()
+                        } else {
+                            Color.White
+                                .copy(alpha = (0.05f + b * 0.13f) * palette.decorationAlpha)
+                                .toArgb()
+                        }
                     canvas.nativeCanvas.drawText(glyph.toString(), x, y, paint)
                 }
                 x += cell * ASCII_COL_STEP
@@ -1354,18 +1578,19 @@ private fun GlowOrb(
     y: Dp,
     size: Dp,
     color: Color,
-    edge: Color = Color.Transparent
+    edge: Color = Color.Transparent,
 ) {
     with(scope) {
         Box(
-            modifier = Modifier
-                .align(alignment)
-                .offset(x = x, y = y)
-                .size(size)
-                .background(
-                    brush = Brush.radialGradient(colors = listOf(color, edge)),
-                    shape = CircleShape
-                )
+            modifier =
+                Modifier
+                    .align(alignment)
+                    .offset(x = x, y = y)
+                    .size(size)
+                    .background(
+                        brush = Brush.radialGradient(colors = listOf(color, edge)),
+                        shape = CircleShape,
+                    ),
         )
     }
 }
@@ -1380,17 +1605,18 @@ private data class GlassFluidBlob(
     val ry: Float,
     val rot: Float,
     val colorIndex: Int,
-    val alpha: Float
+    val alpha: Float,
 )
 
-private val GlassFluidBlobs = listOf(
-    GlassFluidBlob(0.28f, 0.14f, 0.55f, 0.30f, -24f, 0, 0.34f),
-    GlassFluidBlob(0.86f, 0.32f, 0.45f, 0.26f, 18f, 1, 0.30f),
-    GlassFluidBlob(0.10f, 0.54f, 0.50f, 0.24f, 30f, 2, 0.26f),
-    GlassFluidBlob(0.70f, 0.80f, 0.60f, 0.28f, -14f, 1, 0.28f),
-    GlassFluidBlob(0.38f, 0.96f, 0.45f, 0.22f, 10f, 0, 0.24f),
-    GlassFluidBlob(0.52f, 0.42f, 0.35f, 0.18f, -32f, 1, 0.16f)
-)
+private val GlassFluidBlobs =
+    listOf(
+        GlassFluidBlob(0.28f, 0.14f, 0.55f, 0.30f, -24f, 0, 0.34f),
+        GlassFluidBlob(0.86f, 0.32f, 0.45f, 0.26f, 18f, 1, 0.30f),
+        GlassFluidBlob(0.10f, 0.54f, 0.50f, 0.24f, 30f, 2, 0.26f),
+        GlassFluidBlob(0.70f, 0.80f, 0.60f, 0.28f, -14f, 1, 0.28f),
+        GlassFluidBlob(0.38f, 0.96f, 0.45f, 0.22f, 10f, 0, 0.24f),
+        GlassFluidBlob(0.52f, 0.42f, 0.35f, 0.18f, -32f, 1, 0.16f),
+    )
 
 /**
  * Text color for rank badges, pedestal numbers, and swatch selection dots.
@@ -1406,20 +1632,26 @@ internal fun ShareThemePalette.contrastingText(chip: Color): Color =
  * Circular gradient swatch used by share dialogs to pick a [ShareTheme].
  */
 @Composable
-fun ThemeSwatch(theme: ShareTheme, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun ThemeSwatch(
+    theme: ShareTheme,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val palette = theme.palette
     Box(
-        modifier = modifier
-            .size(26.dp)
-            .clip(CircleShape)
-            .background(Brush.linearGradient(palette.gradient))
-            .clickable(onClick = onClick)
-            .border(
-                width = if (selected) 3.dp else 1.dp,
-                color = if (selected) Color.White else Color.White.copy(alpha = 0.15f),
-                shape = CircleShape
-            ),
-        contentAlignment = Alignment.Center
+        modifier =
+            modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(Brush.linearGradient(palette.gradient))
+                .clickable(onClick = onClick)
+                .border(
+                    width = if (selected) 3.dp else 1.dp,
+                    color = if (selected) Color.White else Color.White.copy(alpha = 0.15f),
+                    shape = CircleShape,
+                ),
+        contentAlignment = Alignment.Center,
     ) {
         if (selected) {
             Box(modifier = Modifier.size(6.dp).background(palette.contrastingText(palette.gradient.first()), CircleShape))

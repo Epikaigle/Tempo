@@ -206,6 +206,30 @@ interface GamificationDao {
     @Upsert
     suspend fun upsertChallenges(challenges: List<DailyChallenge>)
 
+    /**
+     * Insert freshly generated challenges, silently ignoring any whose (challenge_id, date)
+     * already exists. Backed by the unique index added in schema 54, this makes generation
+     * idempotent even if ChallengeWorker and the Profile screen race at midnight.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertChallengesIgnore(challenges: List<DailyChallenge>): LongArray
+
+    /** Delete challenges older than [cutoffDate] (YYYY-MM-DD). See prune in GamificationWorker. */
+    @Query("DELETE FROM daily_challenges WHERE date < :cutoffDate")
+    suspend fun deleteChallengesOlderThan(cutoffDate: String): Int
+
+    /** Total xp_reward of completed challenges older than [cutoffDate] (about to be pruned). */
+    @Query("SELECT COALESCE(SUM(xp_reward), 0) FROM daily_challenges WHERE is_completed = 1 AND date < :cutoffDate")
+    suspend fun sumCompletedXpBefore(cutoffDate: String): Long
+
+    /** Add [xp] to the banked (pruned-challenge) XP offset carried in user_level. */
+    @Query("UPDATE user_level SET banked_challenge_xp = COALESCE(banked_challenge_xp, 0) + :xp WHERE id = 1")
+    suspend fun addBankedChallengeXp(xp: Long)
+
+    /** Wipe the challenge table. Only used by migration 53->54 to dedupe before the unique index. */
+    @Query("DELETE FROM daily_challenges")
+    suspend fun deleteAllChallenges()
+
     @Query("SELECT COUNT(*) FROM daily_challenges WHERE date = :date AND is_completed = 1")
     suspend fun getCompletedChallengeCount(date: String): Int
 
@@ -251,27 +275,96 @@ interface GamificationDao {
     suspend fun getTodayListeningTimeMs(startOfDayMs: Long): Long
 
     /**
-     * Count distinct individual genres today.
-     * Genres are stored as '|||'-delimited strings (e.g. "rock|||pop|||indie").
-     * This extracts the primary genre (first segment) for each track and counts distinct values,
-     * giving a meaningful "different genres heard" count rather than counting full combo strings.
+     * Count distinct individual genres heard today (variety/discovery genre tracking).
+     *
+     * Genres are stored as '|||'-delimited strings (e.g. "rock|||pop|||indie") and the
+     * generation side (ChallengeRepository) splits combos into individual genres via
+     * Converters.repairListColumnValue. This query expands each combo into its segments and
+     * counts distinct values, so progress matches what the user actually explored rather than
+     * counting only a track's primary genre. Falls back to `tags` when `genres` is empty -
+     * the same COALESCE getTopGenresRaw uses to pick a target.
      */
     @Query(
         """
-        SELECT COUNT(DISTINCT LOWER(TRIM(
-            CASE WHEN instr(em.genres, '|||') > 0
-                 THEN substr(em.genres, 1, instr(em.genres, '|||') - 1)
-                 ELSE em.genres
-            END)))
+        SELECT COUNT(DISTINCT LOWER(TRIM(seg.value)))
         FROM listening_events le
-        JOIN tracks t ON le.track_id = t.id
-        LEFT JOIN enriched_metadata em ON em.track_id = t.id
+        LEFT JOIN enriched_metadata em ON em.track_id = le.track_id
+        JOIN json_each(
+            '["' || REPLACE(
+                REPLACE(
+                    REPLACE(
+                        COALESCE(NULLIF(em.genres, ''), NULLIF(em.tags, '')),
+                        '"
+', ''
+                    ),
+                    ' |||', '|||'
+                ),
+                '|||', '","'
+            ) || '"]'
+        ) AS seg
         WHERE le.timestamp >= :startOfDayMs
           AND (le.volume_level IS NULL OR le.volume_level > 0)
-          AND em.genres IS NOT NULL AND em.genres != ''
+          AND COALESCE(NULLIF(em.genres, ''), NULLIF(em.tags, '')) IS NOT NULL
+          AND COALESCE(NULLIF(em.genres, ''), NULLIF(em.tags, '')) != ''
+          AND TRIM(seg.value) != ''
     """,
     )
     suspend fun getTodayUniqueGenres(startOfDayMs: Long): Int
+
+    /**
+     * Count distinct individual genres heard today that the user had never heard before today
+     * ("Sound Explorer" / discovery_genres challenge) - the genre analogue of getTodayNewArtists.
+     *
+     * A genre counts only if every track tagged with it (in genres or tags) has no listening
+     * event before today, so replaying familiar genres never completes the challenge. Quotes
+     * are stripped on both sides so a stored `"pop"` matches a historical `"pop"`.
+     */
+    @Query(
+        """
+        SELECT COUNT(DISTINCT g.genre) FROM (
+            SELECT LOWER(TRIM(seg.value)) AS genre
+            FROM listening_events le
+            LEFT JOIN enriched_metadata em ON em.track_id = le.track_id
+            JOIN json_each(
+                '["' || REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            COALESCE(NULLIF(em.genres, ''), NULLIF(em.tags, '')),
+                            '"
+', ''
+                        ),
+                        ' |||', '|||'
+                    ),
+                    '|||', '","'
+                ) || '"]'
+            ) AS seg
+            WHERE le.timestamp >= :startOfDayMs
+              AND (le.volume_level IS NULL OR le.volume_level > 0)
+              AND TRIM(seg.value) != ''
+        ) AS g
+        WHERE g.genre NOT IN (
+            SELECT LOWER(TRIM(seg2.value))
+            FROM listening_events le2
+            LEFT JOIN enriched_metadata em2 ON em2.track_id = le2.track_id
+            JOIN json_each(
+                '["' || REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            COALESCE(NULLIF(em2.genres, ''), NULLIF(em2.tags, '')),
+                            '"
+', ''
+                        ),
+                        ' |||', '|||'
+                    ),
+                    '|||', '","'
+                ) || '"]'
+            ) AS seg2
+            WHERE le2.timestamp < :startOfDayMs
+              AND TRIM(seg2.value) != ''
+        )
+    """,
+    )
+    suspend fun getTodayNewGenres(startOfDayMs: Long): Int
 
     /**
      * Count artists heard today for the first time ever (never heard before today).

@@ -18,10 +18,11 @@
     <!-- Settings → Your Data -->
     <string name="settings_analytics_toggle">Anonymous app-health stats</string>
     <string name="settings_analytics_toggle_desc">Share anonymous crash, error and feature-usage data. No account, no identifiers, never your listening history.</string>
-    <string name="settings_what_we_collect">What we collect</string>
-    <string name="settings_what_we_collect_desc">The exact list of anonymised events Tempo sends</string>
+    <string name="settings_data_diagnostics">Data &amp; diagnostics</string>
+    <string name="settings_data_diagnostics_desc">What Tempo sends, and how it is running on this device</string>
 
-    <!-- What we collect screen -->
+    <!-- Your data screen -->
+    <string name="your_data_intro">Everything Tempo records and sends, in one place. Nothing here leaves your phone unless you choose to share it.</string>
     <string name="what_we_collect_title">What we collect</string>
     <string name="what_we_collect_intro">This is the complete list of what Tempo sends. Everything is anonymous: no account, no identifiers, and never your listening history.</string>
     <string name="what_we_collect_properties">Sent with each event</string>

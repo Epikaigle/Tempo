@@ -69,5 +69,5 @@ The extension declares the following permissions in `manifest.json`:
 If you have any questions or feedback regarding the privacy practices of Tempo Stats, please contact us:
 
 * **Developer:** Avinash
-* **Email:** hi@avinas.me
+* **Email:** hi@avinash.im
 * **GitHub Repository:** [https://github.com/avinaxhroy/Tempo](https://github.com/avinaxhroy/Tempo)
