@@ -16,10 +16,13 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.ListeningEventDao
+import me.avinas.tempo.data.local.dao.TrackArtistDao
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
+import me.avinas.tempo.data.local.entities.ArtistRole
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.local.entities.Track
+import me.avinas.tempo.data.local.entities.TrackArtist
 import me.avinas.tempo.data.repository.ArtistLinkingService
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.TrackRepository
@@ -36,6 +39,7 @@ import kotlin.coroutines.coroutineContext
 class DeezerDataImportService @Inject constructor(
     private val trackResolver: TrackResolver,
     private val listeningEventDao: ListeningEventDao,
+    private val trackArtistDao: TrackArtistDao,
     private val artistLinkingService: ArtistLinkingService,
     private val enrichedMetadataDao: EnrichedMetadataDao,
     private val trackRepository: TrackRepository,
@@ -251,6 +255,19 @@ class DeezerDataImportService @Inject constructor(
                     }
                 }
 
+                try {
+                    preserveAdditionalDeezerArtistCredit(
+                        resolution.trackId,
+                        resolution.track.artist,
+                        entry.artistName,
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to preserve an additional Deezer artist credit", e)
+                    addCappedError(errors, "An additional artist credit could not be saved")
+                }
+
                 val prepared = metadataPrepared[resolution.trackId]
                 val hasNewIsrc = prepared?.isrc == null && entry.isrc != null
                 val hasNewAlbum = prepared?.album == null && entry.albumName != null
@@ -429,6 +446,29 @@ class DeezerDataImportService @Inject constructor(
             trackId = id,
             isNewTrack = true,
             track = track.copy(id = id),
+        )
+    }
+
+    private suspend fun preserveAdditionalDeezerArtistCredit(
+        trackId: Long,
+        primaryArtistName: String,
+        creditedArtistName: String,
+    ) {
+        val credited = creditedArtistName.trim()
+        if (credited.isBlank() || credited.equals(primaryArtistName.trim(), ignoreCase = true)) return
+
+        val artist = artistLinkingService.getOrCreateArtist(credited)
+        if (trackArtistDao.hasRelationship(trackId, artist.id)) return
+
+        val nextOrder =
+            (trackArtistDao.getRelationshipsForTrack(trackId).maxOfOrNull { it.creditOrder } ?: -1) + 1
+        trackArtistDao.insert(
+            TrackArtist(
+                trackId = trackId,
+                artistId = artist.id,
+                role = ArtistRole.PERFORMER,
+                creditOrder = nextOrder,
+            ),
         )
     }
 
