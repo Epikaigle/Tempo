@@ -201,11 +201,20 @@ class DeezerDataImportService @Inject constructor(
                 val hasNewIsrc = prepared?.isrc == null && entry.isrc != null
                 val hasNewAlbum = prepared?.album == null && entry.albumName != null
                 if (prepared == null || hasNewIsrc || hasNewAlbum) {
-                    preserveDeezerMetadata(resolution.trackId, entry)
-                    metadataPrepared[resolution.trackId] = PreparedMetadata(
-                        isrc = prepared?.isrc ?: entry.isrc,
-                        album = prepared?.album ?: entry.albumName,
-                    )
+                    try {
+                        preserveDeezerMetadata(resolution.trackId, entry)
+                        metadataPrepared[resolution.trackId] = PreparedMetadata(
+                            isrc = prepared?.isrc ?: entry.isrc,
+                            album = prepared?.album ?: entry.albumName,
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Metadata enrichment is secondary: never lose a valid listening
+                        // event solely because ISRC/album persistence failed.
+                        Log.w(TAG, "Failed to preserve Deezer metadata for track " + resolution.trackId, e)
+                        addCappedError(errors, "Metadata for a Deezer track could not be saved")
+                    }
                 }
 
                 val endTimestamp = entry.listenedAtMillis
