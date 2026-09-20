@@ -275,6 +275,18 @@ class DeezerDataImportService @Inject constructor(
                     return resolution
                 }
             }
+
+            // Avoid mutating/merging an exact title+artist row that is already known
+            // to be a different recording.
+            trackRepository.findByTitleAndArtist(entry.trackName, entry.artistName)?.let { exact ->
+                val exactIsrc = enrichedMetadataDao.forTrackSync(exact.id)?.isrc
+                    ?.let(::canonicalIsrc)
+                if (exactIsrc != null && exactIsrc != isrc) {
+                    val resolution = createDeezerTrack(entry)
+                    trackCache[cacheKey] = resolution.copy(isNewTrack = false)
+                    return resolution
+                }
+            }
         }
 
         var resolution = trackResolver.resolve(
@@ -293,24 +305,7 @@ class DeezerDataImportService @Inject constructor(
             val resolvedIsrc = enrichedMetadataDao.forTrackSync(resolution.trackId)?.isrc
                 ?.let(::canonicalIsrc)
             if (resolvedIsrc != null && resolvedIsrc != incomingIsrc) {
-                val newTrack = Track(
-                    title = entry.trackName,
-                    artist = entry.artistName,
-                    album = entry.albumName,
-                    duration = null,
-                    albumArtUrl = null,
-                    spotifyId = null,
-                    youtubeId = null,
-                    musicbrainzId = null,
-                    primaryArtistId = null,
-                    contentType = "MUSIC",
-                )
-                val newId = trackRepository.insert(newTrack)
-                resolution = TrackResolver.Resolution(
-                    trackId = newId,
-                    isNewTrack = true,
-                    track = newTrack.copy(id = newId),
-                )
+                resolution = createDeezerTrack(entry)
             }
         }
 
@@ -318,6 +313,29 @@ class DeezerDataImportService @Inject constructor(
         trackCache[cacheKey] = resolution.copy(isNewTrack = false)
         if (trackCache.size > MAX_CACHE_SIZE) trackCache.clear()
         return resolution
+    }
+
+    private suspend fun createDeezerTrack(
+        entry: DeezerXlsxParser.Entry,
+    ): TrackResolver.Resolution {
+        val track = Track(
+            title = entry.trackName,
+            artist = entry.artistName,
+            album = entry.albumName,
+            duration = null,
+            albumArtUrl = null,
+            spotifyId = null,
+            youtubeId = null,
+            musicbrainzId = null,
+            primaryArtistId = null,
+            contentType = "MUSIC",
+        )
+        val id = trackRepository.insert(track)
+        return TrackResolver.Resolution(
+            trackId = id,
+            isNewTrack = true,
+            track = track.copy(id = id),
+        )
     }
 
     private data class PreparedMetadata(
