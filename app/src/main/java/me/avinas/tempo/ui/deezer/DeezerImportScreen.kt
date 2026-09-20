@@ -272,7 +272,7 @@ private fun IdleContent(
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Plays shorter than 30 seconds are ignored, matching Tempo's Spotify history import.",
+                text = stringResource(R.string.deezer_import_short_plays_note),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary,
             )
