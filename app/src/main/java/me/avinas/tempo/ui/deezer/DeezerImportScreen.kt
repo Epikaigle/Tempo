@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -69,7 +70,7 @@ fun DeezerImportScreen(
     val uiState by viewModel.uiState.collectAsState()
     val importState by viewModel.importState.collectAsState()
     val context = LocalContext.current
-    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedUri by rememberSaveable { mutableStateOf<Uri?>(null) }
 
     val picker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -311,22 +312,8 @@ private fun ImportingContent(state: DeezerDataImportService.ImportState) {
                 else -> stringResource(R.string.deezer_import_preparing) to 0f
             }
 
-            val localizedMessage =
-                when {
-                    message.contains("does not contain Deezer listening history", ignoreCase = true) ->
-                        stringResource(R.string.deezer_import_error_missing_history)
-                    message.contains("No Deezer listening-history entries", ignoreCase = true) ->
-                        stringResource(R.string.deezer_import_error_no_entries)
-                    message.contains("too large", ignoreCase = true) ->
-                        stringResource(R.string.deezer_import_error_too_large)
-                    message.contains("not a valid Deezer XLSX", ignoreCase = true) ->
-                        stringResource(R.string.deezer_import_error_invalid_xlsx)
-                    message.contains("Deezer import failed", ignoreCase = true) ->
-                        stringResource(R.string.deezer_import_error_generic)
-                    else -> message
-                }
             Text(
-                text = localizedMessage,
+                text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
@@ -436,8 +423,22 @@ private fun ErrorContent(
                 color = TextPrimary,
             )
             Spacer(modifier = Modifier.height(8.dp))
+            val localizedMessage =
+                when {
+                    message.contains("does not contain Deezer listening history", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_missing_history)
+                    message.contains("No Deezer listening-history entries", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_no_entries)
+                    message.contains("too large", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_too_large)
+                    message.contains("not a valid Deezer XLSX", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_invalid_xlsx)
+                    message.contains("Deezer import failed", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_generic)
+                    else -> message
+                }
             Text(
-                text = message,
+                text = localizedMessage,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
