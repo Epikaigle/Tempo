@@ -34,6 +34,14 @@ class DeezerImportViewModel @Inject constructor(
     val importState = importService.importState
 
     fun importFile(context: Context, uri: Uri) {
+        if (
+            _uiState.value is DeezerImportUiState.Importing ||
+            importService.importState.value is DeezerDataImportService.ImportState.Parsing ||
+            importService.importState.value is DeezerDataImportService.ImportState.Importing
+        ) {
+            return
+        }
+
         tracker.track(FeatureUsed(TempoFeature.DEEZER_IMPORT))
         _uiState.value = DeezerImportUiState.Importing
         viewModelScope.launch {
