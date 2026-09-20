@@ -183,9 +183,22 @@ class DeezerDataImportService @Inject constructor(
         val trackCache = HashMap<String, TrackResolver.Resolution>()
         val metadataPrepared = HashMap<Long, PreparedMetadata>()
         val isrcIndex = HashMap<String, Long>()
+        val ambiguousIsrcs = HashSet<String>()
         enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
             val normalized = canonicalIsrc(ref.isrc)
-            if (normalized.isNotBlank()) isrcIndex.putIfAbsent(normalized, ref.trackId)
+            if (normalized.isBlank() || normalized in ambiguousIsrcs) return@forEach
+
+            val existingTrackId = isrcIndex[normalized]
+            when {
+                existingTrackId == null -> isrcIndex[normalized] = ref.trackId
+                existingTrackId != ref.trackId -> {
+                    // Never pick an arbitrary winner when legacy data already contains
+                    // the same ISRC on multiple tracks. Fall back to exact textual
+                    // matching for that ISRC instead.
+                    isrcIndex.remove(normalized)
+                    ambiguousIsrcs.add(normalized)
+                }
+            }
         }
         val pendingEvents = ArrayList<ListeningEvent>(FLUSH_BATCH_SIZE)
         var tracksImported = 0
