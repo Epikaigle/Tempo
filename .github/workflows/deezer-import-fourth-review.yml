@@ -1,5 +1,7 @@
 name: Verify Deezer import fourth review
 
+# Validate the final reviewed HEAD
+
 on:
   push:
     branches:
