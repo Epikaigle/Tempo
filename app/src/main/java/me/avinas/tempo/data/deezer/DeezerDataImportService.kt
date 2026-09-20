@@ -375,64 +375,61 @@ class DeezerDataImportService @Inject constructor(
                 }
             }
 
-            // If Tempo does not know this ISRC yet, an exact title+artist match is
-            // safe enough to backfill it. Do NOT use TrackResolver's fuzzy artist
-            // containment here: an authoritative ISRC must never validate a fuzzy
-            // textual match (e.g. "Queen" vs "Queen Latifah").
-            trackRepository.findByTitleAndArtist(entry.trackName, entry.artistName)?.let { exact ->
-                val exactIsrc = enrichedMetadataDao.forTrackSync(exact.id)?.isrc
-                    ?.let(::canonicalIsrc)
-
-                if (exactIsrc == null || exactIsrc == isrc) {
-                    val track = fillMissingAlbumFromDeezer(exact, entry.albumName)
-                    val resolution = TrackResolver.Resolution(
-                        trackId = track.id,
-                        isNewTrack = false,
-                        track = track,
-                    )
-                    cacheTrackResolution(cacheKey, resolution, trackCache)
-                    return resolution
+            // No indexed ISRC match exists. Inspect every track with the exact
+            // same title instead of accepting TrackDao's arbitrary LIMIT 1 result:
+            // Tempo can legitimately contain several versions with the same title/artist.
+            val sameTitleCandidates = trackRepository.findCandidatesByTitle(entry.trackName)
+            val compatibleCandidates = ArrayList<Track>()
+            for (candidate in sameTitleCandidates) {
+                val candidateIsrc =
+                    enrichedMetadataDao.forTrackSync(candidate.id)?.isrc
+                        ?.let(::canonicalIsrc)
+                if (candidateIsrc == null || candidateIsrc == isrc) {
+                    compatibleCandidates.add(candidate)
                 }
+            }
 
-                // Same textual identity but a different authoritative ISRC:
-                // keep the recordings separate.
-                val resolution = createDeezerTrack(entry)
+            val incomingArtists = ArtistParser.getAllArtists(entry.artistName)
+
+            fun chooseByAlbum(candidates: List<Track>): Track? {
+                if (candidates.size <= 1) return candidates.singleOrNull()
+                val album = entry.albumName?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+                return candidates
+                    .filter { it.album?.trim()?.equals(album, ignoreCase = true) == true }
+                    .singleOrNull()
+            }
+
+            // First prefer the complete artist string when it is strictly the same.
+            val exactArtistCandidates =
+                compatibleCandidates.filter { candidate ->
+                    ArtistParser.isStrictSameArtist(candidate.artist, entry.artistName)
+                }
+            val exactArtistMatch = chooseByAlbum(exactArtistCandidates)
+            if (exactArtistMatch != null) {
+                val track = fillMissingAlbumFromDeezer(exactArtistMatch, entry.albumName)
+                val resolution = TrackResolver.Resolution(
+                    trackId = track.id,
+                    isNewTrack = false,
+                    track = track,
+                )
                 cacheTrackResolution(cacheKey, resolution, trackCache)
                 return resolution
             }
 
-            // Deezer can emit one row per credited artist for a collaboration,
-            // while an existing Spotify/live track may store all artists in one string.
-            // Match only SAME-TITLE candidates with a strict individual-artist match,
-            // and never candidates carrying a different authoritative ISRC.
-            val strictCandidates =
-                trackRepository.findCandidatesByTitle(entry.trackName)
-                    .filter { candidate ->
-                        val candidateIsrc =
-                            enrichedMetadataDao.forTrackSync(candidate.id)?.isrc
-                                ?.let(::canonicalIsrc)
-                        val incomingArtists = ArtistParser.getAllArtists(entry.artistName)
-                        candidateIsrc == null &&
-                            ArtistParser.getAllArtists(candidate.artist).any { candidateArtist ->
-                                incomingArtists.any { incomingArtist ->
-                                    ArtistParser.isStrictSameArtist(candidateArtist, incomingArtist)
-                                }
-                            }
+            // Deezer may expose one credited artist while another source stores the
+            // complete collaboration string. Match individual artists strictly —
+            // never by substring/fuzzy containment.
+            val individualArtistCandidates =
+                compatibleCandidates.filter { candidate ->
+                    ArtistParser.getAllArtists(candidate.artist).any { candidateArtist ->
+                        incomingArtists.any { incomingArtist ->
+                            ArtistParser.isStrictSameArtist(candidateArtist, incomingArtist)
+                        }
                     }
-
-            val candidate =
-                when {
-                    strictCandidates.size == 1 -> strictCandidates.single()
-                    strictCandidates.size > 1 && !entry.albumName.isNullOrBlank() -> {
-                        strictCandidates
-                            .filter { it.album.equals(entry.albumName, ignoreCase = true) }
-                            .singleOrNull()
-                    }
-                    else -> null
                 }
-
-            if (candidate != null) {
-                val track = fillMissingAlbumFromDeezer(candidate, entry.albumName)
+            val individualArtistMatch = chooseByAlbum(individualArtistCandidates)
+            if (individualArtistMatch != null) {
+                val track = fillMissingAlbumFromDeezer(individualArtistMatch, entry.albumName)
                 val resolution = TrackResolver.Resolution(
                     trackId = track.id,
                     isNewTrack = false,
