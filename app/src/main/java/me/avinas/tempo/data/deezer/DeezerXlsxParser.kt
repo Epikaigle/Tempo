@@ -34,6 +34,7 @@ object DeezerXlsxParser {
     private const val MAX_PARSE_MEMORY_BUDGET_BYTES = 160L * 1024 * 1024
 
     private val deezerDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    private val isrcRegex = Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
 
     data class Entry(
         val trackName: String,
@@ -445,7 +446,7 @@ object DeezerXlsxParser {
             .uppercase()
             .replace("-", "")
             .replace(" ", "")
-        return normalized.takeIf { it.matches(Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")) }
+        return normalized.takeIf(isrcRegex::matches)
     }
 
     private fun validateEntrySize(size: Long, name: String) {
