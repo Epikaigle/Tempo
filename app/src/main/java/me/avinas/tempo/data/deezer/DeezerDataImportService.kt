@@ -210,16 +210,23 @@ class DeezerDataImportService @Inject constructor(
 
                 val endTimestamp = entry.listenedAtMillis
                 val startTimestamp = (endTimestamp - entry.msPlayed).coerceAtLeast(0L)
+                val knownDurationMs = resolution.track.duration?.takeIf { it > 0L }
+                val completionPercentage =
+                    knownDurationMs?.let { duration ->
+                        ((entry.msPlayed * 100L) / duration)
+                            .coerceIn(0L, 100L)
+                            .toInt()
+                    } ?: DEFAULT_COMPLETION_PERCENTAGE
                 pendingEvents.add(
                     ListeningEvent(
                         track_id = resolution.trackId,
                         timestamp = startTimestamp,
                         playDuration = entry.msPlayed,
-                        completionPercentage = DEFAULT_COMPLETION_PERCENTAGE,
+                        completionPercentage = completionPercentage,
                         source = IMPORT_SOURCE,
-                        wasSkipped = false,
+                        wasSkipped = knownDurationMs != null && completionPercentage < 30,
                         isReplay = false,
-                        estimatedDurationMs = null,
+                        estimatedDurationMs = knownDurationMs,
                         pauseCount = 0,
                         sessionId = null,
                         endTimestamp = endTimestamp,
