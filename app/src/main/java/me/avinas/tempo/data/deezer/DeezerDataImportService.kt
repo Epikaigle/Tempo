@@ -68,7 +68,12 @@ class DeezerDataImportService @Inject constructor(
         val errors: List<String>,
     ) {
         val isSuccess: Boolean
-            get() = errors.isEmpty() || eventsCreated > 0 || duplicatesSkipped > 0
+            get() = when {
+                eventsCreated > 0 -> true
+                errors.isNotEmpty() -> false
+                duplicatesSkipped > 0 || shortPlaysSkipped > 0 -> true
+                else -> false
+            }
     }
 
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
@@ -91,6 +96,9 @@ class DeezerDataImportService @Inject constructor(
         try {
             copyUriWithLimit(appContext, uri, tempFile)
             val parsed = DeezerXlsxParser.parse(tempFile)
+            if (parsed.entries.isEmpty() && parsed.malformedRows == 0) {
+                throw IllegalArgumentException("No Deezer listening history entries found")
+            }
             val result = importEntries(parsed, errors)
             _importState.value = ImportState.Completed(result)
             result
@@ -112,6 +120,7 @@ class DeezerDataImportService @Inject constructor(
         errors: MutableList<String>,
     ): ImportResult {
         val trackCache = HashMap<String, TrackResolver.Resolution>()
+        val metadataPrepared = HashSet<Long>()
         val pendingEvents = ArrayList<ListeningEvent>(FLUSH_BATCH_SIZE)
         var tracksImported = 0
         var eventsCreated = 0
@@ -157,7 +166,9 @@ class DeezerDataImportService @Inject constructor(
                             Log.w(TAG, "Failed to link artists for Deezer track " + resolution.trackId, error)
                         }
                 }
-                preserveDeezerMetadata(resolution.trackId, entry)
+                if (metadataPrepared.add(resolution.trackId)) {
+                    preserveDeezerMetadata(resolution.trackId, entry)
+                }
 
                 val endTimestamp = entry.listenedAtMillis
                 val startTimestamp = (endTimestamp - entry.msPlayed).coerceAtLeast(0L)
@@ -234,7 +245,8 @@ class DeezerDataImportService @Inject constructor(
             ),
         )
 
-        trackCache[cacheKey] = resolution
+        // Cache subsequent occurrences as existing so a new track is counted only once.
+        trackCache[cacheKey] = resolution.copy(isNewTrack = false)
         if (trackCache.size > MAX_CACHE_SIZE) trackCache.clear()
         return resolution
     }
@@ -322,6 +334,8 @@ class DeezerDataImportService @Inject constructor(
         return when {
             message.contains("10_listeningHistory", ignoreCase = true) ->
                 "This file does not contain Deezer listening history (10_listeningHistory)"
+            message.contains("No Deezer listening history entries", ignoreCase = true) ->
+                "No Deezer listening-history entries were found in this export"
             message.contains("XLSX", ignoreCase = true) || error is java.util.zip.ZipException ->
                 "The selected file is not a valid Deezer XLSX export"
             else -> "Deezer import failed"
