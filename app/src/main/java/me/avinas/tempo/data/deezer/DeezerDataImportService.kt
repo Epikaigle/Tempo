@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,9 +17,12 @@ import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.ListeningEvent
+import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.repository.ArtistLinkingService
+import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.TrackRepository
 import me.avinas.tempo.data.repository.TrackResolver
+import me.avinas.tempo.worker.EnrichmentWorker
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -33,6 +37,7 @@ class DeezerDataImportService @Inject constructor(
     private val artistLinkingService: ArtistLinkingService,
     private val enrichedMetadataDao: EnrichedMetadataDao,
     private val trackRepository: TrackRepository,
+    private val statsRepository: StatsRepository,
 ) {
     companion object {
         private const val TAG = "DeezerDataImport"
@@ -95,13 +100,33 @@ class DeezerDataImportService @Inject constructor(
         val tempFile = File.createTempFile("tempo_deezer_", ".xlsx", appContext.cacheDir)
         try {
             copyUriWithLimit(appContext, uri, tempFile)
-            val parsed = DeezerXlsxParser.parse(tempFile)
+            val parsed = DeezerXlsxParser.parse(tempFile) {
+                coroutineContext.ensureActive()
+            }
             if (parsed.entries.isEmpty()) {
                 throw IllegalArgumentException("No valid Deezer listening history entries found")
             }
             val result = importEntries(parsed, errors)
+
+            // Imported events and newly attached metadata must be visible immediately.
+            statsRepository.invalidateCache()
+
+            if (result.tracksImported > 0 || result.eventsCreated > 0 || result.duplicatesSkipped > 0) {
+                try {
+                    EnrichmentWorker.schedulePostImportEnrichment(
+                        appContext,
+                        result.tracksImported.toLong(),
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to schedule post-import enrichment", e)
+                }
+            }
+
             _importState.value = ImportState.Completed(result)
             result
+        } catch (e: CancellationException) {
+            _importState.value = ImportState.Idle
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Deezer import failed", e)
             addCappedError(errors, userFacingError(e))
@@ -120,7 +145,7 @@ class DeezerDataImportService @Inject constructor(
         errors: MutableList<String>,
     ): ImportResult {
         val trackCache = HashMap<String, TrackResolver.Resolution>()
-        val metadataPrepared = HashSet<Long>()
+        val metadataPrepared = HashMap<Long, PreparedMetadata>()
         val pendingEvents = ArrayList<ListeningEvent>(FLUSH_BATCH_SIZE)
         var tracksImported = 0
         var eventsCreated = 0
@@ -133,6 +158,8 @@ class DeezerDataImportService @Inject constructor(
                 val result = listeningEventDao.insertAllBatchedWithDedup(pendingEvents)
                 eventsCreated += result.inserted
                 duplicatesSkipped += result.skipped
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to insert Deezer event batch", e)
                 addCappedError(errors, "A batch of listening events could not be imported")
@@ -161,13 +188,24 @@ class DeezerDataImportService @Inject constructor(
                 val resolution = resolveTrack(entry, trackCache)
                 if (resolution.isNewTrack) {
                     tracksImported++
-                    runCatching { artistLinkingService.linkArtistsForTrack(resolution.track) }
-                        .onFailure { error ->
-                            Log.w(TAG, "Failed to link artists for Deezer track " + resolution.trackId, error)
-                        }
+                    try {
+                        artistLinkingService.linkArtistsForTrack(resolution.track)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to link artists for Deezer track " + resolution.trackId, e)
+                    }
                 }
-                if (metadataPrepared.add(resolution.trackId)) {
+
+                val prepared = metadataPrepared[resolution.trackId]
+                val hasNewIsrc = prepared?.isrc == null && entry.isrc != null
+                val hasNewAlbum = prepared?.album == null && entry.albumName != null
+                if (prepared == null || hasNewIsrc || hasNewAlbum) {
                     preserveDeezerMetadata(resolution.trackId, entry)
+                    metadataPrepared[resolution.trackId] = PreparedMetadata(
+                        isrc = prepared?.isrc ?: entry.isrc,
+                        album = prepared?.album ?: entry.albumName,
+                    )
                 }
 
                 val endTimestamp = entry.listenedAtMillis
@@ -188,6 +226,8 @@ class DeezerDataImportService @Inject constructor(
                     ),
                 )
                 if (pendingEvents.size >= FLUSH_BATCH_SIZE) flush()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to import a Deezer history row", e)
                 addCappedError(errors, "A listening-history row could not be imported")
@@ -237,7 +277,7 @@ class DeezerDataImportService @Inject constructor(
             }
         }
 
-        val resolution = trackResolver.resolve(
+        var resolution = trackResolver.resolve(
             TrackResolver.Query(
                 title = entry.trackName,
                 artist = entry.artistName,
@@ -245,11 +285,48 @@ class DeezerDataImportService @Inject constructor(
             ),
         )
 
+        // ISRC is stronger than a fuzzy/exact title+artist fallback. If the fallback
+        // landed on a track already carrying a different ISRC, these are distinct
+        // recordings (remaster/live/version collisions are common) and must not be merged.
+        val incomingIsrc = entry.isrc
+        if (incomingIsrc != null) {
+            val resolvedIsrc = enrichedMetadataDao.forTrackSync(resolution.trackId)?.isrc
+                ?.let(::canonicalIsrc)
+            if (resolvedIsrc != null && resolvedIsrc != incomingIsrc) {
+                val newTrack = Track(
+                    title = entry.trackName,
+                    artist = entry.artistName,
+                    album = entry.albumName,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    youtubeId = null,
+                    musicbrainzId = null,
+                    primaryArtistId = null,
+                    contentType = "MUSIC",
+                )
+                val newId = trackRepository.insert(newTrack)
+                resolution = TrackResolver.Resolution(
+                    trackId = newId,
+                    isNewTrack = true,
+                    track = newTrack.copy(id = newId),
+                )
+            }
+        }
+
         // Cache subsequent occurrences as existing so a new track is counted only once.
         trackCache[cacheKey] = resolution.copy(isNewTrack = false)
         if (trackCache.size > MAX_CACHE_SIZE) trackCache.clear()
         return resolution
     }
+
+    private data class PreparedMetadata(
+        val isrc: String?,
+        val album: String?,
+    )
+
+    private fun canonicalIsrc(value: String): String =
+        value.trim().uppercase().replace("-", "").replace(" ", "")
 
     private suspend fun preserveDeezerMetadata(
         trackId: Long,
@@ -287,7 +364,7 @@ class DeezerDataImportService @Inject constructor(
         if (changed) enrichedMetadataDao.update(updated)
     }
 
-    private fun copyUriWithLimit(context: Context, uri: Uri, destination: File) {
+    private suspend fun copyUriWithLimit(context: Context, uri: Uri, destination: File) {
         val input = context.contentResolver.openInputStream(uri)
             ?: throw IOException("Could not open Deezer export")
         input.use { source ->
@@ -295,6 +372,7 @@ class DeezerDataImportService @Inject constructor(
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 var total = 0L
                 while (true) {
+                    coroutineContext.ensureActive()
                     val count = source.read(buffer)
                     if (count < 0) break
                     total += count
