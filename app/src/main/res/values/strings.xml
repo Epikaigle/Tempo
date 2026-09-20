@@ -695,7 +695,7 @@
     <string name="deezer_import_step_3">3. Choose Request my data</string>
     <string name="deezer_import_step_4">4. Download the personal-data export when Deezer emails you</string>
     <string name="deezer_import_step_5">5. Select the deezer-data_*.xlsx file here</string>
-    <string name="deezer_import_short_plays_note">Plays shorter than 30 seconds are ignored, matching Tempo's Spotify history import.</string>
+    <string name="deezer_import_short_plays_note">Plays shorter than 30 seconds are ignored, matching Tempo\'s Spotify history import.</string>
     <string name="deezer_import_importing">Importing Deezer history…</string>
     <string name="deezer_import_reading">Reading %1$s…</string>
     <string name="deezer_import_progress">Importing %1$d/%2$d entries\n%3$d tracks, %4$d events</string>
