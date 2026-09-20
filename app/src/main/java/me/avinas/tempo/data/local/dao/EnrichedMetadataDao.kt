@@ -241,7 +241,13 @@ interface EnrichedMetadataDao {
     suspend fun findBySpotifyId(spotifyId: String): EnrichedMetadata?
 
     /** Find a track already identified by an authoritative ISRC (e.g. Deezer export). */
-    @Query("SELECT * FROM enriched_metadata WHERE REPLACE(REPLACE(UPPER(isrc), \'-\', \'\'), \' \', \'\') = UPPER(:isrc) LIMIT 1")
+    @Query(
+        """
+        SELECT * FROM enriched_metadata
+        WHERE REPLACE(REPLACE(UPPER(isrc), '-', ''), ' ', '') = UPPER(:isrc)
+        LIMIT 1
+        """,
+    )
     suspend fun findByIsrc(isrc: String): EnrichedMetadata?
     
     /**
