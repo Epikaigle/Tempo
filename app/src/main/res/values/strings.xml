@@ -681,6 +681,8 @@
     <string name="settings_enable_gamification_desc">Turn off to hide XP, levels, and badges</string>
     <string name="settings_import_spotify_json">Import Spotify Data Export</string>
     <string name="settings_import_spotify_json_desc">Import listening history from Spotify JSON data export files</string>
+    <string name="settings_import_deezer">Import Deezer Data Export</string>
+    <string name="settings_import_deezer_desc">Import listening history from your Deezer personal-data XLSX file</string>
     <string name="settings_import_youtube_music">Import YouTube Music Data</string>
     <string name="settings_import_youtube_music_desc">Import listening history from a YouTube Takeout ZIP (JSON or HTML)</string>
     <string name="settings_name_dialog_body">Choose the display name shown in your personal profile and stories.</string>
