@@ -28,6 +28,8 @@ object DeezerXlsxParser {
     private const val MAX_SHARED_STRINGS = 2_000_000
     private const val MAX_HISTORY_ROWS = 2_000_000
     private const val MAX_STRING_LENGTH = 500
+    private const val MIN_PARSE_MEMORY_BUDGET_BYTES = 16L * 1024 * 1024
+    private const val MAX_PARSE_MEMORY_BUDGET_BYTES = 160L * 1024 * 1024
 
     private val deezerDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
@@ -45,14 +47,20 @@ object DeezerXlsxParser {
         val malformedRows: Int,
     )
 
+    private data class SharedStringsResult(
+        val values: List<String>,
+        val estimatedBytes: Long,
+    )
+
     fun parse(
         file: File,
         cancellationCheck: (() -> Unit)? = null,
     ): ParseResult {
         ZipFile(file).use { zip ->
             cancellationCheck?.invoke()
+            val memoryBudgetBytes = parseMemoryBudgetBytes()
             val sheetPath = findHistorySheetPath(zip)
-            val sharedStrings = readSharedStrings(zip, cancellationCheck)
+            val sharedStrings = readSharedStrings(zip, cancellationCheck, memoryBudgetBytes)
             val sheetEntry = zip.getEntry(sheetPath)
                 ?: throw IllegalArgumentException("Deezer listening-history worksheet is missing")
             validateEntrySize(sheetEntry.size, sheetPath)
@@ -60,8 +68,10 @@ object DeezerXlsxParser {
             zip.getInputStream(sheetEntry).use { raw ->
                 return parseHistorySheet(
                     LimitedInputStream(raw, MAX_XML_ENTRY_BYTES),
-                    sharedStrings,
+                    sharedStrings.values,
                     cancellationCheck,
+                    memoryBudgetBytes,
+                    sharedStrings.estimatedBytes,
                 )
             }
         }
@@ -134,11 +144,14 @@ object DeezerXlsxParser {
     private fun readSharedStrings(
         zip: ZipFile,
         cancellationCheck: (() -> Unit)?,
-    ): List<String> {
-        val entry = zip.getEntry("xl/sharedStrings.xml") ?: return emptyList()
+        memoryBudgetBytes: Long,
+    ): SharedStringsResult {
+        val entry = zip.getEntry("xl/sharedStrings.xml")
+            ?: return SharedStringsResult(emptyList(), 0L)
         validateEntrySize(entry.size, entry.name)
 
         val strings = ArrayList<String>()
+        var estimatedBytes = 0L
         zip.getInputStream(entry).use { raw ->
             var insideItem = false
             var insideText = false
@@ -169,7 +182,14 @@ object DeezerXlsxParser {
                     when (localName ?: qName) {
                         "t" -> insideText = false
                         "si" -> {
-                            strings.add(builder?.toString().orEmpty())
+                            val value = builder?.toString().orEmpty()
+                            estimatedBytes += estimateStringMemoryBytes(value)
+                            if (estimatedBytes > memoryBudgetBytes) {
+                                throw IllegalArgumentException(
+                                    "Deezer export is too large to parse safely on this device",
+                                )
+                            }
+                            strings.add(value)
                             builder = null
                             insideItem = false
                         }
@@ -177,15 +197,18 @@ object DeezerXlsxParser {
                 }
             })
         }
-        return strings
+        return SharedStringsResult(strings, estimatedBytes)
     }
 
     private fun parseHistorySheet(
         input: InputStream,
         sharedStrings: List<String>,
         cancellationCheck: (() -> Unit)?,
+        memoryBudgetBytes: Long,
+        initialEstimatedBytes: Long,
     ): ParseResult {
         val entries = ArrayList<Entry>()
+        var estimatedBytes = initialEstimatedBytes
         var malformedRows = 0
         var headers: Map<String, Int>? = null
         var rowCount = 0
@@ -247,7 +270,17 @@ object DeezerXlsxParser {
                             }
                         } else if (currentRow.isNotEmpty()) {
                             val parsed = parseDataRow(currentRow, activeHeaders)
-                            if (parsed != null) entries.add(parsed) else malformedRows++
+                            if (parsed != null) {
+                                estimatedBytes += estimateEntryMemoryBytes(parsed)
+                                if (estimatedBytes > memoryBudgetBytes) {
+                                    throw IllegalArgumentException(
+                                        "Deezer listening history is too large to import safely on this device",
+                                    )
+                                }
+                                entries.add(parsed)
+                            } else {
+                                malformedRows++
+                            }
                         }
                     }
                 }
@@ -299,6 +332,28 @@ object DeezerXlsxParser {
             listenedAtMillis = timestamp,
             msPlayed = msPlayed,
         )
+    }
+
+    private fun parseMemoryBudgetBytes(): Long {
+        val heapFraction = Runtime.getRuntime().maxMemory() * 2L / 5L
+        return heapFraction.coerceIn(
+            MIN_PARSE_MEMORY_BUDGET_BYTES,
+            MAX_PARSE_MEMORY_BUDGET_BYTES,
+        )
+    }
+
+    private fun estimateStringMemoryBytes(value: String): Long =
+        48L + value.length.toLong() * 2L
+
+    private fun estimateEntryMemoryBytes(entry: Entry): Long {
+        val stringChars =
+            entry.trackName.length +
+                entry.artistName.length +
+                (entry.albumName?.length ?: 0) +
+                (entry.isrc?.length ?: 0)
+        // Conservative estimate for the Entry object, ArrayList reference and
+        // potentially materialized String slices.
+        return 112L + stringChars.toLong() * 2L
     }
 
     private fun parseListeningSeconds(value: String): Double? {
