@@ -212,7 +212,10 @@ object DeezerXlsxParser {
                         if (activeHeaders == null) {
                             val candidate = currentRow.entries
                                 .associate { normalizeHeader(it.value) to it.key }
-                            if (REQUIRED_HEADERS.all { it in candidate }) {
+                            if (REQUIRED_HEADER_GROUPS.all { aliases ->
+                                    aliases.any { normalizeHeader(it) in candidate }
+                                }
+                            ) {
                                 headers = candidate
                             }
                         } else if (currentRow.isNotEmpty()) {
@@ -236,19 +239,26 @@ object DeezerXlsxParser {
         row: Map<Int, String>,
         headers: Map<String, Int>,
     ): Entry? {
-        fun value(header: String): String =
-            headers[normalizeHeader(header)]?.let { row[it] }.orEmpty().trim()
+        fun value(vararg aliases: String): String {
+            val column = aliases
+                .asSequence()
+                .map(::normalizeHeader)
+                .mapNotNull(headers::get)
+                .firstOrNull()
+            return column?.let { row[it] }.orEmpty().trim()
+        }
 
-        val title = sanitize(value("Song Title"))
-        val artist = sanitize(value("Artist"))
+        val title = sanitize(value("Song Title", "Titre", "Titre du morceau", "Titre de la chanson"))
+        val artist = sanitize(value("Artist", "Artiste", "Artists", "Artistes"))
         if (title.isBlank() || artist.isBlank()) return null
 
-        val dateValue = value("Date")
+        val dateValue = value("Date", "Date d'écoute", "Date de l'écoute")
         val timestamp = parseDate(dateValue)
         if (timestamp <= 0L) return null
 
-        val listeningSeconds = value("Listening Time").replace(',', '.').toDoubleOrNull()
-            ?: return null
+        val listeningSeconds = parseListeningSeconds(
+            value("Listening Time", "Temps d'écoute", "Durée d'écoute", "Duree d'ecoute", "Écoute"),
+        ) ?: return null
         if (!listeningSeconds.isFinite() || listeningSeconds < 0.0) return null
         val msPlayed = (listeningSeconds * 1000.0)
             .coerceAtMost(24.0 * 60.0 * 60.0 * 1000.0)
@@ -257,11 +267,27 @@ object DeezerXlsxParser {
         return Entry(
             trackName = title,
             artistName = artist,
-            albumName = sanitize(value("Album Title")).takeIf { it.isNotBlank() },
+            albumName = sanitize(value("Album Title", "Album", "Titre de l'album")).takeIf { it.isNotBlank() },
             isrc = sanitize(value("ISRC")).uppercase().takeIf { it.isNotBlank() },
             listenedAtMillis = timestamp,
             msPlayed = msPlayed,
         )
+    }
+
+    private fun parseListeningSeconds(value: String): Double? {
+        val clean = value.trim()
+        clean.replace(',', '.').toDoubleOrNull()?.let { return it }
+
+        val parts = clean.split(':')
+        if (parts.size in 2..3) {
+            val numbers = parts.map { it.toDoubleOrNull() ?: return null }
+            return if (numbers.size == 3) {
+                numbers[0] * 3600.0 + numbers[1] * 60.0 + numbers[2]
+            } else {
+                numbers[0] * 60.0 + numbers[1]
+            }
+        }
+        return null
     }
 
     private fun parseDate(value: String): Long {
@@ -354,10 +380,10 @@ object DeezerXlsxParser {
             super.read(buffer, offset, length).also(::account)
     }
 
-    private val REQUIRED_HEADERS = setOf(
-        normalizeHeader("Song Title"),
-        normalizeHeader("Artist"),
-        normalizeHeader("Listening Time"),
-        normalizeHeader("Date"),
+    private val REQUIRED_HEADER_GROUPS = listOf(
+        listOf("Song Title", "Titre", "Titre du morceau", "Titre de la chanson"),
+        listOf("Artist", "Artiste", "Artists", "Artistes"),
+        listOf("Listening Time", "Temps d'écoute", "Durée d'écoute", "Duree d'ecoute", "Écoute"),
+        listOf("Date", "Date d'écoute", "Date de l'écoute"),
     )
 }
