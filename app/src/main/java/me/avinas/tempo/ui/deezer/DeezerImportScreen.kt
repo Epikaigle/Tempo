@@ -193,7 +193,7 @@ private fun IdleContent(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Import from Deezer Data Export",
+                text = stringResource(R.string.deezer_import_intro_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
@@ -201,7 +201,7 @@ private fun IdleContent(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Select the Deezer personal-data XLSX file. Tempo reads only the listening-history sheet; account, IP and device data are ignored.",
+                text = stringResource(R.string.deezer_import_intro_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
@@ -214,13 +214,13 @@ private fun IdleContent(
             ) {
                 Icon(Icons.Default.FileOpen, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Select Deezer XLSX")
+                Text(stringResource(R.string.deezer_import_select_file))
             }
 
             if (hasSelection) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Deezer export selected",
+                    text = stringResource(R.string.deezer_import_file_selected),
                     color = DeezerPurple,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
@@ -231,14 +231,14 @@ private fun IdleContent(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
-                        Text("Clear")
+                        Text(stringResource(R.string.deezer_import_clear))
                     }
                     Button(
                         onClick = onImport,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = DeezerPurple),
                     ) {
-                        Text("Start Import")
+                        Text(stringResource(R.string.deezer_import_start))
                     }
                 }
             }
@@ -250,18 +250,18 @@ private fun IdleContent(
     GlassCard(contentPadding = PaddingValues(16.dp)) {
         Column {
             Text(
-                text = "How to get your Deezer data",
+                text = stringResource(R.string.deezer_import_how_to_title),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
             )
             Spacer(modifier = Modifier.height(8.dp))
             listOf(
-                "1. On a computer, open Deezer in your web browser",
-                "2. Open Settings → My data / My personal data",
-                "3. Choose Request my data",
-                "4. Download the personal-data export when Deezer emails you",
-                "5. Select the deezer-data_*.xlsx file here",
+                stringResource(R.string.deezer_import_step_1),
+                stringResource(R.string.deezer_import_step_2),
+                stringResource(R.string.deezer_import_step_3),
+                stringResource(R.string.deezer_import_step_4),
+                stringResource(R.string.deezer_import_step_5),
             ).forEach { step ->
                 Text(
                     text = step,
@@ -290,7 +290,7 @@ private fun ImportingContent(state: DeezerDataImportService.ImportState) {
             CircularProgressIndicator(color = DeezerPurple, modifier = Modifier.size(48.dp))
             Spacer(modifier = Modifier.height(20.dp))
             Text(
-                text = "Importing Deezer history…",
+                text = stringResource(R.string.deezer_import_importing),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
@@ -299,13 +299,16 @@ private fun ImportingContent(state: DeezerDataImportService.ImportState) {
 
             val (message, progress) = when (state) {
                 is DeezerDataImportService.ImportState.Parsing ->
-                    ("Reading " + state.fileName + "…") to 0.05f
+                    stringResource(R.string.deezer_import_reading, state.fileName) to 0.05f
                 is DeezerDataImportService.ImportState.Importing ->
-                    (
-                        "Importing " + state.current + "/" + state.total + " entries\n" +
-                            state.tracksImported + " tracks, " + state.eventsCreated + " events"
+                    stringResource(
+                        R.string.deezer_import_progress,
+                        state.current,
+                        state.total,
+                        state.tracksImported,
+                        state.eventsCreated,
                     ) to (state.current.toFloat() / state.total.coerceAtLeast(1))
-                else -> "Preparing…" to 0f
+                else -> stringResource(R.string.deezer_import_preparing) to 0f
             }
 
             Text(
@@ -343,35 +346,52 @@ private fun CompletedContent(
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Deezer Import Complete",
+                text = stringResource(R.string.deezer_import_complete),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
             )
             Spacer(modifier = Modifier.height(12.dp))
+            val summaryLines = mutableListOf(
+                stringResource(R.string.deezer_import_events_imported, result.eventsCreated),
+                stringResource(R.string.deezer_import_new_tracks, result.tracksImported),
+                stringResource(R.string.deezer_import_duplicates_skipped, result.duplicatesSkipped),
+                stringResource(R.string.deezer_import_short_skipped, result.shortPlaysSkipped),
+            )
+            if (result.malformedRows > 0) {
+                summaryLines += stringResource(
+                    R.string.deezer_import_malformed_skipped,
+                    result.malformedRows,
+                )
+            }
             Text(
-                text = result.eventsCreated.toString() + " listening events imported\n" +
-                    result.tracksImported + " new tracks\n" +
-                    result.duplicatesSkipped + " duplicates skipped\n" +
-                    result.shortPlaysSkipped + " plays under 30 seconds skipped" +
-                    (if (result.malformedRows > 0) "\n" + result.malformedRows + " malformed rows skipped" else ""),
+                text = summaryLines.joinToString("\n"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
             )
+            if (result.errors.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.deezer_import_warnings, result.errors.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextTertiary,
+                    textAlign = TextAlign.Center,
+                )
+            }
             Spacer(modifier = Modifier.height(20.dp))
             Button(
                 onClick = onDone,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = DeezerPurple),
             ) {
-                Text("Done")
+                Text(stringResource(R.string.deezer_import_done))
             }
             OutlinedButton(
                 onClick = onImportAnother,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Import another file")
+                Text(stringResource(R.string.deezer_import_another))
             }
         }
     }
@@ -396,7 +416,7 @@ private fun ErrorContent(
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Deezer Import Failed",
+                text = stringResource(R.string.deezer_import_failed),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
@@ -414,10 +434,10 @@ private fun ErrorContent(
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = DeezerPurple),
             ) {
-                Text("Try again")
+                Text(stringResource(R.string.deezer_import_try_again))
             }
             OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-                Text("Back")
+                Text(stringResource(R.string.settings_back))
             }
         }
     }
