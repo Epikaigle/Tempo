@@ -239,6 +239,18 @@ interface EnrichedMetadataDao {
      */
     @Query("SELECT * FROM enriched_metadata WHERE spotify_id = :spotifyId LIMIT 1")
     suspend fun findBySpotifyId(spotifyId: String): EnrichedMetadata?
+
+    /** Find a track already identified by an authoritative ISRC (e.g. Deezer export). */
+    @Query("SELECT * FROM enriched_metadata WHERE UPPER(isrc) = UPPER(:isrc) LIMIT 1")
+    suspend fun findByIsrc(isrc: String): EnrichedMetadata?
+
+    /** Preserve a newly discovered ISRC without overwriting existing authoritative metadata. */
+    @Query("""
+        UPDATE enriched_metadata
+        SET isrc = :isrc
+        WHERE track_id = :trackId AND (isrc IS NULL OR TRIM(isrc) = '')
+    """)
+    suspend fun updateIsrcIfMissing(trackId: Long, isrc: String): Int
     
     /**
      * Get tracks that are enriched but tracks table is missing album art.
