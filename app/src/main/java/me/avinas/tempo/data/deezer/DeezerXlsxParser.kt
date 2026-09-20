@@ -268,7 +268,7 @@ object DeezerXlsxParser {
             trackName = title,
             artistName = artist,
             albumName = sanitize(value("Album Title", "Album", "Titre de l'album")).takeIf { it.isNotBlank() },
-            isrc = sanitize(value("ISRC")).uppercase().takeIf { it.isNotBlank() },
+            isrc = normalizeIsrc(value("ISRC")),
             listenedAtMillis = timestamp,
             msPlayed = msPlayed,
         )
@@ -342,6 +342,15 @@ object DeezerXlsxParser {
         value.trim().lowercase().replace("\u00a0", " ").replace(Regex("\\s+"), " ")
 
     private fun sanitize(value: String): String = value.trim().take(MAX_STRING_LENGTH)
+
+    private fun normalizeIsrc(value: String): String? {
+        val normalized = value
+            .trim()
+            .uppercase()
+            .replace("-", "")
+            .replace(" ", "")
+        return normalized.takeIf { it.matches(Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")) }
+    }
 
     private fun validateEntrySize(size: Long, name: String) {
         if (size > MAX_XML_ENTRY_BYTES) {
