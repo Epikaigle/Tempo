@@ -311,8 +311,22 @@ private fun ImportingContent(state: DeezerDataImportService.ImportState) {
                 else -> stringResource(R.string.deezer_import_preparing) to 0f
             }
 
+            val localizedMessage =
+                when {
+                    message.contains("does not contain Deezer listening history", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_missing_history)
+                    message.contains("No Deezer listening-history entries", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_no_entries)
+                    message.contains("too large", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_too_large)
+                    message.contains("not a valid Deezer XLSX", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_invalid_xlsx)
+                    message.contains("Deezer import failed", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_generic)
+                    else -> message
+                }
             Text(
-                text = message,
+                text = localizedMessage,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
