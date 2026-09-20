@@ -575,6 +575,23 @@ class DeezerDataImportService @Inject constructor(
                 ),
             )
         }
+
+        // Tempo's primary artist rankings still aggregate the denormalized
+        // tracks.artist string, so keep that representation in sync as well.
+        // Do not rewrite existing collaboration syntax; simply append a missing
+        // credited artist in a format ArtistParser already understands.
+        trackRepository.getById(trackId).first()?.let { current ->
+            val alreadyPresent =
+                ArtistParser.getAllArtists(current.artist).any { existingArtist ->
+                    ArtistParser.isStrictSameArtist(existingArtist, credited)
+                }
+            if (!alreadyPresent && !ArtistParser.isUnknownArtist(current.artist)) {
+                val updatedArtist =
+                    if (current.artist.isBlank()) credited else current.artist.trim() + ", " + credited
+                trackRepository.update(current.copy(artist = updatedArtist))
+            }
+        }
+
         preparedCredits.add(cacheKey)
         if (preparedCredits.size > MAX_CACHE_SIZE) preparedCredits.clear()
     }
