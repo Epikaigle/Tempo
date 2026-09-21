@@ -22,7 +22,7 @@ import org.junit.runner.RunWith
 class DeezerImportPlatformTest {
 
     @Test
-    fun openDocumentContractUsesPersistableDocumentPicker() {
+    fun openDocumentContractUsesSafPickerAndRequestedMimeType() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val intent =
             ActivityResultContracts.OpenDocument().createIntent(
@@ -31,7 +31,10 @@ class DeezerImportPlatformTest {
             )
 
         assertEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)
-        assertTrue(intent.hasCategory(Intent.CATEGORY_OPENABLE))
+        assertTrue(
+            intent.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)
+                ?.contains("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") == true,
+        )
     }
 
     @Test
