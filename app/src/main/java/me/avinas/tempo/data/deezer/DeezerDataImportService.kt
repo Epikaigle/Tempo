@@ -225,7 +225,10 @@ class DeezerDataImportService @Inject constructor(
         internal fun userFacingError(error: Exception): String {
             val message = error.message.orEmpty()
             return when {
-                message.contains("10_listeningHistory", ignoreCase = true) ->
+                message.contains("listening-history columns were not found", ignoreCase = true) ->
+                    "The Deezer listening-history columns in this export are not supported"
+                message.contains("does not contain Deezer's 10_listeningHistory", ignoreCase = true) ||
+                    message.contains("listening-history worksheet is missing", ignoreCase = true) ->
                     "This file does not contain Deezer listening history (10_listeningHistory)"
                 message.contains("No valid Deezer listening history entries", ignoreCase = true) ->
                     "No Deezer listening-history entries were found in this export"
