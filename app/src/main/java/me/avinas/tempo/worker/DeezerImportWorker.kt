@@ -278,6 +278,7 @@ class DeezerImportWorker
                 } finally {
                     progressJob.cancel()
                     cancelProgressNotification()
+                    releasePersistedReadPermission(uri)
                 }
             }
 
@@ -413,6 +414,19 @@ class DeezerImportWorker
             val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.cancel(NOTIFICATION_ID)
             notificationManager.notify(NOTIFICATION_COMPLETION_ID, notification)
+        }
+
+        private fun releasePersistedReadPermission(uri: Uri) {
+            try {
+                applicationContext.contentResolver.releasePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            } catch (_: SecurityException) {
+                // The provider did not grant a persistable permission.
+            } catch (_: IllegalArgumentException) {
+                // The URI/provider does not support persisted permissions.
+            }
         }
 
         private fun cancelProgressNotification() {
