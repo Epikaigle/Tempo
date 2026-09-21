@@ -61,6 +61,13 @@ import me.avinas.tempo.ui.theme.TextTertiary
 
 private val DeezerPurple = Color(0xFFA238FF)
 
+internal val DEEZER_IMPORT_MIME_TYPES =
+    arrayOf(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/octet-stream",
+        "*/*",
+    )
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeezerImportScreen(
@@ -128,13 +135,7 @@ fun DeezerImportScreen(
                         IdleContent(
                             hasSelection = selectedUri != null,
                             onSelect = {
-                                picker.launch(
-                                    arrayOf(
-                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        "application/octet-stream",
-                                        "*/*",
-                                    ),
-                                )
+                                picker.launch(DEEZER_IMPORT_MIME_TYPES)
                             },
                             onClear = { selectedUri = null },
                             onImport = {
@@ -152,7 +153,10 @@ fun DeezerImportScreen(
                     is DeezerImportUiState.Completed -> {
                         CompletedContent(
                             result = state.result,
-                            onDone = onNavigateBack,
+                            onDone = {
+                                viewModel.resetState()
+                                onNavigateBack()
+                            },
                             onImportAnother = {
                                 selectedUri = null
                                 viewModel.resetState()
@@ -167,7 +171,10 @@ fun DeezerImportScreen(
                                 selectedUri = null
                                 viewModel.resetState()
                             },
-                            onBack = onNavigateBack,
+                            onBack = {
+                                viewModel.resetState()
+                                onNavigateBack()
+                            },
                         )
                     }
                 }
@@ -399,6 +406,36 @@ private fun CompletedContent(
                     style = MaterialTheme.typography.bodySmall,
                     color = TextTertiary,
                     textAlign = TextAlign.Center,
+                )
+
+                val warningLines =
+                    result.errors.take(5).map { warning ->
+                        when {
+                            warning.contains("Metadata for a Deezer track", ignoreCase = true) ->
+                                stringResource(R.string.deezer_import_warning_metadata)
+                            warning.contains("additional artist credit", ignoreCase = true) ->
+                                stringResource(R.string.deezer_import_warning_artist_credit)
+                            warning.contains("listening event", ignoreCase = true) ->
+                                stringResource(R.string.deezer_import_warning_event)
+                            warning.contains("listening-history row", ignoreCase = true) ->
+                                stringResource(R.string.deezer_import_warning_row)
+                            warning.contains("more errors", ignoreCase = true) ->
+                                stringResource(R.string.deezer_import_warning_more)
+                            else ->
+                                stringResource(R.string.deezer_import_warning_unknown)
+                        }
+                    }.toMutableList()
+                if (result.errors.size > 5) {
+                    warningLines += stringResource(R.string.deezer_import_warning_more)
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = warningLines.joinToString("\n") { "• $it" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
             Spacer(modifier = Modifier.height(20.dp))
