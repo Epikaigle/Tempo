@@ -58,8 +58,8 @@ class DeezerDataImportServiceTest {
             DeezerDataImportService.deezerArtistCredits("Tyler, the Creator"),
         )
         assertEquals(
-            listOf("Tyler, the Creator", "A$AP Rocky"),
-            DeezerDataImportService.deezerArtistCredits("Tyler, the Creator, A$AP Rocky"),
+            listOf("Tyler, the Creator", "A\$AP Rocky"),
+            DeezerDataImportService.deezerArtistCredits("Tyler, the Creator, A\$AP Rocky"),
         )
         assertEquals(
             listOf("Earth, Wind & Fire", "Chic"),
@@ -215,12 +215,43 @@ class DeezerDataImportServiceTest {
         )
     }
 
+    @Test
+    fun marksSameIsrcWithSameArtistAndDifferentTitleAsAmbiguous() {
+        val sameArtistDiffTitleIsrc = "FRABC2600006"
+        val entries = listOf(
+            entry(sameArtistDiffTitleIsrc, "Artist X", trackName = "Song A"),
+            entry(sameArtistDiffTitleIsrc, "Artist X", trackName = "Song B"),
+        )
+
+        assertEquals(
+            setOf(sameArtistDiffTitleIsrc),
+            DeezerDataImportService.findIncomingAmbiguousIsrcs(entries),
+        )
+    }
+
+    @Test
+    fun acceptsSameIsrcWithCompatibleTitles() {
+        assertTrue(
+            DeezerDataImportService.titlesCompatibleForIsrc("Song A", "song a"),
+        )
+        assertTrue(
+            DeezerDataImportService.titlesCompatibleForIsrc("Song A ", "Song A"),
+        )
+        assertTrue(
+            !DeezerDataImportService.titlesCompatibleForIsrc("Song A", "Song B"),
+        )
+        assertTrue(
+            !DeezerDataImportService.titlesCompatibleForIsrc("", "Song B"),
+        )
+    }
+
     private fun entry(
         isrc: String,
         artist: String,
         msPlayed: Long = 120_000L,
+        trackName: String = "Synthetic Track",
     ) = DeezerXlsxParser.Entry(
-        trackName = "Synthetic Track",
+        trackName = trackName,
         artistName = artist,
         albumName = "Synthetic Album",
         isrc = isrc,

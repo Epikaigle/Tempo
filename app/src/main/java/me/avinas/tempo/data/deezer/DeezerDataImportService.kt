@@ -138,12 +138,23 @@ class DeezerDataImportService @Inject constructor(
         ): Boolean =
             msPlayed < SKIP_PLAY_DURATION_MS || completionPercentage < 30
 
+        internal fun titlesCompatibleForIsrc(title1: String, title2: String): Boolean {
+            val t1 = title1.trim()
+            val t2 = title2.trim()
+            if (t1.isEmpty() || t2.isEmpty()) return false
+            if (t1.equals(t2, ignoreCase = true)) return true
+            val norm1 = ArtistParser.normalizeForSearch(t1)
+            val norm2 = ArtistParser.normalizeForSearch(t2)
+            return norm1.isNotEmpty() && norm1 == norm2
+        }
+
         internal fun findIncomingAmbiguousIsrcs(
             entries: List<DeezerXlsxParser.Entry>,
             minimumPlayDurationMs: Long = TrackingRulesPreferences.DEFAULT_MIN_PLAY_DURATION_MS,
             cancellationCheck: (() -> Unit)? = null,
         ): Set<String> {
             val knownArtists = HashMap<String, MutableList<String>>()
+            val knownTitles = HashMap<String, String>()
             val ambiguous = HashSet<String>()
 
             entries.forEachIndexed { index, entry ->
@@ -159,6 +170,15 @@ class DeezerDataImportService @Inject constructor(
 
                 val isrc = entry.isrc ?: return@forEachIndexed
                 if (isrc in ambiguous) return@forEachIndexed
+
+                // Same ISRC cannot belong to different recordings with incompatible titles
+                val previousTitle = knownTitles[isrc]
+                if (previousTitle == null) {
+                    knownTitles[isrc] = entry.trackName
+                } else if (!titlesCompatibleForIsrc(previousTitle, entry.trackName)) {
+                    ambiguous.add(isrc)
+                    return@forEachIndexed
+                }
 
                 val artists =
                     deezerArtistCredits(entry.artistName)
@@ -573,15 +593,17 @@ class DeezerDataImportService @Inject constructor(
                 ?.takeIf { isrc !in ambiguousIsrcs }
                 ?.let { trackId ->
                     trackRepository.getById(trackId).first()?.let { existingTrack ->
-                        var track = promoteUnknownArtistFromDeezer(existingTrack, entry.artistName)
-                        track = fillMissingAlbumFromDeezer(track, entry.albumName)
-                        val resolution = TrackResolver.Resolution(
-                            trackId = track.id,
-                            isNewTrack = false,
-                            track = track,
-                        )
-                        cacheTrackResolution(cacheKey, resolution, trackCache)
-                        return resolution
+                        if (titlesCompatibleForIsrc(existingTrack.title, entry.trackName)) {
+                            var track = promoteUnknownArtistFromDeezer(existingTrack, entry.artistName)
+                            track = fillMissingAlbumFromDeezer(track, entry.albumName)
+                            val resolution = TrackResolver.Resolution(
+                                trackId = track.id,
+                                isNewTrack = false,
+                                track = track,
+                            )
+                            cacheTrackResolution(cacheKey, resolution, trackCache)
+                            return resolution
+                        }
                     }
                 }
 

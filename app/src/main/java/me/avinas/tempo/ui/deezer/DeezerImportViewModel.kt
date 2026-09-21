@@ -5,7 +5,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +22,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class DeezerImportViewModel @Inject constructor(
+    @param:ApplicationContext private val context: Context,
     private val importService: DeezerDataImportService,
     private val tracker: AnalyticsTracker,
 ) : ViewModel() {
@@ -29,10 +33,7 @@ class DeezerImportViewModel @Inject constructor(
     val importState = importService.importState
 
     init {
-        // The import itself runs in DeezerImportWorker (foreground, survives
-        // navigation and process death). This shared singleton service's state flow
-        // drives both this UI and the worker's notification, so translate its states
-        // into UI state here — same pattern used by YouTubeMusicImportViewModel.
+        // 1. Live in-process state flow: provides high-frequency progress while the app is alive
         viewModelScope.launch {
             importService.importState.collect { state ->
                 when (state) {
@@ -63,6 +64,52 @@ class DeezerImportViewModel @Inject constructor(
                     is DeezerDataImportService.ImportState.Idle -> Unit
                 }
             }
+        }
+
+        // 2. Persistent WorkManager observation: survives navigation and process death
+        viewModelScope.launch {
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkFlow(DeezerImportWorker.WORK_NAME)
+                .collect { infos ->
+                    val info = infos.firstOrNull() ?: return@collect
+                    when (info.state) {
+                        WorkInfo.State.ENQUEUED,
+                        WorkInfo.State.RUNNING -> {
+                            if (_uiState.value !is DeezerImportUiState.Importing) {
+                                _uiState.value = DeezerImportUiState.Importing
+                            }
+                        }
+
+                        WorkInfo.State.SUCCEEDED -> {
+                            if (_uiState.value is DeezerImportUiState.Importing &&
+                                importService.importState.value !is DeezerDataImportService.ImportState.Completed
+                            ) {
+                                val result = DeezerDataImportService.ImportResult(
+                                    tracksImported = info.outputData.getInt(DeezerImportWorker.KEY_TRACKS_IMPORTED, 0),
+                                    eventsCreated = info.outputData.getInt(DeezerImportWorker.KEY_EVENTS_CREATED, 0),
+                                    duplicatesSkipped = info.outputData.getInt(DeezerImportWorker.KEY_DUPLICATES_SKIPPED, 0),
+                                    shortPlaysSkipped = info.outputData.getInt(DeezerImportWorker.KEY_SHORT_PLAYS_SKIPPED, 0),
+                                    malformedRows = info.outputData.getInt(DeezerImportWorker.KEY_MALFORMED_ROWS, 0),
+                                    totalEntries = info.outputData.getInt(DeezerImportWorker.KEY_TOTAL_ENTRIES, 0),
+                                    errors = emptyList(),
+                                )
+                                _uiState.value = DeezerImportUiState.Completed(result)
+                            }
+                        }
+
+                        WorkInfo.State.FAILED -> {
+                            if (_uiState.value is DeezerImportUiState.Importing &&
+                                importService.importState.value !is DeezerDataImportService.ImportState.Completed
+                            ) {
+                                val errorMsg = info.outputData.getString(DeezerImportWorker.KEY_ERROR_MESSAGE)
+                                    ?: "Deezer import failed"
+                                _uiState.value = DeezerImportUiState.Error(errorMsg)
+                            }
+                        }
+
+                        else -> Unit
+                    }
+                }
         }
     }
 
@@ -96,6 +143,10 @@ class DeezerImportViewModel @Inject constructor(
     fun resetState() {
         _uiState.value = DeezerImportUiState.Idle
         importService.resetState()
+        try {
+            WorkManager.getInstance(context).pruneWork()
+        } catch (_: Exception) {
+        }
     }
 }
 
