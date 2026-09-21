@@ -281,9 +281,10 @@ class DeezerDataImportService @Inject constructor(
         val artistCreditsPrepared = HashSet<String>()
         val createdTrackIds = LinkedHashSet<Long>()
         val isrcIndex = HashMap<String, Long>()
+        val importContext = coroutineContext
         val ambiguousIsrcs =
             findIncomingAmbiguousIsrcs(parsed.entries) {
-                coroutineContext.ensureActive()
+                importContext.ensureActive()
             }.toHashSet()
         enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
             val normalized = canonicalIsrc(ref.isrc) ?: return@forEach
