@@ -230,7 +230,8 @@ class DeezerDataImportService @Inject constructor(
                     "This file does not contain Deezer listening history (10_listeningHistory)"
                 message.contains("No valid Deezer listening history entries", ignoreCase = true) ->
                     "No Deezer listening-history entries were found in this export"
-                message.contains("too large", ignoreCase = true) ->
+                message.contains("too large", ignoreCase = true) ||
+                    message.contains("safe size limit", ignoreCase = true) ->
                     "This Deezer export is too large to import safely on this device"
                 message.contains("XLSX", ignoreCase = true) || error is java.util.zip.ZipException ->
                     "The selected file is not a valid Deezer XLSX export"
