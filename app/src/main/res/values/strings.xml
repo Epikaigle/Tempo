@@ -707,6 +707,12 @@
     <string name="deezer_import_short_skipped">%1$d plays below your Tempo minimum ignored</string>
     <string name="deezer_import_malformed_skipped">%1$d malformed rows skipped</string>
     <string name="deezer_import_warnings">%1$d import warnings occurred</string>
+    <string name="deezer_import_warning_metadata">Metadata for one Deezer track could not be saved.</string>
+    <string name="deezer_import_warning_artist_credit">An additional artist credit could not be saved.</string>
+    <string name="deezer_import_warning_event">A listening event could not be imported.</string>
+    <string name="deezer_import_warning_row">A listening-history row could not be imported.</string>
+    <string name="deezer_import_warning_more">Additional warnings were omitted.</string>
+    <string name="deezer_import_warning_unknown">A non-fatal issue occurred during the import.</string>
     <string name="deezer_import_done">Done</string>
     <string name="deezer_import_another">Import another file</string>
     <string name="deezer_import_failed">Deezer Import Failed</string>
