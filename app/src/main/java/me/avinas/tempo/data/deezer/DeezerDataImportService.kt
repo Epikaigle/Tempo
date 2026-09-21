@@ -265,8 +265,8 @@ class DeezerDataImportService @Inject constructor(
         val isSuccess: Boolean
             get() = when {
                 eventsCreated > 0 -> true
-                errors.isNotEmpty() -> false
                 duplicatesSkipped > 0 || shortPlaysSkipped > 0 -> true
+                errors.isNotEmpty() -> false
                 else -> false
             }
     }

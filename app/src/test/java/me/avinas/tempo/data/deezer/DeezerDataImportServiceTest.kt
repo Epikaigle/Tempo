@@ -165,6 +165,17 @@ class DeezerDataImportServiceTest {
         )
         assertTrue(successWithDuplicatesOnly.isSuccess)
 
+        val successWithDuplicatesAndWarnings = DeezerDataImportService.ImportResult(
+            tracksImported = 0,
+            eventsCreated = 0,
+            duplicatesSkipped = 50,
+            shortPlaysSkipped = 0,
+            malformedRows = 0,
+            totalEntries = 50,
+            errors = listOf("Metadata for a Deezer track could not be saved"),
+        )
+        assertTrue(successWithDuplicatesAndWarnings.isSuccess)
+
         val successWithShortPlaysOnly = DeezerDataImportService.ImportResult(
             tracksImported = 0,
             eventsCreated = 0,
@@ -175,6 +186,17 @@ class DeezerDataImportServiceTest {
             errors = emptyList(),
         )
         assertTrue(successWithShortPlaysOnly.isSuccess)
+
+        val successWithShortPlaysAndWarnings = DeezerDataImportService.ImportResult(
+            tracksImported = 0,
+            eventsCreated = 0,
+            duplicatesSkipped = 0,
+            shortPlaysSkipped = 10,
+            malformedRows = 0,
+            totalEntries = 10,
+            errors = listOf("An additional artist credit could not be saved"),
+        )
+        assertTrue(successWithShortPlaysAndWarnings.isSuccess)
 
         val failureWithErrorsAndNoEvents = DeezerDataImportService.ImportResult(
             tracksImported = 0,

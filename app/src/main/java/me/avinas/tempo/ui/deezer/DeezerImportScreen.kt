@@ -108,7 +108,17 @@ fun DeezerImportScreen(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
+                        IconButton(
+                            onClick = {
+                                if (
+                                    uiState is DeezerImportUiState.Completed ||
+                                    uiState is DeezerImportUiState.Error
+                                ) {
+                                    viewModel.resetState()
+                                }
+                                onNavigateBack()
+                            },
+                        ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = stringResource(R.string.settings_back),

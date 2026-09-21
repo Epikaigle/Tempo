@@ -88,11 +88,16 @@ object ArtistParser {
         "florida georgia line",  // Sometimes written as "Florida Georgia & Line"
         "the mamas & the papas",
         "peter paul & mary",
+        "peter, paul & mary",
         "crosby stills nash & young",
+        "crosby, stills, nash & young",
         "emerson lake & palmer",
+        "emerson, lake & palmer",
         "blood sweat & tears",
+        "blood, sweat & tears",
         "earth wind & fire",
         "bell biv devoe",
+        "bell, biv devoe",
         "kool & the gang",
         "rob base & dj ez rock",
         "eric b & rakim",
@@ -260,17 +265,6 @@ object ArtistParser {
     @Volatile
     private var userKnownBands: Set<String> = emptySet()
 
-    private val knownComplexBandKeys: Set<String> by lazy(LazyThreadSafetyMode.PUBLICATION) {
-        KNOWN_COMPLEX_BANDS
-            .asSequence()
-            .map(::normalizeForSearch)
-            .filter { it.isNotBlank() }
-            .toSet()
-    }
-
-    @Volatile
-    private var userKnownBandKeys: Set<String> = emptySet()
-
     /**
      * Load user-defined known band names from the database.
      * Called once at app startup to populate the user set.
@@ -278,12 +272,6 @@ object ArtistParser {
      */
     fun loadUserKnownBands(names: Set<String>) {
         userKnownBands = names.map { it.trim().lowercase() }.toSet()
-        userKnownBandKeys =
-            names
-                .asSequence()
-                .map(::normalizeForSearch)
-                .filter { it.isNotBlank() }
-                .toSet()
         Log.d("ArtistParser", "Loaded ${userKnownBands.size} user-known bands")
     }
 
@@ -294,10 +282,6 @@ object ArtistParser {
     fun addUserKnownBand(name: String) {
         val lower = name.trim().lowercase()
         userKnownBands = userKnownBands + lower
-        val normalized = normalizeForSearch(name)
-        if (normalized.isNotBlank()) {
-            userKnownBandKeys = userKnownBandKeys + normalized
-        }
         Log.d("ArtistParser", "Added user-known band: '$lower'")
     }
     
@@ -493,15 +477,7 @@ object ArtistParser {
      */
     private fun isKnownBand(artist: String): Boolean {
         val lower = artist.trim().lowercase()
-        if (lower in KNOWN_COMPLEX_BANDS || lower in userKnownBands) return true
-
-        // Metadata sources can inject punctuation into a canonical artist name
-        // (for example "Crosby, Stills, Nash & Young"). Compare a punctuation-
-        // insensitive key too, so known artist entities remain intact instead of
-        // being split into bogus individual artists.
-        val normalized = normalizeForSearch(artist)
-        if (normalized.isBlank()) return false
-        return normalized in knownComplexBandKeys || normalized in userKnownBandKeys
+        return lower in KNOWN_COMPLEX_BANDS || lower in userKnownBands
     }
 
     /**

@@ -66,25 +66,13 @@ class DeezerImportViewModel @Inject constructor(
                         _uiState.value = DeezerImportUiState.Importing
                     }
 
-                    is DeezerDataImportService.ImportState.Completed -> {
-                        if (_uiState.value is DeezerImportUiState.Importing) {
-                            _uiState.value =
-                                if (state.result.isSuccess) {
-                                    DeezerImportUiState.Completed(state.result)
-                                } else {
-                                    DeezerImportUiState.Error(
-                                        state.result.errors.firstOrNull() ?: context.getString(R.string.deezer_import_error_generic),
-                                    )
-                                }
-                        }
-                    }
-
-                    is DeezerDataImportService.ImportState.Error -> {
-                        if (_uiState.value is DeezerImportUiState.Importing) {
-                            _uiState.value = DeezerImportUiState.Error(state.message)
-                        }
-                    }
-
+                    // Terminal UI state comes exclusively from WorkManager below.
+                    // The service can publish Completed/Error slightly before the
+                    // unique worker itself becomes terminal. Waiting for WorkManager
+                    // prevents a fast "import another/retry" action from racing
+                    // ExistingWorkPolicy.KEEP and being silently discarded.
+                    is DeezerDataImportService.ImportState.Completed,
+                    is DeezerDataImportService.ImportState.Error,
                     is DeezerDataImportService.ImportState.Idle -> Unit
                 }
             }
@@ -119,10 +107,7 @@ class DeezerImportViewModel @Inject constructor(
                         }
 
                         WorkInfo.State.SUCCEEDED -> {
-                            if (
-                                (_uiState.value is DeezerImportUiState.Importing || activeWorkId == info.id) &&
-                                importService.importState.value !is DeezerDataImportService.ImportState.Completed
-                            ) {
+                            if (_uiState.value is DeezerImportUiState.Importing || activeWorkId == info.id) {
                                 val result = DeezerDataImportService.ImportResult(
                                     tracksImported = info.outputData.getInt(DeezerImportWorker.KEY_TRACKS_IMPORTED, 0),
                                     eventsCreated = info.outputData.getInt(DeezerImportWorker.KEY_EVENTS_CREATED, 0),
@@ -141,10 +126,7 @@ class DeezerImportViewModel @Inject constructor(
                         }
 
                         WorkInfo.State.FAILED -> {
-                            if (
-                                (_uiState.value is DeezerImportUiState.Importing || activeWorkId == info.id) &&
-                                importService.importState.value !is DeezerDataImportService.ImportState.Completed
-                            ) {
+                            if (_uiState.value is DeezerImportUiState.Importing || activeWorkId == info.id) {
                                 val errorMsg =
                                     info.outputData.getString(DeezerImportWorker.KEY_ERROR_MESSAGE)
                                         ?: context.getString(R.string.deezer_import_error_generic)
