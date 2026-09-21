@@ -72,10 +72,10 @@ class DeezerImportWorker
                     val channel =
                         NotificationChannel(
                             NOTIFICATION_CHANNEL_ID,
-                            "Deezer Data Import",
+                            context.getString(R.string.deezer_import_notification_channel_name),
                             NotificationManager.IMPORTANCE_LOW,
                         ).apply {
-                            description = "Progress notifications for Deezer data import"
+                            description = context.getString(R.string.deezer_import_notification_channel_desc)
                         }
                     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     notificationManager.createNotificationChannel(channel)
@@ -151,7 +151,7 @@ class DeezerImportWorker
                 }
 
                 try {
-                    setForeground(createForegroundInfo("Preparing import...", 0, 0))
+                    setForeground(createForegroundInfo(applicationContext.getString(R.string.deezer_import_preparing), 0, 0))
                 } catch (e: IllegalStateException) {
                     Log.w(TAG, "Foreground start not allowed; importing in background", e)
                 }
@@ -165,7 +165,7 @@ class DeezerImportWorker
                             when (state) {
                                 is DeezerDataImportService.ImportState.Parsing -> {
                                     showProgressNotification(
-                                        "Reading ${state.fileName}...",
+                                        applicationContext.getString(R.string.deezer_import_reading, state.fileName),
                                         0,
                                         0,
                                     )
@@ -173,7 +173,11 @@ class DeezerImportWorker
 
                                 is DeezerDataImportService.ImportState.Importing -> {
                                     showProgressNotification(
-                                        "Importing ${state.current}/${state.total} entries",
+                                        applicationContext.getString(
+                                            R.string.deezer_import_notification_progress,
+                                            state.current,
+                                            state.total,
+                                        ),
                                         state.current,
                                         state.total,
                                     )
@@ -248,7 +252,8 @@ class DeezerImportWorker
                 }
             }
 
-        override suspend fun getForegroundInfo(): ForegroundInfo = createForegroundInfo("Importing Deezer Data...", 0, 0)
+        override suspend fun getForegroundInfo(): ForegroundInfo =
+            createForegroundInfo(applicationContext.getString(R.string.deezer_import_preparing), 0, 0)
 
         private fun createForegroundInfo(
             message: String,
@@ -269,14 +274,15 @@ class DeezerImportWorker
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
 
+            val isIndeterminate = total <= 0
             val notification =
                 NotificationCompat
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-                    .setContentTitle("Importing Deezer Data")
+                    .setContentTitle(applicationContext.getString(R.string.deezer_import_notification_title))
                     .setContentText(message)
                     .setContentIntent(pendingIntent)
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setProgress(total.coerceAtLeast(100), current, total == 0)
+                    .setProgress(if (isIndeterminate) 0 else total, current, isIndeterminate)
                     .setOngoing(true)
                     .setOnlyAlertOnce(true)
                     .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -311,13 +317,14 @@ class DeezerImportWorker
             current: Int,
             total: Int,
         ) {
+            val isIndeterminate = total <= 0
             val notification =
                 NotificationCompat
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-                    .setContentTitle("Importing Deezer Data")
+                    .setContentTitle(applicationContext.getString(R.string.deezer_import_notification_title))
                     .setContentText(message)
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setProgress(total.coerceAtLeast(100), current, total == 0)
+                    .setProgress(if (isIndeterminate) 0 else total, current, isIndeterminate)
                     .setOngoing(true)
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .build()
@@ -327,19 +334,12 @@ class DeezerImportWorker
         }
 
         private fun showCompletionNotification(result: DeezerDataImportService.ImportResult) {
-            val message =
-                buildString {
-                    append("${result.eventsCreated} listening events imported, ")
-                    append("${result.tracksImported} tracks")
-                    if (result.duplicatesSkipped > 0) {
-                        append(", ${result.duplicatesSkipped} duplicates skipped")
-                    }
-                }
+            val message = applicationContext.getString(R.string.deezer_import_events_imported, result.eventsCreated)
 
             val notification =
                 NotificationCompat
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-                    .setContentTitle("Deezer Import Complete")
+                    .setContentTitle(applicationContext.getString(R.string.deezer_import_complete))
                     .setContentText(message)
                     .setSmallIcon(R.drawable.ic_notification)
                     .setAutoCancel(true)
@@ -355,7 +355,7 @@ class DeezerImportWorker
             val notification =
                 NotificationCompat
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-                    .setContentTitle("Deezer Import Failed")
+                    .setContentTitle(applicationContext.getString(R.string.deezer_import_failed))
                     .setContentText(error)
                     .setSmallIcon(R.drawable.ic_notification)
                     .setAutoCancel(true)

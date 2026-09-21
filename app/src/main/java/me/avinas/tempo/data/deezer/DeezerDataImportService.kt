@@ -391,8 +391,27 @@ class DeezerDataImportService @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to insert Deezer event batch", e)
-                addCappedError(errors, "A batch of listening events could not be imported")
+                Log.e(TAG, "Batch insert failed, falling back to individual inserts", e)
+                for (event in pendingEvents) {
+                    try {
+                        val count = listeningEventDao.countEventsNearTimestamp(
+                            event.track_id,
+                            event.timestamp - ListeningEventDao.DUPLICATE_TOLERANCE_MS,
+                            event.timestamp + ListeningEventDao.DUPLICATE_TOLERANCE_MS,
+                        )
+                        if (count == 0) {
+                            listeningEventDao.insert(event)
+                            eventsCreated++
+                        } else {
+                            duplicatesSkipped++
+                        }
+                    } catch (ce: CancellationException) {
+                        throw ce
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "Failed to insert individual event for track ${event.track_id}", e2)
+                        addCappedError(errors, "A listening event could not be imported")
+                    }
+                }
             } finally {
                 pendingEvents.clear()
             }

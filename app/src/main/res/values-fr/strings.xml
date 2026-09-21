@@ -1052,4 +1052,8 @@
     <string name="deezer_import_error_invalid_xlsx">Le fichier sélectionné n’est pas un export XLSX Deezer valide.</string>
     <string name="deezer_import_error_generic">Échec de l’import Deezer.</string>
     <string name="deezer_import_background_hint">Vous pouvez quitter cet écran, l’importation continuera en arrière-plan.</string>
+    <string name="deezer_import_notification_channel_name">Import de données Deezer</string>
+    <string name="deezer_import_notification_channel_desc">Notifications de progression pour l\'import d\'export Deezer</string>
+    <string name="deezer_import_notification_title">Import des données Deezer</string>
+    <string name="deezer_import_notification_progress">Import de %1$d/%2$d entrées</string>
 </resources>

@@ -717,6 +717,10 @@
     <string name="deezer_import_error_invalid_xlsx">The selected file is not a valid Deezer XLSX export.</string>
     <string name="deezer_import_error_generic">Deezer import failed.</string>
     <string name="deezer_import_background_hint">You can leave this screen — the import will continue in the background.</string>
+    <string name="deezer_import_notification_channel_name">Deezer Data Import</string>
+    <string name="deezer_import_notification_channel_desc">Progress notifications for Deezer data export import</string>
+    <string name="deezer_import_notification_title">Importing Deezer Data</string>
+    <string name="deezer_import_notification_progress">Importing %1$d/%2$d entries</string>
     <string name="settings_import_youtube_music">Import YouTube Music Data</string>
     <string name="settings_import_youtube_music_desc">Import listening history from a YouTube Takeout ZIP (JSON or HTML)</string>
     <string name="settings_name_dialog_body">Choose the display name shown in your personal profile and stories.</string>
