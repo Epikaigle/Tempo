@@ -440,6 +440,12 @@ private fun ErrorContent(
                         stringResource(R.string.deezer_import_error_too_large)
                     message.contains("not a valid Deezer XLSX", ignoreCase = true) ->
                         stringResource(R.string.deezer_import_error_invalid_xlsx)
+                    message.contains("Not enough memory", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_out_of_memory)
+                    message.contains("No file selected", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_no_file)
+                    message.contains("Invalid file URI", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_invalid_uri)
                     message.contains("Deezer import failed", ignoreCase = true) ->
                         stringResource(R.string.deezer_import_error_generic)
                     else -> message
