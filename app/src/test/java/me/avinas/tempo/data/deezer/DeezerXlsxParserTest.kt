@@ -62,6 +62,21 @@ class DeezerXlsxParserTest {
     }
 
     @Test
+    fun rejectsSheetThatOnlyContainsListeningHistoryInItsName() {
+        val file = createWorkbook(
+            includeHistory = true,
+            historySheetName = "10_listeningHistory_backup",
+        )
+        try {
+            val error = runCatching { DeezerXlsxParser.parse(file) }.exceptionOrNull()
+            assertTrue(error is IllegalArgumentException)
+            assertTrue(error?.message.orEmpty().contains("10_listeningHistory"))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun acceptsFrenchListeningHistoryHeaders() {
         val file = createWorkbook(
             includeHistory = true,
