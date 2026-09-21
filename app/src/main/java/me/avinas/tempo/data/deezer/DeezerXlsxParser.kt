@@ -333,8 +333,19 @@ object DeezerXlsxParser {
         val listeningSeconds = parseListeningSeconds(
             value("Listening Time", "Temps d'écoute", "Durée d'écoute", "Duree d'ecoute", "Écoute"),
         ) ?: return null
-        if (!listeningSeconds.isFinite() || listeningSeconds < 0.0) return null
-        val msPlayed = (listeningSeconds * 1000.0)
+        if (!listeningSeconds.isFinite()) return null
+        val normalizedListeningSeconds =
+            if (listeningSeconds == -1.0) {
+                // Real official Deezer exports use -1 for rows whose listening
+                // duration is unavailable. Keep the row structurally valid and
+                // let the import's <30s rule ignore it instead of reporting the
+                // official export row as malformed.
+                0.0
+            } else {
+                listeningSeconds
+            }
+        if (normalizedListeningSeconds < 0.0) return null
+        val msPlayed = (normalizedListeningSeconds * 1000.0)
             .coerceAtMost(24.0 * 60.0 * 60.0 * 1000.0)
             .toLong()
 
