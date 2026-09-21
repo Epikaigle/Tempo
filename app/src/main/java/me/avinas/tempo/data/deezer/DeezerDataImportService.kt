@@ -60,6 +60,15 @@ class DeezerDataImportService @Inject constructor(
         private val ISRC_REGEX = Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
         const val IMPORT_SOURCE = "com.deezer.music.import.xlsx"
 
+        internal fun albumsCompatibleForIsrcCandidate(
+            existingAlbum: String?,
+            incomingAlbum: String?,
+        ): Boolean {
+            val existing = existingAlbum?.trim()?.takeIf { it.isNotEmpty() }
+            val incoming = incomingAlbum?.trim()?.takeIf { it.isNotEmpty() }
+            return existing == null || incoming == null || existing.equals(incoming, ignoreCase = true)
+        }
+
         internal fun findIncomingAmbiguousIsrcs(
             entries: List<DeezerXlsxParser.Entry>,
             cancellationCheck: (() -> Unit)? = null,
@@ -473,10 +482,20 @@ class DeezerDataImportService @Inject constructor(
             val incomingArtists = ArtistParser.getAllArtists(entry.artistName)
 
             fun chooseByAlbum(candidates: List<Track>): Track? {
-                if (candidates.size <= 1) return candidates.singleOrNull()
+                if (candidates.isEmpty()) return null
+
+                if (candidates.size == 1) {
+                    return candidates.single()
+                        .takeIf { candidate ->
+                            albumsCompatibleForIsrcCandidate(candidate.album, entry.albumName)
+                        }
+                }
+
                 val album = entry.albumName?.trim()?.takeIf { it.isNotEmpty() } ?: return null
                 return candidates
-                    .filter { it.album?.trim()?.equals(album, ignoreCase = true) == true }
+                    .filter { candidate ->
+                        candidate.album?.trim()?.equals(album, ignoreCase = true) == true
+                    }
                     .singleOrNull()
             }
 
