@@ -130,6 +130,26 @@ class DeezerImportWorker
                 Log.i(TAG, "Starting Deezer import worker")
                 val startedAt = System.currentTimeMillis()
 
+                val uriString = inputData.getString(KEY_FILE_URI)
+                if (uriString.isNullOrBlank()) {
+                    Log.e(TAG, "No file URI provided")
+                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
+                    return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "No file selected"))
+                }
+
+                val uri =
+                    try {
+                        Uri.parse(uriString)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to parse URI: $uriString", e)
+                        null
+                    }
+
+                if (uri == null) {
+                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
+                    return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "Invalid file URI"))
+                }
+
                 try {
                     setForeground(createForegroundInfo("Preparing import...", 0, 0))
                 } catch (e: IllegalStateException) {
@@ -165,31 +185,11 @@ class DeezerImportWorker
                         }
                     }
 
-                val uriString = inputData.getString(KEY_FILE_URI)
-                if (uriString.isNullOrBlank()) {
-                    Log.e(TAG, "No file URI provided")
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
-                    return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "No file selected"))
-                }
-
-                val uri =
-                    try {
-                        Uri.parse(uriString)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to parse URI: $uriString", e)
-                        null
-                    }
-
-                if (uri == null) {
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
-                    return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "Invalid file URI"))
-                }
-
                 try {
                     val result = deezerDataImportService.importFromUri(applicationContext, uri)
 
                     if (result.isSuccess) {
-                        reportImport(ImportPhase.COMPLETED, records = result.tracksImported, failure = null, startedAt = startedAt)
+                        reportImport(ImportPhase.COMPLETED, records = result.totalEntries, failure = null, startedAt = startedAt)
                         showCompletionNotification(result)
                         Result.success(
                             workDataOf(

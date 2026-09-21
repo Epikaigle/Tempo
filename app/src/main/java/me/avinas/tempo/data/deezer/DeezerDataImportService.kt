@@ -194,6 +194,28 @@ class DeezerDataImportService @Inject constructor(
 
             return ambiguous
         }
+
+        internal fun sanitizeDisplayName(value: String): String =
+            value
+                .replace(Regex("[\\r\\n\\t\\u0000-\\u001F\\u007F]"), " ")
+                .trim()
+                .take(MAX_DISPLAY_NAME_LENGTH)
+                .ifBlank { "deezer-data.xlsx" }
+
+        internal fun userFacingError(error: Exception): String {
+            val message = error.message.orEmpty()
+            return when {
+                message.contains("10_listeningHistory", ignoreCase = true) ->
+                    "This file does not contain Deezer listening history (10_listeningHistory)"
+                message.contains("No valid Deezer listening history entries", ignoreCase = true) ->
+                    "No Deezer listening-history entries were found in this export"
+                message.contains("too large", ignoreCase = true) ->
+                    "This Deezer export is too large to import safely on this device"
+                message.contains("XLSX", ignoreCase = true) || error is java.util.zip.ZipException ->
+                    "The selected file is not a valid Deezer XLSX export"
+                else -> "Deezer import failed"
+            }
+        }
     }
 
     sealed class ImportState {
@@ -943,13 +965,6 @@ class DeezerDataImportService @Inject constructor(
             }
     }
 
-    private fun sanitizeDisplayName(value: String): String =
-        value
-            .replace(Regex("[\\r\\n\\t\\u0000-\\u001F\\u007F]"), " ")
-            .trim()
-            .take(MAX_DISPLAY_NAME_LENGTH)
-            .ifBlank { "deezer-data.xlsx" }
-
     private fun getFileSize(context: Context, uri: Uri): Long? = try {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
             if (!cursor.moveToFirst()) return@use null
@@ -970,21 +985,6 @@ class DeezerDataImportService @Inject constructor(
     } catch (e: Exception) {
         Log.w(TAG, "Unable to read Deezer export name", e)
         null
-    }
-
-    private fun userFacingError(error: Exception): String {
-        val message = error.message.orEmpty()
-        return when {
-            message.contains("10_listeningHistory", ignoreCase = true) ->
-                "This file does not contain Deezer listening history (10_listeningHistory)"
-            message.contains("No valid Deezer listening history entries", ignoreCase = true) ->
-                "No Deezer listening-history entries were found in this export"
-            message.contains("too large", ignoreCase = true) ->
-                "This Deezer export is too large to import safely on this device"
-            message.contains("XLSX", ignoreCase = true) || error is java.util.zip.ZipException ->
-                "The selected file is not a valid Deezer XLSX export"
-            else -> "Deezer import failed"
-        }
     }
 
     private fun addCappedError(errors: MutableList<String>, message: String) {

@@ -1,0 +1,41 @@
+package me.avinas.tempo.worker
+
+import androidx.work.workDataOf
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Test
+
+class DeezerImportWorkerTest {
+
+    @Test
+    fun workerInputAndOutputKeysAreConsistent() {
+        val inputData = workDataOf(
+            DeezerImportWorker.KEY_FILE_URI to "content://media/external/file/1234",
+        )
+        assertEquals("content://media/external/file/1234", inputData.getString(DeezerImportWorker.KEY_FILE_URI))
+
+        val outputSuccess = workDataOf(
+            DeezerImportWorker.KEY_SUCCESS to true,
+            DeezerImportWorker.KEY_TRACKS_IMPORTED to 15,
+            DeezerImportWorker.KEY_EVENTS_CREATED to 100,
+            DeezerImportWorker.KEY_DUPLICATES_SKIPPED to 2,
+            DeezerImportWorker.KEY_SHORT_PLAYS_SKIPPED to 5,
+            DeezerImportWorker.KEY_MALFORMED_ROWS to 0,
+            DeezerImportWorker.KEY_TOTAL_ENTRIES to 107,
+        )
+        assertEquals(true, outputSuccess.getBoolean(DeezerImportWorker.KEY_SUCCESS, false))
+        assertEquals(15, outputSuccess.getInt(DeezerImportWorker.KEY_TRACKS_IMPORTED, -1))
+        assertEquals(100, outputSuccess.getInt(DeezerImportWorker.KEY_EVENTS_CREATED, -1))
+        assertEquals(2, outputSuccess.getInt(DeezerImportWorker.KEY_DUPLICATES_SKIPPED, -1))
+        assertEquals(5, outputSuccess.getInt(DeezerImportWorker.KEY_SHORT_PLAYS_SKIPPED, -1))
+        assertEquals(0, outputSuccess.getInt(DeezerImportWorker.KEY_MALFORMED_ROWS, -1))
+        assertEquals(107, outputSuccess.getInt(DeezerImportWorker.KEY_TOTAL_ENTRIES, -1))
+
+        val outputFailure = workDataOf(
+            DeezerImportWorker.KEY_SUCCESS to false,
+            DeezerImportWorker.KEY_ERROR_MESSAGE to "No file selected",
+        )
+        assertEquals(false, outputFailure.getBoolean(DeezerImportWorker.KEY_SUCCESS, true))
+        assertEquals("No file selected", outputFailure.getString(DeezerImportWorker.KEY_ERROR_MESSAGE))
+    }
+}

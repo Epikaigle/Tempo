@@ -120,6 +120,101 @@ class DeezerDataImportServiceTest {
         assertTrue(error is CancellationException)
     }
 
+    @Test
+    fun verifiesImportResultSuccessLogic() {
+        val successWithEvents = DeezerDataImportService.ImportResult(
+            tracksImported = 10,
+            eventsCreated = 50,
+            duplicatesSkipped = 0,
+            shortPlaysSkipped = 0,
+            malformedRows = 0,
+            totalEntries = 50,
+            errors = emptyList(),
+        )
+        assertTrue(successWithEvents.isSuccess)
+
+        val successWithDuplicatesOnly = DeezerDataImportService.ImportResult(
+            tracksImported = 0,
+            eventsCreated = 0,
+            duplicatesSkipped = 50,
+            shortPlaysSkipped = 0,
+            malformedRows = 0,
+            totalEntries = 50,
+            errors = emptyList(),
+        )
+        assertTrue(successWithDuplicatesOnly.isSuccess)
+
+        val successWithShortPlaysOnly = DeezerDataImportService.ImportResult(
+            tracksImported = 0,
+            eventsCreated = 0,
+            duplicatesSkipped = 0,
+            shortPlaysSkipped = 10,
+            malformedRows = 0,
+            totalEntries = 10,
+            errors = emptyList(),
+        )
+        assertTrue(successWithShortPlaysOnly.isSuccess)
+
+        val failureWithErrorsAndNoEvents = DeezerDataImportService.ImportResult(
+            tracksImported = 0,
+            eventsCreated = 0,
+            duplicatesSkipped = 0,
+            shortPlaysSkipped = 0,
+            malformedRows = 0,
+            totalEntries = 0,
+            errors = listOf("File corrupted"),
+        )
+        assertTrue(!failureWithErrorsAndNoEvents.isSuccess)
+
+        val emptyResult = DeezerDataImportService.ImportResult(
+            tracksImported = 0,
+            eventsCreated = 0,
+            duplicatesSkipped = 0,
+            shortPlaysSkipped = 0,
+            malformedRows = 0,
+            totalEntries = 0,
+            errors = emptyList(),
+        )
+        assertTrue(!emptyResult.isSuccess)
+    }
+
+    @Test
+    fun sanitizesDisplayNames() {
+        assertEquals("export.xlsx", DeezerDataImportService.sanitizeDisplayName("  export.xlsx  "))
+        assertEquals("deezer-data.xlsx", DeezerDataImportService.sanitizeDisplayName("   "))
+        assertEquals("safe name.xlsx", DeezerDataImportService.sanitizeDisplayName("safe\n\t\u0000name.xlsx"))
+        val overlyLong = "a".repeat(300) + ".xlsx"
+        assertEquals(200, DeezerDataImportService.sanitizeDisplayName(overlyLong).length)
+    }
+
+    @Test
+    fun mapsUserFacingErrors() {
+        assertEquals(
+            "This file does not contain Deezer listening history (10_listeningHistory)",
+            DeezerDataImportService.userFacingError(IllegalArgumentException("Missing 10_listeningHistory")),
+        )
+        assertEquals(
+            "No Deezer listening-history entries were found in this export",
+            DeezerDataImportService.userFacingError(IllegalArgumentException("No valid Deezer listening history entries found")),
+        )
+        assertEquals(
+            "This Deezer export is too large to import safely on this device",
+            DeezerDataImportService.userFacingError(java.io.IOException("This file is too large")),
+        )
+        assertEquals(
+            "The selected file is not a valid Deezer XLSX export",
+            DeezerDataImportService.userFacingError(java.util.zip.ZipException("Not a zip file")),
+        )
+        assertEquals(
+            "The selected file is not a valid Deezer XLSX export",
+            DeezerDataImportService.userFacingError(IllegalArgumentException("Invalid XLSX")),
+        )
+        assertEquals(
+            "Deezer import failed",
+            DeezerDataImportService.userFacingError(RuntimeException("Something unexpected")),
+        )
+    }
+
     private fun entry(
         isrc: String,
         artist: String,

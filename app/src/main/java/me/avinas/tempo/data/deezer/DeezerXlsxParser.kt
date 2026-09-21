@@ -32,7 +32,9 @@ object DeezerXlsxParser {
     private const val MAX_COLUMNS_PER_ROW = 128
     private const val MIN_PARSE_MEMORY_BUDGET_BYTES = 16L * 1024 * 1024
     private const val MAX_PARSE_MEMORY_BUDGET_BYTES = 160L * 1024 * 1024
-    private const val EXCEL_EPOCH_MILLIS = -2209075200000L
+    private const val EXCEL_1900_EPOCH_MILLIS = -2209161600000L // 1899-12-30 00:00:00 UTC (Excel 1900 leap-year bug compensation)
+    private const val EXCEL_1904_EPOCH_MILLIS = -2082844800000L // 1904-01-01 00:00:00 UTC
+    private const val MILLIS_PER_DAY = 86_400_000.0
 
     private val deezerDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     private val isrcRegex = Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
@@ -56,6 +58,11 @@ object DeezerXlsxParser {
         val estimatedBytes: Long,
     )
 
+    private data class WorkbookMetadata(
+        val historySheetPath: String,
+        val is1904DateSystem: Boolean,
+    )
+
     fun parse(
         file: File,
         cancellationCheck: (() -> Unit)? = null,
@@ -63,11 +70,11 @@ object DeezerXlsxParser {
         ZipFile(file).use { zip ->
             cancellationCheck?.invoke()
             val memoryBudgetBytes = parseMemoryBudgetBytes()
-            val sheetPath = findHistorySheetPath(zip)
+            val workbookMetadata = findWorkbookMetadata(zip)
             val sharedStrings = readSharedStrings(zip, cancellationCheck, memoryBudgetBytes)
-            val sheetEntry = zip.getEntry(sheetPath)
+            val sheetEntry = zip.getEntry(workbookMetadata.historySheetPath)
                 ?: throw IllegalArgumentException("Deezer listening-history worksheet is missing")
-            validateEntrySize(sheetEntry.size, sheetPath)
+            validateEntrySize(sheetEntry.size, workbookMetadata.historySheetPath)
 
             zip.getInputStream(sheetEntry).use { raw ->
                 return parseHistorySheet(
@@ -76,39 +83,48 @@ object DeezerXlsxParser {
                     cancellationCheck,
                     memoryBudgetBytes,
                     sharedStrings.estimatedBytes,
+                    workbookMetadata.is1904DateSystem,
                 )
             }
         }
     }
 
-    private fun findHistorySheetPath(zip: ZipFile): String {
+    private fun findWorkbookMetadata(zip: ZipFile): WorkbookMetadata {
         val workbook = zip.getEntry("xl/workbook.xml")
             ?: throw IllegalArgumentException("Invalid XLSX: workbook.xml is missing")
         validateEntrySize(workbook.size, workbook.name)
 
         var exactRelationshipId: String? = null
         var fallbackRelationshipId: String? = null
+        var is1904DateSystem = false
         zip.getInputStream(workbook).use { raw ->
             parseXml(LimitedInputStream(raw, MAX_XML_ENTRY_BYTES), object : DefaultHandler() {
                 override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes) {
-                    if (localName != "sheet" && qName != "sheet") return
-                    val sheetName = attributes.getValue("name")?.trim().orEmpty()
-                    val id =
-                        attributes.getValue(
-                            "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-                            "id",
-                        ) ?: attributes.getValue("r:id")
+                    val name = localName ?: qName
+                    if (name == "workbookPr") {
+                        val date1904Attr = attributes.getValue("date1904")
+                        if (date1904Attr == "1" || date1904Attr.equals("true", ignoreCase = true)) {
+                            is1904DateSystem = true
+                        }
+                    } else if (name == "sheet") {
+                        val sheetName = attributes.getValue("name")?.trim().orEmpty()
+                        val id =
+                            attributes.getValue(
+                                "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+                                "id",
+                            ) ?: attributes.getValue("r:id")
 
-                    if (sheetName.equals(HISTORY_SHEET, ignoreCase = true)) {
-                        exactRelationshipId = id
-                    } else if (
-                        fallbackRelationshipId == null &&
-                        sheetName.endsWith("_listeningHistory", ignoreCase = true)
-                    ) {
-                        // Deezer currently calls the sheet 10_listeningHistory. Match the
-                        // semantic suffix too so a future sheet-order change (e.g. 11_) does
-                        // not break otherwise identical official exports.
-                        fallbackRelationshipId = id
+                        if (sheetName.equals(HISTORY_SHEET, ignoreCase = true)) {
+                            exactRelationshipId = id
+                        } else if (
+                            fallbackRelationshipId == null &&
+                            sheetName.endsWith("_listeningHistory", ignoreCase = true)
+                        ) {
+                            // Deezer currently calls the sheet 10_listeningHistory. Match the
+                            // semantic suffix too so a future sheet-order change (e.g. 11_) does
+                            // not break otherwise identical official exports.
+                            fallbackRelationshipId = id
+                        }
                     }
                 }
             })
@@ -142,7 +158,8 @@ object DeezerXlsxParser {
         if (normalized.split('/').any { it == ".." }) {
             throw IllegalArgumentException("Invalid XLSX worksheet path")
         }
-        return if (normalized.startsWith("xl/")) normalized else "xl/$normalized"
+        val sheetPath = if (normalized.startsWith("xl/")) normalized else "xl/$normalized"
+        return WorkbookMetadata(sheetPath, is1904DateSystem)
     }
 
     private fun readSharedStrings(
@@ -214,6 +231,7 @@ object DeezerXlsxParser {
         cancellationCheck: (() -> Unit)?,
         memoryBudgetBytes: Long,
         initialEstimatedBytes: Long,
+        is1904DateSystem: Boolean = false,
     ): ParseResult {
         val entries = ArrayList<Entry>()
         var estimatedBytes = initialEstimatedBytes
@@ -284,7 +302,7 @@ object DeezerXlsxParser {
                                 headers = candidate
                             }
                         } else if (currentRow.isNotEmpty() && currentRow.values.any { it.isNotBlank() }) {
-                            val parsed = parseDataRow(currentRow, activeHeaders)
+                            val parsed = parseDataRow(currentRow, activeHeaders, is1904DateSystem)
                             if (parsed != null) {
                                 estimatedBytes += estimateEntryMemoryBytes(parsed)
                                 if (estimatedBytes > memoryBudgetBytes) {
@@ -313,6 +331,7 @@ object DeezerXlsxParser {
     private fun parseDataRow(
         row: Map<Int, String>,
         headers: Map<String, Int>,
+        is1904DateSystem: Boolean = false,
     ): Entry? {
         fun value(vararg aliases: String): String {
             val column = aliases
@@ -328,7 +347,7 @@ object DeezerXlsxParser {
         if (title.isBlank() || artist.isBlank()) return null
 
         val dateValue = value("Date", "Date d'écoute", "Date de l'écoute", "Date d'ecoute", "Date de l'ecoute")
-        val timestamp = parseDate(dateValue)
+        val timestamp = parseDate(dateValue, is1904DateSystem)
         if (timestamp <= 0L) return null
 
         val listeningSeconds = parseListeningSeconds(
@@ -398,7 +417,7 @@ object DeezerXlsxParser {
         return null
     }
 
-    private fun parseDate(value: String): Long {
+    internal fun parseDate(value: String, is1904DateSystem: Boolean = false): Long {
         if (value.isBlank()) return 0L
 
         runCatching {
@@ -416,8 +435,14 @@ object DeezerXlsxParser {
         // Some spreadsheet writers store dates as Excel serial numbers.
         val serial = value.trim().toDoubleOrNull()
         if (serial != null && serial > 0.0) {
-            val millisPerDay = 86_400_000.0
-            return (EXCEL_EPOCH_MILLIS + serial * millisPerDay).toLong()
+            val epochMillis = if (is1904DateSystem) {
+                EXCEL_1904_EPOCH_MILLIS
+            } else if (serial >= 61.0) {
+                EXCEL_1900_EPOCH_MILLIS
+            } else {
+                -2209075200000L // 1899-12-31 00:00:00 UTC for pre-March 1900
+            }
+            return (epochMillis + serial * MILLIS_PER_DAY).toLong()
         }
         return 0L
     }

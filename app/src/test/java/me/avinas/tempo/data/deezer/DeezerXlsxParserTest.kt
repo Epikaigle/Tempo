@@ -175,6 +175,45 @@ class DeezerXlsxParserTest {
     }
 
     @Test
+    fun parsesExcel1900NumericSerialDate() {
+        val expected = Instant.parse("2024-10-24T23:00:00Z").toEpochMilli()
+        assertEquals(expected, DeezerXlsxParser.parseDate("45589.958333333336", is1904DateSystem = false))
+
+        val file = createWorkbook(
+            includeHistory = true,
+            inlineStrings = true,
+            dateValue = "45589.958333333336",
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(1, result.entries.size)
+            assertEquals(expected, result.entries.single().listenedAtMillis)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun parsesExcel1904NumericSerialDate() {
+        val expected = Instant.parse("2024-10-24T23:00:00Z").toEpochMilli()
+        assertEquals(expected, DeezerXlsxParser.parseDate("44127.958333333336", is1904DateSystem = true))
+
+        val file = createWorkbook(
+            includeHistory = true,
+            inlineStrings = true,
+            date1904 = true,
+            dateValue = "44127.958333333336",
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(1, result.entries.size)
+            assertEquals(expected, result.entries.single().listenedAtMillis)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun ignoresTrailingBlankRowsWithoutIncrementingMalformedCount() {
         val file = createWorkbook(
             includeHistory = true,
@@ -228,6 +267,8 @@ class DeezerXlsxParserTest {
         officialLayout: Boolean = false,
         listeningTime: String = "213",
         includeEmptyRow: Boolean = false,
+        date1904: Boolean = false,
+        dateValue: String = "2024-10-24 23:00:00",
     ): File {
         val file = kotlin.io.path.createTempFile("deezer-test-", ".xlsx").toFile()
 
@@ -268,12 +309,14 @@ class DeezerXlsxParserTest {
         }.joinToString("")
 
         ZipOutputStream(FileOutputStream(file)).use { zip ->
+            val workbookPr = if (date1904) """<workbookPr date1904="1"/>""" else ""
             writeEntry(
                 zip,
                 "xl/workbook.xml",
                 """
                 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
                     xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                    $workbookPr
                     <sheets>""" + workbookSheets + """</sheets>
                 </workbook>
                 """.trimIndent(),
@@ -375,7 +418,7 @@ class DeezerXlsxParserTest {
                                   <c r="C2" t="inlineStr"><is><t>GBAYE8800243</t></is></c>
                                   <c r="D2" t="inlineStr"><is><t>Whenever You Need Somebody</t></is></c>
                                   <c r="F2" t="inlineStr"><is><t>$listeningTime</t></is></c>
-                                  <c r="I2" t="inlineStr"><is><t>2024-10-24 23:00:00</t></is></c>
+                                  <c r="I2" t="inlineStr"><is><t>$dateValue</t></is></c>
                                 </row>
                                 $emptyRowXml
                               </sheetData>
