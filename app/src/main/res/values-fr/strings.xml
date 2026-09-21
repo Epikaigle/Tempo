@@ -1046,7 +1046,9 @@
     <string name="deezer_import_another">Importer un autre fichier</string>
     <string name="deezer_import_failed">Échec de l’import Deezer</string>
     <string name="deezer_import_try_again">Réessayer</string>
+    <string name="deezer_import_cancel">Annuler l’import</string>
     <string name="deezer_import_error_missing_history">Ce fichier ne contient pas d’historique d’écoute Deezer.</string>
+    <string name="deezer_import_error_unsupported_columns">La feuille de l’historique d’écoute a été trouvée, mais ses colonnes ne sont pas prises en charge par cette version de Tempo.</string>
     <string name="deezer_import_error_no_entries">Aucune entrée valide de l’historique Deezer n’a été trouvée dans cet export.</string>
     <string name="deezer_import_error_too_large">Cet export Deezer est trop volumineux pour être importé en toute sécurité sur cet appareil.</string>
     <string name="deezer_import_error_invalid_xlsx">Le fichier sélectionné n’est pas un export XLSX Deezer valide.</string>
