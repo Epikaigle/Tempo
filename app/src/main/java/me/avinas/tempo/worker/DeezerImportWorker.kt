@@ -123,7 +123,7 @@ class DeezerImportWorker
                     workRequest,
                 )
 
-                Log.i(TAG, "Enqueued Deezer import ($fileUri)")
+                Log.i(TAG, "Enqueued Deezer import")
                 return workRequest.id
             }
 
@@ -150,20 +150,20 @@ class DeezerImportWorker
                 if (uriString.isNullOrBlank()) {
                     Log.e(TAG, "No file URI provided")
                     reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
-                    return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "No file selected"))
+                    return@withContext Result.failure(\n                        workDataOf(\n                            KEY_ERROR_MESSAGE to applicationContext.getString(R.string.deezer_import_error_no_file),\n                        ),\n                    )
                 }
 
                 val uri =
                     try {
                         Uri.parse(uriString)
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to parse URI: $uriString", e)
+                        Log.e(TAG, "Failed to parse Deezer import URI", e)
                         null
                     }
 
                 if (uri == null) {
                     reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
-                    return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "Invalid file URI"))
+                    return@withContext Result.failure(\n                        workDataOf(\n                            KEY_ERROR_MESSAGE to applicationContext.getString(R.string.deezer_import_error_invalid_uri),\n                        ),\n                    )
                 }
 
                 try {
@@ -223,14 +223,17 @@ class DeezerImportWorker
                             ),
                         )
                     } else {
-                        val errorMsg = result.errors.joinToString("; ").take(MAX_ERROR_MESSAGE_CHARS)
+                        val errorMsg =
+                            localizedFailureMessage(
+                                result.errors.joinToString("; ").take(MAX_ERROR_MESSAGE_CHARS),
+                            )
                         reportImport(
                             ImportPhase.FAILED,
                             records = result.totalEntries,
                             failure = FailureClass.UNKNOWN,
                             startedAt = startedAt,
                         )
-                        showFailureNotification(errorMsg.ifBlank { "Deezer import failed" })
+                        showFailureNotification(errorMsg)
                         Result.failure(
                             workDataOf(
                                 KEY_SUCCESS to false,
@@ -245,21 +248,23 @@ class DeezerImportWorker
                 } catch (e: OutOfMemoryError) {
                     Log.e(TAG, "Deezer import ran out of memory", e)
                     reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.OUT_OF_MEMORY, startedAt = startedAt)
-                    showFailureNotification("Not enough memory for this export.")
+                    val errorMsg = applicationContext.getString(R.string.deezer_import_error_out_of_memory)
+                    showFailureNotification(errorMsg)
                     Result.failure(
                         workDataOf(
                             KEY_SUCCESS to false,
-                            KEY_ERROR_MESSAGE to "Not enough memory for this export.",
+                            KEY_ERROR_MESSAGE to errorMsg,
                         ),
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "Deezer import failed with exception", e)
                     reportImport(ImportPhase.FAILED, records = 0, failure = FailureClassifier.of(e), startedAt = startedAt)
-                    showFailureNotification(e.message ?: "Unknown error")
+                    val errorMsg = applicationContext.getString(R.string.deezer_import_error_generic)
+                    showFailureNotification(errorMsg)
                     Result.failure(
                         workDataOf(
                             KEY_SUCCESS to false,
-                            KEY_ERROR_MESSAGE to (e.message ?: "Deezer import failed"),
+                            KEY_ERROR_MESSAGE to errorMsg,
                         ),
                     )
                 } finally {
@@ -366,6 +371,25 @@ class DeezerImportWorker
             notificationManager.cancel(NOTIFICATION_ID)
             notificationManager.notify(NOTIFICATION_COMPLETION_ID, notification)
         }
+
+        private fun localizedFailureMessage(message: String): String =
+            when {
+                message.contains("does not contain Deezer listening history", ignoreCase = true) ->
+                    applicationContext.getString(R.string.deezer_import_error_missing_history)
+                message.contains("No Deezer listening-history entries", ignoreCase = true) ->
+                    applicationContext.getString(R.string.deezer_import_error_no_entries)
+                message.contains("too large", ignoreCase = true) ->
+                    applicationContext.getString(R.string.deezer_import_error_too_large)
+                message.contains("not a valid Deezer XLSX", ignoreCase = true) ->
+                    applicationContext.getString(R.string.deezer_import_error_invalid_xlsx)
+                message.contains("Not enough memory", ignoreCase = true) ->
+                    applicationContext.getString(R.string.deezer_import_error_out_of_memory)
+                message.contains("No file selected", ignoreCase = true) ->
+                    applicationContext.getString(R.string.deezer_import_error_no_file)
+                message.contains("Invalid file URI", ignoreCase = true) ->
+                    applicationContext.getString(R.string.deezer_import_error_invalid_uri)
+                else -> applicationContext.getString(R.string.deezer_import_error_generic)
+            }
 
         private fun showFailureNotification(error: String) {
             val notification =
