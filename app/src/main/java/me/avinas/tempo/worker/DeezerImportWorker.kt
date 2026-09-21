@@ -63,6 +63,7 @@ class DeezerImportWorker
             const val KEY_SHORT_PLAYS_SKIPPED = "short_plays_skipped"
             const val KEY_MALFORMED_ROWS = "malformed_rows"
             const val KEY_TOTAL_ENTRIES = "total_entries"
+            const val KEY_WARNINGS = "warnings"
             const val KEY_ERROR_MESSAGE = "error_message"
 
             private const val MAX_ERROR_MESSAGE_CHARS = 2_000
@@ -228,6 +229,7 @@ class DeezerImportWorker
                                 KEY_SHORT_PLAYS_SKIPPED to result.shortPlaysSkipped,
                                 KEY_MALFORMED_ROWS to result.malformedRows,
                                 KEY_TOTAL_ENTRIES to result.totalEntries,
+                                KEY_WARNINGS to result.errors.toTypedArray(),
                             ),
                         )
                     } else {
@@ -292,17 +294,7 @@ class DeezerImportWorker
         ): ForegroundInfo {
             createNotificationChannel(applicationContext)
 
-            val intent =
-                Intent(applicationContext, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                }
-            val pendingIntent =
-                PendingIntent.getActivity(
-                    applicationContext,
-                    0,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                )
+            val pendingIntent = createContentPendingIntent()
 
             val progressState = calculateProgress(current, total)
             val notification =
@@ -353,6 +345,7 @@ class DeezerImportWorker
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
                     .setContentTitle(applicationContext.getString(R.string.deezer_import_notification_title))
                     .setContentText(message)
+                    .setContentIntent(createContentPendingIntent())
                     .setSmallIcon(R.drawable.ic_notification)
                     .setProgress(progressState.max, progressState.progress, progressState.indeterminate)
                     .setOngoing(true)
@@ -371,6 +364,7 @@ class DeezerImportWorker
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
                     .setContentTitle(applicationContext.getString(R.string.deezer_import_complete))
                     .setContentText(message)
+                    .setContentIntent(createContentPendingIntent())
                     .setSmallIcon(R.drawable.ic_notification)
                     .setAutoCancel(true)
                     .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -385,6 +379,9 @@ class DeezerImportWorker
             when {
                 message.contains("does not contain Deezer listening history", ignoreCase = true) ->
                     applicationContext.getString(R.string.deezer_import_error_missing_history)
+                message.contains("listening-history columns", ignoreCase = true) &&
+                    message.contains("not supported", ignoreCase = true) ->
+                    applicationContext.getString(R.string.deezer_import_error_unsupported_columns)
                 message.contains("No Deezer listening-history entries", ignoreCase = true) ->
                     applicationContext.getString(R.string.deezer_import_error_no_entries)
                 message.contains("too large", ignoreCase = true) ->
@@ -400,12 +397,26 @@ class DeezerImportWorker
                 else -> applicationContext.getString(R.string.deezer_import_error_generic)
             }
 
+        private fun createContentPendingIntent(): PendingIntent {
+            val intent =
+                Intent(applicationContext, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            return PendingIntent.getActivity(
+                applicationContext,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
         private fun showFailureNotification(error: String) {
             val notification =
                 NotificationCompat
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
                     .setContentTitle(applicationContext.getString(R.string.deezer_import_failed))
                     .setContentText(error)
+                    .setContentIntent(createContentPendingIntent())
                     .setSmallIcon(R.drawable.ic_notification)
                     .setAutoCancel(true)
                     .setPriority(NotificationCompat.PRIORITY_DEFAULT)
