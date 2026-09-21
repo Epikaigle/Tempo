@@ -24,6 +24,7 @@ import me.avinas.tempo.data.local.entities.ArtistRole
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.local.entities.TrackArtist
+import me.avinas.tempo.data.preferences.TrackingRulesPreferences
 import me.avinas.tempo.data.repository.ArtistLinkingService
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.TrackRepository
@@ -50,7 +51,7 @@ class DeezerDataImportService @Inject constructor(
     companion object {
         private const val TAG = "DeezerDataImport"
         private const val MAX_FILE_SIZE_BYTES = 256L * 1024 * 1024
-        private const val MIN_MS_PLAYED_FOR_EVENT = 30_000L
+        private const val SKIP_PLAY_DURATION_MS = 30_000L
         private const val FLUSH_BATCH_SIZE = 500
         private const val MAX_CACHE_SIZE = 50_000
         private const val MAX_ERRORS = 20
@@ -95,8 +96,20 @@ class DeezerDataImportService @Inject constructor(
             return existing == null || incoming == null || existing.equals(incoming, ignoreCase = true)
         }
 
+        internal fun shouldImportDeezerPlay(
+            msPlayed: Long,
+            minimumPlayDurationMs: Long = TrackingRulesPreferences.DEFAULT_MIN_PLAY_DURATION_MS,
+        ): Boolean = msPlayed >= minimumPlayDurationMs
+
+        internal fun isDeezerSkip(
+            msPlayed: Long,
+            completionPercentage: Int,
+        ): Boolean =
+            msPlayed < SKIP_PLAY_DURATION_MS || completionPercentage < 30
+
         internal fun findIncomingAmbiguousIsrcs(
             entries: List<DeezerXlsxParser.Entry>,
+            minimumPlayDurationMs: Long = TrackingRulesPreferences.DEFAULT_MIN_PLAY_DURATION_MS,
             cancellationCheck: (() -> Unit)? = null,
         ): Set<String> {
             val knownArtists = HashMap<String, MutableList<String>>()
@@ -105,11 +118,13 @@ class DeezerDataImportService @Inject constructor(
             entries.forEachIndexed { index, entry ->
                 if (index % 256 == 0) cancellationCheck?.invoke()
 
-                // Rows that cannot produce a listening event must not weaken an
-                // otherwise authoritative ISRC. In particular, a noisy <30s row
-                // with bad credits should not force every real play of that ISRC
-                // onto the less reliable textual matching path.
-                if (entry.msPlayed < MIN_MS_PLAYED_FOR_EVENT) return@forEachIndexed
+                // Rows that cannot produce a listening event under Tempo's current
+                // minimum-play rule must not weaken an otherwise authoritative ISRC.
+                // Short plays that do meet the minimum are retained as skips, so they
+                // still participate in identity resolution.
+                if (!shouldImportDeezerPlay(entry.msPlayed, minimumPlayDurationMs)) {
+                    return@forEachIndexed
+                }
 
                 val isrc = entry.isrc ?: return@forEachIndexed
                 if (isrc in ambiguous) return@forEachIndexed
@@ -229,7 +244,9 @@ class DeezerDataImportService @Inject constructor(
                     }
 
                     importStarted = true
-                    val result = importEntries(parsed, errors)
+                    val minimumPlayDurationMs =
+                        TrackingRulesPreferences(appContext).minimumPlayDurationMs
+                    val result = importEntries(parsed, errors, minimumPlayDurationMs)
 
                     if (result.tracksImported > 0 || result.eventsCreated > 0 || result.duplicatesSkipped > 0) {
                         try {
@@ -275,6 +292,7 @@ class DeezerDataImportService @Inject constructor(
     private suspend fun importEntries(
         parsed: DeezerXlsxParser.ParseResult,
         errors: MutableList<String>,
+        minimumPlayDurationMs: Long,
     ): ImportResult {
         val trackCache = HashMap<String, TrackResolver.Resolution>()
         val metadataPrepared = HashMap<Long, PreparedMetadata>()
@@ -283,7 +301,10 @@ class DeezerDataImportService @Inject constructor(
         val isrcIndex = HashMap<String, Long>()
         val importContext = coroutineContext
         val ambiguousIsrcs =
-            findIncomingAmbiguousIsrcs(parsed.entries) {
+            findIncomingAmbiguousIsrcs(
+                parsed.entries,
+                minimumPlayDurationMs = minimumPlayDurationMs,
+            ) {
                 importContext.ensureActive()
             }.toHashSet()
         enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
@@ -336,7 +357,7 @@ class DeezerDataImportService @Inject constructor(
                     )
                 }
     
-                if (entry.msPlayed < MIN_MS_PLAYED_FOR_EVENT) {
+                if (!shouldImportDeezerPlay(entry.msPlayed, minimumPlayDurationMs)) {
                     shortPlaysSkipped++
                     return@forEachIndexed
                 }
@@ -410,7 +431,7 @@ class DeezerDataImportService @Inject constructor(
                             playDuration = entry.msPlayed,
                             completionPercentage = completionPercentage,
                             source = IMPORT_SOURCE,
-                            wasSkipped = knownDurationMs != null && completionPercentage < 30,
+                            wasSkipped = isDeezerSkip(entry.msPlayed, completionPercentage),
                             isReplay = false,
                             estimatedDurationMs = knownDurationMs,
                             pauseCount = 0,

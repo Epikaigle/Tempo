@@ -695,7 +695,7 @@
     <string name="deezer_import_step_3">3. Choose Request my data</string>
     <string name="deezer_import_step_4">4. Download the personal-data export when Deezer emails you</string>
     <string name="deezer_import_step_5">5. Select the deezer-data_*.xlsx file here</string>
-    <string name="deezer_import_short_plays_note">Plays shorter than 30 seconds are ignored, matching Tempo\'s Spotify history import.</string>
+    <string name="deezer_import_short_plays_note">Tempo\'s minimum play-duration rule is respected. Plays under 30 seconds that meet that minimum are imported as skips and can be shown with the history Skip filter.</string>
     <string name="deezer_import_importing">Importing Deezer history…</string>
     <string name="deezer_import_reading">Reading %1$s…</string>
     <string name="deezer_import_progress">Importing %1$d/%2$d entries\n%3$d tracks, %4$d events</string>
@@ -704,7 +704,7 @@
     <string name="deezer_import_events_imported">%1$d listening events imported</string>
     <string name="deezer_import_new_tracks">%1$d new tracks</string>
     <string name="deezer_import_duplicates_skipped">%1$d duplicates skipped</string>
-    <string name="deezer_import_short_skipped">%1$d plays under 30 seconds skipped</string>
+    <string name="deezer_import_short_skipped">%1$d plays below your Tempo minimum ignored</string>
     <string name="deezer_import_malformed_skipped">%1$d malformed rows skipped</string>
     <string name="deezer_import_warnings">%1$d import warnings occurred</string>
     <string name="deezer_import_done">Done</string>

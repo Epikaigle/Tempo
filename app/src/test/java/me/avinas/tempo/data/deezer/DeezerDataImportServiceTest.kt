@@ -14,6 +14,7 @@ class DeezerDataImportServiceTest {
         val conflictingIsrc = "GBXYZ2600002"
         val substringConflictIsrc = "FRABC2600003"
         val shortNoiseIsrc = "DEABC2600004"
+        val retainedSkipIsrc = "NLABC2600005"
 
         val entries =
             listOf(
@@ -26,10 +27,12 @@ class DeezerDataImportServiceTest {
                 entry(substringConflictIsrc, "Queen Latifah"),
                 entry(shortNoiseIsrc, "Stable Artist"),
                 entry(shortNoiseIsrc, "Wrong Short Credit", msPlayed = 5_000L),
+                entry(retainedSkipIsrc, "Stable Skip Artist"),
+                entry(retainedSkipIsrc, "Conflicting Skip Credit", msPlayed = 27_000L),
             )
 
         assertEquals(
-            setOf(conflictingIsrc, substringConflictIsrc),
+            setOf(conflictingIsrc, substringConflictIsrc, retainedSkipIsrc),
             DeezerDataImportService.findIncomingAmbiguousIsrcs(entries),
         )
     }
@@ -76,6 +79,17 @@ class DeezerDataImportServiceTest {
                 incomingAlbum = "Studio Album",
             ),
         )
+    }
+
+    @Test
+    fun appliesTempoMinimumAndSkipClassificationToDeezerPlays() {
+        assertTrue(!DeezerDataImportService.shouldImportDeezerPlay(24_999L))
+        assertTrue(DeezerDataImportService.shouldImportDeezerPlay(25_000L))
+        assertTrue(DeezerDataImportService.shouldImportDeezerPlay(10_000L, minimumPlayDurationMs = 5_000L))
+
+        assertTrue(DeezerDataImportService.isDeezerSkip(29_999L, completionPercentage = 80))
+        assertTrue(!DeezerDataImportService.isDeezerSkip(30_000L, completionPercentage = 80))
+        assertTrue(DeezerDataImportService.isDeezerSkip(120_000L, completionPercentage = 20))
     }
 
     @Test

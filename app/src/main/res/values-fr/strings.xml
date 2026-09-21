@@ -1030,7 +1030,7 @@
     <string name="deezer_import_step_3">3. Choisissez Demander mes données</string>
     <string name="deezer_import_step_4">4. Téléchargez l’export de données personnelles lorsque Deezer vous l’envoie</string>
     <string name="deezer_import_step_5">5. Sélectionnez ici le fichier deezer-data_*.xlsx</string>
-    <string name="deezer_import_short_plays_note">Les écoutes de moins de 30 secondes sont ignorées, comme pour l’import de l’historique Spotify.</string>
+    <string name="deezer_import_short_plays_note">La durée minimale définie dans Tempo est respectée. Les écoutes de moins de 30 secondes qui atteignent ce minimum sont importées comme skips et peuvent être affichées avec le filtre Skip de l’historique.</string>
     <string name="deezer_import_importing">Import de l’historique Deezer…</string>
     <string name="deezer_import_reading">Lecture de %1$s…</string>
     <string name="deezer_import_progress">Import de %1$d/%2$d entrées\n%3$d morceaux, %4$d écoutes</string>
@@ -1039,7 +1039,7 @@
     <string name="deezer_import_events_imported">%1$d écoutes importées</string>
     <string name="deezer_import_new_tracks">%1$d nouveaux morceaux</string>
     <string name="deezer_import_duplicates_skipped">%1$d doublons ignorés</string>
-    <string name="deezer_import_short_skipped">%1$d écoutes de moins de 30 secondes ignorées</string>
+    <string name="deezer_import_short_skipped">%1$d écoutes sous la durée minimale de Tempo ignorées</string>
     <string name="deezer_import_malformed_skipped">%1$d lignes invalides ignorées</string>
     <string name="deezer_import_warnings">%1$d avertissements pendant l’import</string>
     <string name="deezer_import_done">Terminé</string>
