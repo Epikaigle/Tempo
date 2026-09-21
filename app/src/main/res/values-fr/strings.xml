@@ -1054,6 +1054,7 @@
     <string name="deezer_import_error_out_of_memory">Mémoire insuffisante pour importer cet export Deezer.</string>
     <string name="deezer_import_error_no_file">Aucun fichier d’export Deezer n’a été sélectionné.</string>
     <string name="deezer_import_error_invalid_uri">Le fichier Deezer sélectionné n’est plus accessible.</string>
+    <string name="deezer_import_error_cancelled">L’import Deezer a été annulé.</string>
     <string name="deezer_import_background_hint">Vous pouvez quitter cet écran, l’importation continuera en arrière-plan.</string>
     <string name="deezer_import_notification_channel_name">Import de données Deezer</string>
     <string name="deezer_import_notification_channel_desc">Notifications de progression pour l\'import d\'export Deezer</string>
