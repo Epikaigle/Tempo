@@ -33,7 +33,28 @@ class DeezerImportViewModel @Inject constructor(
 
     val importState = importService.importState
 
-    private var activeWorkId: java.util.UUID? = null
+    companion object {
+        private const val STATE_PREFS = "deezer_import_state"
+        private const val PREF_ACTIVE_WORK_ID = "active_work_id"
+    }
+
+    private val statePrefs = context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
+
+    private var activeWorkId: java.util.UUID? =
+        statePrefs
+            .getString(PREF_ACTIVE_WORK_ID, null)
+            ?.let { storedId -> runCatching { java.util.UUID.fromString(storedId) }.getOrNull() }
+
+    private fun rememberActiveWork(id: java.util.UUID?) {
+        activeWorkId = id
+        statePrefs.edit().apply {
+            if (id == null) {
+                remove(PREF_ACTIVE_WORK_ID)
+            } else {
+                putString(PREF_ACTIVE_WORK_ID, id.toString())
+            }
+        }.apply()
+    }
 
     init {
         // 1. Live in-process state flow: provides high-frequency progress while the app is alive
@@ -85,8 +106,11 @@ class DeezerImportViewModel @Inject constructor(
                                     it.state == WorkInfo.State.ENQUEUED ||
                                         it.state == WorkInfo.State.RUNNING ||
                                         it.state == WorkInfo.State.BLOCKED
-                                }?.also { activeWorkId = it.id }
-                            ?: return@collect
+                                }?.also { rememberActiveWork(it.id) }
+                            ?: run {
+                                if (activeWorkId != null) rememberActiveWork(null)
+                                return@collect
+                            }
 
                     when (info.state) {
                         WorkInfo.State.ENQUEUED,
@@ -98,7 +122,8 @@ class DeezerImportViewModel @Inject constructor(
                         }
 
                         WorkInfo.State.SUCCEEDED -> {
-                            if (_uiState.value is DeezerImportUiState.Importing &&
+                            if (
+                                (_uiState.value is DeezerImportUiState.Importing || activeWorkId == info.id) &&
                                 importService.importState.value !is DeezerDataImportService.ImportState.Completed
                             ) {
                                 val result = DeezerDataImportService.ImportResult(
@@ -116,11 +141,11 @@ class DeezerImportViewModel @Inject constructor(
                                 )
                                 _uiState.value = DeezerImportUiState.Completed(result)
                             }
-                            activeWorkId = null
                         }
 
                         WorkInfo.State.FAILED -> {
-                            if (_uiState.value is DeezerImportUiState.Importing &&
+                            if (
+                                (_uiState.value is DeezerImportUiState.Importing || activeWorkId == info.id) &&
                                 importService.importState.value !is DeezerDataImportService.ImportState.Completed
                             ) {
                                 val errorMsg =
@@ -128,17 +153,15 @@ class DeezerImportViewModel @Inject constructor(
                                         ?: context.getString(R.string.deezer_import_error_generic)
                                 _uiState.value = DeezerImportUiState.Error(errorMsg)
                             }
-                            activeWorkId = null
                         }
 
                         WorkInfo.State.CANCELLED -> {
-                            if (_uiState.value is DeezerImportUiState.Importing) {
+                            if (_uiState.value is DeezerImportUiState.Importing || activeWorkId == info.id) {
                                 _uiState.value =
                                     DeezerImportUiState.Error(
                                         context.getString(R.string.deezer_import_error_cancelled),
                                     )
                             }
-                            activeWorkId = null
                         }
                     }
                 }
@@ -169,7 +192,7 @@ class DeezerImportViewModel @Inject constructor(
         }
 
         // ImportRun analytics come from the worker, which owns the import now.
-        activeWorkId = DeezerImportWorker.enqueueImport(context, uri.toString())
+        rememberActiveWork(DeezerImportWorker.enqueueImport(context, uri.toString()))
     }
 
     fun cancelImport() {
@@ -177,6 +200,7 @@ class DeezerImportViewModel @Inject constructor(
     }
 
     fun resetState() {
+        rememberActiveWork(null)
         _uiState.value = DeezerImportUiState.Idle
         importService.resetState()
     }
