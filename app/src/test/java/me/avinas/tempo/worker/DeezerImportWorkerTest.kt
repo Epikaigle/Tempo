@@ -22,6 +22,7 @@ class DeezerImportWorkerTest {
             DeezerImportWorker.KEY_SHORT_PLAYS_SKIPPED to 5,
             DeezerImportWorker.KEY_MALFORMED_ROWS to 0,
             DeezerImportWorker.KEY_TOTAL_ENTRIES to 107,
+            DeezerImportWorker.KEY_WARNINGS to arrayOf("Metadata warning", "Artist warning"),
         )
         assertEquals(true, outputSuccess.getBoolean(DeezerImportWorker.KEY_SUCCESS, false))
         assertEquals(15, outputSuccess.getInt(DeezerImportWorker.KEY_TRACKS_IMPORTED, -1))
@@ -30,6 +31,10 @@ class DeezerImportWorkerTest {
         assertEquals(5, outputSuccess.getInt(DeezerImportWorker.KEY_SHORT_PLAYS_SKIPPED, -1))
         assertEquals(0, outputSuccess.getInt(DeezerImportWorker.KEY_MALFORMED_ROWS, -1))
         assertEquals(107, outputSuccess.getInt(DeezerImportWorker.KEY_TOTAL_ENTRIES, -1))
+        assertEquals(
+            listOf("Metadata warning", "Artist warning"),
+            outputSuccess.getStringArray(DeezerImportWorker.KEY_WARNINGS)?.toList(),
+        )
 
         val outputFailure = workDataOf(
             DeezerImportWorker.KEY_SUCCESS to false,
