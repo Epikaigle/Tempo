@@ -35,6 +35,28 @@ class DeezerDataImportServiceTest {
     }
 
     @Test
+    fun preservesDeezerArtistEntitiesThatContainCollaborationCharacters() {
+        assertEquals(
+            listOf("Mcfly & Carlito"),
+            DeezerDataImportService.deezerArtistCredits("Mcfly & Carlito"),
+        )
+        assertEquals(
+            listOf("HUNTR/X", "EJAE", "Audrey Nuna"),
+            DeezerDataImportService.deezerArtistCredits("HUNTR/X, EJAE, Audrey Nuna"),
+        )
+        assertEquals(
+            listOf("Dimitri Vegas & Like Mike", "W&W", "Marnik"),
+            DeezerDataImportService.deezerArtistCredits(
+                "Dimitri Vegas & Like Mike, W&W, Marnik",
+            ),
+        )
+        assertEquals(
+            listOf("Tyler, the Creator"),
+            DeezerDataImportService.deezerArtistCredits("Tyler, the Creator"),
+        )
+    }
+
+    @Test
     fun rejectsConflictingKnownAlbumsForIsrcCandidate() {
         assertTrue(
             DeezerDataImportService.albumsCompatibleForIsrcCandidate(
