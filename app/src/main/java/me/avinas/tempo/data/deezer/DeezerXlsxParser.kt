@@ -336,10 +336,10 @@ object DeezerXlsxParser {
         if (!listeningSeconds.isFinite()) return null
         val normalizedListeningSeconds =
             if (listeningSeconds == -1.0) {
-                // Real official Deezer exports use -1 for rows whose listening
-                // duration is unavailable. Keep the row structurally valid and
-                // let the import's <30s rule ignore it instead of reporting the
-                // official export row as malformed.
+                // A real official Deezer export contains -1 as a listening-time
+                // sentinel. It cannot represent a usable positive play duration,
+                // so keep the row structurally valid and let the import's <30s
+                // rule ignore it instead of reporting the official row as malformed.
                 0.0
             } else {
                 listeningSeconds
