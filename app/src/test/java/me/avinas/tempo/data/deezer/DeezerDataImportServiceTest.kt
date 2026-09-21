@@ -35,6 +35,28 @@ class DeezerDataImportServiceTest {
     }
 
     @Test
+    fun rejectsConflictingKnownAlbumsForIsrcCandidate() {
+        assertTrue(
+            DeezerDataImportService.albumsCompatibleForIsrcCandidate(
+                existingAlbum = "Same Album",
+                incomingAlbum = "same album",
+            ),
+        )
+        assertTrue(
+            DeezerDataImportService.albumsCompatibleForIsrcCandidate(
+                existingAlbum = null,
+                incomingAlbum = "Incoming Album",
+            ),
+        )
+        assertTrue(
+            !DeezerDataImportService.albumsCompatibleForIsrcCandidate(
+                existingAlbum = "Live Album",
+                incomingAlbum = "Studio Album",
+            ),
+        )
+    }
+
+    @Test
     fun propagatesCancellationDuringIncomingIsrcScan() {
         val entries =
             List(300) { index ->
