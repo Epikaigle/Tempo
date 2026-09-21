@@ -82,6 +82,22 @@ class DeezerImportWorker
                 }
             }
 
+            internal data class ProgressState(
+                val max: Int,
+                val progress: Int,
+                val indeterminate: Boolean,
+            )
+
+            internal fun calculateProgress(current: Int, total: Int): ProgressState {
+                val isIndeterminate = total <= 0
+                val max = if (isIndeterminate) 0 else total
+                return ProgressState(
+                    max = max,
+                    progress = current.coerceAtLeast(0),
+                    indeterminate = isIndeterminate,
+                )
+            }
+
             fun enqueueImport(
                 context: Context,
                 fileUri: String,
@@ -274,7 +290,7 @@ class DeezerImportWorker
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
 
-            val isIndeterminate = total <= 0
+            val progressState = calculateProgress(current, total)
             val notification =
                 NotificationCompat
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
@@ -282,7 +298,7 @@ class DeezerImportWorker
                     .setContentText(message)
                     .setContentIntent(pendingIntent)
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setProgress(if (isIndeterminate) 0 else total, current, isIndeterminate)
+                    .setProgress(progressState.max, progressState.progress, progressState.indeterminate)
                     .setOngoing(true)
                     .setOnlyAlertOnce(true)
                     .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -317,14 +333,14 @@ class DeezerImportWorker
             current: Int,
             total: Int,
         ) {
-            val isIndeterminate = total <= 0
+            val progressState = calculateProgress(current, total)
             val notification =
                 NotificationCompat
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
                     .setContentTitle(applicationContext.getString(R.string.deezer_import_notification_title))
                     .setContentText(message)
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setProgress(if (isIndeterminate) 0 else total, current, isIndeterminate)
+                    .setProgress(progressState.max, progressState.progress, progressState.indeterminate)
                     .setOngoing(true)
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .build()

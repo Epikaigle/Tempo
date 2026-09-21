@@ -38,4 +38,31 @@ class DeezerImportWorkerTest {
         assertEquals(false, outputFailure.getBoolean(DeezerImportWorker.KEY_SUCCESS, true))
         assertEquals("No file selected", outputFailure.getString(DeezerImportWorker.KEY_ERROR_MESSAGE))
     }
+
+    @Test
+    fun calculatesProgressCorrectlyForVariousTotals() {
+        // Zero or unknown total is indeterminate
+        val unknown = DeezerImportWorker.calculateProgress(current = 0, total = 0)
+        assertEquals(0, unknown.max)
+        assertEquals(0, unknown.progress)
+        assertEquals(true, unknown.indeterminate)
+
+        // Small export (e.g. 20 items) uses actual total as max so progress scales to 100%
+        val smallFinished = DeezerImportWorker.calculateProgress(current = 20, total = 20)
+        assertEquals(20, smallFinished.max)
+        assertEquals(20, smallFinished.progress)
+        assertEquals(false, smallFinished.indeterminate)
+
+        // Mid-progress on small export
+        val smallMid = DeezerImportWorker.calculateProgress(current = 5, total = 20)
+        assertEquals(20, smallMid.max)
+        assertEquals(5, smallMid.progress)
+        assertEquals(false, smallMid.indeterminate)
+
+        // Large export
+        val large = DeezerImportWorker.calculateProgress(current = 500, total = 1000)
+        assertEquals(1000, large.max)
+        assertEquals(500, large.progress)
+        assertEquals(false, large.indeterminate)
+    }
 }
