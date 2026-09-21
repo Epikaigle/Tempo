@@ -108,7 +108,11 @@ class DeezerImportViewModel @Inject constructor(
                                     shortPlaysSkipped = info.outputData.getInt(DeezerImportWorker.KEY_SHORT_PLAYS_SKIPPED, 0),
                                     malformedRows = info.outputData.getInt(DeezerImportWorker.KEY_MALFORMED_ROWS, 0),
                                     totalEntries = info.outputData.getInt(DeezerImportWorker.KEY_TOTAL_ENTRIES, 0),
-                                    errors = emptyList(),
+                                    errors =
+                                        info.outputData
+                                            .getStringArray(DeezerImportWorker.KEY_WARNINGS)
+                                            ?.toList()
+                                            .orEmpty(),
                                 )
                                 _uiState.value = DeezerImportUiState.Completed(result)
                             }
@@ -166,6 +170,10 @@ class DeezerImportViewModel @Inject constructor(
 
         // ImportRun analytics come from the worker, which owns the import now.
         activeWorkId = DeezerImportWorker.enqueueImport(context, uri.toString())
+    }
+
+    fun cancelImport() {
+        DeezerImportWorker.cancel(context)
     }
 
     fun resetState() {
