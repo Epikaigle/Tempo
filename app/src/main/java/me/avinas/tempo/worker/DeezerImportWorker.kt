@@ -53,7 +53,7 @@ class DeezerImportWorker
             private const val NOTIFICATION_ID = 9300
             private const val NOTIFICATION_COMPLETION_ID = 9301
 
-            private const val WORK_NAME = "deezer_import"
+            internal const val WORK_NAME = "deezer_import"
 
             const val KEY_FILE_URI = "file_uri"
             const val KEY_SUCCESS = "success"

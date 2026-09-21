@@ -143,10 +143,6 @@ class DeezerImportViewModel @Inject constructor(
     fun resetState() {
         _uiState.value = DeezerImportUiState.Idle
         importService.resetState()
-        try {
-            WorkManager.getInstance(context).pruneWork()
-        } catch (_: Exception) {
-        }
     }
 }
 
