@@ -191,7 +191,17 @@ class DeezerDataImportServiceTest {
     fun mapsUserFacingErrors() {
         assertEquals(
             "This file does not contain Deezer listening history (10_listeningHistory)",
-            DeezerDataImportService.userFacingError(IllegalArgumentException("Missing 10_listeningHistory")),
+            DeezerDataImportService.userFacingError(
+                IllegalArgumentException("This XLSX does not contain Deezer's 10_listeningHistory listening-history sheet"),
+            ),
+        )
+        assertEquals(
+            "The Deezer listening-history columns in this export are not supported",
+            DeezerDataImportService.userFacingError(
+                IllegalArgumentException(
+                    "Deezer listening-history columns were not found in 10_listeningHistory",
+                ),
+            ),
         )
         assertEquals(
             "No Deezer listening-history entries were found in this export",
