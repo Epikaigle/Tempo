@@ -543,6 +543,27 @@ class DeezerDataImportService @Inject constructor(
                 return resolution
             }
 
+            // A legacy placeholder with the exact title is safe to promote only
+            // when album metadata does not contradict Deezer. This avoids leaving
+            // an "Unknown Artist" duplicate solely because the old row had no ISRC.
+            val placeholderCandidates =
+                compatibleCandidates.filter { candidate ->
+                    ArtistParser.isUnknownArtist(candidate.artist) ||
+                        ArtistParser.isPlaceholderArtistName(candidate.artist)
+                }
+            val placeholderMatch = chooseByAlbum(placeholderCandidates)
+            if (placeholderMatch != null) {
+                var track = promoteUnknownArtistFromDeezer(placeholderMatch, entry.artistName)
+                track = fillMissingAlbumFromDeezer(track, entry.albumName)
+                val resolution = TrackResolver.Resolution(
+                    trackId = track.id,
+                    isNewTrack = false,
+                    track = track,
+                )
+                cacheTrackResolution(cacheKey, resolution, trackCache)
+                return resolution
+            }
+
             // Deezer may expose one credited artist while another source stores the
             // complete collaboration string. Match individual artists strictly —
             // never by substring/fuzzy containment.
