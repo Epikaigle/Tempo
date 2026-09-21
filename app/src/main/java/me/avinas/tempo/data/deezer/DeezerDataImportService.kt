@@ -58,8 +58,18 @@ class DeezerDataImportService @Inject constructor(
         private const val DEFAULT_COMPLETION_PERCENTAGE = 80
         private const val TEMP_FILE_PREFIX = "tempo_deezer_"
         private const val MAX_DISPLAY_NAME_LENGTH = 200
-        private val ISRC_REGEX = Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
         const val IMPORT_SOURCE = "com.deezer.music.import.xlsx"
+
+        private val KNOWN_COMMA_ARTISTS = listOf(
+            "Tyler, the Creator",
+            "Earth, Wind & Fire",
+            "Crosby, Stills, Nash & Young",
+            "Crosby, Stills & Nash",
+            "Peter, Paul & Mary",
+            "Blood, Sweat & Tears",
+            "Emerson, Lake & Palmer",
+            "Bell, Biv DeVoe",
+        )
 
         internal fun deezerArtistCredits(value: String): List<String> {
             val cleaned = value.trim()
@@ -70,20 +80,41 @@ class DeezerDataImportService @Inject constructor(
             // to one Deezer artist entity and must not be split further.
             if (!cleaned.contains(',')) return listOf(cleaned)
 
+            // Protect known comma-containing artist names so collaborations do not split them
+            var protected = cleaned
+            val replacements = mutableListOf<Pair<String, String>>()
+            KNOWN_COMMA_ARTISTS.forEachIndexed { index, name ->
+                val regex = Regex(Regex.escape(name), RegexOption.IGNORE_CASE)
+                if (regex.containsMatchIn(protected)) {
+                    val token = "@@DEEZER_COMMA_ARTIST_${index}@@"
+                    regex.findAll(protected).forEach { match ->
+                        replacements.add(token to match.value)
+                    }
+                    protected = regex.replace(protected, token)
+                }
+            }
+
             // Preserve known comma-containing artist names already recognized by
             // Tempo (for example names where the comma is part of the stage name).
-            val wholeParsed = ArtistParser.getAllArtists(cleaned)
+            val wholeParsed = ArtistParser.getAllArtists(protected)
             if (
                 wholeParsed.size == 1 &&
-                ArtistParser.isStrictSameArtist(wholeParsed.single(), cleaned)
+                ArtistParser.isStrictSameArtist(wholeParsed.single(), protected)
             ) {
                 return listOf(cleaned)
             }
 
-            return cleaned
+            return protected
                 .split(',')
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
+                .map { part ->
+                    var restored = part
+                    for ((token, original) in replacements) {
+                        restored = restored.replace(token, original)
+                    }
+                    restored
+                }
                 .distinctBy { ArtistParser.normalizeForSearch(it) }
         }
 
@@ -224,7 +255,7 @@ class DeezerDataImportService @Inject constructor(
                             0,
                             0,
                             0,
-                            listOf("Deezer export is larger than 256 MB"),
+                            listOf("This Deezer export is too large to import safely on this device"),
                         )
                     _importState.value = ImportState.Error(result.errors.first())
                     return@withContext result
@@ -308,7 +339,7 @@ class DeezerDataImportService @Inject constructor(
                 importContext.ensureActive()
             }.toHashSet()
         enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
-            val normalized = canonicalIsrc(ref.isrc) ?: return@forEach
+            val normalized = DeezerXlsxParser.normalizeIsrc(ref.isrc) ?: return@forEach
             if (normalized in ambiguousIsrcs) return@forEach
 
             val existingTrackId = isrcIndex[normalized]
@@ -521,7 +552,7 @@ class DeezerDataImportService @Inject constructor(
             for (candidate in sameTitleCandidates) {
                 val candidateIsrc =
                     enrichedMetadataDao.forTrackSync(candidate.id)?.isrc
-                        ?.let(::canonicalIsrc)
+                        ?.let(DeezerXlsxParser::normalizeIsrc)
                 if (candidateIsrc == null || candidateIsrc == isrc) {
                     compatibleCandidates.add(candidate)
                 }
@@ -817,25 +848,12 @@ class DeezerDataImportService @Inject constructor(
         }
 
         // Tempo's primary artist rankings still aggregate the denormalized
-        // tracks.artist string, so keep that representation in sync as well.
-        // Preserve the existing syntax and append only a genuinely missing
-        // Deezer credit.
+        // tracks.artist string. Ensure primaryArtistId is set if missing.
         trackRepository.getById(trackId).first()?.let { current ->
-            val alreadyPresent =
-                comparableArtistCredits(current.artist).any { existingArtist ->
-                    ArtistParser.isStrictSameArtist(existingArtist, credited)
-                }
-
-            var updated = current
             if (isPrimaryCredit && current.primaryArtistId == null) {
-                updated = updated.copy(primaryArtistId = artist.id)
+                val updated = current.copy(primaryArtistId = artist.id)
+                trackRepository.update(updated)
             }
-            if (!alreadyPresent && !ArtistParser.isUnknownArtist(current.artist)) {
-                val updatedArtist =
-                    if (current.artist.isBlank()) credited else current.artist.trim() + ", " + credited
-                updated = updated.copy(artist = updatedArtist)
-            }
-            if (updated != current) trackRepository.update(updated)
         }
 
         preparedCredits.add(cacheKey)
@@ -846,11 +864,6 @@ class DeezerDataImportService @Inject constructor(
         val isrc: String?,
         val album: String?,
     )
-
-    private fun canonicalIsrc(value: String): String? {
-        val normalized = value.trim().uppercase().replace("-", "").replace(" ", "")
-        return normalized.takeIf(ISRC_REGEX::matches)
-    }
 
     private suspend fun preserveDeezerMetadata(
         trackId: Long,
@@ -873,7 +886,7 @@ class DeezerDataImportService @Inject constructor(
 
         var updated = existing
         var changed = false
-        val storedIsrc = updated.isrc?.let(::canonicalIsrc)
+        val storedIsrc = updated.isrc?.let(DeezerXlsxParser::normalizeIsrc)
         if (storedIsrc == null && entry.isrc != null) {
             // Repair blank *and invalid* legacy ISRC values with Deezer's validated ISRC.
             updated = updated.copy(isrc = entry.isrc)
@@ -907,7 +920,7 @@ class DeezerDataImportService @Inject constructor(
                     if (count < 0) break
                     total += count
                     if (total > MAX_FILE_SIZE_BYTES) {
-                        throw IOException("Deezer export is larger than 256 MB")
+                        throw IOException("This Deezer export is too large to import safely on this device")
                     }
                     output.write(buffer, 0, count)
                 }

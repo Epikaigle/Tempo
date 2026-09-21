@@ -132,6 +132,65 @@ class DeezerXlsxParserTest {
     }
 
     @Test
+    fun acceptsUnaccentedFrenchListeningHistoryHeaders() {
+        val file = createWorkbook(
+            includeHistory = true,
+            frenchHeaders = true,
+            unaccentedHeaders = true,
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(1, result.entries.size)
+            assertEquals(0, result.malformedRows)
+            assertEquals("Never Gonna Give You Up", result.entries.single().trackName)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun parsesColonDurationWithCommaDecimals() {
+        val file = createWorkbook(
+            includeHistory = true,
+            inlineStrings = true,
+            listeningTime = "03:33,5",
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(1, result.entries.size)
+            assertEquals(0, result.malformedRows)
+            assertEquals(213_500L, result.entries.single().msPlayed)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun normalizesIsrcFormats() {
+        assertEquals("GBAYE8800243", DeezerXlsxParser.normalizeIsrc("GB-AYE-88-00243"))
+        assertEquals("GBAYE8800243", DeezerXlsxParser.normalizeIsrc("  gbaye8800243  "))
+        assertEquals("GBAYE8800243", DeezerXlsxParser.normalizeIsrc("gb aye 8800243"))
+        assertEquals(null, DeezerXlsxParser.normalizeIsrc("INVALID_ISRC"))
+        assertEquals(null, DeezerXlsxParser.normalizeIsrc(""))
+    }
+
+    @Test
+    fun ignoresTrailingBlankRowsWithoutIncrementingMalformedCount() {
+        val file = createWorkbook(
+            includeHistory = true,
+            inlineStrings = true,
+            includeEmptyRow = true,
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(1, result.entries.size)
+            assertEquals(0, result.malformedRows)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
     fun propagatesCancellationCheck() {
         val file = createWorkbook(includeHistory = true)
         try {
@@ -163,10 +222,12 @@ class DeezerXlsxParserTest {
         putHistorySecond: Boolean = false,
         historySheetName: String = "10_listeningHistory",
         frenchHeaders: Boolean = false,
+        unaccentedHeaders: Boolean = false,
         inlineStrings: Boolean = false,
         absoluteWorksheetTargets: Boolean = false,
         officialLayout: Boolean = false,
         listeningTime: String = "213",
+        includeEmptyRow: Boolean = false,
     ): File {
         val file = kotlin.io.path.createTempFile("deezer-test-", ".xlsx").toFile()
 
@@ -228,7 +289,19 @@ class DeezerXlsxParserTest {
             )
 
             val headers =
-                if (frenchHeaders) {
+                if (frenchHeaders && unaccentedHeaders) {
+                    listOf(
+                        "Titre du morceau",
+                        "Artiste",
+                        "ISRC",
+                        "Titre de l'album",
+                        "Adresse IP",
+                        "Duree d'ecoute",
+                        "Plateforme",
+                        "Modele",
+                        "Date d'ecoute",
+                    )
+                } else if (frenchHeaders) {
                     listOf(
                         "Titre du morceau",
                         "Artiste",
@@ -280,6 +353,7 @@ class DeezerXlsxParserTest {
             sheets.forEachIndexed { index, pair ->
                 val xml =
                     if (pair.first.contains("listeningHistory", ignoreCase = true)) {
+                        val emptyRowXml = if (includeEmptyRow) """<row r="3"><c r="A3"/></row>""" else ""
                         if (inlineStrings) {
                             """
                             <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
@@ -303,6 +377,7 @@ class DeezerXlsxParserTest {
                                   <c r="F2" t="inlineStr"><is><t>$listeningTime</t></is></c>
                                   <c r="I2" t="inlineStr"><is><t>2024-10-24 23:00:00</t></is></c>
                                 </row>
+                                $emptyRowXml
                               </sheetData>
                             </worksheet>
                             """.trimIndent()
@@ -329,6 +404,7 @@ class DeezerXlsxParserTest {
                                   <c r="F2"><v>$listeningTime</v></c>
                                   <c r="I2" t="s"><v>13</v></c>
                                 </row>
+                                $emptyRowXml
                               </sheetData>
                             </worksheet>
                             """.trimIndent()

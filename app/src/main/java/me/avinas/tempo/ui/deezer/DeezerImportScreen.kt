@@ -324,6 +324,13 @@ private fun ImportingContent(state: DeezerDataImportService.ImportState) {
                 modifier = Modifier.fillMaxWidth(),
                 color = DeezerPurple,
             )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.deezer_import_background_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = TextTertiary,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

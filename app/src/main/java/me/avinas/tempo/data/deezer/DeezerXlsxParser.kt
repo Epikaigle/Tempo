@@ -32,6 +32,7 @@ object DeezerXlsxParser {
     private const val MAX_COLUMNS_PER_ROW = 128
     private const val MIN_PARSE_MEMORY_BUDGET_BYTES = 16L * 1024 * 1024
     private const val MAX_PARSE_MEMORY_BUDGET_BYTES = 160L * 1024 * 1024
+    private const val EXCEL_EPOCH_MILLIS = -2209075200000L
 
     private val deezerDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     private val isrcRegex = Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
@@ -282,7 +283,7 @@ object DeezerXlsxParser {
                             ) {
                                 headers = candidate
                             }
-                        } else if (currentRow.isNotEmpty()) {
+                        } else if (currentRow.isNotEmpty() && currentRow.values.any { it.isNotBlank() }) {
                             val parsed = parseDataRow(currentRow, activeHeaders)
                             if (parsed != null) {
                                 estimatedBytes += estimateEntryMemoryBytes(parsed)
@@ -326,7 +327,7 @@ object DeezerXlsxParser {
         val artist = sanitize(value("Artist", "Artiste", "Artists", "Artistes"))
         if (title.isBlank() || artist.isBlank()) return null
 
-        val dateValue = value("Date", "Date d'écoute", "Date de l'écoute")
+        val dateValue = value("Date", "Date d'écoute", "Date de l'écoute", "Date d'ecoute", "Date de l'ecoute")
         val timestamp = parseDate(dateValue)
         if (timestamp <= 0L) return null
 
@@ -382,8 +383,8 @@ object DeezerXlsxParser {
     }
 
     private fun parseListeningSeconds(value: String): Double? {
-        val clean = value.trim()
-        clean.replace(',', '.').toDoubleOrNull()?.let { return it }
+        val clean = value.trim().replace(',', '.')
+        clean.toDoubleOrNull()?.let { return it }
 
         val parts = clean.split(':')
         if (parts.size in 2..3) {
@@ -416,10 +417,7 @@ object DeezerXlsxParser {
         val serial = value.trim().toDoubleOrNull()
         if (serial != null && serial > 0.0) {
             val millisPerDay = 86_400_000.0
-            val excelEpoch = LocalDateTime.of(1899, 12, 30, 0, 0)
-                .toInstant(ZoneOffset.UTC)
-                .toEpochMilli()
-            return (excelEpoch + serial * millisPerDay).toLong()
+            return (EXCEL_EPOCH_MILLIS + serial * millisPerDay).toLong()
         }
         return 0L
     }
@@ -451,7 +449,7 @@ object DeezerXlsxParser {
 
     private fun sanitize(value: String): String = value.trim().take(MAX_STRING_LENGTH)
 
-    private fun normalizeIsrc(value: String): String? {
+    internal fun normalizeIsrc(value: String): String? {
         val normalized = value
             .trim()
             .uppercase()
@@ -508,6 +506,6 @@ object DeezerXlsxParser {
         listOf("Song Title", "Titre", "Titre du morceau", "Titre de la chanson"),
         listOf("Artist", "Artiste", "Artists", "Artistes"),
         listOf("Listening Time", "Temps d'écoute", "Durée d'écoute", "Duree d'ecoute", "Écoute"),
-        listOf("Date", "Date d'écoute", "Date de l'écoute"),
+        listOf("Date", "Date d'écoute", "Date de l'écoute", "Date d'ecoute", "Date de l'ecoute"),
     )
 }

@@ -1,25 +1,20 @@
 package me.avinas.tempo.ui.deezer
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FailureClass
-import me.avinas.tempo.data.analytics.FailureClassifier
 import me.avinas.tempo.data.analytics.FeatureUsed
-import me.avinas.tempo.data.analytics.ImportPhase
-import me.avinas.tempo.data.analytics.ImportProvider
-import me.avinas.tempo.data.analytics.ImportRun
 import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.data.deezer.DeezerDataImportService
+import me.avinas.tempo.worker.DeezerImportWorker
 import javax.inject.Inject
 
 @HiltViewModel
@@ -33,6 +28,44 @@ class DeezerImportViewModel @Inject constructor(
 
     val importState = importService.importState
 
+    init {
+        // The import itself runs in DeezerImportWorker (foreground, survives
+        // navigation and process death). This shared singleton service's state flow
+        // drives both this UI and the worker's notification, so translate its states
+        // into UI state here — same pattern used by YouTubeMusicImportViewModel.
+        viewModelScope.launch {
+            importService.importState.collect { state ->
+                when (state) {
+                    is DeezerDataImportService.ImportState.Parsing,
+                    is DeezerDataImportService.ImportState.Importing -> {
+                        _uiState.value = DeezerImportUiState.Importing
+                    }
+
+                    is DeezerDataImportService.ImportState.Completed -> {
+                        if (_uiState.value is DeezerImportUiState.Importing) {
+                            _uiState.value =
+                                if (state.result.isSuccess) {
+                                    DeezerImportUiState.Completed(state.result)
+                                } else {
+                                    DeezerImportUiState.Error(
+                                        state.result.errors.firstOrNull() ?: "Deezer import failed",
+                                    )
+                                }
+                        }
+                    }
+
+                    is DeezerDataImportService.ImportState.Error -> {
+                        if (_uiState.value is DeezerImportUiState.Importing) {
+                            _uiState.value = DeezerImportUiState.Error(state.message)
+                        }
+                    }
+
+                    is DeezerDataImportService.ImportState.Idle -> Unit
+                }
+            }
+        }
+    }
+
     fun importFile(context: Context, uri: Uri) {
         if (
             _uiState.value is DeezerImportUiState.Importing ||
@@ -44,49 +77,25 @@ class DeezerImportViewModel @Inject constructor(
 
         tracker.track(FeatureUsed(TempoFeature.DEEZER_IMPORT))
         _uiState.value = DeezerImportUiState.Importing
-        viewModelScope.launch {
-            val startedAt = System.currentTimeMillis()
-            try {
-                val result = importService.importFromUri(context.applicationContext, uri)
-                tracker.track(
-                    ImportRun(
-                        provider = ImportProvider.DEEZER,
-                        phase = if (result.isSuccess) ImportPhase.COMPLETED else ImportPhase.FAILED,
-                        records = result.tracksImported,
-                        failure = if (result.isSuccess) null else FailureClass.UNKNOWN,
-                        durationMillis = System.currentTimeMillis() - startedAt,
-                    ),
-                )
-                _uiState.value =
-                    if (result.isSuccess) {
-                        DeezerImportUiState.Completed(result)
-                    } else {
-                        DeezerImportUiState.Error(
-                            result.errors.firstOrNull() ?: "Deezer import failed",
-                        )
-                    }
-            } catch (e: CancellationException) {
-                _uiState.value = DeezerImportUiState.Idle
-                throw e
-            } catch (e: Exception) {
-                Log.e("DeezerImportVM", "Import failed", e)
-                tracker.track(
-                    ImportRun(
-                        provider = ImportProvider.DEEZER,
-                        phase = ImportPhase.FAILED,
-                        records = 0,
-                        failure = FailureClassifier.of(e),
-                        durationMillis = System.currentTimeMillis() - startedAt,
-                    ),
-                )
-                _uiState.value = DeezerImportUiState.Error("Deezer import failed")
-            }
+
+        // Persist the SAF grant so the worker can still read the file if
+        // WorkManager restarts it after a process death.
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        } catch (_: SecurityException) {
+            // Grant not persistable — fine while the process lives.
         }
+
+        // ImportRun analytics come from the worker, which owns the import now.
+        DeezerImportWorker.enqueueImport(context, uri.toString())
     }
 
     fun resetState() {
-        importService.resetState()
         _uiState.value = DeezerImportUiState.Idle
+        importService.resetState()
     }
 }
 
