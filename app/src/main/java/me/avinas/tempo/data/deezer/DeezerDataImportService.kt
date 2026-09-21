@@ -59,6 +59,42 @@ class DeezerDataImportService @Inject constructor(
         private const val MAX_DISPLAY_NAME_LENGTH = 200
         private val ISRC_REGEX = Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
         const val IMPORT_SOURCE = "com.deezer.music.import.xlsx"
+
+        internal fun findIncomingAmbiguousIsrcs(
+            entries: List<DeezerXlsxParser.Entry>,
+        ): Set<String> {
+            val representativeArtists = HashMap<String, List<String>>()
+            val ambiguous = HashSet<String>()
+
+            for (entry in entries) {
+                val isrc = entry.isrc ?: continue
+                if (isrc in ambiguous) continue
+
+                val artists =
+                    ArtistParser.getAllArtists(entry.artistName)
+                        .filterNot { artist ->
+                            ArtistParser.isUnknownArtist(artist) ||
+                                ArtistParser.isPlaceholderArtistName(artist)
+                        }
+                if (artists.isEmpty()) continue
+
+                val previous = representativeArtists[isrc]
+                if (previous == null) {
+                    representativeArtists[isrc] = artists
+                    continue
+                }
+
+                val sharesStrictArtist =
+                    previous.any { previousArtist ->
+                        artists.any { incomingArtist ->
+                            ArtistParser.isStrictSameArtist(previousArtist, incomingArtist)
+                        }
+                    }
+                if (!sharesStrictArtist) ambiguous.add(isrc)
+            }
+
+            return ambiguous
+        }
     }
 
     sealed class ImportState {
@@ -192,7 +228,7 @@ class DeezerDataImportService @Inject constructor(
         val artistCreditsPrepared = HashSet<String>()
         val createdTrackIds = LinkedHashSet<Long>()
         val isrcIndex = HashMap<String, Long>()
-        val ambiguousIsrcs = HashSet<String>()
+        val ambiguousIsrcs = findIncomingAmbiguousIsrcs(parsed.entries).toHashSet()
         enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
             val normalized = canonicalIsrc(ref.isrc) ?: return@forEach
             if (normalized in ambiguousIsrcs) return@forEach
@@ -249,7 +285,7 @@ class DeezerDataImportService @Inject constructor(
                 }
     
                 try {
-                    val resolution = resolveTrack(entry, trackCache, isrcIndex)
+                    val resolution = resolveTrack(entry, trackCache, isrcIndex, ambiguousIsrcs)
                     if (resolution.isNewTrack) {
                         createdTrackIds.add(resolution.trackId)
                         tracksImported++
@@ -288,7 +324,9 @@ class DeezerDataImportService @Inject constructor(
                                 isrc = prepared?.isrc ?: entry.isrc,
                                 album = prepared?.album ?: entry.albumName,
                             )
-                            entry.isrc?.let { isrcIndex.putIfAbsent(it, resolution.trackId) }
+                            entry.isrc
+                                ?.takeIf { it !in ambiguousIsrcs }
+                                ?.let { isrcIndex.putIfAbsent(it, resolution.trackId) }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -367,16 +405,22 @@ class DeezerDataImportService @Inject constructor(
         entry: DeezerXlsxParser.Entry,
         trackCache: MutableMap<String, TrackResolver.Resolution>,
         isrcIndex: MutableMap<String, Long>,
+        ambiguousIsrcs: Set<String>,
     ): TrackResolver.Resolution {
-        val cacheKey = entry.isrc?.let { "isrc:" + it }
-            ?: "meta:" + entry.trackName.lowercase() + "|" + entry.artistName.lowercase() + "|" +
-                entry.albumName.orEmpty().lowercase()
+        val cacheKey =
+            entry.isrc
+                ?.takeIf { it !in ambiguousIsrcs }
+                ?.let { "isrc:" + it }
+                ?: "meta:" + entry.trackName.lowercase() + "|" + entry.artistName.lowercase() + "|" +
+                    entry.albumName.orEmpty().lowercase()
 
         trackCache[cacheKey]?.let { return it }
 
         entry.isrc?.let { isrc ->
             // ISRC is authoritative. Prefer it over all textual matching.
-            isrcIndex[isrc]?.let { trackId ->
+            isrcIndex[isrc]
+                ?.takeIf { isrc !in ambiguousIsrcs }
+                ?.let { trackId ->
                 trackRepository.getById(trackId).first()?.let { existingTrack ->
                     var track = promoteUnknownArtistFromDeezer(existingTrack, entry.artistName)
                     track = fillMissingAlbumFromDeezer(track, entry.albumName)
