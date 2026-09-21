@@ -60,6 +60,32 @@ class DeezerDataImportService @Inject constructor(
         private val ISRC_REGEX = Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
         const val IMPORT_SOURCE = "com.deezer.music.import.xlsx"
 
+        internal fun deezerArtistCredits(value: String): List<String> {
+            val cleaned = value.trim()
+            if (cleaned.isEmpty()) return emptyList()
+
+            // In the official export, Deezer separates distinct artist credits
+            // with commas. Characters such as '&', '/', '+' and ' x ' can belong
+            // to one Deezer artist entity and must not be split further.
+            if (!cleaned.contains(',')) return listOf(cleaned)
+
+            // Preserve known comma-containing artist names already recognized by
+            // Tempo (for example names where the comma is part of the stage name).
+            val wholeParsed = ArtistParser.getAllArtists(cleaned)
+            if (
+                wholeParsed.size == 1 &&
+                ArtistParser.isStrictSameArtist(wholeParsed.single(), cleaned)
+            ) {
+                return listOf(cleaned)
+            }
+
+            return cleaned
+                .split(',')
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .distinctBy(ArtistParser::normalizeForSearch)
+        }
+
         internal fun albumsCompatibleForIsrcCandidate(
             existingAlbum: String?,
             incomingAlbum: String?,
@@ -89,7 +115,7 @@ class DeezerDataImportService @Inject constructor(
                 if (isrc in ambiguous) return@forEachIndexed
 
                 val artists =
-                    ArtistParser.getAllArtists(entry.artistName)
+                    deezerArtistCredits(entry.artistName)
                         .filterNot { artist ->
                             ArtistParser.isUnknownArtist(artist) ||
                                 ArtistParser.isPlaceholderArtistName(artist)
@@ -320,7 +346,7 @@ class DeezerDataImportService @Inject constructor(
                         createdTrackIds.add(resolution.trackId)
                         tracksImported++
                         try {
-                            artistLinkingService.linkArtistsForTrack(resolution.track)
+                            linkDeezerArtistsForTrack(resolution.track)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -329,7 +355,7 @@ class DeezerDataImportService @Inject constructor(
                     }
     
                     try {
-                        ArtistParser.getAllArtists(entry.artistName).forEach { creditedArtist ->
+                        deezerArtistCredits(entry.artistName).forEach { creditedArtist ->
                             preserveAdditionalDeezerArtistCredit(
                                 resolution.trackId,
                                 resolution.track.artist,
@@ -479,7 +505,7 @@ class DeezerDataImportService @Inject constructor(
                 }
             }
 
-            val incomingArtists = ArtistParser.getAllArtists(entry.artistName)
+            val incomingArtists = deezerArtistCredits(entry.artistName)
 
             fun chooseByAlbum(candidates: List<Track>): Track? {
                 if (candidates.isEmpty()) return null
@@ -521,7 +547,7 @@ class DeezerDataImportService @Inject constructor(
             // never by substring/fuzzy containment.
             val individualArtistCandidates =
                 compatibleCandidates.filter { candidate ->
-                    ArtistParser.getAllArtists(candidate.artist).any { candidateArtist ->
+                    comparableArtistCredits(candidate.artist).any { candidateArtist ->
                         incomingArtists.any { incomingArtist ->
                             ArtistParser.isStrictSameArtist(candidateArtist, incomingArtist)
                         }
@@ -582,6 +608,46 @@ class DeezerDataImportService @Inject constructor(
         return removed
     }
 
+    private fun comparableArtistCredits(value: String): List<String> =
+        buildList {
+            val cleaned = value.trim()
+            if (cleaned.isNotEmpty()) add(cleaned)
+            addAll(deezerArtistCredits(value))
+            addAll(ArtistParser.getAllArtists(value))
+        }.distinctBy(ArtistParser::normalizeForSearch)
+
+    private suspend fun linkDeezerArtistsForTrack(track: Track): Track {
+        val artists =
+            deezerArtistCredits(track.artist)
+                .filterNot { artist ->
+                    ArtistParser.isUnknownArtist(artist) ||
+                        ArtistParser.isPlaceholderArtistName(artist)
+                }
+                .map { artistLinkingService.getOrCreateArtist(it) }
+                .distinctBy { it.id }
+
+        if (artists.isEmpty()) return track
+
+        // This path is used only for a newly-created Deezer track or when
+        // replacing an Unknown Artist placeholder, so rebuilding its junction
+        // rows is safe and avoids leaving the placeholder relationship behind.
+        trackArtistDao.deleteAllForTrack(track.id)
+        artists.forEachIndexed { index, artist ->
+            trackArtistDao.insert(
+                TrackArtist(
+                    trackId = track.id,
+                    artistId = artist.id,
+                    role = if (index == 0) ArtistRole.PRIMARY else ArtistRole.PERFORMER,
+                    creditOrder = index,
+                ),
+            )
+        }
+
+        val updated = track.copy(primaryArtistId = artists.first().id)
+        if (updated != track) trackRepository.update(updated)
+        return updated
+    }
+
     private suspend fun fillMissingAlbumFromDeezer(
         track: Track,
         deezerAlbum: String?,
@@ -632,7 +698,7 @@ class DeezerDataImportService @Inject constructor(
         }
 
         return try {
-            artistLinkingService.linkArtistsForTrack(candidate)
+            linkDeezerArtistsForTrack(candidate)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -714,7 +780,7 @@ class DeezerDataImportService @Inject constructor(
         // credited artist in a format ArtistParser already understands.
         trackRepository.getById(trackId).first()?.let { current ->
             val alreadyPresent =
-                ArtistParser.getAllArtists(current.artist).any { existingArtist ->
+                comparableArtistCredits(current.artist).any { existingArtist ->
                     ArtistParser.isStrictSameArtist(existingArtist, credited)
                 }
             if (!alreadyPresent && !ArtistParser.isUnknownArtist(current.artist)) {
