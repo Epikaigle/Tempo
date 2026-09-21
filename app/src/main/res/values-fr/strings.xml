@@ -1042,6 +1042,12 @@
     <string name="deezer_import_short_skipped">%1$d écoutes sous la durée minimale de Tempo ignorées</string>
     <string name="deezer_import_malformed_skipped">%1$d lignes invalides ignorées</string>
     <string name="deezer_import_warnings">%1$d avertissements pendant l’import</string>
+    <string name="deezer_import_warning_metadata">Les métadonnées d’un morceau Deezer n’ont pas pu être enregistrées.</string>
+    <string name="deezer_import_warning_artist_credit">Un artiste crédité supplémentaire n’a pas pu être enregistré.</string>
+    <string name="deezer_import_warning_event">Une écoute n’a pas pu être importée.</string>
+    <string name="deezer_import_warning_row">Une ligne de l’historique d’écoute n’a pas pu être importée.</string>
+    <string name="deezer_import_warning_more">D’autres avertissements ont été omis.</string>
+    <string name="deezer_import_warning_unknown">Un problème non bloquant est survenu pendant l’import.</string>
     <string name="deezer_import_done">Terminé</string>
     <string name="deezer_import_another">Importer un autre fichier</string>
     <string name="deezer_import_failed">Échec de l’import Deezer</string>
