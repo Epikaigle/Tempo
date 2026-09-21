@@ -150,7 +150,11 @@ class DeezerImportWorker
                 if (uriString.isNullOrBlank()) {
                     Log.e(TAG, "No file URI provided")
                     reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
-                    return@withContext Result.failure(\n                        workDataOf(\n                            KEY_ERROR_MESSAGE to applicationContext.getString(R.string.deezer_import_error_no_file),\n                        ),\n                    )
+                    return@withContext Result.failure(
+                        workDataOf(
+                            KEY_ERROR_MESSAGE to applicationContext.getString(R.string.deezer_import_error_no_file),
+                        ),
+                    )
                 }
 
                 val uri =
@@ -163,7 +167,11 @@ class DeezerImportWorker
 
                 if (uri == null) {
                     reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
-                    return@withContext Result.failure(\n                        workDataOf(\n                            KEY_ERROR_MESSAGE to applicationContext.getString(R.string.deezer_import_error_invalid_uri),\n                        ),\n                    )
+                    return@withContext Result.failure(
+                        workDataOf(
+                            KEY_ERROR_MESSAGE to applicationContext.getString(R.string.deezer_import_error_invalid_uri),
+                        ),
+                    )
                 }
 
                 try {
