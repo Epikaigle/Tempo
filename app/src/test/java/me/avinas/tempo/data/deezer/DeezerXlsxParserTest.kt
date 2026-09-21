@@ -98,7 +98,7 @@ class DeezerXlsxParserTest {
     }
 
     @Test
-    fun acceptsOfficialUnavailableListeningTimeSentinel() {
+    fun acceptsOfficialNegativeListeningTimeSentinel() {
         val file = createWorkbook(
             includeHistory = true,
             inlineStrings = true,
