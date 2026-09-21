@@ -107,10 +107,7 @@ class DeezerImportViewModel @Inject constructor(
                                         it.state == WorkInfo.State.RUNNING ||
                                         it.state == WorkInfo.State.BLOCKED
                                 }?.also { rememberActiveWork(it.id) }
-                            ?: run {
-                                if (activeWorkId != null) rememberActiveWork(null)
-                                return@collect
-                            }
+                            ?: return@collect
 
                     when (info.state) {
                         WorkInfo.State.ENQUEUED,
