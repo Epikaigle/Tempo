@@ -52,7 +52,7 @@ class DeezerImportViewModel @Inject constructor(
                                     DeezerImportUiState.Completed(state.result)
                                 } else {
                                     DeezerImportUiState.Error(
-                                        state.result.errors.firstOrNull() ?: "Deezer import failed",
+                                        state.result.errors.firstOrNull() ?: context.getString(R.string.deezer_import_error_generic),
                                     )
                                 }
                         }
