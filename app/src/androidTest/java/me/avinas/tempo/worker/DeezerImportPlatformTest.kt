@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import me.avinas.tempo.R
+import me.avinas.tempo.ui.deezer.DEEZER_IMPORT_MIME_TYPES
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -27,13 +28,18 @@ class DeezerImportPlatformTest {
         val intent =
             ActivityResultContracts.OpenDocument().createIntent(
                 context,
-                arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                DEEZER_IMPORT_MIME_TYPES,
             )
 
         assertEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)
-        assertTrue(
-            intent.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)
-                ?.contains("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") == true,
+        assertEquals("*/*", intent.type)
+        assertEquals(
+            setOf(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/octet-stream",
+                "*/*",
+            ),
+            intent.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)?.toSet(),
         )
     }
 
