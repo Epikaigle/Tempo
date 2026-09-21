@@ -289,4 +289,15 @@ class DeezerDataImportServiceTest {
         listenedAtMillis = Instant.parse("2026-01-01T12:00:00Z").toEpochMilli(),
         msPlayed = msPlayed,
     )
+
+    @Test
+    fun mapsXmlSafeSizeLimitFailureToTooLargeMessage() {
+        assertEquals(
+            "This Deezer export is too large to import safely on this device",
+            DeezerDataImportService.userFacingError(
+                IllegalArgumentException("XLSX XML entry exceeds safe size limit"),
+            ),
+        )
+    }
+
 }
