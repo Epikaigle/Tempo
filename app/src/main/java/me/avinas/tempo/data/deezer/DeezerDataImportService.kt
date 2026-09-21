@@ -62,13 +62,22 @@ class DeezerDataImportService @Inject constructor(
 
         internal fun findIncomingAmbiguousIsrcs(
             entries: List<DeezerXlsxParser.Entry>,
+            cancellationCheck: (() -> Unit)? = null,
         ): Set<String> {
             val knownArtists = HashMap<String, MutableList<String>>()
             val ambiguous = HashSet<String>()
 
-            for (entry in entries) {
-                val isrc = entry.isrc ?: continue
-                if (isrc in ambiguous) continue
+            entries.forEachIndexed { index, entry ->
+                if (index % 256 == 0) cancellationCheck?.invoke()
+
+                // Rows that cannot produce a listening event must not weaken an
+                // otherwise authoritative ISRC. In particular, a noisy <30s row
+                // with bad credits should not force every real play of that ISRC
+                // onto the less reliable textual matching path.
+                if (entry.msPlayed < MIN_MS_PLAYED_FOR_EVENT) return@forEachIndexed
+
+                val isrc = entry.isrc ?: return@forEachIndexed
+                if (isrc in ambiguous) return@forEachIndexed
 
                 val artists =
                     ArtistParser.getAllArtists(entry.artistName)
@@ -76,12 +85,12 @@ class DeezerDataImportService @Inject constructor(
                             ArtistParser.isUnknownArtist(artist) ||
                                 ArtistParser.isPlaceholderArtistName(artist)
                         }
-                if (artists.isEmpty()) continue
+                if (artists.isEmpty()) return@forEachIndexed
 
                 val previous = knownArtists[isrc]
                 if (previous == null) {
                     knownArtists[isrc] = artists.toMutableList()
-                    continue
+                    return@forEachIndexed
                 }
 
                 val sharesStrictArtist =
@@ -92,7 +101,7 @@ class DeezerDataImportService @Inject constructor(
                     }
                 if (!sharesStrictArtist) {
                     ambiguous.add(isrc)
-                    continue
+                    return@forEachIndexed
                 }
 
                 artists.forEach { incomingArtist ->
@@ -237,7 +246,10 @@ class DeezerDataImportService @Inject constructor(
         val artistCreditsPrepared = HashSet<String>()
         val createdTrackIds = LinkedHashSet<Long>()
         val isrcIndex = HashMap<String, Long>()
-        val ambiguousIsrcs = findIncomingAmbiguousIsrcs(parsed.entries).toHashSet()
+        val ambiguousIsrcs =
+            findIncomingAmbiguousIsrcs(parsed.entries) {
+                coroutineContext.ensureActive()
+            }.toHashSet()
         enrichedMetadataDao.getTrackIsrcRefs().forEach { ref ->
             val normalized = canonicalIsrc(ref.isrc) ?: return@forEach
             if (normalized in ambiguousIsrcs) return@forEach
