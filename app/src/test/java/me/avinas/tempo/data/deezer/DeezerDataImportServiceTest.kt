@@ -37,17 +37,17 @@ class DeezerDataImportServiceTest {
     @Test
     fun preservesDeezerArtistEntitiesThatContainCollaborationCharacters() {
         assertEquals(
-            listOf("Mcfly & Carlito"),
-            DeezerDataImportService.deezerArtistCredits("Mcfly & Carlito"),
+            listOf("Alpha & Beta"),
+            DeezerDataImportService.deezerArtistCredits("Alpha & Beta"),
         )
         assertEquals(
-            listOf("HUNTR/X", "EJAE", "Audrey Nuna"),
-            DeezerDataImportService.deezerArtistCredits("HUNTR/X, EJAE, Audrey Nuna"),
+            listOf("Group/Name", "Guest One", "Guest Two"),
+            DeezerDataImportService.deezerArtistCredits("Group/Name, Guest One, Guest Two"),
         )
         assertEquals(
-            listOf("Dimitri Vegas & Like Mike", "W&W", "Marnik"),
+            listOf("Duo & Partner", "Initials&Initials", "Guest Three"),
             DeezerDataImportService.deezerArtistCredits(
-                "Dimitri Vegas & Like Mike, W&W, Marnik",
+                "Duo & Partner, Initials&Initials, Guest Three",
             ),
         )
         assertEquals(
