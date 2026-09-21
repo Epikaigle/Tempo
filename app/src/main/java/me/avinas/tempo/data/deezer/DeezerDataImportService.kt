@@ -217,7 +217,7 @@ class DeezerDataImportService @Inject constructor(
 
         internal fun sanitizeDisplayName(value: String): String =
             value
-                .replace(Regex("[\\r\\n\\t\\u0000-\\u001F\\u007F]"), " ")
+                .replace(Regex("[\\r\\n\\t\\u0000-\\u001F\\u007F]+"), " ")
                 .trim()
                 .take(MAX_DISPLAY_NAME_LENGTH)
                 .ifBlank { "deezer-data.xlsx" }
