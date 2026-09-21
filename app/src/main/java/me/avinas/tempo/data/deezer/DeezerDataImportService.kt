@@ -81,9 +81,9 @@ class DeezerDataImportService @Inject constructor(
 
             return cleaned
                 .split(',')
-                .map(String::trim)
-                .filter(String::isNotEmpty)
-                .distinctBy(ArtistParser::normalizeForSearch)
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinctBy { ArtistParser.normalizeForSearch(it) }
         }
 
         internal fun albumsCompatibleForIsrcCandidate(
@@ -614,7 +614,7 @@ class DeezerDataImportService @Inject constructor(
             if (cleaned.isNotEmpty()) add(cleaned)
             addAll(deezerArtistCredits(value))
             addAll(ArtistParser.getAllArtists(value))
-        }.distinctBy(ArtistParser::normalizeForSearch)
+        }.distinctBy { ArtistParser.normalizeForSearch(it) }
 
     private suspend fun linkDeezerArtistsForTrack(track: Track): Track {
         val artists =
