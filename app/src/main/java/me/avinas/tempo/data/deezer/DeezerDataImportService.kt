@@ -63,7 +63,7 @@ class DeezerDataImportService @Inject constructor(
         internal fun findIncomingAmbiguousIsrcs(
             entries: List<DeezerXlsxParser.Entry>,
         ): Set<String> {
-            val representativeArtists = HashMap<String, List<String>>()
+            val knownArtists = HashMap<String, MutableList<String>>()
             val ambiguous = HashSet<String>()
 
             for (entry in entries) {
@@ -78,9 +78,9 @@ class DeezerDataImportService @Inject constructor(
                         }
                 if (artists.isEmpty()) continue
 
-                val previous = representativeArtists[isrc]
+                val previous = knownArtists[isrc]
                 if (previous == null) {
-                    representativeArtists[isrc] = artists
+                    knownArtists[isrc] = artists.toMutableList()
                     continue
                 }
 
@@ -90,7 +90,16 @@ class DeezerDataImportService @Inject constructor(
                             ArtistParser.isStrictSameArtist(previousArtist, incomingArtist)
                         }
                     }
-                if (!sharesStrictArtist) ambiguous.add(isrc)
+                if (!sharesStrictArtist) {
+                    ambiguous.add(isrc)
+                    continue
+                }
+
+                artists.forEach { incomingArtist ->
+                    if (previous.none { ArtistParser.isStrictSameArtist(it, incomingArtist) }) {
+                        previous.add(incomingArtist)
+                    }
+                }
             }
 
             return ambiguous
