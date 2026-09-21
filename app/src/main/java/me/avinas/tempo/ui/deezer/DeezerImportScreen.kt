@@ -143,7 +143,11 @@ fun DeezerImportScreen(
                         )
                     }
 
-                    DeezerImportUiState.Importing -> ImportingContent(importState)
+                    DeezerImportUiState.Importing ->
+                        ImportingContent(
+                            state = importState,
+                            onCancel = viewModel::cancelImport,
+                        )
 
                     is DeezerImportUiState.Completed -> {
                         CompletedContent(
@@ -282,7 +286,10 @@ private fun IdleContent(
 }
 
 @Composable
-private fun ImportingContent(state: DeezerDataImportService.ImportState) {
+private fun ImportingContent(
+    state: DeezerDataImportService.ImportState,
+    onCancel: () -> Unit,
+) {
     GlassCard(contentPadding = PaddingValues(24.dp)) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -331,6 +338,13 @@ private fun ImportingContent(state: DeezerDataImportService.ImportState) {
                 color = TextTertiary,
                 textAlign = TextAlign.Center,
             )
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.deezer_import_cancel))
+            }
         }
     }
 }
@@ -434,6 +448,9 @@ private fun ErrorContent(
                 when {
                     message.contains("does not contain Deezer listening history", ignoreCase = true) ->
                         stringResource(R.string.deezer_import_error_missing_history)
+                    message.contains("listening-history columns", ignoreCase = true) &&
+                        message.contains("not supported", ignoreCase = true) ->
+                        stringResource(R.string.deezer_import_error_unsupported_columns)
                     message.contains("No Deezer listening-history entries", ignoreCase = true) ->
                         stringResource(R.string.deezer_import_error_no_entries)
                     message.contains("too large", ignoreCase = true) ->
