@@ -69,5 +69,15 @@ class DeezerImportWorkerTest {
         assertEquals(1000, large.max)
         assertEquals(500, large.progress)
         assertEquals(false, large.indeterminate)
+
+        val overflow = DeezerImportWorker.calculateProgress(current = 25, total = 20)
+        assertEquals(20, overflow.max)
+        assertEquals(20, overflow.progress)
+        assertEquals(false, overflow.indeterminate)
+
+        val negative = DeezerImportWorker.calculateProgress(current = -5, total = 20)
+        assertEquals(20, negative.max)
+        assertEquals(0, negative.progress)
+        assertEquals(false, negative.indeterminate)
     }
 }

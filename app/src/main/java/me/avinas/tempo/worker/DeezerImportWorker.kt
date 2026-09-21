@@ -49,7 +49,7 @@ class DeezerImportWorker
         companion object {
             private const val TAG = "DeezerImportWorker"
 
-            private const val NOTIFICATION_CHANNEL_ID = "deezer_import_channel"
+            internal const val NOTIFICATION_CHANNEL_ID = "deezer_import_channel"
             private const val NOTIFICATION_ID = 9300
             private const val NOTIFICATION_COMPLETION_ID = 9301
 
@@ -94,7 +94,12 @@ class DeezerImportWorker
                 val max = if (isIndeterminate) 0 else total
                 return ProgressState(
                     max = max,
-                    progress = current.coerceAtLeast(0),
+                    progress =
+                        if (isIndeterminate) {
+                            0
+                        } else {
+                            current.coerceIn(0, max)
+                        },
                     indeterminate = isIndeterminate,
                 )
             }

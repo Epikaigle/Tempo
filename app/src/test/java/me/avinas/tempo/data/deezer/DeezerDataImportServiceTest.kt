@@ -5,6 +5,7 @@ import java.util.concurrent.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import me.avinas.tempo.utils.ArtistParser
 
 class DeezerDataImportServiceTest {
 
@@ -65,6 +66,26 @@ class DeezerDataImportServiceTest {
             listOf("Earth, Wind & Fire", "Chic"),
             DeezerDataImportService.deezerArtistCredits("Earth, Wind & Fire, Chic"),
         )
+        assertEquals(
+            listOf("Crosby, Stills, Nash & Young", "Neil Young"),
+            DeezerDataImportService.deezerArtistCredits(
+                "Crosby, Stills, Nash & Young, Neil Young",
+            ),
+        )
+        assertEquals(
+            listOf("Bell, Biv DeVoe"),
+            DeezerDataImportService.deezerArtistCredits("Bell, Biv DeVoe"),
+        )
+
+        try {
+            ArtistParser.loadUserKnownBands(setOf("Future, The Artist"))
+            assertEquals(
+                listOf("Future, The Artist", "Guest"),
+                DeezerDataImportService.deezerArtistCredits("Future, The Artist, Guest"),
+            )
+        } finally {
+            ArtistParser.loadUserKnownBands(emptySet())
+        }
     }
 
     @Test

@@ -60,62 +60,60 @@ class DeezerDataImportService @Inject constructor(
         private const val MAX_DISPLAY_NAME_LENGTH = 200
         const val IMPORT_SOURCE = "com.deezer.music.import.xlsx"
 
-        private val KNOWN_COMMA_ARTISTS = listOf(
-            "Tyler, the Creator",
-            "Earth, Wind & Fire",
-            "Crosby, Stills, Nash & Young",
-            "Crosby, Stills & Nash",
-            "Peter, Paul & Mary",
-            "Blood, Sweat & Tears",
-            "Emerson, Lake & Palmer",
-            "Bell, Biv DeVoe",
-        )
+        private fun isSingleDeezerArtistEntity(value: String): Boolean {
+            val parsed = ArtistParser.getAllArtists(value)
+            return parsed.size == 1 &&
+                ArtistParser.isStrictSameArtist(parsed.single(), value)
+        }
 
         internal fun deezerArtistCredits(value: String): List<String> {
             val cleaned = value.trim()
             if (cleaned.isEmpty()) return emptyList()
 
-            // In the official export, Deezer separates distinct artist credits
-            // with commas. Characters such as '&', '/', '+' and ' x ' can belong
-            // to one Deezer artist entity and must not be split further.
-            if (!cleaned.contains(',')) return listOf(cleaned)
-
-            // Protect known comma-containing artist names so collaborations do not split them
-            var protected = cleaned
-            val replacements = mutableListOf<Pair<String, String>>()
-            KNOWN_COMMA_ARTISTS.forEachIndexed { index, name ->
-                val regex = Regex(Regex.escape(name), RegexOption.IGNORE_CASE)
-                if (regex.containsMatchIn(protected)) {
-                    val token = "@@DEEZER_COMMA_ARTIST_${index}@@"
-                    regex.findAll(protected).forEach { match ->
-                        replacements.add(token to match.value)
-                    }
-                    protected = regex.replace(protected, token)
-                }
-            }
-
-            // Preserve known comma-containing artist names already recognized by
-            // Tempo (for example names where the comma is part of the stage name).
-            val wholeParsed = ArtistParser.getAllArtists(protected)
-            if (
-                wholeParsed.size == 1 &&
-                ArtistParser.isStrictSameArtist(wholeParsed.single(), protected)
-            ) {
+            // Deezer uses commas between credited artists, but a comma may also
+            // legitimately belong to an artist entity. Preserve a complete name
+            // whenever Tempo already recognises it as one artist.
+            if (!cleaned.contains(',') || isSingleDeezerArtistEntity(cleaned)) {
                 return listOf(cleaned)
             }
 
-            return protected
-                .split(',')
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .map { part ->
-                    var restored = part
-                    for ((token, original) in replacements) {
-                        restored = restored.replace(token, original)
+            val parts =
+                cleaned
+                    .split(',')
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            if (parts.isEmpty()) return emptyList()
+
+            // Greedily protect the longest recognised comma-containing artist at
+            // each position, then treat the remaining commas as Deezer credit
+            // separators. This automatically benefits from Tempo's full known-
+            // artist set (including user-defined names) instead of a tiny local
+            // whitelist.
+            val credits = ArrayList<String>(parts.size)
+            var index = 0
+            while (index < parts.size) {
+                var protectedArtist: String? = null
+                var nextIndex = index + 1
+
+                for (endExclusive in parts.size downTo index + 2) {
+                    val candidate = parts.subList(index, endExclusive).joinToString(", ")
+                    if (isSingleDeezerArtistEntity(candidate)) {
+                        protectedArtist = candidate
+                        nextIndex = endExclusive
+                        break
                     }
-                    restored
                 }
-                .distinctBy { ArtistParser.normalizeForSearch(it) }
+
+                if (protectedArtist != null) {
+                    credits.add(protectedArtist)
+                    index = nextIndex
+                } else {
+                    credits.add(parts[index])
+                    index++
+                }
+            }
+
+            return credits.distinctBy { ArtistParser.normalizeForSearch(it) }
         }
 
         internal fun albumsCompatibleForIsrcCandidate(
