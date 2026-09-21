@@ -426,22 +426,23 @@ class DeezerDataImportService @Inject constructor(
         trackCache[cacheKey]?.let { return it }
 
         entry.isrc?.let { isrc ->
-            // ISRC is authoritative. Prefer it over all textual matching.
+            // A non-ambiguous validated ISRC is authoritative. Prefer it over
+            // all textual matching whenever it identifies one existing track.
             isrcIndex[isrc]
                 ?.takeIf { isrc !in ambiguousIsrcs }
                 ?.let { trackId ->
-                trackRepository.getById(trackId).first()?.let { existingTrack ->
-                    var track = promoteUnknownArtistFromDeezer(existingTrack, entry.artistName)
-                    track = fillMissingAlbumFromDeezer(track, entry.albumName)
-                    val resolution = TrackResolver.Resolution(
-                        trackId = track.id,
-                        isNewTrack = false,
-                        track = track,
-                    )
-                    cacheTrackResolution(cacheKey, resolution, trackCache)
-                    return resolution
+                    trackRepository.getById(trackId).first()?.let { existingTrack ->
+                        var track = promoteUnknownArtistFromDeezer(existingTrack, entry.artistName)
+                        track = fillMissingAlbumFromDeezer(track, entry.albumName)
+                        val resolution = TrackResolver.Resolution(
+                            trackId = track.id,
+                            isNewTrack = false,
+                            track = track,
+                        )
+                        cacheTrackResolution(cacheKey, resolution, trackCache)
+                        return resolution
+                    }
                 }
-            }
 
             // No indexed ISRC match exists. Inspect every track with the exact
             // same title instead of accepting TrackDao's arbitrary LIMIT 1 result:
