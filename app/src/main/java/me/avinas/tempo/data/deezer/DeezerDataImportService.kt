@@ -355,11 +355,11 @@ class DeezerDataImportService @Inject constructor(
                     }
     
                     try {
-                        deezerArtistCredits(entry.artistName).forEach { creditedArtist ->
+                        deezerArtistCredits(entry.artistName).forEachIndexed { creditIndex, creditedArtist ->
                             preserveAdditionalDeezerArtistCredit(
                                 resolution.trackId,
-                                resolution.track.artist,
                                 creditedArtist,
+                                isPrimaryCredit = creditIndex == 0,
                                 artistCreditsPrepared,
                             )
                         }
@@ -743,14 +743,13 @@ class DeezerDataImportService @Inject constructor(
 
     private suspend fun preserveAdditionalDeezerArtistCredit(
         trackId: Long,
-        primaryArtistName: String,
         creditedArtistName: String,
+        isPrimaryCredit: Boolean,
         preparedCredits: MutableSet<String>,
     ) {
         val credited = creditedArtistName.trim()
         if (
             credited.isBlank() ||
-            credited.equals(primaryArtistName.trim(), ignoreCase = true) ||
             ArtistParser.isUnknownArtist(credited) ||
             ArtistParser.isPlaceholderArtistName(credited)
         ) {
@@ -768,7 +767,7 @@ class DeezerDataImportService @Inject constructor(
                 TrackArtist(
                     trackId = trackId,
                     artistId = artist.id,
-                    role = ArtistRole.PERFORMER,
+                    role = if (isPrimaryCredit) ArtistRole.PRIMARY else ArtistRole.PERFORMER,
                     creditOrder = nextOrder,
                 ),
             )
@@ -776,18 +775,24 @@ class DeezerDataImportService @Inject constructor(
 
         // Tempo's primary artist rankings still aggregate the denormalized
         // tracks.artist string, so keep that representation in sync as well.
-        // Do not rewrite existing collaboration syntax; simply append a missing
-        // credited artist in a format ArtistParser already understands.
+        // Preserve the existing syntax and append only a genuinely missing
+        // Deezer credit.
         trackRepository.getById(trackId).first()?.let { current ->
             val alreadyPresent =
                 comparableArtistCredits(current.artist).any { existingArtist ->
                     ArtistParser.isStrictSameArtist(existingArtist, credited)
                 }
+
+            var updated = current
+            if (isPrimaryCredit && current.primaryArtistId == null) {
+                updated = updated.copy(primaryArtistId = artist.id)
+            }
             if (!alreadyPresent && !ArtistParser.isUnknownArtist(current.artist)) {
                 val updatedArtist =
                     if (current.artist.isBlank()) credited else current.artist.trim() + ", " + credited
-                trackRepository.update(current.copy(artist = updatedArtist))
+                updated = updated.copy(artist = updatedArtist)
             }
+            if (updated != current) trackRepository.update(updated)
         }
 
         preparedCredits.add(cacheKey)
