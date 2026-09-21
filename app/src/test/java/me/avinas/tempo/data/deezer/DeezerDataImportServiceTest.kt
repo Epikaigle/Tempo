@@ -16,6 +16,7 @@ class DeezerDataImportServiceTest {
             listOf(
                 entry(compatibleIsrc, "Primary Artist"),
                 entry(compatibleIsrc, "Primary Artist, Guest Artist"),
+                entry(compatibleIsrc, "Guest Artist"),
                 entry(conflictingIsrc, "Artist Alpha"),
                 entry(conflictingIsrc, "Artist Beta"),
                 entry(substringConflictIsrc, "Queen"),
