@@ -102,7 +102,7 @@ object DeezerXlsxParser {
                         exactRelationshipId = id
                     } else if (
                         fallbackRelationshipId == null &&
-                        sheetName.contains("listeningHistory", ignoreCase = true)
+                        sheetName.endsWith("_listeningHistory", ignoreCase = true)
                     ) {
                         // Deezer currently calls the sheet 10_listeningHistory. Match the
                         // semantic suffix too so a future sheet-order change (e.g. 11_) does
