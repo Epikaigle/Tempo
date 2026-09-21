@@ -77,11 +77,12 @@ class DeezerXlsxParserTest {
     }
 
     @Test
-    fun parsesRealisticInlineStringsWithAbsoluteWorksheetPath() {
+    fun parsesActualDeezerInlineStringsAtSheet10Path() {
         val file = createWorkbook(
             includeHistory = true,
             inlineStrings = true,
             absoluteWorksheetTargets = true,
+            officialLayout = true,
         )
         try {
             val result = DeezerXlsxParser.parse(file)
@@ -91,6 +92,25 @@ class DeezerXlsxParserTest {
             assertEquals("Rick Astley", entry.artistName)
             assertEquals("GBAYE8800243", entry.isrc)
             assertEquals(213_000L, entry.msPlayed)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun acceptsOfficialUnavailableListeningTimeSentinel() {
+        val file = createWorkbook(
+            includeHistory = true,
+            inlineStrings = true,
+            absoluteWorksheetTargets = true,
+            officialLayout = true,
+            listeningTime = "-1",
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(1, result.entries.size)
+            assertEquals(0, result.malformedRows)
+            assertEquals(0L, result.entries.single().msPlayed)
         } finally {
             file.delete()
         }
@@ -130,11 +150,30 @@ class DeezerXlsxParserTest {
         frenchHeaders: Boolean = false,
         inlineStrings: Boolean = false,
         absoluteWorksheetTargets: Boolean = false,
+        officialLayout: Boolean = false,
+        listeningTime: String = "213",
     ): File {
         val file = kotlin.io.path.createTempFile("deezer-test-", ".xlsx").toFile()
 
         val sheets =
-            if (includeHistory && putHistorySecond) {
+            if (officialLayout && includeHistory) {
+                listOf(
+                    "1_creationData",
+                    "2_customizationData",
+                    "3_setupData",
+                    "4_favoriteArtist",
+                    "5_favoriteAlbum",
+                    "6_favoritePodcast",
+                    "7_favoritePlaylist",
+                    "8_favoriteSong",
+                    "9_dislikedTracks",
+                    historySheetName,
+                    "11_playlistCreated",
+                    "12_businessData",
+                    "13_navigationData",
+                    "14_tracking",
+                ).mapIndexed { index, name -> name to "rId" + (index + 1) }
+            } else if (includeHistory && putHistorySecond) {
                 listOf("00_userProfile" to "rId1", historySheetName to "rId2")
             } else if (includeHistory) {
                 listOf(historySheetName to "rId1")
@@ -246,7 +285,7 @@ class DeezerXlsxParserTest {
                                   <c r="B2" t="inlineStr"><is><t>Rick Astley</t></is></c>
                                   <c r="C2" t="inlineStr"><is><t>GBAYE8800243</t></is></c>
                                   <c r="D2" t="inlineStr"><is><t>Whenever You Need Somebody</t></is></c>
-                                  <c r="F2"><v>213</v></c>
+                                  <c r="F2" t="inlineStr"><is><t>$listeningTime</t></is></c>
                                   <c r="I2" t="inlineStr"><is><t>2024-10-24 23:00:00</t></is></c>
                                 </row>
                               </sheetData>
@@ -272,7 +311,7 @@ class DeezerXlsxParserTest {
                                   <c r="B2" t="s"><v>10</v></c>
                                   <c r="C2" t="s"><v>11</v></c>
                                   <c r="D2" t="s"><v>12</v></c>
-                                  <c r="F2"><v>213</v></c>
+                                  <c r="F2"><v>$listeningTime</v></c>
                                   <c r="I2" t="s"><v>13</v></c>
                                 </row>
                               </sheetData>
