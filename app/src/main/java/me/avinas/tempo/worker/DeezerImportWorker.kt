@@ -183,7 +183,10 @@ class DeezerImportWorker
                 try {
                     setForeground(createForegroundInfo(applicationContext.getString(R.string.deezer_import_preparing), 0, 0))
                 } catch (e: IllegalStateException) {
-                    Log.w(TAG, "Foreground start not allowed; importing in background", e)
+                    // Long-running imports must not silently continue without foreground
+                    // execution. Let WorkManager retry when foreground promotion is allowed.
+                    Log.w(TAG, "Foreground start not allowed; retrying Deezer import later", e)
+                    return@withContext Result.retry()
                 }
 
                 val progressJob =
