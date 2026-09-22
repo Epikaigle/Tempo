@@ -88,10 +88,16 @@ object ArtistParser {
         "florida georgia line",  // Sometimes written as "Florida Georgia & Line"
         "the mamas & the papas",
         "peter paul & mary",
+        "peter, paul & mary",
         "crosby stills nash & young",
+        "crosby, stills, nash & young",
         "emerson lake & palmer",
+        "emerson, lake & palmer",
         "blood sweat & tears",
+        "blood, sweat & tears",
         "earth wind & fire",
+        "bell biv devoe",
+        "bell, biv devoe",
         "kool & the gang",
         "rob base & dj ez rock",
         "eric b & rakim",
@@ -471,8 +477,7 @@ object ArtistParser {
      */
     private fun isKnownBand(artist: String): Boolean {
         val lower = artist.trim().lowercase()
-        if (lower in KNOWN_COMPLEX_BANDS) return true
-        return lower in userKnownBands
+        return lower in KNOWN_COMPLEX_BANDS || lower in userKnownBands
     }
 
     /**
