@@ -455,7 +455,7 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
 fun TopArtistPage(page: SpotlightStoryPage.TopArtist) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
-        // Dynamic sizing for Hero Image based on available height
+        // Scale down hero image when displaying more than 5 artists
         val heroImageScale = if (page.topArtists.size > 5) 0.6f else 1.0f
         
         Column(
@@ -724,8 +724,7 @@ fun TopTrackSetupPage(page: SpotlightStoryPage.TopTrackSetup) {
 fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
-        // Dynamic sizing for Hero Image based on available height (preventing oversize)
-        // If we have a full list (10 items), we must be conservative with the Hero size.
+        // Scale down hero image when displaying more than 5 songs to preserve list space
         val heroImageScale = if (page.topSongs.size > 5) 0.6f else 1.0f
         
         Column(
@@ -3513,7 +3512,7 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
 fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
     val inCapture = LocalInCaptureContext.current
     val seen = isStoryPageSeen()
-    // Title unlock transition: previous title fades out, new title animates in
+    // Cross-fade to new title
     val oldTitleAlpha = remember { Animatable(0f) }
     val newTitleOffset = remember { Animatable(80f) }
     val newTitleAlpha  = remember { Animatable(0f) }

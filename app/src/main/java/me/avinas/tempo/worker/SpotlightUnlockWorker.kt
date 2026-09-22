@@ -22,13 +22,7 @@ import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 /**
- * Worker that checks daily for Spotlight story unlocks and sends Android notifications.
- * 
- * Checks for four types of story unlocks:
- * 1. Weekly Story - Unlocks on Sunday
- * 2. Monthly Story - Unlocks on the last day of each month
- * 3. Yearly Story - Unlocks on December 1st
- * 4. All-Time Story - Unlocks after 6 months of listening data
+ * Checks daily for Spotlight story availability milestones and posts notifications.
  */
 @HiltWorker
 class SpotlightUnlockWorker @AssistedInject constructor(
@@ -48,15 +42,8 @@ class SpotlightUnlockWorker @AssistedInject constructor(
         private const val NOTIFICATION_ID_ALL_TIME = 4003
 
         /**
-         * Schedule weekly checks for story unlocks.
-         * 
-         * Weekly checks are sufficient because:
-         * - Monthly: Only unlocks on last day of month (day 28-31)
-         * - Yearly: Only unlocks on December 1st
-         * - All-Time: 6-month milestone doesn't need daily precision
-         * 
-         * Runs once per week with an 8-hour flex window for battery optimization.
-         * HomeViewModel also checks when app opens, so this is just a backup for inactive users.
+         * Schedules weekly checks for story milestone availability.
+         * Serves as backup notification trigger for users who do not open the app.
          */
         fun scheduleWeekly(context: Context) {
             // Battery-optimized constraints
@@ -169,7 +156,7 @@ class SpotlightUnlockWorker @AssistedInject constructor(
     }
 
     /**
-     * Check if the All-Time story has just unlocked (6 months of data reached).
+     * Checks whether listening history has reached the 6-month All-Time story threshold.
      * Only checks earliest timestamp - SpotlightViewModel verifies data availability.
      */
     private suspend fun checkAllTimeStoryUnlock(

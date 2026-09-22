@@ -14,7 +14,6 @@ import { syncToPhone, getSyncStatus, initAutoSync, adjustSyncInterval, initHeart
 import { signRequest, validatePingResponse } from '../shared/security';
 import { PhoneSocket, RECONNECT_ALARM_NAME, KEEPALIVE_ALARM_NAME, clearStaleAlarms } from './websocket';
 
-// State
 
 const tracker = new PlaybackTracker();
 

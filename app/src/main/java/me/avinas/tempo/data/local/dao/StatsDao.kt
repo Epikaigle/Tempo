@@ -1845,12 +1845,8 @@ interface StatsDao {
     suspend fun getArtistCountry(artistName: String): String?
 
     /**
-     * Get artist image URL from enriched metadata for PRIMARY artist.
-     * Looks for tracks where this artist is the main/solo artist (not featured).
-     * Uses track_artists junction table to ensure we only get images from tracks
-     * where this artist is marked as PRIMARY, preventing wrong images from multi-artist tracks.
-     * Uses case-insensitive matching.
-     * Checks all artist image sources in priority order: Spotify > iTunes > Last.fm > Deezer
+     * Artist image URL from enriched metadata for PRIMARY artist records.
+     * Checks sources in priority order: Spotify > iTunes > Last.fm > Deezer.
      */
     @Query(
         """
@@ -1874,11 +1870,8 @@ interface StatsDao {
     suspend fun getArtistImageAsPrimaryArtist(artistName: String): String?
 
     /**
-     * Get artist image URL from enriched metadata where artist is listed first.
-     * Uses track_artists junction table to ensure we only get images from tracks
-     * where this artist is marked as PRIMARY (first/main artist).
-     * Uses case-insensitive matching.
-     * Checks all artist image sources in priority order: Spotify > iTunes > Last.fm > Deezer
+     * Artist image URL from enriched metadata where artist is listed first.
+     * Checks sources in priority order: Spotify > iTunes > Last.fm > Deezer.
      */
     @Query(
         """
@@ -1913,10 +1906,8 @@ interface StatsDao {
     suspend fun getArtistImageAsFirstArtist(artistName: String): String?
 
     /**
-     * Get artist image URL from enriched metadata (fallback - any track containing artist).
-     * Uses track_artists junction table with PRIMARY role to ensure correct artist images.
-     * This prevents multi-artist tracks from returning the wrong artist's image.
-     * Checks all artist image sources in priority order: Spotify > iTunes > Last.fm > Deezer
+     * Fallback artist image URL from enriched metadata for any PRIMARY artist track.
+     * Checks sources in priority order: Spotify > iTunes > Last.fm > Deezer.
      */
     @Query(
         """

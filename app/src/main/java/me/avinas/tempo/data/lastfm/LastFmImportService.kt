@@ -2119,7 +2119,7 @@ class LastFmImportService
                             // - archive=2: threshold=1 (need 1 active)
                             // - archive=3: threshold=2 (need 2 active)
                             // - archive=4: threshold=2 (need 2 active)
-                            // This ensures we don't delete archives until we've truly covered them.
+                            // Only prune archive rows once active plays meet coverage threshold.
                             val threshold = (archive.playCount + 1) / 2
                             if (activePlayCount >= threshold) {
                                 scrobbleArchiveDao.delete(archive)

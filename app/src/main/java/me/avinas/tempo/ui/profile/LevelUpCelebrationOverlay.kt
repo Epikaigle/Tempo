@@ -48,7 +48,7 @@ import java.util.Locale
 
 /**
  * Fullscreen celebration overlay shown when the user reaches a new level.
- * Displays the level badge, unlocked title, XP, streak stats, and share action.
+ * Displays the level badge, title, XP, streak stats, and share action.
  */
 @Composable
 fun LevelUpCelebrationOverlay(

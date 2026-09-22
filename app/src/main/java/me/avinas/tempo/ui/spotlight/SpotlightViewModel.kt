@@ -86,9 +86,8 @@ class SpotlightViewModel @Inject constructor(
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun observeDataChanges() {
         viewModelScope.launch {
-            // flatMapLatest ensures that whenever selectedTimeRange changes, we cancel the old
-            // repository subscription and immediately re-subscribe with the new range.
-            // This prevents stale THIS_MONTH data being pushed when a different filter is active.
+            // flatMapLatest cancels the in-flight query when selectedTimeRange changes,
+            // preventing stale results from an earlier filter overwriting the active one.
             _uiState
                 .map { it.selectedTimeRange }
                 .distinctUntilChanged()
@@ -260,7 +259,7 @@ class SpotlightViewModel @Inject constructor(
                         if (earliestDate.isAfter(sixMonthsAgo)) {
                             isLocked = true
                             
-                            // Calculate when it unlocks
+                            // 6-month threshold milestone
                             val unlockDate = earliestDate.plusMonths(6)
                             val formatter = java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy")
                             lockMessage = "Needs 6 months of data. Unlocks on ${unlockDate.format(formatter)}"
@@ -278,7 +277,7 @@ class SpotlightViewModel @Inject constructor(
                     }
                 }
                 else -> {
-                    // Other ranges unlocked by default
+                    // Ranges that require no history duration check
                     isLocked = false
                 }
             }

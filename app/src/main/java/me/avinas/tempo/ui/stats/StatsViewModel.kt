@@ -252,7 +252,7 @@ class StatsViewModel
                 // Fetch data directly (inline, awaitable) rather than via fire-and-forget loadData()
                 fetchDataForRefresh()
             } finally {
-                // Ensure spinner shows for at least 600ms so it doesn't flash away
+                // Keep spinner visible for at least 600ms to prevent flicker
                 val elapsed = System.currentTimeMillis() - startTime
                 if (elapsed < 600) delay(600 - elapsed)
                 _uiState.update { it.copy(isRefreshing = false) }

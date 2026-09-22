@@ -16,15 +16,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Service responsible for creating and linking artists to tracks.
- * 
- * This service:
- * 1. Parses artist strings to extract individual artists
- * 2. Creates Artist records if they don't exist
- * 3. Links tracks to artists via the TrackArtist junction table
- * 4. Updates track.primary_artist_id
- * 
- * This ensures all tracks are properly linked to artist entities.
+ * Extracts artist names from raw track strings, persists [Artist] records,
+ * and maintains [TrackArtist] junction relationships and primary artist IDs.
  */
 @Singleton
 class ArtistLinkingService @Inject constructor(
@@ -37,12 +30,7 @@ class ArtistLinkingService @Inject constructor(
         private const val TAG = "ArtistLinkingService"
     }
     
-    /**
-     * Process a track to ensure all artists are created and linked.
-     * 
-     * @param track The track to process
-     * @return The updated track with primary_artist_id set
-     */
+    /** Links [track] to its primary and featured artist records, inserting new artists as needed. */
     suspend fun linkArtistsForTrack(track: Track): Track = withContext(Dispatchers.IO) {
         if (track.artist.isBlank()) {
             Log.d(TAG, "Skipping track ${track.id} - no artist")

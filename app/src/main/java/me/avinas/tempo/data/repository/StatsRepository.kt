@@ -33,38 +33,11 @@ import me.avinas.tempo.data.stats.TrackEngagement
 import me.avinas.tempo.data.stats.YearOverYearComparison
 
 /**
- * Repository interface for accessing listening statistics.
- * Provides cached, on-demand computation of all metrics.
+ * Repository interface for listening statistics.
+ * Serves cached, offline-first computations from Room without blocking on remote APIs.
  *
- * =====================================================
- * DATA FLOW PATTERN: Enrichment → Database → UI
- * =====================================================
- *
- * This repository is the primary data access layer for UI components.
- * It follows a strict pattern to ensure efficient data management:
- *
- * 1. UI (ViewModels) → StatsRepository → Database
- *    - All data comes from locally cached database
- *    - No direct API calls are made
- *    - Queries are optimized with proper indices
- *
- * 2. Background Enrichment → Database
- *    - EnrichmentWorker fetches data from APIs
- *    - Data is stored in database via DAOs
- *    - Happens in background, never blocks UI
- *
- * Benefits:
- * - Fast, offline-first user experience
- * - API rate limits are respected in background
- * - Stats are computed efficiently using SQL
- * - Cache invalidation is handled properly
- * - UI never waits for API responses
- *
- * Note: Spotify audio-features API was deprecated in Nov 2024.
- * We now use MusicBrainz tags for mood/genre categorization
- * and user behavior patterns for engagement metrics.
- *
- * =====================================================
+ * Mood and genre metrics rely on local metadata and MusicBrainz tags following
+ * Spotify audio-features deprecation (Nov 2024).
  */
 interface StatsRepository {
     // Overview Stats

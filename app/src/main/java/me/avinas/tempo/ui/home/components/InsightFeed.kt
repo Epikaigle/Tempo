@@ -155,7 +155,7 @@ fun ConstellationWeb(
                     center = Offset(cxPx, cyPx)
                 )
 
-                // Render dynamic elastic connectors
+                // Elastic connectors
                 val resolvedPositions = categories.mapIndexed { index, type ->
                     val angle = angles[index] + orbitAngle.toDouble()
                     val baseOffset = Offset(
@@ -658,7 +658,7 @@ private fun MoodVisualizer(valence: Float, energy: Float, color: Color) {
             .padding(vertical = 2.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Living Soundwave: 16 dynamic wave bars whose amplitude and motion reflect energy
+        // 16 soundwave bars with amplitude and speed tied to energy level
         val barCount = 16
         val infiniteTransition = rememberInfiniteTransition(label = "mood_soundwave")
         val baseSpeed = (1200 - (safeEnergy * 600)).toInt().coerceAtLeast(350)
@@ -1859,7 +1859,7 @@ private fun EngagementVisualizer(value: Float, color: Color) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // High-Craft Elevated Circular Ring Gauge
+        // Circular ring progress gauge
         Box(
             modifier = Modifier.size(86.dp),
             contentAlignment = Alignment.Center

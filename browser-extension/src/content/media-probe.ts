@@ -655,8 +655,7 @@
     let artist: string | undefined;
     let album: string | undefined;
 
-    // Enhanced patterns for robust description parsing
-    // Handles: "Song Name:", "Track:", "Title:", "Song:", "Music:", etc.
+    // Field label regexes for YouTube video description parsing (e.g. "Song Name:", "Artist:")
     const titleRegex = /^\s*(song\s*name|song|track|title|music\s*name|music)\s*[\-–—:|~]\s*(.+)$/i;
     // Handles: "Performed by:", "Artist:", "Singer:", "Vocals:", "Music by:", "Composed by:", etc.
     const artistRegex = /^\s*(singer|singers|artist|artists|performed\s+by|vocals|vocals\s+by|music\s+by|composed\s+by|written\s+by|created\s+by|sung\s+by|vocalist)\s*[\-–—:|~]\s*(.+)$/i;

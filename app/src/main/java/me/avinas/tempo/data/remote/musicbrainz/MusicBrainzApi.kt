@@ -16,7 +16,7 @@ import retrofit2.http.Query
  * Base URL: https://musicbrainz.org/ws/2/
  * 
  * The `inc` parameter specifies which related data to include in responses.
- * The `fmt=json` parameter ensures JSON responses (XML is default).
+ * The `fmt=json` parameter sets JSON response format (XML is default).
  */
 interface MusicBrainzApi {
 

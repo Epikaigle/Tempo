@@ -111,7 +111,7 @@ class ProfileViewModel @Inject constructor(
         }
         
         viewModelScope.launch {
-            // First ensure today's challenges are generated
+            // Generate today's challenges before observing
             challengeRepository.generateDailyChallengesIfNeeded()
             
             // Then observe them
@@ -171,7 +171,7 @@ class ProfileViewModel @Inject constructor(
         } catch (e: Exception) {
             _uiState.update { it.copy(error = e.message) }
         } finally {
-            // Ensure spinner shows for at least 600ms so it doesn't flash away
+            // Keep spinner visible for at least 600ms to prevent flicker
             val elapsed = System.currentTimeMillis() - startTime
             if (elapsed < 600) delay(600 - elapsed)
             _uiState.update { it.copy(isRefreshing = false) }

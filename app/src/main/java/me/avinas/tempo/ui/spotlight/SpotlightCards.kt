@@ -276,7 +276,7 @@ fun DashboardCosmicClockCard(
                     }
                     
                     // Build smooth path (Catmull-Rom or simple LineTo)
-                    // Simple LineTo for now to ensure robustness, but closed loop.
+                    // Straight-line segments to close waveform loop
                     if (points.isNotEmpty()) {
                         path.moveTo(points[0].x, points[0].y)
                         for (i in 1 until points.size) {
@@ -1711,7 +1711,7 @@ fun DashboardDiscoveryCard(
                  val centerY = size.height * 0.6f
                  val maxRadius = size.width * 0.8f
                  
-                 // Dynamic color based on type
+                 // Core accent mapped to discovery type
                  val coreColor = when(data.discoveryType) {
                      "The Explorer" -> Color(0xFF8B5CF6) // Violet (New)
                      "The Time Traveler" -> Color(0xFFF59E0B) // Amber (Old/Gold)

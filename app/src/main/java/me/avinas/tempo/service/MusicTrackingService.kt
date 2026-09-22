@@ -68,9 +68,7 @@ import java.util.concurrent.atomic.AtomicLong
  * is managed by the system lifecycle.
  */
 class MusicTrackingService : NotificationListenerService() {
-    /**
-     * Hilt EntryPoint for manual dependency injection in NotificationListenerService.
-     */
+    /** Entry point for dependency injection outside Fragment/Activity lifecycle. */
     @EntryPoint
     @InstallIn(SingletonComponent::class)
     interface MusicTrackingServiceEntryPoint {
@@ -410,8 +408,7 @@ class MusicTrackingService : NotificationListenerService() {
         // Replay detection: maximum time between plays to consider it a replay (5 minutes)
         private const val REPLAY_THRESHOLD_MS = 5 * 60 * 1000L
 
-        // Smart adaptive polling intervals for accurate duration tracking
-        // These are dynamically adjusted based on song phase and duration
+        // Polling intervals adjusted by song duration and playback progress
         private const val POLL_INTERVAL_SONG_START_MS = 3_000L // First 30s: poll every 3s (skip detection)
         private const val POLL_INTERVAL_SONG_MIDDLE_MS = 8_000L // Middle: poll every 8s (battery efficient)
         private const val POLL_INTERVAL_SONG_END_MS = 4_000L // Last 30s: poll every 4s (completion detection)
@@ -850,7 +847,7 @@ class MusicTrackingService : NotificationListenerService() {
             serviceScope.launch { reevaluateActiveContent() }
         }
 
-    // Dynamic app lists - cached from database, refreshed periodically
+    // App filter caches populated from Room
     @Volatile
     private var cachedEnabledApps: Set<String> = emptySet()
 
@@ -1400,7 +1397,7 @@ class MusicTrackingService : NotificationListenerService() {
         }
     }
 
-    /** Dynamically-registered receiver so it only lives while the service is running. */
+    /** Receiver unregistered on service teardown. */
     private var batteryStateReceiver: BatteryStateReceiver? = null
 
     override fun onCreate() {
@@ -1580,7 +1577,7 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     /**
-     * Check if a package is in the enabled music apps list (dynamic from database).
+     * Check if a package is in the user-enabled music apps list.
      *
      * Falls back to the static MUSIC_APPS set only when the DB cache hasn't loaded yet
      * (race condition on service start). Once the cache is initialised the DB wins, so
@@ -1614,13 +1611,10 @@ class MusicTrackingService : NotificationListenerService() {
     /**
      * Check if a package is in the blocked apps list.
      *
-     * Uses a two-tier check:
-     * 1. Static BLOCKED_APPS set (always blocked, never tracked)
-     * 2. Database cache (user preferences)
+     * Two-tier block check: compile-time [BLOCKED_APPS] set, then user blacklist in Room.
      *
-     * The static list is checked FIRST to ensure video apps like YouTube
-     * are always blocked, even if they weren't properly seeded into the database.
-     * This is a performance-safe check (just a set membership lookup).
+     * The static list is checked first so video apps like YouTube
+     * are blocked immediately regardless of database cache state.
      */
     private fun isInBlockedApps(packageName: String): Boolean {
         // FIRST: Always block apps in the static blocklist (guaranteed protection)
@@ -2283,7 +2277,7 @@ class MusicTrackingService : NotificationListenerService() {
         Log.i(TAG, "NotificationListener connected - scanning active notifications")
 
         // Scan existing notifications for music that's already playing
-        // Use a slight delay to ensure the binder is fully registered with the system
+        // Delay briefly to allow system binder registration before querying notifications
         serviceScope.launch {
             delay(500) // Wait for system to fully register the listener
             withContext(Dispatchers.Main) {
@@ -2387,7 +2381,7 @@ class MusicTrackingService : NotificationListenerService() {
                 session.pause()
                 saveListeningEvent(session)
             }
-            // Ensure the foreground notification reflects the paused-for-battery state
+            // Reflect paused-for-battery state in foreground notification
             updateTrackingNotification(null, null)
             return
         }
@@ -2585,7 +2579,7 @@ class MusicTrackingService : NotificationListenerService() {
                 playbackStates[packageName] = newSession
                 updateTrackingNotification(title, artist)
 
-                // Insert track asynchronously but ensure trackId is set before any save
+                // Asynchronously resolve and insert track before persisting child records
                 serviceScope.launch {
                     try {
                         // CONTENT FILTERING: same rules as the MediaSession path (podcast/
@@ -2763,7 +2757,7 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     /**
-     * Handle an existing track - update if needed and ensure proper linking.
+     * Update metadata and link artists for an existing track record.
      */
     private suspend fun handleExistingTrack(
         existingTrack: Track,
@@ -2789,7 +2783,7 @@ class MusicTrackingService : NotificationListenerService() {
             return updatedTrack
         }
 
-        // Ensure artists are linked even for existing tracks (migration support)
+        // Link artists for tracks imported prior to relational artist schema
         if (existingTrack.primaryArtistId == null &&
             !me.avinas.tempo.utils.ArtistParser
                 .isUnknownArtist(existingTrack.artist)
@@ -2917,8 +2911,7 @@ class MusicTrackingService : NotificationListenerService() {
                 }
             localMetadataCache.put(trackId, updatedLocalMetadata)
 
-            // IMPORTANT: Always save local bitmap to storage immediately if we have one
-            // This ensures we have a local backup even if enriched URL exists but fails to load
+            // Cache local bitmap to storage as offline backup even if remote URL exists
             val savedLocalArtUrl =
                 updatedLocalMetadata.albumArtBitmap?.let {
                     saveAlbumArtToStorage(it, updatedLocalMetadata.title, updatedLocalMetadata.artist)
@@ -2946,9 +2939,7 @@ class MusicTrackingService : NotificationListenerService() {
 
             val shouldUpdate = existingMetadata == null || needsAlbumArt || needsGenre || needsAlbum || needsYear || needsDuration
 
-            // CRITICAL FIX: Even if we don't need to update EnrichedMetadata (shouldUpdate=false),
-            // we MUST ensure Track entity has album art for the UI.
-            // Strategy: Store local as backup in Track table when enriched hotlink exists
+            // Keep local art as fallback in Track table when enriched remote hotlink exists
             if (!shouldUpdate) {
                 val track = trackRepository.getById(trackId).first()
                 if (track != null && track.albumArtUrl.isNullOrBlank() && savedLocalArtUrl != null) {
@@ -3051,18 +3042,7 @@ class MusicTrackingService : NotificationListenerService() {
         }
     }
 
-    /**
-     * Helper to ensure Track entity has album art, preferring enriched source but falling back to local.
-     */
-
-    /**
-     * Helper to ensure Track entity has album art, preferring enriched source but falling back to local.
-     *
-     * @param trackId The track ID to check
-     * @param enrichedArtUrl The enriched art URL (may be HTTP which could fail)
-     * @param localMetadata Local metadata from MediaSession (contains bitmap in memory)
-     * @param savedLocalArtUrl Pre-saved local art file URL (already persisted to disk)
-     */
+    /** Backfills Track.albumArtUrl from enriched metadata or local storage fallback. */
     private suspend fun checkAndBackfillTrackArt(
         trackId: Long,
         enrichedArtUrl: String?,
@@ -4086,7 +4066,7 @@ class MusicTrackingService : NotificationListenerService() {
                         // JPEG encode + file write there was a jank/ANR risk on rapid track skips.
                         val localArtUrl = albumArtBitmap?.let { saveAlbumArtToStorage(it, title, artist) }
 
-                        // Ensure locally extracted art URI is available to the fallback logic
+                        // Cache local art URI for downstream metadata fallback
                         if (localArtUrl != null) {
                             val currentCache = localMetadataCache.get(track.id) ?: localMetadata
                             if (currentCache != null) {
@@ -4200,10 +4180,8 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     private fun startForegroundServiceWithNotification() {
-        // Ensure the channel exists before building/presenting the notification. If the
-        // service is restarted by the system (rather than via onCreate), the channel may
-        // not yet be registered, and posting a notification with an unknown channel id is
-        // exactly what raises BadForegroundServiceNotificationException.
+        // Register channel before startForeground; restarts outside onCreate crash with
+        // BadForegroundServiceNotificationException if the channel is missing.
         createNotificationChannel()
         val notification = buildTrackingNotification(null, null)
 

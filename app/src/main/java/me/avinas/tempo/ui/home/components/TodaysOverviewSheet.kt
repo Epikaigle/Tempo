@@ -143,7 +143,7 @@ fun TodaysOverviewOverlay(
     var isClosing by remember { mutableStateOf(false) }
     var showShareDialog by remember { mutableStateOf(false) }
 
-    // Dynamic accent color extracted from top track album art or top artist image
+    // Accent color extracted from top track album art or top artist image
     val topArtUrl = remember(topTracks, topArtists) {
         topTracks.firstOrNull()?.albumArtUrl?.takeIf { it.isNotBlank() }
             ?: topArtists.firstOrNull()?.imageUrl?.takeIf { it.isNotBlank() }
@@ -1646,7 +1646,7 @@ private fun TodaysOverviewFooter() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Dynamic Accent Extraction via Coil & Android Palette
+// Accent Extraction via Coil & Android Palette
 // ──────────────────────────────────────────────────────────────
 
 @Composable
