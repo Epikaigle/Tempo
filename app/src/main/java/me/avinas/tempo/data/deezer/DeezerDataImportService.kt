@@ -228,6 +228,22 @@ class DeezerDataImportService @Inject constructor(
         internal fun requiresOrphanCleanup(failure: Throwable): Boolean =
             failure is CancellationException || failure is OutOfMemoryError
 
+        internal suspend fun <T> runWithOrphanCleanupOnAbort(
+            createdTrackIds: Set<Long>,
+            cleanup: suspend (Set<Long>) -> Unit,
+            block: suspend () -> T,
+        ): T =
+            try {
+                block()
+            } catch (failure: Throwable) {
+                if (requiresOrphanCleanup(failure)) {
+                    withContext(NonCancellable) {
+                        cleanup(createdTrackIds)
+                    }
+                }
+                throw failure
+            }
+
         internal fun orphanedCreatedTrackIds(
             createdTrackIds: Set<Long>,
             trackIdsWithEvents: Set<Long>,
@@ -450,7 +466,10 @@ class DeezerDataImportService @Inject constructor(
             }
         }
 
-        try {
+        runWithOrphanCleanupOnAbort(
+            createdTrackIds = createdTrackIds,
+            cleanup = ::cleanupOrphanedCreatedTracks,
+        ) {
             parsed.entries.forEachIndexed { index, entry ->
                 if (index % 100 == 0) {
                     coroutineContext.ensureActive()
@@ -555,13 +574,6 @@ class DeezerDataImportService @Inject constructor(
             }
 
             flush()
-        } catch (failure: Throwable) {
-            if (requiresOrphanCleanup(failure)) {
-                withContext(NonCancellable) {
-                    cleanupOrphanedCreatedTracks(createdTrackIds)
-                }
-            }
-            throw failure
         }
 
         if (errors.isNotEmpty() && createdTrackIds.isNotEmpty()) {
