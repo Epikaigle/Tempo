@@ -220,6 +220,19 @@ class DeezerDataImportService @Inject constructor(
                 .take(MAX_DISPLAY_NAME_LENGTH)
                 .ifBlank { "deezer-data.xlsx" }
 
+        /**
+         * Cancellation and OOM are the two fatal exits that can interrupt [importEntries]
+         * after it has already created track rows but before a listening event is committed.
+         * Both must trigger best-effort orphan cleanup before the failure is propagated.
+         */
+        internal fun requiresOrphanCleanup(failure: Throwable): Boolean =
+            failure is CancellationException || failure is OutOfMemoryError
+
+        internal fun orphanedCreatedTrackIds(
+            createdTrackIds: Set<Long>,
+            trackIdsWithEvents: Set<Long>,
+        ): Set<Long> = createdTrackIds.filterTo(LinkedHashSet()) { it !in trackIdsWithEvents }
+
         internal fun userFacingError(error: Exception): String {
             val message = error.message.orEmpty()
             return when {
@@ -542,11 +555,13 @@ class DeezerDataImportService @Inject constructor(
             }
 
             flush()
-        } catch (e: CancellationException) {
-            withContext(NonCancellable) {
-                cleanupOrphanedCreatedTracks(createdTrackIds)
+        } catch (failure: Throwable) {
+            if (requiresOrphanCleanup(failure)) {
+                withContext(NonCancellable) {
+                    cleanupOrphanedCreatedTracks(createdTrackIds)
+                }
             }
-            throw e
+            throw failure
         }
 
         if (errors.isNotEmpty() && createdTrackIds.isNotEmpty()) {
@@ -733,9 +748,9 @@ class DeezerDataImportService @Inject constructor(
                 .forEach { row -> trackIdsWithEvents.add(row.track_id) }
         }
 
+        val orphanedTrackIds = orphanedCreatedTrackIds(createdTrackIds, trackIdsWithEvents)
         var removed = 0
-        for (trackId in createdTrackIds) {
-            if (trackId in trackIdsWithEvents) continue
+        for (trackId in orphanedTrackIds) {
             val result = trackRepository.deleteTrackWithAllData(trackId)
             if (result.success) removed++
         }
