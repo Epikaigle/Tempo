@@ -40,6 +40,54 @@ jobs:
       - name: Run Android Lint
         run: ./gradlew :app:lintDebug --stacktrace
 
+      - name: Reject new lint errors
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          base_sha = os.environ["PR_BASE_SHA"]
+          changed = {
+              p.strip()
+              for p in subprocess.check_output(
+                  ["git", "diff", "--name-only", f"{base_sha}...HEAD"],
+                  text=True,
+              ).splitlines()
+              if p.strip()
+          }
+
+          report = Path(
+              "app/build/intermediates/lint_intermediate_text_report/"
+              "debug/lintReportDebug/lint-results-debug.txt"
+          )
+          text = report.read_text(encoding="utf-8", errors="replace")
+          errors = []
+          pattern = re.compile(r"^(.*?):\d+: Error:", re.MULTILINE)
+
+          repo_root = Path.cwd().resolve()
+          for match in pattern.finditer(text):
+              raw = Path(match.group(1))
+              try:
+                  relative = raw.resolve().relative_to(repo_root).as_posix()
+              except ValueError:
+                  relative = raw.as_posix()
+              if relative in changed:
+                  line_end = text.find("\n", match.start())
+                  errors.append(text[match.start(): line_end if line_end >= 0 else None])
+
+          if errors:
+              print("Lint errors found in files changed by this PR:")
+              print("\n".join(errors))
+              raise SystemExit(1)
+
+          print("No lint errors in files changed by this PR.")
+          PY
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
 
   android-platform-tests:
     name: Android Platform Tests
