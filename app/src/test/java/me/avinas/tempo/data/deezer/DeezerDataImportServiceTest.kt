@@ -60,6 +60,14 @@ class DeezerDataImportServiceTest {
             DeezerDataImportService.deezerArtistCredits("Tyler, the Creator"),
         )
         assertEquals(
+            listOf("Nova, The Architect"),
+            DeezerDataImportService.deezerArtistCredits("Nova, The Architect"),
+        )
+        assertEquals(
+            listOf("Kid Cudi", "Eminem"),
+            DeezerDataImportService.deezerArtistCredits("Kid Cudi, Eminem"),
+        )
+        assertEquals(
             listOf("Tyler, the Creator", "A\$AP Rocky"),
             DeezerDataImportService.deezerArtistCredits("Tyler, the Creator, A\$AP Rocky"),
         )
