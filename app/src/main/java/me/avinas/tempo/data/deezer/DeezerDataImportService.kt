@@ -234,8 +234,14 @@ class DeezerDataImportService @Inject constructor(
             try {
                 block()
             } catch (failure: Throwable) {
-                withContext(NonCancellable) {
-                    cleanup(createdTrackIds)
+                try {
+                    withContext(NonCancellable) {
+                        cleanup(createdTrackIds)
+                    }
+                } catch (cleanupFailure: Throwable) {
+                    if (cleanupFailure !== failure) {
+                        runCatching { failure.addSuppressed(cleanupFailure) }
+                    }
                 }
                 throw failure
             }
