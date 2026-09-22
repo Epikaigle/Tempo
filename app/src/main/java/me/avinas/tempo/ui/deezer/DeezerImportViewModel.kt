@@ -1,7 +1,6 @@
 package me.avinas.tempo.ui.deezer
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,6 +10,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.avinas.tempo.R
@@ -159,23 +159,40 @@ class DeezerImportViewModel @Inject constructor(
         tracker.track(FeatureUsed(TempoFeature.DEEZER_IMPORT))
         _uiState.value = DeezerImportUiState.Importing
 
-        // Persist the SAF grant so the worker can still read the file if
-        // WorkManager restarts it after a process death.
-        try {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION,
-            )
-        } catch (_: SecurityException) {
-            // Grant not persistable — fine while the process lives.
-        } catch (_: IllegalArgumentException) {
-            // Some document providers expose a readable URI without supporting
-            // persistable grants. WorkManager can still use the transient grant
-            // while this process remains alive.
-        }
+        viewModelScope.launch {
+            var stagedPath: String? = null
+            try {
+                // Copy while the ActivityResult grant is definitely alive. The worker
+                // then receives a private file URI, so provider-specific persistable
+                // permission support can no longer break process-death recovery.
+                val stagedFile = importService.stageImportFile(context, uri)
+                stagedPath = stagedFile.absolutePath
 
-        // ImportRun analytics come from the worker, which owns the import now.
-        rememberActiveWork(DeezerImportWorker.enqueueImport(context, uri.toString()))
+                val enqueueResult =
+                    DeezerImportWorker.enqueueImport(
+                        context,
+                        Uri.fromFile(stagedFile).toString(),
+                    )
+
+                if (!enqueueResult.requestAccepted) {
+                    // KEEP selected an already-running unique work. This newly staged
+                    // file has no owner and must not be left behind.
+                    importService.deleteStagedImportFile(context, stagedPath)
+                    stagedPath = null
+                }
+
+                rememberActiveWork(enqueueResult.workId)
+            } catch (e: CancellationException) {
+                importService.deleteStagedImportFile(context, stagedPath)
+                throw e
+            } catch (e: Exception) {
+                importService.deleteStagedImportFile(context, stagedPath)
+                _uiState.value =
+                    DeezerImportUiState.Error(
+                        DeezerDataImportService.userFacingError(e),
+                    )
+            }
+        }
     }
 
     fun cancelImport() {
