@@ -168,6 +168,10 @@ class DeezerImportViewModel @Inject constructor(
             )
         } catch (_: SecurityException) {
             // Grant not persistable — fine while the process lives.
+        } catch (_: IllegalArgumentException) {
+            // Some document providers expose a readable URI without supporting
+            // persistable grants. WorkManager can still use the transient grant
+            // while this process remains alive.
         }
 
         // ImportRun analytics come from the worker, which owns the import now.
