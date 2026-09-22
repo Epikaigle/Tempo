@@ -46,6 +46,11 @@ class DeezerImportWorker
         private val deezerDataImportService: DeezerDataImportService,
         private val tracker: AnalyticsTracker,
     ) : CoroutineWorker(appContext, workerParams) {
+        data class EnqueueResult(
+            val workId: java.util.UUID,
+            val requestAccepted: Boolean,
+        )
+
         companion object {
             private const val TAG = "DeezerImportWorker"
 
@@ -103,11 +108,6 @@ class DeezerImportWorker
                     indeterminate = isIndeterminate,
                 )
             }
-
-            data class EnqueueResult(
-                val workId: java.util.UUID,
-                val requestAccepted: Boolean,
-            )
 
             private fun isActiveWork(info: WorkInfo): Boolean =
                 info.state == WorkInfo.State.ENQUEUED ||
