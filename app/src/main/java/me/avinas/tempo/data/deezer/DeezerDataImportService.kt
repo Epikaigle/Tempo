@@ -233,7 +233,9 @@ class DeezerDataImportService @Inject constructor(
                 message.contains("too large", ignoreCase = true) ||
                     message.contains("safe size limit", ignoreCase = true) ->
                     "This Deezer export is too large to import safely on this device"
-                message.contains("XLSX", ignoreCase = true) || error is java.util.zip.ZipException ->
+                message.contains("XLSX", ignoreCase = true) ||
+                    error is java.util.zip.ZipException ||
+                    error is org.xml.sax.SAXException ->
                     "The selected file is not a valid Deezer XLSX export"
                 else -> "Deezer import failed"
             }
