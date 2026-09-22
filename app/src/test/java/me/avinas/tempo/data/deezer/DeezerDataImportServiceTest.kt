@@ -350,9 +350,9 @@ class DeezerDataImportServiceTest {
     }
 
     @Test
-    fun ordinaryRowFailureDoesNotTriggerFatalCleanup() = runTest {
+    fun unexpectedFatalFailureAlsoTriggersOrphanCleanup() = runTest {
         var cleanupCalls = 0
-        val expected = IllegalStateException("synthetic row failure")
+        val expected = IllegalStateException("synthetic fatal failure")
 
         val thrown =
             try {
@@ -368,7 +368,7 @@ class DeezerDataImportServiceTest {
             }
 
         assertTrue(thrown === expected)
-        assertEquals(0, cleanupCalls)
+        assertEquals(1, cleanupCalls)
     }
 
     @Test
