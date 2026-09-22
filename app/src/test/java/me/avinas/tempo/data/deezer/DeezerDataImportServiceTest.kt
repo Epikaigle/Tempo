@@ -2,6 +2,7 @@ package me.avinas.tempo.data.deezer
 
 import java.time.Instant
 import java.util.concurrent.CancellationException
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -299,6 +300,85 @@ class DeezerDataImportServiceTest {
         )
         assertTrue(
             !DeezerDataImportService.titlesCompatibleForIsrc("", "Song B"),
+        )
+    }
+
+    @Test
+    fun cleansCreatedTracksBeforeRethrowingOutOfMemoryError() = runTest {
+        val createdTrackIds = linkedSetOf(11L, 12L)
+        var cleanedTrackIds: Set<Long>? = null
+        val expected = OutOfMemoryError("synthetic OOM")
+
+        val thrown =
+            try {
+                DeezerDataImportService.runWithOrphanCleanupOnAbort(
+                    createdTrackIds = createdTrackIds,
+                    cleanup = { ids -> cleanedTrackIds = ids.toSet() },
+                ) {
+                    throw expected
+                }
+                null
+            } catch (failure: Throwable) {
+                failure
+            }
+
+        assertTrue(thrown === expected)
+        assertEquals(createdTrackIds, cleanedTrackIds)
+    }
+
+    @Test
+    fun cleansCreatedTracksBeforeRethrowingCancellation() = runTest {
+        val createdTrackIds = linkedSetOf(21L)
+        var cleanupCalls = 0
+        val expected = CancellationException("synthetic cancellation")
+
+        val thrown =
+            try {
+                DeezerDataImportService.runWithOrphanCleanupOnAbort(
+                    createdTrackIds = createdTrackIds,
+                    cleanup = { cleanupCalls++ },
+                ) {
+                    throw expected
+                }
+                null
+            } catch (failure: Throwable) {
+                failure
+            }
+
+        assertTrue(thrown === expected)
+        assertEquals(1, cleanupCalls)
+    }
+
+    @Test
+    fun ordinaryRowFailureDoesNotTriggerFatalCleanup() = runTest {
+        var cleanupCalls = 0
+        val expected = IllegalStateException("synthetic row failure")
+
+        val thrown =
+            try {
+                DeezerDataImportService.runWithOrphanCleanupOnAbort(
+                    createdTrackIds = setOf(31L),
+                    cleanup = { cleanupCalls++ },
+                ) {
+                    throw expected
+                }
+                null
+            } catch (failure: Throwable) {
+                failure
+            }
+
+        assertTrue(thrown === expected)
+        assertEquals(0, cleanupCalls)
+    }
+
+    @Test
+    fun orphanCleanupSelectionPreservesCreatedTracksThatAlreadyHaveEvents() {
+        assertEquals(
+            linkedSetOf(41L, 43L),
+            DeezerDataImportService.orphanedCreatedTrackIds(
+                createdTrackIds = linkedSetOf(41L, 42L, 43L, 44L),
+                trackIdsWithEvents = setOf(42L, 44L, 99L),
+            ),
         )
     }
 
