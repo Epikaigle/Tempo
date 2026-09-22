@@ -418,17 +418,13 @@ class DeezerDataImportService @Inject constructor(
                 Log.e(TAG, "Batch insert failed, falling back to individual inserts", e)
                 for (event in pendingEvents) {
                     try {
-                        val count = listeningEventDao.countEventsNearTimestamp(
-                            event.track_id,
-                            event.timestamp - ListeningEventDao.DUPLICATE_TOLERANCE_MS,
-                            event.timestamp + ListeningEventDao.DUPLICATE_TOLERANCE_MS,
-                        )
-                        if (count == 0) {
-                            listeningEventDao.insert(event)
-                            eventsCreated++
-                        } else {
-                            duplicatesSkipped++
-                        }
+                        // Keep the exact same fingerprint and source-authority
+                        // reconciliation guarantees as the normal batch path.
+                        // Retrying one event at a time isolates a bad row without
+                        // degrading cross-source deduplication semantics.
+                        val singleResult = listeningEventDao.insertAllBatchedWithDedup(listOf(event))
+                        eventsCreated += singleResult.inserted
+                        duplicatesSkipped += singleResult.skipped
                     } catch (ce: CancellationException) {
                         throw ce
                     } catch (e2: Exception) {
