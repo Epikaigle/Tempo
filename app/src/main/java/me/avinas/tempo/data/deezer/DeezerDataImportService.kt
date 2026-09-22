@@ -221,13 +221,11 @@ class DeezerDataImportService @Inject constructor(
                 .ifBlank { "deezer-data.xlsx" }
 
         /**
-         * Cancellation and OOM are the two fatal exits that can interrupt [importEntries]
-         * after it has already created track rows but before a listening event is committed.
-         * Both must trigger best-effort orphan cleanup before the failure is propagated.
+         * Any fatal exit can interrupt [importEntries] after a track row was created but
+         * before its listening event was committed. Always perform best-effort orphan
+         * cleanup before propagating the original failure. Tracks that already have events
+         * are preserved by [cleanupOrphanedCreatedTracks].
          */
-        internal fun requiresOrphanCleanup(failure: Throwable): Boolean =
-            failure is CancellationException || failure is OutOfMemoryError
-
         internal suspend fun <T> runWithOrphanCleanupOnAbort(
             createdTrackIds: Set<Long>,
             cleanup: suspend (Set<Long>) -> Unit,
@@ -236,10 +234,8 @@ class DeezerDataImportService @Inject constructor(
             try {
                 block()
             } catch (failure: Throwable) {
-                if (requiresOrphanCleanup(failure)) {
-                    withContext(NonCancellable) {
-                        cleanup(createdTrackIds)
-                    }
+                withContext(NonCancellable) {
+                    cleanup(createdTrackIds)
                 }
                 throw failure
             }
