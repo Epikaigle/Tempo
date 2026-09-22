@@ -58,6 +58,9 @@ class DeezerDataImportService @Inject constructor(
         private const val DEFAULT_COMPLETION_PERCENTAGE = 80
         private const val TEMP_FILE_PREFIX = "tempo_deezer_"
         private const val MAX_DISPLAY_NAME_LENGTH = 200
+        private const val STAGED_IMPORT_DIR = "deezer_imports"
+        private const val STAGED_IMPORT_PREFIX = "deezer-import-"
+        private const val STAGED_IMPORT_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000
         const val IMPORT_SOURCE = "com.deezer.music.import.xlsx"
 
         private fun isSingleDeezerArtistEntity(value: String): Boolean {
@@ -66,14 +69,36 @@ class DeezerDataImportService @Inject constructor(
                 ArtistParser.isStrictSameArtist(parsed.single(), value)
         }
 
+        private fun looksLikeCommaBearingArtistEntity(value: String): Boolean {
+            val parts = value.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            if (parts.size != 2) return false
+
+            // A comma is also part of legitimate stage/entity names (for example
+            // "Tyler, the Creator"). For previously unseen names, preserve common
+            // article/suffix forms instead of inventing two Artist rows solely
+            // because Deezer also uses commas as credit separators.
+            val second = parts[1]
+            val firstWord = second.substringBefore(' ').trim().trimEnd('.').lowercase()
+            return firstWord in setOf(
+                "the", "le", "la", "les", "el", "los", "las",
+                "der", "die", "das", "de", "het",
+                "jr", "sr", "ii", "iii", "iv",
+            )
+        }
+
         internal fun deezerArtistCredits(value: String): List<String> {
             val cleaned = value.trim()
             if (cleaned.isEmpty()) return emptyList()
 
             // Deezer uses commas between credited artists, but a comma may also
             // legitimately belong to an artist entity. Preserve a complete name
-            // whenever Tempo already recognises it as one artist.
-            if (!cleaned.contains(',') || isSingleDeezerArtistEntity(cleaned)) {
+            // whenever Tempo already recognises it as one artist, and also for
+            // common comma-bearing name forms that may not be in the known set yet.
+            if (
+                !cleaned.contains(',') ||
+                isSingleDeezerArtistEntity(cleaned) ||
+                looksLikeCommaBearingArtistEntity(cleaned)
+            ) {
                 return listOf(cleaned)
             }
 
@@ -308,6 +333,52 @@ class DeezerDataImportService @Inject constructor(
 
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
+
+    /**
+     * Copies the selected SAF document into app-private storage before WorkManager
+     * takes ownership of the import. This removes any dependency on a provider's
+     * persistable-URI support: the worker can restart after process death and still
+     * read the exact file the user selected.
+     */
+    suspend fun stageImportFile(
+        context: Context,
+        uri: Uri,
+    ): File =
+        withContext(Dispatchers.IO) {
+            val appContext = context.applicationContext
+            val directory = File(appContext.filesDir, STAGED_IMPORT_DIR)
+            if (!directory.exists() && !directory.mkdirs()) {
+                throw IOException("Could not prepare Deezer import storage")
+            }
+            cleanupStaleStagedFiles(directory)
+
+            val staged = File.createTempFile(STAGED_IMPORT_PREFIX, ".xlsx", directory)
+            try {
+                copyUriWithLimit(appContext, uri, staged)
+                staged
+            } catch (failure: Throwable) {
+                runCatching { staged.delete() }
+                throw failure
+            }
+        }
+
+    fun deleteStagedImportFile(
+        context: Context,
+        filePath: String?,
+    ) {
+        if (filePath.isNullOrBlank()) return
+        val directory = File(context.applicationContext.filesDir, STAGED_IMPORT_DIR)
+        val canonicalDirectory = runCatching { directory.canonicalFile }.getOrNull() ?: return
+        val file = runCatching { File(filePath).canonicalFile }.getOrNull() ?: return
+
+        val owned =
+            file.parentFile == canonicalDirectory &&
+                file.name.startsWith(STAGED_IMPORT_PREFIX) &&
+                file.name.endsWith(".xlsx", ignoreCase = true)
+        if (owned && file.exists() && !file.delete()) {
+            Log.w(TAG, "Could not delete staged Deezer import file")
+        }
+    }
 
     suspend fun importFromUri(
         context: Context,
@@ -1018,6 +1089,23 @@ class DeezerDataImportService @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun cleanupStaleStagedFiles(directory: File) {
+        val cutoff = System.currentTimeMillis() - STAGED_IMPORT_MAX_AGE_MS
+        directory.listFiles()
+            ?.asSequence()
+            ?.filter { file ->
+                file.isFile &&
+                    file.name.startsWith(STAGED_IMPORT_PREFIX) &&
+                    file.name.endsWith(".xlsx", ignoreCase = true) &&
+                    file.lastModified() < cutoff
+            }
+            ?.forEach { file ->
+                if (!file.delete()) {
+                    Log.w(TAG, "Could not delete stale staged Deezer import file")
+                }
+            }
     }
 
     private fun cleanupStaleTempFiles(cacheDir: File) {
