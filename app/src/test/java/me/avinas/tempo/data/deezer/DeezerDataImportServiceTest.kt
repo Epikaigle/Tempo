@@ -372,6 +372,28 @@ class DeezerDataImportServiceTest {
     }
 
     @Test
+    fun cleanupFailureDoesNotReplaceOriginalImportFailure() = runTest {
+        val expected = OutOfMemoryError("original failure")
+        val cleanupFailure = IllegalStateException("cleanup failed")
+
+        val thrown =
+            try {
+                DeezerDataImportService.runWithOrphanCleanupOnAbort(
+                    createdTrackIds = setOf(35L),
+                    cleanup = { throw cleanupFailure },
+                ) {
+                    throw expected
+                }
+                null
+            } catch (failure: Throwable) {
+                failure
+            }
+
+        assertTrue(thrown === expected)
+        assertTrue(expected.suppressed.contains(cleanupFailure))
+    }
+
+    @Test
     fun orphanCleanupSelectionPreservesCreatedTracksThatAlreadyHaveEvents() {
         assertEquals(
             linkedSetOf(41L, 43L),
