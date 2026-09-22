@@ -468,7 +468,7 @@ class DeezerDataImportService @Inject constructor(
 
         runWithOrphanCleanupOnAbort(
             createdTrackIds = createdTrackIds,
-            cleanup = ::cleanupOrphanedCreatedTracks,
+            cleanup = { ids -> cleanupOrphanedCreatedTracks(ids) },
         ) {
             parsed.entries.forEachIndexed { index, entry ->
                 if (index % 100 == 0) {
