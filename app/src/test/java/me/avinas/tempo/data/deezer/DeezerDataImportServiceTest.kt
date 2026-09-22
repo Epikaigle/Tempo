@@ -260,6 +260,10 @@ class DeezerDataImportServiceTest {
         )
         assertEquals(
             "The selected file is not a valid Deezer XLSX export",
+            DeezerDataImportService.userFacingError(org.xml.sax.SAXException("Malformed worksheet XML")),
+        )
+        assertEquals(
+            "The selected file is not a valid Deezer XLSX export",
             DeezerDataImportService.userFacingError(IllegalArgumentException("Invalid XLSX")),
         )
         assertEquals(
