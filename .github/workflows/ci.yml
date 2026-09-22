@@ -52,14 +52,30 @@ jobs:
           from pathlib import Path
 
           base_sha = os.environ["PR_BASE_SHA"]
-          changed = {
-              p.strip()
-              for p in subprocess.check_output(
-                  ["git", "diff", "--name-only", f"{base_sha}...HEAD"],
-                  text=True,
-              ).splitlines()
-              if p.strip()
-          }
+          diff = subprocess.check_output(
+              ["git", "diff", "--unified=0", "--no-color", f"{base_sha}...HEAD", "--"],
+              text=True,
+          )
+
+          changed_lines = {}
+          current_file = None
+          for line in diff.splitlines():
+              if line.startswith("+++ b/"):
+                  current_file = line[6:]
+                  changed_lines.setdefault(current_file, set())
+                  continue
+              if not line.startswith("@@") or current_file is None:
+                  continue
+
+              match = re.search(r"\+(\d+)(?:,(\d+))?", line)
+              if match is None:
+                  continue
+              start_line = int(match.group(1))
+              count = int(match.group(2) or "1")
+              if count > 0:
+                  changed_lines[current_file].update(
+                      range(start_line, start_line + count)
+                  )
 
           report = Path(
               "app/build/intermediates/lint_intermediate_text_report/"
@@ -67,25 +83,29 @@ jobs:
           )
           text = report.read_text(encoding="utf-8", errors="replace")
           errors = []
-          pattern = re.compile(r"^(.*?):\d+: Error:", re.MULTILINE)
+          pattern = re.compile(r"^(.*?):(\d+): Error:", re.MULTILINE)
 
           repo_root = Path.cwd().resolve()
           for match in pattern.finditer(text):
               raw = Path(match.group(1))
+              line_number = int(match.group(2))
               try:
                   relative = raw.resolve().relative_to(repo_root).as_posix()
               except ValueError:
                   relative = raw.as_posix()
-              if relative in changed:
+
+              if line_number in changed_lines.get(relative, set()):
                   line_end = text.find("\n", match.start())
-                  errors.append(text[match.start(): line_end if line_end >= 0 else None])
+                  errors.append(
+                      text[match.start(): line_end if line_end >= 0 else None]
+                  )
 
           if errors:
-              print("Lint errors found in files changed by this PR:")
+              print("Lint errors found on lines added or modified by this PR:")
               print("\n".join(errors))
               raise SystemExit(1)
 
-          print("No lint errors in files changed by this PR.")
+          print("No lint errors on lines added or modified by this PR.")
           PY
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
