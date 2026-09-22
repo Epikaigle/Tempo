@@ -10,9 +10,19 @@ class DeezerImportWorkerTest {
     @Test
     fun workerInputAndOutputKeysAreConsistent() {
         val inputData = workDataOf(
-            DeezerImportWorker.KEY_FILE_URI to "content://media/external/file/1234",
+            DeezerImportWorker.KEY_FILE_URI to "file:///data/user/0/me.avinas.tempo/files/deezer_imports/deezer-import-1234.xlsx",
         )
-        assertEquals("content://media/external/file/1234", inputData.getString(DeezerImportWorker.KEY_FILE_URI))
+        assertEquals(
+            "file:///data/user/0/me.avinas.tempo/files/deezer_imports/deezer-import-1234.xlsx",
+            inputData.getString(DeezerImportWorker.KEY_FILE_URI),
+        )
+
+        val enqueueResult =
+            DeezerImportWorker.EnqueueResult(
+                workId = java.util.UUID.fromString("00000000-0000-0000-0000-000000000004"),
+                requestAccepted = false,
+            )
+        assertEquals(false, enqueueResult.requestAccepted)
 
         val outputSuccess = workDataOf(
             DeezerImportWorker.KEY_SUCCESS to true,
