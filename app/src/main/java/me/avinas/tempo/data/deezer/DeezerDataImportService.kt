@@ -395,7 +395,7 @@ class DeezerDataImportService @Inject constructor(
             }
         }
 
-    private suspend fun importEntries(
+    internal suspend fun importEntries(
         parsed: DeezerXlsxParser.ParseResult,
         errors: MutableList<String>,
         minimumPlayDurationMs: Long,
