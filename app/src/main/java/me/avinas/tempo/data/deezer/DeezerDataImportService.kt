@@ -122,7 +122,10 @@ class DeezerDataImportService @Inject constructor(
 
                 for (endExclusive in parts.size downTo index + 2) {
                     val candidate = parts.subList(index, endExclusive).joinToString(", ")
-                    if (isSingleDeezerArtistEntity(candidate)) {
+                    if (
+                        isSingleDeezerArtistEntity(candidate) ||
+                        looksLikeCommaBearingArtistEntity(candidate)
+                    ) {
                         protectedArtist = candidate
                         nextIndex = endExclusive
                         break
