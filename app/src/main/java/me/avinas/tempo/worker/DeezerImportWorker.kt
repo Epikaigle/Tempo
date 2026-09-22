@@ -104,34 +104,71 @@ class DeezerImportWorker
                 )
             }
 
-            fun enqueueImport(
+            data class EnqueueResult(
+                val workId: java.util.UUID,
+                val requestAccepted: Boolean,
+            )
+
+            private fun isActiveWork(info: WorkInfo): Boolean =
+                info.state == WorkInfo.State.ENQUEUED ||
+                    info.state == WorkInfo.State.RUNNING ||
+                    info.state == WorkInfo.State.BLOCKED
+
+            suspend fun enqueueImport(
                 context: Context,
                 fileUri: String,
-            ): java.util.UUID {
-                val inputData =
-                    workDataOf(
-                        KEY_FILE_URI to fileUri,
-                    )
+            ): EnqueueResult =
+                withContext(Dispatchers.IO) {
+                    val workManager = WorkManager.getInstance(context)
+                    val existing =
+                        workManager
+                            .getWorkInfosForUniqueWork(WORK_NAME)
+                            .get()
+                            .firstOrNull(::isActiveWork)
+                    if (existing != null) {
+                        Log.i(TAG, "Deezer import already active; keeping ${existing.id}")
+                        return@withContext EnqueueResult(existing.id, requestAccepted = false)
+                    }
 
-                val workRequest =
-                    OneTimeWorkRequestBuilder<DeezerImportWorker>()
-                        .setInputData(inputData)
-                        .setBackoffCriteria(
-                            BackoffPolicy.EXPONENTIAL,
-                            30,
-                            TimeUnit.SECONDS,
-                        ).addTag("deezer_import")
-                        .build()
+                    val inputData =
+                        workDataOf(
+                            KEY_FILE_URI to fileUri,
+                        )
 
-                WorkManager.getInstance(context).enqueueUniqueWork(
-                    WORK_NAME,
-                    ExistingWorkPolicy.KEEP,
-                    workRequest,
-                )
+                    val workRequest =
+                        OneTimeWorkRequestBuilder<DeezerImportWorker>()
+                            .setInputData(inputData)
+                            .setBackoffCriteria(
+                                BackoffPolicy.EXPONENTIAL,
+                                30,
+                                TimeUnit.SECONDS,
+                            ).addTag("deezer_import")
+                            .build()
 
-                Log.i(TAG, "Enqueued Deezer import")
-                return workRequest.id
-            }
+                    // KEEP is still the final concurrency guard. Waiting for the enqueue
+                    // operation and then resolving the unique-work chain tells the caller
+                    // which UUID actually owns the slot if another enqueue won a race.
+                    workManager
+                        .enqueueUniqueWork(
+                            WORK_NAME,
+                            ExistingWorkPolicy.KEEP,
+                            workRequest,
+                        ).result
+                        .get()
+
+                    val infos = workManager.getWorkInfosForUniqueWork(WORK_NAME).get()
+                    val requested = infos.firstOrNull { it.id == workRequest.id }
+                    val owner = requested ?: infos.firstOrNull(::isActiveWork)
+                    val ownerId = owner?.id ?: workRequest.id
+                    val accepted = requested != null
+
+                    if (accepted) {
+                        Log.i(TAG, "Enqueued Deezer import ${workRequest.id}")
+                    } else {
+                        Log.i(TAG, "Another Deezer import won enqueue race; keeping $ownerId")
+                    }
+                    EnqueueResult(ownerId, requestAccepted = accepted)
+                }
 
             fun cancel(context: Context) {
                 WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
@@ -288,7 +325,15 @@ class DeezerImportWorker
                 } finally {
                     progressJob.cancel()
                     cancelProgressNotification()
-                    releasePersistedReadPermission(uri)
+                    if (uri.scheme == "file") {
+                        deezerDataImportService.deleteStagedImportFile(
+                            applicationContext,
+                            uri.path,
+                        )
+                    } else {
+                        // Backward compatibility for work enqueued by an older build.
+                        releasePersistedReadPermission(uri)
+                    }
                 }
             }
 
