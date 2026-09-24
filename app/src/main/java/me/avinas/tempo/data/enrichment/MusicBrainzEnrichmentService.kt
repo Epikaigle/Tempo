@@ -15,6 +15,7 @@ import me.avinas.tempo.data.local.entities.GenreSource
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.remote.musicbrainz.*
 import me.avinas.tempo.utils.ArtistParser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,6 +38,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
         private const val MIN_SEARCH_SCORE = 80 // Minimum match score to accept
         private const val MIN_TITLE_SIMILARITY = 0.85 // Minimum title similarity to accept a match
         private const val MIN_FUZZY_TITLE_SIMILARITY = 0.70 // For fuzzy searches, require slightly lower but still reasonable match
+        private const val MAX_COVER_RELEASE_CANDIDATES = 8
         
         // Pre-compiled regex pattern to avoid repeated native memory allocation
         private val CAA_INDEX_PATTERN = Regex("""^https?://coverartarchive\.org/(release|release-group)/[a-f0-9-]+/?$""")
@@ -142,21 +144,39 @@ class MusicBrainzEnrichmentService @Inject constructor(
         if (result !is SearchResult.Found) return null
 
         val detailed = fetchRecordingDetails(result.recording.id)
-        val release = detailed?.releases?.firstOrNull()
-            ?: result.recording.releases?.firstOrNull()
-            ?: return null
+        val releases = (detailed?.releases.orEmpty() + result.recording.releases.orEmpty())
+            .distinctBy { it.id }
+        if (releases.isEmpty()) return null
 
-        val art = fetchCoverArt(release.id)
-            ?: release.releaseGroup?.id?.let { fetchReleaseGroupCoverArt(it) }
-            ?: return null
-        val best = art.large ?: art.medium ?: art.small ?: return null
+        val albumHint = track.album
+            ?.takeIf { it.isNotBlank() }
+            ?: currentMetadata?.albumTitle?.takeIf { it.isNotBlank() }
+        val attemptedReleaseGroups = mutableSetOf<String>()
 
-        return CoverArtLookupResult(
-            albumArtUrl = best,
-            albumArtUrlSmall = art.small,
-            albumArtUrlLarge = art.large,
-            albumTitle = release.title ?: currentMetadata?.albumTitle ?: track.album,
-        )
+        for (release in rankMusicBrainzReleases(releases, albumHint).take(MAX_COVER_RELEASE_CANDIDATES)) {
+            val releaseArt = fetchCoverArt(release.id)
+            val releaseGroupId = release.releaseGroup?.id
+            val groupArt = if (
+                releaseArt == null &&
+                releaseGroupId != null &&
+                attemptedReleaseGroups.add(releaseGroupId)
+            ) {
+                fetchReleaseGroupCoverArt(releaseGroupId)
+            } else {
+                null
+            }
+            val art = releaseArt ?: groupArt ?: continue
+            val best = art.large ?: art.medium ?: art.small ?: continue
+
+            return CoverArtLookupResult(
+                albumArtUrl = best,
+                albumArtUrlSmall = art.small,
+                albumArtUrlLarge = art.large,
+                albumTitle = release.title.ifBlank { currentMetadata?.albumTitle ?: track.album.orEmpty() },
+            )
+        }
+
+        return null
     }
 
     /**
@@ -272,6 +292,8 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 if (index < searchStrategies.lastIndex) {
                     delay(500)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Search exception with strategy ${index + 1}", e)
                 if (index == searchStrategies.lastIndex) {
@@ -779,6 +801,8 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 Log.w(TAG, "Recording lookup failed: ${response.code()}")
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Recording lookup error", e)
             null
@@ -855,6 +879,8 @@ class MusicBrainzEnrichmentService @Inject constructor(
                     large = "${CoverArtArchiveApi.BASE_URL}release/$releaseMbid/front-1200"
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Cover art fetch error for release $releaseMbid: ${e.message}")
             null
@@ -906,6 +932,8 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 Log.w(TAG, "Cover art API error ${response.code()} for release group $releaseGroupMbid")
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Release group cover art fetch error for $releaseGroupMbid", e)
             null
@@ -1171,6 +1199,80 @@ class MusicBrainzEnrichmentService @Inject constructor(
         val medium: String?,
         val large: String?
     )
+}
+
+
+/**
+ * Rank MusicBrainz releases for cover selection instead of trusting API order.
+ *
+ * An exact known album title is the strongest signal. Without an album hint we
+ * prefer official releases with actual front artwork and avoid compilations/live
+ * releases when an ordinary album/single release is available.
+ */
+internal fun rankMusicBrainzReleases(
+    releases: List<MBRelease>,
+    albumHint: String?,
+): List<MBRelease> =
+    releases.sortedWith(
+        compareByDescending<MBRelease> { musicBrainzReleaseScore(it, albumHint) }
+            .thenBy { it.date ?: it.releaseGroup?.firstReleaseDate ?: "9999-99-99" }
+            .thenBy { it.id }
+    )
+
+internal fun musicBrainzReleaseScore(
+    release: MBRelease,
+    albumHint: String?,
+): Int {
+    val normalizedHint = albumHint
+        ?.let(ArtistParser::normalizeForSearch)
+        ?.takeIf { it.isNotBlank() }
+    val normalizedRelease = ArtistParser.normalizeForSearch(release.title)
+    val normalizedGroup = release.releaseGroup?.title
+        ?.let(ArtistParser::normalizeForSearch)
+        .orEmpty()
+
+    var score = 0
+    var exactAlbumMatch = false
+
+    if (normalizedHint != null) {
+        when {
+            normalizedRelease == normalizedHint -> {
+                score += 240
+                exactAlbumMatch = true
+            }
+            normalizedGroup == normalizedHint -> {
+                score += 220
+                exactAlbumMatch = true
+            }
+            normalizedRelease.length >= 4 &&
+                (normalizedRelease.contains(normalizedHint) || normalizedHint.contains(normalizedRelease)) ->
+                score += 90
+            normalizedGroup.length >= 4 &&
+                (normalizedGroup.contains(normalizedHint) || normalizedHint.contains(normalizedGroup)) ->
+                score += 80
+        }
+    }
+
+    when {
+        release.coverArtArchive?.front == true -> score += 70
+        release.coverArtArchive?.artwork == true -> score += 35
+    }
+
+    if (release.status.equals("Official", ignoreCase = true)) score += 20
+
+    when (release.releaseGroup?.primaryType?.lowercase()) {
+        "album" -> score += 12
+        "ep" -> score += 8
+        "single" -> score += 6
+    }
+
+    if (!exactAlbumMatch) {
+        val secondaryTypes = release.releaseGroup?.secondaryTypes.orEmpty()
+        if (secondaryTypes.any { it.equals("Compilation", ignoreCase = true) }) score -= 60
+        if (secondaryTypes.any { it.equals("Live", ignoreCase = true) }) score -= 30
+    }
+
+    return score
 }
 
 

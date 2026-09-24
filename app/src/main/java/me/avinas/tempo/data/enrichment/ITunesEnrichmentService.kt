@@ -170,8 +170,7 @@ class ITunesEnrichmentService @Inject constructor(
                             result.trackCensoredName?.takeIf { it.isNotBlank() },
                         )
                         resultTitles.any { resultTitle ->
-                            resultTitle.contains(cleanTrack, ignoreCase = true) ||
-                                cleanTrack.contains(resultTitle, ignoreCase = true)
+                            isSafeCoverTrackTitleMatch(cleanTrack, resultTitle)
                         }
                     } else if (album != null) {
                         // If searching for album, validate album title

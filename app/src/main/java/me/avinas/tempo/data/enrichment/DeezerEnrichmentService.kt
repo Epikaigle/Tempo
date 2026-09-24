@@ -108,9 +108,6 @@ class DeezerEnrichmentService @Inject constructor(
         track: String,
         album: String?,
     ): DeezerTrack? {
-        val expectedTitle = me.avinas.tempo.utils.ArtistParser.normalizeForSearch(
-            me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track)
-        )
         val expectedAlbum = album
             ?.let(me.avinas.tempo.utils.ArtistParser::normalizeForSearch)
             ?.takeIf { it.isNotBlank() }
@@ -129,12 +126,7 @@ class DeezerEnrichmentService @Inject constructor(
                 )
                 if (!artistMatches) return@filter false
 
-                val candidateTitle = me.avinas.tempo.utils.ArtistParser.normalizeForSearch(
-                    me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(result.title)
-                )
-                candidateTitle == expectedTitle ||
-                    (expectedTitle.length >= 4 && candidateTitle.contains(expectedTitle)) ||
-                    (candidateTitle.length >= 4 && expectedTitle.contains(candidateTitle))
+                isSafeCoverTrackTitleMatch(track, result.title)
             }
             .sortedByDescending { result ->
                 var score = 0
