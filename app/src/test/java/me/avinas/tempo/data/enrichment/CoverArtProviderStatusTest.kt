@@ -71,4 +71,42 @@ class CoverArtProviderStatusTest {
         assertEquals("https://example.test/large.jpg", result.candidate?.albumArtUrl)
         assertEquals("Album", result.candidate?.albumTitle)
     }
+    @Test
+    fun lastFmMismatchedAutocorrectedIdentityIsRejected() {
+        val result = mapLastFmCoverSearchResult(
+            result = LastFmEnrichmentService.LastFmResult.Success(
+                tags = emptyList(),
+                genres = emptyList(),
+                albumArtUrl = "https://lastfm.example/wrong.jpg",
+                albumTitle = "Wrong Album",
+                trackTitle = "Stay Live Forever",
+                artistName = "Drake Bell",
+            ),
+            expectedTitle = "Stay",
+            expectedArtist = "Drake",
+        )
+
+        assertEquals(CoverArtLookupStatus.NOT_FOUND, result.status)
+        assertEquals(null, result.candidate)
+    }
+
+    @Test
+    fun lastFmExactIdentityMapsArtworkCandidate() {
+        val result = mapLastFmCoverSearchResult(
+            result = LastFmEnrichmentService.LastFmResult.Success(
+                tags = emptyList(),
+                genres = emptyList(),
+                albumArtUrl = "https://lastfm.example/right.jpg",
+                albumTitle = "Album",
+                trackTitle = "Stay",
+                artistName = "Drake",
+            ),
+            expectedTitle = "Stay",
+            expectedArtist = "Drake",
+        )
+
+        assertEquals(CoverArtLookupStatus.FOUND, result.status)
+        assertEquals("https://lastfm.example/right.jpg", result.candidate?.albumArtUrl)
+    }
+
 }
