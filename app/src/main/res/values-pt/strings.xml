@@ -1191,4 +1191,7 @@
     <string name="details_cover_restore_auto">Voltar à seleção automática</string>
     <string name="details_cover_restore_auto_hint">O Tempo poderá voltar a escolher a capa automaticamente.</string>
     <string name="details_cover_try_again">Pesquisar novamente</string>
+
+    <string name="details_cover_unavailable">Indisponível</string>
+    <string name="details_cover_error">Falha na pesquisa</string>
 </resources>
