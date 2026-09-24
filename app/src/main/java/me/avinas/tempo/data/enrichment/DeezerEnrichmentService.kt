@@ -5,6 +5,7 @@ import me.avinas.tempo.data.remote.deezer.DeezerApi
 import me.avinas.tempo.data.remote.deezer.DeezerTrack
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 /**
@@ -57,48 +58,106 @@ class DeezerEnrichmentService @Inject constructor(
         track: String,
         album: String? = null
     ): CoverArtResult? {
-        return try {
+        try {
             val cleanArtist = me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
             val cleanTrack = me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track)
             val structuredQuery = "artist:\"$cleanArtist\" track:\"$cleanTrack\""
             val structured = deezerApi.searchTracks(structuredQuery)
-            var results = if (structured.isSuccessful) structured.body()?.data.orEmpty() else emptyList()
 
-            if (results.isEmpty()) {
-                delay(RATE_LIMIT_DELAY_MS)
-                val loose = deezerApi.searchTracks("$cleanTrack $cleanArtist")
-                results = if (loose.isSuccessful) loose.body()?.data.orEmpty() else emptyList()
+            if (structured.isSuccessful) {
+                findBestCoverMatch(
+                    results = structured.body()?.data.orEmpty(),
+                    artist = artist,
+                    track = track,
+                    album = album,
+                )?.let { return it.toCoverArtResult() }
             }
 
-            val bestMatch = results.firstOrNull { result ->
+            // Structured search may return near matches without the requested track.
+            // Always try one relaxed query before giving up, but still validate title + artist.
+            delay(RATE_LIMIT_DELAY_MS)
+            val loose = deezerApi.searchTracks("$cleanTrack $cleanArtist")
+            if (!loose.isSuccessful) {
+                if (!structured.isSuccessful) {
+                    throw IllegalStateException(
+                        "Deezer API error: ${structured.code()} / ${loose.code()}"
+                    )
+                }
+                return null
+            }
+
+            return findBestCoverMatch(
+                results = loose.body()?.data.orEmpty(),
+                artist = artist,
+                track = track,
+                album = album,
+            )?.toCoverArtResult()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Deezer cover-art search error", e)
+            throw e
+        }
+    }
+
+    private fun findBestCoverMatch(
+        results: List<DeezerTrack>,
+        artist: String,
+        track: String,
+        album: String?,
+    ): DeezerTrack? {
+        val expectedTitle = me.avinas.tempo.utils.ArtistParser.normalizeForSearch(
+            me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track)
+        )
+        val expectedAlbum = album
+            ?.let(me.avinas.tempo.utils.ArtistParser::normalizeForSearch)
+            ?.takeIf { it.isNotBlank() }
+
+        return results
+            .asSequence()
+            .filter { result ->
                 val hasArt = !result.album.coverXl.isNullOrBlank() ||
                     !result.album.coverBig.isNullOrBlank() ||
                     !result.album.coverMedium.isNullOrBlank()
-                hasArt && me.avinas.tempo.utils.ArtistParser.hasAnyMatchingArtist(
+                if (!hasArt) return@filter false
+
+                val artistMatches = me.avinas.tempo.utils.ArtistParser.hasAnyMatchingArtist(
                     result.artist.name,
-                    artist
+                    artist,
                 )
-            } ?: results.firstOrNull { result ->
-                !result.album.coverXl.isNullOrBlank() ||
-                    !result.album.coverBig.isNullOrBlank() ||
-                    !result.album.coverMedium.isNullOrBlank()
-            } ?: return null
+                if (!artistMatches) return@filter false
 
-            val bestUrl = bestMatch.album.coverXl
-                ?: bestMatch.album.coverBig
-                ?: bestMatch.album.coverMedium
-                ?: return null
+                val candidateTitle = me.avinas.tempo.utils.ArtistParser.normalizeForSearch(
+                    me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(result.title)
+                )
+                candidateTitle == expectedTitle ||
+                    (expectedTitle.length >= 4 && candidateTitle.contains(expectedTitle)) ||
+                    (candidateTitle.length >= 4 && expectedTitle.contains(candidateTitle))
+            }
+            .sortedByDescending { result ->
+                var score = 0
+                val candidateAlbum = me.avinas.tempo.utils.ArtistParser.normalizeForSearch(
+                    result.album.title
+                )
+                if (expectedAlbum != null && candidateAlbum == expectedAlbum) score += 4
+                if (!result.album.coverXl.isNullOrBlank()) score += 2
+                if (!result.album.coverBig.isNullOrBlank()) score += 1
+                score
+            }
+            .firstOrNull()
+    }
 
-            CoverArtResult(
-                albumArtUrl = bestUrl,
-                albumArtUrlSmall = bestMatch.album.coverSmall,
-                albumArtUrlLarge = bestMatch.album.coverXl ?: bestMatch.album.coverBig,
-                albumTitle = bestMatch.album.title
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Deezer cover-art search error", e)
-            null
-        }
+    private fun DeezerTrack.toCoverArtResult(): CoverArtResult {
+        val bestUrl = album.coverXl
+            ?: album.coverBig
+            ?: album.coverMedium
+            ?: error("Validated Deezer match unexpectedly has no artwork")
+        return CoverArtResult(
+            albumArtUrl = bestUrl,
+            albumArtUrlSmall = album.coverSmall,
+            albumArtUrlLarge = album.coverXl ?: album.coverBig,
+            albumTitle = album.title,
+        )
     }
 
     /**
