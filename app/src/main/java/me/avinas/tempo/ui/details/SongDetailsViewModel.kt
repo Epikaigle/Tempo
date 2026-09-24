@@ -368,6 +368,8 @@ class SongDetailsViewModel @Inject constructor(
                         coverPickerError = null,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -421,6 +423,8 @@ class SongDetailsViewModel @Inject constructor(
                         ),
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
