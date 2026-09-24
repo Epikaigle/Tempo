@@ -96,6 +96,23 @@ interface EnrichedMetadataDao {
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(metadata: List<EnrichedMetadata>): List<Long>
+
+    /**
+     * Batch counterpart of [upsertFromAutomaticEnrichment].
+     * Process rows sequentially inside one transaction so duplicate track IDs in a
+     * batch also see the preceding protected write.
+     */
+    @Transaction
+    suspend fun upsertAllFromAutomaticEnrichment(
+        metadata: List<EnrichedMetadata>,
+    ): List<Long> {
+        val ids = ArrayList<Long>(metadata.size)
+        for (item in metadata) {
+            val current = forTrackSync(item.trackId)
+            ids += upsert(mergeAutomaticEnrichmentArtwork(current, item))
+        }
+        return ids
+    }
     
     @Update
     suspend fun update(metadata: EnrichedMetadata)
