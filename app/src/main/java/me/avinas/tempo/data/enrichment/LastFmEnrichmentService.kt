@@ -129,6 +129,19 @@ class LastFmEnrichmentService
         }
 
         /**
+         * Look up track metadata directly from Last.fm for user-driven artwork selection.
+         * Unlike [supplementMetadata], this does not write to the database or skip tracks
+         * that already have genre/tag data.
+         */
+        suspend fun searchTrackInfo(title: String, artist: String): LastFmResult {
+            if (!isAvailable()) return LastFmResult.NotConfigured
+            if (ArtistParser.isUnknownArtist(artist)) {
+                return LastFmResult.Error("Artist unknown")
+            }
+            return fetchTrackInfo(title, artist, getApiKey())
+        }
+
+        /**
          * Fetch track info from Last.fm.
          */
         private suspend fun fetchTrackInfo(
