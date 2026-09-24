@@ -120,9 +120,9 @@ class DeezerEnrichmentService @Inject constructor(
                     !result.album.coverMedium.isNullOrBlank()
                 if (!hasArt) return@filter false
 
-                val artistMatches = me.avinas.tempo.utils.ArtistParser.hasAnyMatchingArtist(
-                    result.artist.name,
-                    artist,
+                val artistMatches = isSafeCoverArtistMatch(
+                    expectedArtist = artist,
+                    candidateArtist = result.artist.name,
                 )
                 if (!artistMatches) return@filter false
 
