@@ -1502,4 +1502,10 @@
     <string name="details_cover_restore_auto">Return to automatic selection</string>
     <string name="details_cover_restore_auto_hint">Tempo will be allowed to choose artwork automatically again.</string>
     <string name="details_cover_try_again">Search again</string>
+
+    <string name="details_cover_provider_spotify" translatable="false">Spotify</string>
+    <string name="details_cover_provider_apple_music" translatable="false">Apple Music</string>
+    <string name="details_cover_provider_musicbrainz" translatable="false">MusicBrainz</string>
+    <string name="details_cover_provider_deezer" translatable="false">Deezer</string>
+    <string name="details_cover_provider_lastfm" translatable="false">Last.fm</string>
 </resources>
