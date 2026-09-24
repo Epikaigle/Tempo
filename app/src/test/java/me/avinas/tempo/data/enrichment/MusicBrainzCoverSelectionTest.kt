@@ -85,6 +85,19 @@ class MusicBrainzCoverSelectionTest {
     }
 
     @Test
+    fun shortAlbumHintDoesNotMatchBySubstring() {
+        val unrelated = release(id = "unrelated", title = "SOS Deluxe Collection")
+        val ordinary = release(id = "ordinary", title = "Another Album")
+
+        val ranked = rankMusicBrainzReleases(
+            listOf(unrelated, ordinary),
+            albumHint = "SOS",
+        )
+
+        assertEquals("ordinary", ranked.first().id)
+    }
+
+    @Test
     fun exactCompilationHintStillWinsWhenUserAlbumPointsThere() {
         val album = release(id = "album", title = "Artist Album")
         val compilation = release(
