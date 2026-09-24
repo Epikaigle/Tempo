@@ -1082,4 +1082,7 @@
     <string name="details_cover_restore_auto">Zur automatischen Auswahl zurückkehren</string>
     <string name="details_cover_restore_auto_hint">Tempo darf das Cover wieder automatisch auswählen.</string>
     <string name="details_cover_try_again">Erneut suchen</string>
+
+    <string name="details_cover_unavailable">Nicht verfügbar</string>
+    <string name="details_cover_error">Suche fehlgeschlagen</string>
 </resources>
