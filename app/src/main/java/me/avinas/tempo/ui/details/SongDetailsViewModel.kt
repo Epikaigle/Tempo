@@ -206,7 +206,8 @@ class SongDetailsViewModel @Inject constructor(
                         appleMusicUrl = appleMusicUrl,
                         peakBingeDay = peakBinge,
                         habitualHour = habitualHour,
-                        habitualHourOfDay = habitualHourOfDay
+                        habitualHourOfDay = habitualHourOfDay,
+                        isManualCover = enrichedMetadata?.albumArtSource == AlbumArtSource.USER_SELECTED
                     ) 
                 }
 
@@ -231,6 +232,158 @@ class SongDetailsViewModel @Inject constructor(
 
     fun refresh() {
         loadTrackDetails()
+    }
+
+    fun showCoverPicker() {
+        if (_uiState.value.showCoverPicker) return
+        _uiState.update {
+            it.copy(
+                showCoverPicker = true,
+                isLoadingCoverCandidates = true,
+                isSavingCover = false,
+                coverPickerError = null,
+                coverCandidates = emptyList(),
+            )
+        }
+        loadCoverCandidates()
+    }
+
+    fun dismissCoverPicker() {
+        if (_uiState.value.isSavingCover) return
+        _uiState.update {
+            it.copy(
+                showCoverPicker = false,
+                isLoadingCoverCandidates = false,
+                coverPickerError = null,
+            )
+        }
+    }
+
+    fun retryCoverCandidates() {
+        if (_uiState.value.showCoverPicker) loadCoverCandidates()
+    }
+
+    private fun loadCoverCandidates() {
+        val track = _uiState.value.trackDetails?.track ?: return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoadingCoverCandidates = true,
+                    coverPickerError = null,
+                )
+            }
+            try {
+                val metadata = enrichedMetadataRepository.forTrackSync(trackId)
+                val candidates = coverArtPickerService.search(track, metadata)
+                _uiState.update {
+                    it.copy(
+                        isLoadingCoverCandidates = false,
+                        coverCandidates = candidates,
+                        coverPickerError = null,
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoadingCoverCandidates = false,
+                        coverPickerError = e.message ?: "Failed to load cover art",
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectCover(candidate: CoverArtCandidate) {
+        val currentDetails = _uiState.value.trackDetails ?: return
+        if (_uiState.value.isSavingCover) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
+            try {
+                val selectedUrl = candidate.albumArtUrlLarge
+                    ?.takeIf { it.isNotBlank() }
+                    ?: candidate.albumArtUrl
+                val existing = enrichedMetadataRepository.forTrackSync(trackId)
+                val updatedMetadata = (existing ?: EnrichedMetadata(trackId = trackId)).copy(
+                    albumArtUrl = selectedUrl,
+                    albumArtUrlSmall = candidate.albumArtUrlSmall ?: selectedUrl,
+                    albumArtUrlLarge = candidate.albumArtUrlLarge ?: selectedUrl,
+                    albumArtSource = AlbumArtSource.USER_SELECTED,
+                    cacheTimestamp = System.currentTimeMillis(),
+                )
+                enrichedMetadataRepository.upsert(updatedMetadata)
+                trackRepository.update(currentDetails.track.copy(albumArtUrl = selectedUrl))
+
+                statsRepository.invalidateCache()
+                statsRepository.notifyMetadataUpdate()
+                _uiState.update { state ->
+                    state.copy(
+                        trackDetails = state.trackDetails?.copy(
+                            track = state.trackDetails.track.copy(albumArtUrl = selectedUrl),
+                        ),
+                        isManualCover = true,
+                        showCoverPicker = false,
+                        isLoadingCoverCandidates = false,
+                        isSavingCover = false,
+                        coverPickerError = null,
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isSavingCover = false,
+                        coverPickerError = e.message ?: "Failed to save cover art",
+                    )
+                }
+            }
+        }
+    }
+
+    fun resetCoverToAutomatic() {
+        val current = _uiState.value.trackDetails?.track ?: return
+        if (_uiState.value.isSavingCover) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
+            try {
+                val existing = enrichedMetadataRepository.forTrackSync(trackId)
+                if (existing != null) {
+                    enrichedMetadataRepository.upsert(
+                        existing.copy(
+                            albumArtUrl = null,
+                            albumArtUrlSmall = null,
+                            albumArtUrlLarge = null,
+                            albumArtSource = AlbumArtSource.NONE,
+                            enrichmentStatus = EnrichmentStatus.PENDING,
+                            cacheTimestamp = System.currentTimeMillis(),
+                        )
+                    )
+                } else {
+                    enrichedMetadataRepository.createPendingIfNotExists(trackId)
+                }
+                enrichedMetadataRepository.markForReEnrichment(trackId)
+                EnrichmentWorker.enqueueImmediate(context, trackId)
+
+                // Keep the last visible cover until automatic enrichment resolves a replacement.
+                _uiState.update {
+                    it.copy(
+                        isManualCover = false,
+                        showCoverPicker = false,
+                        isLoadingCoverCandidates = false,
+                        isSavingCover = false,
+                        coverPickerError = null,
+                        trackDetails = it.trackDetails?.copy(track = current),
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isSavingCover = false,
+                        coverPickerError = e.message ?: "Failed to restore automatic artwork",
+                    )
+                }
+            }
+        }
     }
 
     // Audio Preview Controls
@@ -486,5 +639,6 @@ data class SongDetailsUiState(
     val isLoadingCoverCandidates: Boolean = false,
     val isSavingCover: Boolean = false,
     val coverPickerError: String? = null,
-    val coverCandidates: List<CoverArtCandidate> = emptyList()
+    val coverCandidates: List<CoverArtCandidate> = emptyList(),
+    val isManualCover: Boolean = false,
 )
