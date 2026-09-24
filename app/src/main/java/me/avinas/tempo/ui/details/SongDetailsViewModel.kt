@@ -343,22 +343,18 @@ class SongDetailsViewModel @Inject constructor(
                             ?: candidate.albumArtUrl
                     )
                     ?: candidate.albumArtUrl
-                val existing = enrichedMetadataRepository.forTrackSync(trackId)
                 val selectedSmallUrl = me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
                     .fixHttpUrl(candidate.albumArtUrlSmall ?: selectedUrl)
                     ?: selectedUrl
                 val selectedLargeUrl = me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
                     .fixHttpUrl(candidate.albumArtUrlLarge ?: selectedUrl)
                     ?: selectedUrl
-                val updatedMetadata = (existing ?: EnrichedMetadata(trackId = trackId)).copy(
+                enrichedMetadataRepository.setUserSelectedArtwork(
+                    trackId = trackId,
                     albumArtUrl = selectedUrl,
                     albumArtUrlSmall = selectedSmallUrl,
                     albumArtUrlLarge = selectedLargeUrl,
-                    albumArtSource = AlbumArtSource.USER_SELECTED,
-                    cacheTimestamp = System.currentTimeMillis(),
                 )
-                enrichedMetadataRepository.upsert(updatedMetadata)
-                trackRepository.updateAlbumArtUrl(trackId, selectedUrl)
 
                 statsRepository.invalidateCache()
                 statsRepository.notifyMetadataUpdate()
@@ -396,23 +392,7 @@ class SongDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
             try {
-                val existing = enrichedMetadataRepository.forTrackSync(trackId)
-                if (existing != null) {
-                    enrichedMetadataRepository.upsert(
-                        existing.copy(
-                            albumArtUrl = null,
-                            albumArtUrlSmall = null,
-                            albumArtUrlLarge = null,
-                            albumArtSource = AlbumArtSource.NONE,
-                            enrichmentStatus = EnrichmentStatus.PENDING,
-                            cacheTimestamp = System.currentTimeMillis(),
-                        )
-                    )
-                } else {
-                    enrichedMetadataRepository.createPendingIfNotExists(trackId)
-                }
-                trackRepository.updateAlbumArtUrl(trackId, null)
-                enrichedMetadataRepository.markForReEnrichment(trackId)
+                enrichedMetadataRepository.resetArtworkToAutomatic(trackId)
                 EnrichmentWorker.enqueueImmediate(context, trackId)
 
                 // Clear the manual image immediately. The normal enrichment worker will
