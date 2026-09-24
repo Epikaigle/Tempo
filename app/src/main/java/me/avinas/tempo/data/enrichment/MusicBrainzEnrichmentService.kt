@@ -201,10 +201,14 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 if (existingByMbid != null && existingByMbid.trackId != track.id && existingByMbid.isCacheValid()) {
                     // Reuse existing metadata for different track with same MB ID
                     Log.d(TAG, "Deduplication: reusing metadata from track ${existingByMbid.trackId}")
-                    val copied = existingByMbid.copy(
+                    val reusable = existingByMbid.copy(
                         id = existingMetadata?.id ?: 0,
                         trackId = track.id,
                         cacheTimestamp = System.currentTimeMillis()
+                    )
+                    val copied = preserveUserSelectedArtwork(
+                        current = existingMetadata,
+                        replacement = reusable,
                     )
                     enrichedMetadataDao.upsert(copied)
                     return EnrichmentResult.Success(copied)
@@ -1166,5 +1170,29 @@ class MusicBrainzEnrichmentService @Inject constructor(
         val small: String?,
         val medium: String?,
         val large: String?
+    )
+}
+
+
+/**
+ * Automatic metadata replacement must never discard artwork explicitly chosen by
+ * the user. Used by MusicBrainz's cross-track metadata reuse path, which otherwise
+ * replaces the entire enriched_metadata row in one operation.
+ */
+internal fun preserveUserSelectedArtwork(
+    current: EnrichedMetadata?,
+    replacement: EnrichedMetadata,
+): EnrichedMetadata {
+    val manual = current?.takeIf {
+        it.albumArtSource == AlbumArtSource.USER_SELECTED &&
+            !it.albumArtUrl.isNullOrBlank()
+    } ?: return replacement
+
+    val selectedUrl = manual.albumArtUrl!!
+    return replacement.copy(
+        albumArtUrl = selectedUrl,
+        albumArtUrlSmall = manual.albumArtUrlSmall ?: selectedUrl,
+        albumArtUrlLarge = manual.albumArtUrlLarge ?: selectedUrl,
+        albumArtSource = AlbumArtSource.USER_SELECTED,
     )
 }
