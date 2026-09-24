@@ -1,6 +1,8 @@
 package me.avinas.tempo.data.enrichment
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.Track
 import javax.inject.Inject
@@ -81,7 +83,7 @@ class CoverArtPickerService @Inject constructor(
     ): CoverArtLookupResult {
         val albumHint = track.album ?: currentMetadata?.albumTitle
 
-        return try {
+        val lookup = try {
             when (provider) {
                 CoverArtProvider.CURRENT -> {
                     val candidate = currentCandidate(track)
@@ -235,5 +237,11 @@ class CoverArtPickerService @Inject constructor(
                 message = e.message,
             )
         }
+
+        // Some legacy enrichment helpers catch broad exceptions internally. Re-check
+        // coroutine cancellation before returning so a dismissed picker can never
+        // publish a stale provider result.
+        currentCoroutineContext().ensureActive()
+        return lookup
     }
 }
