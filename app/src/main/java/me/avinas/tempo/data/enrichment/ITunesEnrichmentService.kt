@@ -156,35 +156,12 @@ class ITunesEnrichmentService @Inject constructor(
                     continue // Try next strategy
                 }
 
-                // Check for match using relaxed artist validation
-                val cleanTrack = if (track != null) ArtistParser.cleanTrackTitle(track) else null
-                
-                val bestMatch = results.find { result ->
-                    val resultArtist = result.artistName ?: ""
-                    
-                    // Verify at least one artist token matches to reject wrong-artist results
-                    val isArtistMatch = isSafeCoverArtistMatch(artist, resultArtist)
-                    
-                    if (!isArtistMatch) return@find false
-
-                    // If searching for a track, validate track title
-                    if (track != null && cleanTrack != null) {
-                        val resultTitles = listOfNotNull(
-                            result.trackName?.takeIf { it.isNotBlank() },
-                            result.trackCensoredName?.takeIf { it.isNotBlank() },
-                        )
-                        resultTitles.any { resultTitle ->
-                            isSafeCoverTrackTitleMatch(cleanTrack, resultTitle)
-                        }
-                    } else if (album != null) {
-                        // If searching for album, validate album title
-                        (result.collectionName?.contains(album, ignoreCase = true) == true ||
-                         result.collectionCensoredName?.contains(album, ignoreCase = true) == true)
-                    } else {
-                        // If just searching by artist (no album/track provided), take the first artist match
-                        true
-                    }
-                }
+                val bestMatch = selectBestITunesCoverMatch(
+                    results = results,
+                    expectedArtist = artist,
+                    expectedTrack = track,
+                    expectedAlbum = album,
+                )
 
                 if (bestMatch != null) {
                     val artworkUrl = bestMatch.getBestArtworkUrl()
@@ -864,3 +841,66 @@ internal fun resolveITunesCoverSearchTerminalResult(
     } else {
         ITunesEnrichmentService.iTunesResult.Error(lastProviderError ?: "iTunes lookup failed")
     }
+
+internal fun selectBestITunesCoverMatch(
+    results: List<AppleMusicResult>,
+    expectedArtist: String,
+    expectedTrack: String?,
+    expectedAlbum: String?,
+): AppleMusicResult? {
+    val cleanTrack = expectedTrack?.let(ArtistParser::cleanTrackTitle)
+    val normalizedAlbum = expectedAlbum
+        ?.let(ArtistParser::normalizeForSearch)
+        ?.takeIf { it.isNotBlank() }
+
+    return results
+        .asSequence()
+        .filter { result ->
+            val resultArtist = result.artistName.orEmpty()
+            if (!isSafeCoverArtistMatch(expectedArtist, resultArtist)) return@filter false
+
+            when {
+                cleanTrack != null -> {
+                    val resultTitles = listOfNotNull(
+                        result.trackName?.takeIf { it.isNotBlank() },
+                        result.trackCensoredName?.takeIf { it.isNotBlank() },
+                    )
+                    resultTitles.any { isSafeCoverTrackTitleMatch(cleanTrack, it) }
+                }
+                normalizedAlbum != null -> {
+                    listOfNotNull(
+                        result.collectionName?.takeIf { it.isNotBlank() },
+                        result.collectionCensoredName?.takeIf { it.isNotBlank() },
+                    ).any { isSafeCoverTrackTitleMatch(expectedAlbum.orEmpty(), it) }
+                }
+                else -> true
+            }
+        }
+        .withIndex()
+        .maxWithOrNull(
+            compareBy<IndexedValue<AppleMusicResult>> { indexed ->
+                iTunesCoverMatchScore(indexed.value, normalizedAlbum)
+            }.thenByDescending { indexed -> -indexed.index }
+        )
+        ?.value
+}
+
+private fun iTunesCoverMatchScore(
+    result: AppleMusicResult,
+    normalizedAlbum: String?,
+): Int {
+    var score = 0
+    val candidateAlbum = result.collectionName
+        ?.let(ArtistParser::normalizeForSearch)
+        ?.takeIf { it.isNotBlank() }
+
+    if (normalizedAlbum != null && candidateAlbum != null) {
+        when {
+            candidateAlbum == normalizedAlbum -> score += 100
+            isSafeCoverTrackTitleMatch(normalizedAlbum, candidateAlbum) -> score += 40
+        }
+    }
+
+    if (!result.getBestArtworkUrl().isNullOrBlank()) score += 5
+    return score
+}
