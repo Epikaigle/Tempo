@@ -1244,10 +1244,10 @@ internal fun musicBrainzReleaseScore(
                 score += 220
                 exactAlbumMatch = true
             }
-            normalizedRelease.length >= 4 &&
+            minOf(normalizedRelease.length, normalizedHint.length) >= 4 &&
                 (normalizedRelease.contains(normalizedHint) || normalizedHint.contains(normalizedRelease)) ->
                 score += 90
-            normalizedGroup.length >= 4 &&
+            minOf(normalizedGroup.length, normalizedHint.length) >= 4 &&
                 (normalizedGroup.contains(normalizedHint) || normalizedHint.contains(normalizedGroup)) ->
                 score += 80
         }
