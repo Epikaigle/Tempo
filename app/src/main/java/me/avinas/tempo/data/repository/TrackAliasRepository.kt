@@ -111,25 +111,32 @@ open class TrackAliasRepository @Inject constructor(
             return false
         }
         
-        val sourceTrack = trackDao.getTrackById(sourceTrackId)
-        val targetTrack = trackDao.getTrackById(targetTrackId)
-        val sourceMetadata = enrichedMetadataDao.forTrackSync(sourceTrackId)
-        val targetMetadata = enrichedMetadataDao.forTrackSync(targetTrackId)
+        val sourceTrackSnapshot = trackDao.getTrackById(sourceTrackId)
+        val targetTrackSnapshot = trackDao.getTrackById(targetTrackId)
         
-        if (sourceTrack == null) {
+        if (sourceTrackSnapshot == null) {
             Log.w(TAG, "Source track $sourceTrackId not found")
             return false
         }
-        if (targetTrack == null) {
+        if (targetTrackSnapshot == null) {
             Log.w(TAG, "Target track $targetTrackId not found")
             return false
         }
         
-        Log.i(TAG, "Merging track '${sourceTrack.title}' by '${sourceTrack.artist}' " +
-                "into '${targetTrack.title}' by '${targetTrack.artist}'")
+        Log.i(TAG, "Merging track '${sourceTrackSnapshot.title}' by '${sourceTrackSnapshot.artist}' " +
+                "into '${targetTrackSnapshot.title}' by '${targetTrackSnapshot.artist}'")
         
         return try {
             database.withTransaction {
+                // Re-read every merge-sensitive row inside the transaction. The user may
+                // have selected/reset artwork after the preliminary existence check.
+                val sourceTrack = trackDao.getTrackById(sourceTrackId)
+                    ?: error("Source track $sourceTrackId disappeared before merge")
+                val targetTrack = trackDao.getTrackById(targetTrackId)
+                    ?: error("Target track $targetTrackId disappeared before merge")
+                val sourceMetadata = enrichedMetadataDao.forTrackSync(sourceTrackId)
+                val targetMetadata = enrichedMetadataDao.forTrackSync(targetTrackId)
+
                 // 1. Create alias for future lookups
                 val alias = TrackAlias(
                     targetTrackId = targetTrackId,
@@ -162,6 +169,12 @@ open class TrackAliasRepository @Inject constructor(
                 
                 // 3. Merge metadata from source into target (fill missing fields)
                 var updatedTarget = mergeTrackMetadata(sourceTrack, targetTrack)
+
+                // Returning the surviving target to automatic selection is also an
+                // explicit preference. Do not resurrect artwork from the source track.
+                if (targetMetadata?.albumArtSource == AlbumArtSource.USER_RESET) {
+                    updatedTarget = updatedTarget.copy(albumArtUrl = targetTrack.albumArtUrl)
+                }
 
                 // A user-selected cover is an explicit preference, not ordinary enrichment.
                 // Preserve the target's manual cover when it already has one; otherwise carry
@@ -331,5 +344,6 @@ internal fun preferredManualArtwork(
                 !it.albumArtUrl.isNullOrBlank()
         }
 
+    if (targetMetadata?.albumArtSource == AlbumArtSource.USER_RESET) return null
     return targetMetadata.validManualArtwork() ?: sourceMetadata.validManualArtwork()
 }
