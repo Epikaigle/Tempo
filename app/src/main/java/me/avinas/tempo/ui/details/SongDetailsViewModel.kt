@@ -393,6 +393,8 @@ class SongDetailsViewModel @Inject constructor(
             _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
             try {
                 enrichedMetadataRepository.resetArtworkToAutomatic(trackId)
+                statsRepository.invalidateCache()
+                statsRepository.notifyMetadataUpdate()
                 EnrichmentWorker.enqueueImmediate(context, trackId)
 
                 // Clear the manual image immediately. The normal enrichment worker will
