@@ -26,8 +26,8 @@ data class CoverArtCandidate(
 )
 
 /**
- * User-driven artwork lookup. Every provider is queried in parallel and no database
- * state is changed until the user explicitly selects one of the returned candidates.
+ * User-driven artwork lookup. Providers are independent so the UI can surface
+ * results progressively; no database state is changed until the user selects one.
  */
 @Singleton
 class CoverArtPickerService @Inject constructor(
@@ -37,53 +37,21 @@ class CoverArtPickerService @Inject constructor(
     private val lastFmEnrichmentService: LastFmEnrichmentService,
     private val deezerEnrichmentService: DeezerEnrichmentService,
 ) {
-    suspend fun search(
-        track: Track,
-        currentMetadata: EnrichedMetadata?,
-    ): List<CoverArtCandidate> = supervisorScope {
-        val albumHint = track.album ?: currentMetadata?.albumTitle
+    companion object {
+        val REMOTE_PROVIDERS = listOf(
+            CoverArtProvider.SPOTIFY,
+            CoverArtProvider.APPLE_MUSIC,
+            CoverArtProvider.MUSICBRAINZ,
+            CoverArtProvider.DEEZER,
+            CoverArtProvider.LASTFM,
+        )
+    }
 
-        val spotifyDeferred = async {
-            runCatching { spotifyEnrichmentService.fetchBasicMetadata(track) }.getOrNull()
-        }
-        val iTunesDeferred = async {
-            runCatching {
-                iTunesEnrichmentService.searchAlbumArt(
-                    artist = track.artist,
-                    album = albumHint,
-                    track = track.title,
-                )
-            }.getOrNull()
-        }
-        val musicBrainzDeferred = async {
-            runCatching {
-                musicBrainzEnrichmentService.searchCoverArt(track, currentMetadata)
-            }.getOrNull()
-        }
-        val lastFmDeferred = async {
-            runCatching {
-                lastFmEnrichmentService.searchTrackInfo(
-                    title = track.title,
-                    artist = track.artist,
-                )
-            }.getOrNull()
-        }
-        val deezerDeferred = async {
-            runCatching {
-                deezerEnrichmentService.searchAlbumArt(
-                    artist = track.artist,
-                    track = track.title,
-                    album = albumHint,
-                )
-            }.getOrNull()
-        }
-
-        val candidates = mutableListOf<CoverArtCandidate>()
-
+    fun currentCandidate(track: Track): CoverArtCandidate? =
         track.albumArtUrl
             ?.takeIf { it.isNotBlank() }
             ?.let { current ->
-                candidates += CoverArtCandidate(
+                CoverArtCandidate(
                     provider = CoverArtProvider.CURRENT,
                     albumArtUrl = current,
                     albumArtUrlLarge = current,
@@ -92,72 +60,123 @@ class CoverArtPickerService @Inject constructor(
                 )
             }
 
-        (spotifyDeferred.await() as? SpotifyEnrichmentService.BasicMetadataResult.Success)
-            ?.let { result ->
-                val best = result.albumArtUrlLarge ?: result.albumArtUrl
-                if (!best.isNullOrBlank()) {
-                    candidates += CoverArtCandidate(
-                        provider = CoverArtProvider.SPOTIFY,
-                        albumArtUrl = best,
-                        albumArtUrlSmall = result.albumArtUrlSmall,
-                        albumArtUrlLarge = result.albumArtUrlLarge,
-                        albumTitle = result.albumTitle,
-                    )
-                }
-            }
+    suspend fun searchProvider(
+        provider: CoverArtProvider,
+        track: Track,
+        currentMetadata: EnrichedMetadata?,
+    ): CoverArtCandidate? {
+        val albumHint = track.album ?: currentMetadata?.albumTitle
 
-        (iTunesDeferred.await() as? ITunesEnrichmentService.iTunesResult.Success)
-            ?.let { result ->
-                candidates += CoverArtCandidate(
-                    provider = CoverArtProvider.APPLE_MUSIC,
-                    albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
-                    albumArtUrlSmall = result.albumArtUrlSmall,
-                    albumArtUrlLarge = result.albumArtUrlLarge,
-                    albumTitle = result.albumTitle,
-                )
-            }
+        return when (provider) {
+            CoverArtProvider.CURRENT -> currentCandidate(track)
 
-        musicBrainzDeferred.await()?.let { result ->
-            candidates += CoverArtCandidate(
-                provider = CoverArtProvider.MUSICBRAINZ,
-                albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
-                albumArtUrlSmall = result.albumArtUrlSmall,
-                albumArtUrlLarge = result.albumArtUrlLarge,
-                albumTitle = result.albumTitle,
-            )
-        }
-
-        (lastFmDeferred.await() as? LastFmEnrichmentService.LastFmResult.Success)
-            ?.let { result ->
-                result.albumArtUrl
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { url ->
-                        candidates += CoverArtCandidate(
-                            provider = CoverArtProvider.LASTFM,
-                            albumArtUrl = url,
-                            albumArtUrlLarge = url,
+            CoverArtProvider.SPOTIFY ->
+                runCatching { spotifyEnrichmentService.fetchBasicMetadata(track) }
+                    .getOrNull()
+                    .let { it as? SpotifyEnrichmentService.BasicMetadataResult.Success }
+                    ?.let { result ->
+                        val best = result.albumArtUrlLarge ?: result.albumArtUrl
+                        if (best.isNullOrBlank()) null else CoverArtCandidate(
+                            provider = provider,
+                            albumArtUrl = best,
+                            albumArtUrlSmall = result.albumArtUrlSmall,
+                            albumArtUrlLarge = result.albumArtUrlLarge,
                             albumTitle = result.albumTitle,
                         )
                     }
-            }
 
-        deezerDeferred.await()?.let { result ->
-            candidates += CoverArtCandidate(
-                provider = CoverArtProvider.DEEZER,
-                albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
-                albumArtUrlSmall = result.albumArtUrlSmall,
-                albumArtUrlLarge = result.albumArtUrlLarge,
-                albumTitle = result.albumTitle,
-            )
+            CoverArtProvider.APPLE_MUSIC ->
+                runCatching {
+                    iTunesEnrichmentService.searchAlbumArt(
+                        artist = track.artist,
+                        album = albumHint,
+                        track = track.title,
+                    )
+                }.getOrNull()
+                    .let { it as? ITunesEnrichmentService.iTunesResult.Success }
+                    ?.let { result ->
+                        CoverArtCandidate(
+                            provider = provider,
+                            albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
+                            albumArtUrlSmall = result.albumArtUrlSmall,
+                            albumArtUrlLarge = result.albumArtUrlLarge,
+                            albumTitle = result.albumTitle,
+                        )
+                    }
+
+            CoverArtProvider.MUSICBRAINZ ->
+                runCatching {
+                    musicBrainzEnrichmentService.searchCoverArt(track, currentMetadata)
+                }.getOrNull()
+                    ?.let { result ->
+                        CoverArtCandidate(
+                            provider = provider,
+                            albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
+                            albumArtUrlSmall = result.albumArtUrlSmall,
+                            albumArtUrlLarge = result.albumArtUrlLarge,
+                            albumTitle = result.albumTitle,
+                        )
+                    }
+
+            CoverArtProvider.LASTFM ->
+                runCatching {
+                    lastFmEnrichmentService.searchTrackInfo(
+                        title = track.title,
+                        artist = track.artist,
+                    )
+                }.getOrNull()
+                    .let { it as? LastFmEnrichmentService.LastFmResult.Success }
+                    ?.let { result ->
+                        result.albumArtUrl
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { url ->
+                                CoverArtCandidate(
+                                    provider = provider,
+                                    albumArtUrl = url,
+                                    albumArtUrlLarge = url,
+                                    albumTitle = result.albumTitle,
+                                )
+                            }
+                    }
+
+            CoverArtProvider.DEEZER ->
+                runCatching {
+                    deezerEnrichmentService.searchAlbumArt(
+                        artist = track.artist,
+                        track = track.title,
+                        album = albumHint,
+                    )
+                }.getOrNull()
+                    ?.let { result ->
+                        CoverArtCandidate(
+                            provider = provider,
+                            albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
+                            albumArtUrlSmall = result.albumArtUrlSmall,
+                            albumArtUrlLarge = result.albumArtUrlLarge,
+                            albumTitle = result.albumTitle,
+                        )
+                    }
+        }
+    }
+
+    suspend fun search(
+        track: Track,
+        currentMetadata: EnrichedMetadata?,
+    ): List<CoverArtCandidate> = supervisorScope {
+        val remote = REMOTE_PROVIDERS.associateWith { provider ->
+            async { searchProvider(provider, track, currentMetadata) }
         }
 
-        candidates
-            .filter { it.albumArtUrl.isNotBlank() }
-            .distinctBy { candidate ->
-                candidate.albumArtUrl
-                    .substringBefore('?')
-                    .replace("http://", "https://")
-                    .lowercase()
+        buildList {
+            currentCandidate(track)?.let(::add)
+            for (provider in REMOTE_PROVIDERS) {
+                remote.getValue(provider).await()?.let(::add)
             }
+        }.distinctBy { candidate ->
+            candidate.albumArtUrl
+                .substringBefore('?')
+                .replace("http://", "https://")
+                .lowercase()
+        }
     }
 }
