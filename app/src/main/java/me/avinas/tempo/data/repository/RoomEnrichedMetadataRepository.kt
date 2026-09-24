@@ -37,6 +37,26 @@ class RoomEnrichedMetadataRepository @Inject constructor(
 
     override suspend fun upsertFromAutomaticEnrichment(metadata: EnrichedMetadata): Long =
         dao.upsertFromAutomaticEnrichment(metadata)
+
+    override suspend fun setUserSelectedArtwork(
+        trackId: Long,
+        albumArtUrl: String,
+        albumArtUrlSmall: String,
+        albumArtUrlLarge: String,
+    ): Long =
+        dao.setUserSelectedArtwork(
+            trackId = trackId,
+            albumArtUrl = albumArtUrl,
+            albumArtUrlSmall = albumArtUrlSmall,
+            albumArtUrlLarge = albumArtUrlLarge,
+            timestamp = System.currentTimeMillis(),
+        )
+
+    override suspend fun resetArtworkToAutomatic(trackId: Long): Long =
+        dao.resetArtworkToAutomatic(
+            trackId = trackId,
+            timestamp = System.currentTimeMillis(),
+        )
     
     override suspend fun createPendingIfNotExists(trackId: Long) {
         val existing = dao.forTrackSync(trackId)
