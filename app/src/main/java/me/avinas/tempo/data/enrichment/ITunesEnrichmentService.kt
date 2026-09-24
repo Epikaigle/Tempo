@@ -121,6 +121,8 @@ class ITunesEnrichmentService @Inject constructor(
         
         // Track unique queries to avoid duplicates
         val uniqueQueries = searchStrategies.distinct()
+        var hadSuccessfulResponse = false
+        var lastProviderError: String? = null
         
         for ((index, query) in uniqueQueries.withIndex()) {
             Log.d(TAG, "Searching iTunes (strategy ${index + 1}/${uniqueQueries.size}): $query")
@@ -141,9 +143,11 @@ class ITunesEnrichmentService @Inject constructor(
                 )
 
                 if (!response.isSuccessful) {
+                    lastProviderError = "iTunes API error: ${response.code()}"
                     Log.e(TAG, "iTunes search failed for '$query': ${response.code()}")
                     continue // Try next strategy
                 }
+                hadSuccessfulResponse = true
 
                 val searchResponse = response.body()
                 val results = searchResponse?.results ?: emptyList()
@@ -159,7 +163,7 @@ class ITunesEnrichmentService @Inject constructor(
                     val resultArtist = result.artistName ?: ""
                     
                     // Verify at least one artist token matches to reject wrong-artist results
-                    val isArtistMatch = ArtistParser.hasAnyMatchingArtist(resultArtist, artist)
+                    val isArtistMatch = isSafeCoverArtistMatch(artist, resultArtist)
                     
                     if (!isArtistMatch) return@find false
 
@@ -209,13 +213,18 @@ class ITunesEnrichmentService @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                lastProviderError = e.message ?: "iTunes lookup failed"
                 Log.e(TAG, "Error searching iTunes with query '$query'", e)
                 // Continue to next strategy on ordinary provider/network errors.
             }
         }
         
         Log.d(TAG, "iTunes search exhausted all strategies for '$artist' - '$track'")
-        return iTunesResult.NotFound
+        return if (hadSuccessfulResponse) {
+            iTunesResult.NotFound
+        } else {
+            iTunesResult.Error(lastProviderError ?: "iTunes lookup failed")
+        }
     }
     
     /**
