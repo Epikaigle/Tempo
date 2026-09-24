@@ -690,10 +690,12 @@ class MusicBrainzEnrichmentService @Inject constructor(
             
             val updatedTrack = track.copy(
                 musicbrainzId = recording.id,
-                albumArtUrl = finalAlbumArtUrl,
                 album = if (track.album.isNullOrBlank()) primaryRelease?.title else track.album
             )
-            trackDao.update(updatedTrack)
+            trackDao.updatePreservingManualArtwork(updatedTrack)
+            if (!finalAlbumArtUrl.isNullOrBlank()) {
+                trackDao.updateAutomaticAlbumArtUrl(track.id, finalAlbumArtUrl)
+            }
             
             return EnrichmentResult.Success(metadata)
             
