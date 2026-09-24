@@ -191,7 +191,7 @@ data class EnrichedMetadata(
     
     // Album art source tracking for priority-based replacement
     // Higher priority sources can replace lower priority ones
-    // Priority: SPOTIFY > MUSICBRAINZ > ITUNES > DEEZER > LOCAL > NONE
+    // Priority: USER_SELECTED > SPOTIFY > MUSICBRAINZ > ITUNES > DEEZER > LOCAL > NONE
     @ColumnInfo(name = "album_art_source", defaultValue = "NONE")
     val albumArtSource: AlbumArtSource = AlbumArtSource.NONE,
     
@@ -380,7 +380,10 @@ enum class AlbumArtSource(val priority: Int) {
     /**
      * Check if this is an API source (not local or none).
      */
-    fun isApiSource(): Boolean = this != NONE && this != LOCAL
+    fun isApiSource(): Boolean = this != NONE && this != LOCAL && this != USER_SELECTED
+
+    /** True only for an explicit artwork choice made by the user. */
+    fun isUserSelected(): Boolean = this == USER_SELECTED
 }
 
 /**
