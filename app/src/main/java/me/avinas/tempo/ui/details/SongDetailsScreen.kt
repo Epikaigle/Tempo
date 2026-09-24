@@ -367,6 +367,7 @@ fun SongDetailsContent(
                         onNavigateToArtist = onNavigateToArtist,
                         onNavigateToAlbum = onNavigateToAlbum,
                         onEditTitle = { viewModel.showEditTitleDialog() },
+                        onEditCover = { viewModel.showCoverPicker() },
                         onTitlePositioned = { top ->
                             val collapsed = top <= headerBottomPx
                             if (collapsed != showCollapsedTitle) {
@@ -570,6 +571,16 @@ fun SongDetailsContent(
         )
     }
 
+    if (uiState.showCoverPicker) {
+        CoverArtPickerSheet(
+            state = uiState,
+            onSelect = viewModel::selectCover,
+            onResetAutomatic = viewModel::resetCoverToAutomatic,
+            onRetry = viewModel::retryCoverCandidates,
+            onDismiss = viewModel::dismissCoverPicker,
+        )
+    }
+
     if (uiState.showDeleteDialog) {
         DeleteSongConfirmDialog(
             trackDetails = trackDetails,
@@ -696,6 +707,7 @@ fun SongHeroEditorialStage(
     onNavigateToArtist: (String) -> Unit,
     onNavigateToAlbum: (String, String) -> Unit,
     onEditTitle: () -> Unit,
+    onEditCover: () -> Unit,
     onTitlePositioned: (Float) -> Unit = {},
     genre: String? = null,
     releaseDate: String? = null,
@@ -769,6 +781,26 @@ fun SongHeroEditorialStage(
                             modifier = Modifier.size(16.dp)
                         )
                     }
+                }
+
+                // Explicit affordance: artwork is editable without relying on a hidden gesture.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(10.dp)
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(TempoDarkSurface.copy(alpha = 0.90f))
+                        .border(0.8.dp, GlassBorderMedium, CircleShape)
+                        .premiumClickable(onClick = onEditCover),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = stringResource(R.string.details_change_cover),
+                        tint = TextPrimary,
+                        modifier = Modifier.size(16.dp),
+                    )
                 }
             }
         }
