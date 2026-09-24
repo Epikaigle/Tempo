@@ -48,6 +48,17 @@ interface EnrichedMetadataRepository {
      * against in-flight enrichment races.
      */
     suspend fun upsertFromAutomaticEnrichment(metadata: EnrichedMetadata): Long
+
+    /** Atomically persist a user-selected cover and its Track-table mirror. */
+    suspend fun setUserSelectedArtwork(
+        trackId: Long,
+        albumArtUrl: String,
+        albumArtUrlSmall: String,
+        albumArtUrlLarge: String,
+    ): Long
+
+    /** Atomically clear manual artwork and mark the track for automatic selection. */
+    suspend fun resetArtworkToAutomatic(trackId: Long): Long
     
     /**
      * Create a pending enrichment record if one doesn't exist.
