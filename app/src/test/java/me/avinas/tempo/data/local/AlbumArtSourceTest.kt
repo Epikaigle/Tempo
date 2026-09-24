@@ -22,6 +22,7 @@ class AlbumArtSourceTest {
     fun explicitUserSelectionCanReplaceEveryAutomaticSource() {
         val automaticSources = listOf(
             AlbumArtSource.NONE,
+            AlbumArtSource.USER_RESET,
             AlbumArtSource.LOCAL,
             AlbumArtSource.DEEZER,
             AlbumArtSource.ITUNES,
@@ -39,4 +40,17 @@ class AlbumArtSourceTest {
         assertTrue(AlbumArtSource.USER_SELECTED.isUserSelected())
         assertFalse(AlbumArtSource.USER_SELECTED.isApiSource())
     }
+    @Test
+    fun userResetCanBeReplacedByRealAutomaticArtwork() {
+        val reset = AlbumArtSource.USER_RESET
+
+        assertTrue(reset.shouldBeReplacedBy(AlbumArtSource.LOCAL))
+        assertTrue(reset.shouldBeReplacedBy(AlbumArtSource.DEEZER))
+        assertTrue(reset.shouldBeReplacedBy(AlbumArtSource.ITUNES))
+        assertTrue(reset.shouldBeReplacedBy(AlbumArtSource.MUSICBRAINZ))
+        assertTrue(reset.shouldBeReplacedBy(AlbumArtSource.SPOTIFY))
+        assertFalse(reset.isApiSource())
+        assertFalse(reset.isUserSelected())
+    }
+
 }
