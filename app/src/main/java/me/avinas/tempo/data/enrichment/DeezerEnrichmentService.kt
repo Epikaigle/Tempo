@@ -40,6 +40,67 @@ class DeezerEnrichmentService @Inject constructor(
         data class Error(val message: String) : DeezerResult()
     }
     
+    data class CoverArtResult(
+        val albumArtUrl: String,
+        val albumArtUrlSmall: String? = null,
+        val albumArtUrlLarge: String? = null,
+        val albumTitle: String? = null
+    )
+
+    /**
+     * Search Deezer specifically for album artwork. This lookup is independent of
+     * preview availability, so a valid cover can still be offered when Deezer does
+     * not expose a 30-second sample for the track.
+     */
+    suspend fun searchAlbumArt(
+        artist: String,
+        track: String,
+        album: String? = null
+    ): CoverArtResult? {
+        return try {
+            val cleanArtist = me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
+            val cleanTrack = me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track)
+            val structuredQuery = "artist:\"$cleanArtist\" track:\"$cleanTrack\""
+            val structured = deezerApi.searchTracks(structuredQuery)
+            var results = if (structured.isSuccessful) structured.body()?.data.orEmpty() else emptyList()
+
+            if (results.isEmpty()) {
+                delay(RATE_LIMIT_DELAY_MS)
+                val loose = deezerApi.searchTracks("$cleanTrack $cleanArtist")
+                results = if (loose.isSuccessful) loose.body()?.data.orEmpty() else emptyList()
+            }
+
+            val bestMatch = results.firstOrNull { result ->
+                val hasArt = !result.album.coverXl.isNullOrBlank() ||
+                    !result.album.coverBig.isNullOrBlank() ||
+                    !result.album.coverMedium.isNullOrBlank()
+                hasArt && me.avinas.tempo.utils.ArtistParser.hasAnyMatchingArtist(
+                    result.artist.name,
+                    artist
+                )
+            } ?: results.firstOrNull { result ->
+                !result.album.coverXl.isNullOrBlank() ||
+                    !result.album.coverBig.isNullOrBlank() ||
+                    !result.album.coverMedium.isNullOrBlank()
+            } ?: return null
+
+            val bestUrl = bestMatch.album.coverXl
+                ?: bestMatch.album.coverBig
+                ?: bestMatch.album.coverMedium
+                ?: return null
+
+            CoverArtResult(
+                albumArtUrl = bestUrl,
+                albumArtUrlSmall = bestMatch.album.coverSmall,
+                albumArtUrlLarge = bestMatch.album.coverXl ?: bestMatch.album.coverBig,
+                albumTitle = bestMatch.album.title
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Deezer cover-art search error", e)
+            null
+        }
+    }
+
     /**
      * Search for a track and get its preview URL.
      */
