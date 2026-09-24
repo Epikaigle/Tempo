@@ -3011,7 +3011,7 @@ class MusicTrackingService : NotificationListenerService() {
                     cacheTimestamp = System.currentTimeMillis(),
                 )
 
-            enrichedMetadataRepository.upsert(updatedMetadata)
+            enrichedMetadataRepository.upsertFromAutomaticEnrichment(updatedMetadata)
 
             // Log what we filled in
             val filledFields = mutableListOf<String>()
