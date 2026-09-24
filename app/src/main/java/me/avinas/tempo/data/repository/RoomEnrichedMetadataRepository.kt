@@ -34,6 +34,9 @@ class RoomEnrichedMetadataRepository @Inject constructor(
     // Write Operations (for Enrichment Services)
     
     override suspend fun upsert(metadata: EnrichedMetadata): Long = dao.upsert(metadata)
+
+    override suspend fun upsertFromAutomaticEnrichment(metadata: EnrichedMetadata): Long =
+        dao.upsertFromAutomaticEnrichment(metadata)
     
     override suspend fun createPendingIfNotExists(trackId: Long) {
         val existing = dao.forTrackSync(trackId)
