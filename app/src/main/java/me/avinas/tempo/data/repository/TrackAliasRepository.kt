@@ -166,21 +166,19 @@ open class TrackAliasRepository @Inject constructor(
                 // A user-selected cover is an explicit preference, not ordinary enrichment.
                 // Preserve the target's manual cover when it already has one; otherwise carry
                 // the source manual cover across the merge before the source row is deleted.
-                val targetHasManualCover =
-                    targetMetadata?.albumArtSource == AlbumArtSource.USER_SELECTED &&
-                        !targetMetadata.albumArtUrl.isNullOrBlank()
-                val sourceHasManualCover =
-                    sourceMetadata?.albumArtSource == AlbumArtSource.USER_SELECTED &&
-                        !sourceMetadata.albumArtUrl.isNullOrBlank()
+                val manualArtwork = preferredManualArtwork(
+                    sourceMetadata = sourceMetadata,
+                    targetMetadata = targetMetadata,
+                )
 
-                if (!targetHasManualCover && sourceHasManualCover) {
-                    val selectedUrl = sourceMetadata!!.albumArtUrl!!
+                if (manualArtwork != null) {
+                    val selectedUrl = manualArtwork.albumArtUrl!!
                     updatedTarget = updatedTarget.copy(albumArtUrl = selectedUrl)
 
                     val mergedMetadata = (targetMetadata ?: EnrichedMetadata(trackId = targetTrackId)).copy(
                         albumArtUrl = selectedUrl,
-                        albumArtUrlSmall = sourceMetadata.albumArtUrlSmall ?: selectedUrl,
-                        albumArtUrlLarge = sourceMetadata.albumArtUrlLarge ?: selectedUrl,
+                        albumArtUrlSmall = manualArtwork.albumArtUrlSmall ?: selectedUrl,
+                        albumArtUrlLarge = manualArtwork.albumArtUrlLarge ?: selectedUrl,
                         albumArtSource = AlbumArtSource.USER_SELECTED,
                         cacheTimestamp = System.currentTimeMillis(),
                     )
@@ -316,4 +314,22 @@ open class TrackAliasRepository @Inject constructor(
     suspend fun getAllAliases(): List<TrackAlias> {
         return trackAliasDao.getAllSync()
     }
+}
+
+
+/**
+ * Resolve the artwork preference for a track merge. The surviving target's explicit
+ * choice always wins; otherwise an explicit choice from the source follows the merge.
+ */
+internal fun preferredManualArtwork(
+    sourceMetadata: EnrichedMetadata?,
+    targetMetadata: EnrichedMetadata?,
+): EnrichedMetadata? {
+    fun EnrichedMetadata?.validManualArtwork(): EnrichedMetadata? =
+        this?.takeIf {
+            it.albumArtSource == AlbumArtSource.USER_SELECTED &&
+                !it.albumArtUrl.isNullOrBlank()
+        }
+
+    return targetMetadata.validManualArtwork() ?: sourceMetadata.validManualArtwork()
 }
