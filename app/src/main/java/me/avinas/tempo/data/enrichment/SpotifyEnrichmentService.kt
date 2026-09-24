@@ -600,7 +600,7 @@ class SpotifyEnrichmentService @Inject constructor(
             Log.d(TAG, "Spotify: Replacing ${existingMetadata.albumArtSource} album art with SPOTIFY source")
         }
 
-        enrichedMetadataDao.upsert(updated)
+        enrichedMetadataDao.upsertFromAutomaticEnrichment(updated)
         // Log simplified message
         Log.d(TAG, "Saved Spotify data for track $trackId (artistId: $primaryArtistId, url: ${spotifyTrack.externalUrls.spotify})")
         
