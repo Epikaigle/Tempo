@@ -155,41 +155,14 @@ class CoverArtPickerService @Inject constructor(
                     )
 
                 CoverArtProvider.LASTFM ->
-                    when (
-                        val result = lastFmEnrichmentService.searchTrackInfo(
+                    mapLastFmCoverSearchResult(
+                        result = lastFmEnrichmentService.searchTrackInfo(
                             title = track.title,
                             artist = track.artist,
-                        )
-                    ) {
-                        is LastFmEnrichmentService.LastFmResult.Success -> {
-                            val url = result.albumArtUrl?.takeIf { it.isNotBlank() }
-                            if (url == null) {
-                                CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
-                            } else {
-                                CoverArtLookupResult(
-                                    provider = provider,
-                                    status = CoverArtLookupStatus.FOUND,
-                                    candidate = CoverArtCandidate(
-                                        provider = provider,
-                                        albumArtUrl = url,
-                                        albumArtUrlLarge = url,
-                                        albumTitle = result.albumTitle,
-                                    ),
-                                )
-                            }
-                        }
-                        LastFmEnrichmentService.LastFmResult.NotConfigured ->
-                            CoverArtLookupResult(provider, CoverArtLookupStatus.UNAVAILABLE)
-                        LastFmEnrichmentService.LastFmResult.TrackNotFound,
-                        LastFmEnrichmentService.LastFmResult.AlreadyHasData ->
-                            CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
-                        is LastFmEnrichmentService.LastFmResult.Error ->
-                            CoverArtLookupResult(
-                                provider = provider,
-                                status = CoverArtLookupStatus.ERROR,
-                                message = result.message,
-                            )
-                    }
+                        ),
+                        expectedTitle = track.title,
+                        expectedArtist = track.artist,
+                    )
 
                 CoverArtProvider.DEEZER -> {
                     val result = deezerEnrichmentService.searchAlbumArt(
@@ -258,6 +231,49 @@ internal fun mapMusicBrainzCoverSearchResult(
         is MusicBrainzEnrichmentService.CoverArtSearchResult.Error ->
             CoverArtLookupResult(
                 provider = CoverArtProvider.MUSICBRAINZ,
+                status = CoverArtLookupStatus.ERROR,
+                message = result.message,
+            )
+    }
+
+internal fun mapLastFmCoverSearchResult(
+    result: LastFmEnrichmentService.LastFmResult,
+    expectedTitle: String,
+    expectedArtist: String,
+): CoverArtLookupResult =
+    when (result) {
+        is LastFmEnrichmentService.LastFmResult.Success -> {
+            val identityMatches =
+                result.trackTitle?.let { isSafeCoverTrackTitleMatch(expectedTitle, it) } == true &&
+                    result.artistName?.let { isSafeCoverArtistMatch(expectedArtist, it) } == true
+            val url = result.albumArtUrl?.takeIf { it.isNotBlank() }
+
+            if (!identityMatches || url == null) {
+                CoverArtLookupResult(
+                    provider = CoverArtProvider.LASTFM,
+                    status = CoverArtLookupStatus.NOT_FOUND,
+                )
+            } else {
+                CoverArtLookupResult(
+                    provider = CoverArtProvider.LASTFM,
+                    status = CoverArtLookupStatus.FOUND,
+                    candidate = CoverArtCandidate(
+                        provider = CoverArtProvider.LASTFM,
+                        albumArtUrl = url,
+                        albumArtUrlLarge = url,
+                        albumTitle = result.albumTitle,
+                    ),
+                )
+            }
+        }
+        LastFmEnrichmentService.LastFmResult.NotConfigured ->
+            CoverArtLookupResult(CoverArtProvider.LASTFM, CoverArtLookupStatus.UNAVAILABLE)
+        LastFmEnrichmentService.LastFmResult.TrackNotFound,
+        LastFmEnrichmentService.LastFmResult.AlreadyHasData ->
+            CoverArtLookupResult(CoverArtProvider.LASTFM, CoverArtLookupStatus.NOT_FOUND)
+        is LastFmEnrichmentService.LastFmResult.Error ->
+            CoverArtLookupResult(
+                provider = CoverArtProvider.LASTFM,
                 status = CoverArtLookupStatus.ERROR,
                 message = result.message,
             )
