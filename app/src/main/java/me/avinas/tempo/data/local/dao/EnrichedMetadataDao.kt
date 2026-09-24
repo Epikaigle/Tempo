@@ -15,6 +15,9 @@ interface EnrichedMetadataDao {
     
     @Query("SELECT * FROM enriched_metadata WHERE track_id = :trackId LIMIT 1")
     suspend fun forTrackSync(trackId: Long): EnrichedMetadata?
+
+    @Query("SELECT * FROM enriched_metadata WHERE track_id IN (:trackIds)")
+    suspend fun forTracksSync(trackIds: List<Long>): List<EnrichedMetadata>
     
     @Query("SELECT * FROM enriched_metadata WHERE musicbrainz_recording_id = :mbid LIMIT 1")
     suspend fun findByMusicBrainzId(mbid: String): EnrichedMetadata?
@@ -106,12 +109,26 @@ interface EnrichedMetadataDao {
     suspend fun upsertAllFromAutomaticEnrichment(
         metadata: List<EnrichedMetadata>,
     ): List<Long> {
-        val ids = ArrayList<Long>(metadata.size)
+        if (metadata.isEmpty()) return emptyList()
+
+        // Last.fm currently flushes at 500 rows, safely below Android SQLite's
+        // conservative bind-variable limit. Read existing rows once instead of
+        // issuing one SELECT per imported metadata row.
+        val currentByTrackId = forTracksSync(metadata.map { it.trackId }.distinct())
+            .associateBy { it.trackId }
+            .toMutableMap()
+        val merged = ArrayList<EnrichedMetadata>(metadata.size)
+
         for (item in metadata) {
-            val current = forTrackSync(item.trackId)
-            ids += upsert(mergeAutomaticEnrichmentArtwork(current, item))
+            val resolved = mergeAutomaticEnrichmentArtwork(
+                current = currentByTrackId[item.trackId],
+                incoming = item,
+            )
+            currentByTrackId[item.trackId] = resolved
+            merged += resolved
         }
-        return ids
+
+        return upsertAll(merged)
     }
     
     @Update
@@ -656,11 +673,10 @@ internal fun mergeAutomaticEnrichmentArtwork(
     // resurrecting the old manual URL or prematurely erasing the reset marker.
     if (current?.albumArtSource == AlbumArtSource.USER_RESET) {
         val incomingHasRealAutomaticArtwork =
-            incoming.albumArtSource !in setOf(
-                AlbumArtSource.NONE,
-                AlbumArtSource.USER_RESET,
-                AlbumArtSource.USER_SELECTED,
-            ) && !incoming.albumArtUrl.isNullOrBlank()
+            incoming.albumArtSource != AlbumArtSource.NONE &&
+                incoming.albumArtSource != AlbumArtSource.USER_RESET &&
+                incoming.albumArtSource != AlbumArtSource.USER_SELECTED &&
+                !incoming.albumArtUrl.isNullOrBlank()
 
         if (!incomingHasRealAutomaticArtwork) {
             return incoming.copy(
