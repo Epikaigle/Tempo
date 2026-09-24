@@ -33,7 +33,7 @@ class AutomaticArtworkWriteGuardTest {
         val currentAfterReset = EnrichedMetadata(
             trackId = 1L,
             albumArtUrl = null,
-            albumArtSource = AlbumArtSource.NONE,
+            albumArtSource = AlbumArtSource.USER_RESET,
         )
         val staleManual = EnrichedMetadata(
             trackId = 1L,
@@ -44,7 +44,7 @@ class AutomaticArtworkWriteGuardTest {
 
         val merged = mergeAutomaticEnrichmentArtwork(currentAfterReset, staleManual)
 
-        assertEquals(AlbumArtSource.NONE, merged.albumArtSource)
+        assertEquals(AlbumArtSource.USER_RESET, merged.albumArtSource)
         assertEquals(null, merged.albumArtUrl)
         assertEquals(listOf("Rock"), merged.genres)
     }
@@ -64,4 +64,33 @@ class AutomaticArtworkWriteGuardTest {
 
         assertEquals(incoming, mergeAutomaticEnrichmentArtwork(current, incoming))
     }
+    @Test
+    fun resetTombstoneClearsOnlyWhenRealAutomaticArtworkArrives() {
+        val currentAfterReset = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = null,
+            albumArtSource = AlbumArtSource.USER_RESET,
+        )
+        val incomingWithoutArtwork = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = null,
+            albumArtSource = AlbumArtSource.NONE,
+            genres = listOf("Pop"),
+        )
+        val incomingWithArtwork = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = "https://itunes.example/new.jpg",
+            albumArtSource = AlbumArtSource.ITUNES,
+        )
+
+        val stillReset = mergeAutomaticEnrichmentArtwork(currentAfterReset, incomingWithoutArtwork)
+        val replaced = mergeAutomaticEnrichmentArtwork(currentAfterReset, incomingWithArtwork)
+
+        assertEquals(AlbumArtSource.USER_RESET, stillReset.albumArtSource)
+        assertEquals(null, stillReset.albumArtUrl)
+        assertEquals(listOf("Pop"), stillReset.genres)
+        assertEquals(AlbumArtSource.ITUNES, replaced.albumArtSource)
+        assertEquals("https://itunes.example/new.jpg", replaced.albumArtUrl)
+    }
+
 }
