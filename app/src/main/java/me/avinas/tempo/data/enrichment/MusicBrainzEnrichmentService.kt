@@ -93,6 +93,66 @@ class MusicBrainzEnrichmentService @Inject constructor(
         object CacheHit : EnrichmentResult()
     }
 
+    data class CoverArtLookupResult(
+        val albumArtUrl: String,
+        val albumArtUrlSmall: String? = null,
+        val albumArtUrlLarge: String? = null,
+        val albumTitle: String? = null,
+    )
+
+    /**
+     * Finds Cover Art Archive artwork without mutating enrichment state.
+     * Used by the user-driven cover picker so artwork can be compared before saving.
+     */
+    suspend fun searchCoverArt(
+        track: Track,
+        currentMetadata: EnrichedMetadata? = null,
+    ): CoverArtLookupResult? {
+        if (ArtistParser.isUnknownArtist(track.artist)) return null
+
+        currentMetadata?.musicbrainzReleaseId?.let { releaseId ->
+            fetchCoverArt(releaseId)?.let { art ->
+                return CoverArtLookupResult(
+                    albumArtUrl = art.large ?: art.medium ?: art.small ?: return@let,
+                    albumArtUrlSmall = art.small,
+                    albumArtUrlLarge = art.large,
+                    albumTitle = currentMetadata.albumTitle ?: track.album,
+                )
+            }
+        }
+
+        currentMetadata?.musicbrainzReleaseGroupId?.let { groupId ->
+            fetchReleaseGroupCoverArt(groupId)?.let { art ->
+                return CoverArtLookupResult(
+                    albumArtUrl = art.large ?: art.medium ?: art.small ?: return@let,
+                    albumArtUrlSmall = art.small,
+                    albumArtUrlLarge = art.large,
+                    albumTitle = currentMetadata.albumTitle ?: track.album,
+                )
+            }
+        }
+
+        val result = searchRecording(track.title, track.artist)
+        if (result !is SearchResult.Found) return null
+
+        val detailed = fetchRecordingDetails(result.recording.id)
+        val release = detailed?.releases?.firstOrNull()
+            ?: result.recording.releases?.firstOrNull()
+            ?: return null
+
+        val art = fetchCoverArt(release.id)
+            ?: release.releaseGroup?.id?.let { fetchReleaseGroupCoverArt(it) }
+            ?: return null
+        val best = art.large ?: art.medium ?: art.small ?: return null
+
+        return CoverArtLookupResult(
+            albumArtUrl = best,
+            albumArtUrlSmall = art.small,
+            albumArtUrlLarge = art.large,
+            albumTitle = release.title ?: currentMetadata?.albumTitle ?: track.album,
+        )
+    }
+
     /**
      * Enrich a track with MusicBrainz metadata.
      * 
