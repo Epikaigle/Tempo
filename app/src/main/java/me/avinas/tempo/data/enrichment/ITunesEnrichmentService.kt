@@ -220,11 +220,10 @@ class ITunesEnrichmentService @Inject constructor(
         }
         
         Log.d(TAG, "iTunes search exhausted all strategies for '$artist' - '$track'")
-        return if (hadSuccessfulResponse) {
-            iTunesResult.NotFound
-        } else {
-            iTunesResult.Error(lastProviderError ?: "iTunes lookup failed")
-        }
+        return resolveITunesCoverSearchTerminalResult(
+            hadSuccessfulResponse = hadSuccessfulResponse,
+            lastProviderError = lastProviderError,
+        )
     }
     
     /**
@@ -855,3 +854,13 @@ class ITunesEnrichmentService @Inject constructor(
      */
     fun isAvailable(): Boolean = true
 }
+
+internal fun resolveITunesCoverSearchTerminalResult(
+    hadSuccessfulResponse: Boolean,
+    lastProviderError: String?,
+): ITunesEnrichmentService.iTunesResult =
+    if (hadSuccessfulResponse) {
+        ITunesEnrichmentService.iTunesResult.NotFound
+    } else {
+        ITunesEnrichmentService.iTunesResult.Error(lastProviderError ?: "iTunes lookup failed")
+    }
