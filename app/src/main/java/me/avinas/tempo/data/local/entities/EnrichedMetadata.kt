@@ -346,16 +346,19 @@ enum class EnrichmentStatus {
  * 4. ITUNES (4) - Apple Music artwork (high quality)
  * 5. DEEZER (3) - Deezer album artwork
  * 6. LOCAL (2) - Extracted from MediaSession/notification
- * 7. NONE (0) - No album art yet
+ * 7. NONE / USER_RESET (0) - No automatic album art currently selected
  * 
  * Key behavior:
  * - LOCAL art can be replaced by any API source
  * - API sources generally shouldn't be replaced by lower priority sources
  * - Same-priority sources can replace each other (to refresh stale art)
  * - USER_SELECTED is only changed by an explicit user action
+ * - USER_RESET is an internal tombstone that prevents stale full-row Track writes
+ *   from resurrecting a manual cover after the user returns to automatic selection
  */
 enum class AlbumArtSource(val priority: Int) {
     NONE(0),
+    USER_RESET(0),   // Explicit reset tombstone; any real automatic source may replace it
     LOCAL(2),        // Extracted from device (MediaSession/notification)
     DEEZER(3),       // Deezer album artwork
     ITUNES(4),       // iTunes/Apple Music artwork
@@ -380,7 +383,8 @@ enum class AlbumArtSource(val priority: Int) {
     /**
      * Check if this is an API source (not local or none).
      */
-    fun isApiSource(): Boolean = this != NONE && this != LOCAL && this != USER_SELECTED
+    fun isApiSource(): Boolean =
+        this != NONE && this != USER_RESET && this != LOCAL && this != USER_SELECTED
 
     /** True only for an explicit artwork choice made by the user. */
     fun isUserSelected(): Boolean = this == USER_SELECTED
