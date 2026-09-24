@@ -136,7 +136,7 @@ class LastFmEnrichmentService
         suspend fun searchTrackInfo(title: String, artist: String): LastFmResult {
             if (!isAvailable()) return LastFmResult.NotConfigured
             if (ArtistParser.isUnknownArtist(artist)) {
-                return LastFmResult.Error("Artist unknown")
+                return LastFmResult.TrackNotFound
             }
             return fetchTrackInfo(title, artist, getApiKey())
         }
