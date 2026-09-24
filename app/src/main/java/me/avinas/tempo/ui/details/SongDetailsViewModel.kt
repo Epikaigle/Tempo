@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.enrichment.CoverArtCandidate
 import me.avinas.tempo.data.enrichment.CoverArtPickerService
+import me.avinas.tempo.data.enrichment.CoverArtProvider
 import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.entities.AlbumArtSource
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
@@ -75,6 +76,7 @@ class SongDetailsViewModel @Inject constructor(
     // ExoPlayer for 30-second audio preview
     private var exoPlayer: ExoPlayer? = null
     private var previewProgressJob: Job? = null
+    private var coverLookupJob: Job? = null
 
     private val _isPlayingPreview = MutableStateFlow(false)
     val isPlayingPreview: StateFlow<Boolean> = _isPlayingPreview.asStateFlow()
@@ -243,6 +245,7 @@ class SongDetailsViewModel @Inject constructor(
                 isSavingCover = false,
                 coverPickerError = null,
                 coverCandidates = emptyList(),
+                coverLookupFinished = emptySet(),
             )
         }
         loadCoverCandidates()
@@ -250,6 +253,8 @@ class SongDetailsViewModel @Inject constructor(
 
     fun dismissCoverPicker() {
         if (_uiState.value.isSavingCover) return
+        coverLookupJob?.cancel()
+        coverLookupJob = null
         _uiState.update {
             it.copy(
                 showCoverPicker = false,
@@ -265,22 +270,45 @@ class SongDetailsViewModel @Inject constructor(
 
     private fun loadCoverCandidates() {
         val track = _uiState.value.trackDetails?.track ?: return
-        viewModelScope.launch {
+        coverLookupJob?.cancel()
+        coverLookupJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isLoadingCoverCandidates = true,
                     coverPickerError = null,
+                    coverCandidates = listOfNotNull(coverArtPickerService.currentCandidate(track)),
+                    coverLookupFinished = emptySet(),
                 )
             }
+
             try {
                 val metadata = enrichedMetadataRepository.forTrackSync(trackId)
-                val candidates = coverArtPickerService.search(track, metadata)
-                _uiState.update {
-                    it.copy(
-                        isLoadingCoverCandidates = false,
-                        coverCandidates = candidates,
-                        coverPickerError = null,
-                    )
+                coroutineScope {
+                    CoverArtPickerService.REMOTE_PROVIDERS.forEach { provider ->
+                        launch {
+                            val candidate = coverArtPickerService.searchProvider(provider, track, metadata)
+                            _uiState.update { state ->
+                                val finished = state.coverLookupFinished + provider
+                                val candidates = if (candidate != null) {
+                                    (state.coverCandidates.filterNot { it.provider == provider } + candidate)
+                                        .sortedBy { item ->
+                                            when (item.provider) {
+                                                CoverArtProvider.CURRENT -> -1
+                                                else -> CoverArtPickerService.REMOTE_PROVIDERS.indexOf(item.provider)
+                                            }
+                                        }
+                                } else {
+                                    state.coverCandidates
+                                }
+                                state.copy(
+                                    coverCandidates = candidates,
+                                    coverLookupFinished = finished,
+                                    isLoadingCoverCandidates =
+                                        finished.size < CoverArtPickerService.REMOTE_PROVIDERS.size,
+                                )
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.update {
@@ -448,6 +476,8 @@ class SongDetailsViewModel @Inject constructor(
         _previewProgress.value = 0f
         _previewPositionMs.value = 0L
         previewProgressJob?.cancel()
+        coverLookupJob?.cancel()
+        coverLookupJob = null
         exoPlayer?.stop()
     }
 
@@ -640,5 +670,6 @@ data class SongDetailsUiState(
     val isSavingCover: Boolean = false,
     val coverPickerError: String? = null,
     val coverCandidates: List<CoverArtCandidate> = emptyList(),
+    val coverLookupFinished: Set<CoverArtProvider> = emptySet(),
     val isManualCover: Boolean = false,
 )
