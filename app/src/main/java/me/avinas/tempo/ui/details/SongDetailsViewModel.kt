@@ -328,7 +328,7 @@ class SongDetailsViewModel @Inject constructor(
     }
 
     fun selectCover(candidate: CoverArtCandidate) {
-        val currentDetails = _uiState.value.trackDetails ?: return
+        if (_uiState.value.trackDetails == null) return
         if (_uiState.value.isSavingCover) return
 
         coverLookupJob?.cancel()
@@ -382,7 +382,7 @@ class SongDetailsViewModel @Inject constructor(
     }
 
     fun resetCoverToAutomatic() {
-        val current = _uiState.value.trackDetails?.track ?: return
+        if (_uiState.value.trackDetails == null) return
         if (_uiState.value.isSavingCover) return
 
         coverLookupJob?.cancel()
