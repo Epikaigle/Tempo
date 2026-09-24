@@ -340,7 +340,8 @@ enum class EnrichmentStatus {
  * Higher priority sources provide higher quality, more reliable artwork.
  * 
  * Priority order (highest to lowest):
- * 1. SPOTIFY (6) - Official album artwork from Spotify
+ * 1. USER_SELECTED (100) - Explicit user choice; never replaced automatically
+ * 2. SPOTIFY (6) - Official album artwork from Spotify
  * 2. MUSICBRAINZ (5) - Cover Art Archive (community verified)
  * 3. ITUNES (4) - Apple Music artwork (high quality)
  * 4. DEEZER (3) - Deezer album artwork
@@ -351,6 +352,7 @@ enum class EnrichmentStatus {
  * - LOCAL art can be replaced by any API source
  * - API sources generally shouldn't be replaced by lower priority sources
  * - Same-priority sources can replace each other (to refresh stale art)
+ * - USER_SELECTED is only changed by an explicit user action
  */
 enum class AlbumArtSource(val priority: Int) {
     NONE(0),
@@ -358,7 +360,8 @@ enum class AlbumArtSource(val priority: Int) {
     DEEZER(3),       // Deezer album artwork
     ITUNES(4),       // iTunes/Apple Music artwork
     MUSICBRAINZ(5),  // Cover Art Archive (community verified)
-    SPOTIFY(6);      // Spotify official artwork (highest priority)
+    SPOTIFY(6),      // Spotify official artwork (highest automatic priority)
+    USER_SELECTED(100); // Explicit user choice; locked against automatic replacement
     
     /**
      * Check if this source should be replaced by another.
