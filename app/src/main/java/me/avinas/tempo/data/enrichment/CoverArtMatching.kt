@@ -2,12 +2,28 @@ package me.avinas.tempo.data.enrichment
 
 import me.avinas.tempo.utils.ArtistParser
 
+private val COVER_VERSION_MARKERS = setOf(
+    "remaster",
+    "remastered",
+    "remix",
+    "mix",
+    "edit",
+    "version",
+    "live",
+    "acoustic",
+    "instrumental",
+    "mono",
+    "stereo",
+    "deluxe",
+)
+
 /**
- * Strict-enough title matching for user-facing cover candidates.
+ * Conservative title matching for user-facing cover candidates.
  *
- * Exact normalized titles always match, including very short song names. Partial
- * containment is allowed only for titles of at least four characters so a short
- * title such as "XO" cannot accidentally match an unrelated longer song.
+ * Exact normalized titles always match. A prefix match is accepted only when the
+ * extra suffix clearly describes a version of the same recording (for example
+ * "2011 remaster", "live", or "radio edit"). Ordinary longer titles such as
+ * "Stay High" or "Homecoming" are deliberately rejected.
  */
 internal fun isSafeCoverTrackTitleMatch(
     expectedTitle: String,
@@ -23,8 +39,45 @@ internal fun isSafeCoverTrackTitleMatch(
     if (expected.isBlank() || candidate.isBlank()) return false
     if (expected == candidate) return true
 
-    val shorterLength = minOf(expected.length, candidate.length)
-    if (shorterLength < 4) return false
+    fun isRecognizedVersionSuffix(base: String, longer: String): Boolean {
+        if (!longer.startsWith("$base ")) return false
+        val suffixTokens = longer
+            .removePrefix(base)
+            .trim()
+            .split(" ")
+            .filter { it.isNotBlank() }
 
-    return expected.contains(candidate) || candidate.contains(expected)
+        return suffixTokens.any { token -> token in COVER_VERSION_MARKERS }
+    }
+
+    return isRecognizedVersionSuffix(expected, candidate) ||
+        isRecognizedVersionSuffix(candidate, expected)
+}
+
+/**
+ * Strict artist validation for artwork providers.
+ *
+ * Provider candidates must contain at least one parsed artist that is an exact
+ * normalized match (allowing only the existing "The X" vs "X" normalization).
+ * This intentionally avoids the broader fuzzy/Jaccard matcher used elsewhere in
+ * Tempo, so "Drake" cannot validate "Drake Bell".
+ */
+internal fun isSafeCoverArtistMatch(
+    expectedArtist: String,
+    candidateArtist: String,
+): Boolean {
+    if (ArtistParser.isUnknownArtist(expectedArtist) ||
+        ArtistParser.isUnknownArtist(candidateArtist)
+    ) {
+        return false
+    }
+
+    val expectedArtists = ArtistParser.getAllArtists(expectedArtist)
+    val candidateArtists = ArtistParser.getAllArtists(candidateArtist)
+
+    return expectedArtists.any { expected ->
+        candidateArtists.any { candidate ->
+            ArtistParser.isStrictSameArtist(expected, candidate)
+        }
+    }
 }
