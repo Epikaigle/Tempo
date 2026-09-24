@@ -1308,4 +1308,7 @@
     <string name="details_cover_restore_auto">Вернуться к автоматическому выбору</string>
     <string name="details_cover_restore_auto_hint">Tempo снова сможет автоматически выбирать обложку.</string>
     <string name="details_cover_try_again">Искать снова</string>
+
+    <string name="details_cover_unavailable">Недоступно</string>
+    <string name="details_cover_error">Ошибка поиска</string>
 </resources>
