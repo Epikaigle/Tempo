@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.R
 import me.avinas.tempo.data.enrichment.CoverArtCandidate
+import me.avinas.tempo.data.enrichment.CoverArtLookupStatus
 import me.avinas.tempo.data.enrichment.CoverArtPickerService
 import me.avinas.tempo.data.enrichment.CoverArtProvider
 import me.avinas.tempo.ui.components.AlbumArtImage
@@ -168,12 +169,15 @@ internal fun CoverArtPickerSheet(
                 ) {
                     providers.forEach { provider ->
                         val candidate = state.coverCandidates.firstOrNull { it.provider == provider }
-                        val finished = provider == CoverArtProvider.CURRENT ||
-                            provider in state.coverLookupFinished
+                        val status = if (provider == CoverArtProvider.CURRENT) {
+                            if (candidate != null) CoverArtLookupStatus.FOUND else CoverArtLookupStatus.NOT_FOUND
+                        } else {
+                            state.coverProviderStatuses[provider] ?: CoverArtLookupStatus.LOADING
+                        }
                         CoverProviderCard(
                             provider = provider,
                             candidate = candidate,
-                            loading = !finished,
+                            status = status,
                             selected = selectedProvider == provider && candidate != null,
                             onClick = {
                                 if (candidate != null && !state.isSavingCover) {
@@ -186,13 +190,17 @@ internal fun CoverArtPickerSheet(
                 }
             }
 
-            state.coverPickerError?.let { error ->
+            val hasProviderError = state.coverProviderStatuses.values
+                .any { it == CoverArtLookupStatus.ERROR }
+            if (state.coverPickerError != null || hasProviderError) {
                 Spacer(modifier = Modifier.height(14.dp))
-                Text(
-                    text = error,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                state.coverPickerError?.let { error ->
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 TextButton(
                     onClick = onRetry,
                     enabled = !state.isLoadingCoverCandidates && !state.isSavingCover,
@@ -250,7 +258,7 @@ internal fun CoverArtPickerSheet(
 private fun CoverProviderCard(
     provider: CoverArtProvider,
     candidate: CoverArtCandidate?,
-    loading: Boolean,
+    status: CoverArtLookupStatus,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -293,11 +301,25 @@ private fun CoverProviderCard(
                         )
                     }
                 }
-                loading -> {
+                status == CoverArtLookupStatus.LOADING -> {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
                         strokeWidth = 2.dp,
                         color = TempoPrimary,
+                    )
+                }
+                status == CoverArtLookupStatus.UNAVAILABLE -> {
+                    Text(
+                        text = stringResource(R.string.details_cover_unavailable),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextTertiary,
+                    )
+                }
+                status == CoverArtLookupStatus.ERROR -> {
+                    Text(
+                        text = stringResource(R.string.details_cover_error),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
                 else -> {
@@ -320,7 +342,9 @@ private fun CoverProviderCard(
         Text(
             text = when {
                 candidate?.albumTitle?.isNotBlank() == true -> candidate.albumTitle.orEmpty()
-                loading -> stringResource(R.string.details_cover_searching)
+                status == CoverArtLookupStatus.LOADING -> stringResource(R.string.details_cover_searching)
+                status == CoverArtLookupStatus.UNAVAILABLE -> stringResource(R.string.details_cover_unavailable)
+                status == CoverArtLookupStatus.ERROR -> stringResource(R.string.details_cover_error)
                 else -> ""
             },
             style = MaterialTheme.typography.labelSmall,
