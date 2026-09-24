@@ -119,7 +119,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
                     albumArtUrl = best,
                     albumArtUrlSmall = art.small,
                     albumArtUrlLarge = art.large,
-                    albumTitle = currentMetadata.albumTitle ?: track.album,
+                    albumTitle = currentMetadata?.albumTitle ?: track.album,
                 )
             }
         }
