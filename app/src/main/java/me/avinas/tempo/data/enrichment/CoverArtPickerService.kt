@@ -1,7 +1,7 @@
 package me.avinas.tempo.data.enrichment
 
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.supervisorScope
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.Track
 import javax.inject.Inject
@@ -11,6 +11,7 @@ enum class CoverArtProvider {
     CURRENT,
     SPOTIFY,
     APPLE_MUSIC,
+    MUSICBRAINZ,
     LASTFM,
     DEEZER,
 }
@@ -32,35 +33,49 @@ data class CoverArtCandidate(
 class CoverArtPickerService @Inject constructor(
     private val spotifyEnrichmentService: SpotifyEnrichmentService,
     private val iTunesEnrichmentService: ITunesEnrichmentService,
+    private val musicBrainzEnrichmentService: MusicBrainzEnrichmentService,
     private val lastFmEnrichmentService: LastFmEnrichmentService,
     private val deezerEnrichmentService: DeezerEnrichmentService,
 ) {
     suspend fun search(
         track: Track,
         currentMetadata: EnrichedMetadata?,
-    ): List<CoverArtCandidate> = coroutineScope {
+    ): List<CoverArtCandidate> = supervisorScope {
         val albumHint = track.album ?: currentMetadata?.albumTitle
 
-        val spotifyDeferred = async { spotifyEnrichmentService.fetchBasicMetadata(track) }
+        val spotifyDeferred = async {
+            runCatching { spotifyEnrichmentService.fetchBasicMetadata(track) }.getOrNull()
+        }
         val iTunesDeferred = async {
-            iTunesEnrichmentService.searchAlbumArt(
-                artist = track.artist,
-                album = albumHint,
-                track = track.title,
-            )
+            runCatching {
+                iTunesEnrichmentService.searchAlbumArt(
+                    artist = track.artist,
+                    album = albumHint,
+                    track = track.title,
+                )
+            }.getOrNull()
+        }
+        val musicBrainzDeferred = async {
+            runCatching {
+                musicBrainzEnrichmentService.searchCoverArt(track, currentMetadata)
+            }.getOrNull()
         }
         val lastFmDeferred = async {
-            lastFmEnrichmentService.searchTrackInfo(
-                title = track.title,
-                artist = track.artist,
-            )
+            runCatching {
+                lastFmEnrichmentService.searchTrackInfo(
+                    title = track.title,
+                    artist = track.artist,
+                )
+            }.getOrNull()
         }
         val deezerDeferred = async {
-            deezerEnrichmentService.searchAlbumArt(
-                artist = track.artist,
-                track = track.title,
-                album = albumHint,
-            )
+            runCatching {
+                deezerEnrichmentService.searchAlbumArt(
+                    artist = track.artist,
+                    track = track.title,
+                    album = albumHint,
+                )
+            }.getOrNull()
         }
 
         val candidates = mutableListOf<CoverArtCandidate>()
@@ -101,6 +116,16 @@ class CoverArtPickerService @Inject constructor(
                     albumTitle = result.albumTitle,
                 )
             }
+
+        musicBrainzDeferred.await()?.let { result ->
+            candidates += CoverArtCandidate(
+                provider = CoverArtProvider.MUSICBRAINZ,
+                albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
+                albumArtUrlSmall = result.albumArtUrlSmall,
+                albumArtUrlLarge = result.albumArtUrlLarge,
+                albumTitle = result.albumTitle,
+            )
+        }
 
         (lastFmDeferred.await() as? LastFmEnrichmentService.LastFmResult.Success)
             ?.let { result ->
