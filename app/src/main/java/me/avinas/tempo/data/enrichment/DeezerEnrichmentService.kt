@@ -58,6 +58,8 @@ class DeezerEnrichmentService @Inject constructor(
         track: String,
         album: String? = null
     ): CoverArtResult? {
+        if (me.avinas.tempo.utils.ArtistParser.isUnknownArtist(artist)) return null
+
         try {
             val cleanArtist = me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
             val cleanTrack = me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track)
