@@ -787,8 +787,8 @@ fun SongHeroEditorialStage(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(10.dp)
-                        .size(36.dp)
+                        .padding(8.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
                         .background(TempoDarkSurface.copy(alpha = 0.90f))
                         .border(0.8.dp, GlassBorderMedium, CircleShape)
@@ -799,7 +799,7 @@ fun SongHeroEditorialStage(
                         imageVector = Icons.Rounded.Edit,
                         contentDescription = stringResource(R.string.details_change_cover),
                         tint = TextPrimary,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
