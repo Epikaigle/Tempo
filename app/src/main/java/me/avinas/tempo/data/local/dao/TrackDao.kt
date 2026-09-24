@@ -1,6 +1,7 @@
 package me.avinas.tempo.data.local.dao
 
 import androidx.room.*
+import me.avinas.tempo.data.local.entities.AlbumArtSource
 import me.avinas.tempo.data.local.entities.Artist
 import me.avinas.tempo.data.local.entities.Track
 import kotlinx.coroutines.flow.Flow
@@ -49,10 +50,36 @@ interface TrackDao {
     """)
     suspend fun getManualAlbumArtUrl(trackId: Long): String?
 
+    @Query("SELECT album_art_source FROM enriched_metadata WHERE track_id = :trackId LIMIT 1")
+    suspend fun getAlbumArtSource(trackId: Long): AlbumArtSource?
+
+    @Query("SELECT album_art_url FROM tracks WHERE id = :trackId LIMIT 1")
+    suspend fun getCurrentTrackAlbumArtUrl(trackId: Long): String?
+
     @Transaction
     suspend fun updatePreservingManualArtwork(track: Track) {
-        val manualArt = getManualAlbumArtUrl(track.id)
-        update(if (manualArt != null) track.copy(albumArtUrl = manualArt) else track)
+        val source = getAlbumArtSource(track.id)
+        val manualArt = if (source == AlbumArtSource.USER_SELECTED) {
+            getManualAlbumArtUrl(track.id)
+        } else {
+            null
+        }
+        val currentTrackArt = if (source == AlbumArtSource.USER_RESET) {
+            getCurrentTrackAlbumArtUrl(track.id)
+        } else {
+            null
+        }
+
+        update(
+            track.copy(
+                albumArtUrl = resolveProtectedTrackArtwork(
+                    source = source,
+                    manualArtUrl = manualArt,
+                    currentTrackArtUrl = currentTrackArt,
+                    incomingArtUrl = track.albumArtUrl,
+                )
+            )
+        )
     }
 
     /**
@@ -345,3 +372,15 @@ interface TrackDao {
     suspend fun updateArtistString(trackId: Long, artist: String): Int
 }
 
+
+internal fun resolveProtectedTrackArtwork(
+    source: AlbumArtSource?,
+    manualArtUrl: String?,
+    currentTrackArtUrl: String?,
+    incomingArtUrl: String?,
+): String? =
+    when (source) {
+        AlbumArtSource.USER_SELECTED -> manualArtUrl ?: currentTrackArtUrl ?: incomingArtUrl
+        AlbumArtSource.USER_RESET -> currentTrackArtUrl
+        else -> incomingArtUrl
+    }
