@@ -14,6 +14,7 @@ import me.avinas.tempo.data.remote.spotify.SpotifyAuthManager
 import me.avinas.tempo.data.remote.spotify.SpotifyFullArtist
 import me.avinas.tempo.data.remote.spotify.SpotifyTrack
 import me.avinas.tempo.utils.ArtistParser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -49,6 +50,63 @@ class SpotifyEnrichmentService @Inject constructor(
         object NotConnected : SpotifyEnrichmentResult()
         object TrackNotFound : SpotifyEnrichmentResult()
         data class Error(val message: String, val retryable: Boolean = true) : SpotifyEnrichmentResult()
+    }
+
+    sealed class SpotifyCoverArtResult {
+        data class Success(
+            val albumArtUrl: String,
+            val title: String? = null,
+        ) : SpotifyCoverArtResult()
+
+        object Unavailable : SpotifyCoverArtResult()
+        object NotFound : SpotifyCoverArtResult()
+        data class Error(val message: String) : SpotifyCoverArtResult()
+    }
+
+    /**
+     * Fetch cover art from Spotify's public oEmbed endpoint when Tempo already knows
+     * the Spotify identity of the track. This does not re-enable authenticated Spotify
+     * Web API search; it only resolves artwork for an existing Spotify ID/URL.
+     */
+    suspend fun fetchCoverArtForPicker(
+        track: Track,
+        existingMetadata: EnrichedMetadata?,
+    ): SpotifyCoverArtResult {
+        val spotifyId = track.spotifyId
+            ?.takeIf { it.isNotBlank() }
+            ?: existingMetadata?.spotifyId?.takeIf { it.isNotBlank() }
+            ?: existingMetadata?.spotifyTrackUrl
+                ?.substringAfter("/track/", "")
+                ?.substringBefore('?')
+                ?.takeIf { it.isNotBlank() }
+
+        if (spotifyId.isNullOrBlank()) return SpotifyCoverArtResult.Unavailable
+
+        return try {
+            val spotifyUrl = "https://open.spotify.com/track/$spotifyId"
+            val response = spotifyApi.getOEmbed(spotifyUrl)
+            when {
+                response.isSuccessful -> {
+                    val body = response.body()
+                    val art = body?.thumbnailUrl?.takeIf { it.isNotBlank() }
+                    if (art != null) {
+                        SpotifyCoverArtResult.Success(
+                            albumArtUrl = art,
+                            title = body.title,
+                        )
+                    } else {
+                        SpotifyCoverArtResult.NotFound
+                    }
+                }
+                response.code() == 404 -> SpotifyCoverArtResult.NotFound
+                else -> SpotifyCoverArtResult.Error("Spotify oEmbed error: ${response.code()}")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Spotify oEmbed artwork lookup failed", e)
+            SpotifyCoverArtResult.Error(e.message ?: "Spotify artwork lookup failed")
+        }
     }
 
     /**
