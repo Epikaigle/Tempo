@@ -442,7 +442,7 @@ class EnrichmentWorker @AssistedInject constructor(
                         albumArtUrl = fixedArtUrl,
                         album = if (track.album.isNullOrBlank()) metadata.albumTitle else track.album
                     )
-                    trackDao.update(updatedTrack)
+                    trackDao.updatePreservingManualArtwork(updatedTrack)
                     
                     // Also update the enriched metadata if URL was fixed
                     if (fixedArtUrl != metadata.albumArtUrl) {
@@ -580,7 +580,7 @@ class EnrichmentWorker @AssistedInject constructor(
                         // Also update album name if track is missing it
                         album = if (currentTrack.album.isNullOrBlank()) finalMetadata.albumTitle else currentTrack.album
                     )
-                    trackDao.update(updatedTrack)
+                    trackDao.updatePreservingManualArtwork(updatedTrack)
                     
                     // Also update the enriched metadata if URL was changed
                     if (fixedArtUrl != finalMetadata.albumArtUrl) {
