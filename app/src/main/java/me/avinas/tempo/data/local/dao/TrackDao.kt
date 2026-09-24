@@ -41,6 +41,10 @@ interface TrackDao {
     @Query("UPDATE tracks SET title = :title WHERE id = :trackId")
     suspend fun updateTitle(trackId: Long, title: String)
 
+    /** Update only the artwork URL without overwriting concurrently refreshed track metadata. */
+    @Query("UPDATE tracks SET album_art_url = :albumArtUrl WHERE id = :trackId")
+    suspend fun updateAlbumArtUrl(trackId: Long, albumArtUrl: String?)
+
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId AND (youtube_id IS NULL OR youtube_id = '')")
     suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int
 
