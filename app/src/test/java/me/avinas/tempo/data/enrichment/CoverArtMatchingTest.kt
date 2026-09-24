@@ -20,6 +20,8 @@ class CoverArtMatchingTest {
     fun ordinaryLongerTitleIsRejected() {
         assertFalse(isSafeCoverTrackTitleMatch("Stay", "Stay High"))
         assertFalse(isSafeCoverTrackTitleMatch("Home", "Homecoming"))
+        assertFalse(isSafeCoverTrackTitleMatch("Stay", "Stay Live Forever"))
+        assertFalse(isSafeCoverTrackTitleMatch("Song", "Song Mix Tape"))
     }
 
     @Test
