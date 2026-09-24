@@ -439,10 +439,10 @@ class EnrichmentWorker @AssistedInject constructor(
                     // Fix HTTP URLs to HTTPS for better reliability
                     val fixedArtUrl = MusicBrainzEnrichmentService.fixHttpUrl(metadata.albumArtUrl)
                     val updatedTrack = track.copy(
-                        albumArtUrl = fixedArtUrl,
                         album = if (track.album.isNullOrBlank()) metadata.albumTitle else track.album
                     )
                     trackDao.updatePreservingManualArtwork(updatedTrack)
+                    trackDao.updateAutomaticAlbumArtUrl(metadata.trackId, fixedArtUrl)
                     
                     // Also update the enriched metadata if URL was fixed
                     if (fixedArtUrl != metadata.albumArtUrl) {
@@ -576,11 +576,11 @@ class EnrichmentWorker @AssistedInject constructor(
                 if (currentTrack != null && currentTrack.albumArtUrl != fixedArtUrl) {
                     Log.i(TAG, "Propagating enriched album art to Track $trackId: $fixedArtUrl")
                     val updatedTrack = currentTrack.copy(
-                        albumArtUrl = fixedArtUrl,
                         // Also update album name if track is missing it
                         album = if (currentTrack.album.isNullOrBlank()) finalMetadata.albumTitle else currentTrack.album
                     )
                     trackDao.updatePreservingManualArtwork(updatedTrack)
+                    trackDao.updateAutomaticAlbumArtUrl(trackId, fixedArtUrl)
                     
                     // Also update the enriched metadata if URL was changed
                     if (fixedArtUrl != finalMetadata.albumArtUrl) {
