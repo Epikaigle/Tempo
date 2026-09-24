@@ -1080,4 +1080,7 @@
     <string name="details_cover_restore_auto">Revenir à la sélection automatique</string>
     <string name="details_cover_restore_auto_hint">Tempo pourra de nouveau choisir automatiquement la pochette.</string>
     <string name="details_cover_try_again">Relancer la recherche</string>
+
+    <string name="details_cover_unavailable">Indisponible</string>
+    <string name="details_cover_error">Erreur de recherche</string>
 </resources>
