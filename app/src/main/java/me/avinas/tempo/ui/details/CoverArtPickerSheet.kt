@@ -77,8 +77,9 @@ internal fun CoverArtPickerSheet(
     LaunchedEffect(state.coverCandidates) {
         val currentSelection = state.coverCandidates.firstOrNull { it.provider == selectedProvider }
         if (currentSelection == null) {
+            // Keep the existing cover selected when there is one, but never auto-select
+            // a remote provider result: choosing a replacement must remain an explicit tap.
             selectedProvider = state.coverCandidates.firstOrNull { it.isCurrent }?.provider
-                ?: state.coverCandidates.firstOrNull()?.provider
         }
     }
 
