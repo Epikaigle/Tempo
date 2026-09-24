@@ -42,6 +42,12 @@ interface EnrichedMetadataRepository {
      * Called by enrichment services after fetching data from APIs.
      */
     suspend fun upsert(metadata: EnrichedMetadata): Long
+
+    /**
+     * Persist metadata produced automatically while preserving the user's artwork lock
+     * against in-flight enrichment races.
+     */
+    suspend fun upsertFromAutomaticEnrichment(metadata: EnrichedMetadata): Long
     
     /**
      * Create a pending enrichment record if one doesn't exist.
