@@ -855,6 +855,7 @@ internal fun selectBestITunesCoverMatch(
 
     return results
         .asSequence()
+        .filter { !it.getBestArtworkUrl().isNullOrBlank() }
         .filter { result ->
             val resultArtist = result.artistName.orEmpty()
             if (!isSafeCoverArtistMatch(expectedArtist, resultArtist)) return@filter false
@@ -880,7 +881,7 @@ internal fun selectBestITunesCoverMatch(
         .maxWithOrNull(
             compareBy<IndexedValue<AppleMusicResult>> { indexed ->
                 iTunesCoverMatchScore(indexed.value, normalizedAlbum)
-            }.thenByDescending { indexed -> -indexed.index }
+            }.thenBy { indexed -> -indexed.index }
         )
         ?.value
 }
@@ -901,6 +902,5 @@ private fun iTunesCoverMatchScore(
         }
     }
 
-    if (!result.getBestArtworkUrl().isNullOrBlank()) score += 5
     return score
 }
