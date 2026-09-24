@@ -344,10 +344,16 @@ class SongDetailsViewModel @Inject constructor(
                     )
                     ?: candidate.albumArtUrl
                 val existing = enrichedMetadataRepository.forTrackSync(trackId)
+                val selectedSmallUrl = me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+                    .fixHttpUrl(candidate.albumArtUrlSmall ?: selectedUrl)
+                    ?: selectedUrl
+                val selectedLargeUrl = me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+                    .fixHttpUrl(candidate.albumArtUrlLarge ?: selectedUrl)
+                    ?: selectedUrl
                 val updatedMetadata = (existing ?: EnrichedMetadata(trackId = trackId)).copy(
                     albumArtUrl = selectedUrl,
-                    albumArtUrlSmall = candidate.albumArtUrlSmall ?: selectedUrl,
-                    albumArtUrlLarge = candidate.albumArtUrlLarge ?: selectedUrl,
+                    albumArtUrlSmall = selectedSmallUrl,
+                    albumArtUrlLarge = selectedLargeUrl,
                     albumArtSource = AlbumArtSource.USER_SELECTED,
                     cacheTimestamp = System.currentTimeMillis(),
                 )
