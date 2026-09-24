@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -95,6 +98,7 @@ internal fun CoverArtPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
         ) {
             Text(
@@ -275,7 +279,7 @@ private fun CoverProviderCard(
                     AlbumArtImage(
                         albumArtUrl = candidate.albumArtUrlLarge ?: candidate.albumArtUrl,
                         contentDescription = providerLabel(provider),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxSize(),
                     )
                     if (selected) {
                         Icon(
@@ -315,7 +319,7 @@ private fun CoverProviderCard(
         )
         Text(
             text = when {
-                candidate?.albumTitle?.isNotBlank() == true -> candidate.albumTitle
+                candidate?.albumTitle?.isNotBlank() == true -> candidate.albumTitle.orEmpty()
                 loading -> stringResource(R.string.details_cover_searching)
                 else -> ""
             },
