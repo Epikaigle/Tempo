@@ -414,7 +414,7 @@ class LastFmEnrichmentService
                     cacheTimestamp = System.currentTimeMillis(),
                 )
 
-            enrichedMetadataDao.upsert(updatedMetadata)
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(updatedMetadata)
 
             // Only log as "Updated" if we actually added useful data
             if (lastFmResult.genres.isNotEmpty() || lastFmResult.tags.isNotEmpty()) {
@@ -635,7 +635,7 @@ class LastFmEnrichmentService
                 )
 
             // Save the updated metadata
-            enrichedMetadataDao.upsert(updatedMetadata)
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(updatedMetadata)
 
             Log.i(TAG, "Pre-enriched track ${track.id} with Last.fm MBIDs")
             return updatedMetadata
