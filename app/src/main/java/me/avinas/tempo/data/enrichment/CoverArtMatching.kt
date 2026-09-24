@@ -15,6 +15,19 @@ private val COVER_VERSION_MARKERS = setOf(
     "mono",
     "stereo",
     "deluxe",
+    "edition",
+)
+
+private val COVER_VERSION_ALLOWED_TOKENS = COVER_VERSION_MARKERS + setOf(
+    "radio",
+    "single",
+    "album",
+    "extended",
+    "club",
+    "original",
+    "anniversary",
+    "bonus",
+    "digital",
 )
 
 /**
@@ -47,7 +60,13 @@ internal fun isSafeCoverTrackTitleMatch(
             .split(" ")
             .filter { it.isNotBlank() }
 
-        return suffixTokens.any { token -> token in COVER_VERSION_MARKERS }
+        val hasVersionMarker = suffixTokens.any { token -> token in COVER_VERSION_MARKERS }
+        val containsOnlyVersionTokens = suffixTokens.all { token ->
+            token in COVER_VERSION_ALLOWED_TOKENS ||
+                token.all(Char::isDigit)
+        }
+
+        return hasVersionMarker && containsOnlyVersionTokens
     }
 
     return isRecognizedVersionSuffix(expected, candidate) ||
