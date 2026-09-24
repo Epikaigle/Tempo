@@ -35,6 +35,27 @@ interface TrackDao {
     suspend fun update(track: Track)
 
     /**
+     * Automatic/full-row track updates must never overwrite a cover explicitly
+     * chosen by the user. Read the manual URL and write the track in one Room
+     * transaction so a concurrent metadata change cannot slip between the two.
+     */
+    @Query("""
+        SELECT album_art_url FROM enriched_metadata
+        WHERE track_id = :trackId
+        AND album_art_source = 'USER_SELECTED'
+        AND album_art_url IS NOT NULL
+        AND album_art_url != ''
+        LIMIT 1
+    """)
+    suspend fun getManualAlbumArtUrl(trackId: Long): String?
+
+    @Transaction
+    suspend fun updatePreservingManualArtwork(track: Track) {
+        val manualArt = getManualAlbumArtUrl(track.id)
+        update(if (manualArt != null) track.copy(albumArtUrl = manualArt) else track)
+    }
+
+    /**
      * Update only the title of a track.
      * Targeted update avoids overwriting other columns (e.g. enriched art URLs).
      */
