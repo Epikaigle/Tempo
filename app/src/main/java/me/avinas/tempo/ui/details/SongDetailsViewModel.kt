@@ -352,7 +352,7 @@ class SongDetailsViewModel @Inject constructor(
                     cacheTimestamp = System.currentTimeMillis(),
                 )
                 enrichedMetadataRepository.upsert(updatedMetadata)
-                trackRepository.update(currentDetails.track.copy(albumArtUrl = selectedUrl))
+                trackRepository.updateAlbumArtUrl(trackId, selectedUrl)
 
                 statsRepository.invalidateCache()
                 statsRepository.notifyMetadataUpdate()
@@ -405,7 +405,7 @@ class SongDetailsViewModel @Inject constructor(
                 } else {
                     enrichedMetadataRepository.createPendingIfNotExists(trackId)
                 }
-                trackRepository.update(current.copy(albumArtUrl = null))
+                trackRepository.updateAlbumArtUrl(trackId, null)
                 enrichedMetadataRepository.markForReEnrichment(trackId)
                 EnrichmentWorker.enqueueImmediate(context, trackId)
 
