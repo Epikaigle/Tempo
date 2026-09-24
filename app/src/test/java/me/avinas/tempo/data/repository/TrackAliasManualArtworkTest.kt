@@ -55,4 +55,20 @@ class TrackAliasManualArtworkTest {
 
         assertNull(preferredManualArtwork(emptyManual, automatic))
     }
+    @Test
+    fun targetAutomaticResetBeatsSourceManualArtwork() {
+        val source = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = "https://source.example/cover.jpg",
+            albumArtSource = AlbumArtSource.USER_SELECTED,
+        )
+        val target = EnrichedMetadata(
+            trackId = 2L,
+            albumArtUrl = null,
+            albumArtSource = AlbumArtSource.USER_RESET,
+        )
+
+        assertNull(preferredManualArtwork(source, target))
+    }
+
 }
