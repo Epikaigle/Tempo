@@ -48,8 +48,7 @@ fun InteractiveTrendLine(
         "Labels size (${labels.size}) must match dataPoints size (${dataPoints.size})" 
     }
 
-    // Use labels list directly as key to avoid hashCode collisions
-    // This ensures state resets even if dataPoints.size stays the same
+    // Key on labels to reset state when dataset changes even if point count matches
     var selectedIndex by remember(labels) { mutableStateOf<Int?>(null) }
     var isDragging by remember(labels) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -72,7 +71,7 @@ fun InteractiveTrendLine(
         }
     }
 
-    // Helper function to calculate nearest index from X position
+    // Map X touch position to nearest data point index
     fun calculateNearestIndex(xPos: Float, width: Float): Int {
         if (dataPoints.size <= 1) return 0
         
@@ -197,7 +196,6 @@ fun InteractiveTrendLine(
                 fillPath.lineTo(width, height)
                 fillPath.close()
             } else {
-                // Use the same calculation as in helper function for consistency
                 dataPoints.forEachIndexed { index, value ->
                     val x = (index.toFloat() / (dataPoints.size - 1)) * width
                     val y = height - ((value - minVal) / range * height)
@@ -261,7 +259,7 @@ fun InteractiveTrendLine(
 
             // Draw selection indicator circles
             selectedIndex?.let { index ->
-                // Calculate x from index directly to ensure x and y are in perfect sync
+                // Align indicator circle with point coordinate
                 val x = if (dataPoints.size > 1) {
                     (index.toFloat() / (dataPoints.size - 1)) * width
                 } else {

@@ -20,14 +20,8 @@ import com.google.zxing.common.HybridBinarizer
 import java.util.concurrent.Executors
 
 /**
- * A Compose wrapper around CameraX that continuously analyses camera frames and
- * invokes [onQrDetected] when a valid QR code is found.
- *
- * The scanner can be reset by changing the key parameter - useful when the user
- * needs to scan again after a failed attempt.
- *
- * Caller is responsible for ensuring the CAMERA permission has been granted
- * before this composable is placed in the hierarchy.
+ * CameraX QR code scanner that invokes [onQrDetected] on successful frame decode.
+ * Caller must verify CAMERA permission before placement in composition.
  */
 @Composable
 fun QrScannerView(

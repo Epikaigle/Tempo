@@ -37,7 +37,7 @@ class NotificationWorker
             private const val CHANNEL_ID = "tempo_updates"
             private const val NOTIFICATION_ID = 3004
 
-            // Separate channel for challenge notifications (ensures correct category/sound in system settings)
+            // Notification channel for daily challenge alerts
             private const val CHALLENGE_CHANNEL_ID = "tempo_challenges"
             private const val CHALLENGE_NOTIFICATION_ID = 3006
 
@@ -230,7 +230,6 @@ class NotificationWorker
         }
 
         private fun sendChallengeReadyNotification() {
-            // Ensure the challenge-specific channel is created
             createChallengeNotificationChannel()
 
             // Create an intent that opens the app directly to the challenges tab

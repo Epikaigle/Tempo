@@ -38,26 +38,11 @@ private val URL_PARAM_STRIP_REGEX = Regex("[?&](t|timestamp|v|version|_)=[^&]*")
 private val URL_TRAILING_SEP_REGEX = Regex("[?&]$")
 
 /**
- * A cached image component that ensures all images are properly cached.
- * 
- * This composable wraps Coil's AsyncImage with proper cache configuration:
- * - Uses explicit memory and disk cache keys based on URL (ignoring size)
- * - Uses INEXACT precision to allow cached images of different sizes to be reused
- * - Automatically fixes HTTP URLs to HTTPS
- * - Uses the app-wide singleton ImageLoader with 50MB disk cache
- * 
- * @param imageUrl The URL of the image to load
- * @param contentDescription Accessibility description
- * @param modifier Modifier for the image
- * @param contentScale How to scale the image
- * @param targetSizeDp Target display size in dp - when provided, Coil will downsample
- *                     the image during decode to use less memory and decode faster.
- *                     Use for thumbnails and small images to improve performance.
- * @param placeholder Optional placeholder to show while loading
- * @param error Optional fallback to show on error
- * @param showLoadingIndicator Whether to show a loading indicator
- * @param onSuccess Callback when image loads successfully (with the result)
- * @param onError Callback when image fails to load
+ * Coil [AsyncImage] wrapper configured with size-independent cache keys,
+ * inexact size reuse, and automatic HTTP-to-HTTPS upgrade.
+ *
+ * @param targetSizeDp When provided, downsamples during decode to reduce memory usage.
+ *
  * @param allowHardware Whether to allow hardware bitmaps (set false for screenshots)
  * @param blurRadius Optional blur radius applied via a software Coil [coil3.transform.Transformation].
  *                   Unlike `Modifier.blur` (which uses RenderEffect and is dropped when drawn to a

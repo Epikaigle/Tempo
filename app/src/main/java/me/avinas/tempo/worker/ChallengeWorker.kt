@@ -147,7 +147,7 @@ class ChallengeWorker
             }
 
             // Query the typical hour the user starts listening each day over the last 28 days.
-            // Using start-of-listening rather than peak hour ensures the notification arrives
+            // Using start-of-listening rather than peak hour delivers the notification
             // around the time the user naturally opens their music app for the day.
             val startMs = now - (28L * 24 * 60 * 60 * 1000L)
             val typicalStartHour: Int =

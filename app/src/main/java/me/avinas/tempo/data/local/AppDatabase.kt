@@ -344,18 +344,18 @@ abstract class AppDatabase : RoomDatabase() {
         /**
          * Migration from version 11 to 12.
          *
-         * Adds enhanced robustness tracking fields to listening_events:
+         * Adds pause duration, seek count, and playback diagnostic columns to listening_events:
          * - total_pause_duration_ms: Total time the track was paused
-         * - seek_count: Number of seek operations (forward/backward)
-         * - position_updates_count: Number of position updates (for validation)
-         * - was_interrupted: Whether the session was interrupted (app kill, crash)
+         * - seek_count: Number of seek operations
+         * - position_updates_count: Number of position updates
+         * - was_interrupted: Whether session was interrupted (kill, crash)
          */
         val MIGRATION_11_12 =
             object : Migration(11, 12) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 11 to 12 - Adding enhanced tracking fields")
 
-                    // Add robustness tracking columns to listening_events
+                    // Add pause and seek tracking columns to listening_events
                     db.execSQL(
                         """
                     ALTER TABLE listening_events 
@@ -475,8 +475,8 @@ abstract class AppDatabase : RoomDatabase() {
         /**
          * Migration from version 14 to 15.
          *
-         * Adds Deezer and Last.fm artist image URL columns for comprehensive
-         * artist image fallback chain: Spotify > iTunes > Last.fm > Deezer
+         * Adds Deezer and Last.fm artist image URL columns to complete the
+         * fallback chain: Spotify > iTunes > Last.fm > Deezer
          */
         val MIGRATION_14_15 =
             object : Migration(14, 15) {
@@ -762,7 +762,7 @@ abstract class AppDatabase : RoomDatabase() {
         /**
          * Migration from version 18 to 19.
          *
-         * Adds comprehensive content filtering support:
+         * Adds content filtering tables and flags:
          * 1. Add content_type column to tracks table (MUSIC, PODCAST, AUDIOBOOK)
          * 2. Add filterPodcasts and filterAudiobooks to user_preferences
          * 3. Create manual_content_marks table for user-defined filtering patterns
@@ -1070,8 +1070,7 @@ abstract class AppDatabase : RoomDatabase() {
          * Migration from version 24 to 25.
          *
          * Adds app_preferences table for user-controlled app selection.
-         * Seeds the table with ALL apps from the original hardcoded sets to ensure
-         * existing users don't lose tracking for any apps they were using.
+         * Seeds app_preferences with compile-time defaults to preserve active apps for existing users.
          *
          * DATA PRESERVATION: This migration ONLY creates a new table - it does NOT
          * modify or delete any existing data (tracks, listening_events, etc.).
@@ -1102,7 +1101,7 @@ abstract class AppDatabase : RoomDatabase() {
                     val currentTime = System.currentTimeMillis()
 
                     // MUSIC APPS - ALL apps from the original MUSIC_APPS set (enabled)
-                    // This ensures existing users can continue tracking all apps they used
+                    // Seed table with existing default apps
                     val musicApps =
                         listOf(
                             // Major Streaming Services
@@ -1551,7 +1550,7 @@ abstract class AppDatabase : RoomDatabase() {
          * and was missing several required indices.
          *
          * This is a repair migration - it drops and recreates all affected indices
-         * to ensure schema consistency without data loss.
+         * to restore schema consistency without data loss.
          */
         val MIGRATION_29_30 =
             object : Migration(29, 30) {
@@ -1567,7 +1566,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Ensure source index exists
                     db.execSQL(
                         """
                     CREATE INDEX IF NOT EXISTS index_listening_events_source 

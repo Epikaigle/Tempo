@@ -202,8 +202,8 @@ class EnrichmentWorker @AssistedInject constructor(
             // submission to replace the previous still-ENQUEUED one under APPEND_OR_REPLACE.
             // KEEP policy is correct here: if the same track is already queued, there is no
             // need to enqueue a duplicate job.
-            // The generic (null trackId) path keeps APPEND_OR_REPLACE to ensure a startup
-            // batch sweep always runs after whatever is currently pending.
+            // The generic (null trackId) path keeps APPEND_OR_REPLACE so a startup
+            // sweep always runs after in-flight work settles.
             val workName = if (trackId != null) "${WORK_NAME_IMMEDIATE}_$trackId" else WORK_NAME_IMMEDIATE
             val workPolicy = if (trackId != null) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.APPEND_OR_REPLACE
 
@@ -386,7 +386,7 @@ class EnrichmentWorker @AssistedInject constructor(
             
             Log.i(TAG, "Enrichment work completed successfully")
             
-            // Invalidate stats cache to ensure UI picks up new metadata immediately
+            // Invalidate stats cache so screens reload updated metadata immediately
             statsRepository.invalidateCache()
             
             // Only notify UI for user-triggered enrichments (e.g., refresh artist image)
@@ -571,8 +571,7 @@ class EnrichmentWorker @AssistedInject constructor(
                 // Fix HTTP URLs to HTTPS for better reliability
                 val fixedArtUrl = MusicBrainzEnrichmentService.fixHttpUrl(finalMetadata.albumArtUrl)
                 
-                // We have a URL, ensure it's on the track
-                // Note: We don't need to re-fetch the track, we can use the ID
+                // Sync resolved art URL to the track record
                 val currentTrack = trackDao.getTrackById(trackId)
                 if (currentTrack != null && currentTrack.albumArtUrl != fixedArtUrl) {
                     Log.i(TAG, "Propagating enriched album art to Track $trackId: $fixedArtUrl")
@@ -695,8 +694,7 @@ class EnrichmentWorker @AssistedInject constructor(
         // For large post-import backlogs, use two-tier enrichment:
         //   Tier 1: Top-played tracks (play_count >= 2) — most important, enriched first
         //   Tier 2: Remaining pending tracks — filled in if tier 1 doesn't fill the batch
-        //   This ensures YouTube Music imports with thousands of tracks prioritize
-        //   frequently-played songs and defer one-play wonders to the periodic worker.
+        //   Prioritizes frequently-played tracks before backfilling one-play entries.
         val pendingTracks: List<EnrichedMetadata> = if (isPostImportEnrichment) {
             val pendingCount = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
             if (pendingCount > POST_IMPORT_LARGE_BACKLOG_THRESHOLD) {

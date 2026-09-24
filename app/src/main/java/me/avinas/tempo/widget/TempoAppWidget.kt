@@ -274,7 +274,6 @@ class TempoAppWidget : GlanceAppWidget() {
             if (chartData.isNotEmpty()) {
                 Text("This Week", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 11.sp))
                 Spacer(modifier = GlanceModifier.height(4.dp))
-                // Fixed height for chart in large view to ensure consistency
                 Box(modifier = GlanceModifier.fillMaxWidth().height(60.dp)) {
                      BarChart(data = chartData, maxHeight = 60.dp, modifier = GlanceModifier.fillMaxSize())
                 }

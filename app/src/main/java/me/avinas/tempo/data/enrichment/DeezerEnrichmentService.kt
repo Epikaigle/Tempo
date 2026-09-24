@@ -8,10 +8,8 @@ import javax.inject.Singleton
 import kotlinx.coroutines.delay
 
 /**
- * Service responsible for fetching audio previews from Deezer.
- * 
- * Deezer provides public 30-second MP3 previews via their search API.
- * This is used as a reliable fallback when Spotify/iTunes fail to provide previews.
+ * Fetches 30-second audio previews from Deezer's search API
+ * as fallback when Spotify and iTunes have no sample.
  */
 @Singleton
 class DeezerEnrichmentService @Inject constructor(
@@ -52,7 +50,7 @@ class DeezerEnrichmentService @Inject constructor(
     ): DeezerResult {
         return try {
             // Deezer advanced search syntax: artist:"..." track:"..."
-            // Cleaning up the search terms is crucial
+            // Strip featured artists and clean title for Deezer search syntax
             val cleanArtist = me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
             val cleanTrack = me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track)
             

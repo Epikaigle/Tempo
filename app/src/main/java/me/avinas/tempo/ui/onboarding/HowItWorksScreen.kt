@@ -64,7 +64,7 @@ fun HowItWorksScreen(
     onNext: () -> Unit,
     onSkip: () -> Unit
 ) {
-    // Flow cue: one seamless dash loop. Phase wraps on a whole multiple of
+    // Flow cue: continuous dash loop. Phase wraps on multiples of
     // the dash period so Restart never snaps; the arrow bobs on a sine for
     // the same reason (old linear 1.0→1.12 scale visibly jumped each cycle).
     // ponytail perf: the State is held unread — only the two connectors that
@@ -148,7 +148,7 @@ fun HowItWorksScreen(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Dynamic, device-size aware spacing between Skip bar and main section
+                // Adaptive vertical spacing based on screen height
                 val topSpacing = adaptiveSizeByCategory(
                     expanded = rememberScreenHeightPercentage(0.035f),
                     medium = 20.dp,
@@ -260,7 +260,7 @@ private fun FlowStep(
     title: String,
     subtitle: String
 ) {
-    // Clamped height ensures consistent appearance across all screen sizes
+    // Card height clamped to 70–90dp across screen sizes
     val cardHeight = rememberClampedHeightPercentage(0.095f, 70.dp, 90.dp)
     
     GlassCard(

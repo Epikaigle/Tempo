@@ -163,7 +163,6 @@ fun RestoreScreen(
 
     androidx.activity.compose.BackHandler(enabled = !isOperationActive, onBack = onBack)
 
-    // ViewModel State
     val isSignedIn by viewModel.isSignedIn.collectAsState()
     val driveBackups by viewModel.driveBackups.collectAsState()
     val importExportResult by viewModel.importExportResult.collectAsState()

@@ -1069,7 +1069,6 @@ private fun DataStatItem(
     }
 }
 
-// Helper functions
 private fun formatCount(count: Int): String {
     return when {
         count >= 1000 -> String.format(java.util.Locale.US, "%.1fK", count / 1000.0)

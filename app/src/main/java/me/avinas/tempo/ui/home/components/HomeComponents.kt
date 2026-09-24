@@ -323,7 +323,7 @@ private val SpotlightStoryGradient = listOf(
     Color(0xFF8B5CF6),  // Vivid Violet
     Color(0xFFEC4899),  // Neon Rose
     Color(0xFFF59E0B),  // Warm Amber
-    TempoPrimary        // Seamless loop back to Teal
+    TempoPrimary        // Loop back to teal
 )
 
 @Composable

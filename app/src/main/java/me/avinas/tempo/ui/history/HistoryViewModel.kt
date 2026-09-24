@@ -191,7 +191,7 @@ class HistoryViewModel @Inject constructor(
             // Fetch data inline so we actually wait for it before clearing isRefreshing
             fetchHistoryForRefresh()
         } finally {
-            // Ensure spinner shows for at least 600ms so it doesn't feel like a bug
+            // Keep spinner visible for at least 600ms to prevent flicker
             val elapsed = System.currentTimeMillis() - startTime
             if (elapsed < 600) delay(600 - elapsed)
             _uiState.update { it.copy(isRefreshing = false) }
@@ -666,7 +666,7 @@ class HistoryViewModel @Inject constructor(
                 // On error, reload the history to get the correct state
                 Log.e(TAG, "Error deleting listening event $id", e)
                 _uiState.update { it.copy(error = "Failed to delete: ${e.message}") }
-                loadHistory() // Reload to ensure UI matches database
+                loadHistory() // Resync UI with database after delete failure
             } finally {
                 // Always remove from pending set and re-enable observer
                 pendingDeletes.remove(id)

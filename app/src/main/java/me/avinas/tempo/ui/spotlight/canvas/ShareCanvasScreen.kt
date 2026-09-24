@@ -95,10 +95,7 @@ fun ShareCanvasScreen(
         if (!isLoading && allCards.isNotEmpty() && canvasState.availableCards.isEmpty()) {
                 val initialCard = viewModel.getInitialCard()
             // Center relative to the canvas, not the screen
-            // Dynamic Scale Calculation:
-            // Target 50% of screen width for the card to balance "New Obsession" full-bleed 
-            // vs other cards with padding.
-            // Card base width is 320dp.
+            // Scale card to 50% canvas width (base 320dp)
             val targetCardWidthPx = with(density) { canvasWidth.toPx() * 0.5f }
             val baseCardWidthPx = with(density) { 320.dp.toPx() }
             val cardScale = targetCardWidthPx / baseCardWidthPx

@@ -20,13 +20,7 @@ import me.avinas.tempo.ui.components.*
 import me.avinas.tempo.ui.theme.*
 
 /**
- * Dialog for renaming an artist with smart auto-merge detection.
- *
- * Flow:
- * 1. User types a new name
- * 2. On "Check & Rename", the system detects if any other artists are split fragments
- * 3. If split artists are found, shows a merge confirmation
- * 4. User confirms → rename + merge + save as known artist
+ * Dialog for renaming an artist with merge detection for split artist fragments.
  */
 @Composable
 fun ArtistRenameDialog(

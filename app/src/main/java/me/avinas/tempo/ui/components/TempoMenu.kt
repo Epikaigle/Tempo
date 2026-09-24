@@ -28,15 +28,7 @@ import androidx.compose.ui.window.PopupProperties
 import me.avinas.tempo.ui.theme.*
 
 /**
- * Cohesive menu picker design tokens and components for Tempo.
- *
- * Replaces raw, unstyled [DropdownMenu] across all screens with a unified,
- * dark studio glassmorphic surface:
- * - 16dp rounded geometry
- * - Studio elevated gradient surface (TempoSurfaceRaised -> TempoSurfaceDialog)
- * - Hairline glass border (GlassBorderSoft)
- * - Tactile menu item touch targets with dedicated icon tiles and subtitle support
- * - Native selection indicator with [TempoIcons.Check]
+ * Dropdown menu styling tokens for glassmorphic surfaces.
  */
 object TempoMenuTokens {
     val Radius = 16.dp

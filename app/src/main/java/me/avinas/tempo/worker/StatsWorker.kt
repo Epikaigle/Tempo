@@ -16,9 +16,7 @@ import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
 
 /**
- * Background worker for pre-computing statistics.
- * This worker runs periodically to warm the stats cache for common time ranges,
- * ensuring fast access when the user opens the stats screen.
+ * Periodically pre-computes stats cache for common time ranges ahead of user navigation.
  */
 @HiltWorker
 class StatsPrecomputeWorker @AssistedInject constructor(

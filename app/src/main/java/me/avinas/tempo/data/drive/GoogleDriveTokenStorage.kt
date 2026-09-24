@@ -10,15 +10,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Secure storage for Google Drive OAuth tokens using EncryptedSharedPreferences.
- * 
- * Uses AES-256-GCM encryption for values and AES-256-SIV for keys,
- * backed by Android Keystore for key management. This ensures tokens
- * are stored securely and cannot be read by other apps.
- * 
- * This enables background workers (like DriveBackupWorker) to restore
- * user sessions without requiring UI interaction, making scheduled
- * backups reliable even when the app has been killed.
+ * Stores Google Drive OAuth tokens in EncryptedSharedPreferences.
+ * Keys and values are encrypted via Android Keystore.
  */
 @Singleton
 class GoogleDriveTokenStorage @Inject constructor(

@@ -163,7 +163,7 @@ fun RateAppBottomSheet(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Dynamic sentiment micro-label
+            // Sentiment label based on star selection
             val sentimentText = when (selectedRating) {
                 5 -> "5.0 ★ Exceptional music tracking"
                 4 -> "4.0 ★ Great listening companion"

@@ -51,7 +51,7 @@ import java.util.Locale
 import kotlin.math.sin
 
 /**
- * Fullscreen celebration overlay shown when the user unlocks or upgrades badges.
+ * Fullscreen celebration overlay shown when the user earns or upgrades badges.
  * Supports paging through multiple badges, sharing, and reduced motion.
  */
 @Composable

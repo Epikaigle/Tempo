@@ -230,7 +230,7 @@ fun StatsScreen(
                             me.avinas.tempo.ui.components.EmptyState(
                                  modifier = Modifier
                                      .fillMaxWidth()
-                                     .fillParentMaxHeight(0.7f), // Dynamic height relative to parent container
+                                     .fillParentMaxHeight(0.7f),
                                  timeRange = uiState.selectedTimeRange,
                                  onCheckSupportedApps = onNavigateToSupportedApps
                             )

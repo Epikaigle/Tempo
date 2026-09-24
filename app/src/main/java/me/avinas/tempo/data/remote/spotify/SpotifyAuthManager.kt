@@ -24,19 +24,7 @@ import javax.inject.Named
 import javax.inject.Singleton
 
 /**
- * Manages Spotify OAuth 2.0 authentication using Authorization Code with PKCE flow.
- * 
- * PKCE (Proof Key for Code Exchange) is required for mobile apps as they cannot
- * securely store client secrets. This implementation follows Spotify's auth guide:
- * https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow
- * 
- * Flow:
- * 1. Generate code verifier (random string)
- * 2. Generate code challenge (SHA256 hash of verifier, base64url encoded)
- * 3. Open Spotify login in browser with code challenge
- * 4. User grants permission, Spotify redirects back with authorization code
- * 5. Exchange code + verifier for access token
- * 6. Store tokens securely, refresh when expired
+ * Spotify OAuth 2.0 PKCE authentication flow manager.
  */
 @Singleton
 class SpotifyAuthManager @Inject constructor(

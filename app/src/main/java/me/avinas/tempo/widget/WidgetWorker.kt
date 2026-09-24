@@ -91,7 +91,7 @@ class WidgetWorker @AssistedInject constructor(
             val todayHoursString = String.format("%.1f", todayHours)
             
             // Chart Data (Hourly)
-            // Ensure we have 24 points, filling gaps with 0
+            // Zero-fill missing hours across the 24-hour chart window
             val hourlyMap = hourlyStats.associate { it.hour to it.totalTimeMs.toFloat() }
             // Get current hour to limit the chart if desired, or show full 24h
             val currentHour = java.time.LocalTime.now().hour

@@ -50,8 +50,7 @@ class ShareCanvasViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                // Generate cards for ALL time ranges to maximize card availability
-                // This ensures we find the initial card regardless of which time range it was generated for
+                // Query all time ranges so the target card is found regardless of which range generated it
                 val timeRanges = listOf(TimeRange.ALL_TIME, TimeRange.THIS_MONTH, TimeRange.THIS_WEEK)
                 
                 val allCardsFromAllRanges = timeRanges.map { range ->

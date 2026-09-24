@@ -233,9 +233,8 @@ class DesktopPlayIngestionService @Inject constructor(
         val rotatedTokenStr = rotatedToken ?: token
 
         // Enqueue per-track immediate enrichment for each new track, identical to how
-        // MusicTrackingService handles real-time plays.  Using per-track IDs (rather than
-        // a single batch call) ensures the tracks are not lost at the bottom of the
-        // play-count-ordered PENDING queue and cannot be displaced by concurrent calls.
+        // MusicTrackingService handles real-time plays. Using per-track IDs avoids
+        // displacing or deprioritizing tracks in the pending enrichment queue.
         for (trackId in newTrackIds) {
             EnrichmentWorker.enqueueImmediate(context, trackId)
         }

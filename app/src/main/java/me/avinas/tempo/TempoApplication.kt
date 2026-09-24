@@ -349,10 +349,7 @@ class TempoApplication :
         }
     }
 
-    /**
-     * Check if Spotify-API-Only mode is enabled and schedule polling if so.
-     * This ensures the worker resumes after app restart.
-     */
+    /** Schedules Spotify polling worker if Spotify-API-Only mode is enabled. */
     private fun scheduleSpotifyPollingIfEnabled() {
         applicationScope.launch {
             try {
