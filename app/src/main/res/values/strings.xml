@@ -1508,4 +1508,7 @@
     <string name="details_cover_provider_musicbrainz" translatable="false">MusicBrainz</string>
     <string name="details_cover_provider_deezer" translatable="false">Deezer</string>
     <string name="details_cover_provider_lastfm" translatable="false">Last.fm</string>
+
+    <string name="details_cover_unavailable">Unavailable</string>
+    <string name="details_cover_error">Lookup failed</string>
 </resources>
