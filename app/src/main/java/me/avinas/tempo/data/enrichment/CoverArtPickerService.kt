@@ -149,24 +149,31 @@ class CoverArtPickerService @Inject constructor(
                             )
                     }
 
-                CoverArtProvider.MUSICBRAINZ -> {
-                    val result = musicBrainzEnrichmentService.searchCoverArt(track, currentMetadata)
-                    if (result == null) {
-                        CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
-                    } else {
-                        CoverArtLookupResult(
-                            provider = provider,
-                            status = CoverArtLookupStatus.FOUND,
-                            candidate = CoverArtCandidate(
+                CoverArtProvider.MUSICBRAINZ ->
+                    when (val result = musicBrainzEnrichmentService.searchCoverArt(track, currentMetadata)) {
+                        is MusicBrainzEnrichmentService.CoverArtSearchResult.Success -> {
+                            val artwork = result.artwork
+                            CoverArtLookupResult(
                                 provider = provider,
-                                albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
-                                albumArtUrlSmall = result.albumArtUrlSmall,
-                                albumArtUrlLarge = result.albumArtUrlLarge,
-                                albumTitle = result.albumTitle,
-                            ),
-                        )
+                                status = CoverArtLookupStatus.FOUND,
+                                candidate = CoverArtCandidate(
+                                    provider = provider,
+                                    albumArtUrl = artwork.albumArtUrlLarge ?: artwork.albumArtUrl,
+                                    albumArtUrlSmall = artwork.albumArtUrlSmall,
+                                    albumArtUrlLarge = artwork.albumArtUrlLarge,
+                                    albumTitle = artwork.albumTitle,
+                                ),
+                            )
+                        }
+                        MusicBrainzEnrichmentService.CoverArtSearchResult.NotFound ->
+                            CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
+                        is MusicBrainzEnrichmentService.CoverArtSearchResult.Error ->
+                            CoverArtLookupResult(
+                                provider = provider,
+                                status = CoverArtLookupStatus.ERROR,
+                                message = result.message,
+                            )
                     }
-                }
 
                 CoverArtProvider.LASTFM ->
                     when (
