@@ -165,10 +165,14 @@ class ITunesEnrichmentService @Inject constructor(
 
                     // If searching for a track, validate track title
                     if (track != null && cleanTrack != null) {
-                        (result.trackName?.contains(cleanTrack, ignoreCase = true) == true || 
-                         result.trackCensoredName?.contains(cleanTrack, ignoreCase = true) == true ||
-                         cleanTrack.contains(result.trackName ?: "", ignoreCase = true) ||
-                         cleanTrack.contains(result.trackCensoredName ?: "", ignoreCase = true))
+                        val resultTitles = listOfNotNull(
+                            result.trackName?.takeIf { it.isNotBlank() },
+                            result.trackCensoredName?.takeIf { it.isNotBlank() },
+                        )
+                        resultTitles.any { resultTitle ->
+                            resultTitle.contains(cleanTrack, ignoreCase = true) ||
+                                cleanTrack.contains(resultTitle, ignoreCase = true)
+                        }
                     } else if (album != null) {
                         // If searching for album, validate album title
                         (result.collectionName?.contains(album, ignoreCase = true) == true ||
