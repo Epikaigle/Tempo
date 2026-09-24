@@ -18,7 +18,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import me.avinas.tempo.data.enrichment.CoverArtCandidate
+import me.avinas.tempo.data.enrichment.CoverArtPickerService
 import me.avinas.tempo.data.local.dao.ListeningEventDao
+import me.avinas.tempo.data.local.entities.AlbumArtSource
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.ListeningEvent
@@ -59,6 +62,7 @@ class SongDetailsViewModel @Inject constructor(
     private val trackRepository: TrackRepository,
     private val trackAliasRepository: TrackAliasRepository,
     private val listeningEventDao: ListeningEventDao,
+    private val coverArtPickerService: CoverArtPickerService,
     private val tracker: AnalyticsTracker,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -477,5 +481,10 @@ data class SongDetailsUiState(
     val showEditTitleDialog: Boolean = false,
     val isSavingTitle: Boolean = false,
     val editTitleError: String? = null,
-    val mergeTargetTrack: Track? = null
+    val mergeTargetTrack: Track? = null,
+    val showCoverPicker: Boolean = false,
+    val isLoadingCoverCandidates: Boolean = false,
+    val isSavingCover: Boolean = false,
+    val coverPickerError: String? = null,
+    val coverCandidates: List<CoverArtCandidate> = emptyList()
 )
