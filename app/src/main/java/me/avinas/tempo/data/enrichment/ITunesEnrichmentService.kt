@@ -3,6 +3,7 @@ package me.avinas.tempo.data.enrichment
 import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.data.remote.itunes.iTunesApi
@@ -202,9 +203,11 @@ class ITunesEnrichmentService @Inject constructor(
                     Log.d(TAG, "Results found for '$query' but none matched artist '$artist' or title")
                 }
 
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Error searching iTunes with query '$query'", e)
-                // Continue to next strategy on error
+                // Continue to next strategy on ordinary provider/network errors.
             }
         }
         
