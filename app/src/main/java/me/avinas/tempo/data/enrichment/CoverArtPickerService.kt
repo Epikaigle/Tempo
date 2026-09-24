@@ -1,7 +1,6 @@
 package me.avinas.tempo.data.enrichment
 
-import kotlinx.coroutines.async
-import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.CancellationException
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.Track
 import javax.inject.Inject
@@ -16,6 +15,14 @@ enum class CoverArtProvider {
     DEEZER,
 }
 
+enum class CoverArtLookupStatus {
+    LOADING,
+    FOUND,
+    NOT_FOUND,
+    UNAVAILABLE,
+    ERROR,
+}
+
 data class CoverArtCandidate(
     val provider: CoverArtProvider,
     val albumArtUrl: String,
@@ -25,9 +32,16 @@ data class CoverArtCandidate(
     val isCurrent: Boolean = false,
 )
 
+data class CoverArtLookupResult(
+    val provider: CoverArtProvider,
+    val status: CoverArtLookupStatus,
+    val candidate: CoverArtCandidate? = null,
+    val message: String? = null,
+)
+
 /**
- * User-driven artwork lookup. Providers are independent so the UI can surface
- * results progressively; no database state is changed until the user selects one.
+ * User-driven artwork lookup. Each provider is queried independently and no database
+ * state is changed until the user explicitly selects a candidate.
  */
 @Singleton
 class CoverArtPickerService @Inject constructor(
@@ -64,119 +78,162 @@ class CoverArtPickerService @Inject constructor(
         provider: CoverArtProvider,
         track: Track,
         currentMetadata: EnrichedMetadata?,
-    ): CoverArtCandidate? {
+    ): CoverArtLookupResult {
         val albumHint = track.album ?: currentMetadata?.albumTitle
 
-        return when (provider) {
-            CoverArtProvider.CURRENT -> currentCandidate(track)
-
-            CoverArtProvider.SPOTIFY ->
-                runCatching { spotifyEnrichmentService.fetchBasicMetadata(track) }
-                    .getOrNull()
-                    .let { it as? SpotifyEnrichmentService.BasicMetadataResult.Success }
-                    ?.let { result ->
-                        val best = result.albumArtUrlLarge ?: result.albumArtUrl
-                        if (best.isNullOrBlank()) null else CoverArtCandidate(
-                            provider = provider,
-                            albumArtUrl = best,
-                            albumArtUrlSmall = result.albumArtUrlSmall,
-                            albumArtUrlLarge = result.albumArtUrlLarge,
-                            albumTitle = result.albumTitle,
-                        )
-                    }
-
-            CoverArtProvider.APPLE_MUSIC ->
-                runCatching {
-                    iTunesEnrichmentService.searchAlbumArt(
-                        artist = track.artist,
-                        album = albumHint,
-                        track = track.title,
+        return try {
+            when (provider) {
+                CoverArtProvider.CURRENT -> {
+                    val candidate = currentCandidate(track)
+                    CoverArtLookupResult(
+                        provider = provider,
+                        status = if (candidate != null) CoverArtLookupStatus.FOUND else CoverArtLookupStatus.NOT_FOUND,
+                        candidate = candidate,
                     )
-                }.getOrNull()
-                    .let { it as? ITunesEnrichmentService.iTunesResult.Success }
-                    ?.let { result ->
-                        CoverArtCandidate(
-                            provider = provider,
-                            albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
-                            albumArtUrlSmall = result.albumArtUrlSmall,
-                            albumArtUrlLarge = result.albumArtUrlLarge,
-                            albumTitle = result.albumTitle,
-                        )
-                    }
+                }
 
-            CoverArtProvider.MUSICBRAINZ ->
-                runCatching {
-                    musicBrainzEnrichmentService.searchCoverArt(track, currentMetadata)
-                }.getOrNull()
-                    ?.let { result ->
-                        CoverArtCandidate(
-                            provider = provider,
-                            albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
-                            albumArtUrlSmall = result.albumArtUrlSmall,
-                            albumArtUrlLarge = result.albumArtUrlLarge,
-                            albumTitle = result.albumTitle,
-                        )
-                    }
-
-            CoverArtProvider.LASTFM ->
-                runCatching {
-                    lastFmEnrichmentService.searchTrackInfo(
-                        title = track.title,
-                        artist = track.artist,
-                    )
-                }.getOrNull()
-                    .let { it as? LastFmEnrichmentService.LastFmResult.Success }
-                    ?.let { result ->
-                        result.albumArtUrl
-                            ?.takeIf { it.isNotBlank() }
-                            ?.let { url ->
-                                CoverArtCandidate(
+                CoverArtProvider.SPOTIFY ->
+                    when (val result = spotifyEnrichmentService.fetchCoverArtForPicker(track, currentMetadata)) {
+                        is SpotifyEnrichmentService.SpotifyCoverArtResult.Success ->
+                            CoverArtLookupResult(
+                                provider = provider,
+                                status = CoverArtLookupStatus.FOUND,
+                                candidate = CoverArtCandidate(
                                     provider = provider,
-                                    albumArtUrl = url,
-                                    albumArtUrlLarge = url,
+                                    albumArtUrl = result.albumArtUrl,
+                                    albumArtUrlLarge = result.albumArtUrl,
+                                    albumTitle = albumHint,
+                                ),
+                            )
+                        SpotifyEnrichmentService.SpotifyCoverArtResult.Unavailable ->
+                            CoverArtLookupResult(provider, CoverArtLookupStatus.UNAVAILABLE)
+                        SpotifyEnrichmentService.SpotifyCoverArtResult.NotFound ->
+                            CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
+                        is SpotifyEnrichmentService.SpotifyCoverArtResult.Error ->
+                            CoverArtLookupResult(
+                                provider = provider,
+                                status = CoverArtLookupStatus.ERROR,
+                                message = result.message,
+                            )
+                    }
+
+                CoverArtProvider.APPLE_MUSIC ->
+                    when (
+                        val result = iTunesEnrichmentService.searchAlbumArt(
+                            artist = track.artist,
+                            album = albumHint,
+                            track = track.title,
+                        )
+                    ) {
+                        is ITunesEnrichmentService.iTunesResult.Success ->
+                            CoverArtLookupResult(
+                                provider = provider,
+                                status = CoverArtLookupStatus.FOUND,
+                                candidate = CoverArtCandidate(
+                                    provider = provider,
+                                    albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
+                                    albumArtUrlSmall = result.albumArtUrlSmall,
+                                    albumArtUrlLarge = result.albumArtUrlLarge,
                                     albumTitle = result.albumTitle,
+                                ),
+                            )
+                        ITunesEnrichmentService.iTunesResult.NotFound ->
+                            CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
+                        is ITunesEnrichmentService.iTunesResult.Error ->
+                            CoverArtLookupResult(
+                                provider = provider,
+                                status = CoverArtLookupStatus.ERROR,
+                                message = result.message,
+                            )
+                    }
+
+                CoverArtProvider.MUSICBRAINZ -> {
+                    val result = musicBrainzEnrichmentService.searchCoverArt(track, currentMetadata)
+                    if (result == null) {
+                        CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
+                    } else {
+                        CoverArtLookupResult(
+                            provider = provider,
+                            status = CoverArtLookupStatus.FOUND,
+                            candidate = CoverArtCandidate(
+                                provider = provider,
+                                albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
+                                albumArtUrlSmall = result.albumArtUrlSmall,
+                                albumArtUrlLarge = result.albumArtUrlLarge,
+                                albumTitle = result.albumTitle,
+                            ),
+                        )
+                    }
+                }
+
+                CoverArtProvider.LASTFM ->
+                    when (
+                        val result = lastFmEnrichmentService.searchTrackInfo(
+                            title = track.title,
+                            artist = track.artist,
+                        )
+                    ) {
+                        is LastFmEnrichmentService.LastFmResult.Success -> {
+                            val url = result.albumArtUrl?.takeIf { it.isNotBlank() }
+                            if (url == null) {
+                                CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
+                            } else {
+                                CoverArtLookupResult(
+                                    provider = provider,
+                                    status = CoverArtLookupStatus.FOUND,
+                                    candidate = CoverArtCandidate(
+                                        provider = provider,
+                                        albumArtUrl = url,
+                                        albumArtUrlLarge = url,
+                                        albumTitle = result.albumTitle,
+                                    ),
                                 )
                             }
+                        }
+                        LastFmEnrichmentService.LastFmResult.NotConfigured ->
+                            CoverArtLookupResult(provider, CoverArtLookupStatus.UNAVAILABLE)
+                        LastFmEnrichmentService.LastFmResult.TrackNotFound,
+                        LastFmEnrichmentService.LastFmResult.AlreadyHasData ->
+                            CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
+                        is LastFmEnrichmentService.LastFmResult.Error ->
+                            CoverArtLookupResult(
+                                provider = provider,
+                                status = CoverArtLookupStatus.ERROR,
+                                message = result.message,
+                            )
                     }
 
-            CoverArtProvider.DEEZER ->
-                runCatching {
-                    deezerEnrichmentService.searchAlbumArt(
+                CoverArtProvider.DEEZER -> {
+                    val result = deezerEnrichmentService.searchAlbumArt(
                         artist = track.artist,
                         track = track.title,
                         album = albumHint,
                     )
-                }.getOrNull()
-                    ?.let { result ->
-                        CoverArtCandidate(
+                    if (result == null) {
+                        CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
+                    } else {
+                        CoverArtLookupResult(
                             provider = provider,
-                            albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
-                            albumArtUrlSmall = result.albumArtUrlSmall,
-                            albumArtUrlLarge = result.albumArtUrlLarge,
-                            albumTitle = result.albumTitle,
+                            status = CoverArtLookupStatus.FOUND,
+                            candidate = CoverArtCandidate(
+                                provider = provider,
+                                albumArtUrl = result.albumArtUrlLarge ?: result.albumArtUrl,
+                                albumArtUrlSmall = result.albumArtUrlSmall,
+                                albumArtUrlLarge = result.albumArtUrlLarge,
+                                albumTitle = result.albumTitle,
+                            ),
                         )
                     }
-        }
-    }
-
-    suspend fun search(
-        track: Track,
-        currentMetadata: EnrichedMetadata?,
-    ): List<CoverArtCandidate> = supervisorScope {
-        val remote = REMOTE_PROVIDERS.associateWith { provider ->
-            async { searchProvider(provider, track, currentMetadata) }
-        }
-
-        buildList {
-            currentCandidate(track)?.let(::add)
-            for (provider in REMOTE_PROVIDERS) {
-                remote.getValue(provider).await()?.let(::add)
+                }
             }
-        }.distinctBy { candidate ->
-            candidate.albumArtUrl
-                .substringBefore('?')
-                .replace("http://", "https://")
-                .lowercase()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CoverArtLookupResult(
+                provider = provider,
+                status = CoverArtLookupStatus.ERROR,
+                message = e.message,
+            )
         }
     }
 }
