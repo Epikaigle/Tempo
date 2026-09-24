@@ -342,11 +342,11 @@ enum class EnrichmentStatus {
  * Priority order (highest to lowest):
  * 1. USER_SELECTED (100) - Explicit user choice; never replaced automatically
  * 2. SPOTIFY (6) - Official album artwork from Spotify
- * 2. MUSICBRAINZ (5) - Cover Art Archive (community verified)
- * 3. ITUNES (4) - Apple Music artwork (high quality)
- * 4. DEEZER (3) - Deezer album artwork
- * 5. LOCAL (2) - Extracted from MediaSession/notification
- * 6. NONE (0) - No album art yet
+ * 3. MUSICBRAINZ (5) - Cover Art Archive (community verified)
+ * 4. ITUNES (4) - Apple Music artwork (high quality)
+ * 5. DEEZER (3) - Deezer album artwork
+ * 6. LOCAL (2) - Extracted from MediaSession/notification
+ * 7. NONE (0) - No album art yet
  * 
  * Key behavior:
  * - LOCAL art can be replaced by any API source
