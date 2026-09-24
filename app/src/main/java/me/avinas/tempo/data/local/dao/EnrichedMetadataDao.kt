@@ -1,6 +1,7 @@
 package me.avinas.tempo.data.local.dao
 
 import androidx.room.*
+import me.avinas.tempo.data.local.entities.AlbumArtSource
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.SpotifyEnrichmentStatus
@@ -20,6 +21,21 @@ interface EnrichedMetadataDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(metadata: EnrichedMetadata): Long
+
+    /**
+     * Persist metadata produced by automatic enrichment without allowing a stale
+     * in-flight request to overwrite or resurrect a user's explicit artwork choice.
+     *
+     * The current row is read inside the same Room transaction immediately before
+     * the write. This closes both races:
+     * - user selects manual art while an automatic lookup is already running;
+     * - user resets to automatic while an older request still carries USER_SELECTED.
+     */
+    @Transaction
+    suspend fun upsertFromAutomaticEnrichment(metadata: EnrichedMetadata): Long {
+        val current = forTrackSync(metadata.trackId)
+        return upsert(mergeAutomaticEnrichmentArtwork(current, metadata))
+    }
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(metadata: List<EnrichedMetadata>): List<Long>
@@ -533,3 +549,45 @@ data class SpotifyEnrichmentStatusCount(
     @ColumnInfo(name = "spotify_enrichment_status") val status: SpotifyEnrichmentStatus,
     val count: Int
 )
+
+
+/**
+ * Artwork conflict resolver for automatic enrichment writes.
+ *
+ * Manual artwork is controlled exclusively by explicit UI actions:
+ * automatic writes may preserve an existing manual choice, but may never create,
+ * replace, or resurrect USER_SELECTED from a stale snapshot.
+ */
+internal fun mergeAutomaticEnrichmentArtwork(
+    current: EnrichedMetadata?,
+    incoming: EnrichedMetadata,
+): EnrichedMetadata {
+    val currentManual = current?.takeIf {
+        it.albumArtSource == AlbumArtSource.USER_SELECTED &&
+            !it.albumArtUrl.isNullOrBlank()
+    }
+
+    if (currentManual != null) {
+        val selectedUrl = currentManual.albumArtUrl!!
+        return incoming.copy(
+            albumArtUrl = selectedUrl,
+            albumArtUrlSmall = currentManual.albumArtUrlSmall ?: selectedUrl,
+            albumArtUrlLarge = currentManual.albumArtUrlLarge ?: selectedUrl,
+            albumArtSource = AlbumArtSource.USER_SELECTED,
+        )
+    }
+
+    // An automatic task can hold a stale copy of USER_SELECTED after the user has
+    // deliberately returned to automatic selection. Never let that stale snapshot
+    // re-create the manual lock.
+    if (incoming.albumArtSource == AlbumArtSource.USER_SELECTED) {
+        return incoming.copy(
+            albumArtUrl = current?.albumArtUrl,
+            albumArtUrlSmall = current?.albumArtUrlSmall,
+            albumArtUrlLarge = current?.albumArtUrlLarge,
+            albumArtSource = current?.albumArtSource ?: AlbumArtSource.NONE,
+        )
+    }
+
+    return incoming
+}
