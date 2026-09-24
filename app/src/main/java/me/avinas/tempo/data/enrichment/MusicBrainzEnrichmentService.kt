@@ -110,10 +110,13 @@ class MusicBrainzEnrichmentService @Inject constructor(
     ): CoverArtLookupResult? {
         if (ArtistParser.isUnknownArtist(track.artist)) return null
 
-        currentMetadata?.musicbrainzReleaseId?.let { releaseId ->
-            fetchCoverArt(releaseId)?.let { art ->
+        val knownReleaseId = currentMetadata?.musicbrainzReleaseId
+        if (!knownReleaseId.isNullOrBlank()) {
+            val art = fetchCoverArt(knownReleaseId)
+            val best = art?.large ?: art?.medium ?: art?.small
+            if (art != null && best != null) {
                 return CoverArtLookupResult(
-                    albumArtUrl = art.large ?: art.medium ?: art.small ?: return@let,
+                    albumArtUrl = best,
                     albumArtUrlSmall = art.small,
                     albumArtUrlLarge = art.large,
                     albumTitle = currentMetadata.albumTitle ?: track.album,
@@ -121,10 +124,13 @@ class MusicBrainzEnrichmentService @Inject constructor(
             }
         }
 
-        currentMetadata?.musicbrainzReleaseGroupId?.let { groupId ->
-            fetchReleaseGroupCoverArt(groupId)?.let { art ->
+        val knownReleaseGroupId = currentMetadata?.musicbrainzReleaseGroupId
+        if (!knownReleaseGroupId.isNullOrBlank()) {
+            val art = fetchReleaseGroupCoverArt(knownReleaseGroupId)
+            val best = art?.large ?: art?.medium ?: art?.small
+            if (art != null && best != null) {
                 return CoverArtLookupResult(
-                    albumArtUrl = art.large ?: art.medium ?: art.small ?: return@let,
+                    albumArtUrl = best,
                     albumArtUrlSmall = art.small,
                     albumArtUrlLarge = art.large,
                     albumTitle = currentMetadata.albumTitle ?: track.album,
