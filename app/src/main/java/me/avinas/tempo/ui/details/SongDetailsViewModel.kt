@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.enrichment.CoverArtCandidate
+import me.avinas.tempo.data.enrichment.CoverArtLookupStatus
 import me.avinas.tempo.data.enrichment.CoverArtPickerService
 import me.avinas.tempo.data.enrichment.CoverArtProvider
 import me.avinas.tempo.data.local.dao.ListeningEventDao
@@ -49,7 +51,8 @@ import me.avinas.tempo.data.analytics.TempoFeature
  * ViewModel for Song Details screen.
  *
  * Data Flow Pattern: Enrichment → Database → UI
- * - This ViewModel ONLY reads from database via Repository (never makes API calls)
+ * - Normal screen rendering reads cached metadata from the database
+ * - Remote artwork lookup runs only after the user explicitly opens the cover picker
  * - Track metadata is fetched from database cache
  * - Mood/genre derived from MusicBrainz tags & Spotify audio features
  * - Engagement metrics computed from listening behavior
@@ -245,7 +248,8 @@ class SongDetailsViewModel @Inject constructor(
                 isSavingCover = false,
                 coverPickerError = null,
                 coverCandidates = emptyList(),
-                coverLookupFinished = emptySet(),
+                coverProviderStatuses = CoverArtPickerService.REMOTE_PROVIDERS
+                    .associateWith { CoverArtLookupStatus.LOADING },
             )
         }
         loadCoverCandidates()
@@ -277,7 +281,8 @@ class SongDetailsViewModel @Inject constructor(
                     isLoadingCoverCandidates = true,
                     coverPickerError = null,
                     coverCandidates = listOfNotNull(coverArtPickerService.currentCandidate(track)),
-                    coverLookupFinished = emptySet(),
+                    coverProviderStatuses = CoverArtPickerService.REMOTE_PROVIDERS
+                        .associateWith { CoverArtLookupStatus.LOADING },
                 )
             }
 
@@ -286,10 +291,9 @@ class SongDetailsViewModel @Inject constructor(
                 coroutineScope {
                     CoverArtPickerService.REMOTE_PROVIDERS.forEach { provider ->
                         launch {
-                            val candidate = coverArtPickerService.searchProvider(provider, track, metadata)
+                            val result = coverArtPickerService.searchProvider(provider, track, metadata)
                             _uiState.update { state ->
-                                val finished = state.coverLookupFinished + provider
-                                val candidates = if (candidate != null) {
+                                val candidates = result.candidate?.let { candidate ->
                                     (state.coverCandidates.filterNot { it.provider == provider } + candidate)
                                         .sortedBy { item ->
                                             when (item.provider) {
@@ -297,19 +301,21 @@ class SongDetailsViewModel @Inject constructor(
                                                 else -> CoverArtPickerService.REMOTE_PROVIDERS.indexOf(item.provider)
                                             }
                                         }
-                                } else {
-                                    state.coverCandidates
-                                }
+                                } ?: state.coverCandidates.filterNot { it.provider == provider }
+
+                                val statuses = state.coverProviderStatuses + (provider to result.status)
                                 state.copy(
                                     coverCandidates = candidates,
-                                    coverLookupFinished = finished,
+                                    coverProviderStatuses = statuses,
                                     isLoadingCoverCandidates =
-                                        finished.size < CoverArtPickerService.REMOTE_PROVIDERS.size,
+                                        statuses.values.any { it == CoverArtLookupStatus.LOADING },
                                 )
                             }
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -330,8 +336,12 @@ class SongDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
             try {
-                val selectedUrl = candidate.albumArtUrlLarge
-                    ?.takeIf { it.isNotBlank() }
+                val selectedUrl = me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+                    .fixHttpUrl(
+                        candidate.albumArtUrlLarge
+                            ?.takeIf { it.isNotBlank() }
+                            ?: candidate.albumArtUrl
+                    )
                     ?: candidate.albumArtUrl
                 val existing = enrichedMetadataRepository.forTrackSync(trackId)
                 val updatedMetadata = (existing ?: EnrichedMetadata(trackId = trackId)).copy(
@@ -678,6 +688,6 @@ data class SongDetailsUiState(
     val isSavingCover: Boolean = false,
     val coverPickerError: String? = null,
     val coverCandidates: List<CoverArtCandidate> = emptyList(),
-    val coverLookupFinished: Set<CoverArtProvider> = emptySet(),
+    val coverProviderStatuses: Map<CoverArtProvider, CoverArtLookupStatus> = emptyMap(),
     val isManualCover: Boolean = false,
 )
