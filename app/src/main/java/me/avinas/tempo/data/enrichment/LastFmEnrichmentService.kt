@@ -43,6 +43,8 @@ class LastFmEnrichmentService
                 val albumArtUrl: String? = null,
                 val albumTitle: String? = null,
                 val musicbrainzId: String? = null,
+                val trackTitle: String? = null,
+                val artistName: String? = null,
             ) : LastFmResult()
 
             object NotConfigured : LastFmResult()
@@ -155,6 +157,7 @@ class LastFmEnrichmentService
                         track = title,
                         artist = artist,
                         apiKey = apiKey,
+                        autocorrect = 0,
                     )
 
                 if (!response.isSuccessful) {
@@ -192,6 +195,8 @@ class LastFmEnrichmentService
                     albumArtUrl = albumArtUrl,
                     albumTitle = albumTitle,
                     musicbrainzId = trackInfo.mbid,
+                    trackTitle = trackInfo.name,
+                    artistName = trackInfo.artist?.name ?: trackInfo.album?.artist,
                 )
             } catch (e: CancellationException) {
                 throw e
