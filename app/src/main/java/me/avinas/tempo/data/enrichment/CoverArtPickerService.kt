@@ -104,7 +104,7 @@ class CoverArtPickerService @Inject constructor(
                                     provider = provider,
                                     albumArtUrl = result.albumArtUrl,
                                     albumArtUrlLarge = result.albumArtUrl,
-                                    albumTitle = albumHint,
+                                    albumTitle = null,
                                 ),
                             )
                         SpotifyEnrichmentService.SpotifyCoverArtResult.Unavailable ->
