@@ -36,6 +36,63 @@ interface EnrichedMetadataDao {
         val current = forTrackSync(metadata.trackId)
         return upsert(mergeAutomaticEnrichmentArtwork(current, metadata))
     }
+
+    @Query("UPDATE tracks SET album_art_url = :albumArtUrl WHERE id = :trackId")
+    suspend fun updateTrackAlbumArtUrlForArtwork(trackId: Long, albumArtUrl: String?)
+
+    /**
+     * Save an explicit artwork choice and mirror it to tracks atomically.
+     *
+     * The current metadata row is read inside the transaction so a concurrent
+     * enrichment result cannot be lost when the user changes only the artwork.
+     */
+    @Transaction
+    suspend fun setUserSelectedArtwork(
+        trackId: Long,
+        albumArtUrl: String,
+        albumArtUrlSmall: String,
+        albumArtUrlLarge: String,
+        timestamp: Long,
+    ): Long {
+        val current = forTrackSync(trackId) ?: EnrichedMetadata(trackId = trackId)
+        val updated = current.copy(
+            albumArtUrl = albumArtUrl,
+            albumArtUrlSmall = albumArtUrlSmall,
+            albumArtUrlLarge = albumArtUrlLarge,
+            albumArtSource = AlbumArtSource.USER_SELECTED,
+            cacheTimestamp = timestamp,
+        )
+        val rowId = upsert(updated)
+        updateTrackAlbumArtUrlForArtwork(trackId, albumArtUrl)
+        return rowId
+    }
+
+    /**
+     * Remove the explicit artwork choice and clear the Track mirror atomically.
+     *
+     * USER_RESET is intentionally kept until a real automatic artwork source wins.
+     * It acts as a tombstone against stale Track snapshots that still carry the old
+     * manual URL.
+     */
+    @Transaction
+    suspend fun resetArtworkToAutomatic(
+        trackId: Long,
+        timestamp: Long,
+    ): Long {
+        val current = forTrackSync(trackId) ?: EnrichedMetadata(trackId = trackId)
+        val reset = current.copy(
+            albumArtUrl = null,
+            albumArtUrlSmall = null,
+            albumArtUrlLarge = null,
+            albumArtSource = AlbumArtSource.USER_RESET,
+            enrichmentStatus = EnrichmentStatus.PENDING,
+            retryCount = 0,
+            cacheTimestamp = timestamp,
+        )
+        val rowId = upsert(reset)
+        updateTrackAlbumArtUrlForArtwork(trackId, null)
+        return rowId
+    }
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(metadata: List<EnrichedMetadata>): List<Long>
@@ -575,6 +632,27 @@ internal fun mergeAutomaticEnrichmentArtwork(
             albumArtUrlLarge = currentManual.albumArtUrlLarge ?: selectedUrl,
             albumArtSource = AlbumArtSource.USER_SELECTED,
         )
+    }
+
+    // After an explicit reset, keep the tombstone until a real automatic source
+    // provides non-empty artwork. This prevents stale full-row snapshots from
+    // resurrecting the old manual URL or prematurely erasing the reset marker.
+    if (current?.albumArtSource == AlbumArtSource.USER_RESET) {
+        val incomingHasRealAutomaticArtwork =
+            incoming.albumArtSource !in setOf(
+                AlbumArtSource.NONE,
+                AlbumArtSource.USER_RESET,
+                AlbumArtSource.USER_SELECTED,
+            ) && !incoming.albumArtUrl.isNullOrBlank()
+
+        if (!incomingHasRealAutomaticArtwork) {
+            return incoming.copy(
+                albumArtUrl = null,
+                albumArtUrlSmall = null,
+                albumArtUrlLarge = null,
+                albumArtSource = AlbumArtSource.USER_RESET,
+            )
+        }
     }
 
     // An automatic task can hold a stale copy of USER_SELECTED after the user has
