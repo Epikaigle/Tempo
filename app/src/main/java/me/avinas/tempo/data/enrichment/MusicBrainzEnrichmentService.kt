@@ -210,7 +210,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
                         current = existingMetadata,
                         replacement = reusable,
                     )
-                    enrichedMetadataDao.upsert(copied)
+                    enrichedMetadataDao.upsertFromAutomaticEnrichment(copied)
                     return EnrichmentResult.Success(copied)
                 }
 
@@ -220,7 +220,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
             
             is SearchResult.NotFound -> {
                 val metadata = createNotFoundMetadata(track, existingMetadata, searchResult.reason)
-                enrichedMetadataDao.upsert(metadata)
+                enrichedMetadataDao.upsertFromAutomaticEnrichment(metadata)
                 EnrichmentResult.NotFound(searchResult.reason)
             }
             
@@ -232,7 +232,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
                         retryCount = existingMetadata.retryCount + 1,
                         lastEnrichmentAttempt = System.currentTimeMillis()
                     )
-                    enrichedMetadataDao.upsert(updated)
+                    enrichedMetadataDao.upsertFromAutomaticEnrichment(updated)
                 }
                 EnrichmentResult.Error(searchResult.message, searchResult.retryable)
             }
@@ -609,7 +609,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 Log.d(TAG, "MusicBrainz: Preserving ${existingMetadata.albumArtSource} album art (higher priority than MUSICBRAINZ)")
             }
             
-            enrichedMetadataDao.upsert(metadata)
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(metadata)
             Log.i(TAG, "Successfully enriched track ${track.id}: '${track.title}'")
             
             // Smart album association: Create Artist and Album entities if album info is available
@@ -940,7 +940,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 enrichmentStatus = EnrichmentStatus.PENDING,
                 cacheTimestamp = System.currentTimeMillis()
             )
-            enrichedMetadataDao.upsert(pending)
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(pending)
         }
     }
 
@@ -1116,7 +1116,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 cacheTimestamp = System.currentTimeMillis()
             )
 
-            enrichedMetadataDao.upsert(supplementedMetadata)
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(supplementedMetadata)
             
             // Only log if we actually added something useful
             val tagsCount = tags.size
