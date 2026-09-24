@@ -36,9 +36,10 @@ interface TrackDao {
     suspend fun update(track: Track)
 
     /**
-     * Automatic/full-row track updates must never overwrite a cover explicitly
-     * chosen by the user. Read the manual URL and write the track in one Room
-     * transaction so a concurrent metadata change cannot slip between the two.
+     * Full-row Track updates are used for artist, album, duration and identifier
+     * maintenance. Artwork is deliberately NOT part of that contract: preserving
+     * the currently stored URL prevents a stale Track snapshot from resurrecting an
+     * old cover after the user changed or reset it.
      */
     @Query("""
         SELECT album_art_url FROM enriched_metadata
@@ -58,27 +59,36 @@ interface TrackDao {
 
     @Transaction
     suspend fun updatePreservingManualArtwork(track: Track) {
-        val source = getAlbumArtSource(track.id)
-        val manualArt = if (source == AlbumArtSource.USER_SELECTED) {
-            getManualAlbumArtUrl(track.id)
-        } else {
-            null
-        }
-        val currentTrackArt = if (source == AlbumArtSource.USER_RESET) {
-            getCurrentTrackAlbumArtUrl(track.id)
-        } else {
-            null
-        }
+        val currentTrackArt = getCurrentTrackAlbumArtUrl(track.id)
+        update(track.copy(albumArtUrl = currentTrackArt))
+    }
 
-        update(
-            track.copy(
-                albumArtUrl = resolveProtectedTrackArtwork(
-                    source = source,
-                    manualArtUrl = manualArt,
-                    currentTrackArtUrl = currentTrackArt,
-                    incomingArtUrl = track.albumArtUrl,
-                )
-            )
+    /**
+     * The only automatic path allowed to change Track.album_art_url.
+     * Re-check the current artwork preference in the same transaction as the write,
+     * so a user selection/reset that wins the race cannot be overwritten.
+     */
+    @Transaction
+    suspend fun updateAutomaticAlbumArtUrl(
+        trackId: Long,
+        albumArtUrl: String?,
+    ) {
+        val source = getAlbumArtSource(trackId)
+        val manualArt = if (source == AlbumArtSource.USER_SELECTED) {
+            getManualAlbumArtUrl(trackId)
+        } else {
+            null
+        }
+        val currentTrackArt = getCurrentTrackAlbumArtUrl(trackId)
+
+        updateAlbumArtUrl(
+            trackId = trackId,
+            albumArtUrl = resolveProtectedTrackArtwork(
+                source = source,
+                manualArtUrl = manualArt,
+                currentTrackArtUrl = currentTrackArt,
+                incomingArtUrl = albumArtUrl,
+            ),
         )
     }
 
