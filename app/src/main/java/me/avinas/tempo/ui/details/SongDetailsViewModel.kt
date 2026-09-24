@@ -325,6 +325,8 @@ class SongDetailsViewModel @Inject constructor(
         val currentDetails = _uiState.value.trackDetails ?: return
         if (_uiState.value.isSavingCover) return
 
+        coverLookupJob?.cancel()
+        coverLookupJob = null
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
             try {
@@ -371,6 +373,8 @@ class SongDetailsViewModel @Inject constructor(
         val current = _uiState.value.trackDetails?.track ?: return
         if (_uiState.value.isSavingCover) return
 
+        coverLookupJob?.cancel()
+        coverLookupJob = null
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
             try {
@@ -389,10 +393,12 @@ class SongDetailsViewModel @Inject constructor(
                 } else {
                     enrichedMetadataRepository.createPendingIfNotExists(trackId)
                 }
+                trackRepository.update(current.copy(albumArtUrl = null))
                 enrichedMetadataRepository.markForReEnrichment(trackId)
                 EnrichmentWorker.enqueueImmediate(context, trackId)
 
-                // Keep the last visible cover until automatic enrichment resolves a replacement.
+                // Clear the manual image immediately. The normal enrichment worker will
+                // repopulate Track.albumArtUrl and its metadata-update signal reloads this screen.
                 _uiState.update {
                     it.copy(
                         isManualCover = false,
@@ -400,7 +406,9 @@ class SongDetailsViewModel @Inject constructor(
                         isLoadingCoverCandidates = false,
                         isSavingCover = false,
                         coverPickerError = null,
-                        trackDetails = it.trackDetails?.copy(track = current),
+                        trackDetails = it.trackDetails?.copy(
+                            track = it.trackDetails.track.copy(albumArtUrl = null),
+                        ),
                     )
                 }
             } catch (e: Exception) {
@@ -476,13 +484,13 @@ class SongDetailsViewModel @Inject constructor(
         _previewProgress.value = 0f
         _previewPositionMs.value = 0L
         previewProgressJob?.cancel()
-        coverLookupJob?.cancel()
-        coverLookupJob = null
         exoPlayer?.stop()
     }
 
     override fun onCleared() {
         super.onCleared()
+        coverLookupJob?.cancel()
+        coverLookupJob = null
         stopAudioPreview()
         exoPlayer?.release()
         exoPlayer = null
