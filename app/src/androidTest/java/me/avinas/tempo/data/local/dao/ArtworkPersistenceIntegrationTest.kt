@@ -158,11 +158,9 @@ class ArtworkPersistenceIntegrationTest {
             timestamp = 1L,
         )
 
-        // Maintenance code may still update unrelated columns from the stale snapshot.
-        // The guarded full-row writer must preserve the user's newer artwork choice.
-        trackDao.updatePreservingManualArtwork(
-            staleSnapshot.copy(contentType = "MUSIC")
-        )
+        // Maintenance code must update only content_type. A targeted write cannot
+        // replay stale artwork (or any other unrelated fields) from this snapshot.
+        trackDao.updateContentType(staleSnapshot.id, "MUSIC")
 
         val updated = requireNotNull(trackDao.getTrackById(trackId))
         assertEquals("MUSIC", updated.contentType)
