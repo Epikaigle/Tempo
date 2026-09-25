@@ -1194,4 +1194,7 @@
 
     <string name="details_cover_unavailable">Indisponível</string>
     <string name="details_cover_error">Falha na pesquisa</string>
+    <string name="details_cover_load_error">Não foi possível carregar as capas</string>
+    <string name="details_cover_save_error">Não foi possível guardar a capa</string>
+    <string name="details_cover_restore_auto_error">Não foi possível restaurar a seleção automática</string>
 </resources>
