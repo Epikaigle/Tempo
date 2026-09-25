@@ -72,7 +72,7 @@ interface TrackDao {
     suspend fun updateAutomaticAlbumArtUrl(
         trackId: Long,
         albumArtUrl: String?,
-    ) {
+    ): String? {
         val source = getAlbumArtSource(trackId)
         val manualArt = if (source == AlbumArtSource.USER_SELECTED) {
             getManualAlbumArtUrl(trackId)
@@ -80,16 +80,18 @@ interface TrackDao {
             null
         }
         val currentTrackArt = getCurrentTrackAlbumArtUrl(trackId)
+        val resolvedArtwork = resolveProtectedTrackArtwork(
+            source = source,
+            manualArtUrl = manualArt,
+            currentTrackArtUrl = currentTrackArt,
+            incomingArtUrl = albumArtUrl,
+        )
 
         updateAlbumArtUrl(
             trackId = trackId,
-            albumArtUrl = resolveProtectedTrackArtwork(
-                source = source,
-                manualArtUrl = manualArt,
-                currentTrackArtUrl = currentTrackArt,
-                incomingArtUrl = albumArtUrl,
-            ),
+            albumArtUrl = resolvedArtwork,
         )
+        return resolvedArtwork
     }
 
     /**
