@@ -35,6 +35,17 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
+
+internal fun immediateEnrichmentWorkPolicy(
+    trackId: Long?,
+    appendAfterExisting: Boolean,
+): ExistingWorkPolicy =
+    if (trackId == null || appendAfterExisting) {
+        ExistingWorkPolicy.APPEND_OR_REPLACE
+    } else {
+        ExistingWorkPolicy.KEEP
+    }
+
 /**
  * WorkManager worker that enriches unenriched tracks with metadata from external APIs.
  */
@@ -178,7 +189,11 @@ class EnrichmentWorker @AssistedInject constructor(
          * Trigger immediate enrichment for a specific track or batch.
          * When trackId is null, only processes completely unenriched tracks to avoid excessive API calls.
          */
-        fun enqueueImmediate(context: Context, trackId: Long? = null) {
+        fun enqueueImmediate(
+            context: Context,
+            trackId: Long? = null,
+            appendAfterExisting: Boolean = false,
+        ) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
@@ -197,15 +212,17 @@ class EnrichmentWorker @AssistedInject constructor(
                 .addTag("enrichment_immediate")
                 .build()
 
-            // Per-track enrichments each get a unique work name so that a desktop batch
-            // (which enqueues multiple track IDs in quick succession) does not cause each
-            // submission to replace the previous still-ENQUEUED one under APPEND_OR_REPLACE.
-            // KEEP policy is correct here: if the same track is already queued, there is no
-            // need to enqueue a duplicate job.
-            // The generic (null trackId) path keeps APPEND_OR_REPLACE so a startup
-            // sweep always runs after in-flight work settles.
+            // Per-track enrichments normally use KEEP to deduplicate repeated requests.
+            // A user action that changes enrichment state (notably "return to automatic
+            // artwork") must get a fresh pass *after* any in-flight request that may have
+            // started from an older snapshot. APPEND_OR_REPLACE preserves the current work
+            // when it is healthy and guarantees a successor; if the chain is already failed
+            // or cancelled WorkManager starts a replacement instead.
             val workName = if (trackId != null) "${WORK_NAME_IMMEDIATE}_$trackId" else WORK_NAME_IMMEDIATE
-            val workPolicy = if (trackId != null) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.APPEND_OR_REPLACE
+            val workPolicy = immediateEnrichmentWorkPolicy(
+                trackId = trackId,
+                appendAfterExisting = appendAfterExisting,
+            )
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 workName,
