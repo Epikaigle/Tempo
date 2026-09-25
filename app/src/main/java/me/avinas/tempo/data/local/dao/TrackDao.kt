@@ -54,6 +54,9 @@ interface TrackDao {
     @Query("SELECT album_art_source FROM enriched_metadata WHERE track_id = :trackId LIMIT 1")
     suspend fun getAlbumArtSource(trackId: Long): AlbumArtSource?
 
+    @Query("SELECT album_art_url FROM enriched_metadata WHERE track_id = :trackId LIMIT 1")
+    suspend fun getMetadataAlbumArtUrl(trackId: Long): String?
+
     @Query("SELECT album_art_url FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getCurrentTrackAlbumArtUrl(trackId: Long): String?
 
@@ -77,8 +80,11 @@ interface TrackDao {
 
     /**
      * The only automatic path allowed to change Track.album_art_url.
-     * Re-check the current artwork preference in the same transaction as the write,
-     * so a user selection/reset that wins the race cannot be overwritten.
+     *
+     * Re-check the authoritative metadata decision in the same transaction. Once
+     * enriched_metadata contains an accepted automatic cover, callers with stale
+     * provider results must mirror that canonical URL instead of diverging the
+     * Track row. USER_SELECTED and USER_RESET retain their stronger protections.
      */
     @Transaction
     suspend fun updateAutomaticAlbumArtUrl(
@@ -91,12 +97,22 @@ interface TrackDao {
         } else {
             null
         }
+        val canonicalAutomaticArt =
+            if (source != null &&
+                source != AlbumArtSource.NONE &&
+                source != AlbumArtSource.USER_RESET &&
+                source != AlbumArtSource.USER_SELECTED
+            ) {
+                getMetadataAlbumArtUrl(trackId)?.takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
         val currentTrackArt = getCurrentTrackAlbumArtUrl(trackId)
         val resolvedArtwork = resolveProtectedTrackArtwork(
             source = source,
             manualArtUrl = manualArt,
             currentTrackArtUrl = currentTrackArt,
-            incomingArtUrl = albumArtUrl,
+            incomingArtUrl = canonicalAutomaticArt ?: albumArtUrl,
         )
 
         updateAlbumArtUrl(

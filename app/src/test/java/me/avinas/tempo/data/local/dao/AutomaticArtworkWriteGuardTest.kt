@@ -93,4 +93,67 @@ class AutomaticArtworkWriteGuardTest {
         assertEquals("https://itunes.example/new.jpg", replaced.albumArtUrl)
     }
 
+    @Test
+    fun staleLowerPriorityAutomaticArtworkCannotOverwriteCurrentWinner() {
+        val current = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = "https://spotify.example/winner.jpg",
+            albumArtUrlSmall = "https://spotify.example/winner-small.jpg",
+            albumArtUrlLarge = "https://spotify.example/winner-large.jpg",
+            albumArtSource = AlbumArtSource.SPOTIFY,
+            genres = listOf("Old"),
+        )
+        val staleLowerPriority = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = "https://deezer.example/stale.jpg",
+            albumArtSource = AlbumArtSource.DEEZER,
+            genres = listOf("Pop"),
+        )
+
+        val merged = mergeAutomaticEnrichmentArtwork(current, staleLowerPriority)
+
+        assertEquals(AlbumArtSource.SPOTIFY, merged.albumArtSource)
+        assertEquals("https://spotify.example/winner.jpg", merged.albumArtUrl)
+        assertEquals("https://spotify.example/winner-small.jpg", merged.albumArtUrlSmall)
+        assertEquals("https://spotify.example/winner-large.jpg", merged.albumArtUrlLarge)
+        assertEquals(listOf("Pop"), merged.genres)
+    }
+
+    @Test
+    fun metadataOnlyAutomaticWriteCannotEraseExistingArtwork() {
+        val current = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = "https://itunes.example/cover.jpg",
+            albumArtSource = AlbumArtSource.ITUNES,
+        )
+        val incomingWithoutArtwork = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = null,
+            albumArtSource = AlbumArtSource.NONE,
+            tags = listOf("favorite"),
+        )
+
+        val merged = mergeAutomaticEnrichmentArtwork(current, incomingWithoutArtwork)
+
+        assertEquals(AlbumArtSource.ITUNES, merged.albumArtSource)
+        assertEquals("https://itunes.example/cover.jpg", merged.albumArtUrl)
+        assertEquals(listOf("favorite"), merged.tags)
+    }
+
+    @Test
+    fun samePriorityAutomaticSourceCanRefreshArtwork() {
+        val current = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = "https://itunes.example/old.jpg",
+            albumArtSource = AlbumArtSource.ITUNES,
+        )
+        val refreshed = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = "https://itunes.example/new.jpg",
+            albumArtSource = AlbumArtSource.ITUNES,
+        )
+
+        assertEquals(refreshed, mergeAutomaticEnrichmentArtwork(current, refreshed))
+    }
+
 }

@@ -9,8 +9,11 @@ import kotlinx.coroutines.runBlocking
 import me.avinas.tempo.data.analytics.NoOpAnalyticsTracker
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.entities.AlbumArtSource
+import me.avinas.tempo.data.local.entities.EnrichedMetadata
+import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.repository.ArtistLinkingService
+import me.avinas.tempo.data.repository.RoomEnrichedMetadataRepository
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.TrackAliasRepository
 import org.junit.After
@@ -239,6 +242,124 @@ class ArtworkPersistenceIntegrationTest {
             AlbumArtSource.USER_RESET,
             metadataDao.forTrackSync(targetId)?.albumArtSource,
         )
+    }
+
+
+    @Test
+    fun pendingCreationCannotReplaceExistingManualArtwork() = runBlocking {
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val repository = RoomEnrichedMetadataRepository(metadataDao)
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Song",
+                    artist = "Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+
+        val manualUrl = "https://manual.example/cover.jpg"
+        metadataDao.setUserSelectedArtwork(
+            trackId = trackId,
+            albumArtUrl = manualUrl,
+            albumArtUrlSmall = manualUrl,
+            albumArtUrlLarge = manualUrl,
+            timestamp = 1L,
+        )
+
+        repository.createPendingIfNotExists(trackId)
+
+        val preserved = requireNotNull(metadataDao.forTrackSync(trackId))
+        assertEquals(AlbumArtSource.USER_SELECTED, preserved.albumArtSource)
+        assertEquals(manualUrl, preserved.albumArtUrl)
+        assertEquals(manualUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        val newTrackId =
+            trackDao.insert(
+                Track(
+                    title = "Fresh Song",
+                    artist = "Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+        repository.createPendingIfNotExists(newTrackId)
+        assertEquals(
+            EnrichmentStatus.PENDING,
+            metadataDao.forTrackSync(newTrackId)?.enrichmentStatus,
+        )
+    }
+
+    @Test
+    fun automaticPriorityAndTrackMirrorStayConsistentAcrossRacingProviders() = runBlocking {
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Song",
+                    artist = "Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+
+        val itunesUrl = "https://itunes.example/cover.jpg"
+        val spotifyUrl = "https://spotify.example/cover.jpg"
+        val staleDeezerUrl = "https://deezer.example/stale.jpg"
+
+        metadataDao.upsertFromAutomaticEnrichment(
+            EnrichedMetadata(
+                trackId = trackId,
+                albumArtUrl = itunesUrl,
+                albumArtSource = AlbumArtSource.ITUNES,
+            )
+        )
+        assertEquals(itunesUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        metadataDao.upsertFromAutomaticEnrichment(
+            EnrichedMetadata(
+                trackId = trackId,
+                albumArtUrl = spotifyUrl,
+                albumArtSource = AlbumArtSource.SPOTIFY,
+            )
+        )
+        assertEquals(spotifyUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        metadataDao.upsertFromAutomaticEnrichment(
+            EnrichedMetadata(
+                trackId = trackId,
+                albumArtUrl = staleDeezerUrl,
+                albumArtSource = AlbumArtSource.DEEZER,
+                genres = listOf("Pop"),
+            )
+        )
+
+        // Even a stale direct Track write must mirror the authoritative Spotify
+        // decision rather than diverging from enriched_metadata.
+        val mirrored =
+            trackDao.updateAutomaticAlbumArtUrl(
+                trackId = trackId,
+                albumArtUrl = staleDeezerUrl,
+            )
+
+        val finalMetadata = requireNotNull(metadataDao.forTrackSync(trackId))
+        assertEquals(AlbumArtSource.SPOTIFY, finalMetadata.albumArtSource)
+        assertEquals(spotifyUrl, finalMetadata.albumArtUrl)
+        assertEquals(listOf("Pop"), finalMetadata.genres)
+        assertEquals(spotifyUrl, mirrored)
+        assertEquals(spotifyUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
     }
 
     @Suppress("UNCHECKED_CAST")

@@ -26,6 +26,16 @@ interface EnrichedMetadataDao {
     suspend fun upsert(metadata: EnrichedMetadata): Long
 
     /**
+     * Insert metadata only when no row for the track exists.
+     *
+     * The unique track_id index makes this a single atomic SQLite decision, so a
+     * concurrent manual artwork selection can never be replaced by a stale
+     * "create pending" check-then-upsert sequence.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(metadata: EnrichedMetadata): Long
+
+    /**
      * Persist metadata produced by automatic enrichment without allowing a stale
      * in-flight request to overwrite or resurrect a user's explicit artwork choice.
      *
@@ -37,7 +47,19 @@ interface EnrichedMetadataDao {
     @Transaction
     suspend fun upsertFromAutomaticEnrichment(metadata: EnrichedMetadata): Long {
         val current = forTrackSync(metadata.trackId)
-        return upsert(mergeAutomaticEnrichmentArtwork(current, metadata))
+        val resolved = mergeAutomaticEnrichmentArtwork(current, metadata)
+        val rowId = upsert(resolved)
+
+        // Track.album_art_url is a denormalized UI mirror. Keep it in the same
+        // transaction as the authoritative artwork decision so a stale provider
+        // cannot leave the two tables disagreeing.
+        if (resolved.albumArtSource == AlbumArtSource.USER_RESET) {
+            updateTrackAlbumArtUrlForArtwork(resolved.trackId, null)
+        } else if (!resolved.albumArtUrl.isNullOrBlank()) {
+            updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
+        }
+
+        return rowId
     }
 
     @Query("UPDATE tracks SET album_art_url = :albumArtUrl WHERE id = :trackId")
@@ -128,7 +150,18 @@ interface EnrichedMetadataDao {
             merged += resolved
         }
 
-        return upsertAll(merged)
+        val rowIds = upsertAll(merged)
+
+        // Keep Track mirrors aligned with the protected result for batch imports too.
+        for (resolved in merged) {
+            if (resolved.albumArtSource == AlbumArtSource.USER_RESET) {
+                updateTrackAlbumArtUrlForArtwork(resolved.trackId, null)
+            } else if (!resolved.albumArtUrl.isNullOrBlank()) {
+                updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
+            }
+        }
+
+        return rowIds
     }
     
     @Update
@@ -653,6 +686,14 @@ internal fun mergeAutomaticEnrichmentArtwork(
     current: EnrichedMetadata?,
     incoming: EnrichedMetadata,
 ): EnrichedMetadata {
+    fun preserveCurrentArtwork(): EnrichedMetadata =
+        incoming.copy(
+            albumArtUrl = current?.albumArtUrl,
+            albumArtUrlSmall = current?.albumArtUrlSmall,
+            albumArtUrlLarge = current?.albumArtUrlLarge,
+            albumArtSource = current?.albumArtSource ?: AlbumArtSource.NONE,
+        )
+
     val currentManual = current?.takeIf {
         it.albumArtSource == AlbumArtSource.USER_SELECTED &&
             !it.albumArtUrl.isNullOrBlank()
@@ -668,36 +709,55 @@ internal fun mergeAutomaticEnrichmentArtwork(
         )
     }
 
+    val incomingHasRealAutomaticArtwork =
+        incoming.albumArtSource != AlbumArtSource.NONE &&
+            incoming.albumArtSource != AlbumArtSource.USER_RESET &&
+            incoming.albumArtSource != AlbumArtSource.USER_SELECTED &&
+            !incoming.albumArtUrl.isNullOrBlank()
+
     // After an explicit reset, keep the tombstone until a real automatic source
     // provides non-empty artwork. This prevents stale full-row snapshots from
     // resurrecting the old manual URL or prematurely erasing the reset marker.
-    if (current?.albumArtSource == AlbumArtSource.USER_RESET) {
-        val incomingHasRealAutomaticArtwork =
-            incoming.albumArtSource != AlbumArtSource.NONE &&
-                incoming.albumArtSource != AlbumArtSource.USER_RESET &&
-                incoming.albumArtSource != AlbumArtSource.USER_SELECTED &&
-                !incoming.albumArtUrl.isNullOrBlank()
-
-        if (!incomingHasRealAutomaticArtwork) {
-            return incoming.copy(
-                albumArtUrl = null,
-                albumArtUrlSmall = null,
-                albumArtUrlLarge = null,
-                albumArtSource = AlbumArtSource.USER_RESET,
-            )
-        }
+    if (current?.albumArtSource == AlbumArtSource.USER_RESET &&
+        !incomingHasRealAutomaticArtwork
+    ) {
+        return incoming.copy(
+            albumArtUrl = null,
+            albumArtUrlSmall = null,
+            albumArtUrlLarge = null,
+            albumArtSource = AlbumArtSource.USER_RESET,
+        )
     }
 
     // An automatic task can hold a stale copy of USER_SELECTED after the user has
     // deliberately returned to automatic selection. Never let that stale snapshot
     // re-create the manual lock.
     if (incoming.albumArtSource == AlbumArtSource.USER_SELECTED) {
-        return incoming.copy(
-            albumArtUrl = current?.albumArtUrl,
-            albumArtUrlSmall = current?.albumArtUrlSmall,
-            albumArtUrlLarge = current?.albumArtUrlLarge,
-            albumArtSource = current?.albumArtSource ?: AlbumArtSource.NONE,
-        )
+        return preserveCurrentArtwork()
+    }
+
+    val currentHasArtwork = !current?.albumArtUrl.isNullOrBlank()
+    if (currentHasArtwork && !incomingHasRealAutomaticArtwork) {
+        // Status/genre/etc. writes without artwork must not erase a cover selected
+        // by a previous automatic source.
+        return preserveCurrentArtwork()
+    }
+
+    val currentHasRealAutomaticArtwork =
+        currentHasArtwork &&
+            current?.albumArtSource != null &&
+            current.albumArtSource != AlbumArtSource.NONE &&
+            current.albumArtSource != AlbumArtSource.USER_RESET &&
+            current.albumArtSource != AlbumArtSource.USER_SELECTED
+
+    if (currentHasRealAutomaticArtwork &&
+        incomingHasRealAutomaticArtwork &&
+        !current!!.albumArtSource.shouldBeReplacedBy(incoming.albumArtSource)
+    ) {
+        // The incoming request may have started before a higher-priority provider
+        // finished. Preserve the winner while still accepting all non-art metadata
+        // from the stale request.
+        return preserveCurrentArtwork()
     }
 
     return incoming

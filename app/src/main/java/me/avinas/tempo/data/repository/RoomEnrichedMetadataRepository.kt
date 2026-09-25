@@ -59,15 +59,14 @@ class RoomEnrichedMetadataRepository @Inject constructor(
         )
     
     override suspend fun createPendingIfNotExists(trackId: Long) {
-        val existing = dao.forTrackSync(trackId)
-        if (existing == null) {
-            val pending = EnrichedMetadata(
-                trackId = trackId,
-                enrichmentStatus = EnrichmentStatus.PENDING,
-                cacheTimestamp = System.currentTimeMillis()
-            )
-            dao.upsert(pending)
-        }
+        val pending = EnrichedMetadata(
+            trackId = trackId,
+            enrichmentStatus = EnrichmentStatus.PENDING,
+            cacheTimestamp = System.currentTimeMillis()
+        )
+        // One INSERT OR IGNORE is atomic. A manual selection or enrichment row
+        // that wins the race is preserved instead of being REPLACEd by PENDING.
+        dao.insertIfAbsent(pending)
     }
     
     override suspend fun markForReEnrichment(trackId: Long) {
