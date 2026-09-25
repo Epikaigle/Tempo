@@ -1085,4 +1085,7 @@
 
     <string name="details_cover_unavailable">Nicht verfügbar</string>
     <string name="details_cover_error">Suche fehlgeschlagen</string>
+    <string name="details_cover_load_error">Cover konnten nicht geladen werden</string>
+    <string name="details_cover_save_error">Cover konnte nicht gespeichert werden</string>
+    <string name="details_cover_restore_auto_error">Automatische Coverauswahl konnte nicht wiederhergestellt werden</string>
 </resources>
