@@ -173,7 +173,7 @@ open class TrackAliasRepository @Inject constructor(
                 // Returning the surviving target to automatic selection is also an
                 // explicit preference. Do not resurrect artwork from the source track.
                 if (targetMetadata?.albumArtSource == AlbumArtSource.USER_RESET) {
-                    updatedTarget = updatedTarget.copy(albumArtUrl = targetTrack.albumArtUrl)
+                    updatedTarget = updatedTarget.copy(albumArtUrl = null)
                 }
 
                 // A user-selected cover is an explicit preference, not ordinary enrichment.

@@ -56,7 +56,7 @@ class AlbumArtSourceTest {
 
     @Test
     fun userResetIsNeverAnAutomaticReplacementCandidate() {
-        AlbumArtSource.entries.forEach { source ->
+        AlbumArtSource.values().forEach { source ->
             assertFalse(source.shouldBeReplacedBy(AlbumArtSource.USER_RESET))
         }
     }
