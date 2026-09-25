@@ -30,6 +30,28 @@ private val COVER_VERSION_ALLOWED_TOKENS = COVER_VERSION_MARKERS + setOf(
     "digital",
 )
 
+private fun explicitCoverVersionKinds(title: String): Set<String> =
+    ArtistParser.normalizeForSearch(title)
+        .split(" ")
+        .mapNotNull { token ->
+            when (token) {
+                "remaster", "remastered" -> "remaster"
+                "remix" -> "remix"
+                "mix" -> "mix"
+                "edit" -> "edit"
+                "version" -> "version"
+                "live" -> "live"
+                "acoustic" -> "acoustic"
+                "instrumental" -> "instrumental"
+                "mono" -> "mono"
+                "stereo" -> "stereo"
+                "deluxe" -> "deluxe"
+                "edition" -> "edition"
+                else -> null
+            }
+        }
+        .toSet()
+
 /**
  * Conservative title matching for user-facing cover candidates.
  *
@@ -42,6 +64,19 @@ internal fun isSafeCoverTrackTitleMatch(
     expectedTitle: String,
     candidateTitle: String,
 ): Boolean {
+    val expectedVersions = explicitCoverVersionKinds(expectedTitle)
+    val candidateVersions = explicitCoverVersionKinds(candidateTitle)
+
+    // When Tempo's own title explicitly identifies a version, never silently
+    // downgrade it to a different/studio version. A plain expected title may
+    // still accept a provider's explicit version suffix as a conservative
+    // fallback (the existing picker behavior).
+    if (expectedVersions.isNotEmpty() &&
+        expectedVersions.intersect(candidateVersions).isEmpty()
+    ) {
+        return false
+    }
+
     val expected = ArtistParser.normalizeForSearch(
         ArtistParser.cleanTrackTitle(expectedTitle)
     )
