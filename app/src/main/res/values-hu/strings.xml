@@ -719,4 +719,7 @@
 
     <string name="details_cover_unavailable">Nem érhető el</string>
     <string name="details_cover_error">Sikertelen keresés</string>
+    <string name="details_cover_load_error">A borítók betöltése nem sikerült</string>
+    <string name="details_cover_save_error">A borító mentése nem sikerült</string>
+    <string name="details_cover_restore_auto_error">Az automatikus borítóválasztás visszaállítása nem sikerült</string>
 </resources>
