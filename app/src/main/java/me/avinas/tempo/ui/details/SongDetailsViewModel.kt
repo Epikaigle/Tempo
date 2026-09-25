@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import me.avinas.tempo.R
 import me.avinas.tempo.data.enrichment.CoverArtCandidate
 import me.avinas.tempo.data.enrichment.CoverArtLookupStatus
 import me.avinas.tempo.data.enrichment.CoverArtPickerService
@@ -320,7 +321,7 @@ class SongDetailsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isLoadingCoverCandidates = false,
-                        coverPickerError = e.message ?: "Failed to load cover art",
+                        coverPickerError = e.message ?: context.getString(R.string.details_cover_load_error),
                     )
                 }
             }
@@ -376,7 +377,7 @@ class SongDetailsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isSavingCover = false,
-                        coverPickerError = e.message ?: "Failed to save cover art",
+                        coverPickerError = e.message ?: context.getString(R.string.details_cover_save_error),
                     )
                 }
             }
@@ -417,7 +418,7 @@ class SongDetailsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isSavingCover = false,
-                        coverPickerError = e.message ?: "Failed to restore automatic artwork",
+                        coverPickerError = e.message ?: context.getString(R.string.details_cover_restore_auto_error),
                     )
                 }
             }
