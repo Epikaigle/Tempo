@@ -130,6 +130,50 @@ class ArtworkPersistenceIntegrationTest {
     }
 
     @Test
+    fun fullRowMaintenanceUpdateCannotOverwriteConcurrentManualArtwork() = runBlocking {
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Song",
+                    artist = "Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = "https://automatic.example/old.jpg",
+                    spotifyId = null,
+                    musicbrainzId = null,
+                    contentType = "PODCAST",
+                )
+            )
+
+        // Simulate code that read the Track before the user changed the artwork.
+        val staleSnapshot = requireNotNull(trackDao.getTrackById(trackId))
+        val manualUrl = "https://manual.example/new.jpg"
+        metadataDao.setUserSelectedArtwork(
+            trackId = trackId,
+            albumArtUrl = manualUrl,
+            albumArtUrlSmall = manualUrl,
+            albumArtUrlLarge = manualUrl,
+            timestamp = 1L,
+        )
+
+        // Maintenance code may still update unrelated columns from the stale snapshot.
+        // The guarded full-row writer must preserve the user's newer artwork choice.
+        trackDao.updatePreservingManualArtwork(
+            staleSnapshot.copy(contentType = "MUSIC")
+        )
+
+        val updated = requireNotNull(trackDao.getTrackById(trackId))
+        assertEquals("MUSIC", updated.contentType)
+        assertEquals(manualUrl, updated.albumArtUrl)
+        assertEquals(
+            AlbumArtSource.USER_SELECTED,
+            metadataDao.forTrackSync(trackId)?.albumArtSource,
+        )
+    }
+
+    @Test
     fun mergeKeepsResetTargetEmptyWhenSourceHasManualArtworkAndTrackMirrorIsStale() = runBlocking {
         val trackDao = database.trackDao()
         val metadataDao = database.enrichedMetadataDao()
