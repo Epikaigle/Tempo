@@ -1511,4 +1511,7 @@
 
     <string name="details_cover_unavailable">Unavailable</string>
     <string name="details_cover_error">Lookup failed</string>
+    <string name="details_cover_load_error">Failed to load cover art</string>
+    <string name="details_cover_save_error">Failed to save cover art</string>
+    <string name="details_cover_restore_auto_error">Failed to restore automatic artwork</string>
 </resources>
