@@ -32,6 +32,23 @@ class CoverArtMatchingTest {
     }
 
     @Test
+    fun explicitVersionDoesNotDowngradeToStudioVersion() {
+        assertFalse(isSafeCoverTrackTitleMatch("Song Live", "Song"))
+        assertFalse(isSafeCoverTrackTitleMatch("Song Remix", "Song"))
+        assertFalse(isSafeCoverTrackTitleMatch("Dreams (Remastered)", "Dreams"))
+    }
+
+    @Test
+    fun equivalentExplicitVersionMarkersStillMatch() {
+        assertTrue(
+            isSafeCoverTrackTitleMatch(
+                "Dreams (Remastered)",
+                "Dreams 2011 Remaster",
+            )
+        )
+    }
+
+    @Test
     fun remasterSuffixDoesNotBreakARealMatch() {
         assertTrue(
             isSafeCoverTrackTitleMatch(
