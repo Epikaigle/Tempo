@@ -372,7 +372,11 @@ enum class AlbumArtSource(val priority: Int) {
      * Equal priority allows refreshing stale art from same source.
      */
     fun shouldBeReplacedBy(other: AlbumArtSource): Boolean {
-        return other.priority >= this.priority && other != NONE
+        // USER_RESET is a control-state tombstone, not an artwork source. It is
+        // applied only by the explicit reset action and must never win automatic
+        // source arbitration.
+        if (other == NONE || other == USER_RESET) return false
+        return other.priority >= this.priority
     }
     
     /**

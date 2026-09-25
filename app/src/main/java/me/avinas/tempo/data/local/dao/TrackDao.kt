@@ -59,8 +59,20 @@ interface TrackDao {
 
     @Transaction
     suspend fun updatePreservingManualArtwork(track: Track) {
+        val source = getAlbumArtSource(track.id)
+        val manualArt = if (source == AlbumArtSource.USER_SELECTED) {
+            getManualAlbumArtUrl(track.id)
+        } else {
+            null
+        }
         val currentTrackArt = getCurrentTrackAlbumArtUrl(track.id)
-        update(track.copy(albumArtUrl = currentTrackArt))
+        val preservedArtwork = resolveProtectedTrackArtwork(
+            source = source,
+            manualArtUrl = manualArt,
+            currentTrackArtUrl = currentTrackArt,
+            incomingArtUrl = currentTrackArt,
+        )
+        update(track.copy(albumArtUrl = preservedArtwork))
     }
 
     /**
@@ -393,6 +405,6 @@ internal fun resolveProtectedTrackArtwork(
 ): String? =
     when (source) {
         AlbumArtSource.USER_SELECTED -> manualArtUrl ?: currentTrackArtUrl ?: incomingArtUrl
-        AlbumArtSource.USER_RESET -> currentTrackArtUrl
+        AlbumArtSource.USER_RESET -> null
         else -> incomingArtUrl
     }

@@ -21,13 +21,13 @@ class TrackArtworkWriteGuardTest {
     }
 
     @Test
-    fun resetTombstoneBlocksStaleArtworkResurrection() {
+    fun resetTombstoneClearsStaleTrackMirrorAndBlocksIncomingArtwork() {
         assertNull(
             resolveProtectedTrackArtwork(
                 source = AlbumArtSource.USER_RESET,
                 manualArtUrl = null,
-                currentTrackArtUrl = null,
-                incomingArtUrl = "https://stale-manual.example/cover.jpg",
+                currentTrackArtUrl = "https://stale-track.example/old-manual.jpg",
+                incomingArtUrl = "https://automatic.example/new.jpg",
             )
         )
     }

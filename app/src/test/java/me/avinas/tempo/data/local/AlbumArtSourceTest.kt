@@ -40,6 +40,7 @@ class AlbumArtSourceTest {
         assertTrue(AlbumArtSource.USER_SELECTED.isUserSelected())
         assertFalse(AlbumArtSource.USER_SELECTED.isApiSource())
     }
+
     @Test
     fun userResetCanBeReplacedByRealAutomaticArtwork() {
         val reset = AlbumArtSource.USER_RESET
@@ -53,4 +54,10 @@ class AlbumArtSourceTest {
         assertFalse(reset.isUserSelected())
     }
 
+    @Test
+    fun userResetIsNeverAnAutomaticReplacementCandidate() {
+        AlbumArtSource.entries.forEach { source ->
+            assertFalse(source.shouldBeReplacedBy(AlbumArtSource.USER_RESET))
+        }
+    }
 }
