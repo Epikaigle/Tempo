@@ -396,9 +396,13 @@ class SongDetailsViewModel @Inject constructor(
                 enrichedMetadataRepository.resetArtworkToAutomatic(trackId)
                 statsRepository.invalidateCache()
                 statsRepository.notifyMetadataUpdate()
-                EnrichmentWorker.enqueueImmediate(context, trackId)
+                EnrichmentWorker.enqueueImmediate(
+                    context = context,
+                    trackId = trackId,
+                    appendAfterExisting = true,
+                )
 
-                // Clear the manual image immediately. The normal enrichment worker will
+                // Clear the manual image immediately. The guaranteed post-reset enrichment worker will
                 // repopulate Track.albumArtUrl and its metadata-update signal reloads this screen.
                 _uiState.update {
                     it.copy(
