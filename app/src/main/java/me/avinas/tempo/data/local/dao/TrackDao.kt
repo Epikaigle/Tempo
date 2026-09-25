@@ -113,6 +113,10 @@ interface TrackDao {
     @Query("UPDATE tracks SET title = :title WHERE id = :trackId")
     suspend fun updateTitle(trackId: Long, title: String)
 
+    /** Update only content classification without overwriting concurrently refreshed metadata. */
+    @Query("UPDATE tracks SET content_type = :contentType WHERE id = :trackId")
+    suspend fun updateContentType(trackId: Long, contentType: String): Int
+
     /** Update only the artwork URL without overwriting concurrently refreshed track metadata. */
     @Query("UPDATE tracks SET album_art_url = :albumArtUrl WHERE id = :trackId")
     suspend fun updateAlbumArtUrl(trackId: Long, albumArtUrl: String?)
