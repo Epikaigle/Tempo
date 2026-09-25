@@ -41,6 +41,36 @@ data class CoverArtLookupResult(
     val message: String? = null,
 )
 
+internal fun buildCurrentCoverArtCandidate(
+    track: Track,
+    currentMetadata: EnrichedMetadata?,
+): CoverArtCandidate? {
+    val current = track.albumArtUrl?.takeIf { it.isNotBlank() } ?: return null
+    val normalizedCurrent = MusicBrainzEnrichmentService.fixHttpUrl(current) ?: current
+    val metadataMatchesCurrent =
+        currentMetadata != null &&
+            listOf(
+                currentMetadata.albumArtUrl,
+                currentMetadata.albumArtUrlSmall,
+                currentMetadata.albumArtUrlLarge,
+            ).any { metadataUrl ->
+                val normalizedMetadata = MusicBrainzEnrichmentService.fixHttpUrl(metadataUrl)
+                !normalizedMetadata.isNullOrBlank() && normalizedMetadata == normalizedCurrent
+            }
+
+    return CoverArtCandidate(
+        provider = CoverArtProvider.CURRENT,
+        albumArtUrl = current,
+        albumArtUrlSmall = currentMetadata?.albumArtUrlSmall
+            ?.takeIf { metadataMatchesCurrent && it.isNotBlank() },
+        albumArtUrlLarge = currentMetadata?.albumArtUrlLarge
+            ?.takeIf { metadataMatchesCurrent && it.isNotBlank() }
+            ?: current,
+        albumTitle = currentMetadata?.albumTitle ?: track.album,
+        isCurrent = true,
+    )
+}
+
 /**
  * User-driven artwork lookup. Each provider is queried independently and no database
  * state is changed until the user explicitly selects a candidate.
@@ -63,18 +93,14 @@ class CoverArtPickerService @Inject constructor(
         )
     }
 
-    fun currentCandidate(track: Track): CoverArtCandidate? =
-        track.albumArtUrl
-            ?.takeIf { it.isNotBlank() }
-            ?.let { current ->
-                CoverArtCandidate(
-                    provider = CoverArtProvider.CURRENT,
-                    albumArtUrl = current,
-                    albumArtUrlLarge = current,
-                    albumTitle = track.album,
-                    isCurrent = true,
-                )
-            }
+    fun currentCandidate(
+        track: Track,
+        currentMetadata: EnrichedMetadata? = null,
+    ): CoverArtCandidate? =
+        buildCurrentCoverArtCandidate(
+            track = track,
+            currentMetadata = currentMetadata,
+        )
 
     suspend fun searchProvider(
         provider: CoverArtProvider,
@@ -86,7 +112,7 @@ class CoverArtPickerService @Inject constructor(
         val lookup = try {
             when (provider) {
                 CoverArtProvider.CURRENT -> {
-                    val candidate = currentCandidate(track)
+                    val candidate = currentCandidate(track, currentMetadata)
                     CoverArtLookupResult(
                         provider = provider,
                         status = if (candidate != null) CoverArtLookupStatus.FOUND else CoverArtLookupStatus.NOT_FOUND,
