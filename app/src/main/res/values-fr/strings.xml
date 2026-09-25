@@ -1083,4 +1083,7 @@
 
     <string name="details_cover_unavailable">Indisponible</string>
     <string name="details_cover_error">Erreur de recherche</string>
+    <string name="details_cover_load_error">Impossible de charger les pochettes</string>
+    <string name="details_cover_save_error">Impossible d’enregistrer la pochette</string>
+    <string name="details_cover_restore_auto_error">Impossible de rétablir la sélection automatique</string>
 </resources>
