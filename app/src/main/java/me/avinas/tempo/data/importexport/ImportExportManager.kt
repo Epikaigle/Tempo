@@ -638,6 +638,24 @@ class ImportExportManager @Inject constructor(
                     database.enrichedMetadataDao().update(remappedMeta.copy(id = existingMeta.id))
                 }
             }
+
+            // Track.albumArtUrl is a denormalized mirror used by the UI. Restoring tracks
+            // before enriched metadata can temporarily reintroduce artwork that contradicts
+            // a local/imported USER_RESET tombstone, especially with "Skip Duplicates".
+            // Reconcile the mirror from the final metadata state before this transaction
+            // commits so callers can never observe a split-brain artwork preference.
+            for (restoredTrackId in trackIdMap.values.toSet()) {
+                val restoredTrack = database.trackDao().getTrackById(restoredTrackId) ?: continue
+                val restoredMetadata = database.enrichedMetadataDao().forTrackSync(restoredTrackId)
+                val reconciledArtwork = resolveRestoredTrackArtwork(
+                    albumArtSource = restoredMetadata?.albumArtSource,
+                    metadataArtUrl = restoredMetadata?.albumArtUrl,
+                    trackArtUrl = restoredTrack.albumArtUrl,
+                )
+                if (reconciledArtwork != restoredTrack.albumArtUrl) {
+                    database.trackDao().updateAlbumArtUrl(restoredTrackId, reconciledArtwork)
+                }
+            }
             
             _progress.value = ImportExportProgress("Importing preferences...", 90, 100)
             
@@ -1131,6 +1149,21 @@ private data class ExtractedImage(
     val path: String,
     val bytesWritten: Long
 )
+
+internal fun resolveRestoredTrackArtwork(
+    albumArtSource: AlbumArtSource?,
+    metadataArtUrl: String?,
+    trackArtUrl: String?,
+): String? =
+    when (albumArtSource) {
+        AlbumArtSource.USER_RESET -> null
+        AlbumArtSource.USER_SELECTED ->
+            metadataArtUrl?.takeIf { it.isNotBlank() }
+                ?: trackArtUrl?.takeIf { it.isNotBlank() }
+        else ->
+            trackArtUrl?.takeIf { it.isNotBlank() }
+                ?: metadataArtUrl?.takeIf { it.isNotBlank() }
+    }
 
 internal fun resolveRestoredProfileImagePath(
     exportedProfileImagePath: String?,
