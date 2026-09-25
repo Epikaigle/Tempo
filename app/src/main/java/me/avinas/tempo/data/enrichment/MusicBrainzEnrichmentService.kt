@@ -17,6 +17,7 @@ import me.avinas.tempo.data.remote.musicbrainz.*
 import me.avinas.tempo.utils.ArtistParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,6 +40,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
         private const val MIN_TITLE_SIMILARITY = 0.85 // Minimum title similarity to accept a match
         private const val MIN_FUZZY_TITLE_SIMILARITY = 0.70 // For fuzzy searches, require slightly lower but still reasonable match
         private const val MAX_COVER_RELEASE_CANDIDATES = 8
+        private const val MUSICBRAINZ_MIN_REQUEST_INTERVAL_NS = 1_000_000_000L
         
         // Pre-compiled regex pattern to avoid repeated native memory allocation
         private val CAA_INDEX_PATTERN = Regex("""^https?://coverartarchive\.org/(release|release-group)/[a-f0-9-]+/?$""")
@@ -82,6 +84,33 @@ class MusicBrainzEnrichmentService @Inject constructor(
             
             return true
         }
+    }
+
+    private val musicBrainzRequestMutex = Mutex()
+    private var lastMusicBrainzRequestStartedAtNanos = 0L
+
+    /**
+     * MusicBrainz asks clients to keep requests to one per second. Serialize only
+     * the scheduling step so concurrent enrichment jobs still run independently
+     * once their request has been assigned a safe start time.
+     */
+    private suspend fun <T> withMusicBrainzRateLimit(block: suspend () -> T): T {
+        musicBrainzRequestMutex.lock()
+        try {
+            if (lastMusicBrainzRequestStartedAtNanos != 0L) {
+                val elapsedNanos = System.nanoTime() - lastMusicBrainzRequestStartedAtNanos
+                val remainingNanos = MUSICBRAINZ_MIN_REQUEST_INTERVAL_NS - elapsedNanos
+                if (remainingNanos > 0L) {
+                    val waitMillis = (remainingNanos + 999_999L) / 1_000_000L
+                    delay(waitMillis)
+                }
+            }
+            lastMusicBrainzRequestStartedAtNanos = System.nanoTime()
+        } finally {
+            musicBrainzRequestMutex.unlock()
+        }
+
+        return block()
     }
 
     /**
@@ -298,7 +327,9 @@ class MusicBrainzEnrichmentService @Inject constructor(
             Log.d(TAG, "Search query (strategy ${index + 1}/${searchStrategies.size}): $query")
             
             try {
-                val response = musicBrainzApi.searchRecordings(query = query, limit = 5)
+                val response = withMusicBrainzRateLimit {
+                    musicBrainzApi.searchRecordings(query = query, limit = 5)
+                }
                 
                 if (!response.isSuccessful) {
                     val errorBody = response.errorBody()?.string()
@@ -315,10 +346,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
                     return processSearchResponse(searchResponse, title, artist)
                 }
                 
-                // Add delay between search attempts to respect rate limit
-                if (index < searchStrategies.lastIndex) {
-                    delay(500)
-                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -823,10 +850,9 @@ class MusicBrainzEnrichmentService @Inject constructor(
         strict: Boolean = false,
     ): RecordingLookupResponse? {
         return try {
-            // Add small delay to respect rate limit
-            delay(100)
-            
-            val response = musicBrainzApi.lookupRecording(mbid)
+            val response = withMusicBrainzRateLimit {
+                musicBrainzApi.lookupRecording(mbid)
+            }
             if (response.isSuccessful) {
                 response.body()
             } else {
@@ -851,10 +877,9 @@ class MusicBrainzEnrichmentService @Inject constructor(
      */
     private suspend fun fetchArtistDetails(mbid: String): ArtistLookupResponse? {
         return try {
-            // Add small delay to respect rate limit
-            delay(100)
-            
-            val response = musicBrainzApi.lookupArtist(mbid)
+            val response = withMusicBrainzRateLimit {
+                musicBrainzApi.lookupArtist(mbid)
+            }
             if (response.isSuccessful) {
                 response.body()
             } else {
