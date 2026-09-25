@@ -64,6 +64,14 @@ import me.avinas.tempo.ui.theme.TextPrimary
 import me.avinas.tempo.ui.theme.TextSecondary
 import me.avinas.tempo.ui.theme.TextTertiary
 
+internal fun reconcileCoverPickerSelection(
+    selectedProvider: CoverArtProvider?,
+    candidates: List<CoverArtCandidate>,
+): CoverArtProvider? =
+    selectedProvider?.takeIf { selected ->
+        candidates.any { candidate -> candidate.provider == selected }
+    }
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun CoverArtPickerSheet(
@@ -77,12 +85,12 @@ internal fun CoverArtPickerSheet(
     var selectedProvider by remember { mutableStateOf<CoverArtProvider?>(null) }
 
     LaunchedEffect(state.coverCandidates) {
-        val currentSelection = state.coverCandidates.firstOrNull { it.provider == selectedProvider }
-        if (currentSelection == null) {
-            // Keep the existing cover selected when there is one, but never auto-select
-            // a remote provider result: choosing a replacement must remain an explicit tap.
-            selectedProvider = state.coverCandidates.firstOrNull { it.isCurrent }?.provider
-        }
+        // Never auto-select "Current" (or any remote result). Persist only an explicit
+        // user tap while that provider still has a candidate.
+        selectedProvider = reconcileCoverPickerSelection(
+            selectedProvider = selectedProvider,
+            candidates = state.coverCandidates,
+        )
     }
 
     val selected = state.coverCandidates.firstOrNull { it.provider == selectedProvider }
