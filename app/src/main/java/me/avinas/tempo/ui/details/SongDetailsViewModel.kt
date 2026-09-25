@@ -281,7 +281,7 @@ class SongDetailsViewModel @Inject constructor(
                 it.copy(
                     isLoadingCoverCandidates = true,
                     coverPickerError = null,
-                    coverCandidates = listOfNotNull(coverArtPickerService.currentCandidate(track)),
+                    coverCandidates = emptyList(),
                     coverProviderStatuses = CoverArtPickerService.REMOTE_PROVIDERS
                         .associateWith { CoverArtLookupStatus.LOADING },
                 )
@@ -289,6 +289,13 @@ class SongDetailsViewModel @Inject constructor(
 
             try {
                 val metadata = enrichedMetadataRepository.forTrackSync(trackId)
+                _uiState.update {
+                    it.copy(
+                        coverCandidates = listOfNotNull(
+                            coverArtPickerService.currentCandidate(track, metadata),
+                        ),
+                    )
+                }
                 coroutineScope {
                     CoverArtPickerService.REMOTE_PROVIDERS.forEach { provider ->
                         launch {
