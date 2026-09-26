@@ -58,6 +58,14 @@ class CoverArtMatchingTest {
     }
 
     @Test
+    fun explicitVersionSubtypesCannotCrossMatch() {
+        assertFalse(isSafeCoverTrackTitleMatch("Song (Single Version)", "Song (Album Version)"))
+        assertFalse(isSafeCoverTrackTitleMatch("Song Radio Edit", "Song Extended Edit"))
+        assertFalse(isSafeCoverTrackTitleMatch("Song Original Mix", "Song Club Mix"))
+        assertTrue(isSafeCoverTrackTitleMatch("Song Radio Edit", "Song (Radio Edit)"))
+    }
+
+    @Test
     fun versionAwareSearchKeepsExplicitTitleBeforeCleanFallback() {
         assertEquals(
             listOf("Dreams (Remastered)", "Dreams"),
