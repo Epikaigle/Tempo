@@ -85,6 +85,18 @@ class ArtworkRestorePolicyTest {
     }
 
     @Test
+    fun currentDeviceContentBackupCanStillBePreservedDuringReconciliation() {
+        assertEquals(
+            "content://media/external/audio/albumart/42",
+            resolveRestoredTrackArtwork(
+                albumArtSource = AlbumArtSource.ITUNES,
+                metadataArtUrl = "https://automatic.example/current.jpg",
+                trackArtUrl = "content://media/external/audio/albumart/42",
+            ),
+        )
+    }
+
+    @Test
     fun automaticArtworkBackfillsTrackMirrorWhenMissing() {
         assertEquals(
             "https://automatic.example/cover.jpg",
