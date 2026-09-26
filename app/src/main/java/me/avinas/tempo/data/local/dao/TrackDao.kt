@@ -138,22 +138,48 @@ interface TrackDao {
     @Query("UPDATE tracks SET album_art_url = :albumArtUrl WHERE id = :trackId")
     suspend fun updateAlbumArtUrl(trackId: Long, albumArtUrl: String?)
 
-    /**
-     * Remove a local fallback only if it is still the exact fallback that was
-     * successfully consumed. The compare-and-clear guard prevents a delayed image
-     * callback from deleting a newer backup written by the tracking service.
-     */
     @Query("""
         UPDATE tracks
-        SET album_art_url = NULL
+        SET album_art_url = :replacementUrl
         WHERE id = :trackId
         AND album_art_url = :expectedLocalUrl
         AND album_art_url LIKE 'file://%'
     """)
-    suspend fun clearLocalAlbumArtUrlIfMatches(
+    suspend fun replaceLocalAlbumArtUrlIfMatches(
         trackId: Long,
         expectedLocalUrl: String,
+        replacementUrl: String,
     ): Int
+
+    /**
+     * Promote a consumed local fallback back to the authoritative remote artwork.
+     *
+     * The replacement is allowed only while automatic metadata still owns a real
+     * remote/API cover and Track still points at the exact local fallback that the
+     * UI just consumed.
+     */
+    @Transaction
+    suspend fun promoteLocalAlbumArtToCanonicalIfMatches(
+        trackId: Long,
+        expectedLocalUrl: String,
+    ): String? {
+        val source = getAlbumArtSource(trackId)
+        if (source?.isApiSource() != true) return null
+
+        val canonicalRemote =
+            getMetadataAlbumArtUrl(trackId)
+                ?.takeIf { isRemoteArtwork(it) }
+                ?: return null
+
+        val updated =
+            replaceLocalAlbumArtUrlIfMatches(
+                trackId = trackId,
+                expectedLocalUrl = expectedLocalUrl,
+                replacementUrl = canonicalRemote,
+            )
+
+        return canonicalRemote.takeIf { updated > 0 }
+    }
 
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId AND (youtube_id IS NULL OR youtube_id = '')")
     suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int
@@ -463,15 +489,12 @@ internal fun resolveAutomaticTrackArtwork(
     canonicalAutomaticArtUrl: String?,
     incomingArtUrl: String?,
 ): String? {
-    val hasCanonicalAutomaticArtwork =
-        source != null &&
-            source != AlbumArtSource.NONE &&
-            source != AlbumArtSource.USER_RESET &&
-            source != AlbumArtSource.USER_SELECTED &&
-            !canonicalAutomaticArtUrl.isNullOrBlank()
+    val hasCanonicalRemoteArtwork =
+        source?.isApiSource() == true &&
+            isRemoteArtwork(canonicalAutomaticArtUrl)
 
     val automaticCandidate =
-        if (hasCanonicalAutomaticArtwork) {
+        if (hasCanonicalRemoteArtwork) {
             incomingArtUrl?.takeIf(::isLocalBackupArtwork)
                 ?: currentTrackArtUrl?.takeIf(::isLocalBackupArtwork)
                 ?: canonicalAutomaticArtUrl
@@ -489,3 +512,16 @@ internal fun resolveAutomaticTrackArtwork(
 
 internal fun isLocalBackupArtwork(url: String?): Boolean =
     url?.startsWith("file://") == true
+
+internal fun isRemoteArtwork(url: String?): Boolean =
+    url?.startsWith("https://", ignoreCase = true) == true ||
+        url?.startsWith("http://", ignoreCase = true) == true
+
+internal fun shouldPreserveLocalTrackBackup(
+    source: AlbumArtSource,
+    canonicalArtworkUrl: String?,
+    currentTrackArtworkUrl: String?,
+): Boolean =
+    source.isApiSource() &&
+        isRemoteArtwork(canonicalArtworkUrl) &&
+        isLocalBackupArtwork(currentTrackArtworkUrl)
