@@ -44,6 +44,10 @@ class RoomTrackRepository @Inject constructor(
     override suspend fun updateTitle(trackId: Long, title: String) = dao.updateTitle(trackId, title)
     override suspend fun updateAutomaticAlbumArtUrl(trackId: Long, albumArtUrl: String?): String? =
         dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
+    override suspend fun clearLocalAlbumArtUrlIfMatches(
+        trackId: Long,
+        expectedLocalUrl: String,
+    ): Int = dao.clearLocalAlbumArtUrlIfMatches(trackId, expectedLocalUrl)
     override suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int =
         dao.updateYoutubeIdIfMissing(trackId, youtubeId)
     override fun all(): Flow<List<Track>> = dao.all()
