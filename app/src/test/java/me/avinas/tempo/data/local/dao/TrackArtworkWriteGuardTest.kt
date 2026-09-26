@@ -44,4 +44,46 @@ class TrackArtworkWriteGuardTest {
             )
         )
     }
+
+    @Test
+    fun canonicalAutomaticArtworkKeepsExistingLocalBackup() {
+        assertEquals(
+            "file:///covers/song.jpg",
+            resolveAutomaticTrackArtwork(
+                source = AlbumArtSource.SPOTIFY,
+                manualArtUrl = null,
+                currentTrackArtUrl = "file:///covers/song.jpg",
+                canonicalAutomaticArtUrl = "https://spotify.example/canonical.jpg",
+                incomingArtUrl = "https://deezer.example/stale.jpg",
+            )
+        )
+    }
+
+    @Test
+    fun newLocalBackupCanReplaceAnOlderLocalBackup() {
+        assertEquals(
+            "file:///covers/new.jpg",
+            resolveAutomaticTrackArtwork(
+                source = AlbumArtSource.ITUNES,
+                manualArtUrl = null,
+                currentTrackArtUrl = "file:///covers/old.jpg",
+                canonicalAutomaticArtUrl = "https://itunes.example/canonical.jpg",
+                incomingArtUrl = "file:///covers/new.jpg",
+            )
+        )
+    }
+
+    @Test
+    fun remoteAutomaticWriteStillCollapsesToCanonicalMetadataArtwork() {
+        assertEquals(
+            "https://spotify.example/canonical.jpg",
+            resolveAutomaticTrackArtwork(
+                source = AlbumArtSource.SPOTIFY,
+                manualArtUrl = null,
+                currentTrackArtUrl = "https://itunes.example/old.jpg",
+                canonicalAutomaticArtUrl = "https://spotify.example/canonical.jpg",
+                incomingArtUrl = "https://deezer.example/stale.jpg",
+            )
+        )
+    }
 }
