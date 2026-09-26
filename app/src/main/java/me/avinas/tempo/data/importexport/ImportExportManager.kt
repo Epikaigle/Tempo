@@ -1152,6 +1152,11 @@ internal fun remapRestoredImageUrl(
     pathMapping: Map<String, String>,
 ): String? {
     if (exportedUrl.isNullOrBlank()) return exportedUrl
+    if (exportedUrl.startsWith("content://")) {
+        // Content-provider grants are device/session specific and are not
+        // transferable through a Tempo backup.
+        return null
+    }
     if (!exportedUrl.startsWith("file://")) return exportedUrl
 
     // file:// paths are device-private. They are usable after restore only when
