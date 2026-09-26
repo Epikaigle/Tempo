@@ -368,6 +368,9 @@ fun SongDetailsContent(
                         onNavigateToAlbum = onNavigateToAlbum,
                         onEditTitle = { viewModel.showEditTitleDialog() },
                         onEditCover = { viewModel.showCoverPicker() },
+                        onHotlinkSuccess = {
+                            viewModel.consumeLocalArtworkBackup(trackDetails.localBackupArtUrl)
+                        },
                         onTitlePositioned = { top ->
                             val collapsed = top <= headerBottomPx
                             if (collapsed != showCollapsedTitle) {
@@ -708,6 +711,7 @@ fun SongHeroEditorialStage(
     onNavigateToAlbum: (String, String) -> Unit,
     onEditTitle: () -> Unit,
     onEditCover: () -> Unit,
+    onHotlinkSuccess: () -> Unit = {},
     onTitlePositioned: (Float) -> Unit = {},
     genre: String? = null,
     releaseDate: String? = null,
@@ -760,9 +764,7 @@ fun SongHeroEditorialStage(
                         R.string.details_cover_artwork_cd, trackDetails.track.title
                     ),
                     modifier = Modifier.fillMaxSize(),
-                    onHotlinkSuccess = {
-                        viewModel.clearLocalArtworkBackup(trackDetails.localBackupArtUrl)
-                    },
+                    onHotlinkSuccess = { onHotlinkSuccess() },
                 )
 
                 // Favorite Badge
