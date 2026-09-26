@@ -156,13 +156,13 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 if (!knownRecordingId.isNullOrBlank()) {
                     val knownRecording = fetchRecordingDetails(knownRecordingId, strict = true)
                     knownRecording != null &&
-                        isSafeCoverTrackTitleMatch(track.title, knownRecording.title.orEmpty()) &&
-                        isSafeCoverArtistMatch(
-                            track.artist,
-                            knownRecording.artistCredit
+                        isSafeCoverIdentityMatch(
+                            expectedTitle = track.title,
+                            expectedArtist = track.artist,
+                            candidateTitle = knownRecording.title.orEmpty(),
+                            candidateArtists = knownRecording.artistCredit
                                 .orEmpty()
-                                .mapNotNull { it.name ?: it.artist?.name }
-                                .joinToString(", "),
+                                .mapNotNull { it.name ?: it.artist?.name },
                         )
                 } else {
                     false
