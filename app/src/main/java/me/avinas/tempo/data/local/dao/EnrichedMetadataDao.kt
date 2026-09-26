@@ -60,8 +60,12 @@ interface EnrichedMetadataDao {
             resolved.albumArtSource == AlbumArtSource.USER_SELECTED &&
                 !resolved.albumArtUrl.isNullOrBlank() ->
                 updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
-            !isLocalBackupArtwork(currentTrackArtwork) &&
-                !resolved.albumArtUrl.isNullOrBlank() ->
+            shouldPreserveLocalTrackBackup(
+                source = resolved.albumArtSource,
+                canonicalArtworkUrl = resolved.albumArtUrl,
+                currentTrackArtworkUrl = currentTrackArtwork,
+            ) -> Unit
+            !resolved.albumArtUrl.isNullOrBlank() ->
                 updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
         }
 
@@ -171,8 +175,12 @@ interface EnrichedMetadataDao {
                 resolved.albumArtSource == AlbumArtSource.USER_SELECTED &&
                     !resolved.albumArtUrl.isNullOrBlank() ->
                     updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
-                !isLocalBackupArtwork(currentTrackArtwork) &&
-                    !resolved.albumArtUrl.isNullOrBlank() ->
+                shouldPreserveLocalTrackBackup(
+                    source = resolved.albumArtSource,
+                    canonicalArtworkUrl = resolved.albumArtUrl,
+                    currentTrackArtworkUrl = currentTrackArtwork,
+                ) -> Unit
+                !resolved.albumArtUrl.isNullOrBlank() ->
                     updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
             }
         }
