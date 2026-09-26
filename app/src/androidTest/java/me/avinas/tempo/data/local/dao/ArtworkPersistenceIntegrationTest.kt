@@ -542,6 +542,104 @@ class ArtworkPersistenceIntegrationTest {
     }
 
     @Test
+    fun sharedManagedBackupIsDeletedOnlyAfterLastTrackReleasesIt() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val repository =
+            RoomTrackRepository(
+                dao = trackDao,
+                trackArtistDao = database.trackArtistDao(),
+                manualContentMarkDao = database.manualContentMarkDao(),
+                enrichedMetadataDao = metadataDao,
+            )
+
+        suspend fun createTrack(title: String, remoteUrl: String): Long {
+            val id =
+                trackDao.insert(
+                    Track(
+                        title = title,
+                        artist = "Shared Artist",
+                        album = null,
+                        duration = null,
+                        albumArtUrl = null,
+                        spotifyId = null,
+                        musicbrainzId = null,
+                    )
+                )
+            metadataDao.upsertFromAutomaticEnrichment(
+                EnrichedMetadata(
+                    trackId = id,
+                    albumArtUrl = remoteUrl,
+                    albumArtSource = AlbumArtSource.SPOTIFY,
+                )
+            )
+            return id
+        }
+
+        val firstId = createTrack("Shared Song A", "https://remote.example/a.jpg")
+        val secondId = createTrack("Shared Song B", "https://remote.example/b.jpg")
+        val localFile = File(context.filesDir, "album_art/shared-backup.jpg")
+        localFile.parentFile?.mkdirs()
+        localFile.writeBytes(byteArrayOf(1, 2, 3))
+        val localUrl = "file://" + localFile.absolutePath
+        trackDao.updateAlbumArtUrl(firstId, localUrl)
+        trackDao.updateAlbumArtUrl(secondId, localUrl)
+
+        assertEquals(
+            "https://remote.example/a.jpg",
+            repository.consumeLocalAlbumArtBackup(firstId, localUrl),
+        )
+        assertTrue(localFile.exists())
+        assertEquals(localUrl, trackDao.getTrackById(secondId)?.albumArtUrl)
+
+        assertEquals(
+            "https://remote.example/b.jpg",
+            repository.consumeLocalAlbumArtBackup(secondId, localUrl),
+        )
+        assertTrue(!localFile.exists())
+    }
+
+    @Test
+    fun contentUriCanActAsLocalBackupWithoutFileOwnership() = runBlocking {
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val repository =
+            RoomTrackRepository(
+                dao = trackDao,
+                trackArtistDao = database.trackArtistDao(),
+                manualContentMarkDao = database.manualContentMarkDao(),
+                enrichedMetadataDao = metadataDao,
+            )
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Content Song",
+                    artist = "Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+        val remoteUrl = "https://remote.example/content.jpg"
+        val contentUrl = "content://media/external/audio/albumart/42"
+        metadataDao.upsertFromAutomaticEnrichment(
+            EnrichedMetadata(
+                trackId = trackId,
+                albumArtUrl = remoteUrl,
+                albumArtSource = AlbumArtSource.ITUNES,
+            )
+        )
+
+        assertEquals(contentUrl, repository.updateAutomaticAlbumArtUrl(trackId, contentUrl))
+        assertEquals(contentUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+        assertEquals(remoteUrl, repository.consumeLocalAlbumArtBackup(trackId, contentUrl))
+        assertEquals(remoteUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+    }
+
+    @Test
     fun automaticPriorityAndTrackMirrorStayConsistentAcrossRacingProviders() = runBlocking {
         val trackDao = database.trackDao()
         val metadataDao = database.enrichedMetadataDao()
