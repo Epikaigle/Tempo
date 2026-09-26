@@ -1472,8 +1472,10 @@ internal fun isSpotifyPickerIdentityCompatible(
     val artistMatches =
         verifiedArtist.isNullOrBlank() ||
             isSafeCoverArtistMatch(track.artist, verifiedArtist)
+    // Spotify's oEmbed schema provides the entity title. Without it we cannot
+    // prove that a cached Spotify ID still belongs to the edited Track.
     val titleMatches =
-        providerTitle.isNullOrBlank() ||
+        !providerTitle.isNullOrBlank() &&
             isSafeCoverTrackTitleMatch(track.title, providerTitle)
 
     return artistMatches && titleMatches
