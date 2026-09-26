@@ -84,6 +84,15 @@ internal fun CoverArtPickerSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedProvider by remember { mutableStateOf<CoverArtProvider?>(null) }
 
+    LaunchedEffect(state.isLoadingCoverCandidates) {
+        // A retry starts a new lookup generation. Drop any previous explicit
+        // selection so a changed result from the same provider can never become
+        // selected without another user tap.
+        if (state.isLoadingCoverCandidates) {
+            selectedProvider = null
+        }
+    }
+
     LaunchedEffect(state.coverCandidates) {
         // Never auto-select "Current" (or any remote result). Persist only an explicit
         // user tap while that provider still has a candidate.
