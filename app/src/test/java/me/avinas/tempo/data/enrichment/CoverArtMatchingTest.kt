@@ -86,6 +86,12 @@ class CoverArtMatchingTest {
     }
 
     @Test
+    fun featuredArtistAloneCannotIdentifyCollaborativeTrack() {
+        assertFalse(isSafeCoverArtistMatch("Dua Lipa feat. DaBaby", "DaBaby"))
+        assertTrue(isSafeCoverArtistMatch("Dua Lipa feat. DaBaby", "Dua Lipa"))
+    }
+
+    @Test
     fun strictArtistMatchRejectsUnknownArtist() {
         assertFalse(isSafeCoverArtistMatch("Unknown Artist", "Drake"))
     }
