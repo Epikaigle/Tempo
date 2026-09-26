@@ -6,6 +6,7 @@ import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.dao.TrackArtistDao
 import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.dao.isLocalBackupArtwork
+import me.avinas.tempo.data.local.dao.isManagedLocalArtworkFile
 import me.avinas.tempo.data.local.entities.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -59,7 +60,9 @@ class RoomTrackRepository @Inject constructor(
         trackId: Long,
         albumArtUrl: String?,
     ): String? {
-        if (!isLocalBackupArtwork(albumArtUrl)) {
+        // content:// is local artwork too, but Tempo does not own its backing
+        // file. Only managed file:// backups need the stale-file existence guard.
+        if (!isManagedLocalArtworkFile(albumArtUrl)) {
             return dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
         }
 
@@ -83,6 +86,8 @@ class RoomTrackRepository @Inject constructor(
     }
 
     private suspend fun deleteLocalAlbumArtIfUnreferenced(localUrl: String) {
+        if (!isManagedLocalArtworkFile(localUrl)) return
+
         val stillReferenced =
             dao.countAlbumArtUrlReferences(localUrl) > 0 ||
                 enrichedMetadataDao.countImageUrlReferences(localUrl) > 0
