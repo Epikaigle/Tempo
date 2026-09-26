@@ -160,3 +160,16 @@ internal fun coverSearchTitleVariants(title: String): List<String> {
         add(cleaned)
     }.distinct()
 }
+
+internal fun isSafeCoverIdentityMatch(
+    expectedTitle: String,
+    expectedArtist: String,
+    candidateTitle: String,
+    candidateArtists: List<String>,
+): Boolean =
+    isSafeCoverTrackTitleMatch(expectedTitle, candidateTitle) &&
+        candidateArtists.isNotEmpty() &&
+        isSafeCoverArtistMatch(
+            expectedArtist = expectedArtist,
+            candidateArtist = candidateArtists.joinToString(", "),
+        )
