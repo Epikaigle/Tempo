@@ -299,6 +299,76 @@ class ArtworkPersistenceIntegrationTest {
     }
 
     @Test
+    fun automaticMetadataRefreshPreservesLocalTrackBackup() = runBlocking {
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Song",
+                    artist = "Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+
+        val remoteUrl = "https://itunes.example/canonical.jpg"
+        val staleRemoteUrl = "https://deezer.example/stale.jpg"
+        val localBackupUrl = "file:///covers/song.jpg"
+
+        metadataDao.upsertFromAutomaticEnrichment(
+            EnrichedMetadata(
+                trackId = trackId,
+                albumArtUrl = remoteUrl,
+                albumArtSource = AlbumArtSource.ITUNES,
+            )
+        )
+        assertEquals(remoteUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        val storedBackup =
+            trackDao.updateAutomaticAlbumArtUrl(
+                trackId = trackId,
+                albumArtUrl = localBackupUrl,
+            )
+        assertEquals(localBackupUrl, storedBackup)
+        assertEquals(localBackupUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        val currentMetadata = requireNotNull(metadataDao.forTrackSync(trackId))
+        metadataDao.upsertFromAutomaticEnrichment(
+            currentMetadata.copy(
+                genres = listOf("Pop"),
+                cacheTimestamp = 2L,
+            )
+        )
+
+        assertEquals(remoteUrl, metadataDao.forTrackSync(trackId)?.albumArtUrl)
+        assertEquals(localBackupUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        metadataDao.upsertAllFromAutomaticEnrichment(
+            listOf(
+                requireNotNull(metadataDao.forTrackSync(trackId)).copy(
+                    tags = listOf("tag"),
+                    cacheTimestamp = 3L,
+                )
+            )
+        )
+
+        val staleMirrorAttempt =
+            trackDao.updateAutomaticAlbumArtUrl(
+                trackId = trackId,
+                albumArtUrl = staleRemoteUrl,
+            )
+
+        assertEquals(localBackupUrl, staleMirrorAttempt)
+        assertEquals(remoteUrl, metadataDao.forTrackSync(trackId)?.albumArtUrl)
+        assertEquals(listOf("tag"), metadataDao.forTrackSync(trackId)?.tags)
+        assertEquals(localBackupUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+    }
+
+    @Test
     fun automaticPriorityAndTrackMirrorStayConsistentAcrossRacingProviders() = runBlocking {
         val trackDao = database.trackDao()
         val metadataDao = database.enrichedMetadataDao()
