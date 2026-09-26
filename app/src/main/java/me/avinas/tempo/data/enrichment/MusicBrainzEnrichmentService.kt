@@ -448,14 +448,19 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 val score = recording.score ?: 0
                 if (score < MIN_SEARCH_SCORE) return@filter false
                 
-                // Calculate title similarity
+                // Calculate title similarity. In picker mode the conservative cover
+                // matcher is authoritative: it understands equivalent remaster/live
+                // suffixes that the legacy Levenshtein score would otherwise reject.
                 val recordingTitle = recording.title ?: return@filter false
-                if (strictCoverMatching &&
-                    !isSafeCoverTrackTitleMatch(title, recordingTitle)
-                ) {
-                    return@filter false
-                }
-                val titleSimilarity = calculateTitleSimilarity(cleanedSearchTitle, recordingTitle)
+                val titleSimilarity =
+                    if (strictCoverMatching) {
+                        if (!isSafeCoverTrackTitleMatch(title, recordingTitle)) {
+                            return@filter false
+                        }
+                        1.0
+                    } else {
+                        calculateTitleSimilarity(cleanedSearchTitle, recordingTitle)
+                    }
                 
                 // Title must be at least 85% similar
                 if (titleSimilarity < MIN_TITLE_SIMILARITY) {
@@ -489,12 +494,15 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 if (score < MIN_SEARCH_SCORE - 15) return@filter false // Allow scores down to 65
                 
                 val recordingTitle = recording.title ?: return@filter false
-                if (strictCoverMatching &&
-                    !isSafeCoverTrackTitleMatch(title, recordingTitle)
-                ) {
-                    return@filter false
-                }
-                val titleSimilarity = calculateTitleSimilarity(cleanedSearchTitle, recordingTitle)
+                val titleSimilarity =
+                    if (strictCoverMatching) {
+                        if (!isSafeCoverTrackTitleMatch(title, recordingTitle)) {
+                            return@filter false
+                        }
+                        1.0
+                    } else {
+                        calculateTitleSimilarity(cleanedSearchTitle, recordingTitle)
+                    }
                 
                 // For relaxed matching, still require reasonable title similarity
                 if (titleSimilarity < MIN_FUZZY_TITLE_SIMILARITY) return@filter false
@@ -1411,7 +1419,9 @@ internal fun preserveUserSelectedArtwork(
     // may copy ordinary automatic artwork, but must never transfer another track's
     // explicit user choice. Preserve the target's own automatic artwork when it
     // has one; otherwise leave artwork empty so the normal provider chain continues.
-    if (replacement.albumArtSource == AlbumArtSource.USER_SELECTED) {
+    if (replacement.albumArtSource == AlbumArtSource.USER_SELECTED ||
+        replacement.albumArtSource == AlbumArtSource.USER_RESET
+    ) {
         return replacement.copy(
             albumArtUrl = current?.albumArtUrl,
             albumArtUrlSmall = current?.albumArtUrlSmall,
