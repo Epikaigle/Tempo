@@ -79,6 +79,25 @@ class MusicBrainzManualArtworkTest {
     }
 
     @Test
+    fun donorResetTombstoneIsNeverTransferredToTarget() {
+        val donorSnapshot = EnrichedMetadata(
+            trackId = 2L,
+            albumArtUrl = null,
+            albumArtSource = AlbumArtSource.USER_RESET,
+            genres = listOf("Rock"),
+        )
+
+        val resolved = preserveUserSelectedArtwork(
+            current = null,
+            replacement = donorSnapshot,
+        )
+
+        assertEquals(AlbumArtSource.NONE, resolved.albumArtSource)
+        assertEquals(null, resolved.albumArtUrl)
+        assertEquals(listOf("Rock"), resolved.genres)
+    }
+
+    @Test
     fun automaticArtworkCanBeReplacedNormally() {
         val current = EnrichedMetadata(
             trackId = 1L,
