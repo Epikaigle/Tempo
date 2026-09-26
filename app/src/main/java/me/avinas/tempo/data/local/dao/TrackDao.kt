@@ -257,6 +257,9 @@ interface TrackDao {
 
     @Query("SELECT album_art_url FROM tracks WHERE album_art_url LIKE 'file://%'")
     suspend fun getLocalImageUrls(): List<String>
+
+    @Query("SELECT COUNT(*) FROM tracks WHERE album_art_url = :albumArtUrl")
+    suspend fun countAlbumArtUrlReferences(albumArtUrl: String): Int
     
     // Find by Title and Artist
     
