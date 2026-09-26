@@ -55,6 +55,30 @@ class ArtworkRestorePolicyTest {
     }
 
     @Test
+    fun missingBundledLocalImageIsDroppedInsteadOfKeepingForeignDevicePath() {
+        assertNull(
+            remapRestoredImageUrl(
+                exportedUrl = "file:///data/user/0/old.device/files/album_art/missing.jpg",
+                pathMapping = emptyMap(),
+            )
+        )
+    }
+
+    @Test
+    fun bundledLocalImageIsRemappedAndRemoteUrlIsPreserved() {
+        val oldPath = "file:///data/user/0/old.device/files/album_art/cover.jpg"
+        val newPath = "file:///data/user/0/me.avinas.tempo/files/album_art/cover.jpg"
+        assertEquals(
+            newPath,
+            remapRestoredImageUrl(oldPath, mapOf(oldPath to newPath)),
+        )
+        assertEquals(
+            "https://example.test/cover.jpg",
+            remapRestoredImageUrl("https://example.test/cover.jpg", emptyMap()),
+        )
+    }
+
+    @Test
     fun automaticArtworkBackfillsTrackMirrorWhenMissing() {
         assertEquals(
             "https://automatic.example/cover.jpg",
