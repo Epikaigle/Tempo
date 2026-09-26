@@ -63,16 +63,21 @@ class RoomTrackRepository @Inject constructor(
             return dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
         }
 
-        return withAlbumArtBackupLock {
-            val localFile = File(albumArtUrl!!.removePrefix("file://"))
-            if (localFile.exists()) {
-                dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
-            } else {
-                // A remote-success cleanup may have retired this exact path while a
-                // delayed tracking write was still in flight. Never persist a dead
-                // file:// pointer; re-apply the current protected artwork instead.
-                val currentArtwork = dao.getCurrentTrackAlbumArtUrl(trackId)
-                dao.updateAutomaticAlbumArtUrl(trackId, currentArtwork)
+        return withContext(Dispatchers.IO) {
+            withAlbumArtBackupLock {
+                val localFile = File(albumArtUrl!!.removePrefix("file://"))
+                if (localFile.exists()) {
+                    dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
+                } else {
+                    // A remote-success cleanup may have retired this exact path while
+                    // a delayed tracking write was still in flight. Prefer the
+                    // current canonical remote mirror when one exists; otherwise
+                    // leave the current protected Track value unchanged.
+                    dao.promoteLocalAlbumArtToCanonicalIfMatches(
+                        trackId = trackId,
+                        expectedLocalUrl = albumArtUrl,
+                    ) ?: dao.getCurrentTrackAlbumArtUrl(trackId)
+                }
             }
         }
     }
@@ -81,21 +86,23 @@ class RoomTrackRepository @Inject constructor(
         trackId: Long,
         expectedLocalUrl: String,
     ): String? =
-        withAlbumArtBackupLock {
-            val canonicalRemote =
-                dao.promoteLocalAlbumArtToCanonicalIfMatches(
-                    trackId = trackId,
-                    expectedLocalUrl = expectedLocalUrl,
-                )
+        withContext(Dispatchers.IO) {
+            withAlbumArtBackupLock {
+                val canonicalRemote =
+                    dao.promoteLocalAlbumArtToCanonicalIfMatches(
+                        trackId = trackId,
+                        expectedLocalUrl = expectedLocalUrl,
+                    )
 
-            if (canonicalRemote != null) {
-                val localFile = File(expectedLocalUrl.removePrefix("file://"))
-                if (localFile.exists() && !localFile.delete()) {
-                    Log.w(TAG, "Failed to delete consumed local album art: " + localFile.absolutePath)
+                if (canonicalRemote != null) {
+                    val localFile = File(expectedLocalUrl.removePrefix("file://"))
+                    if (localFile.exists() && !localFile.delete()) {
+                        Log.w(TAG, "Failed to delete consumed local album art: " + localFile.absolutePath)
+                    }
                 }
-            }
 
-            canonicalRemote
+                canonicalRemote
+            }
         }
 
     override suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int =
