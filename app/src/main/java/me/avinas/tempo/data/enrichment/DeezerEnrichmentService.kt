@@ -56,33 +56,45 @@ class DeezerEnrichmentService @Inject constructor(
     suspend fun searchAlbumArt(
         artist: String,
         track: String,
-        album: String? = null
+        album: String? = null,
+        preserveExplicitTrackVersion: Boolean = false,
     ): CoverArtResult? {
         if (me.avinas.tempo.utils.ArtistParser.isUnknownArtist(artist)) return null
 
         try {
             val cleanArtist = me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
-            val cleanTrack = me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track)
-            val structuredQuery = "artist:\"$cleanArtist\" track:\"$cleanTrack\""
-            val structured = deezerApi.searchTracks(structuredQuery)
+            val titleVariants =
+                if (preserveExplicitTrackVersion) coverSearchTitleVariants(track)
+                else listOf(me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track))
+            var hadSuccessfulStructuredResponse = false
+            var lastStructuredError: Int? = null
 
-            if (structured.isSuccessful) {
-                findBestCoverMatch(
-                    results = structured.body()?.data.orEmpty(),
-                    artist = artist,
-                    track = track,
-                    album = album,
-                )?.let { return it.toCoverArtResult() }
+            for ((index, titleVariant) in titleVariants.withIndex()) {
+                if (index > 0) delay(RATE_LIMIT_DELAY_MS)
+                val structuredQuery = "artist:\"$cleanArtist\" track:\"$titleVariant\""
+                val structured = deezerApi.searchTracks(structuredQuery)
+                if (structured.isSuccessful) {
+                    hadSuccessfulStructuredResponse = true
+                    findBestCoverMatch(
+                        results = structured.body()?.data.orEmpty(),
+                        artist = artist,
+                        track = track,
+                        album = album,
+                    )?.let { return it.toCoverArtResult() }
+                } else {
+                    lastStructuredError = structured.code()
+                }
             }
 
             // Structured search may return near matches without the requested track.
             // Always try one relaxed query before giving up, but still validate title + artist.
             delay(RATE_LIMIT_DELAY_MS)
-            val loose = deezerApi.searchTracks("$cleanTrack $cleanArtist")
+            val looseTitle = titleVariants.first()
+            val loose = deezerApi.searchTracks("$looseTitle $cleanArtist")
             if (!loose.isSuccessful) {
-                if (!structured.isSuccessful) {
+                if (!hadSuccessfulStructuredResponse) {
                     throw IllegalStateException(
-                        "Deezer API error: ${structured.code()} / ${loose.code()}"
+                        "Deezer API error: ${lastStructuredError ?: "unknown"} / ${loose.code()}"
                     )
                 }
                 return null
