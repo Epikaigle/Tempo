@@ -30,8 +30,8 @@ private val COVER_VERSION_ALLOWED_TOKENS = COVER_VERSION_MARKERS + setOf(
     "digital",
 )
 
-private fun explicitCoverVersionKinds(title: String): Set<String> =
-    ArtistParser.normalizeForSearch(title)
+private fun explicitCoverVersionKinds(title: String): Set<String> {
+    val kinds = ArtistParser.normalizeForSearch(title)
         .split(" ")
         .mapNotNull { token ->
             when (token) {
@@ -50,7 +50,15 @@ private fun explicitCoverVersionKinds(title: String): Set<String> =
                 else -> null
             }
         }
-        .toSet()
+        .toMutableSet()
+
+    // "Live Version" and "Deluxe Edition" do not describe two independent
+    // recording variants. Ignore those generic qualifiers when a specific kind
+    // is also present so equivalent provider spellings still match.
+    if (kinds.size > 1) kinds.remove("version")
+    if (kinds.size > 1) kinds.remove("edition")
+    return kinds
+}
 
 /**
  * Conservative title matching for user-facing cover candidates.
@@ -71,9 +79,7 @@ internal fun isSafeCoverTrackTitleMatch(
     // downgrade it to a different/studio version. A plain expected title may
     // still accept a provider's explicit version suffix as a conservative
     // fallback (the existing picker behavior).
-    if (expectedVersions.isNotEmpty() &&
-        expectedVersions.intersect(candidateVersions).isEmpty()
-    ) {
+    if (expectedVersions.isNotEmpty() && expectedVersions != candidateVersions) {
         return false
     }
 
@@ -126,13 +132,31 @@ internal fun isSafeCoverArtistMatch(
         return false
     }
 
-    val expectedPrimaryArtist = ArtistParser.getPrimaryArtist(expectedArtist)
-    val candidateArtists = ArtistParser.getAllArtists(candidateArtist)
+    val expectedPrimaryArtists = ArtistParser.getPrimaryArtists(expectedArtist)
+    val candidatePrimaryArtists = ArtistParser.getPrimaryArtists(candidateArtist)
 
-    // A featured artist alone is not enough to identify the recording. Requiring
-    // the expected primary artist still allows provider strings that include all
-    // collaborators while rejecting a solo track from one of the guests.
-    return candidateArtists.any { candidate ->
-        ArtistParser.isStrictSameArtist(expectedPrimaryArtist, candidate)
+    // Every co-billed primary artist must still be present. Featured guests are
+    // intentionally excluded from this requirement, but a solo track from one
+    // member of an "A & B" collaboration can no longer validate the artwork.
+    return expectedPrimaryArtists.all { expected ->
+        candidatePrimaryArtists.any { candidate ->
+            ArtistParser.isStrictSameArtist(expected, candidate)
+        }
     }
+}
+
+internal fun coverSearchTitleVariants(title: String): List<String> {
+    val raw = title.trim()
+    val cleaned = ArtistParser.cleanTrackTitle(raw)
+    if (cleaned.isBlank()) return listOf(raw).filter { it.isNotBlank() }
+
+    val rawHasExplicitVersion = explicitCoverVersionKinds(raw).isNotEmpty()
+    return buildList {
+        if (rawHasExplicitVersion &&
+            ArtistParser.normalizeForSearch(raw) != ArtistParser.normalizeForSearch(cleaned)
+        ) {
+            add(raw)
+        }
+        add(cleaned)
+    }.distinct()
 }
