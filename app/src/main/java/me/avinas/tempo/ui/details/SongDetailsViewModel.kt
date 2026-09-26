@@ -498,8 +498,16 @@ class SongDetailsViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
+                        isLoadingCoverCandidates = false,
                         isSavingCover = false,
                         coverPickerError = e.message ?: context.getString(R.string.details_cover_restore_auto_error),
+                        coverProviderStatuses = it.coverProviderStatuses.mapValues { (_, status) ->
+                            if (status == CoverArtLookupStatus.LOADING) {
+                                CoverArtLookupStatus.ERROR
+                            } else {
+                                status
+                            }
+                        },
                     )
                 }
             }
