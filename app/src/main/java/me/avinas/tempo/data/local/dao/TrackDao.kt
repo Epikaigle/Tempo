@@ -143,7 +143,7 @@ interface TrackDao {
         SET album_art_url = :replacementUrl
         WHERE id = :trackId
         AND album_art_url = :expectedLocalUrl
-        AND album_art_url LIKE 'file://%'
+        AND (album_art_url LIKE 'file://%' OR album_art_url LIKE 'content://%')
     """)
     suspend fun replaceLocalAlbumArtUrlIfMatches(
         trackId: Long,
@@ -514,6 +514,10 @@ internal fun resolveAutomaticTrackArtwork(
 }
 
 internal fun isLocalBackupArtwork(url: String?): Boolean =
+    url?.startsWith("file://") == true ||
+        url?.startsWith("content://") == true
+
+internal fun isManagedLocalArtworkFile(url: String?): Boolean =
     url?.startsWith("file://") == true
 
 internal fun isRemoteArtwork(url: String?): Boolean =
