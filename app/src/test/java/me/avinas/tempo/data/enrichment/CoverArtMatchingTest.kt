@@ -1,5 +1,6 @@
 package me.avinas.tempo.data.enrichment
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -49,6 +50,23 @@ class CoverArtMatchingTest {
     }
 
     @Test
+    fun explicitVersionRejectsAdditionalDifferentVersionKind() {
+        assertFalse(isSafeCoverTrackTitleMatch("Song Live", "Song Live Remix"))
+        assertFalse(isSafeCoverTrackTitleMatch("Song Remix", "Song Remix Live"))
+        assertTrue(isSafeCoverTrackTitleMatch("Song Live", "Song Live Version"))
+        assertTrue(isSafeCoverTrackTitleMatch("Album Deluxe", "Album Deluxe Edition"))
+    }
+
+    @Test
+    fun versionAwareSearchKeepsExplicitTitleBeforeCleanFallback() {
+        assertEquals(
+            listOf("Dreams (Remastered)", "Dreams"),
+            coverSearchTitleVariants("Dreams (Remastered)"),
+        )
+        assertEquals(listOf("Dreams"), coverSearchTitleVariants("Dreams"))
+    }
+
+    @Test
     fun remasterSuffixDoesNotBreakARealMatch() {
         assertTrue(
             isSafeCoverTrackTitleMatch(
@@ -89,6 +107,41 @@ class CoverArtMatchingTest {
     fun featuredArtistAloneCannotIdentifyCollaborativeTrack() {
         assertFalse(isSafeCoverArtistMatch("Dua Lipa feat. DaBaby", "DaBaby"))
         assertTrue(isSafeCoverArtistMatch("Dua Lipa feat. DaBaby", "Dua Lipa"))
+    }
+
+    @Test
+    fun allCoBilledPrimaryArtistsAreRequired() {
+        assertTrue(isSafeCoverArtistMatch("Artist A & Artist B", "Artist A & Artist B"))
+        assertFalse(isSafeCoverArtistMatch("Artist A & Artist B", "Artist A"))
+        assertFalse(isSafeCoverArtistMatch("Artist A & Artist B", "Artist A feat. Artist B"))
+    }
+
+    @Test
+    fun cachedIdentityRequiresBothTitleAndPrimaryArtists() {
+        assertTrue(
+            isSafeCoverIdentityMatch(
+                expectedTitle = "Song Live",
+                expectedArtist = "Artist A & Artist B",
+                candidateTitle = "Song Live Version",
+                candidateArtists = listOf("Artist A", "Artist B"),
+            )
+        )
+        assertFalse(
+            isSafeCoverIdentityMatch(
+                expectedTitle = "Song Live",
+                expectedArtist = "Artist A & Artist B",
+                candidateTitle = "Song",
+                candidateArtists = listOf("Artist A", "Artist B"),
+            )
+        )
+        assertFalse(
+            isSafeCoverIdentityMatch(
+                expectedTitle = "Song Live",
+                expectedArtist = "Artist A & Artist B",
+                candidateTitle = "Song Live",
+                candidateArtists = listOf("Artist A"),
+            )
+        )
     }
 
     @Test
