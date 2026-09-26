@@ -1,5 +1,7 @@
 package me.avinas.tempo.ui.details
 
+import me.avinas.tempo.data.local.dao.isLocalBackupArtwork
+
 import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -344,7 +346,7 @@ class SongDetailsViewModel @Inject constructor(
      */
     fun consumeLocalArtworkBackup(localBackupArtUrl: String?) {
         val expectedLocalUrl =
-            localBackupArtUrl?.takeIf { it.startsWith("file://") } ?: return
+            localBackupArtUrl?.takeIf(::isLocalBackupArtwork) ?: return
 
         viewModelScope.launch {
             try {
@@ -380,7 +382,7 @@ class SongDetailsViewModel @Inject constructor(
 
     private suspend fun discardObsoleteLocalArtworkBackup(localBackupArtUrl: String?) {
         val expectedLocalUrl =
-            localBackupArtUrl?.takeIf { it.startsWith("file://") } ?: return
+            localBackupArtUrl?.takeIf(::isLocalBackupArtwork) ?: return
 
         try {
             trackRepository.discardLocalAlbumArtBackup(expectedLocalUrl)
