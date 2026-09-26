@@ -31,8 +31,10 @@ private val COVER_VERSION_ALLOWED_TOKENS = COVER_VERSION_MARKERS + setOf(
 )
 
 private fun explicitCoverVersionKinds(title: String): Set<String> {
-    val kinds = ArtistParser.normalizeForSearch(title)
+    val tokens = ArtistParser.normalizeForSearch(title)
         .split(" ")
+        .filter { it.isNotBlank() }
+    val kinds = tokens
         .mapNotNull { token ->
             when (token) {
                 "remaster", "remastered" -> "remaster"
@@ -52,9 +54,34 @@ private fun explicitCoverVersionKinds(title: String): Set<String> {
         }
         .toMutableSet()
 
-    // "Live Version" and "Deluxe Edition" do not describe two independent
-    // recording variants. Ignore those generic qualifiers when a specific kind
-    // is also present so equivalent provider spellings still match.
+    val compoundKinds = tokens.zipWithNext().mapNotNull { (first, second) ->
+        when ("$first $second") {
+            "radio edit" -> "radio-edit"
+            "extended edit" -> "extended-edit"
+            "club edit" -> "club-edit"
+            "single version" -> "single-version"
+            "album version" -> "album-version"
+            "extended version" -> "extended-version"
+            "original version" -> "original-version"
+            "original mix" -> "original-mix"
+            "extended mix" -> "extended-mix"
+            "club mix" -> "club-mix"
+            "anniversary edition" -> "anniversary-edition"
+            "deluxe edition" -> "deluxe"
+            else -> null
+        }
+    }.toSet()
+
+    if (compoundKinds.isNotEmpty()) {
+        kinds.addAll(compoundKinds)
+        if (compoundKinds.any { it.endsWith("-edit") }) kinds.remove("edit")
+        if (compoundKinds.any { it.endsWith("-version") }) kinds.remove("version")
+        if (compoundKinds.any { it.endsWith("-mix") }) kinds.remove("mix")
+        if (compoundKinds.any { it.endsWith("-edition") || it == "deluxe" }) kinds.remove("edition")
+    }
+
+    // "Live Version" and similar generic wording do not describe two independent
+    // recording variants. Ignore generic qualifiers when a specific kind remains.
     if (kinds.size > 1) kinds.remove("version")
     if (kinds.size > 1) kinds.remove("edition")
     return kinds
