@@ -497,6 +497,51 @@ class ArtworkPersistenceIntegrationTest {
     }
 
     @Test
+    fun discardedManualFallbackCannotBeResurrectedByDelayedWriter() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val repository =
+            RoomTrackRepository(
+                dao = trackDao,
+                trackArtistDao = database.trackArtistDao(),
+                manualContentMarkDao = database.manualContentMarkDao(),
+                enrichedMetadataDao = metadataDao,
+            )
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Manual Song",
+                    artist = "Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+        val manualUrl = "https://manual.example/current.jpg"
+        metadataDao.setUserSelectedArtwork(
+            trackId = trackId,
+            albumArtUrl = manualUrl,
+            albumArtUrlSmall = manualUrl,
+            albumArtUrlLarge = manualUrl,
+            timestamp = 1L,
+        )
+
+        val localFile = File(context.filesDir, "album_art/obsolete-manual-backup.jpg")
+        localFile.parentFile?.mkdirs()
+        localFile.writeBytes(byteArrayOf(1, 2, 3))
+        val localUrl = "file://" + localFile.absolutePath
+
+        repository.discardLocalAlbumArtBackup(localUrl)
+
+        assertTrue(!localFile.exists())
+        assertEquals(manualUrl, repository.updateAutomaticAlbumArtUrl(trackId, localUrl))
+        assertEquals(manualUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+    }
+
+    @Test
     fun automaticPriorityAndTrackMirrorStayConsistentAcrossRacingProviders() = runBlocking {
         val trackDao = database.trackDao()
         val metadataDao = database.enrichedMetadataDao()
