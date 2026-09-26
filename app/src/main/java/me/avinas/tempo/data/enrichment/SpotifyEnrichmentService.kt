@@ -82,13 +82,6 @@ class SpotifyEnrichmentService @Inject constructor(
 
         if (spotifyId.isNullOrBlank()) return SpotifyCoverArtResult.Unavailable
 
-        val verifiedArtist = existingMetadata?.spotifyVerifiedArtist
-        if (!verifiedArtist.isNullOrBlank() &&
-            !isSafeCoverArtistMatch(track.artist, verifiedArtist)
-        ) {
-            return SpotifyCoverArtResult.NotFound
-        }
-
         return try {
             val spotifyUrl = "https://open.spotify.com/track/$spotifyId"
             val response = spotifyApi.getOEmbed(spotifyUrl)
@@ -98,8 +91,11 @@ class SpotifyEnrichmentService @Inject constructor(
                     val art = body?.thumbnailUrl?.takeIf { it.isNotBlank() }
                     val providerTitle = body?.title?.takeIf { it.isNotBlank() }
                     if (art != null &&
-                        (providerTitle == null ||
-                            isSafeCoverTrackTitleMatch(track.title, providerTitle))
+                        isSpotifyPickerIdentityCompatible(
+                            track = track,
+                            existingMetadata = existingMetadata,
+                            providerTitle = providerTitle,
+                        )
                     ) {
                         SpotifyCoverArtResult.Success(
                             albumArtUrl = art,
@@ -1464,4 +1460,21 @@ class SpotifyEnrichmentService @Inject constructor(
             }
         """.trimIndent()
     }
+}
+
+
+internal fun isSpotifyPickerIdentityCompatible(
+    track: Track,
+    existingMetadata: EnrichedMetadata?,
+    providerTitle: String?,
+): Boolean {
+    val verifiedArtist = existingMetadata?.spotifyVerifiedArtist
+    val artistMatches =
+        verifiedArtist.isNullOrBlank() ||
+            isSafeCoverArtistMatch(track.artist, verifiedArtist)
+    val titleMatches =
+        providerTitle.isNullOrBlank() ||
+            isSafeCoverTrackTitleMatch(track.title, providerTitle)
+
+    return artistMatches && titleMatches
 }
