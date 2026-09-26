@@ -73,6 +73,7 @@ class ITunesCoverSelectionTest {
     @Test
     fun explicitRemasterCannotDowngradeToStudioVersion() {
         val studio = appleResult(
+            artistName = "Fleetwood Mac",
             trackName = "Dreams",
             collectionName = "Rumours",
             artworkUrl = "https://example.test/studio/100x100bb.jpg",
@@ -86,6 +87,25 @@ class ITunesCoverSelectionTest {
         )
 
         assertNull(selected)
+    }
+
+    @Test
+    fun equivalentExplicitRemasterIsAccepted() {
+        val remaster = appleResult(
+            artistName = "Fleetwood Mac",
+            trackName = "Dreams 2011 Remaster",
+            collectionName = "Rumours",
+            artworkUrl = "https://example.test/remaster/100x100bb.jpg",
+        )
+
+        val selected = selectBestITunesCoverMatch(
+            results = listOf(remaster),
+            expectedArtist = "Fleetwood Mac",
+            expectedTrack = "Dreams (Remastered)",
+            expectedAlbum = "Rumours",
+        )
+
+        assertEquals("Dreams 2011 Remaster", selected?.trackName)
     }
 
     @Test
