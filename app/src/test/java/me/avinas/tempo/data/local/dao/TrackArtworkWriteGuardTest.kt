@@ -74,6 +74,28 @@ class TrackArtworkWriteGuardTest {
     }
 
     @Test
+    fun localCanonicalSourceDoesNotFreezeAnOlderLocalTrackMirror() {
+        assertEquals(
+            "file:///covers/new.jpg",
+            resolveAutomaticTrackArtwork(
+                source = AlbumArtSource.LOCAL,
+                manualArtUrl = null,
+                currentTrackArtUrl = "file:///covers/old.jpg",
+                canonicalAutomaticArtUrl = "file:///covers/new.jpg",
+                incomingArtUrl = "file:///covers/new.jpg",
+            )
+        )
+        assertEquals(
+            false,
+            shouldPreserveLocalTrackBackup(
+                source = AlbumArtSource.LOCAL,
+                canonicalArtworkUrl = "file:///covers/new.jpg",
+                currentTrackArtworkUrl = "file:///covers/old.jpg",
+            )
+        )
+    }
+
+    @Test
     fun remoteAutomaticWriteStillCollapsesToCanonicalMetadataArtwork() {
         assertEquals(
             "https://spotify.example/canonical.jpg",
