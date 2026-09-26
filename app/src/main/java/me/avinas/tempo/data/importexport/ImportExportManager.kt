@@ -1161,8 +1161,11 @@ internal fun resolveRestoredTrackArtwork(
             metadataArtUrl?.takeIf { it.isNotBlank() }
                 ?: trackArtUrl?.takeIf { it.isNotBlank() }
         else ->
-            trackArtUrl?.takeIf { it.isNotBlank() }
-                ?: metadataArtUrl?.takeIf { it.isNotBlank() }
+            when {
+                trackArtUrl?.startsWith("file://") == true -> trackArtUrl
+                !metadataArtUrl.isNullOrBlank() -> metadataArtUrl
+                else -> trackArtUrl?.takeIf { it.isNotBlank() }
+            }
     }
 
 internal fun resolveRestoredProfileImagePath(
