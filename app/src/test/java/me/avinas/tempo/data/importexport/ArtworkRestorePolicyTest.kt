@@ -31,6 +31,30 @@ class ArtworkRestorePolicyTest {
     }
 
     @Test
+    fun canonicalAutomaticMetadataBeatsStaleRemoteTrackMirror() {
+        assertEquals(
+            "https://automatic.example/current.jpg",
+            resolveRestoredTrackArtwork(
+                albumArtSource = AlbumArtSource.SPOTIFY,
+                metadataArtUrl = "https://automatic.example/current.jpg",
+                trackArtUrl = "https://automatic.example/stale.jpg",
+            ),
+        )
+    }
+
+    @Test
+    fun localTrackBackupIsPreservedBesideCanonicalRemoteMetadata() {
+        assertEquals(
+            "file:///data/user/0/me.avinas.tempo/files/album_art/backup.jpg",
+            resolveRestoredTrackArtwork(
+                albumArtSource = AlbumArtSource.MUSICBRAINZ,
+                metadataArtUrl = "https://automatic.example/current.jpg",
+                trackArtUrl = "file:///data/user/0/me.avinas.tempo/files/album_art/backup.jpg",
+            ),
+        )
+    }
+
+    @Test
     fun automaticArtworkBackfillsTrackMirrorWhenMissing() {
         assertEquals(
             "https://automatic.example/cover.jpg",
