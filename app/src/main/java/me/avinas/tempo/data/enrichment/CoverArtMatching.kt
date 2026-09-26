@@ -193,10 +193,19 @@ internal fun isSafeCoverIdentityMatch(
     expectedArtist: String,
     candidateTitle: String,
     candidateArtists: List<String>,
-): Boolean =
-    isSafeCoverTrackTitleMatch(expectedTitle, candidateTitle) &&
-        candidateArtists.isNotEmpty() &&
-        isSafeCoverArtistMatch(
-            expectedArtist = expectedArtist,
-            candidateArtist = candidateArtists.joinToString(", "),
-        )
+): Boolean {
+    if (!isSafeCoverTrackTitleMatch(expectedTitle, candidateTitle) ||
+        candidateArtists.isEmpty()
+    ) {
+        return false
+    }
+
+    val expectedPrimaryArtists = ArtistParser.getPrimaryArtists(expectedArtist)
+    val candidatePrimaryArtists = candidateArtists.flatMap(ArtistParser::getPrimaryArtists)
+
+    return expectedPrimaryArtists.all { expected ->
+        candidatePrimaryArtists.any { candidate ->
+            ArtistParser.isStrictSameArtist(expected, candidate)
+        }
+    }
+}
