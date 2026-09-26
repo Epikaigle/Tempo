@@ -9,7 +9,9 @@ import java.lang.reflect.Proxy
 import kotlinx.coroutines.runBlocking
 import me.avinas.tempo.data.analytics.NoOpAnalyticsTracker
 import me.avinas.tempo.data.local.AppDatabase
+import me.avinas.tempo.data.local.entities.Album
 import me.avinas.tempo.data.local.entities.AlbumArtSource
+import me.avinas.tempo.data.local.entities.Artist
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.Track
@@ -597,6 +599,74 @@ class ArtworkPersistenceIntegrationTest {
             "https://remote.example/b.jpg",
             repository.consumeLocalAlbumArtBackup(secondId, localUrl),
         )
+        assertTrue(!localFile.exists())
+    }
+
+    @Test
+    fun managedBackupStaysWhileArtistOrAlbumStillReferencesIt() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val artistDao = database.artistDao()
+        val albumDao = database.albumDao()
+        val repository =
+            RoomTrackRepository(
+                dao = trackDao,
+                trackArtistDao = database.trackArtistDao(),
+                manualContentMarkDao = database.manualContentMarkDao(),
+                enrichedMetadataDao = metadataDao,
+            )
+
+        val localFile = File(context.filesDir, "album_art/shared-entity-backup.jpg")
+        localFile.parentFile?.mkdirs()
+        localFile.writeBytes(byteArrayOf(4, 5, 6))
+        val localUrl = "file://" + localFile.absolutePath
+
+        val artistId =
+            artistDao.insert(
+                Artist(
+                    name = "Artwork Owner",
+                    imageUrl = localUrl,
+                )
+            )
+        val albumId =
+            albumDao.insert(
+                Album(
+                    title = "Artwork Album",
+                    artistId = artistId,
+                    releaseYear = null,
+                    artworkUrl = localUrl,
+                )
+            )
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Artwork Song",
+                    artist = "Artwork Owner",
+                    album = "Artwork Album",
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+        val remoteUrl = "https://remote.example/entity.jpg"
+        metadataDao.upsertFromAutomaticEnrichment(
+            EnrichedMetadata(
+                trackId = trackId,
+                albumArtUrl = remoteUrl,
+                albumArtSource = AlbumArtSource.ITUNES,
+            )
+        )
+        trackDao.updateAlbumArtUrl(trackId, localUrl)
+
+        assertEquals(remoteUrl, repository.consumeLocalAlbumArtBackup(trackId, localUrl))
+        assertTrue(localFile.exists())
+
+        artistDao.updateImageUrl(artistId, null)
+        albumDao.update(requireNotNull(albumDao.getAlbumById(albumId)).copy(artworkUrl = null))
+        repository.discardLocalAlbumArtBackup(localUrl)
+
         assertTrue(!localFile.exists())
     }
 
