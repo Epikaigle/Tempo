@@ -108,11 +108,12 @@ interface TrackDao {
                 null
             }
         val currentTrackArt = getCurrentTrackAlbumArtUrl(trackId)
-        val resolvedArtwork = resolveProtectedTrackArtwork(
+        val resolvedArtwork = resolveAutomaticTrackArtwork(
             source = source,
             manualArtUrl = manualArt,
             currentTrackArtUrl = currentTrackArt,
-            incomingArtUrl = canonicalAutomaticArt ?: albumArtUrl,
+            canonicalAutomaticArtUrl = canonicalAutomaticArt,
+            incomingArtUrl = albumArtUrl,
         )
 
         updateAlbumArtUrl(
@@ -428,3 +429,46 @@ internal fun resolveProtectedTrackArtwork(
         AlbumArtSource.USER_RESET -> null
         else -> incomingArtUrl
     }
+
+/**
+ * Resolve a Track-table artwork write produced by automatic tracking/enrichment.
+ *
+ * When enriched_metadata already owns a canonical automatic remote cover,
+ * Track.album_art_url may intentionally contain a file:// image as an offline
+ * fallback. Keep (or refresh) that local backup instead of replacing it with the
+ * remote URL. Remote/stale provider writes still collapse to the canonical
+ * metadata URL, while USER_SELECTED and USER_RESET remain authoritative.
+ */
+internal fun resolveAutomaticTrackArtwork(
+    source: AlbumArtSource?,
+    manualArtUrl: String?,
+    currentTrackArtUrl: String?,
+    canonicalAutomaticArtUrl: String?,
+    incomingArtUrl: String?,
+): String? {
+    val hasCanonicalAutomaticArtwork =
+        source != null &&
+            source != AlbumArtSource.NONE &&
+            source != AlbumArtSource.USER_RESET &&
+            source != AlbumArtSource.USER_SELECTED &&
+            !canonicalAutomaticArtUrl.isNullOrBlank()
+
+    val automaticCandidate =
+        if (hasCanonicalAutomaticArtwork) {
+            incomingArtUrl?.takeIf(::isLocalBackupArtwork)
+                ?: currentTrackArtUrl?.takeIf(::isLocalBackupArtwork)
+                ?: canonicalAutomaticArtUrl
+        } else {
+            incomingArtUrl
+        }
+
+    return resolveProtectedTrackArtwork(
+        source = source,
+        manualArtUrl = manualArtUrl,
+        currentTrackArtUrl = currentTrackArtUrl,
+        incomingArtUrl = automaticCandidate,
+    )
+}
+
+internal fun isLocalBackupArtwork(url: String?): Boolean =
+    url?.startsWith("file://") == true
