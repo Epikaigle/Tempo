@@ -366,6 +366,28 @@ class ArtworkPersistenceIntegrationTest {
         assertEquals(remoteUrl, metadataDao.forTrackSync(trackId)?.albumArtUrl)
         assertEquals(listOf("tag"), metadataDao.forTrackSync(trackId)?.tags)
         assertEquals(localBackupUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        // A delayed callback for an older file must not clear the current backup.
+        assertEquals(
+            0,
+            trackDao.clearLocalAlbumArtUrlIfMatches(
+                trackId = trackId,
+                expectedLocalUrl = "file:///covers/older.jpg",
+            ),
+        )
+        assertEquals(localBackupUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        // The callback for the exact file that was consumed may clear only that
+        // Track-table fallback. The canonical remote metadata remains untouched.
+        assertEquals(
+            1,
+            trackDao.clearLocalAlbumArtUrlIfMatches(
+                trackId = trackId,
+                expectedLocalUrl = localBackupUrl,
+            ),
+        )
+        assertNull(trackDao.getTrackById(trackId)?.albumArtUrl)
+        assertEquals(remoteUrl, metadataDao.forTrackSync(trackId)?.albumArtUrl)
     }
 
     @Test
