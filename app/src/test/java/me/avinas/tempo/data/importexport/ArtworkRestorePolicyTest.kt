@@ -76,6 +76,12 @@ class ArtworkRestorePolicyTest {
             "https://example.test/cover.jpg",
             remapRestoredImageUrl("https://example.test/cover.jpg", emptyMap()),
         )
+        assertNull(
+            remapRestoredImageUrl(
+                "content://media/external/audio/albumart/42",
+                emptyMap(),
+            )
+        )
     }
 
     @Test
