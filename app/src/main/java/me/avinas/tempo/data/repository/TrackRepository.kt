@@ -22,6 +22,7 @@ interface TrackRepository {
         trackId: Long,
         expectedLocalUrl: String,
     ): String? = null
+    suspend fun discardLocalAlbumArtBackup(expectedLocalUrl: String) {}
     suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int
     fun all(): Flow<List<Track>>
     suspend fun searchTracks(query: String): List<Track>
