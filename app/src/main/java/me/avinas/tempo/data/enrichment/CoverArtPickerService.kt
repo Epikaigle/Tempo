@@ -151,6 +151,7 @@ class CoverArtPickerService @Inject constructor(
                             artist = track.artist,
                             album = albumHint,
                             track = track.title,
+                            preserveExplicitTrackVersion = true,
                         )
                     ) {
                         is ITunesEnrichmentService.iTunesResult.Success ->
@@ -195,6 +196,7 @@ class CoverArtPickerService @Inject constructor(
                         artist = track.artist,
                         track = track.title,
                         album = albumHint,
+                        preserveExplicitTrackVersion = true,
                     )
                     if (result == null) {
                         CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
