@@ -335,6 +335,44 @@ class SongDetailsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Clear a local fallback after the remote artwork has loaded successfully.
+     *
+     * The repository compare-and-clear makes this safe if a newer local fallback
+     * is written while the previous image request is still finishing.
+     */
+    fun clearLocalArtworkBackup(localBackupArtUrl: String?) {
+        val expectedLocalUrl =
+            localBackupArtUrl?.takeIf { it.startsWith("file://") } ?: return
+
+        viewModelScope.launch {
+            try {
+                val cleared =
+                    trackRepository.clearLocalAlbumArtUrlIfMatches(
+                        trackId = trackId,
+                        expectedLocalUrl = expectedLocalUrl,
+                    )
+                if (cleared > 0) {
+                    statsRepository.invalidateCache()
+                    _uiState.update { state ->
+                        val details = state.trackDetails
+                        if (details?.localBackupArtUrl == expectedLocalUrl) {
+                            state.copy(
+                                trackDetails = details.copy(localBackupArtUrl = null),
+                            )
+                        } else {
+                            state
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Cleanup is best-effort; artwork display has already succeeded.
+            }
+        }
+    }
+
     fun selectCover(candidate: CoverArtCandidate) {
         if (_uiState.value.trackDetails == null) return
         if (_uiState.value.isSavingCover) return
