@@ -138,6 +138,23 @@ interface TrackDao {
     @Query("UPDATE tracks SET album_art_url = :albumArtUrl WHERE id = :trackId")
     suspend fun updateAlbumArtUrl(trackId: Long, albumArtUrl: String?)
 
+    /**
+     * Remove a local fallback only if it is still the exact fallback that was
+     * successfully consumed. The compare-and-clear guard prevents a delayed image
+     * callback from deleting a newer backup written by the tracking service.
+     */
+    @Query("""
+        UPDATE tracks
+        SET album_art_url = NULL
+        WHERE id = :trackId
+        AND album_art_url = :expectedLocalUrl
+        AND album_art_url LIKE 'file://%'
+    """)
+    suspend fun clearLocalAlbumArtUrlIfMatches(
+        trackId: Long,
+        expectedLocalUrl: String,
+    ): Int
+
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId AND (youtube_id IS NULL OR youtube_id = '')")
     suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int
 
