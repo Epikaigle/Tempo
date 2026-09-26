@@ -82,6 +82,13 @@ class SpotifyEnrichmentService @Inject constructor(
 
         if (spotifyId.isNullOrBlank()) return SpotifyCoverArtResult.Unavailable
 
+        val verifiedArtist = existingMetadata?.spotifyVerifiedArtist
+        if (!verifiedArtist.isNullOrBlank() &&
+            !isSafeCoverArtistMatch(track.artist, verifiedArtist)
+        ) {
+            return SpotifyCoverArtResult.NotFound
+        }
+
         return try {
             val spotifyUrl = "https://open.spotify.com/track/$spotifyId"
             val response = spotifyApi.getOEmbed(spotifyUrl)
@@ -89,10 +96,14 @@ class SpotifyEnrichmentService @Inject constructor(
                 response.isSuccessful -> {
                     val body = response.body()
                     val art = body?.thumbnailUrl?.takeIf { it.isNotBlank() }
-                    if (art != null) {
+                    val providerTitle = body?.title?.takeIf { it.isNotBlank() }
+                    if (art != null &&
+                        (providerTitle == null ||
+                            isSafeCoverTrackTitleMatch(track.title, providerTitle))
+                    ) {
                         SpotifyCoverArtResult.Success(
                             albumArtUrl = art,
-                            title = body.title,
+                            title = providerTitle,
                         )
                     } else {
                         SpotifyCoverArtResult.NotFound
