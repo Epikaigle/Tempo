@@ -104,6 +104,15 @@ class CoverArtProviderStatusTest {
                 providerTitle = "Correct Song",
             )
         )
+
+        val collaboration = track.copy(artist = "Correct Artist & Guest Artist")
+        assertTrue(
+            isSpotifyPickerIdentityCompatible(
+                track = collaboration,
+                existingMetadata = metadata.copy(spotifyVerifiedArtist = "Correct Artist"),
+                providerTitle = "Correct Song",
+            )
+        )
         assertTrue(
             !isSpotifyPickerIdentityCompatible(
                 track = track,
