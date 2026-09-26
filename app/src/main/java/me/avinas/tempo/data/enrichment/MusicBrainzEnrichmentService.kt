@@ -372,13 +372,21 @@ class MusicBrainzEnrichmentService @Inject constructor(
 
                 val searchResponse = response.body()
                 if (searchResponse != null && searchResponse.recordings.isNotEmpty()) {
-                    // Found results with this strategy
-                    return processSearchResponse(
-                        searchResponse = searchResponse,
-                        title = title,
-                        artist = artist,
-                        strictCoverMatching = strictCoverMatching,
-                    )
+                    // A provider query can return nearby recordings while our
+                    // conservative identity filter rejects all of them. That is
+                    // not terminal: continue to the next search strategy.
+                    when (
+                        val processed = processSearchResponse(
+                            searchResponse = searchResponse,
+                            title = title,
+                            artist = artist,
+                            strictCoverMatching = strictCoverMatching,
+                        )
+                    ) {
+                        is SearchResult.Found -> return processed
+                        is SearchResult.Error -> return processed
+                        is SearchResult.NotFound -> Unit
+                    }
                 }
                 
             } catch (e: CancellationException) {
