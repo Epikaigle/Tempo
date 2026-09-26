@@ -104,6 +104,13 @@ class CoverArtProviderStatusTest {
                 providerTitle = "Correct Song",
             )
         )
+        assertTrue(
+            !isSpotifyPickerIdentityCompatible(
+                track = track,
+                existingMetadata = metadata.copy(spotifyVerifiedArtist = "Correct Artist"),
+                providerTitle = null,
+            )
+        )
     }
 
     @Test
