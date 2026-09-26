@@ -126,12 +126,13 @@ internal fun isSafeCoverArtistMatch(
         return false
     }
 
-    val expectedArtists = ArtistParser.getAllArtists(expectedArtist)
+    val expectedPrimaryArtist = ArtistParser.getPrimaryArtist(expectedArtist)
     val candidateArtists = ArtistParser.getAllArtists(candidateArtist)
 
-    return expectedArtists.any { expected ->
-        candidateArtists.any { candidate ->
-            ArtistParser.isStrictSameArtist(expected, candidate)
-        }
+    // A featured artist alone is not enough to identify the recording. Requiring
+    // the expected primary artist still allows provider strings that include all
+    // collaborators while rejecting a solo track from one of the guests.
+    return candidateArtists.any { candidate ->
+        ArtistParser.isStrictSameArtist(expectedPrimaryArtist, candidate)
     }
 }
