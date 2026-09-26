@@ -109,7 +109,8 @@ class ITunesEnrichmentService @Inject constructor(
     suspend fun searchAlbumArt(
         artist: String,
         album: String? = null,
-        track: String? = null
+        track: String? = null,
+        preserveExplicitTrackVersion: Boolean = false,
     ): iTunesResult {
         if (ArtistParser.isUnknownArtist(artist)) {
             Log.d(TAG, "Skipping iTunes search: artist is unknown")
@@ -117,7 +118,12 @@ class ITunesEnrichmentService @Inject constructor(
         }
 
         // Build search strategies
-        val searchStrategies = buildSearchStrategies(artist, album, track)
+        val searchStrategies = buildSearchStrategies(
+            artist = artist,
+            album = album,
+            track = track,
+            preserveExplicitTrackVersion = preserveExplicitTrackVersion,
+        )
         
         // Track unique queries to avoid duplicates
         val uniqueQueries = searchStrategies.distinct()
@@ -786,7 +792,12 @@ class ITunesEnrichmentService @Inject constructor(
         return "$basePath/${size}x${size}cc.$ext"
     }
 
-    private fun buildSearchStrategies(artist: String, album: String?, track: String?): List<String> {
+    private fun buildSearchStrategies(
+        artist: String,
+        album: String?,
+        track: String?,
+        preserveExplicitTrackVersion: Boolean = false,
+    ): List<String> {
         val strategies = mutableListOf<String>()
         val primaryArtist = ArtistParser.getPrimaryArtist(artist)
         
@@ -797,8 +808,14 @@ class ITunesEnrichmentService @Inject constructor(
         
         // Strategy 2: Primary Artist + Track (Best for track metadata)
         if (!track.isNullOrBlank()) {
-            val cleanTrack = ArtistParser.cleanTrackTitle(track)
-            strategies.add("$primaryArtist $cleanTrack")
+            val titleVariants =
+                if (preserveExplicitTrackVersion) coverSearchTitleVariants(track)
+                else listOf(ArtistParser.cleanTrackTitle(track))
+            val cleanTrack = titleVariants.last()
+
+            titleVariants.forEach { titleVariant ->
+                strategies.add("$primaryArtist $titleVariant")
+            }
             
             // Strategy 3: Try other artists if available
             val allArtists = ArtistParser.getAllArtists(artist)
