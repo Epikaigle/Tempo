@@ -151,8 +151,25 @@ class MusicBrainzEnrichmentService @Inject constructor(
         if (ArtistParser.isUnknownArtist(track.artist)) return CoverArtSearchResult.NotFound
 
         return try {
+            val knownRecordingId = currentMetadata?.musicbrainzRecordingId
+            val knownIdentityMatches =
+                if (!knownRecordingId.isNullOrBlank()) {
+                    val knownRecording = fetchRecordingDetails(knownRecordingId, strict = true)
+                    knownRecording != null &&
+                        isSafeCoverTrackTitleMatch(track.title, knownRecording.title.orEmpty()) &&
+                        isSafeCoverArtistMatch(
+                            track.artist,
+                            knownRecording.artistCredit
+                                .orEmpty()
+                                .mapNotNull { it.name ?: it.artist?.name }
+                                .joinToString(", "),
+                        )
+                } else {
+                    false
+                }
+
             val knownReleaseId = currentMetadata?.musicbrainzReleaseId
-            if (!knownReleaseId.isNullOrBlank()) {
+            if (knownIdentityMatches && !knownReleaseId.isNullOrBlank()) {
                 val art = fetchCoverArt(knownReleaseId, strict = true)
                 val best = art?.large ?: art?.medium ?: art?.small
                 if (art != null && best != null) {
@@ -168,7 +185,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
             }
 
             val knownReleaseGroupId = currentMetadata?.musicbrainzReleaseGroupId
-            if (!knownReleaseGroupId.isNullOrBlank()) {
+            if (knownIdentityMatches && !knownReleaseGroupId.isNullOrBlank()) {
                 val art = fetchReleaseGroupCoverArt(knownReleaseGroupId, strict = true)
                 val best = art?.large ?: art?.medium ?: art?.small
                 if (art != null && best != null) {
@@ -330,7 +347,11 @@ class MusicBrainzEnrichmentService @Inject constructor(
         strictCoverMatching: Boolean = false,
     ): SearchResult {
         // Try multiple search strategies
-        val searchStrategies = buildSearchStrategies(title, artist)
+        val searchStrategies = buildSearchStrategies(
+            title = title,
+            artist = artist,
+            preserveExplicitVersion = strictCoverMatching,
+        )
         
         for ((index, query) in searchStrategies.withIndex()) {
             Log.d(TAG, "Search query (strategy ${index + 1}/${searchStrategies.size}): $query")
@@ -378,17 +399,32 @@ class MusicBrainzEnrichmentService @Inject constructor(
      * Build multiple search strategies for MusicBrainz.
      * Uses different query formats to maximize chance of finding a match.
      */
-    private fun buildSearchStrategies(title: String, artist: String): List<String> {
+    private fun buildSearchStrategies(
+        title: String,
+        artist: String,
+        preserveExplicitVersion: Boolean = false,
+    ): List<String> {
         val strategies = mutableListOf<String>()
         
-        val cleanTitle = ArtistParser.cleanTrackTitle(title)
+        val titleVariants =
+            if (preserveExplicitVersion) coverSearchTitleVariants(title)
+            else listOf(ArtistParser.cleanTrackTitle(title))
+        val cleanTitle = titleVariants.last()
         val allArtists = ArtistParser.getAllArtists(artist)
         val primaryArtist = ArtistParser.getPrimaryArtist(artist)
         
         val escapedTitle = escapeLucene(cleanTitle)
         val escapedPrimaryArtist = escapeLucene(primaryArtist)
+
+        // For the picker, ask for the explicit version first. The cleaned title
+        // remains the fallback so providers with inconsistent naming still work.
+        titleVariants.dropLast(1).forEach { versionedTitle ->
+            strategies.add(
+                "recording:\"${escapeLucene(versionedTitle)}\" AND artist:\"$escapedPrimaryArtist\""
+            )
+        }
         
-        // Strategy 1: Exact title + primary artist (most precise)
+        // Strategy 1: Exact cleaned title + primary artist.
         strategies.add("recording:\"$escapedTitle\" AND artist:\"$escapedPrimaryArtist\"")
         
         // Strategy 2: Try each artist if there are multiple
