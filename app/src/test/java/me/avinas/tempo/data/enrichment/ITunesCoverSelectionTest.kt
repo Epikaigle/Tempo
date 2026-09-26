@@ -71,6 +71,42 @@ class ITunesCoverSelectionTest {
     }
 
     @Test
+    fun explicitRemasterCannotDowngradeToStudioVersion() {
+        val studio = appleResult(
+            trackName = "Dreams",
+            collectionName = "Rumours",
+            artworkUrl = "https://example.test/studio/100x100bb.jpg",
+        )
+
+        val selected = selectBestITunesCoverMatch(
+            results = listOf(studio),
+            expectedArtist = "Fleetwood Mac",
+            expectedTrack = "Dreams (Remastered)",
+            expectedAlbum = "Rumours",
+        )
+
+        assertNull(selected)
+    }
+
+    @Test
+    fun explicitLiveVersionCannotDowngradeToStudioVersion() {
+        val studio = appleResult(
+            trackName = "Song",
+            collectionName = "Studio Album",
+            artworkUrl = "https://example.test/studio/100x100bb.jpg",
+        )
+
+        val selected = selectBestITunesCoverMatch(
+            results = listOf(studio),
+            expectedArtist = "Dua Lipa",
+            expectedTrack = "Song Live",
+            expectedAlbum = null,
+        )
+
+        assertNull(selected)
+    }
+
+    @Test
     fun wrongArtistIsRejectedEvenWithExactAlbum() {
         val wrongArtist = appleResult(
             artistName = "Dua Lipa Tribute",
