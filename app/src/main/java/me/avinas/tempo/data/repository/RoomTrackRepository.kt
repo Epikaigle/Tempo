@@ -105,6 +105,18 @@ class RoomTrackRepository @Inject constructor(
             }
         }
 
+    override suspend fun discardLocalAlbumArtBackup(expectedLocalUrl: String) =
+        withContext(Dispatchers.IO) {
+            withAlbumArtBackupLock {
+                if (!isLocalBackupArtwork(expectedLocalUrl)) return@withAlbumArtBackupLock
+
+                val localFile = File(expectedLocalUrl.removePrefix("file://"))
+                if (localFile.exists() && !localFile.delete()) {
+                    Log.w(TAG, "Failed to delete obsolete local album art: " + localFile.absolutePath)
+                }
+            }
+        }
+
     override suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int =
         dao.updateYoutubeIdIfMissing(trackId, youtubeId)
     override fun all(): Flow<List<Track>> = dao.all()
