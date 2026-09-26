@@ -87,25 +87,33 @@ class DeezerEnrichmentService @Inject constructor(
             }
 
             // Structured search may return near matches without the requested track.
-            // Always try one relaxed query before giving up, but still validate title + artist.
-            delay(RATE_LIMIT_DELAY_MS)
-            val looseTitle = titleVariants.first()
-            val loose = deezerApi.searchTracks("$looseTitle $cleanArtist")
-            if (!loose.isSuccessful) {
-                if (!hadSuccessfulStructuredResponse) {
-                    throw IllegalStateException(
-                        "Deezer API error: ${lastStructuredError ?: "unknown"} / ${loose.code()}"
-                    )
+            // Try relaxed queries in the same order: explicit version first, then
+            // cleaned fallback. Identity validation still decides what may be shown.
+            var hadSuccessfulLooseResponse = false
+            var lastLooseError: Int? = null
+            for (titleVariant in titleVariants) {
+                delay(RATE_LIMIT_DELAY_MS)
+                val loose = deezerApi.searchTracks("$titleVariant $cleanArtist")
+                if (loose.isSuccessful) {
+                    hadSuccessfulLooseResponse = true
+                    findBestCoverMatch(
+                        results = loose.body()?.data.orEmpty(),
+                        artist = artist,
+                        track = track,
+                        album = album,
+                    )?.let { return it.toCoverArtResult() }
+                } else {
+                    lastLooseError = loose.code()
                 }
-                return null
             }
 
-            return findBestCoverMatch(
-                results = loose.body()?.data.orEmpty(),
-                artist = artist,
-                track = track,
-                album = album,
-            )?.toCoverArtResult()
+            if (!hadSuccessfulStructuredResponse && !hadSuccessfulLooseResponse) {
+                throw IllegalStateException(
+                    "Deezer API error: ${lastStructuredError ?: "unknown"} / " +
+                        "${lastLooseError ?: "unknown"}"
+                )
+            }
+            return null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
