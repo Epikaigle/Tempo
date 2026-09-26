@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.io.File
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.runBlocking
 import me.avinas.tempo.data.analytics.NoOpAnalyticsTracker
@@ -14,6 +15,7 @@ import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.repository.ArtistLinkingService
 import me.avinas.tempo.data.repository.RoomEnrichedMetadataRepository
+import me.avinas.tempo.data.repository.RoomTrackRepository
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.TrackAliasRepository
 import org.junit.After
@@ -367,27 +369,131 @@ class ArtworkPersistenceIntegrationTest {
         assertEquals(listOf("tag"), metadataDao.forTrackSync(trackId)?.tags)
         assertEquals(localBackupUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
 
-        // A delayed callback for an older file must not clear the current backup.
-        assertEquals(
-            0,
-            trackDao.clearLocalAlbumArtUrlIfMatches(
+        // A delayed callback for a different file must not touch the current backup.
+        assertNull(
+            trackDao.promoteLocalAlbumArtToCanonicalIfMatches(
                 trackId = trackId,
                 expectedLocalUrl = "file:///covers/older.jpg",
-            ),
+            )
         )
         assertEquals(localBackupUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
 
-        // The callback for the exact file that was consumed may clear only that
-        // Track-table fallback. The canonical remote metadata remains untouched.
+        // Consuming the exact fallback restores Track's canonical remote mirror
+        // instead of leaving the denormalized Track artwork empty.
         assertEquals(
-            1,
-            trackDao.clearLocalAlbumArtUrlIfMatches(
+            remoteUrl,
+            trackDao.promoteLocalAlbumArtToCanonicalIfMatches(
                 trackId = trackId,
                 expectedLocalUrl = localBackupUrl,
             ),
         )
-        assertNull(trackDao.getTrackById(trackId)?.albumArtUrl)
+        assertEquals(remoteUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
         assertEquals(remoteUrl, metadataDao.forTrackSync(trackId)?.albumArtUrl)
+    }
+
+    @Test
+    fun localArtworkRefreshUpdatesTrackMirrorForSingleAndBatchWrites() = runBlocking {
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Local Song",
+                    artist = "Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+
+        val firstLocal = "file:///covers/first.jpg"
+        val secondLocal = "file:///covers/second.jpg"
+        val thirdLocal = "file:///covers/third.jpg"
+
+        metadataDao.upsertFromAutomaticEnrichment(
+            EnrichedMetadata(
+                trackId = trackId,
+                albumArtUrl = firstLocal,
+                albumArtSource = AlbumArtSource.LOCAL,
+            )
+        )
+        assertEquals(firstLocal, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        metadataDao.upsertFromAutomaticEnrichment(
+            requireNotNull(metadataDao.forTrackSync(trackId)).copy(
+                albumArtUrl = secondLocal,
+                albumArtUrlSmall = secondLocal,
+                albumArtUrlLarge = secondLocal,
+                albumArtSource = AlbumArtSource.LOCAL,
+            )
+        )
+        assertEquals(secondLocal, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        metadataDao.upsertAllFromAutomaticEnrichment(
+            listOf(
+                requireNotNull(metadataDao.forTrackSync(trackId)).copy(
+                    albumArtUrl = thirdLocal,
+                    albumArtUrlSmall = thirdLocal,
+                    albumArtUrlLarge = thirdLocal,
+                    albumArtSource = AlbumArtSource.LOCAL,
+                )
+            )
+        )
+
+        assertEquals(thirdLocal, metadataDao.forTrackSync(trackId)?.albumArtUrl)
+        assertEquals(thirdLocal, trackDao.getTrackById(trackId)?.albumArtUrl)
+    }
+
+    @Test
+    fun consumedLocalBackupCannotBeResurrectedByDelayedSamePathWrite() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val repository =
+            RoomTrackRepository(
+                dao = trackDao,
+                trackArtistDao = database.trackArtistDao(),
+                manualContentMarkDao = database.manualContentMarkDao(),
+                enrichedMetadataDao = metadataDao,
+            )
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Race Song",
+                    artist = "Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+        val remoteUrl = "https://spotify.example/canonical.jpg"
+        metadataDao.upsertFromAutomaticEnrichment(
+            EnrichedMetadata(
+                trackId = trackId,
+                albumArtUrl = remoteUrl,
+                albumArtSource = AlbumArtSource.SPOTIFY,
+            )
+        )
+
+        val localFile = File(context.filesDir, "album_art/race-backup.jpg")
+        localFile.parentFile?.mkdirs()
+        localFile.writeBytes(byteArrayOf(1, 2, 3))
+        val localUrl = "file://" + localFile.absolutePath
+        trackDao.updateAlbumArtUrl(trackId, localUrl)
+
+        assertEquals(remoteUrl, repository.consumeLocalAlbumArtBackup(trackId, localUrl))
+        assertTrue(!localFile.exists())
+        assertEquals(remoteUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+
+        // Simulate the delayed writer that still holds the exact same deterministic
+        // file:// path. Because cleanup removed the file under the repository lock,
+        // the stale write is rejected and the canonical remote mirror survives.
+        assertEquals(remoteUrl, repository.updateAutomaticAlbumArtUrl(trackId, localUrl))
+        assertEquals(remoteUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
     }
 
     @Test
