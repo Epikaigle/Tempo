@@ -25,12 +25,8 @@ import coil3.request.ImageRequest
 import coil3.size.Precision
 import coil3.size.Scale
 import coil3.size.Size
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import me.avinas.tempo.R
 import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
-import java.io.File
 
 private const val TAG = "AlbumArtImage"
 
@@ -53,8 +49,6 @@ fun AlbumArtImage(
     onArtworkReady: ((android.graphics.Bitmap, Palette?) -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-
     // Get the singleton ImageLoader with our cache configuration
     // This uses the ImageLoaderFactory implementation in TempoApplication
     // which provides the Hilt-injected singleton with 50MB disk cache
@@ -137,13 +131,11 @@ fun AlbumArtImage(
         if (state is AsyncImagePainter.State.Success) {
             // Image loaded successfully
             if (isHotlink && !localArtUrl.isNullOrBlank() && localArtUrl.startsWith("file://")) {
-                // Hotlink worked. Remove the on-disk fallback first, then let the
-                // caller clear the matching database pointer. Keeping both steps in
-                // one effect avoids composition-time side effects and stale refs.
+                // The remote image is confirmed usable. Let the repository retire
+                // the matching local fallback and restore Track's canonical remote
+                // mirror in one guarded operation.
                 LaunchedEffect(urlToLoad, localArtUrl) {
-                    if (deleteLocalArtFile(localArtUrl)) {
-                        onHotlinkSuccess?.invoke(albumArtUrl!!)
-                    }
+                    onHotlinkSuccess?.invoke(albumArtUrl!!)
                 }
             }
         } else if (state is AsyncImagePainter.State.Error) {
@@ -218,32 +210,6 @@ private fun averageColor(bitmap: android.graphics.Bitmap): Int {
     return android.graphics.Color.rgb((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
 }
 
-/**
- * Delete local album art file to save storage after hotlink loads successfully.
- */
-private suspend fun deleteLocalArtFile(localArtUrl: String): Boolean =
-    withContext(Dispatchers.IO) {
-        try {
-            val filePath = localArtUrl.removePrefix("file://")
-            val file = File(filePath)
-            if (!file.exists()) {
-                // The DB pointer is already stale, so it is safe for the caller to
-                // clear it even though there is nothing left to delete on disk.
-                true
-            } else {
-                val deleted = file.delete()
-                if (deleted) {
-                    Log.d(TAG, "Deleted local art file to save storage: $filePath")
-                } else {
-                    Log.w(TAG, "Failed to delete local art file: $filePath")
-                }
-                deleted
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error deleting local art file", e)
-            false
-        }
-    }
 
 /**
  * Placeholder for album art when no image is available.
