@@ -35,6 +35,50 @@ class MusicBrainzManualArtworkTest {
     }
 
     @Test
+    fun donorManualArtworkIsNeverTransferredToTargetWithoutArtwork() {
+        val donorSnapshot = EnrichedMetadata(
+            trackId = 1L,
+            albumArtUrl = "https://manual.example/donor.jpg",
+            albumArtUrlSmall = "https://manual.example/donor-small.jpg",
+            albumArtUrlLarge = "https://manual.example/donor-large.jpg",
+            albumArtSource = AlbumArtSource.USER_SELECTED,
+            genres = listOf("Rock"),
+        )
+
+        val resolved = preserveUserSelectedArtwork(
+            current = null,
+            replacement = donorSnapshot.copy(trackId = 2L),
+        )
+
+        assertEquals(AlbumArtSource.NONE, resolved.albumArtSource)
+        assertEquals(null, resolved.albumArtUrl)
+        assertEquals(null, resolved.albumArtUrlSmall)
+        assertEquals(null, resolved.albumArtUrlLarge)
+        assertEquals(listOf("Rock"), resolved.genres)
+    }
+
+    @Test
+    fun donorManualArtworkCannotReplaceTargetsAutomaticArtwork() {
+        val current = EnrichedMetadata(
+            trackId = 2L,
+            albumArtUrl = "https://itunes.example/target.jpg",
+            albumArtSource = AlbumArtSource.ITUNES,
+        )
+        val donorSnapshot = EnrichedMetadata(
+            trackId = 2L,
+            albumArtUrl = "https://manual.example/donor.jpg",
+            albumArtSource = AlbumArtSource.USER_SELECTED,
+            genres = listOf("Rock"),
+        )
+
+        val resolved = preserveUserSelectedArtwork(current, donorSnapshot)
+
+        assertEquals(AlbumArtSource.ITUNES, resolved.albumArtSource)
+        assertEquals("https://itunes.example/target.jpg", resolved.albumArtUrl)
+        assertEquals(listOf("Rock"), resolved.genres)
+    }
+
+    @Test
     fun automaticArtworkCanBeReplacedNormally() {
         val current = EnrichedMetadata(
             trackId = 1L,
