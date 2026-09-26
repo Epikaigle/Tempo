@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import androidx.room.withTransaction
 import me.avinas.tempo.BuildConfig
 import me.avinas.tempo.data.local.AppDatabase
+import me.avinas.tempo.data.local.dao.isLocalBackupArtwork
 import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.profile.ProfileIdentityManager
 import me.avinas.tempo.utils.ImageUrlHostAllowlist
@@ -1176,7 +1177,7 @@ internal fun resolveRestoredTrackArtwork(
                 ?: trackArtUrl?.takeIf { it.isNotBlank() }
         else ->
             when {
-                trackArtUrl?.startsWith("file://") == true -> trackArtUrl
+                isLocalBackupArtwork(trackArtUrl) -> trackArtUrl
                 !metadataArtUrl.isNullOrBlank() -> metadataArtUrl
                 else -> trackArtUrl?.takeIf { it.isNotBlank() }
             }
