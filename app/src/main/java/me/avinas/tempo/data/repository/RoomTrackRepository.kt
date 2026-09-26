@@ -5,10 +5,13 @@ import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.dao.TrackArtistDao
 import me.avinas.tempo.data.local.dao.TrackDao
+import me.avinas.tempo.data.local.dao.isLocalBackupArtwork
 import me.avinas.tempo.data.local.entities.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -22,6 +25,16 @@ class RoomTrackRepository @Inject constructor(
 
     companion object {
         private const val TAG = "TrackRepository"
+        private val albumArtBackupMutex = Mutex()
+    }
+
+    private suspend fun <T> withAlbumArtBackupLock(block: suspend () -> T): T {
+        albumArtBackupMutex.lock()
+        return try {
+            block()
+        } finally {
+            albumArtBackupMutex.unlock()
+        }
     }
 
     override fun getById(id: Long): Flow<Track?> = dao.getById(id)
@@ -42,12 +55,49 @@ class RoomTrackRepository @Inject constructor(
     override suspend fun insertAll(tracks: List<Track>): List<Long> = dao.insertAll(tracks)
     override suspend fun update(track: Track) = dao.updatePreservingManualArtwork(track)
     override suspend fun updateTitle(trackId: Long, title: String) = dao.updateTitle(trackId, title)
-    override suspend fun updateAutomaticAlbumArtUrl(trackId: Long, albumArtUrl: String?): String? =
-        dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
-    override suspend fun clearLocalAlbumArtUrlIfMatches(
+    override suspend fun updateAutomaticAlbumArtUrl(
+        trackId: Long,
+        albumArtUrl: String?,
+    ): String? {
+        if (!isLocalBackupArtwork(albumArtUrl)) {
+            return dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
+        }
+
+        return withAlbumArtBackupLock {
+            val localFile = File(albumArtUrl!!.removePrefix("file://"))
+            if (localFile.exists()) {
+                dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
+            } else {
+                // A remote-success cleanup may have retired this exact path while a
+                // delayed tracking write was still in flight. Never persist a dead
+                // file:// pointer; re-apply the current protected artwork instead.
+                val currentArtwork = dao.getCurrentTrackAlbumArtUrl(trackId)
+                dao.updateAutomaticAlbumArtUrl(trackId, currentArtwork)
+            }
+        }
+    }
+
+    override suspend fun consumeLocalAlbumArtBackup(
         trackId: Long,
         expectedLocalUrl: String,
-    ): Int = dao.clearLocalAlbumArtUrlIfMatches(trackId, expectedLocalUrl)
+    ): String? =
+        withAlbumArtBackupLock {
+            val canonicalRemote =
+                dao.promoteLocalAlbumArtToCanonicalIfMatches(
+                    trackId = trackId,
+                    expectedLocalUrl = expectedLocalUrl,
+                )
+
+            if (canonicalRemote != null) {
+                val localFile = File(expectedLocalUrl.removePrefix("file://"))
+                if (localFile.exists() && !localFile.delete()) {
+                    Log.w(TAG, "Failed to delete consumed local album art: " + localFile.absolutePath)
+                }
+            }
+
+            canonicalRemote
+        }
+
     override suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int =
         dao.updateYoutubeIdIfMissing(trackId, youtubeId)
     override fun all(): Flow<List<Track>> = dao.all()
