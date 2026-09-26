@@ -137,11 +137,14 @@ fun AlbumArtImage(
         if (state is AsyncImagePainter.State.Success) {
             // Image loaded successfully
             if (isHotlink && !localArtUrl.isNullOrBlank() && localArtUrl.startsWith("file://")) {
-                // Hotlink worked! Clean up local backup in background
-                LaunchedEffect(urlToLoad) {
-                    deleteLocalArtFile(localArtUrl)
+                // Hotlink worked. Remove the on-disk fallback first, then let the
+                // caller clear the matching database pointer. Keeping both steps in
+                // one effect avoids composition-time side effects and stale refs.
+                LaunchedEffect(urlToLoad, localArtUrl) {
+                    if (deleteLocalArtFile(localArtUrl)) {
+                        onHotlinkSuccess?.invoke(albumArtUrl!!)
+                    }
                 }
-                onHotlinkSuccess?.invoke(albumArtUrl!!)
             }
         } else if (state is AsyncImagePainter.State.Error) {
             // Image failed to load
@@ -218,24 +221,29 @@ private fun averageColor(bitmap: android.graphics.Bitmap): Int {
 /**
  * Delete local album art file to save storage after hotlink loads successfully.
  */
-private suspend fun deleteLocalArtFile(localArtUrl: String) {
+private suspend fun deleteLocalArtFile(localArtUrl: String): Boolean =
     withContext(Dispatchers.IO) {
         try {
             val filePath = localArtUrl.removePrefix("file://")
             val file = File(filePath)
-            if (file.exists()) {
+            if (!file.exists()) {
+                // The DB pointer is already stale, so it is safe for the caller to
+                // clear it even though there is nothing left to delete on disk.
+                true
+            } else {
                 val deleted = file.delete()
                 if (deleted) {
                     Log.d(TAG, "Deleted local art file to save storage: $filePath")
                 } else {
                     Log.w(TAG, "Failed to delete local art file: $filePath")
                 }
+                deleted
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error deleting local art file", e)
+            false
         }
     }
-}
 
 /**
  * Placeholder for album art when no image is available.
