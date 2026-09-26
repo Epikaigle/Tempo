@@ -82,6 +82,21 @@ class RoomTrackRepository @Inject constructor(
         }
     }
 
+    private suspend fun deleteLocalAlbumArtIfUnreferenced(localUrl: String) {
+        val stillReferenced =
+            dao.countAlbumArtUrlReferences(localUrl) > 0 ||
+                enrichedMetadataDao.countImageUrlReferences(localUrl) > 0
+        if (stillReferenced) {
+            Log.d(TAG, "Keeping shared local album art still referenced by another row: $localUrl")
+            return
+        }
+
+        val localFile = File(localUrl.removePrefix("file://"))
+        if (localFile.exists() && !localFile.delete()) {
+            Log.w(TAG, "Failed to delete obsolete local album art: " + localFile.absolutePath)
+        }
+    }
+
     override suspend fun consumeLocalAlbumArtBackup(
         trackId: Long,
         expectedLocalUrl: String,
@@ -95,10 +110,7 @@ class RoomTrackRepository @Inject constructor(
                     )
 
                 if (canonicalRemote != null) {
-                    val localFile = File(expectedLocalUrl.removePrefix("file://"))
-                    if (localFile.exists() && !localFile.delete()) {
-                        Log.w(TAG, "Failed to delete consumed local album art: " + localFile.absolutePath)
-                    }
+                    deleteLocalAlbumArtIfUnreferenced(expectedLocalUrl)
                 }
 
                 canonicalRemote
@@ -110,10 +122,7 @@ class RoomTrackRepository @Inject constructor(
             withAlbumArtBackupLock {
                 if (!isLocalBackupArtwork(expectedLocalUrl)) return@withAlbumArtBackupLock
 
-                val localFile = File(expectedLocalUrl.removePrefix("file://"))
-                if (localFile.exists() && !localFile.delete()) {
-                    Log.w(TAG, "Failed to delete obsolete local album art: " + localFile.absolutePath)
-                }
+                deleteLocalAlbumArtIfUnreferenced(expectedLocalUrl)
             }
         }
 
