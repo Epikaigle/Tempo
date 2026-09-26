@@ -760,6 +760,9 @@ fun SongHeroEditorialStage(
                         R.string.details_cover_artwork_cd, trackDetails.track.title
                     ),
                     modifier = Modifier.fillMaxSize(),
+                    onHotlinkSuccess = {
+                        viewModel.clearLocalArtworkBackup(trackDetails.localBackupArtUrl)
+                    },
                 )
 
                 // Favorite Badge
