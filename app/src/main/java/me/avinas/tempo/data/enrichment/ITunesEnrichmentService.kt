@@ -848,7 +848,7 @@ internal fun selectBestITunesCoverMatch(
     expectedTrack: String?,
     expectedAlbum: String?,
 ): AppleMusicResult? {
-    val cleanTrack = expectedTrack?.let(ArtistParser::cleanTrackTitle)
+    val expectedTrackTitle = expectedTrack?.takeIf { it.isNotBlank() }
     val normalizedAlbum = expectedAlbum
         ?.let(ArtistParser::normalizeForSearch)
         ?.takeIf { it.isNotBlank() }
@@ -861,12 +861,12 @@ internal fun selectBestITunesCoverMatch(
             if (!isSafeCoverArtistMatch(expectedArtist, resultArtist)) return@filter false
 
             when {
-                cleanTrack != null -> {
+                expectedTrackTitle != null -> {
                     val resultTitles = listOfNotNull(
                         result.trackName?.takeIf { it.isNotBlank() },
                         result.trackCensoredName?.takeIf { it.isNotBlank() },
                     )
-                    resultTitles.any { isSafeCoverTrackTitleMatch(cleanTrack, it) }
+                    resultTitles.any { isSafeCoverTrackTitleMatch(expectedTrackTitle, it) }
                 }
                 normalizedAlbum != null -> {
                     listOfNotNull(
