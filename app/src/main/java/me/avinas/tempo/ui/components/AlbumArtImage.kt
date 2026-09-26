@@ -25,12 +25,8 @@ import coil3.request.ImageRequest
 import coil3.size.Precision
 import coil3.size.Scale
 import coil3.size.Size
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import me.avinas.tempo.R
 import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
-import java.io.File
 
 private const val TAG = "AlbumArtImage"
 
@@ -53,8 +49,6 @@ fun AlbumArtImage(
     onArtworkReady: ((android.graphics.Bitmap, Palette?) -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-
     // Get the singleton ImageLoader with our cache configuration
     // This uses the ImageLoaderFactory implementation in TempoApplication
     // which provides the Hilt-injected singleton with 50MB disk cache
@@ -137,11 +131,12 @@ fun AlbumArtImage(
         if (state is AsyncImagePainter.State.Success) {
             // Image loaded successfully
             if (isHotlink && !localArtUrl.isNullOrBlank() && localArtUrl.startsWith("file://")) {
-                // Hotlink worked! Clean up local backup in background
-                LaunchedEffect(urlToLoad) {
-                    deleteLocalArtFile(localArtUrl)
+                // The remote image is confirmed usable. Let the repository retire
+                // the matching local fallback and restore Track's canonical remote
+                // mirror in one guarded operation.
+                LaunchedEffect(urlToLoad, localArtUrl) {
+                    onHotlinkSuccess?.invoke(albumArtUrl!!)
                 }
-                onHotlinkSuccess?.invoke(albumArtUrl!!)
             }
         } else if (state is AsyncImagePainter.State.Error) {
             // Image failed to load
@@ -215,27 +210,6 @@ private fun averageColor(bitmap: android.graphics.Bitmap): Int {
     return android.graphics.Color.rgb((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
 }
 
-/**
- * Delete local album art file to save storage after hotlink loads successfully.
- */
-private suspend fun deleteLocalArtFile(localArtUrl: String) {
-    withContext(Dispatchers.IO) {
-        try {
-            val filePath = localArtUrl.removePrefix("file://")
-            val file = File(filePath)
-            if (file.exists()) {
-                val deleted = file.delete()
-                if (deleted) {
-                    Log.d(TAG, "Deleted local art file to save storage: $filePath")
-                } else {
-                    Log.w(TAG, "Failed to delete local art file: $filePath")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error deleting local art file", e)
-        }
-    }
-}
 
 /**
  * Placeholder for album art when no image is available.

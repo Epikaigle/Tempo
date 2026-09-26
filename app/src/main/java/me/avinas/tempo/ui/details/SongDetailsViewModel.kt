@@ -1,5 +1,7 @@
 package me.avinas.tempo.ui.details
 
+import me.avinas.tempo.data.local.dao.isLocalBackupArtwork
+
 import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -9,6 +11,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -18,7 +21,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import me.avinas.tempo.R
+import me.avinas.tempo.data.enrichment.CoverArtCandidate
+import me.avinas.tempo.data.enrichment.CoverArtLookupStatus
+import me.avinas.tempo.data.enrichment.CoverArtPickerService
+import me.avinas.tempo.data.enrichment.CoverArtProvider
 import me.avinas.tempo.data.local.dao.ListeningEventDao
+import me.avinas.tempo.data.local.entities.AlbumArtSource
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
 import me.avinas.tempo.data.local.entities.ListeningEvent
@@ -45,7 +54,8 @@ import me.avinas.tempo.data.analytics.TempoFeature
  * ViewModel for Song Details screen.
  *
  * Data Flow Pattern: Enrichment → Database → UI
- * - This ViewModel ONLY reads from database via Repository (never makes API calls)
+ * - Normal screen rendering reads cached metadata from the database
+ * - Remote artwork lookup runs only after the user explicitly opens the cover picker
  * - Track metadata is fetched from database cache
  * - Mood/genre derived from MusicBrainz tags & Spotify audio features
  * - Engagement metrics computed from listening behavior
@@ -59,6 +69,7 @@ class SongDetailsViewModel @Inject constructor(
     private val trackRepository: TrackRepository,
     private val trackAliasRepository: TrackAliasRepository,
     private val listeningEventDao: ListeningEventDao,
+    private val coverArtPickerService: CoverArtPickerService,
     private val tracker: AnalyticsTracker,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -71,6 +82,7 @@ class SongDetailsViewModel @Inject constructor(
     // ExoPlayer for 30-second audio preview
     private var exoPlayer: ExoPlayer? = null
     private var previewProgressJob: Job? = null
+    private var coverLookupJob: Job? = null
 
     private val _isPlayingPreview = MutableStateFlow(false)
     val isPlayingPreview: StateFlow<Boolean> = _isPlayingPreview.asStateFlow()
@@ -202,7 +214,8 @@ class SongDetailsViewModel @Inject constructor(
                         appleMusicUrl = appleMusicUrl,
                         peakBingeDay = peakBinge,
                         habitualHour = habitualHour,
-                        habitualHourOfDay = habitualHourOfDay
+                        habitualHourOfDay = habitualHourOfDay,
+                        isManualCover = enrichedMetadata?.albumArtSource == AlbumArtSource.USER_SELECTED
                     ) 
                 }
 
@@ -227,6 +240,280 @@ class SongDetailsViewModel @Inject constructor(
 
     fun refresh() {
         loadTrackDetails()
+    }
+
+    fun showCoverPicker() {
+        if (_uiState.value.showCoverPicker) return
+        _uiState.update {
+            it.copy(
+                showCoverPicker = true,
+                isLoadingCoverCandidates = true,
+                isSavingCover = false,
+                coverPickerError = null,
+                coverCandidates = emptyList(),
+                coverProviderStatuses = CoverArtPickerService.REMOTE_PROVIDERS
+                    .associateWith { CoverArtLookupStatus.LOADING },
+            )
+        }
+        loadCoverCandidates()
+    }
+
+    fun dismissCoverPicker() {
+        if (_uiState.value.isSavingCover) return
+        coverLookupJob?.cancel()
+        coverLookupJob = null
+        _uiState.update {
+            it.copy(
+                showCoverPicker = false,
+                isLoadingCoverCandidates = false,
+                coverPickerError = null,
+            )
+        }
+    }
+
+    fun retryCoverCandidates() {
+        if (_uiState.value.showCoverPicker) loadCoverCandidates()
+    }
+
+    private fun loadCoverCandidates() {
+        val track = _uiState.value.trackDetails?.track ?: return
+        coverLookupJob?.cancel()
+        coverLookupJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoadingCoverCandidates = true,
+                    coverPickerError = null,
+                    coverCandidates = emptyList(),
+                    coverProviderStatuses = CoverArtPickerService.REMOTE_PROVIDERS
+                        .associateWith { CoverArtLookupStatus.LOADING },
+                )
+            }
+
+            try {
+                val metadata = enrichedMetadataRepository.forTrackSync(trackId)
+                _uiState.update {
+                    it.copy(
+                        coverCandidates = listOfNotNull(
+                            coverArtPickerService.currentCandidate(track, metadata),
+                        ),
+                    )
+                }
+                coroutineScope {
+                    CoverArtPickerService.REMOTE_PROVIDERS.forEach { provider ->
+                        launch {
+                            val result = coverArtPickerService.searchProvider(provider, track, metadata)
+                            _uiState.update { state ->
+                                val candidates = result.candidate?.let { candidate ->
+                                    (state.coverCandidates.filterNot { it.provider == provider } + candidate)
+                                        .sortedBy { item ->
+                                            when (item.provider) {
+                                                CoverArtProvider.CURRENT -> -1
+                                                else -> CoverArtPickerService.REMOTE_PROVIDERS.indexOf(item.provider)
+                                            }
+                                        }
+                                } ?: state.coverCandidates.filterNot { it.provider == provider }
+
+                                val statuses = state.coverProviderStatuses + (provider to result.status)
+                                state.copy(
+                                    coverCandidates = candidates,
+                                    coverProviderStatuses = statuses,
+                                    isLoadingCoverCandidates =
+                                        statuses.values.any { it == CoverArtLookupStatus.LOADING },
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoadingCoverCandidates = false,
+                        coverPickerError = e.message ?: context.getString(R.string.details_cover_load_error),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Retire the exact local fallback after the remote artwork has loaded.
+     *
+     * The repository atomically promotes Track.albumArtUrl back to the current
+     * canonical remote URL before deleting the local file. Delayed local writers
+     * are guarded from persisting a file:// path that no longer exists.
+     */
+    fun consumeLocalArtworkBackup(localBackupArtUrl: String?) {
+        val expectedLocalUrl =
+            localBackupArtUrl?.takeIf(::isLocalBackupArtwork) ?: return
+
+        viewModelScope.launch {
+            try {
+                val canonicalRemote =
+                    trackRepository.consumeLocalAlbumArtBackup(
+                        trackId = trackId,
+                        expectedLocalUrl = expectedLocalUrl,
+                    )
+                if (canonicalRemote != null) {
+                    statsRepository.invalidateCache()
+                    _uiState.update { state ->
+                        val details = state.trackDetails
+                        if (details?.localBackupArtUrl == expectedLocalUrl) {
+                            state.copy(
+                                trackDetails =
+                                    details.copy(
+                                        track = details.track.copy(albumArtUrl = canonicalRemote),
+                                        localBackupArtUrl = null,
+                                    ),
+                            )
+                        } else {
+                            state
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Cleanup is best-effort; artwork display has already succeeded.
+            }
+        }
+    }
+
+    private suspend fun discardObsoleteLocalArtworkBackup(localBackupArtUrl: String?) {
+        val expectedLocalUrl =
+            localBackupArtUrl?.takeIf(::isLocalBackupArtwork) ?: return
+
+        try {
+            trackRepository.discardLocalAlbumArtBackup(expectedLocalUrl)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Best-effort storage cleanup. Artwork persistence already succeeded.
+        }
+    }
+
+    fun selectCover(candidate: CoverArtCandidate) {
+        if (_uiState.value.trackDetails == null) return
+        if (_uiState.value.isSavingCover) return
+
+        coverLookupJob?.cancel()
+        coverLookupJob = null
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
+            try {
+                val selectedUrl = me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+                    .fixHttpUrl(
+                        candidate.albumArtUrlLarge
+                            ?.takeIf { it.isNotBlank() }
+                            ?: candidate.albumArtUrl
+                    )
+                    ?: candidate.albumArtUrl
+                val selectedSmallUrl = me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+                    .fixHttpUrl(candidate.albumArtUrlSmall ?: selectedUrl)
+                    ?: selectedUrl
+                val selectedLargeUrl = me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+                    .fixHttpUrl(candidate.albumArtUrlLarge ?: selectedUrl)
+                    ?: selectedUrl
+                val obsoleteLocalBackup = _uiState.value.trackDetails?.localBackupArtUrl
+                enrichedMetadataRepository.setUserSelectedArtwork(
+                    trackId = trackId,
+                    albumArtUrl = selectedUrl,
+                    albumArtUrlSmall = selectedSmallUrl,
+                    albumArtUrlLarge = selectedLargeUrl,
+                )
+                discardObsoleteLocalArtworkBackup(obsoleteLocalBackup)
+
+                statsRepository.invalidateCache()
+                statsRepository.notifyMetadataUpdate()
+                _uiState.update { state ->
+                    state.copy(
+                        trackDetails = state.trackDetails?.copy(
+                            track = state.trackDetails.track.copy(albumArtUrl = selectedUrl),
+                            localBackupArtUrl = null,
+                        ),
+                        isManualCover = true,
+                        showCoverPicker = false,
+                        isLoadingCoverCandidates = false,
+                        isSavingCover = false,
+                        coverPickerError = null,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoadingCoverCandidates = false,
+                        isSavingCover = false,
+                        coverPickerError = e.message ?: context.getString(R.string.details_cover_save_error),
+                        coverProviderStatuses = it.coverProviderStatuses.mapValues { (_, status) ->
+                            if (status == CoverArtLookupStatus.LOADING) {
+                                CoverArtLookupStatus.ERROR
+                            } else {
+                                status
+                            }
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    fun resetCoverToAutomatic() {
+        if (_uiState.value.trackDetails == null) return
+        if (_uiState.value.isSavingCover) return
+
+        coverLookupJob?.cancel()
+        coverLookupJob = null
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
+            try {
+                val obsoleteLocalBackup = _uiState.value.trackDetails?.localBackupArtUrl
+                enrichedMetadataRepository.resetArtworkToAutomatic(trackId)
+                discardObsoleteLocalArtworkBackup(obsoleteLocalBackup)
+                statsRepository.invalidateCache()
+                statsRepository.notifyMetadataUpdate()
+                EnrichmentWorker.enqueueImmediate(
+                    context = context,
+                    trackId = trackId,
+                    appendAfterExisting = true,
+                )
+
+                // Clear the manual image immediately. The guaranteed post-reset enrichment worker will
+                // repopulate Track.albumArtUrl and its metadata-update signal reloads this screen.
+                _uiState.update {
+                    it.copy(
+                        isManualCover = false,
+                        showCoverPicker = false,
+                        isLoadingCoverCandidates = false,
+                        isSavingCover = false,
+                        coverPickerError = null,
+                        trackDetails = it.trackDetails?.copy(
+                            track = it.trackDetails.track.copy(albumArtUrl = null),
+                            localBackupArtUrl = null,
+                        ),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isLoadingCoverCandidates = false,
+                        isSavingCover = false,
+                        coverPickerError = e.message ?: context.getString(R.string.details_cover_restore_auto_error),
+                        coverProviderStatuses = it.coverProviderStatuses.mapValues { (_, status) ->
+                            if (status == CoverArtLookupStatus.LOADING) {
+                                CoverArtLookupStatus.ERROR
+                            } else {
+                                status
+                            }
+                        },
+                    )
+                }
+            }
+        }
     }
 
     // Audio Preview Controls
@@ -296,6 +583,8 @@ class SongDetailsViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        coverLookupJob?.cancel()
+        coverLookupJob = null
         stopAudioPreview()
         exoPlayer?.release()
         exoPlayer = null
@@ -477,5 +766,12 @@ data class SongDetailsUiState(
     val showEditTitleDialog: Boolean = false,
     val isSavingTitle: Boolean = false,
     val editTitleError: String? = null,
-    val mergeTargetTrack: Track? = null
+    val mergeTargetTrack: Track? = null,
+    val showCoverPicker: Boolean = false,
+    val isLoadingCoverCandidates: Boolean = false,
+    val isSavingCover: Boolean = false,
+    val coverPickerError: String? = null,
+    val coverCandidates: List<CoverArtCandidate> = emptyList(),
+    val coverProviderStatuses: Map<CoverArtProvider, CoverArtLookupStatus> = emptyMap(),
+    val isManualCover: Boolean = false,
 )

@@ -1037,7 +1037,7 @@ class DeezerDataImportService @Inject constructor(
     ) {
         val existing = enrichedMetadataDao.forTrackSync(trackId)
         if (existing == null) {
-            enrichedMetadataDao.upsert(
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(
                 EnrichedMetadata(
                     trackId = trackId,
                     albumTitle = entry.albumName,
@@ -1070,7 +1070,7 @@ class DeezerDataImportService @Inject constructor(
             updated = updated.copy(artistName = entry.artistName)
             changed = true
         }
-        if (changed) enrichedMetadataDao.update(updated)
+        if (changed) enrichedMetadataDao.upsertFromAutomaticEnrichment(updated)
     }
 
     private suspend fun copyUriWithLimit(context: Context, uri: Uri, destination: File) {
