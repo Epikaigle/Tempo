@@ -1471,7 +1471,10 @@ internal fun isSpotifyPickerIdentityCompatible(
     val verifiedArtist = existingMetadata?.spotifyVerifiedArtist
     val artistMatches =
         verifiedArtist.isNullOrBlank() ||
-            isSafeCoverArtistMatch(track.artist, verifiedArtist)
+            isSafeCoverArtistMatch(
+                expectedArtist = me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(track.artist),
+                candidateArtist = verifiedArtist,
+            )
     // Spotify's oEmbed schema provides the entity title. Without it we cannot
     // prove that a cached Spotify ID still belongs to the edited Track.
     val titleMatches =
