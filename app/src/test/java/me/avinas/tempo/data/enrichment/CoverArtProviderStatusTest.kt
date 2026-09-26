@@ -1,5 +1,7 @@
 package me.avinas.tempo.data.enrichment
 
+import me.avinas.tempo.data.local.entities.EnrichedMetadata
+import me.avinas.tempo.data.local.entities.Track
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
@@ -71,6 +73,39 @@ class CoverArtProviderStatusTest {
         assertEquals("https://example.test/large.jpg", result.candidate?.albumArtUrl)
         assertEquals("Album", result.candidate?.albumTitle)
     }
+    @Test
+    fun spotifyCachedIdentityRejectsEditedTitleAndArtist() {
+        val track = Track(
+            id = 1L,
+            title = "Correct Song",
+            artist = "Correct Artist",
+            album = null,
+            duration = null,
+            albumArtUrl = null,
+            spotifyId = "stale-id",
+            musicbrainzId = null,
+        )
+        val metadata = EnrichedMetadata(
+            trackId = track.id,
+            spotifyVerifiedArtist = "Old Artist",
+        )
+
+        assertTrue(
+            !isSpotifyPickerIdentityCompatible(
+                track = track,
+                existingMetadata = metadata,
+                providerTitle = "Old Song",
+            )
+        )
+        assertTrue(
+            isSpotifyPickerIdentityCompatible(
+                track = track,
+                existingMetadata = metadata.copy(spotifyVerifiedArtist = "Correct Artist"),
+                providerTitle = "Correct Song",
+            )
+        )
+    }
+
     @Test
     fun lastFmMismatchedAutocorrectedIdentityIsRejected() {
         val result = mapLastFmCoverSearchResult(
