@@ -50,17 +50,26 @@ interface EnrichedMetadataDao {
         val resolved = mergeAutomaticEnrichmentArtwork(current, metadata)
         val rowId = upsert(resolved)
 
-        // Track.album_art_url is a denormalized UI mirror. Keep it in the same
-        // transaction as the authoritative artwork decision so a stale provider
-        // cannot leave the two tables disagreeing.
-        if (resolved.albumArtSource == AlbumArtSource.USER_RESET) {
-            updateTrackAlbumArtUrlForArtwork(resolved.trackId, null)
-        } else if (!resolved.albumArtUrl.isNullOrBlank()) {
-            updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
+        // Track.album_art_url is normally a denormalized UI mirror, but it may
+        // intentionally contain a file:// backup while enriched_metadata keeps the
+        // preferred remote URL. Preserve that backup across automatic refreshes.
+        val currentTrackArtwork = getTrackAlbumArtUrlForArtwork(resolved.trackId)
+        when {
+            resolved.albumArtSource == AlbumArtSource.USER_RESET ->
+                updateTrackAlbumArtUrlForArtwork(resolved.trackId, null)
+            resolved.albumArtSource == AlbumArtSource.USER_SELECTED &&
+                !resolved.albumArtUrl.isNullOrBlank() ->
+                updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
+            !isLocalBackupArtwork(currentTrackArtwork) &&
+                !resolved.albumArtUrl.isNullOrBlank() ->
+                updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
         }
 
         return rowId
     }
+
+    @Query("SELECT album_art_url FROM tracks WHERE id = :trackId LIMIT 1")
+    suspend fun getTrackAlbumArtUrlForArtwork(trackId: Long): String?
 
     @Query("UPDATE tracks SET album_art_url = :albumArtUrl WHERE id = :trackId")
     suspend fun updateTrackAlbumArtUrlForArtwork(trackId: Long, albumArtUrl: String?)
@@ -152,12 +161,19 @@ interface EnrichedMetadataDao {
 
         val rowIds = upsertAll(merged)
 
-        // Keep Track mirrors aligned with the protected result for batch imports too.
+        // Keep Track mirrors aligned for batch imports too, without discarding a
+        // local file:// fallback that is deliberately stored outside metadata.
         for (resolved in merged) {
-            if (resolved.albumArtSource == AlbumArtSource.USER_RESET) {
-                updateTrackAlbumArtUrlForArtwork(resolved.trackId, null)
-            } else if (!resolved.albumArtUrl.isNullOrBlank()) {
-                updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
+            val currentTrackArtwork = getTrackAlbumArtUrlForArtwork(resolved.trackId)
+            when {
+                resolved.albumArtSource == AlbumArtSource.USER_RESET ->
+                    updateTrackAlbumArtUrlForArtwork(resolved.trackId, null)
+                resolved.albumArtSource == AlbumArtSource.USER_SELECTED &&
+                    !resolved.albumArtUrl.isNullOrBlank() ->
+                    updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
+                !isLocalBackupArtwork(currentTrackArtwork) &&
+                    !resolved.albumArtUrl.isNullOrBlank() ->
+                    updateTrackAlbumArtUrlForArtwork(resolved.trackId, resolved.albumArtUrl)
             }
         }
 
