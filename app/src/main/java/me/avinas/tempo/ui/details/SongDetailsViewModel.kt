@@ -378,6 +378,19 @@ class SongDetailsViewModel @Inject constructor(
         }
     }
 
+    private suspend fun discardObsoleteLocalArtworkBackup(localBackupArtUrl: String?) {
+        val expectedLocalUrl =
+            localBackupArtUrl?.takeIf { it.startsWith("file://") } ?: return
+
+        try {
+            trackRepository.discardLocalAlbumArtBackup(expectedLocalUrl)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Best-effort storage cleanup. Artwork persistence already succeeded.
+        }
+    }
+
     fun selectCover(candidate: CoverArtCandidate) {
         if (_uiState.value.trackDetails == null) return
         if (_uiState.value.isSavingCover) return
@@ -400,12 +413,14 @@ class SongDetailsViewModel @Inject constructor(
                 val selectedLargeUrl = me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
                     .fixHttpUrl(candidate.albumArtUrlLarge ?: selectedUrl)
                     ?: selectedUrl
+                val obsoleteLocalBackup = _uiState.value.trackDetails?.localBackupArtUrl
                 enrichedMetadataRepository.setUserSelectedArtwork(
                     trackId = trackId,
                     albumArtUrl = selectedUrl,
                     albumArtUrlSmall = selectedSmallUrl,
                     albumArtUrlLarge = selectedLargeUrl,
                 )
+                discardObsoleteLocalArtworkBackup(obsoleteLocalBackup)
 
                 statsRepository.invalidateCache()
                 statsRepository.notifyMetadataUpdate()
@@ -413,6 +428,7 @@ class SongDetailsViewModel @Inject constructor(
                     state.copy(
                         trackDetails = state.trackDetails?.copy(
                             track = state.trackDetails.track.copy(albumArtUrl = selectedUrl),
+                            localBackupArtUrl = null,
                         ),
                         isManualCover = true,
                         showCoverPicker = false,
@@ -426,8 +442,16 @@ class SongDetailsViewModel @Inject constructor(
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
+                        isLoadingCoverCandidates = false,
                         isSavingCover = false,
                         coverPickerError = e.message ?: context.getString(R.string.details_cover_save_error),
+                        coverProviderStatuses = it.coverProviderStatuses.mapValues { (_, status) ->
+                            if (status == CoverArtLookupStatus.LOADING) {
+                                CoverArtLookupStatus.ERROR
+                            } else {
+                                status
+                            }
+                        },
                     )
                 }
             }
@@ -443,7 +467,9 @@ class SongDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
             try {
+                val obsoleteLocalBackup = _uiState.value.trackDetails?.localBackupArtUrl
                 enrichedMetadataRepository.resetArtworkToAutomatic(trackId)
+                discardObsoleteLocalArtworkBackup(obsoleteLocalBackup)
                 statsRepository.invalidateCache()
                 statsRepository.notifyMetadataUpdate()
                 EnrichmentWorker.enqueueImmediate(
@@ -463,6 +489,7 @@ class SongDetailsViewModel @Inject constructor(
                         coverPickerError = null,
                         trackDetails = it.trackDetails?.copy(
                             track = it.trackDetails.track.copy(albumArtUrl = null),
+                            localBackupArtUrl = null,
                         ),
                     )
                 }
