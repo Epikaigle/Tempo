@@ -336,29 +336,34 @@ class SongDetailsViewModel @Inject constructor(
     }
 
     /**
-     * Clear a local fallback after the remote artwork has loaded successfully.
+     * Retire the exact local fallback after the remote artwork has loaded.
      *
-     * The repository compare-and-clear makes this safe if a newer local fallback
-     * is written while the previous image request is still finishing.
+     * The repository atomically promotes Track.albumArtUrl back to the current
+     * canonical remote URL before deleting the local file. Delayed local writers
+     * are guarded from persisting a file:// path that no longer exists.
      */
-    fun clearLocalArtworkBackup(localBackupArtUrl: String?) {
+    fun consumeLocalArtworkBackup(localBackupArtUrl: String?) {
         val expectedLocalUrl =
             localBackupArtUrl?.takeIf { it.startsWith("file://") } ?: return
 
         viewModelScope.launch {
             try {
-                val cleared =
-                    trackRepository.clearLocalAlbumArtUrlIfMatches(
+                val canonicalRemote =
+                    trackRepository.consumeLocalAlbumArtBackup(
                         trackId = trackId,
                         expectedLocalUrl = expectedLocalUrl,
                     )
-                if (cleared > 0) {
+                if (canonicalRemote != null) {
                     statsRepository.invalidateCache()
                     _uiState.update { state ->
                         val details = state.trackDetails
                         if (details?.localBackupArtUrl == expectedLocalUrl) {
                             state.copy(
-                                trackDetails = details.copy(localBackupArtUrl = null),
+                                trackDetails =
+                                    details.copy(
+                                        track = details.track.copy(albumArtUrl = canonicalRemote),
+                                        localBackupArtUrl = null,
+                                    ),
                             )
                         } else {
                             state
