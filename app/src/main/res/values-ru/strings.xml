@@ -1242,4 +1242,22 @@
     <string name="history_video_non_music_track_description">Удалить существующие прослушивания и блокировать будущие совпадения</string>
     <string name="history_video_non_music_artist">Считать %1$s видео / не музыкой</string>
     <string name="history_video_non_music_artist_description">Удалить всю совпадающую историю и блокировать будущие воспроизведения</string>
+
+    <string name="details_change_cover">Изменить обложку</string>
+    <string name="details_change_cover_title">Выбрать обложку</string>
+    <string name="details_change_cover_body">Сравните обложки из нескольких сервисов. Ваш выбор останется закреплённым, пока вы не измените его или не вернётесь к автоматическому выбору.</string>
+    <string name="details_cover_current">Текущая</string>
+    <string name="details_cover_searching">Поиск…</string>
+    <string name="details_cover_not_found">Обложка не найдена</string>
+    <string name="details_cover_use">Использовать эту обложку</string>
+    <string name="details_cover_manual">Выбранная вручную обложка</string>
+    <string name="details_cover_restore_auto">Вернуться к автоматическому выбору</string>
+    <string name="details_cover_restore_auto_hint">Tempo снова сможет автоматически выбирать обложку.</string>
+    <string name="details_cover_try_again">Искать снова</string>
+
+    <string name="details_cover_unavailable">Недоступно</string>
+    <string name="details_cover_error">Ошибка поиска</string>
+    <string name="details_cover_load_error">Не удалось загрузить обложки</string>
+    <string name="details_cover_save_error">Не удалось сохранить обложку</string>
+    <string name="details_cover_restore_auto_error">Не удалось восстановить автоматический выбор обложки</string>
 </resources>

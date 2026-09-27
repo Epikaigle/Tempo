@@ -650,4 +650,22 @@
     <string name="history_video_non_music_track_description">Meglévő lejátszások eltávolítása és jövőbeli egyezések blokkolása</string>
     <string name="history_video_non_music_artist">%1$s kezelése videóként / nem zeneként</string>
     <string name="history_video_non_music_artist_description">Minden egyező előzmény eltávolítása és a jövőbeli lejátszások blokkolása</string>
+
+    <string name="details_change_cover">Borító módosítása</string>
+    <string name="details_change_cover_title">Borító kiválasztása</string>
+    <string name="details_change_cover_body">Hasonlítsd össze a több szolgáltatásból származó borítókat. A választásod rögzítve marad, amíg meg nem változtatod vagy vissza nem térsz az automatikus kiválasztáshoz.</string>
+    <string name="details_cover_current">Jelenlegi</string>
+    <string name="details_cover_searching">Keresés…</string>
+    <string name="details_cover_not_found">Nem található borító</string>
+    <string name="details_cover_use">Borító használata</string>
+    <string name="details_cover_manual">Kézzel választott borító</string>
+    <string name="details_cover_restore_auto">Vissza az automatikus kiválasztáshoz</string>
+    <string name="details_cover_restore_auto_hint">A Tempo ismét automatikusan választhat borítót.</string>
+    <string name="details_cover_try_again">Keresés újra</string>
+
+    <string name="details_cover_unavailable">Nem érhető el</string>
+    <string name="details_cover_error">Sikertelen keresés</string>
+    <string name="details_cover_load_error">A borítók betöltése nem sikerült</string>
+    <string name="details_cover_save_error">A borító mentése nem sikerült</string>
+    <string name="details_cover_restore_auto_error">Az automatikus borítóválasztás visszaállítása nem sikerült</string>
 </resources>

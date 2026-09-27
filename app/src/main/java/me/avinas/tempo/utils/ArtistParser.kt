@@ -483,6 +483,13 @@ object ArtistParser {
     }
 
     /**
+     * Get every primary/co-billed artist, excluding featured guests.
+     */
+    fun getPrimaryArtists(artistString: String): List<String> {
+        return parse(artistString).primaryArtists
+    }
+
+    /**
      * Extracts all parsed artist names from [artistString].
      */
     fun getAllArtists(artistString: String): List<String> {

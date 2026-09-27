@@ -1016,4 +1016,22 @@
     <string name="history_video_non_music_track_description">Vorhandene Wiedergaben entfernen und zukünftige Treffer blockieren</string>
     <string name="history_video_non_music_artist">%1$s als Video / keine Musik behandeln</string>
     <string name="history_video_non_music_artist_description">Den gesamten passenden Verlauf entfernen und zukünftige Wiedergaben blockieren</string>
+
+    <string name="details_change_cover">Cover ändern</string>
+    <string name="details_change_cover_title">Cover auswählen</string>
+    <string name="details_change_cover_body">Vergleiche Cover aus mehreren Diensten. Deine Auswahl bleibt gesperrt, bis du sie änderst oder zur automatischen Auswahl zurückkehrst.</string>
+    <string name="details_cover_current">Aktuell</string>
+    <string name="details_cover_searching">Suche…</string>
+    <string name="details_cover_not_found">Kein Cover gefunden</string>
+    <string name="details_cover_use">Dieses Cover verwenden</string>
+    <string name="details_cover_manual">Manuelles Cover</string>
+    <string name="details_cover_restore_auto">Zur automatischen Auswahl zurückkehren</string>
+    <string name="details_cover_restore_auto_hint">Tempo darf das Cover wieder automatisch auswählen.</string>
+    <string name="details_cover_try_again">Erneut suchen</string>
+
+    <string name="details_cover_unavailable">Nicht verfügbar</string>
+    <string name="details_cover_error">Suche fehlgeschlagen</string>
+    <string name="details_cover_load_error">Cover konnten nicht geladen werden</string>
+    <string name="details_cover_save_error">Cover konnte nicht gespeichert werden</string>
+    <string name="details_cover_restore_auto_error">Automatische Coverauswahl konnte nicht wiederhergestellt werden</string>
 </resources>
