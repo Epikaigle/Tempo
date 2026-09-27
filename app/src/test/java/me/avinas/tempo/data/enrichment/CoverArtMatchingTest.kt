@@ -66,6 +66,23 @@ class CoverArtMatchingTest {
     }
 
     @Test
+    fun cleanAndExplicitVersionsDoNotCrossMatch() {
+        assertFalse(isSafeCoverTrackTitleMatch("Song (Clean)", "Song (Explicit)"))
+        assertFalse(isSafeCoverTrackTitleMatch("Song (Explicit)", "Song (Clean)"))
+        assertFalse(isSafeCoverTrackTitleMatch("Song (Clean Version)", "Song (Explicit Version)"))
+        assertTrue(isSafeCoverTrackTitleMatch("Song (Clean)", "Song (Clean Version)"))
+        assertTrue(isSafeCoverTrackTitleMatch("Song (Explicit)", "Song (Explicit Version)"))
+    }
+
+    @Test
+    fun vipAndDubMixVersionsDoNotCrossMatch() {
+        assertFalse(isSafeCoverTrackTitleMatch("Song (VIP Mix)", "Song (Dub Mix)"))
+        assertFalse(isSafeCoverTrackTitleMatch("Song (VIP)", "Song (Club Mix)"))
+        assertTrue(isSafeCoverTrackTitleMatch("Song (VIP)", "Song (VIP Mix)"))
+        assertTrue(isSafeCoverTrackTitleMatch("Song (Dub)", "Song (Dub Mix)"))
+    }
+
+    @Test
     fun versionAwareSearchKeepsExplicitTitleBeforeCleanFallback() {
         assertEquals(
             listOf("Dreams (Remastered)", "Dreams"),

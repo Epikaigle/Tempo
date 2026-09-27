@@ -16,6 +16,10 @@ private val COVER_VERSION_MARKERS = setOf(
     "stereo",
     "deluxe",
     "edition",
+    "clean",
+    "explicit",
+    "vip",
+    "dub",
 )
 
 private val COVER_VERSION_ALLOWED_TOKENS = COVER_VERSION_MARKERS + setOf(
@@ -28,6 +32,8 @@ private val COVER_VERSION_ALLOWED_TOKENS = COVER_VERSION_MARKERS + setOf(
     "anniversary",
     "bonus",
     "digital",
+    "intro",
+    "outro",
 )
 
 private fun explicitCoverVersionKinds(title: String): Set<String> {
@@ -49,6 +55,10 @@ private fun explicitCoverVersionKinds(title: String): Set<String> {
                 "stereo" -> "stereo"
                 "deluxe" -> "deluxe"
                 "edition" -> "edition"
+                "clean" -> "clean"
+                "explicit" -> "explicit"
+                "vip" -> "vip"
+                "dub" -> "dub"
                 else -> null
             }
         }
@@ -68,15 +78,20 @@ private fun explicitCoverVersionKinds(title: String): Set<String> {
             "club mix" -> "club-mix"
             "anniversary edition" -> "anniversary-edition"
             "deluxe edition" -> "deluxe"
+            "clean version" -> "clean"
+            "clean edit" -> "clean"
+            "explicit version" -> "explicit"
+            "vip mix" -> "vip"
+            "dub mix" -> "dub"
             else -> null
         }
     }.toSet()
 
     if (compoundKinds.isNotEmpty()) {
         kinds.addAll(compoundKinds)
-        if (compoundKinds.any { it.endsWith("-edit") }) kinds.remove("edit")
-        if (compoundKinds.any { it.endsWith("-version") }) kinds.remove("version")
-        if (compoundKinds.any { it.endsWith("-mix") }) kinds.remove("mix")
+        if (compoundKinds.any { it.endsWith("-edit") || it == "clean" }) kinds.remove("edit")
+        if (compoundKinds.any { it.endsWith("-version") || it == "clean" || it == "explicit" }) kinds.remove("version")
+        if (compoundKinds.any { it.endsWith("-mix") || it == "vip" || it == "dub" }) kinds.remove("mix")
         if (compoundKinds.any { it.endsWith("-edition") || it == "deluxe" }) kinds.remove("edition")
     }
 
