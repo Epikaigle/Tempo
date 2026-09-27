@@ -140,7 +140,22 @@ class LastFmEnrichmentService
             if (ArtistParser.isUnknownArtist(artist)) {
                 return LastFmResult.TrackNotFound
             }
-            return fetchTrackInfo(title, artist, getApiKey())
+            val apiKey = getApiKey()
+            val initial = fetchTrackInfo(title, artist, apiKey)
+            if (initial !is LastFmResult.TrackNotFound) return initial
+
+            // When raw artist or title has featured guests or extra qualifiers,
+            // retry with primary artist / cleaned title variants as fallback.
+            // Strict cover identity matching still guards the result before display.
+            val primaryArtist = ArtistParser.getPrimaryArtist(artist)
+            val titleVariants = coverSearchTitleVariants(title)
+            for (titleVariant in titleVariants) {
+                if (titleVariant == title && primaryArtist == artist) continue
+                val fallback = fetchTrackInfo(titleVariant, primaryArtist, apiKey)
+                if (fallback is LastFmResult.Success) return fallback
+            }
+
+            return LastFmResult.TrackNotFound
         }
 
         /**

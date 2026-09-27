@@ -72,13 +72,11 @@ class SpotifyEnrichmentService @Inject constructor(
         track: Track,
         existingMetadata: EnrichedMetadata?,
     ): SpotifyCoverArtResult {
-        val spotifyId = track.spotifyId
-            ?.takeIf { it.isNotBlank() }
-            ?: existingMetadata?.spotifyId?.takeIf { it.isNotBlank() }
-            ?: existingMetadata?.spotifyTrackUrl
-                ?.substringAfter("/track/", "")
-                ?.substringBefore('?')
-                ?.takeIf { it.isNotBlank() }
+        val spotifyId = extractSpotifyTrackId(
+            track.spotifyId?.takeIf { it.isNotBlank() }
+                ?: existingMetadata?.spotifyId?.takeIf { it.isNotBlank() }
+                ?: existingMetadata?.spotifyTrackUrl
+        )
 
         if (spotifyId.isNullOrBlank()) return SpotifyCoverArtResult.Unavailable
 
@@ -1482,4 +1480,18 @@ internal fun isSpotifyPickerIdentityCompatible(
             isSafeCoverTrackTitleMatch(track.title, providerTitle)
 
     return artistMatches && titleMatches
+}
+
+internal fun extractSpotifyTrackId(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    val trimmed = raw.trim()
+    val candidate = when {
+        trimmed.startsWith("spotify:track:") ->
+            trimmed.removePrefix("spotify:track:")
+        trimmed.contains("/track/") ->
+            trimmed.substringAfter("/track/")
+        else -> trimmed
+    }
+    val cleanId = candidate.substringBefore('?').substringBefore('&').substringBefore('/').trim()
+    return cleanId.takeIf { it.isNotBlank() && !it.contains(":") }
 }

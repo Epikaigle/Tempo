@@ -123,6 +123,23 @@ class CoverArtProviderStatusTest {
     }
 
     @Test
+    fun spotifyTrackIdExtractionHandlesPlainIdUriAndWebUrl() {
+        assertEquals("4cOdK2wGLETKBW3PvgPWqT", extractSpotifyTrackId("4cOdK2wGLETKBW3PvgPWqT"))
+        assertEquals("4cOdK2wGLETKBW3PvgPWqT", extractSpotifyTrackId("spotify:track:4cOdK2wGLETKBW3PvgPWqT"))
+        assertEquals(
+            "4cOdK2wGLETKBW3PvgPWqT",
+            extractSpotifyTrackId("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=abc123xyz"),
+        )
+        assertEquals(
+            "4cOdK2wGLETKBW3PvgPWqT",
+            extractSpotifyTrackId("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT/"),
+        )
+        assertEquals(null, extractSpotifyTrackId(null))
+        assertEquals(null, extractSpotifyTrackId(""))
+        assertEquals(null, extractSpotifyTrackId("   "))
+    }
+
+    @Test
     fun lastFmMismatchedAutocorrectedIdentityIsRejected() {
         val result = mapLastFmCoverSearchResult(
             result = LastFmEnrichmentService.LastFmResult.Success(
