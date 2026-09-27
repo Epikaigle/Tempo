@@ -46,6 +46,16 @@ class CoverArtPickerSelectionTest {
         )
     }
 
+    @Test
+    fun columnCountAdaptsToScreenWidth() {
+        assertEquals(2, resolveCoverPickerColumnCount(360f))
+        assertEquals(2, resolveCoverPickerColumnCount(480f))
+        assertEquals(3, resolveCoverPickerColumnCount(500f))
+        assertEquals(3, resolveCoverPickerColumnCount(650f))
+        assertEquals(4, resolveCoverPickerColumnCount(720f))
+        assertEquals(4, resolveCoverPickerColumnCount(1080f))
+    }
+
     private fun candidate(provider: CoverArtProvider) =
         CoverArtCandidate(
             provider = provider,

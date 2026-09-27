@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
@@ -70,6 +71,13 @@ internal fun reconcileCoverPickerSelection(
 ): CoverArtProvider? =
     selectedProvider?.takeIf { selected ->
         candidates.any { candidate -> candidate.provider == selected }
+    }
+
+internal fun resolveCoverPickerColumnCount(maxWidthDp: Float): Int =
+    when {
+        maxWidthDp >= 720f -> 4
+        maxWidthDp >= 500f -> 3
+        else -> 2
     }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -156,7 +164,8 @@ internal fun CoverArtPickerSheet(
                         contentDescription = providerLabel(candidate.provider),
                         modifier = Modifier
                             .size(168.dp)
-                            .clip(RoundedCornerShape(18.dp)),
+                            .clip(RoundedCornerShape(18.dp))
+                            .border(1.dp, GlassBorderMedium, RoundedCornerShape(18.dp)),
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
@@ -180,12 +189,14 @@ internal fun CoverArtPickerSheet(
             Spacer(modifier = Modifier.height(20.dp))
 
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val cardWidth = (maxWidth - 12.dp) / 2
+                val spacing = 12.dp
+                val columns = resolveCoverPickerColumnCount(maxWidth.value)
+                val cardWidth = (maxWidth - (spacing * (columns - 1))) / columns
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    maxItemsInEachRow = 2,
+                    horizontalArrangement = Arrangement.spacedBy(spacing),
+                    verticalArrangement = Arrangement.spacedBy(spacing),
+                    maxItemsInEachRow = columns,
                 ) {
                     providers.forEach { provider ->
                         val candidate = state.coverCandidates.firstOrNull { it.provider == provider }
@@ -206,7 +217,7 @@ internal fun CoverArtPickerSheet(
                             },
                             modifier = Modifier
                                 .width(cardWidth)
-                                .heightIn(min = 196.dp),
+                                .heightIn(min = 180.dp),
                         )
                     }
                 }
@@ -299,7 +310,7 @@ private fun CoverProviderCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(128.dp)
+                .aspectRatio(1f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(GlassFrostSoft),
             contentAlignment = Alignment.Center,
