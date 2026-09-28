@@ -241,6 +241,11 @@ fun SpotlightScreen(
             )
 
             // Fullscreen Story Overlay
+            // Trigger analytics once when story playback starts.
+            val storyPlaying = showStory && !uiState.storyLoading && uiState.storyPages.isNotEmpty()
+            LaunchedEffect(storyPlaying) {
+                if (storyPlaying) viewModel.trackStoryOpened()
+            }
             AnimatedVisibility(
                 visible = showStory,
                 enter = fadeIn(animationSpec = tween(300)),

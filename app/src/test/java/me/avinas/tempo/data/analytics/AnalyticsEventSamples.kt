@@ -12,13 +12,12 @@ object AnalyticsEventSamples {
     val all: List<AnalyticsEvent> = listOf(
         AppStarted(AppStartType.COLD, 1_500L, listenerReady = true),
         AppStarted(AppStartType.WARM, 200L, listenerReady = false),
-        ScreenViewed(AnalyticsScreen.HOME),
+        ScreenViewed(AnalyticsScreen.SONG_DETAILS),
         FeatureUsed(TempoFeature.SPOTLIGHT),
         OnboardingStep(OnboardingStepName.PRIVACY, OnboardingAction.SKIP, 4_000L),
         OnboardingCompleted(skippedCount = 3, totalMillis = 42_000L),
         NotifAccessResult(AccessResult.GRANTED, GrantVia.ONBOARDING),
         BatteryExemptionResult(ExemptionResult.SKIPPED),
-        TrackingSourceActive(TrackingSource.NOTIFICATION),
         TrackingGap(TrackingGapReason.OEM_KILL, 90_000L),
         ServiceRevived(RevivedBy.HEALTH_WORKER, RecoveryAction.FORCE_RESTART),
         ListeningActivity(listens = 37, distinctApps = 3),
@@ -36,11 +35,6 @@ object AnalyticsEventSamples {
             records = 900,
             failure = null,
             durationMillis = 60_000L
-        ),
-        EnrichmentRun(
-            provider = EnrichmentProvider.RECCOBEATS,
-            attempts = 13,
-            successes = 4
         ),
         BackupRun(
             target = BackupTarget.DRIVE,

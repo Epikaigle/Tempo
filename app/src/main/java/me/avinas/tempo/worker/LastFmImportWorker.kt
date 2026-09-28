@@ -295,7 +295,7 @@ class LastFmImportWorker
             val notification =
                 NotificationCompat
                     .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-                    .setSmallIcon(R.drawable.ic_launcher_foreground)
+                    .setSmallIcon(R.drawable.ic_notification)
                     .setContentTitle("Last.fm Import Complete!")
                     .setContentText("Imported $eventsImported events from $tracksCreated tracks")
                     .setContentIntent(pendingIntent)

@@ -3,6 +3,7 @@ package me.avinas.tempo.ui.navigation
 import me.avinas.tempo.data.analytics.AnalyticsScreen
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnalyticsScreenMappingTest {
@@ -77,5 +78,18 @@ class AnalyticsScreenMappingTest {
             assertEquals(name, name.uppercase())
             assertNotEquals("route argument leaked into a screen name", true, name.contains("/"))
         }
+    }
+
+    @Test
+    fun `only detail screens are tracked`() {
+        assertEquals(
+            setOf(
+                AnalyticsScreen.SONG_DETAILS,
+                AnalyticsScreen.ARTIST_DETAILS,
+                AnalyticsScreen.ALBUM_DETAILS,
+            ),
+            AnalyticsScreenViewModel.TRACKED_SCREENS,
+        )
+        assertTrue(AnalyticsScreenViewModel.TRACKED_SCREENS.contains(AnalyticsScreen.SONG_DETAILS))
     }
 }

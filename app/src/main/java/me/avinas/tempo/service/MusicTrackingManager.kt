@@ -136,6 +136,17 @@ class MusicTrackingManager(
     suspend fun saveEventImmediate(event: ListeningEvent): Result<Long> {
         if (!shouldPersistEvent(event)) return Result.success(0L)
 
+        // Deduplicate by (sessionId, trackId, timestamp) before inserting.
+        if (isSessionEventAlreadyPersisted(event, event.sessionId.orEmpty())) {
+            Log.w(
+                TAG,
+                "Skipped immediate save — session ${event.sessionId} already persisted " +
+                    "for track ${event.track_id}",
+            )
+            updateMetrics { it.copy(duplicatesSkipped = it.duplicatesSkipped + 1) }
+            return Result.success(0L)
+        }
+
         val result = withRetry(MAX_RETRIES, INITIAL_RETRY_DELAY_MS) {
             listeningRepository.insert(event)
         }
@@ -290,7 +301,10 @@ class MusicTrackingManager(
             try {
                 // Events can spend up to BATCH_TIMEOUT_MS in memory. Re-read the current
                 // Room rule before writing so a newly added NON_MUSIC mark takes effect.
-                val candidates = batch.filter { shouldPersistEvent(it.event) }
+                //
+                // Deduplicate by (sessionId, trackId, timestamp) to prevent re-saves across restarts.
+                val candidates =
+                    filterSessionDuplicates(batch.filter { shouldPersistEvent(it.event) })
                 if (candidates.isEmpty()) {
                     updateMetrics { it.copy(batchesProcessed = it.batchesProcessed + 1) }
                     Log.d(TAG, "Batch contained no events allowed by current rules")
@@ -338,6 +352,72 @@ class MusicTrackingManager(
         }
     }
     
+    /**
+     * Returns the (sessionId, trackId, timestamp) tuple identifying this listening session.
+     */
+    private fun sessionIdentityOf(event: ListeningEvent, fallbackSessionId: String): Triple<String, Long, Long>? {
+        val sid = event.sessionId ?: fallbackSessionId.takeIf { it.isNotBlank() }
+        return if (sid.isNullOrBlank()) null else Triple(sid, event.track_id, event.timestamp)
+    }
+
+    /**
+     * Returns true if a row already exists for this (sessionId, trackId, timestamp) tuple.
+     * Returns false on lookup failure to avoid dropping valid events.
+     */
+    private suspend fun isSessionEventAlreadyPersisted(event: ListeningEvent, sessionId: String): Boolean {
+        val identity = sessionIdentityOf(event, sessionId) ?: return false
+        return try {
+            listeningRepository.getEventsBySessionId(identity.first)
+                .any { it.track_id == identity.second && it.timestamp == identity.third }
+        } catch (e: Exception) {
+            Log.w(TAG, "Session dedup lookup failed for ${identity.first}; letting event through", e)
+            false
+        }
+    }
+
+    /**
+     * Filters out events whose session identity is already persisted or duplicated in this batch.
+     */
+    internal suspend fun filterSessionDuplicates(candidates: List<PendingEvent>): List<PendingEvent> {
+        if (candidates.isEmpty()) return candidates
+
+        // Query existing records by session ID.
+        val persistedKeys = HashSet<Triple<String, Long, Long>>()
+        val sessionIds =
+            candidates.mapNotNull { sessionIdentityOf(it.event, it.sessionId)?.first }.distinct()
+        for (sid in sessionIds) {
+            try {
+                listeningRepository.getEventsBySessionId(sid).forEach { row ->
+                    persistedKeys.add(Triple(sid, row.track_id, row.timestamp))
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Session dedup lookup failed for $sid; letting batch through", e)
+                return candidates
+            }
+        }
+
+        val seenInBatch = HashSet<Triple<String, Long, Long>>()
+        val survivors = ArrayList<PendingEvent>(candidates.size)
+        var dropped = 0
+        for (pending in candidates) {
+            val key = sessionIdentityOf(pending.event, pending.sessionId)
+            if (key != null && (key in persistedKeys || !seenInBatch.add(key))) {
+                dropped++
+                Log.w(
+                    TAG,
+                    "Dropped duplicate write for session ${key.first} " +
+                        "(track ${key.second}) — session already persisted",
+                )
+            } else {
+                survivors.add(pending)
+            }
+        }
+        if (dropped > 0) {
+            updateMetrics { it.copy(duplicatesSkipped = it.duplicatesSkipped + dropped) }
+        }
+        return survivors
+    }
+
     private fun handleFailedEvent(pending: PendingEvent) {
         if (pending.retryCount >= MAX_RETRIES) {
             Log.e(TAG, "Event exceeded max retries, discarding: trackId=${pending.event.track_id}")
@@ -413,7 +493,20 @@ class MusicTrackingManager(
                     continue
                 }
 
-                val id = listeningRepository.insert(pending.event)
+                // Check whether the session was already written while queued offline.
+                val id =
+                    processingMutex.withLock {
+                        if (isSessionEventAlreadyPersisted(pending.event, pending.sessionId)) {
+                            Log.i(TAG, "Offline event already persisted for session ${pending.sessionId}; dropping duplicate")
+                            -1L
+                        } else {
+                            listeningRepository.insert(pending.event)
+                        }
+                    }
+                if (id == -1L) {
+                    offlineQueue.remove(pending.key())
+                    continue
+                }
                 if (id > 0L) {
                     if (!shouldPersistEvent(pending.event)) {
                         listeningRepository.deleteById(id)

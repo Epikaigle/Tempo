@@ -9,6 +9,9 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
+import kotlinx.coroutines.flow.first
 import me.avinas.tempo.R
 import me.avinas.tempo.data.enrichment.SpotifyEnrichmentService
 import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
@@ -16,17 +19,14 @@ import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.entities.SpotifyEnrichmentStatus
 import me.avinas.tempo.data.remote.spotify.SpotifyAuthManager
 import me.avinas.tempo.worker.LastFmImportWorker
-import dagger.assisted.Assisted
-import dagger.assisted.AssistedInject
-import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
  * WorkManager worker that enriches tracks with Spotify audio features.
- * 
+ *
  * This worker is OPTIONAL and only runs when the user has connected their Spotify account.
  * It enriches tracks in background to add advanced audio analysis features.
- * 
+ *
  * Features:
  * - Prioritizes frequently played tracks
  * - Respects API rate limits
@@ -34,230 +34,237 @@ import java.util.concurrent.TimeUnit
  * - Gracefully handles disconnection during enrichment
  */
 @HiltWorker
-class SpotifyEnrichmentWorker @AssistedInject constructor(
-    @Assisted appContext: Context,
-    @Assisted workerParams: WorkerParameters,
-    private val spotifyEnrichmentService: SpotifyEnrichmentService,
-    private val authManager: SpotifyAuthManager,
-    private val enrichedMetadataDao: EnrichedMetadataDao,
-    private val trackDao: TrackDao
-) : CoroutineWorker(appContext, workerParams) {
+class SpotifyEnrichmentWorker
+    @AssistedInject
+    constructor(
+        @Assisted appContext: Context,
+        @Assisted workerParams: WorkerParameters,
+        private val spotifyEnrichmentService: SpotifyEnrichmentService,
+        private val authManager: SpotifyAuthManager,
+        private val enrichedMetadataDao: EnrichedMetadataDao,
+        private val trackDao: TrackDao,
+    ) : CoroutineWorker(appContext, workerParams) {
+        companion object {
+            private const val TAG = "SpotifyEnrichWorker"
+            private const val WORK_NAME = "spotify_enrichment"
+            private const val WORK_NAME_IMMEDIATE = "spotify_enrichment_immediate"
+            private const val NOTIFICATION_CHANNEL_ID = "spotify_enrichment_worker"
+            private const val NOTIFICATION_ID = 3001
 
-    companion object {
-        private const val TAG = "SpotifyEnrichWorker"
-        private const val WORK_NAME = "spotify_enrichment"
-        private const val WORK_NAME_IMMEDIATE = "spotify_enrichment_immediate"
-        private const val NOTIFICATION_CHANNEL_ID = "spotify_enrichment_worker"
-        private const val NOTIFICATION_ID = 3001
-        
-        // How many tracks to process per run
-        private const val BATCH_SIZE = 10
-        
-        // Delay between processing each track (ms)
-        private const val INTER_TRACK_DELAY_MS = 200L
+            // How many tracks to process per run
+            private const val BATCH_SIZE = 10
 
-        /**
-         * Schedule periodic Spotify enrichment work.
-         * Runs every 30 minutes when connected to network.
-         */
-        fun schedulePeriodic(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .setRequiresBatteryNotLow(true)
-                .build()
+            // Delay between processing each track (ms)
+            private const val INTER_TRACK_DELAY_MS = 200L
 
-            val workRequest = PeriodicWorkRequestBuilder<SpotifyEnrichmentWorker>(
-                30, TimeUnit.MINUTES,
-                10, TimeUnit.MINUTES // Flex interval
-            )
-                .setConstraints(constraints)
-                .setBackoffCriteria(
-                    BackoffPolicy.EXPONENTIAL,
-                    WorkRequest.MIN_BACKOFF_MILLIS,
-                    TimeUnit.MILLISECONDS
+            /**
+             * Schedule periodic Spotify enrichment work.
+             * Runs every 30 minutes when connected to network.
+             */
+            fun schedulePeriodic(context: Context) {
+                val constraints =
+                    Constraints
+                        .Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .setRequiresBatteryNotLow(true)
+                        .build()
+
+                val workRequest =
+                    PeriodicWorkRequestBuilder<SpotifyEnrichmentWorker>(
+                        30,
+                        TimeUnit.MINUTES,
+                        10,
+                        TimeUnit.MINUTES, // Flex interval
+                    ).setConstraints(constraints)
+                        .setBackoffCriteria(
+                            BackoffPolicy.EXPONENTIAL,
+                            WorkRequest.MIN_BACKOFF_MILLIS,
+                            TimeUnit.MILLISECONDS,
+                        ).addTag("spotify_enrichment")
+                        .build()
+
+                WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                    WORK_NAME,
+                    ExistingPeriodicWorkPolicy.KEEP,
+                    workRequest,
                 )
-                .addTag("spotify_enrichment")
-                .build()
 
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
-                workRequest
-            )
+                Log.i(TAG, "Periodic Spotify enrichment scheduled")
+            }
 
-            Log.i(TAG, "Periodic Spotify enrichment scheduled")
-        }
+            /**
+             * Trigger immediate Spotify enrichment.
+             * Called after user connects Spotify to quickly enrich existing tracks.
+             */
+            fun enqueueImmediate(context: Context) {
+                val constraints =
+                    Constraints
+                        .Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
 
-        /**
-         * Trigger immediate Spotify enrichment.
-         * Called after user connects Spotify to quickly enrich existing tracks.
-         */
-        fun enqueueImmediate(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
+                val workRequest =
+                    OneTimeWorkRequestBuilder<SpotifyEnrichmentWorker>()
+                        .setConstraints(constraints)
+                        .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                        .addTag("spotify_enrichment_immediate")
+                        .build()
 
-            val workRequest = OneTimeWorkRequestBuilder<SpotifyEnrichmentWorker>()
-                .setConstraints(constraints)
-                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                .addTag("spotify_enrichment_immediate")
-                .build()
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    WORK_NAME_IMMEDIATE,
+                    ExistingWorkPolicy.REPLACE,
+                    workRequest,
+                )
 
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                WORK_NAME_IMMEDIATE,
-                ExistingWorkPolicy.REPLACE,
-                workRequest
-            )
+                Log.i(TAG, "Immediate Spotify enrichment enqueued")
+            }
 
-            Log.i(TAG, "Immediate Spotify enrichment enqueued")
-        }
-
-        /**
-         * Cancel all Spotify enrichment work.
-         * Called when user disconnects Spotify.
-         */
-        fun cancel(context: Context) {
-            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
-            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_IMMEDIATE)
-            Log.i(TAG, "Spotify enrichment work cancelled")
-        }
-    }
-
-    override suspend fun doWork(): Result {
-        Log.i(TAG, "Starting Spotify enrichment work")
-
-        // Check if Last.fm import is running - defer to avoid resource contention
-        if (LastFmImportWorker.isImportRunning(applicationContext)) {
-            Log.i(TAG, "Last.fm import in progress - deferring Spotify enrichment")
-            return Result.success()
-        }
-
-        // Check if Spotify is connected
-        if (!authManager.isConnected()) {
-            Log.i(TAG, "Spotify not connected, skipping enrichment")
-            return Result.success()
-        }
-
-        return try {
-            val enrichedCount = enrichBatch()
-            Log.i(TAG, "Spotify enrichment completed: $enrichedCount tracks enriched")
-            Result.success()
-        } catch (e: Exception) {
-            Log.e(TAG, "Spotify enrichment failed", e)
-            if (runAttemptCount < 3) {
-                Result.retry()
-            } else {
-                Result.failure()
+            /**
+             * Cancel all Spotify enrichment work.
+             * Called when user disconnects Spotify.
+             */
+            fun cancel(context: Context) {
+                WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+                WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_IMMEDIATE)
+                Log.i(TAG, "Spotify enrichment work cancelled")
             }
         }
-    }
 
-    private suspend fun enrichBatch(): Int {
-        // Get tracks needing Spotify enrichment
-        val tracksToEnrich = enrichedMetadataDao.getTracksNeedingSpotifyEnrichment(BATCH_SIZE)
-        
-        if (tracksToEnrich.isEmpty()) {
-            Log.d(TAG, "No tracks need Spotify enrichment")
-            return 0
-        }
+        override suspend fun doWork(): Result {
+            Log.i(TAG, "Starting Spotify enrichment work")
 
-        Log.d(TAG, "Found ${tracksToEnrich.size} tracks to enrich with Spotify")
+            // Check if Last.fm import is running - defer to avoid resource contention
+            if (LastFmImportWorker.isImportRunning(applicationContext)) {
+                Log.i(TAG, "Last.fm import in progress - deferring Spotify enrichment")
+                return Result.success()
+            }
 
-        // OPTIMIZATION: Check if we have tracks with Spotify IDs but missing audio features
-        // Since Spotify no longer provides audio features, we skip audio feature enrichment.
-        // We only process tracks that don't have Spotify IDs yet to get basic metadata (album art).
-        val withoutSpotifyId = tracksToEnrich.filter { it.spotifyId == null }
-        
-        var successCount = 0
-        
-        // Phase 1: Bulk enrichment for audio features was removed (deprecated API)
-        // We now skip directly to finding missing metadata for new tracks
-
-        
-        // Phase 2: Search and enrich tracks without Spotify IDs
-        for (metadata in withoutSpotifyId) {
-            // Check if still connected
+            // Check if Spotify is connected
             if (!authManager.isConnected()) {
-                Log.w(TAG, "Spotify disconnected during enrichment, stopping")
-                break
+                Log.i(TAG, "Spotify not connected, skipping enrichment")
+                return Result.success()
             }
 
-            // Get the track
-            val track = trackDao.getTrackById(metadata.trackId)
-            if (track == null) {
-                Log.w(TAG, "Track ${metadata.trackId} not found")
-                continue
+            return try {
+                val enrichedCount = enrichBatch()
+                Log.i(TAG, "Spotify enrichment completed: $enrichedCount tracks enriched")
+                Result.success()
+            } catch (e: Exception) {
+                Log.e(TAG, "Spotify enrichment failed", e)
+                if (runAttemptCount < 3) {
+                    Result.retry()
+                } else {
+                    Result.failure()
+                }
+            }
+        }
+
+        private suspend fun enrichBatch(): Int {
+            // Get tracks needing Spotify enrichment
+            val tracksToEnrich = enrichedMetadataDao.getTracksNeedingSpotifyEnrichment(BATCH_SIZE)
+
+            if (tracksToEnrich.isEmpty()) {
+                Log.d(TAG, "No tracks need Spotify enrichment")
+                return 0
             }
 
-            // Attempt enrichment
-            when (val result = spotifyEnrichmentService.enrichTrack(track, metadata)) {
-                is SpotifyEnrichmentService.SpotifyEnrichmentResult.Success -> {
-                    enrichedMetadataDao.updateSpotifyEnrichmentStatus(
-                        trackId = metadata.trackId,
-                        status = SpotifyEnrichmentStatus.ENRICHED
-                    )
-                    successCount++
-                    Log.d(TAG, "Enriched track ${track.id}: '${track.title}'")
-                }
-                
-                is SpotifyEnrichmentService.SpotifyEnrichmentResult.TrackNotFound -> {
-                    enrichedMetadataDao.updateSpotifyEnrichmentStatus(
-                        trackId = metadata.trackId,
-                        status = SpotifyEnrichmentStatus.NOT_FOUND
-                    )
-                    Log.d(TAG, "Track not found on Spotify: '${track.title}'")
-                }
-                
+            Log.d(TAG, "Found ${tracksToEnrich.size} tracks to enrich with Spotify")
 
-                
-                is SpotifyEnrichmentService.SpotifyEnrichmentResult.NotConnected -> {
-                    Log.w(TAG, "Spotify not connected, stopping batch")
+            // OPTIMIZATION: Check if we have tracks with Spotify IDs but missing audio features
+            // Since Spotify no longer provides audio features, we skip audio feature enrichment.
+            // We only process tracks that don't have Spotify IDs yet to get basic metadata (album art).
+            val withoutSpotifyId = tracksToEnrich.filter { it.spotifyId == null }
+
+            var successCount = 0
+
+            // Phase 1: Bulk enrichment for audio features was removed (deprecated API)
+            // We now skip directly to finding missing metadata for new tracks
+
+            // Phase 2: Search and enrich tracks without Spotify IDs
+            for (metadata in withoutSpotifyId) {
+                // Check if still connected
+                if (!authManager.isConnected()) {
+                    Log.w(TAG, "Spotify disconnected during enrichment, stopping")
                     break
                 }
-                
-                is SpotifyEnrichmentService.SpotifyEnrichmentResult.Error -> {
-                    enrichedMetadataDao.updateSpotifyEnrichmentStatus(
-                        trackId = metadata.trackId,
-                        status = SpotifyEnrichmentStatus.FAILED,
-                        error = result.message
-                    )
-                    Log.e(TAG, "Error enriching track: ${result.message}")
+
+                // Get the track
+                val track = trackDao.getTrackById(metadata.trackId)
+                if (track == null) {
+                    Log.w(TAG, "Track ${metadata.trackId} not found")
+                    continue
                 }
+
+                // Attempt enrichment
+                when (val result = spotifyEnrichmentService.enrichTrack(track, metadata)) {
+                    is SpotifyEnrichmentService.SpotifyEnrichmentResult.Success -> {
+                        enrichedMetadataDao.updateSpotifyEnrichmentStatus(
+                            trackId = metadata.trackId,
+                            status = SpotifyEnrichmentStatus.ENRICHED,
+                        )
+                        successCount++
+                        Log.d(TAG, "Enriched track ${track.id}: '${track.title}'")
+                    }
+
+                    is SpotifyEnrichmentService.SpotifyEnrichmentResult.TrackNotFound -> {
+                        enrichedMetadataDao.updateSpotifyEnrichmentStatus(
+                            trackId = metadata.trackId,
+                            status = SpotifyEnrichmentStatus.NOT_FOUND,
+                        )
+                        Log.d(TAG, "Track not found on Spotify: '${track.title}'")
+                    }
+
+                    is SpotifyEnrichmentService.SpotifyEnrichmentResult.NotConnected -> {
+                        Log.w(TAG, "Spotify not connected, stopping batch")
+                        break
+                    }
+
+                    is SpotifyEnrichmentService.SpotifyEnrichmentResult.Error -> {
+                        enrichedMetadataDao.updateSpotifyEnrichmentStatus(
+                            trackId = metadata.trackId,
+                            status = SpotifyEnrichmentStatus.FAILED,
+                            error = result.message,
+                        )
+                        Log.e(TAG, "Error enriching track: ${result.message}")
+                    }
+                }
+
+                // Rate limiting delay
+                kotlinx.coroutines.delay(INTER_TRACK_DELAY_MS)
             }
 
-            // Rate limiting delay
-            kotlinx.coroutines.delay(INTER_TRACK_DELAY_MS)
+            return successCount
         }
 
-        return successCount
-    }
-    
-    /**
-     * Required for expedited work on Android 10 (SDK 29).
-     * Returns ForegroundInfo with notification when work runs as foreground service.
-     */
-    override suspend fun getForegroundInfo(): ForegroundInfo {
-        val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        
-        val channel = NotificationChannel(
-            NOTIFICATION_CHANNEL_ID,
-            "Spotify Enrichment",
-            NotificationManager.IMPORTANCE_LOW
-        )
-        notificationManager.createNotificationChannel(channel)
-        
-        val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Enriching music data")
-            .setContentText("Adding Spotify metadata to your tracks...")
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .build()
-        
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            ForegroundInfo(NOTIFICATION_ID, notification)
+        /**
+         * Required for expedited work on Android 10 (SDK 29).
+         * Returns ForegroundInfo with notification when work runs as foreground service.
+         */
+        override suspend fun getForegroundInfo(): ForegroundInfo {
+            val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            val channel =
+                NotificationChannel(
+                    NOTIFICATION_CHANNEL_ID,
+                    "Spotify Enrichment",
+                    NotificationManager.IMPORTANCE_LOW,
+                )
+            notificationManager.createNotificationChannel(channel)
+
+            val notification =
+                NotificationCompat
+                    .Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle("Enriching music data")
+                    .setContentText("Adding Spotify metadata to your tracks...")
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .setOngoing(true)
+                    .build()
+
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                ForegroundInfo(NOTIFICATION_ID, notification)
+            }
         }
     }
-}

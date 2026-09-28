@@ -70,6 +70,7 @@ fun SettingsScreen(
     onNavigateToLastFmImport: (() -> Unit)? = null,
     onNavigateToSpotifyJsonImport: (() -> Unit)? = null,
     onNavigateToYouTubeMusicImport: (() -> Unit)? = null,
+    onNavigateToExtensionImport: (() -> Unit)? = null,
     onNavigateToDesktop: () -> Unit = {},
     onNavigateToEnrichmentReport: (() -> Unit)? = null,
     onNavigateToYourData: (() -> Unit)? = null,
@@ -568,6 +569,14 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_import_youtube_music),
                             subtitle = stringResource(R.string.settings_import_youtube_music_desc),
                             onClick = { onNavigateToYouTubeMusicImport?.invoke() },
+                        )
+
+                        HorizontalDivider(color = GlassBorderSoft)
+
+                        SettingsOption(
+                            title = stringResource(R.string.settings_import_extension),
+                            subtitle = stringResource(R.string.settings_import_extension_desc),
+                            onClick = { onNavigateToExtensionImport?.invoke() },
                         )
                     }
                 }

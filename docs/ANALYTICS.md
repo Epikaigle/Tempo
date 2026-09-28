@@ -25,19 +25,17 @@ Everything else is a fixed name from a closed list. There is no free-text field 
 | Event | What it tells us |
 |---|---|
 | `app_started` | Startup health: cold or warm start, startup time range, whether music detection was ready |
-| `screen_viewed` | Which screens are reached, such as Home, Stats, History, Settings |
+| `screen_viewed` | Detail-screen visits only (song, artist, album) — all other screens cost zero events |
 | `feature_used` | Which features get used, such as share cards, imports, backups |
 | `onboarding_step` | Where setup stalls: step name, next/skip/back, time range on step |
 | `onboarding_completed` | Setup completion: skipped-step range, total time range |
 | `notif_access` | Notification access result and whether it was granted during onboarding or in Settings |
 | `battery_exemption` | Battery-optimisation exemption result |
-| `tracking_source` | Active detection path: notification, Spotify API, desktop, import |
 | `tracking_gap` | When music detection stopped, why, and for how long (range) |
 | `service_revived` | Whether Tempo restarted itself after the system stopped it, and how |
 | `listening_activity` | Daily totals only, never per track: listen-count range, app-count range |
 | `db_migration` | On-device database schema moved from one version to another |
-| `import_run` | Import result for Last.fm, Spotify, YouTube Music, or Tempo backup: phase, record range, failure category, time range |
-| `enrichment_run` | Metadata lookup health per provider: success and failure counts in ranges |
+| `import_run` | Import result for Last.fm, Spotify, YouTube Music, the browser-extension export, or Tempo backup: phase, record range, failure category, time range |
 | `backup_run` | Backup result for local or Drive: success flag, size and time ranges |
 | `crash` | Fatal crash signature: obfuscated class name, one obfuscated line, app version |
 

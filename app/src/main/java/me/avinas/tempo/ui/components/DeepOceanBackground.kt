@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 @Composable
 fun DeepOceanBackground(
     modifier: Modifier = Modifier,
-    enableAnimations: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(

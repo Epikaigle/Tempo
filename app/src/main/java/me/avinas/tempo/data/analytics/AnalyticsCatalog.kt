@@ -27,7 +27,7 @@ object AnalyticsCatalog {
             ),
             AnalyticsCatalogEntry(
                 event = "screen_viewed",
-                what = "Which screens you open. Powers knowing which parts of the app actually get used.",
+                what = "Which detail screens you open (song, artist, album). Only these three are reported.",
                 properties = listOf("screen"),
             ),
             AnalyticsCatalogEntry(
@@ -56,11 +56,6 @@ object AnalyticsCatalog {
                 properties = listOf("result"),
             ),
             AnalyticsCatalogEntry(
-                event = "tracking_source",
-                what = "Which detection method is active.",
-                properties = listOf("source"),
-            ),
-            AnalyticsCatalogEntry(
                 event = "tracking_gap",
                 what = "When and why music detection stopped, so listening gaps can be fixed.",
                 properties = listOf("reason", "gap"),
@@ -84,11 +79,6 @@ object AnalyticsCatalog {
                 event = "import_run",
                 what = "Whether a history import worked, and the category of failure if not.",
                 properties = listOf("provider", "phase", "records", "dur", "error_class"),
-            ),
-            AnalyticsCatalogEntry(
-                event = "enrichment_run",
-                what = "Whether album-art and metadata lookups are failing.",
-                properties = listOf("provider", "ok", "failed"),
             ),
             AnalyticsCatalogEntry(
                 event = "backup_run",
