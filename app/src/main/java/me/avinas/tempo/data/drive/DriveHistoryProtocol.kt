@@ -52,8 +52,15 @@ object DriveHistoryProtocol {
     fun fileName(deviceId: String, batchId: String, generation: Long = 0L): String {
         require(isValidDeviceId(deviceId)) { "Invalid Tempo Drive device id" }
         require(SHA256_PATTERN.matches(batchId)) { "Invalid Tempo Drive batch id" }
-        require(generation >= 0L) { "Tempo Drive generation cannot be negative" }
+        require(generation in 0..MAX_WIRE_INTEGER) { "Invalid Tempo Drive generation" }
         return "${FILE_PREFIX}g${generation}_${deviceId}_${batchId}.json.gz"
+    }
+
+    /** Missing generation metadata is legacy v1; malformed metadata is never generation zero. */
+    fun parseGeneration(value: String?): Long? {
+        if (value == null) return 0L
+        if (value.isEmpty() || value.any { it !in '0'..'9' }) return null
+        return value.toLongOrNull()?.takeIf { it in 0..MAX_WIRE_INTEGER }
     }
 
     /**

@@ -73,6 +73,16 @@ class DriveHistorySyncSettingsManager @Inject constructor(
         }
     }
 
+    suspend fun markStopped(message: String) {
+        context.driveHistorySyncDataStore.edit {
+            it[ENABLED] = false
+            it[LAST_STATUS] = DriveHistorySyncStatus.NEVER.name
+            it[LAST_MESSAGE] = message
+            it[LAST_UPLOADED] = 0
+            it[LAST_IMPORTED] = 0
+        }
+    }
+
     suspend fun clearForSignOut() {
         context.driveHistorySyncDataStore.edit { it.clear() }
     }

@@ -42,10 +42,17 @@ class DriveAppDataClient @Inject constructor(
     }
 
     @Volatile private var cachedClient: AuthorizedDriveClient? = null
+    private val accountSession = DriveAccountSession { authManager.currentAccount.value?.email }
+
+    suspend fun <T> withAccountBoundSession(block: suspend (String) -> T): T =
+        accountSession.withAccount(block)
 
     private suspend fun service(): AuthorizedDriveClient = withContext(Dispatchers.IO) {
+        accountSession.requireUnchangedAccount()
         val token = authManager.getAccessToken()
             ?: throw DriveException.Auth("Google Drive authorization is unavailable")
+        // Token refresh can suspend while interactive sign-in selects another account.
+        accountSession.requireUnchangedAccount()
 
         cachedClient?.takeIf { it.accessToken == token }?.let { return@withContext it }
         synchronized(this@DriveAppDataClient) {
@@ -73,7 +80,9 @@ class DriveAppDataClient @Inject constructor(
     ): T {
         val client = service()
         return try {
-            block(client.service)
+            val result = block(client.service)
+            accountSession.requireUnchangedAccount()
+            result
         } catch (e: GoogleJsonResponseException) {
             when (e.statusCode) {
                 401 -> {
@@ -156,7 +165,8 @@ class DriveAppDataClient @Inject constructor(
             findFilesByExactName(api, fileName).firstOrNull { existing ->
                 existing.getSize()?.toLong() == compressedBytes.size.toLong() &&
                     existing.md5Checksum.equals(expectedMd5, ignoreCase = true) &&
-                    existing.appProperties?.get(DriveHistoryProtocol.APP_PROPERTY_SHA256) == expectedSha256
+                    existing.appProperties?.get(DriveHistoryProtocol.APP_PROPERTY_SHA256) == expectedSha256 &&
+                    appProperties.all { (key, value) -> existing.appProperties?.get(key) == value }
             }?.let { existing ->
                 Log.d(TAG, "Verified existing history batch; treating retry as success: $fileName")
                 return@executeWithRetry existing.toAppDataFile()
@@ -180,7 +190,9 @@ class DriveAppDataClient @Inject constructor(
                 .execute()
             require(
                 result.getSize()?.toLong() == compressedBytes.size.toLong() &&
-                    result.md5Checksum.equals(expectedMd5, ignoreCase = true)
+                    result.md5Checksum.equals(expectedMd5, ignoreCase = true) &&
+                    result.appProperties?.get(DriveHistoryProtocol.APP_PROPERTY_SHA256) == expectedSha256 &&
+                    appProperties.all { (key, value) -> result.appProperties?.get(key) == value }
             ) { "Google Drive returned mismatched metadata for the uploaded history batch" }
             result.toAppDataFile()
         }
@@ -252,11 +264,13 @@ class DriveAppDataClient @Inject constructor(
      */
     suspend fun getHistoryDisableMarkerVersion(): Long = withContext(Dispatchers.IO) {
         executeWithRetry { api ->
-            val markerVersion = findFilesByExactName(api, DISABLE_MARKER_NAME)
-                .maxOfOrNull { it.modifiedTime?.value ?: 0L }
-                ?: return@executeWithRetry 0L
-            markerVersion.takeIf { it > 0L }
-                ?: throw DriveException.Server("Google Drive did not return a valid deletion marker version")
+            val markers = findFilesByExactName(api, DISABLE_MARKER_NAME)
+            if (markers.isEmpty()) return@executeWithRetry 0L
+            val versions = markers.map { it.modifiedTime?.value ?: 0L }
+            if (versions.any { it <= 0L }) {
+                throw DriveException.Server("Google Drive did not return a valid deletion marker version")
+            }
+            versions.max()
         }
     }
 
@@ -344,10 +358,9 @@ class DriveAppDataClient @Inject constructor(
             val files = listHistoryBatches()
             var deleted = 0
             for (file in files) {
-                val fileGeneration = file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION]
-                    ?.toLongOrNull()
-                    ?.coerceAtLeast(0L)
-                    ?: 0L
+                val fileGeneration = DriveHistoryProtocol.parseGeneration(
+                    file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION]
+                ) ?: continue
                 if (fileGeneration >= generation) continue
                 deleteStrict(file.fileId)
                 deleted++
@@ -392,14 +405,20 @@ class DriveAppDataClient @Inject constructor(
         val safeName = fileName
             .replace("\\", "\\\\")
             .replace("'", "\\'")
-        return api.files().list()
-            .setSpaces(APP_DATA_FOLDER)
-            .setQ("name = '$safeName' and trashed = false")
-            .setPageSize(1_000)
-            .setFields("files(id,name,size,md5Checksum,createdTime,modifiedTime,appProperties)")
-            .execute()
-            .files
-            .orEmpty()
+        val files = mutableListOf<DriveFile>()
+        var pageToken: String? = null
+        do {
+            val page = api.files().list()
+                .setSpaces(APP_DATA_FOLDER)
+                .setQ("name = '$safeName' and trashed = false")
+                .setPageSize(1_000)
+                .setPageToken(pageToken)
+                .setFields("nextPageToken,files(id,name,size,md5Checksum,createdTime,modifiedTime,appProperties)")
+                .execute()
+            files += page.files.orEmpty()
+            pageToken = page.nextPageToken
+        } while (!pageToken.isNullOrBlank())
+        return files
     }
 
     private fun md5Hex(bytes: ByteArray): String =

@@ -84,15 +84,17 @@ class DriveHistorySyncManager @Inject constructor(
     suspend fun enableSync(): Boolean = mutex.withLock {
         withContext(Dispatchers.IO) {
             if (!ensureAuthorized()) return@withContext false
-            reconcileGoogleAccountBoundary()
-            val currentMarker = appDataClient.getHistoryDisableMarkerVersion()
-            val acceptedMarker = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L)
-            if (currentMarker > acceptedMarker) {
-                resetCursorsLocked()
+            appDataClient.withAccountBoundSession { accountEmail ->
+                reconcileGoogleAccountBoundary(accountEmail)
+                val currentMarker = appDataClient.getHistoryDisableMarkerVersion()
+                val acceptedMarker = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L)
+                if (currentMarker > acceptedMarker) {
+                    resetCursorsLocked()
+                }
+                statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, currentMarker).apply()
+                settingsManager.setEnabled(true)
+                true
             }
-            statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, currentMarker).apply()
-            settingsManager.setEnabled(true)
-            true
         }
     }
 
@@ -115,32 +117,34 @@ class DriveHistorySyncManager @Inject constructor(
                     return@withContext DriveHistorySyncResult.Error(message)
                 }
 
-                if (reconcileGoogleAccountBoundary()) {
-                    val message =
-                        "Google account changed. Cross-device sync was turned off; enable it again to use the new Drive account."
-                    settingsManager.setEnabled(false)
-                    settingsManager.markFailure(message)
-                    return@withContext DriveHistorySyncResult.RemoteDisabled(message)
+                appDataClient.withAccountBoundSession { accountEmail ->
+                    if (reconcileGoogleAccountBoundary(accountEmail)) {
+                        val message =
+                            "Google account changed. Cross-device sync was turned off; enable it again to use the new Drive account."
+                        settingsManager.setEnabled(false)
+                        settingsManager.markFailure(message)
+                        return@withAccountBoundSession DriveHistorySyncResult.RemoteDisabled(message)
+                    }
+
+                    val remoteDisable = handleRemoteDisableIfNeeded()
+                    if (remoteDisable != null) return@withAccountBoundSession remoteDisable
+
+                    val uploaded = uploadLocalHistory()
+                    val download = downloadRemoteHistory()
+                    settingsManager.markSuccess(
+                        uploaded = uploaded,
+                        imported = download.inserted,
+                        message = if (download.skipped > 0) {
+                            "${download.skipped} duplicate event(s) ignored"
+                        } else null
+                    )
+                    DriveHistorySyncResult.Success(
+                        uploaded = uploaded,
+                        imported = download.inserted,
+                        duplicates = download.skipped,
+                        replaced = download.replaced
+                    )
                 }
-
-                val remoteDisable = handleRemoteDisableIfNeeded()
-                if (remoteDisable != null) return@withContext remoteDisable
-
-                val uploaded = uploadLocalHistory()
-                val download = downloadRemoteHistory()
-                settingsManager.markSuccess(
-                    uploaded = uploaded,
-                    imported = download.inserted,
-                    message = if (download.skipped > 0) {
-                        "${download.skipped} duplicate event(s) ignored"
-                    } else null
-                )
-                DriveHistorySyncResult.Success(
-                    uploaded = uploaded,
-                    imported = download.inserted,
-                    duplicates = download.skipped,
-                    replaced = download.replaced
-                )
             } catch (e: CancellationException) {
                 withContext(NonCancellable) {
                     settingsManager.markFailure("Cross-device history sync was cancelled")
@@ -172,12 +176,7 @@ class DriveHistorySyncManager @Inject constructor(
      * account. The caller decides whether that account change is an explicit
      * opt-in (enableSync) or must stop a background/manual sync (syncNow).
      */
-    private fun reconcileGoogleAccountBoundary(): Boolean {
-        val current = authManager.currentAccount.value?.email
-            ?.trim()
-            ?.lowercase()
-            ?.takeIf { it.isNotBlank() }
-            ?: return false
+    private fun reconcileGoogleAccountBoundary(current: String): Boolean {
         val previous = statePrefs.getString(KEY_GOOGLE_ACCOUNT_EMAIL, null)
             ?.trim()
             ?.lowercase()
@@ -210,13 +209,19 @@ class DriveHistorySyncManager @Inject constructor(
         val acceptedMarker = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L)
         if (currentMarker <= acceptedMarker) return null
 
+        val message = "Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history."
+        acceptDeletionMarker(currentMarker, message)
         appDataClient.deleteHistoryBatchesBeforeGeneration(currentMarker)
-        statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, currentMarker).apply()
-        settingsManager.setEnabled(false)
-        resetCursorsLocked()
-        return DriveHistorySyncResult.RemoteDisabled(
-            "Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history."
-        )
+        return DriveHistorySyncResult.RemoteDisabled(message)
+    }
+
+    private suspend fun acceptDeletionMarker(marker: Long, message: String? = null) {
+        withContext(NonCancellable) {
+            // Persist the stop before network cleanup, which may fail or be cancelled.
+            settingsManager.markStopped(message ?: "Cloud history sync was turned off after deletion")
+            statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, marker)
+                .remove(KEY_UPLOAD_CURSOR).remove(KEY_DOWNLOAD_CREATED_CURSOR).apply()
+        }
     }
 
     /**
@@ -352,14 +357,14 @@ class DriveHistorySyncManager @Inject constructor(
         var replaced = 0
 
         for (file in files.sortedBy { it.createdAt }) {
-            val rawGeneration = file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION]
-            val parsedGeneration = rawGeneration?.toLongOrNull()
-            if (rawGeneration != null && (parsedGeneration == null || parsedGeneration < 0L)) {
+            val fileGeneration = DriveHistoryProtocol.parseGeneration(
+                file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION]
+            )
+            if (fileGeneration == null) {
                 Log.w(TAG, "Skipping history file with an invalid generation: ${file.fileName}")
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
-            val fileGeneration = parsedGeneration ?: 0L
             if (fileGeneration < acceptedGeneration) {
                 // Pre-delete data (including an upload that finished after the
                 // delete request) is never allowed to resurrect. Cleanup is best
@@ -476,7 +481,7 @@ class DriveHistorySyncManager @Inject constructor(
             seekCount = event.seekCount.coerceAtLeast(0),
             positionUpdatesCount = event.positionUpdatesCount.coerceAtLeast(0),
             wasInterrupted = event.skipped,
-            volumeLevel = event.volumeLevel,
+            volumeLevel = event.volumeLevel?.takeIf { it == 0 },
             contentFingerprint = "$IMPORT_FINGERPRINT_PREFIX${event.eventId}"
         )
     }
@@ -484,22 +489,22 @@ class DriveHistorySyncManager @Inject constructor(
     suspend fun deleteCloudHistoryAndReset(): Int = mutex.withLock {
         withContext(Dispatchers.IO) {
             if (!ensureAuthorized()) throw DriveException.Auth("Google Drive authorization is required")
-            if (reconcileGoogleAccountBoundary()) {
-                settingsManager.setEnabled(false)
-                throw DriveException.Auth(
-                    "Google account changed. Enable cross-device sync for the new account before deleting its Drive history."
-                )
-            }
+            appDataClient.withAccountBoundSession { accountEmail ->
+                if (reconcileGoogleAccountBoundary(accountEmail)) {
+                    settingsManager.setEnabled(false)
+                    throw DriveException.Auth(
+                        "Google account changed. Enable cross-device sync for the new account before deleting its Drive history."
+                    )
+                }
 
-            // Bump the shared server-timestamped generation BEFORE deleting old
-            // batches. A client that explicitly re-enables after this point writes
-            // generation N and is therefore protected from stale-device cleanup.
-            val markerVersion = appDataClient.bumpHistoryDisableMarker()
-            val deleted = appDataClient.deleteHistoryBatchesBeforeGeneration(markerVersion)
-            statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, markerVersion).apply()
-            settingsManager.setEnabled(false)
-            resetCursorsLocked()
-            deleted
+                // Bump the shared server-timestamped generation BEFORE deleting old
+                // batches. A client that explicitly re-enables after this point writes
+                // generation N and is therefore protected from stale-device cleanup.
+                val markerVersion = appDataClient.bumpHistoryDisableMarker()
+                acceptDeletionMarker(markerVersion)
+                val deleted = appDataClient.deleteHistoryBatchesBeforeGeneration(markerVersion)
+                deleted
+            }
         }
     }
 

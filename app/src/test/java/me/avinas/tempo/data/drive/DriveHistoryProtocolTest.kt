@@ -15,6 +15,16 @@ import java.util.zip.GZIPOutputStream
 class DriveHistoryProtocolTest {
 
     @Test
+    fun `generation metadata matches the safe cross-client integer grammar`() {
+        assertEquals(0L, DriveHistoryProtocol.parseGeneration(null))
+        assertEquals(42L, DriveHistoryProtocol.parseGeneration("42"))
+        assertEquals(DriveHistoryProtocol.MAX_WIRE_INTEGER, DriveHistoryProtocol.parseGeneration("9007199254740991"))
+        for (invalid in listOf("", "-1", "+42", " 42", "42.0", "NaN", "9007199254740992", "999999999999999999999999")) {
+            assertEquals(invalid, null, DriveHistoryProtocol.parseGeneration(invalid))
+        }
+    }
+
+    @Test
     fun `event id is stable for the same originating row`() {
         val first = DriveHistoryProtocol.createEventId(
             deviceId = "device-a",

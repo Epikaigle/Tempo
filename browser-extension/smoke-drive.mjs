@@ -155,5 +155,46 @@ check(
   order.join(','),
 );
 
+console.log('\n[Drive 4] Upload identity and cross-client values');
+const checksum = 'a'.repeat(64);
+const uploaded = {
+  name: 'batch.json.gz', size: '42',
+  appProperties: { tempo_kind: 'history_batch', tempo_schema: '1', source_device_id: 'device-1',
+    source_platform: 'chrome_extension', tempo_generation: '7', tempo_sha256: checksum },
+};
+const verified = file => protocol.verifiedUpload(file, uploaded.name, 'device-1', 'chrome_extension', 7, checksum, 42);
+check('complete upload metadata is accepted', verified(uploaded));
+for (const key of Object.keys(uploaded.appProperties)) {
+  check(`upload retry rejects wrong ${key}`, !verified({ ...uploaded, appProperties: { ...uploaded.appProperties, [key]: 'wrong' } }));
+}
+check('upload retry rejects wrong filename', !verified({ ...uploaded, name: 'wrong' }));
+check('upload retry rejects wrong size', !verified({ ...uploaded, size: '41' }));
+for (const key of ['replay_count', 'pause_count', 'seek_count', 'position_updates_count']) {
+  check(`Android-incompatible ${key} is rejected`, !protocol.isValidEvent({ ...event, [key]: 2_147_483_648 }));
+}
+for (const volume of [0, 1, 50, 100]) {
+  const localVolume = protocol.localVolumeFromWire(volume);
+  const converted = await protocol.playToWire({ ...play, volumeLevel: localVolume, isMuted: volume === 0 }, 'device-1');
+  check(`${volume}% volume retains the native browser scale and wire value`, localVolume === volume / 100 && converted.volume_level === volume);
+}
+check('unknown wire volume stays unknown locally', protocol.localVolumeFromWire(null) === -1);
+
+console.log('\n[Drive 5] Response body deadlines');
+const realFetch = globalThis.fetch;
+try {
+  globalThis.fetch = async (_url, options) => new Response(new ReadableStream({
+    start(controller) {
+      options.signal.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true });
+    },
+  }));
+  const stalled = await protocol.fetchWithDeadline('https://example.invalid', {}, 20);
+  let aborted = false;
+  try { await stalled.text(); } catch (error) { aborted = error.name === 'AbortError'; }
+  check('deadline remains active after headers while the body stalls', aborted);
+  globalThis.fetch = async () => new Response('complete');
+  const complete = await protocol.fetchWithDeadline('https://example.invalid', {}, 50);
+  check('normal response bodies are preserved', await complete.text() === 'complete');
+} finally { globalThis.fetch = realFetch; }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);

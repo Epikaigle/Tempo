@@ -33,9 +33,10 @@ The marker is not a history batch. Its Google-server `modifiedTime` is used as t
 Each batch also stores the lowercase SHA-256 of its exact compressed bytes as
 `tempo_sha256=<64 lowercase hex characters>`. Readers verify both the declared
 file size and this checksum before decompressing. A deterministic same-name
-upload is idempotent only when its size and checksum match.
+upload is idempotent only when its size, checksum, filename and all producer/schema/generation metadata match.
 
 Files produced before generation metadata existed are treated as generation `0` for migration compatibility.
+Present generation metadata must contain only decimal digits and fit in `0..9007199254740991`. Invalid metadata is skipped rather than treated as a legacy generation during import or deletion.
 
 The generation is Drive transport metadata; it does not change the v1 JSON payload schema.
 
@@ -87,6 +88,7 @@ Current clients batch at most 50 locally-produced events per upload. Readers rej
 ```
 
 `album`, `session_id`, `site`, and `volume_level` may be `null`. `volume_level` uses a 0–100 protocol scale; `0` means muted and `null` means unknown.
+Replay, pause, seek and position-update counters must fit in `0..2147483647`. Browser clients convert protocol volume back to their local 0–1 scale. Android's device-specific audio stream index can represent known mute (`0`); other remote levels remain unknown locally.
 
 ## Stable event ID
 
@@ -143,6 +145,7 @@ Before importing a batch, a generation-aware reader compares its `tempo_generati
 Upload/download cursors and the accepted disable-marker/generation version belong to one Google account. When a client detects that the authorized Google account changed, it must reset Drive-only cursors/flags before accepting the new account.
 
 Credentials from one Google account must never be reused for another account.
+Android binds the complete history operation, including token refresh and retries, to its initial account identity. An account change or sign-out aborts the operation before another request or response can be accepted.
 
 ## Shared deletion and generation semantics
 
@@ -150,9 +153,10 @@ Explicit deletion of shared cloud history follows this order:
 
 1. create/update `tempo_history_control_v1.json`;
 2. obtain its Google-server `modifiedTime` as the new generation `N`;
-3. delete history batches whose `tempo_generation` is **less than `N`**;
-4. store `N` as the accepted generation locally;
-5. disable Drive history sync locally and reset Drive-only cursors/flags.
+3. disable Drive history sync locally, store `N` as the accepted generation and reset Drive-only cursors/flags;
+4. delete history batches whose `tempo_generation` is **less than `N`**.
+
+Local sync remains disabled if cloud cleanup fails or is cancelled. All clients page through same-name control markers, reject missing server timestamps and use the latest version when concurrent first-use clients have created duplicates. Browser request deadlines cover response bodies as well as headers, so a stalled download cannot indefinitely block deletion or disconnect.
 
 Before uploading, every linked client compares the marker version with the generation it last explicitly accepted. If the remote marker is newer, the client must stop before uploading, remove only batches from generations older than the new marker, reset Drive-only state, and require explicit user re-enablement.
 

@@ -26,6 +26,7 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9._-]{1,200}$/;
 const PLATFORM_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
 const MAX_SAFE_WIRE_INTEGER = Number.MAX_SAFE_INTEGER;
+const MAX_WIRE_COUNTER = 2_147_483_647;
 
 const STATE_KEY = 'tempoDriveHistoryState';
 const DEVICE_KEY = 'tempoDriveDeviceId';
@@ -333,7 +334,13 @@ async function honorRemoteDisableIfNeeded(accessToken: string): Promise<boolean>
   const markerVersion = await getDisableMarkerVersion(accessToken);
   if (markerVersion <= state.acceptedDisableVersion) return false;
 
+  await stopForDeletionMarker(state, markerVersion,
+    'Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history.');
   await deleteBatchesBeforeGeneration(accessToken, markerVersion);
+  return true;
+}
+
+async function stopForDeletionMarker(state: DriveRuntimeState, markerVersion: number, message: string | null): Promise<void> {
   const settings = await storage.getSettings();
   await storage.saveSettings({ ...settings, driveSyncEnabled: false });
   await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
@@ -344,9 +351,8 @@ async function honorRemoteDisableIfNeeded(accessToken: string): Promise<boolean>
     downloadCreatedCursor: 0,
     lastUploaded: 0,
     lastImported: 0,
-    lastError: 'Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history.',
+    lastError: message,
   });
-  return true;
 }
 
 /**
@@ -533,7 +539,7 @@ async function downloadRemotePlays(
         sessionId: event.session_id ?? '',
         site: event.site ?? '',
         contentType: event.content_type || 'MUSIC',
-        volumeLevel: event.volume_level ?? -1,
+        volumeLevel: localVolumeFromWire(event.volume_level),
         anomalies: [],
         totalPauseDurationMs: Math.max(0, event.total_pause_duration_ms || 0),
         positionUpdatesCount: Math.max(0, event.position_updates_count || 0),
@@ -594,24 +600,12 @@ async function deleteDriveHistoryUnlocked(): Promise<number> {
     }
 
     const markerVersion = await bumpDisableMarker(session.accessToken);
-    const deleted = await deleteBatchesBeforeGeneration(session.accessToken, markerVersion);
-
-    const settings = await storage.getSettings();
-    await storage.saveSettings({ ...settings, driveSyncEnabled: false });
-    await saveRuntimeState({
-      ...state,
-      acceptedDisableVersion: markerVersion,
-      downloadCreatedCursor: 0,
-      lastError: null,
-      lastUploaded: 0,
-      lastImported: 0,
-    });
-    await storage.clearDriveUploadedFlags();
-    return deleted;
+    await stopForDeletionMarker(state, markerVersion, null);
+    return await deleteBatchesBeforeGeneration(session.accessToken, markerVersion);
   } catch (err) {
-    // If the marker was already published but deletion failed, leave the feature
-    // enabled and scheduled. The next run will see the newer marker, finish the
-    // cleanup, and then disable itself.
+    // A confirmed marker leaves sync off even if cleanup failed. If publishing
+    // the marker itself failed, retain the previous opt-in/scheduling state.
+    await patchRuntimeState({ lastError: err instanceof Error ? err.message : String(err) });
     await initDriveHistorySync().catch(() => undefined);
     throw err;
   }
@@ -630,10 +624,8 @@ async function uploadBatch(
     fileName,
     'files(id,name,size,md5Checksum,modifiedTime,appProperties)',
   );
-  const verified = existing.find(file =>
-    Number(file.size) === gzip.byteLength &&
-    file.appProperties?.[APP_PROPERTY_SHA256] === checksum
-  );
+  const platform = isFirefoxBuild() ? 'firefox_extension' : 'chrome_extension';
+  const verified = existing.find(file => verifiedUpload(file, fileName, deviceId, platform, generation, checksum, gzip.byteLength));
   if (verified) return;
   for (const file of existing) await deleteDriveFileStrict(accessToken, file.id);
 
@@ -670,9 +662,18 @@ async function uploadBatch(
   );
   await assertDriveResponse(response);
   const uploaded = await response.json() as DriveFileRecord;
-  if (Number(uploaded.size) !== gzip.byteLength || uploaded.appProperties?.[APP_PROPERTY_SHA256] !== checksum) {
+  if (!verifiedUpload(uploaded, fileName, deviceId, platform, generation, checksum, gzip.byteLength)) {
     throw new Error('Google Drive returned mismatched metadata for the uploaded history batch');
   }
+}
+
+function verifiedUpload(file: DriveFileRecord, name: string, device: string, platform: string,
+  generation: number, checksum: string, size: number): boolean {
+  const properties = file.appProperties;
+  return file.name === name && Number(file.size) === size && properties?.tempo_sha256 === checksum &&
+    properties?.tempo_kind === 'history_batch' && properties?.tempo_schema === '1' &&
+    properties?.source_device_id === device && properties?.source_platform === platform &&
+    batchGeneration(file) === generation;
 }
 
 async function findFilesByExactName(
@@ -687,12 +688,20 @@ async function findFilesByExactName(
     pageSize: '1000',
     fields,
   });
-  const response = await driveFetch(accessToken, `${DRIVE_API}/files?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  await assertDriveResponse(response);
-  const data = await response.json() as { files?: DriveFileRecord[] };
-  return data.files ?? [];
+  params.set('fields', `nextPageToken,${fields}`);
+  const files: DriveFileRecord[] = [];
+  let pageToken: string | undefined;
+  do {
+    if (pageToken) params.set('pageToken', pageToken);
+    const response = await driveFetch(accessToken, `${DRIVE_API}/files?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    await assertDriveResponse(response);
+    const data = await response.json() as { files?: DriveFileRecord[]; nextPageToken?: string };
+    files.push(...(data.files ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return files;
 }
 
 async function getDisableMarkerVersion(accessToken: string): Promise<number> {
@@ -909,23 +918,13 @@ async function driveFetch(
 ): Promise<Response> {
   const retrySafe = isDriveRequestRetrySafe(init.method);
   let response: Response;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DRIVE_REQUEST_TIMEOUT_MS);
-  const abortParent = () => controller.abort();
-  init.signal?.addEventListener('abort', abortParent, { once: true });
   try {
-    response = await fetch(url, { ...init, signal: controller.signal });
+    response = await fetchWithDeadline(url, init);
   } catch (err) {
-    // POST creates are not idempotent. If Drive accepted a create but its
-    // response was lost, blindly replaying it can publish duplicate immutable
-    // batches/markers. The next serialized sync performs an exact-name lookup
-    // and safely recognizes an already completed upload.
-    if (!retrySafe || attempt >= MAX_DRIVE_RETRIES) throw err;
+    // Only retry safe requests, and never replay a caller-cancelled operation.
+    if (!retrySafe || init.signal?.aborted || attempt >= MAX_DRIVE_RETRIES) throw err;
     await delayMs(750 * (2 ** attempt));
     return driveFetch(accessToken, url, init, attempt + 1);
-  } finally {
-    clearTimeout(timeout);
-    init.signal?.removeEventListener('abort', abortParent);
   }
 
   if (response.status === 401) {
@@ -952,6 +951,35 @@ async function driveFetch(
   return response;
 }
 
+async function fetchWithDeadline(url: string, init: RequestInit, timeoutMs = DRIVE_REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const abortParent = () => controller.abort();
+  if (init.signal?.aborted) controller.abort();
+  else init.signal?.addEventListener('abort', abortParent, { once: true });
+  const cleanup = () => {
+    clearTimeout(timeout);
+    init.signal?.removeEventListener('abort', abortParent);
+  };
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    if (!response.body) { cleanup(); return response; }
+    const reader = response.body.getReader();
+    // Fetch resolves at the headers. Keep its deadline until the body is read,
+    // so a stalled gzip/JSON response cannot hold the lifecycle queue forever.
+    return new Response(new ReadableStream<Uint8Array>({
+      async pull(stream) {
+        try {
+          const next = await reader.read();
+          if (next.done) { cleanup(); stream.close(); }
+          else stream.enqueue(next.value);
+        } catch (error) { cleanup(); stream.error(error); }
+      },
+      async cancel(reason) { cleanup(); await reader.cancel(reason); },
+    }), { status: response.status, statusText: response.statusText, headers: response.headers });
+  } catch (error) { cleanup(); throw error; }
+}
+
 function isDriveRequestRetrySafe(method: string | undefined): boolean {
   return (method ?? 'GET').toUpperCase() !== 'POST';
 }
@@ -975,16 +1003,16 @@ async function playToWire(play: Play, deviceId: string): Promise<WireEvent> {
     source_app: sourceApp,
     source: `browser:${sourceApp}`,
     skipped: !!play.skipped,
-    replay_count: safeWireInteger(play.replayCount),
+    replay_count: Math.min(MAX_WIRE_COUNTER, safeWireInteger(play.replayCount)),
     completion_percentage: Math.round(clamp(Number.isFinite(play.completionPercentage) ? play.completionPercentage : 0, 0, 100)),
-    pause_count: safeWireInteger(play.pauseCount),
-    seek_count: safeWireInteger(play.seekCount),
+    pause_count: Math.min(MAX_WIRE_COUNTER, safeWireInteger(play.pauseCount)),
+    seek_count: Math.min(MAX_WIRE_COUNTER, safeWireInteger(play.seekCount)),
     session_id: play.sessionId ? play.sessionId.slice(0, 1000) : null,
     site: play.site ? play.site.slice(0, 1000) : null,
     content_type: (play.contentType || 'MUSIC').trim().slice(0, 1000) || 'MUSIC',
     volume_level: protocolVolumeLevel(play),
     total_pause_duration_ms: safeWireInteger(play.totalPauseDurationMs),
-    position_updates_count: safeWireInteger(play.positionUpdatesCount),
+    position_updates_count: Math.min(MAX_WIRE_COUNTER, safeWireInteger(play.positionUpdatesCount)),
   };
   if (!isValidEvent(event)) throw new Error('A local browser play cannot be represented safely');
   return event;
@@ -994,8 +1022,12 @@ function protocolVolumeLevel(play: Play): number | null {
   if (play.isMuted) return 0;
   const value = play.volumeLevel;
   if (!Number.isFinite(value) || value < 0) return null;
-  if (value <= 1) return value <= 0.01 ? 0 : Math.max(1, Math.round(value * 100));
+  if (value <= 1) return value <= 0 ? 0 : Math.max(1, Math.round(value * 100));
   return Math.min(100, Math.max(1, Math.round(value)));
+}
+
+function localVolumeFromWire(volume: number | null): number {
+  return volume == null ? -1 : volume / 100;
 }
 
 async function eventId(deviceId: string, play: Play): Promise<string> {
@@ -1070,16 +1102,16 @@ function isValidEvent(value: unknown): value is WireEvent {
     typeof event.source_app === 'string' && isBoundedText(event.source_app) &&
     typeof event.source === 'string' && isBoundedText(event.source) &&
     typeof event.skipped === 'boolean' &&
-    isNonNegativeWireInteger(event.replay_count) &&
+    isIntegerInRange(event.replay_count, 0, MAX_WIRE_COUNTER) &&
     isIntegerInRange(event.completion_percentage, 0, 100) &&
-    isNonNegativeWireInteger(event.pause_count) &&
-    isNonNegativeWireInteger(event.seek_count) &&
+    isIntegerInRange(event.pause_count, 0, MAX_WIRE_COUNTER) &&
+    isIntegerInRange(event.seek_count, 0, MAX_WIRE_COUNTER) &&
     isOptionalBoundedText(event.session_id) &&
     isOptionalBoundedText(event.site) &&
     typeof event.content_type === 'string' && isBoundedText(event.content_type) &&
     (event.volume_level === null || isIntegerInRange(event.volume_level, 0, 100)) &&
     isNonNegativeWireInteger(event.total_pause_duration_ms) &&
-    isNonNegativeWireInteger(event.position_updates_count);
+    isIntegerInRange(event.position_updates_count, 0, MAX_WIRE_COUNTER);
 }
 
 async function getDeviceId(): Promise<string> {
@@ -1181,4 +1213,8 @@ export const driveProtocolTest = {
   isDriveRequestRetrySafe,
   serializeDriveOperation,
   verifiedAccountChanged,
+  verifiedUpload,
+  localVolumeFromWire,
+  playToWire,
+  fetchWithDeadline,
 };
