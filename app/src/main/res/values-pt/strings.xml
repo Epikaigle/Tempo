@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Browser extension history import -->
+    <string name="settings_import_extension">Importar reproduções do navegador</string>
+    <string name="settings_import_extension_desc">Adicione ao seu histórico as reproduções exportadas da extensão Tempo Stats</string>
+    <string name="extension_import_title">Importar reproduções da extensão</string>
+    <string name="extension_import_headline">Traga as suas reproduções do navegador para o Tempo</string>
+    <string name="extension_import_how_to">1. Abra a extensão Tempo Stats no navegador\n2. No separador Definições, toque em Exportar reproduções\n3. Selecione abaixo o ficheiro tempo-plays transferido</string>
+    <string name="extension_import_choose_file">Escolher ficheiro exportado</string>
+    <string name="extension_import_selected_files">%1$d ficheiro(s) selecionado(s)</string>
+    <string name="extension_import_button">Importar reproduções</string>
+    <string name="extension_import_running">A importar…</string>
+    <string name="extension_import_parsing">A ler %1$s…</string>
+    <string name="extension_import_file_counter">Ficheiro %1$d de %2$d</string>
+    <string name="extension_import_progress">%1$d reproduções processadas</string>
+    <string name="extension_import_progress_added">%1$d adicionadas até agora</string>
+    <string name="extension_import_result_title">Importação concluída</string>
+    <string name="extension_import_stat_imported">Reproduções adicionadas</string>
+    <string name="extension_import_stat_duplicates">Já no seu histórico</string>
+    <string name="extension_import_stat_tracks">Novas faixas</string>
+    <string name="extension_import_stat_too_short">Demasiado curtas para contar</string>
+    <string name="extension_import_stat_unreadable">Linhas ilegíveis</string>
+    <string name="extension_import_stat_files">Ficheiros lidos</string>
+    <string name="extension_import_truncated">Este ficheiro contém mais reproduções do que uma única importação consegue ler. Importe-o novamente para continuar de onde parou.</string>
+    <string name="extension_import_done">Concluído</string>
+    <string name="extension_import_failed_title">A importação falhou</string>
+    <string name="extension_import_retry">Tentar novamente</string>
+
     <string name="app_name">Tempo</string>
     
     <!-- Service notification -->
@@ -379,7 +405,7 @@
     <string name="backup_export">Exportar para dispositivo</string>
     <string name="backup_import">Importar do dispositivo</string>
     <string name="backup_tips">💡 Dicas de backup</string>
-    <string name="backup_drive_auto">• Os backups do Google Drive são automáticos e criptografados\n</string>
+    <string name="backup_drive_auto">• Os backups do Google Drive são automáticos e armazenados na sua conta do Drive\n</string>
     <string name="backup_use_different">Use uma conta diferente</string>
     <string name="backup_last_backup">Último backup: %1$s</string>
 

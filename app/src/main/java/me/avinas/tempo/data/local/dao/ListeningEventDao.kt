@@ -300,18 +300,21 @@ interface ListeningEventDao {
      * legitimate back-to-back plays); different sources use a generous window that
      * absorbs cross-source timestamp drift.
      */
-    private fun isSamePlay(
-        slot: Slot,
-        incoming: ListeningEvent,
-    ): Boolean {
-        val sameSource = slot.source == incoming.source
-        val window: Long =
-            if (sameSource) {
-                DUPLICATE_TOLERANCE_MS
-            } else {
-                val half = maxOf(slot.playDuration, incoming.playDuration) / 2L
-                if (half < RECONCILIATION_WINDOW_MS) RECONCILIATION_WINDOW_MS else half
-            }
+    private fun isSamePlay(slot: Slot, incoming: ListeningEvent): Boolean {
+        val slotDriveDevice = SourceAuthority.driveDeviceId(slot.source)
+        val incomingDriveDevice = SourceAuthority.driveDeviceId(incoming.source)
+        // Layer 1 already removed an exact Drive event id. Distinct ids from the
+        // same originating device are real rapid replays, not temporal dupes.
+        if (slotDriveDevice != null && slotDriveDevice == incomingDriveDevice) return false
+
+        val sameSource = slot.source == incoming.source &&
+            slotDriveDevice == null && incomingDriveDevice == null
+        val window: Long = if (sameSource) {
+            DUPLICATE_TOLERANCE_MS
+        } else {
+            val half = maxOf(slot.playDuration, incoming.playDuration) / 2L
+            if (half < RECONCILIATION_WINDOW_MS) RECONCILIATION_WINDOW_MS else half
+        }
         return kotlin.math.abs(slot.timestamp - incoming.timestamp) <= window
     }
 
