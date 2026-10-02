@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Browser extension history import -->
+    <string name="settings_import_extension">Browser-Wiedergaben importieren</string>
+    <string name="settings_import_extension_desc">Füge exportierte Wiedergaben aus der Tempo Stats-Erweiterung zu deinem Verlauf hinzu</string>
+    <string name="extension_import_title">Wiedergaben aus Erweiterung importieren</string>
+    <string name="extension_import_headline">Übertrage deine Browser-Wiedergaben zu Tempo</string>
+    <string name="extension_import_how_to">1. Öffne die Tempo Stats-Browser-Erweiterung\n2. Öffne den Tab Einstellungen und tippe auf Wiedergaben exportieren\n3. Wähle unten die heruntergeladene tempo-plays-Datei aus</string>
+    <string name="extension_import_choose_file">Exportdatei auswählen</string>
+    <string name="extension_import_selected_files">%1$d Datei(en) ausgewählt</string>
+    <string name="extension_import_button">Wiedergaben importieren</string>
+    <string name="extension_import_running">Importieren…</string>
+    <string name="extension_import_parsing">%1$s wird gelesen…</string>
+    <string name="extension_import_file_counter">Datei %1$d von %2$d</string>
+    <string name="extension_import_progress">%1$d Wiedergaben verarbeitet</string>
+    <string name="extension_import_progress_added">Bisher %1$d hinzugefügt</string>
+    <string name="extension_import_result_title">Import abgeschlossen</string>
+    <string name="extension_import_stat_imported">Hinzugefügte Wiedergaben</string>
+    <string name="extension_import_stat_duplicates">Bereits in deinem Verlauf</string>
+    <string name="extension_import_stat_tracks">Neue Titel</string>
+    <string name="extension_import_stat_too_short">Zu kurz zum Zählen</string>
+    <string name="extension_import_stat_unreadable">Unlesbare Zeilen</string>
+    <string name="extension_import_stat_files">Gelesene Dateien</string>
+    <string name="extension_import_truncated">Diese Datei enthält mehr Wiedergaben, als ein einzelner Import liest. Importiere sie erneut, um an der letzten Stelle fortzufahren.</string>
+    <string name="extension_import_done">Fertig</string>
+    <string name="extension_import_failed_title">Import fehlgeschlagen</string>
+    <string name="extension_import_retry">Erneut versuchen</string>
+
     <string name="app_name">Tempo</string>
     
     <!-- Service notification -->
@@ -1016,29 +1042,4 @@
     <string name="history_video_non_music_track_description">Vorhandene Wiedergaben entfernen und zukünftige Treffer blockieren</string>
     <string name="history_video_non_music_artist">%1$s als Video / keine Musik behandeln</string>
     <string name="history_video_non_music_artist_description">Den gesamten passenden Verlauf entfernen und zukünftige Wiedergaben blockieren</string>
-    <!-- Browser extension history import -->
-    <string name="settings_import_extension">Browser-Wiedergaben importieren</string>
-    <string name="settings_import_extension_desc">Füge exportierte Wiedergaben aus der Tempo Stats-Erweiterung zu deinem Verlauf hinzu</string>
-    <string name="extension_import_title">Wiedergaben aus Erweiterung importieren</string>
-    <string name="extension_import_headline">Übertrage deine Browser-Wiedergaben zu Tempo</string>
-    <string name="extension_import_how_to">1. Öffne die Tempo Stats-Browser-Erweiterung\n2. Öffne den Tab Einstellungen und tippe auf Wiedergaben exportieren\n3. Wähle unten die heruntergeladene tempo-plays-Datei aus</string>
-    <string name="extension_import_choose_file">Exportdatei auswählen</string>
-    <string name="extension_import_selected_files">%1$d Datei(en) ausgewählt</string>
-    <string name="extension_import_button">Wiedergaben importieren</string>
-    <string name="extension_import_running">Importieren…</string>
-    <string name="extension_import_parsing">%1$s wird gelesen…</string>
-    <string name="extension_import_file_counter">Datei %1$d von %2$d</string>
-    <string name="extension_import_progress">%1$d Wiedergaben verarbeitet</string>
-    <string name="extension_import_progress_added">Bisher %1$d hinzugefügt</string>
-    <string name="extension_import_result_title">Import abgeschlossen</string>
-    <string name="extension_import_stat_imported">Hinzugefügte Wiedergaben</string>
-    <string name="extension_import_stat_duplicates">Bereits in deinem Verlauf</string>
-    <string name="extension_import_stat_tracks">Neue Titel</string>
-    <string name="extension_import_stat_too_short">Zu kurz zum Zählen</string>
-    <string name="extension_import_stat_unreadable">Unlesbare Zeilen</string>
-    <string name="extension_import_stat_files">Gelesene Dateien</string>
-    <string name="extension_import_truncated">Diese Datei enthält mehr Wiedergaben, als ein einzelner Import liest. Importiere sie erneut, um an der letzten Stelle fortzufahren.</string>
-    <string name="extension_import_done">Fertig</string>
-    <string name="extension_import_failed_title">Import fehlgeschlagen</string>
-    <string name="extension_import_retry">Erneut versuchen</string>
 </resources>
