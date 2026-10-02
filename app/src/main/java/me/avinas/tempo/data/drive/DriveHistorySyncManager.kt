@@ -293,8 +293,8 @@ class DriveHistorySyncManager @Inject constructor(
 
     private suspend fun localEventToProtocol(event: ListeningEvent): DriveHistoryEvent? {
         val track = database.trackDao().getTrackById(event.track_id) ?: return null
-        val title = track.title.trim().take(1_000).takeIf { it.isNotBlank() } ?: return null
-        val artist = track.artist.trim().take(1_000).takeIf { it.isNotBlank() } ?: return null
+        val title = DriveHistoryProtocol.truncateText(track.title.trim()).takeIf { it.isNotBlank() } ?: return null
+        val artist = DriveHistoryProtocol.truncateText(track.artist.trim()).takeIf { it.isNotBlank() } ?: return null
         if (event.timestamp !in 1..DriveHistoryProtocol.MAX_WIRE_INTEGER) return null
         val durationMs = (event.estimatedDurationMs ?: track.duration ?: event.playDuration)
             .coerceAtLeast(event.playDuration)
@@ -304,8 +304,8 @@ class DriveHistorySyncManager @Inject constructor(
             .removePrefix("desktop:")
             .removePrefix("browser:")
             .ifBlank { "android" }
-            .take(1_000)
-        val source = event.source.ifBlank { "android" }.take(1_000)
+            .let { DriveHistoryProtocol.truncateText(it) }
+        val source = DriveHistoryProtocol.truncateText(event.source.ifBlank { "android" })
 
         return DriveHistoryEvent(
             eventId = DriveHistoryProtocol.createEventId(
@@ -317,7 +317,7 @@ class DriveHistorySyncManager @Inject constructor(
             ),
             title = title,
             artist = artist,
-            album = track.album?.trim()?.take(1_000)?.takeIf { it.isNotBlank() },
+            album = track.album?.trim()?.let { DriveHistoryProtocol.truncateText(it) }?.takeIf { it.isNotBlank() },
             timestampUtc = event.timestamp,
             durationMs = durationMs,
             listenedMs = event.playDuration.coerceIn(0L, DriveHistoryProtocol.MAX_WIRE_INTEGER),
@@ -328,9 +328,9 @@ class DriveHistorySyncManager @Inject constructor(
             completionPercentage = event.completionPercentage.coerceIn(0, 100),
             pauseCount = event.pauseCount.coerceAtLeast(0),
             seekCount = event.seekCount.coerceAtLeast(0),
-            sessionId = event.sessionId?.take(1_000),
+            sessionId = event.sessionId?.let { DriveHistoryProtocol.truncateText(it) },
             site = null,
-            contentType = track.contentType.ifBlank { "MUSIC" }.take(1_000),
+            contentType = DriveHistoryProtocol.truncateText(track.contentType.ifBlank { "MUSIC" }),
             volumeLevel = protocolVolumeLevel(event.volumeLevel),
             totalPauseDurationMs = event.totalPauseDurationMs
                 .coerceIn(0L, DriveHistoryProtocol.MAX_WIRE_INTEGER),

@@ -189,6 +189,21 @@ for (const volume of [0, 1, 50, 100]) {
 }
 check('unknown wire volume stays unknown locally', protocol.localVolumeFromWire(null) === -1);
 
+console.log('\n[Drive 5] Unicode boundaries');
+const boundaryText = 'x'.repeat(999) + '🔊';
+const boundaryPlay = await protocol.playToWire({ ...play, title: boundaryText, artist: boundaryText,
+  album: boundaryText, sessionId: boundaryText, site: boundaryText, contentType: boundaryText }, 'device-1');
+check('truncating long fields never splits an emoji',
+  [boundaryPlay.title, boundaryPlay.artist, boundaryPlay.album, boundaryPlay.session_id,
+    boundaryPlay.site, boundaryPlay.content_type].every(value => value === 'x'.repeat(999)));
+const exactEmoji = 'x'.repeat(998) + '🔊';
+const exactPlay = await protocol.playToWire({ ...play, title: exactEmoji }, 'device-1');
+check('an emoji fitting the field boundary is preserved', exactPlay.title === exactEmoji);
+for (const invalid of ['bad\ud800', 'bad\udc00']) {
+  check('unpaired Unicode surrogates are rejected in required text', !protocol.isValidEvent({ ...event, title: invalid }));
+  check('unpaired Unicode surrogates are rejected in nullable text', !protocol.isValidEvent({ ...event, album: invalid }));
+}
+
 console.log('\n[Drive 5] Response body deadlines');
 const realFetch = globalThis.fetch;
 try {

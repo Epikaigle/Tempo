@@ -15,6 +15,64 @@ import java.util.zip.GZIPOutputStream
 class DriveHistoryProtocolTest {
 
     @Test
+    fun `text truncation preserves complete emoji at the UTF16 boundary`() {
+        val prefix = "x".repeat(999)
+        assertEquals(prefix, DriveHistoryProtocol.truncateText(prefix + "🔊"))
+        val fitting = "x".repeat(998) + "🔊"
+        assertEquals(fitting, DriveHistoryProtocol.truncateText(fitting))
+        assertEquals("", DriveHistoryProtocol.truncateText("🔊", 1))
+        assertEquals("", DriveHistoryProtocol.truncateText("text", 0))
+        val events = listOf(event("boundary", 1_700_000_000_000L).copy(
+            title = DriveHistoryProtocol.truncateText(prefix + "🔊")
+        ))
+        val batch = DriveHistoryBatch(
+            batchId = DriveHistoryProtocol.createBatchId(events), sourceDeviceId = "remote-device",
+            sourceDeviceName = "Tempo device", sourcePlatform = "test",
+            createdAtUtc = 1_700_000_000_000L, events = events
+        )
+        assertEquals(prefix, DriveHistoryProtocol.decodeCompressed(
+            DriveHistoryProtocol.encodeCompressed(batch)).events.single().title)
+    }
+
+    @Test
+    fun `encoder rejects unpaired Unicode surrogates rather than replacing characters`() {
+        val good = event("unicode", 1_700_000_000_000L)
+        val batch = DriveHistoryBatch(
+            batchId = DriveHistoryProtocol.createBatchId(listOf(good)), sourceDeviceId = "remote-device",
+            sourceDeviceName = "Tempo device", sourcePlatform = "test",
+            createdAtUtc = 1_700_000_000_000L, events = listOf(good)
+        )
+        for (invalid in listOf("bad\uD800", "bad\uDC00")) {
+            for (malformed in listOf(good.copy(title = invalid), good.copy(album = invalid))) {
+                assertTrue(runCatching {
+                    DriveHistoryProtocol.encodeCompressed(batch.copy(events = listOf(malformed)))
+                }.exceptionOrNull() is IllegalArgumentException)
+            }
+        }
+    }
+
+    @Test
+    fun `decoder rejects escaped unpaired Unicode surrogates in otherwise valid UTF8`() {
+        val events = listOf(event("escaped", 1_700_000_000_000L).copy(title = "placeholder"))
+        val batch = DriveHistoryBatch(
+            batchId = DriveHistoryProtocol.createBatchId(events), sourceDeviceId = "remote-device",
+            sourceDeviceName = "Tempo device", sourcePlatform = "test",
+            createdAtUtc = 1_700_000_000_000L, events = events
+        )
+        val text = GZIPInputStream(ByteArrayInputStream(DriveHistoryProtocol.encodeCompressed(batch)))
+            .bufferedReader(Charsets.UTF_8).use { it.readText() }
+        for (escape in listOf("\\ud800", "\\udc00")) {
+            val malformed = text.replace("placeholder", "bad$escape")
+            val compressed = ByteArrayOutputStream().use { output ->
+                GZIPOutputStream(output).use { it.write(malformed.toByteArray(Charsets.UTF_8)) }
+                output.toByteArray()
+            }
+            assertTrue(runCatching { DriveHistoryProtocol.decodeCompressed(compressed) }
+                .exceptionOrNull() is IllegalArgumentException)
+        }
+    }
+
+    @Test
     fun `every deletion marker timestamp must be valid even when another marker is newer`() {
         assertEquals(0L, DriveAppDataClient.markerVersion(emptyList()))
         assertEquals(200L, DriveAppDataClient.markerVersion(listOf(100L, 200L)))

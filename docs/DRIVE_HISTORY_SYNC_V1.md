@@ -44,6 +44,7 @@ The generation is Drive transport metadata; it does not change the v1 JSON paylo
 
 A batch is UTF-8 JSON compressed with gzip.
 Readers must reject malformed UTF-8 instead of replacing invalid byte sequences with substitute characters. Valid accents and emoji are preserved across clients.
+Text fields also reject unpaired UTF-16 surrogates, including those written as JSON escapes. The 1,000-unit UTF-16 field limit must never split a supplementary character when preparing local history for upload.
 
 ```json
 {
@@ -134,6 +135,7 @@ The batch ID intentionally does not include the generation. The generation is in
 ## Import and deduplication
 
 Readers must treat `event_id` as the primary idempotency key. A successfully imported remote event records its origin event/device identity locally and must not be re-uploaded as a newly-owned event.
+An import is successful only after the local database transaction commits; a successful write request alone must not advance the download cursor. A malformed batch, including a JSON `null` root, is skipped so later valid batches can still be imported.
 
 A temporal title/artist reconciliation may be used as a secondary duplicate guard when independent capture sources recorded the same playback and therefore legitimately have different origin IDs. Distinct event IDs from the same originating device must not be collapsed merely because they occur close together; they can represent legitimate rapid replays.
 

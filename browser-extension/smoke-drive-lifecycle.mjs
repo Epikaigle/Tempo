@@ -5,6 +5,8 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 
 const out = join(mkdtempSync(join(tmpdir(), 'tempo-drive-lifecycle-')), 'drive.mjs');
 await esbuild.build({
@@ -19,7 +21,8 @@ await esbuild.build({
       export const getDrivePendingPlays = async () => [];
       export const getAllPlays = async () => [];
       export const markDriveUploaded = async () => {};
-      export const insertPlay = async () => {};
+      export const insertPlay = async value => { globalThis.fixture.imported.push(value); };
+      export const hasRecentPlay = async () => false;
     ` : `
       export const getDriveAuthSession = async () => globalThis.fixture.session;
       export const isDriveOAuthConfigured = () => true;
@@ -36,7 +39,7 @@ function reset() {
   globalThis.fixture = {
     settings: { driveSyncEnabled: true, syncIntervalMinutes: 30 },
     session: { accessToken: 'token-a', accountEmail: 'a@example.com' }, cleared: 0, marker: 100,
-    writes: 0, listCalls: 0, paginated: false,
+    writes: 0, listCalls: 0, paginated: false, imported: [],
     stored: { [stateKey]: { acceptedDisableVersion: 100, downloadCreatedCursor: 90,
       lastUploaded: 5, lastImported: 6, lastAuthorizedAccountEmail: 'a@example.com', accountEmail: 'a@example.com' } },
   };
@@ -109,4 +112,44 @@ for (const marker of [0, -1]) {
   assert.equal(fixture.cleared, 0);
 }
 console.log('  ✓ invalid server marker timestamps cannot authorize uploads or alter accepted state');
-console.log('\n5 Drive lifecycle scenarios passed');
+
+reset();
+fixture.stored.tempoDriveDeviceId = 'local-device';
+const event = {
+  event_id: 'a'.repeat(64), title: 'Valid song', artist: 'Artist', album: null,
+  timestamp_utc: 1_700_000_000_000, duration_ms: 180_000, listened_ms: 170_000,
+  source_app: 'test', source: 'browser:test', skipped: false, replay_count: 0,
+  completion_percentage: 94, pause_count: 0, seek_count: 0, session_id: null,
+  site: null, content_type: 'MUSIC', volume_level: 50, total_pause_duration_ms: 0,
+  position_updates_count: 10,
+};
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+const batchId = sha256(`tempo-batch-v1|${event.event_id}`);
+const payloads = [null, {
+  schema_version: 1, batch_id: batchId, source_device_id: 'remote-device',
+  source_device_name: 'Remote browser', source_platform: 'chrome_extension',
+  created_at_utc: 1_700_000_000_000, events: [event],
+}].map(value => gzipSync(JSON.stringify(value)));
+const files = payloads.map((bytes, index) => ({
+  id: `batch-${index}`, name: `tempo_history_v1_g100_remote-device_${batchId}.json.gz`,
+  size: String(bytes.length), createdTime: new Date(1_700_000_000_000 + index).toISOString(),
+  appProperties: { tempo_kind: 'history_batch', tempo_schema: '1', source_device_id: 'remote-device',
+    source_platform: 'chrome_extension', tempo_generation: '100', tempo_sha256: sha256(bytes) },
+}));
+globalThis.fetch = async rawUrl => {
+  const url = new URL(rawUrl);
+  if (url.searchParams.get('alt') === 'media') {
+    return new Response(payloads[Number(url.pathname.split('-').at(-1))]);
+  }
+  if (url.searchParams.get('q')?.startsWith('name =')) {
+    return Response.json({ files: [{ id: 'marker', modifiedTime: new Date(100).toISOString() }] });
+  }
+  return Response.json({ files });
+};
+const result = await drive.syncDriveHistory();
+assert.equal(result.imported, 1);
+assert.equal(fixture.imported[0].title, 'Valid song');
+assert.equal(fixture.stored[stateKey].downloadCreatedCursor, 1_700_000_000_001);
+assert.equal(fixture.stored[stateKey].lastError, null);
+console.log('  ✓ a JSON null batch is consumed and does not block a later valid import');
+console.log('\n6 Drive lifecycle scenarios passed');

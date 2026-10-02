@@ -476,7 +476,7 @@ async function downloadRemotePlays(
       throw err;
     }
 
-    let batch: WireBatch;
+    let batch: unknown;
     try {
       batch = await ungzipJson(bytes);
     } catch (err) {
@@ -486,11 +486,13 @@ async function downloadRemotePlays(
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
-    const validBatch = isValidBatch(batch) &&
-      await deterministicBatchId(batch.events) === batch.batch_id;
+    if (!isValidBatch(batch) || await deterministicBatchId(batch.events) !== batch.batch_id) {
+      console.warn(`[Tempo] Skipping invalid Drive history batch ${file.name}`);
+      maxCreated = Math.max(maxCreated, created);
+      continue;
+    }
     const expectedName = `${FILE_PREFIX}g${generation}_${sourceDeviceId}_${batch.batch_id}.json.gz`;
-    if (!validBatch ||
-      batch.source_device_id !== sourceDeviceId ||
+    if (batch.source_device_id !== sourceDeviceId ||
       batch.source_platform !== sourcePlatform ||
       file.name !== expectedName ||
       batch.source_device_id === deviceId
@@ -989,17 +991,17 @@ function isDriveRequestRetrySafe(method: string | undefined): boolean {
 
 async function playToWire(play: Play, deviceId: string): Promise<WireEvent> {
   const id = play.originEventId ?? await eventId(deviceId, play);
-  const title = play.title.trim().slice(0, 1000);
-  const artist = play.artist.trim().slice(0, 1000);
+  const title = truncateWireText(play.title.trim());
+  const artist = truncateWireText(play.artist.trim());
   if (!title || !artist || !isPositiveWireInteger(play.timestampUtc)) {
     throw new Error('A local browser play has an invalid title, artist, or timestamp');
   }
-  const sourceApp = (play.sourceApp || 'browser').trim().slice(0, 900) || 'browser';
+  const sourceApp = truncateWireText((play.sourceApp || 'browser').trim(), 900) || 'browser';
   const event: WireEvent = {
     event_id: id,
     title,
     artist,
-    album: play.album ? play.album.slice(0, 1000) : null,
+    album: play.album ? truncateWireText(play.album) : null,
     timestamp_utc: play.timestampUtc,
     duration_ms: safeWireInteger(play.durationMs),
     listened_ms: safeWireInteger(play.listenedMs),
@@ -1010,9 +1012,9 @@ async function playToWire(play: Play, deviceId: string): Promise<WireEvent> {
     completion_percentage: Math.round(clamp(Number.isFinite(play.completionPercentage) ? play.completionPercentage : 0, 0, 100)),
     pause_count: Math.min(MAX_WIRE_COUNTER, safeWireInteger(play.pauseCount)),
     seek_count: Math.min(MAX_WIRE_COUNTER, safeWireInteger(play.seekCount)),
-    session_id: play.sessionId ? play.sessionId.slice(0, 1000) : null,
-    site: play.site ? play.site.slice(0, 1000) : null,
-    content_type: (play.contentType || 'MUSIC').trim().slice(0, 1000) || 'MUSIC',
+    session_id: play.sessionId ? truncateWireText(play.sessionId) : null,
+    site: play.site ? truncateWireText(play.site) : null,
+    content_type: truncateWireText((play.contentType || 'MUSIC').trim()) || 'MUSIC',
     volume_level: protocolVolumeLevel(play),
     total_pause_duration_ms: safeWireInteger(play.totalPauseDurationMs),
     position_updates_count: Math.min(MAX_WIRE_COUNTER, safeWireInteger(play.positionUpdatesCount)),
@@ -1072,11 +1074,11 @@ async function gzipJson(value: unknown): Promise<Uint8Array> {
   return compressed;
 }
 
-async function ungzipJson(bytes: Uint8Array): Promise<WireBatch> {
+async function ungzipJson(bytes: Uint8Array): Promise<unknown> {
   const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'));
   const decoded = await readStreamBytesWithLimit(stream, MAX_BATCH_BYTES, 'decompressed');
   const text = new TextDecoder('utf-8', { fatal: true }).decode(decoded);
-  return JSON.parse(text) as WireBatch;
+  return JSON.parse(text) as unknown;
 }
 
 function isValidBatch(value: unknown): value is WireBatch {
@@ -1136,11 +1138,32 @@ async function loadOrCreateDeviceId(): Promise<string> {
 }
 
 function isBoundedText(value: string): boolean {
-  return value.trim().length > 0 && value.length <= 1000;
+  return value.trim().length > 0 && value.length <= 1000 && isWellFormedText(value);
 }
 
 function isOptionalBoundedText(value: unknown): boolean {
-  return value === null || (typeof value === 'string' && value.length <= 1000);
+  return value === null || (typeof value === 'string' && value.length <= 1000 && isWellFormedText(value));
+}
+
+function isWellFormedText(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(++index);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) return false;
+  }
+  return true;
+}
+
+/** The wire limit counts UTF-16 units; a cut must leave a complete code point. */
+function truncateWireText(value: string, limit = 1000): string {
+  let end = Math.min(value.length, limit);
+  if (end > 0 && end < value.length &&
+    value.charCodeAt(end - 1) >= 0xd800 && value.charCodeAt(end - 1) <= 0xdbff &&
+    value.charCodeAt(end) >= 0xdc00 && value.charCodeAt(end) <= 0xdfff
+  ) end--;
+  return value.slice(0, end);
 }
 
 function isPositiveWireInteger(value: unknown): value is number {

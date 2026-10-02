@@ -65,6 +65,27 @@ object DriveHistoryProtocol {
         return value.toLongOrNull()?.takeIf { it in 0..MAX_WIRE_INTEGER }
     }
 
+    /** The wire limit counts UTF-16 units; never split a supplementary code point. */
+    internal fun truncateText(value: String, maxLength: Int = MAX_PRIMARY_TEXT_LENGTH): String {
+        require(maxLength >= 0)
+        var end = minOf(value.length, maxLength)
+        if (end > 0 && end < value.length &&
+            Character.isHighSurrogate(value[end - 1]) && Character.isLowSurrogate(value[end])
+        ) end--
+        return value.substring(0, end)
+    }
+
+    private fun isWellFormedText(value: String): Boolean {
+        var index = 0
+        while (index < value.length) {
+            val unit = value[index++]
+            if (Character.isHighSurrogate(unit)) {
+                if (index >= value.length || !Character.isLowSurrogate(value[index++])) return false
+            } else if (Character.isLowSurrogate(unit)) return false
+        }
+        return true
+    }
+
     /**
      * Deterministic batch id derived only from the ordered event ids.
      *
@@ -105,6 +126,7 @@ object DriveHistoryProtocol {
         require(localEventId >= 0L) { "Tempo local event id cannot be negative" }
         require(timestampUtc in 1..MAX_WIRE_INTEGER) { "Invalid Tempo event timestamp" }
         require(title.isNotBlank() && artist.isNotBlank()) { "Tempo event identity is incomplete" }
+        require(isWellFormedText(title) && isWellFormedText(artist)) { "Malformed Tempo event identity text" }
         val canonical = buildString {
             append("tempo-history-v1|")
             append(deviceId)
@@ -264,11 +286,16 @@ object DriveHistoryProtocol {
         require(batch.sourceDeviceName.isNotBlank() && batch.sourceDeviceName.length <= MAX_PRIMARY_TEXT_LENGTH) {
             "Malformed Tempo Drive device name"
         }
+        require(isWellFormedText(batch.sourceDeviceName)) { "Malformed Tempo Drive device name text" }
         require(PLATFORM_PATTERN.matches(batch.sourcePlatform)) { "Malformed Tempo Drive source platform" }
         require(batch.createdAtUtc in 1..MAX_WIRE_INTEGER) { "Malformed Tempo Drive batch timestamp" }
         require(batch.events.isNotEmpty()) { "Tempo Drive history batch is empty" }
         require(batch.events.size <= MAX_EVENTS_PER_BATCH) { "Tempo Drive history batch contains too many events" }
         batch.events.forEach { event ->
+            require(listOfNotNull(event.title, event.artist, event.album, event.sourceApp, event.source,
+                event.sessionId, event.site, event.contentType).all(::isWellFormedText)) {
+                "Malformed Tempo event Unicode text"
+            }
             require(SHA256_PATTERN.matches(event.eventId)) { "Malformed Tempo Drive event id" }
             require(event.title.isNotBlank() && event.title.length <= MAX_PRIMARY_TEXT_LENGTH) { "Malformed Tempo event title" }
             require(event.artist.isNotBlank() && event.artist.length <= MAX_PRIMARY_TEXT_LENGTH) { "Malformed Tempo event artist" }

@@ -143,13 +143,17 @@ export async function insertPlay(play: Omit<Play, 'id'>): Promise<number> {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
     const store = tx.objectStore(PLAYS_STORE);
     const request = store.add(play);
-    request.onsuccess = () => {
+    // An add request can succeed before its transaction is committed. Drive
+    // must not advance its cursor until this row is durably stored.
+    tx.oncomplete = () => {
       invalidateQueueCountCache();
       invalidateStatsCache();
       _playCountEstimate++;
       resolve(request.result as number);
     };
     request.onerror = () => reject(request.error);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Play insertion transaction aborted'));
   });
 }
 
