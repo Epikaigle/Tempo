@@ -65,6 +65,7 @@ Desktop reads its OAuth client ID at compile time from:
 The GitHub Desktop release workflow reads that value from the repository variable with the same name. Release builds fail early if the variable is missing, preventing an installer from being published with a non-functional Google Drive sign-in flow.
 
 Enable the Google Drive API and register a Desktop public client with a loopback callback. Android, Chrome, Firefox and Desktop must use clients from the same Google Cloud project to access the same hidden application-data namespace.
+The Desktop loopback listener reads complete bounded HTTP headers, checks the callback route and OAuth state, and ignores unrelated requests within one fixed sign-in deadline. The browser acknowledgment confirms receipt of authorization; the Desktop UI reports connection only after token exchange and account verification finish.
 
 The OAuth client ID is a public application identifier. Do not add an OAuth client secret to the Desktop app or repository: Tempo Desktop is a public/native client and uses Authorization Code + PKCE through the user's system browser.
 
@@ -96,6 +97,7 @@ Before changing schema version 1, verify all three producers/consumers agree on:
 - batch size: 50 events
 - timestamps/durations in milliseconds
 - volume represented on the 0–100 protocol scale (`null` when unknown)
+- Desktop fractional volume converted to percent, preserving 1% as audible and capping amplification above 100%
 - stable SHA-256 event IDs
 - deterministic SHA-256 batch IDs
 - marker-before-delete semantics

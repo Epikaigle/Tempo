@@ -469,6 +469,72 @@ fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
+fn parse_oauth_callback(line: &str, expected_state: &str) -> Option<Result<String, String>> {
+    let mut parts = line.split_whitespace();
+    if parts.next()? != "GET" { return None; }
+    let target = parts.next()?;
+    if !matches!(parts.next()?, "HTTP/1.0" | "HTTP/1.1") || parts.next().is_some()
+        || !target.starts_with('/') || target.starts_with("//") {
+        return None;
+    }
+    let callback = Url::parse(&format!("http://127.0.0.1{target}")).ok()?;
+    if callback.path() != "/oauth2/callback" || callback.fragment().is_some() { return None; }
+    let mut values = HashMap::new();
+    for (key, value) in callback.query_pairs() {
+        if matches!(key.as_ref(), "state" | "code" | "error")
+            && values.insert(key.into_owned(), value.into_owned()).is_some() {
+            return None;
+        }
+    }
+    if values.get("state").map(String::as_str) != Some(expected_state) { return None; }
+    if let Some(error) = values.get("error") {
+        return Some(Err(format!("Google sign-in failed: {error}")));
+    }
+    Some(values.remove("code").filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "Google sign-in did not return an authorization code".to_string()))
+}
+
+async fn read_oauth_request(stream: &mut tokio::net::TcpStream) -> Result<String, String> {
+    let mut request = Vec::new();
+    let mut buffer = [0u8; 1024];
+    loop {
+        let count = stream.read(&mut buffer).await.map_err(|e| e.to_string())?;
+        if count == 0 { return Err("Incomplete OAuth callback".into()); }
+        request.extend_from_slice(&buffer[..count]);
+        if request.len() > 16 * 1024 { return Err("OAuth callback is too large".into()); }
+        if request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+            return String::from_utf8(request).map_err(|_| "Invalid OAuth callback encoding".into());
+        }
+    }
+}
+
+async fn wait_for_oauth_callback(
+    listener: &tokio::net::TcpListener, expected_state: &str, deadline: Duration,
+) -> Result<String, String> {
+    tokio::time::timeout(deadline, async {
+        loop {
+            let (mut stream, _) = listener.accept().await
+                .map_err(|e| format!("OAuth callback failed: {e}"))?;
+            let callback = match tokio::time::timeout(Duration::from_secs(10), read_oauth_request(&mut stream)).await {
+                Ok(Ok(request)) => parse_oauth_callback(request.lines().next().unwrap_or_default(), expected_state),
+                _ => None,
+            };
+            let (status, body) = match &callback {
+                Some(Ok(_)) => ("200 OK", "Google authorization received. Return to Tempo Desktop to finish connecting."),
+                Some(Err(_)) => ("200 OK", "Google sign-in was not completed. Return to Tempo Desktop and try again."),
+                None => ("400 Bad Request", "This is not a valid Tempo sign-in callback. Continue in the Google sign-in tab."),
+            };
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+            if let Some(result) = callback { return result; }
+            // An unrelated request, probe or wrong nonce must not consume the
+            // valid browser callback. The shared deadline never restarts.
+        }
+    }).await.map_err(|_| "Google sign-in timed out".to_string())?
+}
+
 async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), String> {
     let client_id = oauth_client_id()
         .ok_or_else(|| "Google Drive OAuth is not configured in this Desktop build".to_string())?;
@@ -501,60 +567,7 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
         .open(auth_url.to_string(), None)
         .map_err(|e| format!("Could not open Google sign-in in your browser: {e}"))?;
 
-    let (mut stream, _) = tokio::time::timeout(Duration::from_secs(180), listener.accept())
-        .await
-        .map_err(|_| "Google sign-in timed out".to_string())?
-        .map_err(|e| format!("OAuth callback failed: {e}"))?;
-
-    let mut buffer = vec![0u8; 16 * 1024];
-    let count = tokio::time::timeout(Duration::from_secs(10), stream.read(&mut buffer))
-        .await
-        .map_err(|_| "OAuth callback timed out".to_string())?
-        .map_err(|e| e.to_string())?;
-    let request = String::from_utf8_lossy(&buffer[..count]);
-    let first_line = request.lines().next().unwrap_or_default();
-    let target = first_line
-        .split_whitespace()
-        .nth(1)
-        .ok_or_else(|| "Invalid OAuth callback".to_string())?;
-    let callback =
-        Url::parse(&format!("http://127.0.0.1:{port}{target}")).map_err(|e| e.to_string())?;
-
-    let mut code: Option<String> = None;
-    let mut returned_state: Option<String> = None;
-    let mut oauth_error: Option<String> = None;
-    for (key, value) in callback.query_pairs() {
-        match key.as_ref() {
-            "code" => code = Some(value.into_owned()),
-            "state" => returned_state = Some(value.into_owned()),
-            "error" => oauth_error = Some(value.into_owned()),
-            _ => {}
-        }
-    }
-
-    let ok = oauth_error.is_none()
-        && returned_state.as_deref() == Some(state_nonce.as_str())
-        && code.is_some();
-    let body = if ok {
-        "Tempo is connected to Google Drive. You can close this tab and return to Tempo Desktop."
-    } else {
-        "Tempo could not complete Google Drive sign-in. Return to Tempo Desktop and try again."
-    };
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        body.as_bytes().len(),
-        body
-    );
-    let _ = stream.write_all(response.as_bytes()).await;
-
-    if let Some(err) = oauth_error {
-        return Err(format!("Google sign-in failed: {err}"));
-    }
-    if returned_state.as_deref() != Some(state_nonce.as_str()) {
-        return Err("Google sign-in returned an invalid OAuth state".to_string());
-    }
-    let code =
-        code.ok_or_else(|| "Google sign-in did not return an authorization code".to_string())?;
+    let code = wait_for_oauth_callback(&listener, &state_nonce, Duration::from_secs(180)).await?;
 
     let token_body = {
         let mut serializer = url::form_urlencoded::Serializer::new(String::new());
@@ -949,15 +962,10 @@ fn protocol_volume(play: &LocalPlay) -> Option<i64> {
     if !play.volume_level.is_finite() || play.volume_level < 0.0 {
         return None;
     }
-    if play.volume_level <= 1.0 {
-        if play.volume_level <= 0.01 {
-            Some(0)
-        } else {
-            Some(((play.volume_level * 100.0).round() as i64).max(1))
-        }
-    } else {
-        Some((play.volume_level.round() as i64).max(1))
-    }
+    if play.volume_level == 0.0 { return Some(0); }
+    // Desktop stores fractional volume. Positive gain must never become mute;
+    // MPRIS amplification above 1.0 is capped at the protocol's 100 percent.
+    Some(((play.volume_level.clamp(0.0, 1.0) * 100.0).round() as i64).max(1))
 }
 
 fn local_to_wire(device_id: &str, play: &LocalPlay) -> WireEvent {
@@ -1751,6 +1759,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn oauth_callback_requires_the_expected_route_nonce_and_unambiguous_parameters() {
+        assert_eq!(parse_oauth_callback("GET /oauth2/callback?state=nonce&code=a%2Bb HTTP/1.1", "nonce").unwrap().unwrap(), "a+b");
+        for line in [
+            "GET /favicon.ico HTTP/1.1",
+            "GET /oauth2/callback?state=wrong&code=x HTTP/1.1",
+            "POST /oauth2/callback?state=nonce&code=x HTTP/1.1",
+            "GET /oauth2/callback?state=nonce&state=nonce&code=x HTTP/1.1",
+            "GET /oauth2/callback?state=nonce&code=x&code=y HTTP/1.1",
+            "GET //other/oauth2/callback?state=nonce&code=x HTTP/1.1",
+        ] { assert!(parse_oauth_callback(line, "nonce").is_none(), "{line}"); }
+        assert!(parse_oauth_callback("GET /oauth2/callback?state=nonce&error=access_denied HTTP/1.1", "nonce").unwrap().is_err());
+        assert!(parse_oauth_callback("GET /oauth2/callback?state=nonce&code= HTTP/1.1", "nonce").unwrap().is_err());
+    }
+
+    #[tokio::test]
+    async fn oauth_listener_ignores_unrelated_connections_and_reads_fragmented_headers() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            wait_for_oauth_callback(&listener, "nonce", Duration::from_secs(5)).await
+        });
+        for target in ["/favicon.ico", "/oauth2/callback?state=wrong&code=x"] {
+            let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+            client.write_all(format!("GET {target} HTTP/1.1\r\nHost: localhost\r\n\r\n").as_bytes()).await.unwrap();
+            let mut response = String::new();
+            client.read_to_string(&mut response).await.unwrap();
+            assert!(response.starts_with("HTTP/1.1 400"));
+        }
+        let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+        client.write_all(b"GET /oauth2/callback?code=a%2Bb").await.unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        client.write_all(b"&state=nonce HTTP/1.1\r\nHost: localhost\r\n\r\n").await.unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).await.unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"));
+        assert_eq!(server.await.unwrap().unwrap(), "a+b");
+    }
+
+    #[tokio::test]
+    async fn oauth_callback_deadline_also_bounds_an_incomplete_connection() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = tokio::net::TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+        let failure = wait_for_oauth_callback(&listener, "nonce", Duration::from_millis(20)).await.unwrap_err();
+        assert!(failure.contains("timed out"));
+        drop(client);
+    }
+
+    #[test]
     fn duplicate_control_markers_use_the_latest_valid_server_version() {
         let mut earlier = fixture_file(&fixture_batch(), b"fixture");
         earlier.modified_time = Some("2026-10-02T00:00:00Z".into());
@@ -2024,6 +2080,11 @@ mod tests {
             volume_level: 0.42,
         };
         assert_eq!(protocol_volume(&play), Some(42));
+        for (volume, expected) in [(0.0, Some(0)), (0.001, Some(1)), (0.01, Some(1)),
+            (0.5, Some(50)), (1.0, Some(100)), (1.5, Some(100)), (-1.0, None), (f64::NAN, None)] {
+            play.volume_level = volume;
+            assert_eq!(protocol_volume(&play), expected, "volume={volume}");
+        }
         play.is_muted = true;
         assert_eq!(protocol_volume(&play), Some(0));
     }
