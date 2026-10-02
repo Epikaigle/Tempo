@@ -18,6 +18,7 @@ interface DriveCommandResponse {
 }
 
 let busy = false;
+let oauthConfigured = false;
 
 void initDrivePanel();
 
@@ -126,6 +127,7 @@ async function fetchStatus(): Promise<DriveSyncStatus> {
 }
 
 async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Promise<void> {
+  oauthConfigured = status.configured;
   const account = document.getElementById('drive-sync-account');
   if (account) {
     account.textContent = status.accountEmail ? `Google account: ${status.accountEmail}` : '';
@@ -147,10 +149,14 @@ async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Pro
   }
 
   const active = status.enabled;
-  if (connect) connect.style.display = active ? 'none' : '';
-  if (sync) sync.style.display = active ? '' : 'none';
+  const needsReconnect = active && status.needsInteractiveAuth;
+  if (connect) {
+    connect.style.display = !active || needsReconnect ? '' : 'none';
+    connect.textContent = needsReconnect ? 'Reconnect Google' : 'Connect Google';
+  }
+  if (sync) sync.style.display = active && !needsReconnect ? '' : 'none';
   if (disconnect) disconnect.style.display = active ? '' : 'none';
-  if (del) del.style.display = active ? '' : 'none';
+  if (del) del.style.display = active && !needsReconnect ? '' : 'none';
 
   if (!replaceMessage) return;
   if (status.lastError) {
@@ -217,7 +223,7 @@ function setInlineStatus(message: string, isError = false): void {
 function setButtonsDisabled(disabled: boolean): void {
   for (const id of ['btn-drive-connect', 'btn-drive-sync', 'btn-drive-disconnect', 'btn-drive-delete']) {
     const button = document.getElementById(id) as HTMLButtonElement | null;
-    if (button) button.disabled = disabled;
+    if (button) button.disabled = disabled || (id === 'btn-drive-connect' && !oauthConfigured);
   }
 }
 
