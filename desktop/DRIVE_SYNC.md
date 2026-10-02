@@ -37,9 +37,10 @@ All clients share `tempo_history_control_v1.json` as a server-timestamped disabl
 When a user deletes shared cloud history, a client must:
 
 1. update/create the disable marker first and obtain the new server generation `N`;
-2. delete only history batches whose `tempo_generation` is less than `N`;
-3. store `N` as the accepted generation;
-4. disable Drive history sync locally and reset Drive-only cursors/upload flags.
+2. atomically store `N`, disable Drive history sync locally and reset Drive-only cursors/upload flags;
+3. delete only history batches whose `tempo_generation` is less than `N`.
+
+Cloud cleanup failure must not resume local synchronization. Duplicate same-name control markers are paged through and validated; the newest Google-server timestamp is authoritative, independent of list order. An upload retry succeeds only when filename, size, checksum and producer/schema/generation metadata all match.
 
 Other linked clients check the marker before uploading. If they observe a newer marker than the one they explicitly accepted, they stop Drive sync, clear their Drive-upload cursors/flags, clean only older generations, and require explicit re-enablement.
 

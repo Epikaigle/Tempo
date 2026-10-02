@@ -764,24 +764,23 @@ async fn list_batches(
     list_files(access_token, &query, Some("createdTime asc")).await
 }
 
-async fn find_exact_file(
+async fn find_exact_files(
     access_token: &str,
     name: &str,
-) -> Result<Option<DriveFileRecord>, String> {
+) -> Result<Vec<DriveFileRecord>, String> {
     let escaped = name.replace('\\', "\\\\").replace('\'', "\\'");
     let query = format!("name = '{escaped}' and trashed = false");
-    Ok(list_files(access_token, &query, None)
-        .await?
-        .into_iter()
-        .next())
+    list_files(access_token, &query, None).await
+}
+
+fn latest_marker_version(files: &[DriveFileRecord]) -> Result<i64, String> {
+    files.iter().try_fold(0, |latest, file| {
+        Ok(latest.max(require_server_time(file.modified_time.as_deref(), "deletion marker")?))
+    })
 }
 
 async fn get_disable_marker_version(access_token: &str) -> Result<i64, String> {
-    let marker = find_exact_file(access_token, DISABLE_MARKER_NAME).await?;
-    match marker {
-        None => Ok(0),
-        Some(file) => require_server_time(file.modified_time.as_deref(), "deletion marker"),
-    }
+    latest_marker_version(&find_exact_files(access_token, DISABLE_MARKER_NAME).await?)
 }
 
 fn batch_generation(file: &DriveFileRecord) -> Option<i64> {
@@ -1042,6 +1041,15 @@ fn pending_local_plays(conn: &Connection) -> Result<Vec<LocalPlay>, String> {
         .map_err(|e| e.to_string())
 }
 
+fn verified_upload(file: &DriveFileRecord, name: &str, device: &str, generation: i64, bytes: &[u8]) -> bool {
+    file.name == name && validate_compressed_metadata(file, bytes).is_ok()
+        && file.app_properties.get("tempo_kind").map(String::as_str) == Some("history_batch")
+        && file.app_properties.get("tempo_schema").map(String::as_str) == Some("1")
+        && file.app_properties.get("source_device_id").map(String::as_str) == Some(device)
+        && file.app_properties.get("source_platform").map(String::as_str) == Some("desktop")
+        && batch_generation(file) == Some(generation)
+}
+
 async fn upload_batch(
     access_token: &str,
     file_name: &str,
@@ -1049,14 +1057,13 @@ async fn upload_batch(
     generation: i64,
     compressed: &[u8],
 ) -> Result<(), String> {
-    if let Some(existing) = find_exact_file(access_token, file_name).await? {
-        if validate_compressed_metadata(&existing, compressed).is_ok() {
-            return Ok(());
-        }
-        // A same-name file with different bytes is not a successful retry.
-        // Publish the correct immutable payload; event IDs deduplicate readers.
-        log::warn!("Publishing a verified replacement batch for {}", file_name);
+    let existing = find_exact_files(access_token, file_name).await?;
+    if existing.iter().any(|file| verified_upload(file, file_name, device_id, generation, compressed)) {
+        return Ok(());
     }
+    // Invalid same-name objects are not proof that the upload succeeded.
+    // Event IDs deduplicate a verified replacement if an old upload also exists.
+
 
     let boundary = format!("tempo_{}", Uuid::new_v4().simple());
     let metadata = serde_json::json!({
@@ -1086,7 +1093,7 @@ async fn upload_batch(
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
 
     let response = http_client()?
-        .post(format!("{DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,createdTime,appProperties"))
+        .post(format!("{DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,size,createdTime,appProperties"))
         .bearer_auth(access_token)
         .header(header::CONTENT_TYPE, format!("multipart/related; boundary={boundary}"))
         .body(body)
@@ -1095,6 +1102,10 @@ async fn upload_batch(
         .map_err(|e| e.to_string())?;
     if !response.status().is_success() {
         return Err(format!("Drive upload failed (HTTP {})", response.status()));
+    }
+    let uploaded: DriveFileRecord = response.json().await.map_err(|e| e.to_string())?;
+    if !verified_upload(&uploaded, file_name, device_id, generation, compressed) {
+        return Err("Google Drive returned mismatched metadata for the uploaded history batch".into());
     }
     Ok(())
 }
@@ -1427,68 +1438,78 @@ async fn delete_batches_before_generation(
 }
 
 async fn bump_disable_marker(access_token: &str) -> Result<i64, String> {
+    let previous = get_disable_marker_version(access_token).await?;
     let marker_body = serde_json::json!({
-        "schema_version": 1,
-        "disabled": true,
-        "updated_at_utc": now_ms()
-    })
-    .to_string();
-
-    if let Some(existing) = find_exact_file(access_token, DISABLE_MARKER_NAME).await? {
+        "schema_version": 1, "history_sync_disabled": true, "revision": Uuid::new_v4().to_string()
+    }).to_string();
+    if find_exact_files(access_token, DISABLE_MARKER_NAME).await?.is_empty() {
+        let boundary = format!("tempo_{}", Uuid::new_v4().simple());
+        let metadata = serde_json::json!({
+            "name": DISABLE_MARKER_NAME,
+            "parents": ["appDataFolder"],
+            "appProperties": {
+                "tempo_kind": "history_sync_control",
+                "tempo_schema": "1"
+            }
+        });
+        let body = format!(
+            "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Type: application/json\r\n\r\n{marker_body}\r\n--{boundary}--\r\n"
+        );
         let response = http_client()?
-            .patch(format!(
-                "{DRIVE_UPLOAD_API}/files/{}?uploadType=media&fields=id,name,modifiedTime",
-                existing.id
+            .post(format!(
+                "{DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,modifiedTime"
             ))
             .bearer_auth(access_token)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(marker_body)
+            .header(
+                header::CONTENT_TYPE,
+                format!("multipart/related; boundary={boundary}"),
+            )
+            .body(body)
             .send()
             .await
             .map_err(|e| e.to_string())?;
         if !response.status().is_success() {
             return Err(format!(
-                "Could not update Drive disable marker (HTTP {})",
+                "Could not create Drive disable marker (HTTP {})",
                 response.status()
             ));
         }
-        let updated: DriveFileRecord = response.json().await.map_err(|e| e.to_string())?;
-        return require_server_time(updated.modified_time.as_deref(), "deletion marker");
+        let _: DriveFileRecord = response.json().await.map_err(|e| e.to_string())?;
     }
-
-    let boundary = format!("tempo_{}", Uuid::new_v4().simple());
-    let metadata = serde_json::json!({
-        "name": DISABLE_MARKER_NAME,
-        "parents": ["appDataFolder"],
-        "appProperties": {
-            "tempo_kind": "history_control",
-            "tempo_schema": "1"
+    // Concurrent first-use clients may create multiple same-name markers. Read
+    // and update all of them so every client observes the newest server version.
+    for attempt in 0..3 {
+        let markers = find_exact_files(access_token, DISABLE_MARKER_NAME).await?;
+        let mut updated = Vec::new();
+        for marker in markers {
+            let response = http_client()?
+                .patch(format!("{DRIVE_UPLOAD_API}/files/{}?uploadType=media&fields=id,name,modifiedTime", marker.id))
+                .bearer_auth(access_token)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(marker_body.clone())
+                .send().await.map_err(|e| e.to_string())?;
+            if !response.status().is_success() {
+                return Err(format!("Could not update Drive disable marker (HTTP {})", response.status()));
+            }
+            updated.push(response.json::<DriveFileRecord>().await.map_err(|e| e.to_string())?);
         }
-    });
-    let body = format!(
-        "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Type: application/json\r\n\r\n{marker_body}\r\n--{boundary}--\r\n"
-    );
-    let response = http_client()?
-        .post(format!(
-            "{DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,modifiedTime"
-        ))
-        .bearer_auth(access_token)
-        .header(
-            header::CONTENT_TYPE,
-            format!("multipart/related; boundary={boundary}"),
-        )
-        .body(body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Could not create Drive disable marker (HTTP {})",
-            response.status()
-        ));
+        let version = latest_marker_version(&updated)?;
+        if version > previous { return Ok(version); }
+        if attempt < 2 { tokio::time::sleep(Duration::from_millis(5)).await; }
     }
-    let created: DriveFileRecord = response.json().await.map_err(|e| e.to_string())?;
-    require_server_time(created.modified_time.as_deref(), "deletion marker")
+    Err("Google Drive did not advance the deletion marker version".into())
+}
+
+fn accept_deletion_marker(conn: &Connection, marker_version: i64, message: Option<&str>) -> Result<(), String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0", [])
+        .map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE drive_sync_state SET enabled = 0, accepted_disable_version = ?1,
+         download_cursor = 0, last_uploaded = 0, last_imported = 0, last_error = ?2 WHERE id = 1",
+        params![marker_version, message],
+    ).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
 }
 
 async fn honor_remote_disable_if_needed(
@@ -1502,25 +1523,11 @@ async fn honor_remote_disable_if_needed(
         return Ok(false);
     }
 
-    // Delete only history from generations older than the newly observed marker.
-    // Another client may already have explicitly re-enabled and seeded generation
-    // N; this stale Desktop instance must never erase that fresh generation.
+    accept_deletion_marker(&conn, marker_version, Some(
+        "Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history."
+    ))?;
+    // Cleanup is allowed to fail after the local stop has been committed.
     delete_batches_before_generation(access_token, marker_version).await?;
-    conn.execute(
-        "UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
-    conn.execute(
-        "UPDATE drive_sync_state SET enabled = 0, accepted_disable_version = ?1,
-         download_cursor = 0, last_uploaded = 0, last_imported = 0,
-         last_error = ?2 WHERE id = 1",
-        params![
-            marker_version,
-            "Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history."
-        ],
-    )
-    .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -1732,27 +1739,71 @@ pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<us
     // A client explicitly re-enabled after the marker update may safely publish
     // generation N while stale clients are still waking up and honoring deletion.
     let marker_version = bump_disable_marker(&token).await?;
-    let deleted = delete_batches_before_generation(&token, marker_version).await?;
-
     let conn = open_sync_db(&state.app_data_dir)?;
-    conn.execute(
-        "UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
-    conn.execute(
-        "UPDATE drive_sync_state SET enabled = 0, accepted_disable_version = ?1,
-         download_cursor = 0, last_uploaded = 0, last_imported = 0,
-         last_error = NULL WHERE id = 1",
-        [marker_version],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(deleted)
+    accept_deletion_marker(&conn, marker_version, None)?;
+    let result = delete_batches_before_generation(&token, marker_version).await;
+    if let Err(err) = &result { let _ = set_last_error(&conn, Some(err)); }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicate_control_markers_use_the_latest_valid_server_version() {
+        let mut earlier = fixture_file(&fixture_batch(), b"fixture");
+        earlier.modified_time = Some("2026-10-02T00:00:00Z".into());
+        let mut later = earlier.clone();
+        later.modified_time = Some("2026-10-02T00:01:00Z".into());
+        let expected = parse_time_ms(later.modified_time.as_deref());
+        assert_eq!(latest_marker_version(&[earlier.clone(), later.clone()]).unwrap(), expected);
+        assert_eq!(latest_marker_version(&[later, earlier.clone()]).unwrap(), expected);
+        assert_eq!(latest_marker_version(&[]).unwrap(), 0);
+        earlier.modified_time = None;
+        assert!(latest_marker_version(&[earlier]).is_err());
+    }
+
+    #[test]
+    fn retry_requires_complete_upload_identity_not_only_matching_bytes() {
+        let batch = fixture_batch();
+        let bytes = encode_batch(&batch).unwrap();
+        let file = fixture_file(&batch, &bytes);
+        assert!(verified_upload(&file, &file.name, &batch.source_device_id, 42, &bytes));
+        for key in ["tempo_kind", "tempo_schema", "source_device_id", "source_platform", APP_PROPERTY_GENERATION] {
+            let mut wrong = file.clone();
+            wrong.app_properties.insert(key.into(), "wrong".into());
+            assert!(!verified_upload(&wrong, &file.name, &batch.source_device_id, 42, &bytes), "{key}");
+        }
+    }
+
+    #[test]
+    fn deletion_stop_and_cursors_are_committed_before_cloud_cleanup() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE drive_event_state (drive_imported INTEGER, drive_uploaded_at INTEGER);
+             INSERT INTO drive_event_state VALUES (0, 100), (1, 100);
+             CREATE TABLE drive_sync_state (
+                id INTEGER PRIMARY KEY, enabled INTEGER, accepted_disable_version INTEGER,
+                download_cursor INTEGER, last_uploaded INTEGER, last_imported INTEGER, last_error TEXT
+             );
+             INSERT INTO drive_sync_state VALUES (1, 1, 0, 123, 4, 5, NULL);"
+        ).unwrap();
+        accept_deletion_marker(&conn, 200, Some("remote deletion")).unwrap();
+        let state: (i64, i64, i64, i64, i64) = conn.query_row(
+            "SELECT enabled, accepted_disable_version, download_cursor, last_uploaded, last_imported FROM drive_sync_state",
+            [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+        ).unwrap();
+        assert_eq!(state, (0, 200, 0, 0, 0));
+        let imported_timestamp: Option<i64> = conn.query_row(
+            "SELECT drive_uploaded_at FROM drive_event_state WHERE drive_imported = 1", [], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(imported_timestamp, Some(100));
+        let pending_timestamp: Option<i64> = conn.query_row(
+            "SELECT drive_uploaded_at FROM drive_event_state WHERE drive_imported = 0", [], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(pending_timestamp, None);
+    }
 
     fn fixture_batch() -> WireBatch {
         let event = WireEvent {

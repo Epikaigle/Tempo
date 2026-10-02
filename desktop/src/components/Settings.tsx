@@ -117,7 +117,7 @@ export default function Settings() {
       const refreshed = await runDriveSyncAction(settings, action);
       // Refresh only Drive status. Keep unsaved ordinary form edits in the UI;
       // a Drive action must never behave like an implicit Save button.
-      setSettings(withDriveStatus(settings, refreshed));
+      setSettings((current) => withDriveStatus(current, refreshed));
     } catch (e) {
       setError(String(e));
       // The backend may update Drive error/connection state even when the action
