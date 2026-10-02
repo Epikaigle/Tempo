@@ -108,7 +108,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Piano
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.DarkMode
@@ -455,7 +455,7 @@ fun ListeningMinutesPage(page: SpotlightStoryPage.ListeningMinutes) {
 fun TopArtistPage(page: SpotlightStoryPage.TopArtist) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
-        // Dynamic sizing for Hero Image based on available height
+        // Scale down hero image when displaying more than 5 artists
         val heroImageScale = if (page.topArtists.size > 5) 0.6f else 1.0f
         
         Column(
@@ -724,8 +724,7 @@ fun TopTrackSetupPage(page: SpotlightStoryPage.TopTrackSetup) {
 fun TopSongsPage(page: SpotlightStoryPage.TopSongs) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
-        // Dynamic sizing for Hero Image based on available height (preventing oversize)
-        // If we have a full list (10 items), we must be conservative with the Hero size.
+        // Scale down hero image when displaying more than 5 songs to preserve list space
         val heroImageScale = if (page.topSongs.size > 5) 0.6f else 1.0f
         
         Column(
@@ -3081,7 +3080,7 @@ private fun getPersonalityAssets(key: String): Pair<ImageVector, Color> {
         "Metalhead"           -> Icons.Default.FlashOn to Color(0xFFDC2626)
         "R&B Soul"            -> Icons.Default.Favorite to Color(0xFFEC4899)
         "Electronic Voyager"  -> Icons.Default.GraphicEq to Color(0xFF22D3EE)
-        "Jazz Cat"            -> Icons.Default.QueueMusic to Color(0xFFF59E0B)
+        "Jazz Cat"            -> Icons.AutoMirrored.Filled.QueueMusic to Color(0xFFF59E0B)
         "Maestro"             -> Icons.Default.Piano to Color(0xFFA78BFA)
         "Indie Spirit"        -> Icons.Default.Explore to Color(0xFF34D399)
         "Party Starter"       -> Icons.Default.Celebration to Color(0xFFF472B6)
@@ -3513,7 +3512,7 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
 fun TitleEarnedPage(page: SpotlightStoryPage.TitleEarned) {
     val inCapture = LocalInCaptureContext.current
     val seen = isStoryPageSeen()
-    // Title unlock transition: previous title fades out, new title animates in
+    // Cross-fade to new title
     val oldTitleAlpha = remember { Animatable(0f) }
     val newTitleOffset = remember { Animatable(80f) }
     val newTitleAlpha  = remember { Animatable(0f) }

@@ -235,9 +235,7 @@ class ITunesEnrichmentSource @Inject constructor(
                 Log.d("EnrichmentSource", "iTunes: Replacing ${base.albumArtSource} album art with ITUNES source")
             }
             
-            // Handle artist images for ALL artists
-            // This ensures secondary artists (feat. X) also get their images enriched and saved
-            // Returns the primary artist's image URL (if found) to avoid a duplicate fetch
+            // Enrich and persist image URLs for primary and featured artists
             val primaryArtistImageUrl = enrichAndPersistAllArtists(track.artist, result, track.title)
             
             // Use the primary artist image for the track metadata if we don't have one yet
@@ -329,7 +327,6 @@ class ITunesEnrichmentSource @Inject constructor(
 
     private suspend fun persistImage(name: String, imageUrl: String, artistId: String?) {
         try {
-            // Ensure artist exists in DB
             val artist = artistDao.getOrCreate(name, imageUrl)
             
             // Update if needed

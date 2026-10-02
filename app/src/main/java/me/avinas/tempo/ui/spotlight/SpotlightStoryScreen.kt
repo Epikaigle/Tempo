@@ -276,7 +276,7 @@ fun SpotlightStoryScreen(
                      animationSpec = tween(durationMillis = remainingTime.toInt(), easing = LinearEasing)
                  )
                  if (pagerState.currentPage < storyPages.size - 1) {
-                     // Use coroutineScope to ensure animation isn't cancelled when currentPage changes
+                     // Launch in outer coroutineScope so scroll animation survives currentPage change
                      coroutineScope.launch {
                          pagerState.animateScrollToPage(pagerState.currentPage + 1)
                      }

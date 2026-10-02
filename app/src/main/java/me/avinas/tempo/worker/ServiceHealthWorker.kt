@@ -12,6 +12,12 @@ import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import me.avinas.tempo.R
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.RecoveryAction
+import me.avinas.tempo.data.analytics.RevivedBy
+import me.avinas.tempo.data.analytics.ServiceRevived
+import me.avinas.tempo.data.analytics.TrackingGap
+import me.avinas.tempo.data.analytics.TrackingGapReason
 import me.avinas.tempo.service.MusicTrackingService
 import me.avinas.tempo.service.TrackingServiceHeartbeat
 import dagger.assisted.Assisted
@@ -24,11 +30,17 @@ import java.util.concurrent.TimeUnit
  * 
  * This is a safety net for cases where the system might kill the service
  * and fail to restart it automatically.
+ *
+ * This is also the single best vantage point for tracking-health reporting: it already
+ * distinguishes "permission is granted" from "the listener is actually alive", so
+ * `tracking_gap` and `service_revived` are reported here rather than instrumenting the
+ * 3,000-line listener service.
  */
 @HiltWorker
 class ServiceHealthWorker @AssistedInject constructor(
     @Assisted appContext: Context,
-    @Assisted workerParams: WorkerParameters
+    @Assisted workerParams: WorkerParameters,
+    private val tracker: AnalyticsTracker
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -97,6 +109,7 @@ class ServiceHealthWorker @AssistedInject constructor(
                     android.content.pm.PackageManager.DONT_KILL_APP
                 )
                 requestListenerRebind(componentName)
+                tracker.track(ServiceRevived(RevivedBy.HEALTH_WORKER, RecoveryAction.COMPONENT_REENABLE))
                 return Result.success()
             }
         } catch (e: Exception) {
@@ -114,8 +127,10 @@ class ServiceHealthWorker @AssistedInject constructor(
             Log.w(TAG, "Tracking listener heartbeat stale: $heartbeat")
             if (heartbeat.shouldForceRestartAfterRebind()) {
                 Log.w(TAG, "Previous rebind did not refresh heartbeat, forcing component restart")
+                reportStaleTracking(heartbeat, RecoveryAction.FORCE_RESTART)
                 restartService(componentName)
             } else {
+                reportStaleTracking(heartbeat, RecoveryAction.REBIND)
                 requestListenerRebind(componentName)
             }
         } else {
@@ -123,6 +138,32 @@ class ServiceHealthWorker @AssistedInject constructor(
         }
 
         return Result.success()
+    }
+
+    /**
+     * Reports that tracking had gone stale and how this worker responded.
+     *
+     * `gap` is how long the listener had been dead, which is the number that actually matters:
+     * a thirty-second gap is a non-event, a three-day gap means a user silently lost history.
+     *
+     * Skipped entirely when the listener has never been alive, because on a fresh install
+     * `shouldRequestRebind()` is true simply because nothing has started yet. Reporting that
+     * as a gap would make every new user look like a tracking failure.
+     */
+    private fun reportStaleTracking(
+        heartbeat: TrackingServiceHeartbeat.Snapshot,
+        recovery: RecoveryAction
+    ) {
+        if (!heartbeat.hasEverStarted()) return
+
+        val gapMillis = if (heartbeat.lastServiceAliveAt > 0L) {
+            System.currentTimeMillis() - heartbeat.lastServiceAliveAt
+        } else {
+            0L
+        }
+
+        tracker.track(TrackingGap(TrackingGapReason.SERVICE_KILLED, gapMillis))
+        tracker.track(ServiceRevived(RevivedBy.HEALTH_WORKER, recovery))
     }
 
     private fun isNotificationListenerEnabled(componentName: ComponentName): Boolean {

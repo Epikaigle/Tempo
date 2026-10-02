@@ -39,7 +39,7 @@ fun CaptureWrapper(
     content: @Composable () -> Unit
 ) {
     var capturedView: android.view.View? by remember { mutableStateOf(null) }
-    
+    val currentContent by rememberUpdatedState(content)
     LaunchedEffect(controller) {
         controller.captureRequest.collectLatest {
             capturedView?.let { view ->
@@ -55,7 +55,7 @@ fun CaptureWrapper(
                         val canvas = android.graphics.Canvas(bitmap)
                         
                         // Draw the view hierarchy to the canvas
-                        // Safe because LocalInCaptureContext ensures software bitmaps
+                        // Safe: LocalInCaptureContext forces software bitmap allocation
                         view.draw(canvas)
                         
                         android.util.Log.d("CaptureWrapper", "Bitmap captured successfully. Size: ${bitmap.byteCount} bytes")
@@ -80,7 +80,7 @@ fun CaptureWrapper(
                     // Provide capture context to all children
                     // This signals that images should use software bitmaps
                     CompositionLocalProvider(LocalInCaptureContext provides true) {
-                        content()
+                        currentContent()
                     }
                 }
             }

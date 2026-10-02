@@ -8,6 +8,8 @@ This extension does **not** have a Tempo-operated central server and does **not*
 
 ---
 
+> **Scope:** this policy covers the browser extension only. The Tempo **Android app** has its own policy at [../PRIVACY.md](../PRIVACY.md). The app reports anonymous app-health statistics (which it discloses in-app and you can switch off); this extension reports nothing to us at all.
+
 ## 1. What Data We Collect & Access
 
 To function as a media tracker and scrobbler, Tempo Stats accesses and collects the following data:
@@ -77,5 +79,5 @@ Firefox builds also declare optional data-collection categories for personally i
 If you have any questions or feedback regarding the privacy practices of Tempo Stats, please contact us:
 
 * **Developer:** Avinash
-* **Email:** hi@avinas.me
+* **Email:** hi@avinash.im
 * **GitHub Repository:** [https://github.com/avinaxhroy/Tempo](https://github.com/avinaxhroy/Tempo)

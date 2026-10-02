@@ -72,8 +72,8 @@
     <string name="level_reached">You reached Level %1$d</string>
 
     <!-- Onboarding: Welcome screen -->
-    <string name="welcome_headline_1">Know Your Music,</string>
-    <string name="welcome_headline_2">Love Your Stats</string>
+    <string name="welcome_headline_1">Every listen,</string>
+    <string name="welcome_headline_2">a little more you</string>
     <string name="welcome_description">Tempo automatically tracks what you listen to and shows you beautiful insights about your listening habits.</string>
     <string name="welcome_get_started">Get Started</string>
     <string name="welcome_skip">Skip</string>
@@ -86,9 +86,9 @@
     <string name="how_it_works_step2_title">Notification appears</string>
     <string name="how_it_works_step2_subtitle">Tempo reads only music info</string>
     <string name="how_it_works_step3_title">Stats saved locally</string>
-    <string name="how_it_works_step3_subtitle">On your phone, nowhere else</string>
+    <string name="how_it_works_step3_subtitle">Your listening history stays here</string>
     <string name="how_it_works_badge_apps">20+ apps</string>
-    <string name="how_it_works_badge_local">100% local</string>
+    <string name="how_it_works_badge_local">Local-first</string>
     <string name="how_it_works_badge_auto">Auto-tracks</string>
     <string name="how_it_works_next">Next</string>
 
@@ -97,8 +97,8 @@
     <string name="privacy_subtitle">Privacy isn\'t a feature. It\'s the foundation.</string>
     <string name="privacy_local_title">100% Local Storage</string>
     <string name="privacy_local_desc">All data stays on your phone. Always.</string>
-    <string name="privacy_no_cloud_title">No Servers, No Cloud</string>
-    <string name="privacy_no_cloud_desc">We have no backend. Zero data uploaded.</string>
+    <string name="privacy_no_cloud_title">No Tempo Servers</string>
+    <string name="privacy_no_cloud_desc">We run no backend and have no account for you. The only thing that leaves your phone is anonymous app-health stats, which you can turn off any time in Settings.</string>
     <string name="privacy_notif_title">Music Notifications Only</string>
     <string name="privacy_notif_desc">We read Spotify, YouTube Music, etc. Never messages.</string>
     <string name="privacy_open_source_title">Open Source</string>
@@ -109,7 +109,7 @@
     <!-- Onboarding: Battery Optimization -->
     <string name="battery_title">One more thing for better accuracy</string>
     <string name="battery_description">Let Tempo run in the background for continuous tracking. This ensures we don\'t miss any songs while your screen is off.</string>
-    <string name="battery_optimize">Optimize</string>
+    <string name="battery_optimize">Allow Background Running</string>
     <string name="battery_skip">Skip for now</string>
 
     <!-- Onboarding: Advanced Settings -->
@@ -267,6 +267,8 @@
     <string name="details_share_preview">Share Preview</string>
     <string name="details_merge_artist">Merge Artist</string>
     <string name="details_merge_with">Merge with…</string>
+    <string name="details_merge_album">Merge Album</string>
+    <string name="album_details_merge">Merge Album</string>
     <string name="details_block_artist">BLOCK ENTIRE ARTIST</string>
     <string name="details_block_track">BLOCK THIS TRACK</string>
     <string name="details_unique_tracks">Unique Songs</string>
@@ -311,6 +313,13 @@
     <string name="merge_search_artists">Type to search for artists</string>
     <string name="merge_search_tracks">Type to search for tracks</string>
     <string name="merge_merging">Merging: %1$s</string>
+    <string name="merge_album_into">Merge \"%1$s\" into \"%2$s\"?</string>
+    <string name="merge_merging_albums">Merging albums…</string>
+    <string name="merge_album_search">Search for the correct album to merge into. All listening history will be combined.</string>
+    <string name="merge_search_albums">Type to search for albums</string>
+    <string name="merge_album_other_by_artist">Albums by %1$s</string>
+    <string name="merge_album_search_placeholder">Search for target album…</string>
+    <string name="merge_album_no_results">No albums found</string>
 
     <!-- Engagement -->
     <string name="engagement_score">Engagement Score</string>
@@ -664,6 +673,44 @@
     <string name="settings_disconnect_spotify_msg">This will remove your Spotify connection. Audio features and mood tracking will no longer be available.</string>
     <string name="settings_disconnect">Disconnect</string>
     <string name="settings_import_success">Successfully processed %1$d records and %2$d images</string>
+    <string name="settings_notification_settings_error">Unable to open notification settings</string>
+    <string name="settings_pause_tracking_low_battery">Pause tracking on low battery</string>
+    <string name="settings_pause_tracking_on_desc">Tracking pauses below 20%% battery to save power (currently %1$d%%)</string>
+    <string name="settings_pause_tracking_off_desc">Tracking continues at all battery levels — no automatic pausing</string>
+    <string name="settings_enable_gamification">Enable Gamification</string>
+    <string name="settings_enable_gamification_desc">Turn off to hide XP, levels, and badges</string>
+    <string name="settings_import_spotify_json">Import Spotify Data Export</string>
+    <string name="settings_import_spotify_json_desc">Import listening history from Spotify JSON data export files</string>
+    <string name="settings_import_youtube_music">Import YouTube Music Data</string>
+    <string name="settings_import_youtube_music_desc">Import listening history from a YouTube Takeout ZIP (JSON or HTML)</string>
+
+    <!-- Browser extension plays: the extension's "Export Plays" file, imported in the app -->
+    <string name="settings_import_extension">Import Browser Extension Plays</string>
+    <string name="settings_import_extension_desc">Add plays exported from the Tempo Stats extension to your history</string>
+    <string name="extension_import_title">Import Extension Plays</string>
+    <string name="extension_import_headline">Bring your browser plays into Tempo</string>
+    <string name="extension_import_how_to">1. Open the Tempo Stats browser extension\n2. Go to its Settings tab and tap Export Plays\n3. Pick the downloaded tempo-plays file below</string>
+    <string name="extension_import_choose_file">Choose export file</string>
+    <string name="extension_import_selected_files">%1$d file(s) selected</string>
+    <string name="extension_import_button">Import plays</string>
+    <string name="extension_import_running">Importing…</string>
+    <string name="extension_import_parsing">Reading %1$s…</string>
+    <string name="extension_import_file_counter">File %1$d of %2$d</string>
+    <string name="extension_import_progress">%1$d plays processed</string>
+    <string name="extension_import_progress_added">%1$d added so far</string>
+    <string name="extension_import_result_title">Import complete</string>
+    <string name="extension_import_stat_imported">Plays added</string>
+    <string name="extension_import_stat_duplicates">Already in your history</string>
+    <string name="extension_import_stat_tracks">New tracks</string>
+    <string name="extension_import_stat_too_short">Too short to count</string>
+    <string name="extension_import_stat_unreadable">Unreadable rows</string>
+    <string name="extension_import_stat_files">Files read</string>
+    <string name="extension_import_truncated">This file holds more plays than a single import reads. Import it again to continue where it stopped.</string>
+    <string name="extension_import_done">Done</string>
+    <string name="extension_import_failed_title">Import failed</string>
+    <string name="extension_import_retry">Try again</string>
+    <string name="settings_name_dialog_body">Choose the display name shown in your personal profile and stories.</string>
+    <string name="settings_no_browser">No browser found</string>
 
     <!-- Spotlight story slide labels (Wrapped / Year in Review type) -->
     <string name="spotlight_this_year_title">Your %1$d Spotlight</string>
@@ -771,6 +818,17 @@
     <string name="stats_search_hint_artists">Search artists…</string>
     <string name="stats_search_hint_albums">Search albums, artists…</string>
     <string name="stats_search_clear">Clear search</string>
+    <string name="stats_range_week">Week</string>
+    <string name="stats_range_month">Month</string>
+    <string name="stats_range_year">Year</string>
+    <string name="stats_range_all_time">All Time</string>
+    <string name="stats_error_title">Something went wrong</string>
+    <string name="stats_error_retry">Retry</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_stats">Stats</string>
+    <string name="nav_history">History</string>
+    <string name="stats_search_open">Search</string>
+    <string name="stats_search_close">Close search</string>
     <string name="stats_search_no_results">No matches for \"%1$s\" in this ranking</string>
 
     <!-- Stats Share -->
@@ -1174,6 +1232,7 @@
     <string name="details_spotify_not_found">Spotify app not found</string>
     <string name="details_apple_not_found">Apple Music app not found</string>
     <string name="details_stat_recorded_library">Recorded in library</string>
+    <string name="details_together_suffix">%1$s listened together</string>
     <string name="details_stat_total_recorded">Total recorded time</string>
     <string name="details_rank_most_played">Most played track</string>
     <string name="details_rank_top_5">Top 5 in library</string>
@@ -1188,8 +1247,9 @@
     <string name="details_trends_empty">No listening activity recorded yet</string>
     <string name="details_trends_active_days">Active days</string>
     <string name="details_trends_daily_avg">Daily average</string>
-    <string name="details_trends_peak_day">Peak single day</string>
+    <string name="details_trends_peak_day">Peak day</string>
     <string name="details_trends_days">%1$d days</string>
+    <string name="details_trends_summary">%1$d active days · %2$s / day · peak %3$d plays</string>
     <string name="details_trends_per_day">%1$s / day</string>
     <string name="details_trends_hud_one">%1$d play (%2$s)</string>
     <string name="details_trends_hud_many">%1$d plays (%2$s)</string>
@@ -1264,6 +1324,8 @@
     <string name="details_journey_discovered_since">and have since listened to</string>
     <string name="details_journey_across">across</string>
     <string name="details_journey_songs">different songs</string>
+    <string name="artist_streak_short">Streak</string>
+    <string name="artist_explored_sub">in your history</string>
     <string name="details_days_ago">%1$d days ago</string>
     <string name="details_timeline_peak_day">Most played in a day</string>
     <string name="details_timeline_peak_window">Peak listening window</string>
@@ -1271,9 +1333,9 @@
     <string name="details_timeline_latest">Latest spin</string>
     <string name="details_playback_title">Playback Breakdown</string>
     <string name="details_playback_full_pct">%1$d%% full plays</string>
-    <string name="details_playback_full_label" formatted="false">Full (≥ 80%)</string>
-    <string name="details_playback_partial_label" formatted="false">Partial (30–80%)</string>
-    <string name="details_playback_skipped_label" formatted="false">Skipped (&lt; 30%)</string>
+    <string name="details_playback_full_label" formatted="false">Full</string>
+    <string name="details_playback_partial_label" formatted="false">Partial</string>
+    <string name="details_playback_skipped_label" formatted="false">Skipped</string>
     <string name="details_playback_legend_fmt">%1$s: %2$d</string>
     <string name="details_playback_narrative_full" formatted="false">You almost never skip this track. 80%+ of plays were listened to the end.</string>
     <string name="details_playback_narrative_mixed">Played regularly in full, occasionally paused or skipped.</string>
@@ -1352,4 +1414,54 @@
     <string name="details_splitting_artist">Splitting artist…</string>
     <string name="details_split_button">Split (%1$d)</string>
     <string name="details_move_to_artist">Move to artist</string>
+    <!-- Configurable Android tracking rules -->
+    <string name="tracking_rules_section">Tracking rules</string>
+    <string name="tracking_rules_help">Enable apps to track music listening. Use the timer button to give an app its own maximum music duration. Block apps to exclude them completely.</string>
+    <string name="tracking_count_listen_after">Count a listen after</string>
+    <string name="tracking_default_max_duration">Default maximum music duration</string>
+    <string name="tracking_no_limit">No limit</string>
+    <string name="tracking_content_exceptions">Content exceptions</string>
+    <string name="tracking_content_exception_types">Always Music / Video &amp; non-music</string>
+    <plurals name="tracking_saved_rules">
+        <item quantity="one">%1$d saved rule</item>
+        <item quantity="other">%1$d saved rules</item>
+    </plurals>
+    <string name="tracking_duration_limit">Duration limit</string>
+    <string name="tracking_minimum_listening_time">Minimum listening time</string>
+    <string name="tracking_minimum_listening_description">A play is saved only after this much actual listening time.</string>
+    <string name="tracking_seconds">Seconds</string>
+    <string name="tracking_minutes">Minutes</string>
+    <string name="tracking_minimum_range">1 to 600 seconds • Default: 25</string>
+    <string name="tracking_save">Save</string>
+    <string name="tracking_cancel">Cancel</string>
+    <string name="tracking_default_max_description">Media longer than this is treated as non-music. Individual apps can override it.</string>
+    <string name="tracking_no_maximum_duration">No maximum duration</string>
+    <string name="tracking_default_twenty_minutes">Default: 20 min 00 s</string>
+    <string name="tracking_app_duration_limit">%1$s duration limit</string>
+    <string name="tracking_use_global_limit">Use global limit</string>
+    <string name="tracking_no_limit_app_description">Never reject media from this app because it is long</string>
+    <string name="tracking_custom_limit">Custom limit</string>
+    <string name="tracking_custom_limit_description">Set an exact duration for this app</string>
+    <string name="tracking_content_exceptions_description">Force matching media to always count as music, or always be excluded as video/non-music. Leave one field empty to match every title or every artist.</string>
+    <string name="tracking_title_optional">Title (optional)</string>
+    <string name="tracking_artist_optional">Artist / channel (optional)</string>
+    <string name="tracking_always_music">Always Music</string>
+    <string name="tracking_always_music_description">Bypass maximum duration and content filters; minimum listening still applies</string>
+    <string name="tracking_video_non_music">Video / non-music</string>
+    <string name="tracking_video_non_music_description">Remove existing matches and exclude future plays from history and stats</string>
+    <string name="tracking_add_rule">Add rule</string>
+    <string name="tracking_done">Done</string>
+    <string name="tracking_any_title">Any title</string>
+    <string name="tracking_any_artist">Any artist</string>
+    <string name="tracking_delete_rule">Delete rule</string>
+    <string name="tracking_music_limit_global">Music limit: Global (%1$s)</string>
+    <string name="tracking_music_limit_no_limit">Music limit: No limit</string>
+    <string name="tracking_music_limit_custom">Music limit: %1$s</string>
+    <string name="tracking_global">Global</string>
+    <string name="history_always_music_track">Always Music — this track</string>
+    <string name="history_always_music_artist">Always Music — %1$s</string>
+    <string name="history_video_non_music_track">It\'s video / non-music</string>
+    <string name="history_video_non_music_track_description">Remove existing plays and block future matches</string>
+    <string name="history_video_non_music_artist">Treat %1$s as video / non-music</string>
+    <string name="history_video_non_music_artist_description">Remove all matching history and block future plays</string>
 </resources>

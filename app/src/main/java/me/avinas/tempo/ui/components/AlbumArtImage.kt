@@ -35,26 +35,10 @@ import java.io.File
 private const val TAG = "AlbumArtImage"
 
 /**
- * Album art image component with smart fallback system:
- *
- * Flow:
- * 1. Local bitmap saved immediately as backup
- * 2. Enrichment tries to get hotlink URL
- * 3. UI loads hotlink first (HTTP→HTTPS fixed)
- * 4. If hotlink loads successfully → delete local file (save storage)
- * 5. If hotlink fails → fall back to local file
- *
- * This optimizes storage while ensuring users always see cover art.
- *
- * @param albumArtUrl The primary album art URL (hotlink from enrichment)
- * @param localArtUrl The local backup file URL (saved from MediaSession bitmap)
- * @param contentDescription Accessibility description
- * @param modifier Modifier for the image
- * @param contentScale How to scale the image
- * @param placeholderEmoji Emoji to show when no art is available
- * @param onHotlinkSuccess Callback when hotlink loads successfully (to clean up local file)
- * @param onPaletteExtracted Callback with the dominant swatch color
- * @param onArtworkReady Callback with the decoded bitmap + full palette (for full-bleed canvas use)
+ * Album art image with tiered fallback resolution:
+ * 1. Attempts remote [albumArtUrl].
+ * 2. Falls back to [localArtUrl] if remote fails or is unavailable.
+ * 3. Triggers [onHotlinkSuccess] to purge the local file once the remote asset loads.
  */
 @Composable
 fun AlbumArtImage(

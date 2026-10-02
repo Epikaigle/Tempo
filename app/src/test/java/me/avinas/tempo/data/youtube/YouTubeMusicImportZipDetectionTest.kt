@@ -212,4 +212,25 @@ class YouTubeMusicImportZipDetectionTest {
         assertNotNull(result.errors.firstOrNull())
         assertTrue(result.errors.first().contains("No watch-history file found"))
     }
+
+    @Test
+    fun `large non-history entries are drained without failing the import`() {
+        // Guards the old readBytes()-on-every-entry OOM: a multi-MB media file
+        // next to a small history file must be skipped by draining, not loaded.
+        val bigMedia = "x".repeat(2 * 1024 * 1024)
+        val bos = ByteArrayOutputStream()
+        ZipOutputStream(bos).use { zos ->
+            zos.putNextEntry(ZipEntry("Takeout/YouTube/video/big-video.mp4"))
+            zos.write(bigMedia.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+            zos.putNextEntry(ZipEntry("Takeout/YouTube and YouTube Music/history/watch-history.json"))
+            zos.write(portugueseHistoryJson.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+        }
+
+        val result = newService().parseZipStream(ByteArrayInputStream(bos.toByteArray()), "takeout.zip")
+
+        assertEquals(1, result.parsed.size)
+        assertEquals("Song A", result.parsed[0].trackName)
+    }
 }

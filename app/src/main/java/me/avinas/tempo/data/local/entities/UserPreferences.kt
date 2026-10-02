@@ -69,8 +69,8 @@ data class UserPreferences(
      * notification will clearly indicate the paused state, and tracking resumes automatically
      * once the battery recovers.
      *
-     * When false: tracking continues at all battery levels (uses slightly more power on low
-     * battery but ensures no listening sessions are missed).
+     * When false: tracking continues at all battery levels (uses more power on low
+     * battery but tracks continuously).
      */
     val pauseTrackingOnLowBattery: Boolean = true,
 

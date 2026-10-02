@@ -1,0 +1,116 @@
+name: Play crash-rate alert
+
+# Watches the Google Play Android vitals crash rate and opens an issue when it regresses.
+#
+# This is the free half of Tempo's crash reporting: Play already collects crashes and ANRs for
+# every install, and because releases ship as an AAB (AGP 4.1+) Play deobfuscates stack traces
+# automatically. Nothing here needs an SDK in the app or any new consent from users.
+#
+# The in-app `crash` event covers what Play cannot see: non-fatal errors, sideloaded builds,
+# and crashes that fall between Play's sampled, lagged reports.
+#
+# One-time setup:
+#   1. Create a service account in Google Cloud and enable the "Google Play Developer
+#      Reporting API" for its project.
+#   2. In Play Console -> Users and permissions, invite the service account's email with the
+#      "View app information (read-only)" permission.
+#   3. Add its JSON key as the repository secret PLAY_SERVICE_ACCOUNT_JSON.
+#
+# Until step 3 the run exits quietly rather than failing, so a fork or fresh clone is not noisy.
+# To exercise the logic without credentials:
+#   CRASH_RESPONSE_FIXTURE=path/to/response.json python3 .github/scripts/play_crash_rate.py
+
+on:
+  schedule:
+    # 07:00 UTC daily, which is late evening the previous day in the API's reporting timezone,
+    # so the most recent complete day is already available.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  crash-rate:
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE_NAME: me.avinas.tempo
+      # Percentage of active users experiencing a user-perceived crash above which this opens
+      # an issue. Play's own "bad behaviour" threshold for Android vitals sits near 1.09%.
+      MAX_ACCEPTABLE_RATE: "1.5"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for credentials
+        id: creds
+        env:
+          SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$SERVICE_ACCOUNT_JSON" ]; then
+            echo "PLAY_SERVICE_ACCOUNT_JSON is not configured; skipping the crash-rate check."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Authenticate to Google
+        id: auth
+        if: steps.creds.outputs.configured == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          create_credentials_file: false
+
+      - name: Query crash rate
+        id: query
+        if: steps.creds.outputs.configured == 'true'
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: python3 .github/scripts/play_crash_rate.py
+
+      - name: Open or update the tracking issue
+        if: steps.query.outputs.regressed == 'true'
+        uses: actions/github-script@v7
+        env:
+          WORST: ${{ steps.query.outputs.worst }}
+          USERS: ${{ steps.query.outputs.users }}
+          LATEST: ${{ steps.query.outputs.latest }}
+        with:
+          script: |
+            const title = 'Crash rate regression on Play';
+            const body = [
+              `User-perceived crash rate reached **${process.env.WORST}%** (latest reported day: ${process.env.LATEST}),`,
+              `against a peak of ~${process.env.USERS} active users per day.`,
+              '',
+              'Deobfuscated stack traces are in Play Console → Monitor and improve → Android',
+              'vitals → Crashes & ANRs. Releases are AABs, so Play deobfuscates them automatically.',
+              '',
+              'Recent non-fatal failures and in-app crash signatures are in the analytics dashboard.',
+              '',
+              '_Opened automatically by the Play crash-rate alert workflow._',
+            ].join('\n');
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'crash-rate',
+            });
+
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['crash-rate'],
+              });
+            }

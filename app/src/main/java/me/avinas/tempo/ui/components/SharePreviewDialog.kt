@@ -3,6 +3,7 @@ package me.avinas.tempo.ui.components
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -104,17 +106,17 @@ fun SharePreviewDialog(
             // 3. Visible UI (Preview + Controls)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier
                     .fillMaxSize()
                     .systemBarsPadding()
-                    .padding(bottom = 64.dp) // Lift content up more to avoid nav bar overlap
+                    .padding(bottom = 16.dp) // Clean spacing with systemBarsPadding
             ) {
                 // Header
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -128,15 +130,17 @@ fun SharePreviewDialog(
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier
+                            .size(36.dp)
                             .background(
-                                Color.White.copy(alpha = 0.1f),
+                                Color.White.copy(alpha = 0.12f),
                                 androidx.compose.foundation.shape.CircleShape
                             )
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = stringResource(R.string.share_close),
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -147,7 +151,8 @@ fun SharePreviewDialog(
                 BoxWithConstraints(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     val scaleX = maxWidth / CardDesignWidth
@@ -156,9 +161,14 @@ fun SharePreviewDialog(
                     
                     val scaledWidth = CardDesignWidth * scale
                     val scaledHeight = CardDesignHeight * scale
+                    val cardShape = RoundedCornerShape((20 * scale).dp)
                     
                     Box(
-                        modifier = Modifier.size(scaledWidth, scaledHeight),
+                        modifier = Modifier
+                            .size(scaledWidth, scaledHeight)
+                            .shadow(24.dp, cardShape, spotColor = Color.Black.copy(alpha = 0.7f), ambientColor = Color.Black.copy(alpha = 0.4f))
+                            .clip(cardShape)
+                            .border(1.dp, Color.White.copy(alpha = 0.18f), cardShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Box(
@@ -175,22 +185,23 @@ fun SharePreviewDialog(
                     }
                 }
 
-                // Theme picker
+                // Theme picker with selected theme name indicator
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = stringResource(R.string.share_theme_label),
+                        text = "${stringResource(R.string.share_theme_label).uppercase()} • ${theme.name}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.55f),
+                        color = Color.White.copy(alpha = 0.65f),
                         letterSpacing = 1.2.sp,
-                        modifier = Modifier.padding(end = 10.dp)
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(end = 12.dp)
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         ShareTheme.entries.forEach { t ->
                             ThemeSwatch(
                                 theme = t,
@@ -211,22 +222,26 @@ fun SharePreviewDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .height(56.dp),
+                        .height(52.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.White,
                         contentColor = Color.Black
                     ),
-                    shape = RoundedCornerShape(28.dp)
+                    shape = RoundedCornerShape(26.dp)
                 ) {
                     if (isSharing) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(22.dp),
                             color = Color.Black,
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Icon(Icons.Default.Share, contentDescription = null)
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = stringResource(R.string.spotlight_share_instagram),
                             style = MaterialTheme.typography.titleMedium,

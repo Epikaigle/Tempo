@@ -49,11 +49,11 @@ interface TrackDao {
     @Query("UPDATE tracks SET album = :albumTitle WHERE id = :trackId")
     suspend fun setTrackAlbum(trackId: Long, albumTitle: String?)
 
-    // ponytail: exact-artist match only (album stats match on exact artist string),
-    // so featured/multi-artist tracks whose `artist` differs won't surface as candidates.
+    // ponytail: match on primary_artist_id (feat. tracks keep the main artist as
+    // primary) with exact-string fallback for legacy unlinked tracks.
     @Query("""
         SELECT * FROM tracks
-        WHERE artist = :artistName
+        WHERE (primary_artist_id = :artistId OR LOWER(artist) = LOWER(:artistName))
         AND (album IS NULL OR album != :albumTitle)
         AND (:query = '' OR INSTR(LOWER(title), LOWER(:query)) > 0)
         ORDER BY title ASC
@@ -62,8 +62,46 @@ interface TrackDao {
     suspend fun getCandidateTracksForAlbum(
         artistName: String,
         albumTitle: String,
-        query: String
+        query: String,
+        artistId: Long
     ): List<Track>
+
+    /**
+     * Get all tracks on a specific album by artist (matching primary_artist_id or artist string).
+     */
+    @Query("""
+        SELECT * FROM tracks
+        WHERE album = :albumTitle
+        AND (
+            primary_artist_id = :artistId
+            OR LOWER(artist) = LOWER(:artistName)
+        )
+        ORDER BY title ASC
+    """)
+    suspend fun getTracksForAlbumByArtist(
+        albumTitle: String,
+        artistId: Long,
+        artistName: String
+    ): List<Track>
+
+    /**
+     * Reassign all tracks with sourceAlbumTitle to targetAlbumTitle.
+     */
+    @Query("""
+        UPDATE tracks
+        SET album = :targetAlbumTitle
+        WHERE album = :sourceAlbumTitle
+        AND (
+            primary_artist_id = :artistId
+            OR LOWER(artist) = LOWER(:artistName)
+        )
+    """)
+    suspend fun reassignAlbumTracks(
+        sourceAlbumTitle: String,
+        targetAlbumTitle: String,
+        artistId: Long,
+        artistName: String
+    ): Int
     
     @Query("DELETE FROM tracks WHERE id = :id")
     suspend fun deleteById(id: Long): Int
@@ -83,26 +121,26 @@ interface TrackDao {
     // Find by Title and Artist
     
     /**
-     * Find track by exact title and artist match.
+     * Find track by exact title and artist match (case-insensitive).
+     * COLLATE NOCASE allows SQLite to utilize existing title/artist indexes.
      */
     @Query("""
         SELECT * FROM tracks 
-        WHERE LOWER(title) = LOWER(:title) 
-        AND LOWER(artist) = LOWER(:artist) 
+        WHERE title = :title COLLATE NOCASE
+        AND artist = :artist COLLATE NOCASE
         LIMIT 1
     """)
     suspend fun findByTitleAndArtist(title: String, artist: String): Track?
     
     /**
      * Find track by title with fuzzy artist match.
-     * Uses INSTR instead of LIKE so '%'/'_' in artist names are matched
-     * literally, not as SQL wildcards.
+     * Uses INSTR instead of LIKE to avoid SQL wildcard matching on '%' or '_'.
      */
     @Query("""
         SELECT * FROM tracks 
-        WHERE LOWER(title) = LOWER(:title) 
+        WHERE title = :title COLLATE NOCASE
         AND (
-            LOWER(artist) = LOWER(:artist) 
+            artist = :artist COLLATE NOCASE
             OR INSTR(LOWER(artist), LOWER(:artist)) > 0
             OR INSTR(LOWER(:artist), LOWER(artist)) > 0
         )
@@ -114,7 +152,7 @@ interface TrackDao {
      * Return all tracks whose title matches exactly (case-insensitive).
      * Used for any-artist intersection matching when the strict/fuzzy queries miss.
      */
-    @Query("SELECT * FROM tracks WHERE LOWER(title) = LOWER(:title)")
+    @Query("SELECT * FROM tracks WHERE title = :title COLLATE NOCASE")
     suspend fun findCandidatesByTitle(title: String): List<Track>
 
     /**
@@ -194,7 +232,20 @@ interface TrackDao {
      * Limited to 50 results to prevent memory issues with large libraries.
      * INSTR keeps '%'/'_' in the query literal (no wildcard surprises).
      */
-    @Query("SELECT * FROM tracks WHERE INSTR(LOWER(title), LOWER(:query)) > 0 ORDER BY title ASC LIMIT 50")
+    @Query("""
+        SELECT t.id, t.title, t.artist, t.album, t.duration,
+               COALESCE(
+                   NULLIF(t.album_art_url, ''),
+                   NULLIF(em.album_art_url, ''),
+                   (SELECT a.artwork_url FROM albums a WHERE a.title = t.album LIMIT 1)
+               ) as album_art_url,
+               t.spotify_id, t.youtube_id, t.musicbrainz_id, t.primary_artist_id, t.content_type
+        FROM tracks t
+        LEFT JOIN enriched_metadata em ON t.id = em.track_id
+        WHERE INSTR(LOWER(t.title), LOWER(:query)) > 0
+        ORDER BY t.title ASC
+        LIMIT 50
+    """)
     suspend fun searchByTitle(query: String): List<Track>
     
     /**
@@ -202,7 +253,20 @@ interface TrackDao {
      * Limited to 50 results to prevent memory issues with large libraries.
      * INSTR keeps '%'/'_' in the query literal (no wildcard surprises).
      */
-    @Query("SELECT * FROM tracks WHERE INSTR(LOWER(artist), LOWER(:query)) > 0 ORDER BY title ASC LIMIT 50")
+    @Query("""
+        SELECT t.id, t.title, t.artist, t.album, t.duration,
+               COALESCE(
+                   NULLIF(t.album_art_url, ''),
+                   NULLIF(em.album_art_url, ''),
+                   (SELECT a.artwork_url FROM albums a WHERE a.title = t.album LIMIT 1)
+               ) as album_art_url,
+               t.spotify_id, t.youtube_id, t.musicbrainz_id, t.primary_artist_id, t.content_type
+        FROM tracks t
+        LEFT JOIN enriched_metadata em ON t.id = em.track_id
+        WHERE INSTR(LOWER(t.artist), LOWER(:query)) > 0
+        ORDER BY t.title ASC
+        LIMIT 50
+    """)
     suspend fun searchByArtist(query: String): List<Track>
     
     // Content Type Operations

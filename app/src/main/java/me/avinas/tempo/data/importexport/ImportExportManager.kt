@@ -13,6 +13,7 @@ import me.avinas.tempo.BuildConfig
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.profile.ProfileIdentityManager
+import me.avinas.tempo.utils.ImageUrlHostAllowlist
 import com.squareup.moshi.JsonReader
 import com.squareup.moshi.JsonWriter
 import me.avinas.tempo.worker.PostRestoreCacheWorker
@@ -68,7 +69,7 @@ class ImportExportManager @Inject constructor(
     // ImportExportManager is a singleton and both export and import mutate shared
     // state (progress flow) while hammering the DB. A manual backup and a scheduled
     // worker backup must never interleave, so only one operation runs at a time.
-    private val operationInProgress = AtomicBoolean(false)
+    private val operationGate = ImportExportOperationGate()
     
     private val _progress = MutableStateFlow<ImportExportProgress?>(null)
     val progress: StateFlow<ImportExportProgress?> = _progress.asStateFlow()
@@ -88,7 +89,8 @@ class ImportExportManager @Inject constructor(
         uri: Uri,
         includeLocalImages: Boolean = true
     ): ImportExportResult = withContext(Dispatchers.IO) {
-        if (!operationInProgress.compareAndSet(false, true)) {
+        val operationLease = operationGate.tryAcquire()
+        if (operationLease == null) {
             return@withContext ImportExportResult.Error(
                 "Another backup/restore is already in progress. Please wait for it to finish."
             )
@@ -103,6 +105,8 @@ class ImportExportManager @Inject constructor(
                 context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                     stagingFile.inputStream().use { it.copyTo(outputStream) }
                 } ?: return@withContext ImportExportResult.Error("Could not open file for writing")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to copy staged backup to destination", e)
                 return@withContext ImportExportResult.Error(
@@ -113,10 +117,11 @@ class ImportExportManager @Inject constructor(
 
             result
         } finally {
-            operationInProgress.set(false)
             stagingFile.delete()
-            delay(1000)
             _progress.value = null
+            // Clear shared progress before releasing the gate. Otherwise a new
+            // operation can start and have its progress erased by this one.
+            operationLease.release()
         }
     }
 
@@ -129,7 +134,8 @@ class ImportExportManager @Inject constructor(
         target: File,
         includeLocalImages: Boolean = true
     ): ImportExportResult = withContext(Dispatchers.IO) {
-        if (!operationInProgress.compareAndSet(false, true)) {
+        val operationLease = operationGate.tryAcquire()
+        if (operationLease == null) {
             return@withContext ImportExportResult.Error(
                 "Another backup/restore is already in progress. Please wait for it to finish."
             )
@@ -137,9 +143,8 @@ class ImportExportManager @Inject constructor(
         try {
             writeBackupArchive(target, includeLocalImages)
         } finally {
-            operationInProgress.set(false)
-            delay(1000)
             _progress.value = null
+            operationLease.release()
         }
     }
 
@@ -323,16 +328,15 @@ class ImportExportManager @Inject constructor(
             _progress.value = ImportExportProgress("Export complete!", 100, 100)
             result
             
+        } catch (e: CancellationException) {
+            target.delete()
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Export failed", e)
             ImportExportResult.Error(
                 "Export failed: ${e::class.java.simpleName}: ${e.message}",
                 e
             )
-        } finally {
-            operationInProgress.set(false)
-            delay(1000)
-            _progress.value = null
         }
     }
     
@@ -346,7 +350,8 @@ class ImportExportManager @Inject constructor(
         uri: Uri,
         conflictStrategy: ImportConflictStrategy
     ): ImportExportResult = withContext(Dispatchers.IO) {
-        if (!operationInProgress.compareAndSet(false, true)) {
+        val operationLease = operationGate.tryAcquire()
+        if (operationLease == null) {
             return@withContext ImportExportResult.Error(
                 "Another backup/restore is already in progress. Please wait for it to finish."
             )
@@ -786,10 +791,19 @@ class ImportExportManager @Inject constructor(
             profileIdentityManager.restoreProfileImagePath(restoredProfileImagePath)
             Log.i(TAG, "Restored profile image path present=${!restoredProfileImagePath.isNullOrBlank()}")
             
-            // Schedule pre-caching of hotlinked images
-            if (data.hotlinkedUrls.isNotEmpty()) {
+            // Schedule pre-caching of hotlinked images. The list comes from the
+            // restored backup file and is therefore untrusted input: a crafted
+            // backup must not be able to make Tempo bulk-fetch arbitrary
+            // attacker-chosen URLs in the background (covert beacon). Only known
+            // music-art CDN hosts are pre-cached; per-image UI loading is unaffected.
+            val cacheableHotlinks = ImageUrlHostAllowlist.filterAllowed(data.hotlinkedUrls)
+            val droppedHotlinkCount = data.hotlinkedUrls.size - cacheableHotlinks.size
+            if (droppedHotlinkCount > 0) {
+                Log.w(TAG, "Dropped $droppedHotlinkCount non-allowlisted hotlinked URLs from the restored backup")
+            }
+            if (cacheableHotlinks.isNotEmpty()) {
                 _progress.value = ImportExportProgress("Scheduling image cache...", 95, 100)
-                PostRestoreCacheWorker.schedule(context, data.hotlinkedUrls)
+                PostRestoreCacheWorker.schedule(context, cacheableHotlinks)
             }
             
             // Invalidate stats cache to force UI refresh (fixes "New User" state persisting)
@@ -804,15 +818,16 @@ class ImportExportManager @Inject constructor(
                 eventsCount = importedEvents,
                 imagesCount = extractedImages.size
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Import failed", e)
             ImportExportResult.Error("Import failed: ${e.message}", e)
         } finally {
-            operationInProgress.set(false)
             stagedEventsFile.delete()
             stagedArchiveFile.delete()
-            delay(1000)
             _progress.value = null
+            operationLease.release()
         }
     }
 
@@ -1084,6 +1099,34 @@ class ImportExportManager @Inject constructor(
 
 }
 
+/**
+ * Single-owner gate for the singleton import/export manager.
+ *
+ * A lease can release the gate only once. Keeping the lease in the public
+ * operation prevents a nested helper from accidentally clearing the shared
+ * gate while its caller is still copying a staged archive to the destination.
+ */
+internal class ImportExportOperationGate {
+    private val active = AtomicBoolean(false)
+
+    fun tryAcquire(): Lease? =
+        if (active.compareAndSet(false, true)) Lease(this) else null
+
+    private fun release() {
+        active.set(false)
+    }
+
+    class Lease internal constructor(
+        private val owner: ImportExportOperationGate
+    ) {
+        private val released = AtomicBoolean(false)
+
+        fun release() {
+            if (released.compareAndSet(false, true)) owner.release()
+        }
+    }
+}
+
 private data class ExtractedImage(
     val path: String,
     val bytesWritten: Long
@@ -1094,9 +1137,12 @@ internal fun resolveRestoredProfileImagePath(
     pathMapping: Map<String, String>
 ): String? {
     if (exportedProfileImagePath.isNullOrBlank()) return null
-    return if (exportedProfileImagePath.startsWith("file://")) {
-        pathMapping[exportedProfileImagePath]
-    } else {
-        exportedProfileImagePath
-    }
+    // A legitimate exported profile image is always a file:// URI inside the
+    // app's private storage (ProfileIdentityManager.updateProfileImage only ever
+    // saves that form, and the export bundles + remaps it via the image
+    // manifest). A backup file is untrusted input, so any other value — an
+    // http(s) URL, a content:// URI, or an arbitrary device path — is discarded
+    // instead of being persisted as-is.
+    if (!exportedProfileImagePath.startsWith("file://")) return null
+    return pathMapping[exportedProfileImagePath]
 }

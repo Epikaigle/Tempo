@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-class SourceAuthorityTest {
+class DriveSourceAuthorityTest {
 
     @Test
     fun `Drive transport preserves the original source authority`() {
@@ -16,6 +16,8 @@ class SourceAuthorityTest {
             SourceAuthority.rank("desktop:windows"),
             SourceAuthority.rank("drive:remote-device:desktop:windows")
         )
+        assertEquals(100, SourceAuthority.rank("drive:remote-device"))
+        assertEquals(100, SourceAuthority.rank("drive::android"))
     }
 
     @Test

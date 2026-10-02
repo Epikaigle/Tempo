@@ -45,10 +45,10 @@ data class Artist(
     val genres: List<String> = emptyList(),
     
     @ColumnInfo(name = "musicbrainz_id") 
-    val musicbrainzId: String?,
+    val musicbrainzId: String? = null,
     
     @ColumnInfo(name = "spotify_id") 
-    val spotifyId: String?,
+    val spotifyId: String? = null,
     
     /**
      * Country/region of the artist (e.g., "IN", "US", "GB")
@@ -73,18 +73,15 @@ data class Artist(
         private val WHITESPACE_PATTERN = Regex("\\s+")
 
         /**
-         * Normalize an artist name for comparison and deduplication.
-         *
-         * Steps:
+         * Normalizes an artist name for comparison and deduplication:
          * 1. NFKC normalization (folds full-width Latin "ＡＢＣ" -> "ABC",
-         *    half-width katakana "ｶ" -> "カ", and other compatibility chars)
-         * 2. Lowercase
-         * 3. Strip punctuation/symbols but keep letters/numbers of any script
-         * 4. Collapse whitespace
+         *    half-width katakana "ｶ" -> "カ", and compatibility chars).
+         * 2. Lowercase.
+         * 3. Strip punctuation and symbols, retaining script letters and numbers.
+         * 4. Collapse whitespace.
          *
-         * If everything is stripped (e.g. symbol/emoji-only names), falls back to
-         * the NFKC-lowercased original so two different names never share the
-         * same empty dedup key.
+         * If all characters are stripped (symbol/emoji-only names), falls back
+         * to the NFKC-lowercased original to prevent empty dedup keys.
          */
         fun normalizeName(name: String): String {
             val nfkc = Normalizer.normalize(name, Normalizer.Form.NFKC)

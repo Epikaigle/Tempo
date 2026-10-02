@@ -480,12 +480,17 @@ class GoogleAuthManager @Inject constructor(
                 Log.w(TAG, "Failed to clear Drive history sync state during sign-out", e)
             }
 
-            tokenStorage.clearAll()
-            authorizationResult = null
-            authorizationResolution = null
-            _currentAccount.value = null
-            _isSignedIn.value = false
-            _needsDriveConsent.value = false
+            try {
+                tokenStorage.clearAll()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to clear persisted Google credentials", e)
+            } finally {
+                authorizationResult = null
+                authorizationResolution = null
+                _currentAccount.value = null
+                _isSignedIn.value = false
+                _needsDriveConsent.value = false
+            }
         }
     }
 

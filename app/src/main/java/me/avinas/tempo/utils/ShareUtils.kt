@@ -10,12 +10,43 @@ import android.net.Uri
 import android.view.View
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.FileProvider
+import dagger.hilt.android.EntryPointAccessors
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
+import me.avinas.tempo.di.AnalyticsEntryPoint
 import java.io.File
 import java.io.FileOutputStream
+import java.io.BufferedOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object ShareUtils {
 
-    fun shareBitmap(context: Context, bitmap: Bitmap): Boolean {
+    /**
+     * Resolves the analytics tracker without an injection point.
+     *
+     * Sharing happens inside plain composables and this stateless object, so there is nowhere
+     * to take a constructor dependency. Failures are swallowed: a share must never break
+     * because reporting could not be set up (for example under a unit test with no Hilt
+     * application).
+     *
+     * Reported when the system share sheet opens, not when a target is chosen — Android does
+     * not tell us which app the user picked, or whether they picked one at all.
+     */
+    private fun reportShare(context: Context, feature: TempoFeature) {
+        runCatching {
+            EntryPointAccessors
+                .fromApplication(context.applicationContext, AnalyticsEntryPoint::class.java)
+                .analyticsTracker()
+                .track(FeatureUsed(feature))
+        }
+    }
+
+    suspend fun shareBitmap(
+        context: Context,
+        bitmap: Bitmap,
+        feature: TempoFeature = TempoFeature.SHARE_CARD
+    ): Boolean = withContext(Dispatchers.IO) {
         try {
             android.util.Log.d("ShareUtils", "Starting share process. Bitmap: ${bitmap.width}x${bitmap.height}")
             val file = saveBitmapToCache(context, bitmap)
@@ -36,8 +67,10 @@ object ShareUtils {
                 // Create chooser to avoid direct app launch issues
                 val chooser = Intent.createChooser(intent, "Share Spotlight")
                 chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(chooser)
-                return true
+                withContext(Dispatchers.Main) {
+                    context.startActivity(chooser)
+                }
+                return@withContext true
             } else {
                 android.util.Log.e("ShareUtils", "Failed to save bitmap to cache.")
             }
@@ -45,7 +78,7 @@ object ShareUtils {
             android.util.Log.e("ShareUtils", "Exception during share", e)
             e.printStackTrace()
         }
-        return false
+        return@withContext false
     }
 
     private fun saveBitmapToCache(context: Context, bitmap: Bitmap): File? {
@@ -57,7 +90,7 @@ object ShareUtils {
             }
             // Overwrite existing file to save space
             val file = File(cachePath, "spotlight_share.png")
-            val stream = FileOutputStream(file)
+            val stream = BufferedOutputStream(FileOutputStream(file), 32768)
             bitmap.compress(Bitmap.CompressFormat.PNG, 90, stream) // Slight compression to reduce memory pressure
             stream.flush()
             stream.close()

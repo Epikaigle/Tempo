@@ -55,8 +55,7 @@ object SpotifyConfig {
     fun requiresSpotify(feature: SpotifyFeature): Boolean = true
     
     /**
-     * List of all features that require Spotify.
-     * Can be shown to users when explaining what they'll unlock.
+     * Features requiring Spotify integration.
      */
     val allSpotifyFeatures = SpotifyFeature.values().toList()
     

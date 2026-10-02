@@ -408,10 +408,8 @@ export class PlaybackTracker {
       tracker.trackDurationMs = durationMs;
     }
 
-    // Mark track as eligible for logging when it accumulates enough listen time.
-    // We do NOT emit ReadyToLog here — the play is only committed when the track
-    // actually ends (track change, tab close, or media stop), ensuring the full
-    // accumulated listen time is recorded rather than a premature 15s snapshot.
+    // Defer ReadyToLog until the track finishes, tab closes, or playback stops,
+    // so final event captures accumulated listen duration rather than early snapshot.
     if (!tracker.eligible && tracker.accumulatedListenMs >= MIN_LISTEN_TIME_MS) {
       tracker.eligible = true;
     }
@@ -512,7 +510,6 @@ export class PlaybackTracker {
     return this.buildNowPlaying(tracker, tracker.lastRaw, tracker.detectedSite, false);
   }
 
-  // Private helpers
 
   private applyDurationCap(tracker: TabTracker, increment: number): number {
     const newTotal = tracker.accumulatedListenMs + increment;

@@ -7,12 +7,12 @@ import androidx.room.PrimaryKey
 
 /**
  * Single-row table tracking the user's XP and level.
- * 
+ *
  * XP is computed deterministically from listening history:
  * - Full play (≥80% completion): 10 XP
  * - Partial play (30-79%): 3 XP
  * - Skipped (<30%): 0 XP
- * 
+ *
  * Level uses an exponential curve: xpForLevel(n) = floor(100 * n^1.5)
  * This means no hardcoded cap. Levels continue infinitely.
  */
@@ -26,7 +26,13 @@ data class UserLevel(
     @ColumnInfo(name = "last_xp_awarded_at") val lastXpAwardedAt: Long = 0,
     @ColumnInfo(name = "current_streak") val currentStreak: Int = 0,
     @ColumnInfo(name = "longest_streak") val longestStreak: Int = 0,
-    @ColumnInfo(name = "last_streak_date") val lastStreakDate: String = ""
+    @ColumnInfo(name = "last_streak_date") val lastStreakDate: String = "",
+    /**
+     * XP carried forward from daily challenges that were pruned (deleted) for storage hygiene.
+     * recomputeXpAndLevel() sums xpReward only from live challenge rows, so pruned rows' XP is
+     * banked here and added back on every recompute to keep total XP invariant.
+     */
+    @ColumnInfo(name = "banked_challenge_xp") val bankedChallengeXp: Long = 0,
 ) {
     /** Progress percentage toward next level (0.0 to 1.0) */
     val levelProgress: Float
@@ -36,29 +42,30 @@ data class UserLevel(
             val progress = totalXp - xpForCurrentLevel
             return (progress.toFloat() / range.toFloat()).coerceIn(0f, 1f)
         }
-    
+
     /** XP remaining to reach next level */
     val xpRemaining: Long
         get() = (xpForNextLevel - totalXp).coerceAtLeast(0)
 
     /** User title based on level */
     val title: String
-        get() = when {
-            currentLevel < 5 -> "Newcomer"
-            currentLevel < 10 -> "Casual Listener"
-            currentLevel < 20 -> "Music Fan"
-            currentLevel < 35 -> "Music Enthusiast"
-            currentLevel < 50 -> "Dedicated Listener"
-            currentLevel < 75 -> "Music Connoisseur"
-            currentLevel < 100 -> "Audiophile"
-            currentLevel < 150 -> "Music Legend"
-            else -> "Sound God"
-        }
+        get() =
+            when {
+                currentLevel < 5 -> "Newcomer"
+                currentLevel < 10 -> "Casual Listener"
+                currentLevel < 20 -> "Music Fan"
+                currentLevel < 35 -> "Music Enthusiast"
+                currentLevel < 50 -> "Dedicated Listener"
+                currentLevel < 75 -> "Music Connoisseur"
+                currentLevel < 100 -> "Audiophile"
+                currentLevel < 150 -> "Music Legend"
+                else -> "Sound God"
+            }
 }
 
 /**
  * Represents a badge (earned or locked) in the gamification system.
- * 
+ *
  * Badges are awarded for milestones: play counts, listening time,
  * streaks, discovery, engagement patterns, and reaching specific levels.
  */
@@ -67,8 +74,8 @@ data class UserLevel(
     indices = [
         Index(value = ["badge_id"], unique = true),
         Index(value = ["category"]),
-        Index(value = ["is_earned"])
-    ]
+        Index(value = ["is_earned"]),
+    ],
 )
 data class Badge(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -76,13 +83,13 @@ data class Badge(
     val name: String,
     val description: String,
     @ColumnInfo(name = "icon_name") val iconName: String,
-    val category: String,      // MILESTONE, TIME, STREAK, DISCOVERY, ENGAGEMENT, LEVEL
+    val category: String, // MILESTONE, TIME, STREAK, DISCOVERY, ENGAGEMENT, LEVEL
     @ColumnInfo(name = "earned_at") val earnedAt: Long = 0,
-    val progress: Int = 0,     // Current progress toward next star
+    val progress: Int = 0, // Current progress toward next star
     @ColumnInfo(name = "max_progress") val maxProgress: Int = 1, // Threshold for next star
     @ColumnInfo(name = "is_earned") val isEarned: Boolean = false,
-    val stars: Int = 0,        // Star count: 0=locked, 1-5=earned stars
-    @ColumnInfo(name = "is_acknowledged") val isAcknowledged: Boolean = false // Track if the user has seen the new star tier
+    val stars: Int = 0, // Star count: 0=locked, 1-5=earned stars
+    @ColumnInfo(name = "is_acknowledged") val isAcknowledged: Boolean = false, // Track if the user has seen the new star tier
 ) {
     /** Progress toward next star as a fraction 0.0 to 1.0 */
     val progressFraction: Float
@@ -103,8 +110,11 @@ data class Badge(
     tableName = "daily_challenges",
     indices = [
         Index(value = ["date"]),
-        Index(value = ["date", "is_completed"])
-    ]
+        Index(value = ["date", "is_completed"]),
+        // One row per challenge per day: makes generation idempotent (INSERT OR IGNORE) and
+        // prevents the midnight worker/UI race from creating duplicate rows that double-count XP.
+        Index(value = ["challenge_id", "date"], unique = true),
+    ],
 )
 data class DailyChallenge(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -119,7 +129,7 @@ data class DailyChallenge(
     @ColumnInfo(name = "completed_at") val completedAt: Long = 0,
     val category: String,
     val difficulty: String,
-    @ColumnInfo(name = "target_metadata") val targetMetadata: String? = null
+    @ColumnInfo(name = "target_metadata") val targetMetadata: String? = null,
 ) {
     val progressFraction: Float
         get() = if (targetValue > 0) (currentProgress.toFloat() / targetValue).coerceIn(0f, 1f) else 0f

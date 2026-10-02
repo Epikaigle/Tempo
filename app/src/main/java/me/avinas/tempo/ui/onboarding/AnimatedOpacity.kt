@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 
 @Composable
 fun AnimatedOpacity(
@@ -19,8 +20,14 @@ fun AnimatedOpacity(
         animationSpec = tween(500, delayMillis = delay),
         label = "alpha"
     )
-    
-    Box(modifier = Modifier.alpha(alpha)) {
+
+    // ponytail: rise + fade reads as arrival, alpha-only reads as ghost.
+    // One shared language: 24px drift, same as transitions + Welcome.
+    Box(
+        modifier = Modifier
+            .alpha(alpha)
+            .graphicsLayer { translationY = (1f - alpha) * 24f }
+    ) {
         content()
     }
 }

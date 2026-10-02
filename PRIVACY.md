@@ -1,149 +1,89 @@
-# Privacy Policy for Tempo
+# Privacy policy for Tempo
 
-**Last Updated:** August 26, 2026
+Last updated: October 2, 2026
 
-## 1. Introduction
+Tempo is a local-first music tracker for Android. Your listening history stays on your phone. Tempo runs no server of its own, creates no accounts, shows no ads, and sells no data. There is no advertising or attribution SDK in the app.
 
-Tempo ("we", "our", or "the App") is designed with a **local-first** philosophy. Your listening history and statistics are stored primarily on your own devices. Tempo does **not** operate a central listening-history server, does **not** sell personal data, and does **not** use listening history for advertising or behavioral profiling.
+Search queries go to metadata services so Tempo can show album art and genres. Anonymous app-health statistics go to Aptabase so crashes get fixed. Listening history is not included in health reporting. Separately, you can opt in to backups and cross-device history sync using your own Google Drive account. Turn off health reporting at any time in Settings → Your Data.
 
-Some optional features can transmit data to third-party services when you explicitly enable them. In particular, Tempo can use **your own Google Drive account** for full backups and, separately, for cross-device listening-history synchronization. These features are described below and can be used or disabled independently.
+## What stays on your device
 
-## 2. Data Collection & Android Permissions
+All listening history lives in an encrypted SQLite (Room) database in internal storage.
 
-To function as a music tracker, Tempo requires specific Android permissions. We use them only for the purposes described here.
+Lose your phone without a backup and the history is gone. Tempo cannot recover it because Tempo never had it.
 
-| Permission | Usage |
-| :--- | :--- |
-| **Notification Access** (`BIND_NOTIFICATION_LISTENER_SERVICE`) | **Core feature.** Detects currently playing media from supported music apps. Tempo filters for media playback and does not intentionally collect message, email, or other unrelated notification content. |
-| **Foreground Service** (`FOREGROUND_SERVICE`) | Allows music tracking to continue reliably in the background. |
-| **Internet Access** (`INTERNET`) | Fetches public music metadata and, when you opt in, communicates with Google Drive and linked Tempo browser/desktop components. |
-| **Media Control** (`MEDIA_CONTENT_CONTROL`) | Reads active media-session playback state and timeline positions for accurate tracking. |
+Backups are yours to control:
 
-## 3. Local Storage
+- Export the full database to a file.
+- Restore from a backup file.
+- Write encrypted backups to your own Google Drive by connecting a Google account. Those files go to your Drive, not to Tempo.
+- Wipe everything in app settings.
 
-### 3.1 Listening history
+## Optional Google Drive history synchronization
 
-Listening events, track metadata, preferences, and statistics are stored locally in Tempo's SQLite/Room database on Android. Browser and desktop companions maintain their own local queues/databases when used.
+Cross-device history sync is disabled by default and separate from full backups. It exchanges listening events directly through Google's hidden `appDataFolder`, using the `drive.appdata` scope; full backups use `drive.file`. Android, the browser extension, and compatible Desktop clients must use the same Google account and Google Cloud application.
 
-### 3.2 Authentication credentials
+When enabled, sync uploads track, artist and album names, playback timestamps and durations, source app/site, playback metrics, and random device/event identifiers used to prevent duplicates. Tempo does not upload hardware identifiers or relay history through a Tempo server. Google account identity is checked to keep each account's sync state separate. Android credentials are stored in Keystore-backed encrypted preferences.
 
-On Android, Google authentication tokens and account information used for Drive access are stored with Android Keystore-backed encrypted preferences. Browser companions rely on the browser's identity/token facilities where available and keep only the minimum state needed for the optional Drive feature.
+Drive traffic uses HTTPS. History batches are compressed, but are not end-to-end encrypted against Google. Hidden application data should not be mistaken for end-to-end encryption. Batches remain in Drive so linked devices can catch up after being offline.
 
-### 3.3 User control
+Disconnect Google to stop synchronization, or use **Delete synced Drive history** to remove the shared cloud history and disable synchronization. Local listening history remains on your devices. A linked device must explicitly re-enable sync after a shared deletion. Local tracking and direct local-network sync remain available without Google.
 
-Tempo provides controls to export and import local data, clear local application data through the operating system, disconnect Google, and delete Tempo cross-device synchronization data from Google Drive.
+The browser extension requests separate opt-in for Drive synchronization. Firefox also requests its optional data-sharing consent where supported; declining it keeps local tracking and local-network sync available.
 
-## 4. Optional Google Drive Features
+## Permissions Tempo asks for
 
-Google Drive integration is optional. Tempo does not require a Google account for ordinary local music tracking or direct local-network synchronization.
+| Permission | Why Tempo needs it |
+|---|---|
+| Notification access (`BIND_NOTIFICATION_LISTENER_SERVICE`) | Detects what is playing by reading media notifications from music apps. Tempo filters for music apps and ignores other notifications such as messages or mail. |
+| Foreground service (`FOREGROUND_SERVICE`) | Keeps tracking running in the background without the system killing it. |
+| Internet (`INTERNET`) | Fetches metadata, sends the anonymous health statistics described below, and communicates with your own Google Drive when you enable backups or history sync. |
+| Media control (`MEDIA_CONTENT_CONTROL`) | Reads the active media session for accurate play, pause, and position state. |
 
-### 4.1 Full Google Drive backups
+## Metadata lookups
 
-If you choose to create or schedule a full backup, Tempo uses the Google Drive `drive.file` permission to create and manage backup files made by Tempo. These backups can contain your Tempo database and data selected for backup.
+To show art, genres, and artist details, Tempo queries third-party services directly from your device. No proxy, no Tempo server in the middle. Each request sends the minimum needed to find a match, usually artist and title.
 
-Full backups are separate from cross-device history synchronization.
+- Spotify: album art, audio features, and artist genres. Search queries send artist name and song title. If you link a Spotify account, the token stays on your device and is used only for these calls.
+- iTunes Search API: fallback for album art and artist images. Search queries send artist and album title. Tempo may also read public Apple Music artist pages for images the API does not return.
+- MusicBrainz and Cover Art Archive: metadata and standard tags. Search queries send artist and title.
+- ReccoBeats: mood and energy analysis when Spotify data is missing. Search queries send artist and title. If a track is not in their database, Tempo may send the public 30-second preview URL supplied by Spotify for analysis. Tempo never uploads your local audio files.
+- Last.fm and Deezer: fallback for biographies, tags, and cover art. Search queries only.
 
-### 4.2 Cross-device listening-history synchronization
+## Anonymous app-health reporting
 
-If you explicitly enable **Cross-device history sync**, Tempo uses the Google Drive `drive.appdata` permission. This permission is limited to the private application-data space assigned to Tempo in your Google Drive account; it does not grant Tempo general access to the rest of your Drive files.
+Tempo sends anonymous statistics about the app itself: crashes, errors, and which features are used. This reporting is independent of the optional Google Drive features above and never includes listening history.
 
-Cross-device synchronization may transmit the following listening-event information when available:
+What is sent: crash signatures (obfuscated class name and line, never the message), failure counts by category, detail-screen visits (song, artist, album only) and features reached, whether onboarding finished, and whether background detection is alive. Counts go out as ranges, not exact numbers. The exact list is in the app under Settings → Your Data → Data and diagnostics, and in `docs/ANALYTICS.md`.
 
-- track title;
-- artist;
-- album;
-- playback timestamp;
-- track duration and listened duration;
-- playback completion percentage;
-- skip/replay, pause, and seek counts;
-- media source/application or supported website;
-- content type and limited playback metrics used by Tempo statistics;
-- a random Tempo device identifier and random/stable event identifiers used for synchronization and duplicate prevention.
+What is never sent: track, artist, album, or playlist names. Search queries. Notification content. File paths. Listening timestamps. Google, Spotify, or Last.fm account details. Any device identifier, including advertising ID and `ANDROID_ID`. Crash messages are left out on purpose, because a parse error can echo notification text.
 
-Tempo does **not** use hardware serial numbers as its cross-device identifier.
+How you stay unidentified: Tempo sets no user ID. The only session value is random, held in memory, regenerated on each start, and rotated after an hour of inactivity. It is never written to disk. No cookies.
 
-The synchronization files are versioned, compressed history batches stored in Google Drive's hidden `appDataFolder`. Each linked Tempo client can upload its new local events and retrieve events produced by other linked clients using the same authorized Google account/application identity. Local databases remain the primary working copies.
+Where it goes: Aptabase, in the EU. Aptabase is open source and its SDKs send no identifiers. On receipt it derives a temporary hash from IP and user agent against a salt that rotates every 24 hours. Old salts are purged on a schedule, so events cannot be linked across days. One caveat stated plainly: that IP also yields a coarse country and region, stored with the event. It is not precise and is not linked to anything else, but it is location data and you should know it is kept.
 
-### 4.3 No Tempo-operated relay server
+When it is sent: over any connection, including mobile data. Each event is a few hundred bytes, about 16 KB on a busy day, so waiting for Wi-Fi would silence reporting for people on mobile data only. Nothing is collected until the in-app notice has been shown, and the notice stays up until you acknowledge it or turn reporting off.
 
-Google Drive synchronization communicates directly between a Tempo client and Google's Drive API. Listening-history batches are not routed through a server operated by Tempo.
+To turn it off: open Settings → Your Data → Anonymous app-health stats. Reporting stops at once and anything buffered but unsent is deleted. This works from any screen.
 
-### 4.4 Encryption and security
+Builds compiled from source send nothing. The reporting key is not committed to the repository, so a self-built copy has reporting inert.
 
-Drive API traffic uses HTTPS. Google protects data stored in Google Drive according to Google's own security practices and terms. Tempo does **not** currently claim end-to-end encryption of cross-device Drive history against Google; users should not interpret the hidden `appDataFolder` as client-side end-to-end encryption.
+## Diagnostics report
 
-### 4.5 Retention and deletion
+Apart from automatic reporting, Tempo can build a diagnostics report when you ask for it in Settings → Your Data → Data and diagnostics. It covers build and database versions, library counts, metadata status, detection health, and background work state, and it appears on screen so you can read it first.
 
-Cross-device history batches may remain in the Tempo application-data area of your Google Drive so that another linked device can catch up after being offline. Their storage counts toward your Google account storage according to Google's Drive policies.
+Nothing uploads to make it. It leaves your phone only if you share it, for example attached to a bug report. Because you start it and review it, it carries more detail than the automatic events. It still holds no track, artist, or album names, no file paths, and no account or device identifiers.
 
-Tempo provides a **Delete synced Drive history** control that deletes Tempo cross-device history batches from the authorized Google Drive account without deleting the listening history already stored locally on your devices. You can also revoke Tempo's Google access from your Google account settings.
+## Children
 
-Google may allow users to delete an application's hidden Drive data independently. If cloud synchronization data is removed, local Tempo history is not automatically deleted.
+Tempo is a general music utility, not aimed at children under 13. Tempo does not knowingly collect personal information from children.
 
-## 5. Browser Extension Data Transmission
+## Changes to this policy
 
-The Tempo browser extension tracks playback on supported music websites as part of its primary function. By default, the extension stores plays locally and can send queued plays directly to a paired Tempo Android device over the local network.
+Tempo may update this policy as features change. Tempo collects no email addresses, so there is no mailing list to notify. Check this file or the About section in the app for updates.
 
-If you separately opt in to Google Drive synchronization, the extension may transmit the listening-event fields listed in Section 4.2 to your Google Drive application-data space. The extension does not enable this transmission by default.
+## Contact
 
-On Firefox versions that support Mozilla's built-in data collection consent system, the Drive feature requests the applicable optional data-transmission permissions when you choose to connect Google Drive. Declining that optional consent leaves local tracking and local-network synchronization available.
-
-## 6. External Services & Data Sharing
-
-Tempo uses third-party APIs to enrich music metadata. We send only information needed for the requested feature, generally artist/track/album search terms.
-
-### 6.1 Google Drive
-
-- **Purpose:** Optional full backups and optional cross-device history synchronization.
-- **Data shared:** Backup contents when you request a backup; listening-event data described in Section 4.2 when cross-device sync is enabled; Google account authorization information required by OAuth.
-- **Scopes:** Tempo is designed to use least-privilege Drive scopes (`drive.file` for Tempo-created backup files and `drive.appdata` for Tempo application data).
-- **Advertising:** Tempo does not use Google Drive data for advertising and does not sell it.
-
-### 6.2 Spotify
-
-- **Usage:** Fetches high-resolution album art, audio features, and artist genres where available.
-- **Data shared:** Search queries such as artist name and song title.
-- **Authentication:** If you link Spotify, its authentication information is stored locally for the requested Spotify API features.
-
-### 6.3 iTunes / Apple Music public services
-
-- **Usage:** Fallback source for artwork and artist information.
-- **Data shared:** Search queries such as artist and album names.
-- **Public pages:** Tempo may request public Apple Music artist pages when necessary to locate public artwork.
-
-### 6.4 MusicBrainz & Cover Art Archive
-
-- **Usage:** Metadata, normalized tags, and artwork.
-- **Data shared:** Music search queries such as artist and track names.
-
-### 6.5 ReccoBeats
-
-- **Usage:** Music analysis where supported.
-- **Data shared:** Music search queries and, in limited cases, a public preview URL supplied by a music service. Tempo does not upload your private local audio files for this purpose.
-
-### 6.6 Last.fm & Deezer
-
-- **Usage:** Fallback artist biographies, tags, metadata, and artwork.
-- **Data shared:** Music search queries.
-
-## 7. Network Communication
-
-Tempo normally communicates directly from your device or browser to the third-party service needed for a feature. Direct local synchronization between Tempo clients uses the local network when available. Optional Google Drive cross-device synchronization uses Google's Drive API when devices cannot communicate directly or when the user chooses Drive synchronization.
-
-Tempo does not operate an advertising, analytics, or listening-history relay server.
-
-## 8. Children's Privacy
-
-Tempo is a general-purpose music utility and is not directed at children under 13. Tempo does not knowingly operate a service intended to collect children's personal information.
-
-## 9. Changes to This Policy
-
-We may update this policy when Tempo's functionality or third-party integrations change. Because Tempo does not operate its own user-account/email database, it may not be possible to notify users directly. The current policy is published with the project/application.
-
-## 10. Contact
-
-If you have questions about privacy or technical details:
-
-**Developer:** Avinash
-**Email:** hi@avinas.me
-**GitHub:** https://github.com/avinaxhroy/Tempo
+Developer: Avinash
+Email: hi@avinash.im
+GitHub: https://github.com/avinaxhroy/Tempo

@@ -251,7 +251,7 @@ class DatabaseOptimization @Inject constructor(
     }
     
     /**
-     * Get comprehensive database diagnostics.
+     * Collects database health, table row counts, and index statistics.
      */
     suspend fun getDiagnostics(): DatabaseDiagnostics = withContext(Dispatchers.IO) {
         val stats = getDatabaseStats()
@@ -346,7 +346,6 @@ class DatabaseOptimization @Inject constructor(
         result
     }
     
-    // Private Helpers
     
     private suspend fun countEvents(): Int = withContext(Dispatchers.IO) {
         try {
@@ -502,7 +501,7 @@ data class IndexStats(
 )
 
 /**
- * Comprehensive database diagnostics.
+ * Database health metrics, table row counts, and index statistics.
  */
 data class DatabaseDiagnostics(
     val stats: DatabaseStats,

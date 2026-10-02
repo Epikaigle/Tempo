@@ -48,7 +48,7 @@ data class ListeningEvent(
     @ColumnInfo(name = "session_id", defaultValue = "NULL") val sessionId: String? = null,
     @ColumnInfo(name = "end_timestamp", defaultValue = "NULL") val endTimestamp: Long? = null,
     
-    // NEW: Enhanced robustness tracking fields
+    // Playback session diagnostic fields
     @ColumnInfo(name = "total_pause_duration_ms", defaultValue = "0") val totalPauseDurationMs: Long = 0,
     @ColumnInfo(name = "seek_count", defaultValue = "0") val seekCount: Int = 0,
     @ColumnInfo(name = "position_updates_count", defaultValue = "0") val positionUpdatesCount: Int = 0,

@@ -171,3 +171,38 @@ Marker-first ordering remains required. Deleting files before publishing the mar
 ## Versioning
 
 Do not silently change the semantics of v1 JSON fields, hashing, units, marker ordering, generation metadata, or filename namespace. An incompatible wire change requires a new schema/file namespace so old and new clients can coexist predictably.
+
+## OAuth setup and release validation
+
+Use public OAuth clients from the same Google Cloud project for Android, Chrome,
+Firefox and Desktop, and enable the Google Drive API. Clients from unrelated
+projects do not share an application's hidden Drive namespace even when they use
+the same Google account.
+
+| Client | Build configuration | Required setup |
+|---|---|---|
+| Android | `GOOGLE_WEB_CLIENT_ID` in local.properties, or `TEMPO_GOOGLE_WEB_CLIENT_ID` in the build environment | Register the Android package and signing certificate, and configure the associated Web client. Request `drive.file` and `drive.appdata`. |
+| Chrome | `TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME` | Register the released extension identity. Request `openid`, `email` and `drive.appdata`. |
+| Firefox | `TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX` | Register the loopback redirect produced for the signed Firefox extension identity. Request `openid`, `email` and `drive.appdata`. |
+| Desktop | `TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP` | Register a Desktop public client with a loopback callback. Request `openid`, `email` and `drive.appdata`. |
+
+Client IDs are public identifiers. Do not put OAuth client secrets or refresh
+tokens in source control. CI uses dummy client IDs to compile and test the code;
+those values cannot validate real Google sign-in.
+
+Before release, test Android, Chrome, Firefox and Desktop with a real test account:
+
+1. On separate networks, send one browser/Desktop play to Android, then retry and
+   restart each client. The history must contain one event, with no sync loop.
+2. Switch Google accounts. No old-account cursor, deletion generation or credential
+   may be applied to the new account.
+3. Delete cloud history, explicitly re-enable one client, then wake a stale client.
+   The stale client must stop and preserve the newly accepted history generation.
+4. Restore an Android backup while a sync is pending. Restored local history must
+   be rescanned after restoration without duplicating remote events.
+5. Disconnect with the native credential store unavailable. Local Drive sync must
+   be disabled and any cleanup failure reported.
+
+These real-account checks remain required even when compilation, unit tests and
+extension builds pass. Keep the PRs as drafts until configuration and these
+checks have been completed.

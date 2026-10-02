@@ -14,6 +14,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import me.avinas.tempo.ui.components.TempoDialogSurface
+import me.avinas.tempo.ui.components.TempoDialogIcon
+import me.avinas.tempo.ui.components.TempoDialogTitle
+import me.avinas.tempo.ui.components.TempoDialogBody
+import me.avinas.tempo.ui.components.TempoDialogDangerButton
+import me.avinas.tempo.ui.components.TempoDialogSecondaryButton
+import me.avinas.tempo.ui.components.TempoIcons
 import me.avinas.tempo.ui.theme.*
 
 /**
@@ -255,46 +263,31 @@ fun SpotifyDisconnectDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = TempoSurfaceDialog,
-        shape = RoundedCornerShape(24.dp),
-        icon = {
-            Icon(
-                Icons.Default.LinkOff,
-                contentDescription = null,
-                tint = TempoError
+    Dialog(onDismissRequest = onDismiss) {
+        TempoDialogSurface {
+            TempoDialogIcon(
+                icon = TempoIcons.AlertCircle,
+                tint = TempoError,
+                size = 48
             )
-        },
-        title = {
-            Text(
-                text = "Disconnect Spotify?",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
+            Spacer(modifier = Modifier.height(16.dp))
+            TempoDialogTitle(text = "Disconnect Spotify?")
+            Spacer(modifier = Modifier.height(8.dp))
+            TempoDialogBody(
+                text = "This will remove audio feature data. Your listening history will remain, but advanced stats like mood and energy analysis will no longer be available."
             )
-        },
-        text = {
-            Text(
-                text = "This will remove all audio feature data. Your listening history will remain, but advanced stats like mood and energy analysis will no longer be available.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
+            Spacer(modifier = Modifier.height(24.dp))
+            TempoDialogDangerButton(
+                text = "Disconnect",
+                onClick = onConfirm
             )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(contentColor = TempoError)
-            ) {
-                Text("Disconnect", fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = TextTertiary)
-            }
+            Spacer(modifier = Modifier.height(6.dp))
+            TempoDialogSecondaryButton(
+                text = "Cancel",
+                onClick = onDismiss
+            )
         }
-    )
+    }
 }
 
 /**

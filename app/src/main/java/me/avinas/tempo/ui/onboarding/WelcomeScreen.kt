@@ -1,205 +1,200 @@
 package me.avinas.tempo.ui.onboarding
 
-import me.avinas.tempo.ui.theme.TempoDarkBackground
-
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.animation.core.*
-import androidx.compose.ui.draw.scale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import me.avinas.tempo.R
 import me.avinas.tempo.ui.components.DeepOceanBackground
-import me.avinas.tempo.ui.components.GlassCard
-import me.avinas.tempo.ui.theme.TempoRed
+import me.avinas.tempo.ui.theme.TempoPrimary
+import me.avinas.tempo.ui.theme.TextOnAccent
+import me.avinas.tempo.ui.theme.rememberReducedMotion
 import me.avinas.tempo.ui.utils.adaptiveSizeByCategory
 import me.avinas.tempo.ui.utils.adaptiveTextUnitByCategory
-import me.avinas.tempo.ui.utils.isSmallScreen
 import me.avinas.tempo.ui.utils.rememberScreenHeightPercentage
 import me.avinas.tempo.ui.utils.scaledSize
-import me.avinas.tempo.ui.utils.rememberClampedHeightPercentage
-import androidx.compose.ui.res.stringResource
-import me.avinas.tempo.R
 
+/**
+ * Welcome onboarding screen in three layers:
+ *   back · native revolving notes around the head,
+ *   mid  · welcome.png fullscreen art,
+ *   top  · headline + CTA overlaid on the image.
+ * Entry plays once (backdrop fades, copy rises); the orbit revolves
+ * slowly and subtly underneath. Honors reduced motion settings.
+ */
 @Composable
 fun WelcomeScreen(
     onGetStarted: () -> Unit,
-    onSkip: () -> Unit
+    onSkip: () -> Unit,
 ) {
+    val reducedMotion = rememberReducedMotion()
+    val haptic = LocalHapticFeedback.current
+
+    // Staggered entry, played ONCE: backdrop fades, headline lands in two
+    // beats (line 1, then line 2 + CTA 80ms later) on a soft spring — the
+    // hook without eagerness. Orbit keeps revolving subtly underneath.
+    val figureEntry = remember { Animatable(0f) }
+    val headlineEntry = remember { Animatable(0f) }
+    val ctaEntry = remember { Animatable(0f) }
+    LaunchedEffect(reducedMotion) {
+        if (reducedMotion) {
+            figureEntry.snapTo(1f)
+            headlineEntry.snapTo(1f)
+            ctaEntry.snapTo(1f)
+        } else {
+            launch { figureEntry.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+            launch {
+                delay(150)
+                headlineEntry.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy))
+            }
+            launch {
+                delay(230)
+                ctaEntry.animateTo(1f, spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioNoBouncy))
+            }
+        }
+    }
+
+    // Full-bleed: the art owns the whole screen, copy sits on top.
     DeepOceanBackground(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
+        modifier = Modifier.fillMaxSize(),
     ) {
-        // Animated Entry
-        var isVisible by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) { isVisible = true }
-
-        androidx.compose.animation.AnimatedVisibility(
-            visible = isVisible,
-            enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(1000)) +
-                    androidx.compose.animation.slideInVertically(
-                        initialOffsetY = { 100 },
-                        animationSpec = androidx.compose.animation.core.tween(1000, easing = androidx.compose.animation.core.FastOutSlowInEasing)
-                    ),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Column(
-                modifier = Modifier
+        // ── BACK + MID — orbit behind, fitted art above, one entry fade ──
+        // No slide: fitted art must not translate. No zoom: the full
+        // image is always visible.
+        Box(
+            modifier =
+                Modifier
                     .fillMaxSize()
-                    .padding(horizontal = adaptiveSizeByCategory(24.dp, 20.dp, 16.dp)),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Top flexible spacer - takes remaining space proportionally
-                Spacer(modifier = Modifier.weight(0.15f))
-                
-                // Hero Illustration with pulse - adaptive sizing
-                val isSmall = isSmallScreen()
-                val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-                val scale by infiniteTransition.animateFloat(
-                    initialValue = 1f,
-                    targetValue = 1.05f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(2000, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
+                    .graphicsLayer { alpha = figureEntry.value },
+        ) {
+            WelcomeBackdrop(modifier = Modifier.fillMaxSize())
+        }
+
+        // ── TOP — legibility scrim + headline and call to action ──
+        // Gentle bottom blend so the copy melts into the artwork.
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        brush =
+                            Brush.verticalGradient(
+                                0.55f to Color.Transparent,
+                                1f to Color(0xFF0A0E0E).copy(alpha = 0.72f),
+                            ),
                     ),
-                    label = "scale"
-                )
-
-                // Hero card with clamped sizing to prevent extremes
-                val heroSize = rememberClampedHeightPercentage(0.16f, 90.dp, 160.dp)
-                val innerGlowSize = rememberClampedHeightPercentage(0.10f, 55.dp, 100.dp)
-                val iconSize = rememberClampedHeightPercentage(0.08f, 45.dp, 80.dp)
-                
-                GlassCard(
-                    modifier = Modifier
-                        .size(heroSize)
-                        .scale(scale),
-                    backgroundColor = TempoRed.copy(alpha = 0.1f),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        // Inner glow
-                        Box(
-                            modifier = Modifier
-                                .size(innerGlowSize)
-                                .background(
-                                    brush = Brush.radialGradient(
-                                        colors = listOf(TempoRed.copy(alpha = 0.4f), Color.Transparent)
-                                    ),
-                                    shape = CircleShape
-                                )
-                        )
-                        
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(iconSize),
-                            tint = Color.White
-                        )
-                    }
+        )
+        Column(
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = adaptiveSizeByCategory(24.dp, 22.dp, 20.dp))
+                    .padding(bottom = rememberScreenHeightPercentage(0.03f)),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            val headlineSize = adaptiveTextUnitByCategory(32.sp, 29.sp, 26.sp)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.graphicsLayer {
+                    alpha = headlineEntry.value
+                    translationY = (1f - headlineEntry.value) * 24f
                 }
-
-                // Proportional spacing after hero
-                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.045f)))
-
-                // Gradient Headline - responsive text
+            ) {
                 Text(
                     text = stringResource(R.string.welcome_headline_1),
-                    style = if (isSmall) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
                     color = Color.White,
-                    fontSize = adaptiveTextUnitByCategory(34.sp, 28.sp, 24.sp)
+                    fontWeight = FontWeight.Bold,
+                    fontSize = headlineSize,
+                    textAlign = TextAlign.Center,
+                    lineHeight = adaptiveTextUnitByCategory(38.sp, 35.sp, 32.sp),
                 )
-                
-                // "Love Your Stats" with Gradient
-                val gradientBrush = Brush.linearGradient(
-                    colors = listOf(Color.White, TempoRed)
-                )
-                
                 Text(
                     text = stringResource(R.string.welcome_headline_2),
-                    style = (if (isSmall) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium).copy(
-                        brush = gradientBrush
-                    ),
+                    style =
+                        MaterialTheme.typography.headlineMedium.copy(
+                            brush = Brush.linearGradient(listOf(Color.White, TempoPrimary)),
+                        ),
                     fontWeight = FontWeight.Bold,
+                    fontSize = headlineSize,
                     textAlign = TextAlign.Center,
-                    color = Color.White,
-                    fontSize = adaptiveTextUnitByCategory(34.sp, 28.sp, 24.sp)
+                    lineHeight = adaptiveTextUnitByCategory(38.sp, 35.sp, 32.sp),
                 )
+            }
 
-                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.02f)))
+            Spacer(modifier = Modifier.height(20.dp))
 
-                // Description text - responsive sizing
-                Text(
-                    text = stringResource(R.string.welcome_description),
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                    color = Color.White.copy(alpha = 0.7f),
-                    lineHeight = adaptiveTextUnitByCategory(24.sp, 22.sp, 20.sp),
-                    fontSize = adaptiveTextUnitByCategory(16.sp, 15.sp, 14.sp)
-                )
-
-                // Flexible spacer between content and button
-                Spacer(modifier = Modifier.weight(0.2f))
-
-                // CTA Button with adaptive height
-                Button(
-                    onClick = onGetStarted,
-                    modifier = Modifier
+            Button(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onGetStarted()
+                },
+                modifier =
+                    Modifier
                         .fillMaxWidth()
+                        .graphicsLayer {
+                            alpha = ctaEntry.value
+                            translationY = (1f - ctaEntry.value) * 24f
+                        }
                         .height(scaledSize(54.dp, 0.85f, 1.1f)),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = TempoRed,
-                        contentColor = Color.White
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = TempoPrimary,
+                        contentColor = TextOnAccent,
                     ),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = ButtonDefaults.buttonElevation(
+                shape = RoundedCornerShape(18.dp),
+                elevation =
+                    ButtonDefaults.buttonElevation(
                         defaultElevation = 8.dp,
-                        pressedElevation = 4.dp
-                    )
-                ) {
-                    Text(
-                        text = stringResource(R.string.welcome_get_started),
-                        fontSize = adaptiveTextUnitByCategory(18.sp, 17.sp, 16.sp),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                
-                // Bottom padding - proportional to screen
-                Spacer(modifier = Modifier.height(rememberScreenHeightPercentage(0.03f)))
+                        pressedElevation = 4.dp,
+                    ),
+            ) {
+                Text(
+                    text = stringResource(R.string.welcome_get_started),
+                    fontSize = adaptiveTextUnitByCategory(18.sp, 17.sp, 16.sp),
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
 
-        // Skip button - rendered LAST to be on top of all content (z-ordering in Box)
+        // Skip — rendered LAST to sit on top (z-ordering in Box)
         TextButton(
-            onClick = onSkip,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(adaptiveSizeByCategory(16.dp, 14.dp, 12.dp))
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onSkip()
+            },
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(adaptiveSizeByCategory(16.dp, 14.dp, 12.dp)),
         ) {
             Text(
                 text = stringResource(R.string.welcome_skip),
                 color = Color.White.copy(alpha = 0.6f),
-                style = MaterialTheme.typography.labelLarge
+                style = MaterialTheme.typography.labelLarge,
             )
         }
     }

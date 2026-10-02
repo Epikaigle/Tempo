@@ -45,6 +45,7 @@ import me.avinas.tempo.ui.components.CaptureWrapper
 import me.avinas.tempo.ui.components.rememberCaptureController
 import me.avinas.tempo.ui.spotlight.SpotlightCardData
 import me.avinas.tempo.ui.theme.*
+import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.utils.ShareUtils
 
 /**
@@ -94,10 +95,7 @@ fun ShareCanvasScreen(
         if (!isLoading && allCards.isNotEmpty() && canvasState.availableCards.isEmpty()) {
                 val initialCard = viewModel.getInitialCard()
             // Center relative to the canvas, not the screen
-            // Dynamic Scale Calculation:
-            // Target 50% of screen width for the card to balance "New Obsession" full-bleed 
-            // vs other cards with padding.
-            // Card base width is 320dp.
+            // Scale card to 50% canvas width (base 320dp)
             val targetCardWidthPx = with(density) { canvasWidth.toPx() * 0.5f }
             val baseCardWidthPx = with(density) { 320.dp.toPx() }
             val cardScale = targetCardWidthPx / baseCardWidthPx
@@ -137,7 +135,7 @@ fun ShareCanvasScreen(
     // Handle share capture
     LaunchedEffect(Unit) {
         captureController.capturedBitmap.collect { bitmap ->
-            val success = ShareUtils.shareBitmap(context, bitmap)
+            val success = ShareUtils.shareBitmap(context, bitmap, TempoFeature.SHARE_CANVAS)
             if (!success) {
                 android.widget.Toast.makeText(
                     context,

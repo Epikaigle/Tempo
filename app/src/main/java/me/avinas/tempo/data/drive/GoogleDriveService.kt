@@ -3,15 +3,15 @@ package me.avinas.tempo.data.drive
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.client.http.FileContent
 import com.google.api.client.http.HttpRequestInitializer
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
-import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File as DriveFile
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -21,10 +21,11 @@ import me.avinas.tempo.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import com.google.api.client.googleapis.json.GoogleJsonResponseException
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -59,12 +60,42 @@ class GoogleDriveService @Inject constructor(
         // Transient-failure retry policy for executeWithRetry
         private const val MAX_TRANSIENT_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 2000L
+        private const val DOWNLOAD_FREE_SPACE_BUFFER_BYTES = 16L * 1024L * 1024L
+
+        internal fun isRetryable403Reason(reason: String?): Boolean = reason in setOf(
+            "rateLimitExceeded",
+            "userRateLimitExceeded",
+            "sharingRateLimitExceeded",
+            "backendError"
+        )
+
+        internal fun shouldInvalidateAuthFor403(reason: String?): Boolean = reason in setOf(
+            "insufficientPermissions",
+            "appNotAuthorizedToFile"
+        )
+
+        internal fun hasEnoughDownloadSpace(
+            expectedSize: Long,
+            usableSpace: Long
+        ): Boolean = usableSpace <= 0L ||
+            expectedSize <= (usableSpace - DOWNLOAD_FREE_SPACE_BUFFER_BYTES).coerceAtLeast(0L)
     }
     
-    private var driveService: Drive? = null
+    private data class CachedDriveClient(
+        val service: Drive,
+        val accessToken: String
+    )
+
+    @Volatile
+    private var driveClient: CachedDriveClient? = null
+    @Volatile
     private var backupFolderId: String? = null
-    private var cachedAccessToken: String? = null
-    
+
+    // The Drive client and its token form one cache entry. Building/updating
+    // them without a lock can leave a client initialized with token A while the
+    // cache says token B, causing every later call to reuse the wrong account.
+    private val driveServiceMutex = Mutex()
+
     // Mutex to prevent race conditions when creating backup folder
     private val folderCreationMutex = Mutex()
     
@@ -72,7 +103,7 @@ class GoogleDriveService @Inject constructor(
      * Initialize the Drive service with current access token.
      * Returns null if authorization is not complete or token is unavailable.
      */
-    private suspend fun getDriveService(): Drive? = withContext(Dispatchers.IO) {
+    private suspend fun getDriveClient(): CachedDriveClient? = withContext(Dispatchers.IO) {
         val accessToken = authManager.getAccessToken()
         if (accessToken == null) {
             Log.w(TAG, "No access token available - authorization may be incomplete")
@@ -84,28 +115,44 @@ class GoogleDriveService @Inject constructor(
             return@withContext null
         }
         
-        // Recreate service if token changed
-        if (driveService == null || cachedAccessToken != accessToken) {
+        driveServiceMutex.withLock {
+            driveClient?.takeIf { it.accessToken == accessToken }?.let {
+                return@withLock it
+            }
+
             Log.d(TAG, "Initializing Drive service with fresh access token")
-            cachedAccessToken = accessToken
-            
+
             // Create a simple HTTP request initializer that adds the Bearer token
             val httpRequestInitializer = HttpRequestInitializer { request ->
                 request.headers.authorization = "Bearer $accessToken"
                 request.connectTimeout = 30000
                 request.readTimeout = 30000
             }
-            
-            driveService = Drive.Builder(
-                NetHttpTransport(),
-                GsonFactory.getDefaultInstance(),
-                httpRequestInitializer
+
+            val newClient = CachedDriveClient(
+                service = Drive.Builder(
+                    NetHttpTransport(),
+                    GsonFactory.getDefaultInstance(),
+                    httpRequestInitializer
+                )
+                    .setApplicationName("Tempo/${BuildConfig.VERSION_NAME}")
+                    .build(),
+                accessToken = accessToken
             )
-                .setApplicationName("Tempo/${BuildConfig.VERSION_NAME}")
-                .build()
+
+            // Publish the matching client/token pair as one immutable value only
+            // after construction is complete, while holding the same mutex.
+            driveClient = newClient
+            newClient
         }
-        
-        driveService
+    }
+
+    private suspend fun clearDriveClient(expectedAccessToken: String? = null) {
+        driveServiceMutex.withLock {
+            if (expectedAccessToken == null || driveClient?.accessToken == expectedAccessToken) {
+                driveClient = null
+            }
+        }
     }
     
     /**
@@ -122,42 +169,112 @@ class GoogleDriveService @Inject constructor(
      * refresh + retry.
      */
     private suspend fun <T> executeWithRetry(
-        retryCount: Int = 0,
+        transientRetryCount: Int = 0,
+        authRetryCount: Int = 0,
         block: suspend (Drive) -> T
     ): T {
-        val service = getDriveService() ?: throw DriveException.Auth(
+        val client = getDriveClient() ?: throw DriveException.Auth(
             "Google Drive authorization incomplete. Please sign out and sign in again."
         )
         
         return try {
-            block(service)
+            block(client.service)
         } catch (e: GoogleJsonResponseException) {
             when (e.statusCode) {
                 401 -> {
                     Log.w(TAG, "Authorization failed (401) - attempting refresh")
-                    driveService = null
-                    cachedAccessToken = null
-                    authManager.clearPersistedAccessToken()
+                    clearDriveClient(client.accessToken)
                     
-                    if (retryCount < 1 && authManager.refreshAccessToken()) {
+                    if (authRetryCount < 1 &&
+                        authManager.refreshAccessTokenAfterFailure(client.accessToken)
+                    ) {
                         Log.i(TAG, "Token refreshed, retrying operation")
-                        executeWithRetry(retryCount + 1, block)
+                        executeWithRetry(
+                            transientRetryCount = transientRetryCount,
+                            authRetryCount = authRetryCount + 1,
+                            block = block
+                        )
                     } else {
                         throw DriveException.Auth("Session expired. Please sign in again.", e)
                     }
                 }
                 403 -> {
-                    // 403 from Drive = the access token is valid but does NOT have the
-                    // required scope (usually drive.file) or can't access the resource.
-                    // Surface the real Google reason and force a clean re-auth.
-                    val reason = e.details?.message ?: e.statusMessage ?: e.message
-                    Log.e(TAG, "Drive API returned 403 Permission denied: $reason", e)
-                    driveService = null
-                    cachedAccessToken = null
-                    authManager.invalidateAuthorization()
-                    authManager.clearPersistedAccessToken()
-                    throw DriveException.Auth(
-                        "Permission denied. Check Drive access. $reason",
+                    // Drive uses HTTP 403 for several unrelated conditions. Quota,
+                    // storage and administrator-policy failures must never wipe a
+                    // valid OAuth session; only known scope/authorization reasons do.
+                    val errorReason = e.details?.errors?.firstOrNull()?.reason
+                    val detail = e.details?.message ?: e.statusMessage ?: e.message
+
+                    if (isRetryable403Reason(errorReason)) {
+                        if (transientRetryCount < MAX_TRANSIENT_RETRIES) {
+                            val backoffMs = RETRY_BASE_DELAY_MS * (1L shl transientRetryCount)
+                            Log.w(
+                                TAG,
+                                "Transient Drive 403 ($errorReason), retrying in ${backoffMs}ms"
+                            )
+                            delay(backoffMs)
+                            return executeWithRetry(
+                                transientRetryCount = transientRetryCount + 1,
+                                authRetryCount = authRetryCount,
+                                block = block
+                            )
+                        }
+                        throw DriveException.Server(
+                            "Google Drive rate limit reached. Please try again later.",
+                            e
+                        )
+                    }
+
+                    when (errorReason) {
+                        "storageQuotaExceeded" -> throw DriveException.Server(
+                            "Google Drive storage is full. Free some Drive storage and try again.",
+                            e
+                        )
+
+                        "dailyLimitExceeded" -> throw DriveException.Server(
+                            "The Google Drive API daily quota has been reached. Try again later.",
+                            e
+                        )
+
+                        "activeItemCreationLimitExceeded",
+                        "numChildrenInNonRootLimitExceeded",
+                        "teamDriveFileLimitExceeded" -> throw DriveException.Server(
+                            "Google Drive cannot create another backup because an item or folder limit was reached. $detail",
+                            e
+                        )
+
+                        "domainPolicy" -> throw DriveException.Server(
+                            "Google Drive access is blocked by your account or organization policy. $detail",
+                            e
+                        )
+                    }
+
+                    if (shouldInvalidateAuthFor403(errorReason)) {
+                        Log.e(TAG, "Drive authorization is insufficient ($errorReason): $detail", e)
+                        clearDriveClient(client.accessToken)
+                        val invalidated = authManager.invalidateAuthorizationForAccessToken(
+                            client.accessToken
+                        )
+                        if (!invalidated && authRetryCount < 1) {
+                            Log.i(TAG, "Authorization changed during the failed request; retrying with the current token")
+                            return executeWithRetry(
+                                transientRetryCount = transientRetryCount,
+                                authRetryCount = authRetryCount + 1,
+                                block = block
+                            )
+                        }
+                        throw DriveException.Auth(
+                            "Google Drive permission is missing. Sign in again to restore Drive access.",
+                            e
+                        )
+                    }
+
+                    // Unknown 403s are surfaced without destroying credentials. A
+                    // future request may succeed, and re-signing in cannot fix quota,
+                    // policy, file-specific or other non-OAuth Drive restrictions.
+                    Log.e(TAG, "Drive API returned 403 ($errorReason): $detail", e)
+                    throw DriveException.Server(
+                        "Google Drive refused the request${if (errorReason != null) " ($errorReason)" else ""}. $detail",
                         e
                     )
                 }
@@ -166,26 +283,44 @@ class GoogleDriveService @Inject constructor(
                     backupFolderId = null
                     throw DriveException.Server("Resource not found. Please try again.", e)
                 }
-                429, 500, 502, 503 -> {
-                    // Rate-limited or transient server error — retry with backoff
-                    if (retryCount < MAX_TRANSIENT_RETRIES) {
-                        val backoffMs = RETRY_BASE_DELAY_MS * (1L shl retryCount)
-                        Log.w(TAG, "Transient Drive error ${e.statusCode} (attempt ${retryCount + 1}), retrying in ${backoffMs}ms")
+                408, 429, 500, 502, 503, 504 -> {
+                    // Rate-limited or transient server error — retry with backoff.
+                    // Keep this counter independent from the single OAuth refresh.
+                    if (transientRetryCount < MAX_TRANSIENT_RETRIES) {
+                        val backoffMs = RETRY_BASE_DELAY_MS * (1L shl transientRetryCount)
+                        Log.w(
+                            TAG,
+                            "Transient Drive error ${e.statusCode} " +
+                                "(attempt ${transientRetryCount + 1}), retrying in ${backoffMs}ms"
+                        )
                         delay(backoffMs)
-                        return executeWithRetry(retryCount + 1, block)
+                        return executeWithRetry(
+                            transientRetryCount = transientRetryCount + 1,
+                            authRetryCount = authRetryCount,
+                            block = block
+                        )
                     }
                     throw DriveException.Server("Drive is temporarily unavailable (${e.statusCode}). Please try again later.", e)
                 }
                 else -> throw DriveException.Server("Drive Error: ${e.message}", e)
             }
         } catch (e: IOException) {
-            if (retryCount < MAX_TRANSIENT_RETRIES) {
-                val backoffMs = RETRY_BASE_DELAY_MS * (1L shl retryCount)
-                Log.w(TAG, "Network error (attempt ${retryCount + 1}), retrying in ${backoffMs}ms...")
+            if (transientRetryCount < MAX_TRANSIENT_RETRIES) {
+                val backoffMs = RETRY_BASE_DELAY_MS * (1L shl transientRetryCount)
+                Log.w(
+                    TAG,
+                    "Network error (attempt ${transientRetryCount + 1}), retrying in ${backoffMs}ms..."
+                )
                 delay(backoffMs)
-                return executeWithRetry(retryCount + 1, block)
+                return executeWithRetry(
+                    transientRetryCount = transientRetryCount + 1,
+                    authRetryCount = authRetryCount,
+                    block = block
+                )
             }
             throw DriveException.Network("Network unavailable. Please check your connection.", e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             if (e is DriveException) throw e
             throw DriveException.Unknown("Unexpected error: ${e.message}", e)
@@ -252,6 +387,7 @@ class GoogleDriveService @Inject constructor(
      */
     suspend fun uploadBackup(
         localFile: File,
+        idempotencyKey: String = UUID.randomUUID().toString(),
         progressCallback: ((Float) -> Unit)? = null
     ): DriveBackupResult = withContext(Dispatchers.IO) {
         try {
@@ -273,13 +409,75 @@ class GoogleDriveService @Inject constructor(
             
             Log.d(TAG, "Uploading backup file: ${localFile.name} (${localFile.length()} bytes)")
             progressCallback?.invoke(0.05f)
+
+            val sourceSize = localFile.length()
+            val sourceMd5 = md5Hex(localFile)
             
             // This handles auth checks via getOrCreateBackupFolder -> executeWithRetry
             val folderId = getOrCreateBackupFolder()
             
             progressCallback?.invoke(0.15f)
             
+            // Keep a stable key for the whole logical upload. The scheduled worker
+            // passes a stable logical run ID, so the key also survives WorkManager
+            // retries. If Google created the file but the response was lost, the
+            // next attempt finds that exact file instead of creating a duplicate.
+            val safeIdempotencyKey = idempotencyKey
+                .replace(Regex("[^A-Za-z0-9._:-]"), "_")
+                .take(120)
+                .ifBlank { UUID.randomUUID().toString() }
+
             executeWithRetry { service ->
+                val existingFiles = service.files().list()
+                    .setQ(
+                        "'$folderId' in parents and trashed = false and " +
+                            "appProperties has { key='backup_run_id' and value='$safeIdempotencyKey' }"
+                    )
+                    .setFields("files(id, name, size, md5Checksum, createdTime)")
+                    .setPageSize(100)
+                    .execute()
+                    .files
+                    .orEmpty()
+
+                val completedExisting = existingFiles.firstOrNull { existing ->
+                    existing.getSize()?.toLong() == sourceSize &&
+                        existing.md5Checksum?.equals(sourceMd5, ignoreCase = true) == true
+                }
+                if (completedExisting != null) {
+                    // A previous request may have reached Drive even when its HTTP
+                    // response never reached Tempo. Reuse the byte-identical file
+                    // and remove any corrupt duplicates left by an older client.
+                    existingFiles
+                        .filterNot { it.id == completedExisting.id }
+                        .forEach { duplicate ->
+                            runCatching { service.files().delete(duplicate.id).execute() }
+                                .onFailure { error ->
+                                    Log.w(TAG, "Could not remove duplicate same-run Drive backup", error)
+                                }
+                        }
+                    Log.i(TAG, "Reusing already-created Drive backup for run $safeIdempotencyKey")
+                    progressCallback?.invoke(0.85f)
+                    return@executeWithRetry DriveBackupResult.Success(
+                        completedExisting.id,
+                        completedExisting.name
+                    )
+                }
+
+                // Never create another same-run file while a corrupt/incomplete one
+                // still exists: a later retry could select the wrong duplicate and
+                // incorrectly report success. Deletion failure therefore aborts this
+                // attempt and is handled by the normal retry policy.
+                existingFiles.forEach { existing ->
+                    try {
+                        service.files().delete(existing.id).execute()
+                    } catch (error: Exception) {
+                        throw IOException(
+                            "Unable to replace an incomplete same-run Drive backup",
+                            error
+                        )
+                    }
+                }
+
                 // Generate backup filename with timestamp
                 val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
                 val deviceName = "${Build.MANUFACTURER}_${Build.MODEL}".replace(" ", "_")
@@ -293,7 +491,8 @@ class GoogleDriveService @Inject constructor(
                     appProperties = mapOf(
                         "app_version" to BuildConfig.VERSION_NAME,
                         "device_name" to "${Build.MANUFACTURER} ${Build.MODEL}",
-                        "backup_timestamp" to System.currentTimeMillis().toString()
+                        "backup_timestamp" to System.currentTimeMillis().toString(),
+                        "backup_run_id" to safeIdempotencyKey
                     )
                 }
                 
@@ -304,7 +503,7 @@ class GoogleDriveService @Inject constructor(
                 progressCallback?.invoke(0.3f)
                 
                 val uploadedFile = service.files().create(fileMetadata, mediaContent)
-                    .setFields("id, name, size, createdTime")
+                    .setFields("id, name, size, md5Checksum, createdTime")
                     .execute()
 
                 progressCallback?.invoke(0.85f)
@@ -315,10 +514,13 @@ class GoogleDriveService @Inject constructor(
                 // fail (executeWithRetry re-uploads from scratch on transient IO
                 // errors).
                 val uploadedSize = uploadedFile.getSize()?.toLong()
-                if (uploadedSize != null && uploadedSize != localFile.length()) {
+                val uploadedMd5 = uploadedFile.md5Checksum
+                if (uploadedSize != sourceSize ||
+                    !uploadedMd5.equals(sourceMd5, ignoreCase = true)
+                ) {
                     runCatching { service.files().delete(uploadedFile.id).execute() }
                     throw IOException(
-                        "Upload verification failed: sent ${localFile.length()} bytes, Drive stored $uploadedSize"
+                        "Upload verification failed: Drive did not store the exact backup bytes"
                     )
                 }
 
@@ -328,12 +530,20 @@ class GoogleDriveService @Inject constructor(
                 DriveBackupResult.Success(uploadedFile.id, uploadedFile.name)
             }.also {
                 // Determine if we need to cleanup (best effort)
-                try { cleanupOldBackups() } catch (e: Exception) { Log.w(TAG, "Cleanup failed", e) }
+                try {
+                    cleanupOldBackups()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Cleanup failed", e)
+                }
                 progressCallback?.invoke(1.0f)
             }
         } catch (e: DriveException) {
             Log.e(TAG, "Upload failed with DriveException", e)
             DriveBackupResult.Error(e.message ?: "Upload failed", e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Upload failed unexpectedly", e)
             DriveBackupResult.Error("Upload failed: ${e.message}", e)
@@ -371,6 +581,8 @@ class GoogleDriveService @Inject constructor(
         } catch (e: DriveException) {
             Log.e(TAG, "Failed to list backups: ${e.message}", e)
             Result.failure(e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to list backups", e)
             Result.failure(e)
@@ -395,64 +607,76 @@ class GoogleDriveService @Inject constructor(
                 
                 // Get file metadata first
                 val driveFile = service.files().get(fileId)
-                    .setFields("id, name, size")
+                    .setFields("id, name, size, md5Checksum")
                     .execute()
                 
                 progressCallback?.invoke(0.2f)
                 
-                // Create local file. The Drive file name is untrusted input —
-                // strip any path components so a hostile name cannot escape the
-                // download directory.
                 val cacheDir = File(context.cacheDir, "drive_downloads")
-                if (!cacheDir.exists()) cacheDir.mkdirs()
-                
-                val file = File(cacheDir, sanitizeDriveFileName(driveFile.name))
-                
-                // Download file
-                FileOutputStream(file).use { outputStream ->
-                    service.files().get(fileId)
-                        .executeMediaAndDownloadTo(outputStream)
+                if ((!cacheDir.exists() && !cacheDir.mkdirs()) || !cacheDir.isDirectory) {
+                    throw IOException("Unable to create the Drive download cache")
                 }
-                
-                // Verify the download is complete. A truncated backup would
-                // otherwise fail deep inside import with a confusing error —
-                // or worse, restore partial data.
-                val expectedSize = driveFile.getSize()
-                if (expectedSize != null && file.length() != expectedSize) {
-                    val actualSize = file.length()
-                    file.delete()
-                    throw IOException(
-                        "Downloaded backup is incomplete: expected $expectedSize bytes, got $actualSize"
+
+                val expectedSize = driveFile.getSize()?.toLong()
+                val expectedMd5 = driveFile.md5Checksum
+                if (expectedSize == null || expectedSize <= 0L || expectedMd5.isNullOrBlank()) {
+                    throw DriveException.Server("Drive backup metadata is incomplete")
+                }
+                val usableSpace = cacheDir.usableSpace
+                if (!hasEnoughDownloadSpace(expectedSize, usableSpace)) {
+                    throw DriveException.Unknown(
+                        "Not enough free device storage to download this backup"
                     )
                 }
-                
-                progressCallback?.invoke(1.0f)
-                
-                Log.i(TAG, "Downloaded backup: ${file.name} (${file.length()} bytes)")
-                file
+
+                // Never trust the remote display name as a local path and never
+                // share a target between concurrent/retried downloads.
+                val file = File.createTempFile("tempo_drive_", ".tempo", cacheDir)
+
+                try {
+                    FileOutputStream(file).use { outputStream ->
+                        service.files().get(fileId)
+                            .executeMediaAndDownloadTo(outputStream)
+                    }
+
+                    if (file.length() != expectedSize ||
+                        !md5Hex(file).equals(expectedMd5, ignoreCase = true)
+                    ) {
+                        throw IOException("Downloaded backup failed its integrity check")
+                    }
+
+                    progressCallback?.invoke(1.0f)
+
+                    Log.i(TAG, "Downloaded and verified Drive backup (${file.length()} bytes)")
+                    file
+                } catch (error: Exception) {
+                    file.delete()
+                    throw error
+                }
             }
             DriveRestoreResult.Success(localFile)
         } catch (e: DriveException) {
             Log.e(TAG, "Download failed with DriveException", e)
             DriveRestoreResult.Error(e.message ?: "Download failed", e)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Download failed", e)
             DriveRestoreResult.Error("Download failed: ${e.message}", e)
         }
     }
 
-    /**
-     * Sanitize an untrusted Drive file name for use as a local file name.
-     * Strips path separators and directory components so the file can never
-     * be written outside the download directory. Falls back to a safe default.
-     */
-    private fun sanitizeDriveFileName(driveName: String?): String {
-        val fallback = "backup.tempo"
-        if (driveName.isNullOrBlank()) return fallback
-        // Take only the final path component, then strip any remaining separators
-        val baseName = driveName.substringAfterLast('/').substringAfterLast('\\')
-        val sanitized = baseName.replace("/", "").replace("\\", "").trim()
-        return if (sanitized.isBlank() || sanitized == "." || sanitized == "..") fallback else sanitized
+    private fun md5Hex(file: File): String {
+        val digest = MessageDigest.getInstance("MD5")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
     }
     
     /**
@@ -468,6 +692,8 @@ class GoogleDriveService @Inject constructor(
                 Log.i(TAG, "Deleted backup: $fileId")
                 true
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete backup", e)
             false
@@ -491,6 +717,8 @@ class GoogleDriveService @Inject constructor(
                     Log.d(TAG, "Deleted old backup: ${backup.fileName}")
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to cleanup old backups", e)
         }
@@ -499,15 +727,21 @@ class GoogleDriveService @Inject constructor(
     /**
      * Check if Drive service is available and authenticated.
      */
-    suspend fun isAvailable(): Boolean = getDriveService() != null
+    suspend fun isAvailable(): Boolean = getDriveClient() != null
     
     /**
      * Clear cached service (call on sign out).
      */
-    fun clearCache() {
-        driveService = null
-        backupFolderId = null
-        cachedAccessToken = null
+    suspend fun clearCache() {
+        // Match getOrCreateBackupFolder's lock order. Waiting for an in-flight
+        // folder lookup prevents it from repopulating an old account's folder ID
+        // immediately after an explicit account switch/sign-out cleared it.
+        folderCreationMutex.withLock {
+            driveServiceMutex.withLock {
+                driveClient = null
+                backupFolderId = null
+            }
+        }
     }
     
     /**

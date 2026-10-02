@@ -253,7 +253,7 @@ class SpotifyImportService @Inject constructor(
                 return ProcessResult.Duplicate
             }
             
-            // Ensure existing track has artists linked (may have been imported before fix)
+            // Backfill artist links for tracks imported under older schemas
             if (existingTrack.primaryArtistId == null) {
                 try {
                     artistLinkingService.linkArtistsForTrack(existingTrack)
@@ -281,8 +281,7 @@ class SpotifyImportService @Inject constructor(
             // Continue anyway - track is created, artists can be linked later
         }
         
-        // CRITICAL: Create enriched metadata with Spotify data
-        // This ensures the track has album art, spotify IDs, and enrichment status
+        // Persist Spotify metadata and album art hotlinks
         createEnrichedMetadata(trackId, spotifyTrack)
         
         // Create listening event

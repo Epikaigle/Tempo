@@ -12,17 +12,8 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 
 /**
- * Helper for OEM-specific background process management.
- * 
- * Based on https://dontkillmyapp.com/xiaomi recommendations.
- * Xiaomi/MIUI is rated 5/5 💩 for aggressive background app killing.
- * 
- * Required user settings for Xiaomi devices:
- * 1. Autostart permission
- * 2. App locking in recent apps
- * 3. Battery Saver → No restriction
- * 4. Boost Speed lock
- * 5. MIUI Optimizations OFF (Developer Options)
+ * OEM background process management helpers for battery-restriction bypasses.
+ * Reference: https://dontkillmyapp.com/xiaomi
  */
 object OemBackgroundHelper {
     

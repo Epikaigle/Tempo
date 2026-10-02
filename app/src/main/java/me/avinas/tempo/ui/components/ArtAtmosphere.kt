@@ -1,6 +1,8 @@
 package me.avinas.tempo.ui.components
 
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -19,6 +21,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
@@ -36,16 +39,22 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
-/* ArtAtmosphere — "art as atmosphere" room layer.
- * Full-viewport wash of the track's cover art behind all content.
+/**
+ * Full-screen blurred backdrop layer rendered from track artwork.
  *
- * Performance contract: everything paints in ONE Canvas draw pass — art,
- * dusk, tint, vignette, grain — so there are no stacked compositor layers
- * and no per-frame RenderEffect blur. The blur is baked once into a tiny
- * 64px bitmap on a background dispatcher (~1ms); the upscale to full-screen
- * with bilinear filtering smooths it the rest of the way. Fades the new art
- * in over the old (web counterpart: keyed remount).
+ * Paints artwork, dusk gradient, color tint, vignette, and grain in a single
+ * Canvas draw pass to avoid multiple compositing layers. Blur is precomputed
+ * on a 64x64 bitmap on a background dispatcher and scaled with bilinear filtering.
  */
+
+/** Initial overscale fraction for the incoming artwork transition. */
+private const val ARRIVAL_ZOOM = 0.05f
+
+/** Fade-in transition duration in milliseconds. */
+private const val ARRIVAL_DURATION_MS = 1100
+
+/** Fade-out duration when artwork is cleared. */
+private const val DISSOLVE_DURATION_MS = 450
 
 @Composable
 fun ArtAtmosphereLayer(
@@ -54,13 +63,24 @@ fun ArtAtmosphereLayer(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    // Deliberately NOT keyed on artUrl: the previous art stays lit while the
-    // new one decodes, so Crossfade transitions new-over-old.
-    var art by remember { mutableStateOf<ImageBitmap?>(null) }
+    val reducedMotion = rememberReducedMotion()
+
+    // Keep previous artwork visible during decoding to avoid blank frames
+    var base by remember { mutableStateOf<ImageBitmap?>(null) }
+    var overlay by remember { mutableStateOf<ImageBitmap?>(null) }
+    val reveal = remember { Animatable(1f) }
 
     LaunchedEffect(artUrl) {
         if (artUrl.isNullOrBlank()) {
-            art = null
+            if (overlay == null && base == null) return@LaunchedEffect
+            overlay = overlay ?: base
+            base = null
+            reveal.animateTo(
+                0f,
+                tween(if (reducedMotion) 0 else DISSOLVE_DURATION_MS, easing = FastOutLinearInEasing),
+            )
+            overlay = null
+            reveal.snapTo(1f)
             return@LaunchedEffect
         }
         val result = context.imageLoader.execute(
@@ -75,94 +95,132 @@ fun ArtAtmosphereLayer(
         } else {
             bitmap
         }
-        art = withContext(Dispatchers.Default) {
+        val washed = withContext(Dispatchers.Default) {
             gaussianWash(software).asImageBitmap()
         }
+        // Crossfade to new artwork or update current transition in flight
+        if (overlay != null && base == null) {
+            overlay = washed
+        } else {
+            base = overlay ?: base
+            overlay = washed
+            reveal.snapTo(0f)
+        }
+        if (reducedMotion) {
+            reveal.snapTo(1f)
+        } else {
+            reveal.animateTo(1f, tween(ARRIVAL_DURATION_MS, easing = FastOutSlowInEasing))
+        }
+        base = null
     }
 
-    val reducedMotion = rememberReducedMotion()
     val grainPaint = remember { GrainNoise.paint(alpha = 0.028f) }
     val saturationFilter = remember {
         ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.12f) })
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        Crossfade(
-            targetState = art,
-            animationSpec = tween(if (reducedMotion) 0 else 1000),
-            label = "artAtmosphere",
-        ) { image ->
-            if (image != null) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val w = size.width
-                    val h = size.height
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val hasArt = base != null || overlay != null
 
-                    // Cover-fit with 25% overscale so soft edges never show
-                    // (the web version's transform: scale(1.2)).
-                    val scale = max(w / image.width, h / image.height) * 1.25f
-                    val dstW = image.width * scale
-                    val dstH = image.height * scale
-                    drawImage(
-                        image = image,
-                        srcOffset = IntOffset.Zero,
-                        srcSize = IntSize(image.width, image.height),
-                        dstOffset = IntOffset(
-                            ((w - dstW) / 2f).roundToInt(),
-                            ((h - dstH) / 2f).roundToInt(),
-                        ),
-                        dstSize = IntSize(dstW.roundToInt(), dstH.roundToInt()),
-                        colorFilter = saturationFilter,
-                    )
+            if (hasArt) {
+                val progress = reveal.value
+                val roomAlpha = if (base == null) progress else 1f
 
-                    // Dusk — dense stat content stays readable while the
-                    // middle band still reads as the artwork.
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                TempoDarkBackground.copy(alpha = 0.80f),
-                                TempoDarkBackground.copy(alpha = 0.55f),
-                                TempoDarkBackground.copy(alpha = 0.74f),
-                                TempoDarkBackground.copy(alpha = 0.92f),
-                            ),
-                            startY = 0f,
-                            endY = h,
-                        )
-                    )
-
-                    // Brand tint wash — conditioned dominant swatch, ≤7%
-                    drawRect(
-                        brush = Brush.radialGradient(
-                            colors = listOf(tint.copy(alpha = 0.07f), Color.Transparent),
-                            center = Offset(w / 2f, h * 0.32f),
-                            radius = max(w, h),
-                        )
-                    )
-
-                    // Vignette — the room falls off to the base at the edges
-                    drawRect(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                TempoDarkBackground.copy(alpha = 0.55f),
-                            ),
-                            center = Offset(w / 2f, h / 2f),
-                            radius = max(w, h) * 0.85f,
-                        )
-                    )
-
-                    // Film grain — texture + OLED banding control
-                    drawIntoCanvas { canvas ->
-                        canvas.nativeCanvas.drawPaint(grainPaint)
-                    }
+                base?.let { art ->
+                    drawWashedArt(art, saturationFilter, alpha = 1f, extraZoom = 0f)
                 }
+                overlay?.let { art ->
+                    drawWashedArt(
+                        art,
+                        saturationFilter,
+                        alpha = progress,
+                        extraZoom = ARRIVAL_ZOOM * (1f - progress),
+                    )
+                }
+
+                // Vertical gradient scrim for content readability
+                drawRect(
+                    alpha = roomAlpha,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            TempoDarkBackground.copy(alpha = 0.80f),
+                            TempoDarkBackground.copy(alpha = 0.55f),
+                            TempoDarkBackground.copy(alpha = 0.74f),
+                            TempoDarkBackground.copy(alpha = 0.92f),
+                        ),
+                        startY = 0f,
+                        endY = h,
+                    )
+                )
+
+                // Dominant color tint wash
+                drawRect(
+                    alpha = roomAlpha,
+                    brush = Brush.radialGradient(
+                        colors = listOf(tint.copy(alpha = 0.07f), Color.Transparent),
+                        center = Offset(w / 2f, h * 0.32f),
+                        radius = max(w, h),
+                    )
+                )
+
+                // Edge vignette
+                drawRect(
+                    alpha = roomAlpha,
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            TempoDarkBackground.copy(alpha = 0.55f),
+                        ),
+                        center = Offset(w / 2f, h / 2f),
+                        radius = max(w, h) * 0.85f,
+                    )
+                )
+
+                // Monochrome film grain
+                val grainAlpha = grainPaint.alpha
+                grainPaint.alpha = (grainAlpha * roomAlpha).roundToInt().coerceIn(0, 255)
+                drawIntoCanvas { canvas ->
+                    canvas.nativeCanvas.drawPaint(grainPaint)
+                }
+                grainPaint.alpha = grainAlpha
             }
         }
     }
 }
 
 /**
- * Two iterations of a separable box blur on a 64px source — visually a
- * Gaussian by the time it is upscaled to full-screen, and effectively free.
+ * Draws bitmap centered and cropped across the canvas with an overscale buffer.
+ */
+private fun DrawScope.drawWashedArt(
+    image: ImageBitmap,
+    saturationFilter: ColorFilter?,
+    alpha: Float,
+    extraZoom: Float,
+) {
+    val w = size.width
+    val h = size.height
+    val scale = max(w / image.width, h / image.height) * 1.25f * (1f + extraZoom)
+    val dstW = image.width * scale
+    val dstH = image.height * scale
+    drawImage(
+        image = image,
+        srcOffset = IntOffset.Zero,
+        srcSize = IntSize(image.width, image.height),
+        dstOffset = IntOffset(
+            ((w - dstW) / 2f).roundToInt(),
+            ((h - dstH) / 2f).roundToInt(),
+        ),
+        dstSize = IntSize(dstW.roundToInt(), dstH.roundToInt()),
+        alpha = alpha,
+        colorFilter = saturationFilter,
+    )
+}
+
+/**
+ * Approximates a Gaussian blur using two passes of a separable box blur.
  */
 private fun gaussianWash(source: android.graphics.Bitmap): android.graphics.Bitmap {
     val w = source.width

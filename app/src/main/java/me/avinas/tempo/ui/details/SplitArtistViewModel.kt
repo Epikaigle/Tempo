@@ -94,7 +94,12 @@ class SplitArtistViewModel @Inject constructor(
                         rawName = group.rawName,
                         isSourceName = group.isSourceName,
                         expanded = false,
-                        targetName = group.rawName,
+                        // Pre-fill the target with the group's own name only for
+                        // collapse-victim groups — moving those to their raw name
+                        // is the whole point. The source-named group must NOT
+                        // default to the source name: that silently resolves to
+                        // the source artist and moves nothing.
+                        targetName = if (group.isSourceName) "" else group.rawName,
                         tracks = group.tracks.map { track ->
                             SplitTrackUi(
                                 id = track.id,
@@ -183,7 +188,12 @@ class SplitArtistViewModel @Inject constructor(
                     )
                 )
             } else {
-                _uiState.value.copy(status = ArtistSplitStatus.Error("Split failed"))
+                _uiState.value.copy(
+                    status = ArtistSplitStatus.Error(
+                        "Split failed — nothing was moved. The target artist " +
+                            "must be different from the source artist."
+                    )
+                )
             }
         }
     }

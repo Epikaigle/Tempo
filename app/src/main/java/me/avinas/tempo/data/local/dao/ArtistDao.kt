@@ -54,7 +54,35 @@ interface ArtistDao {
     @Query("SELECT * FROM artists WHERE name LIKE :query ORDER BY name ASC")
     fun search(query: String): Flow<List<Artist>>
     
-    @Query("SELECT * FROM artists WHERE LOWER(name) LIKE '%' || LOWER(:query) || '%' ORDER BY name ASC LIMIT 50")
+    @Query("""
+        SELECT a.id, a.name, a.normalized_name,
+               COALESCE(
+                   NULLIF(a.image_url, ''),
+                   (SELECT COALESCE(
+                       NULLIF(em.spotify_artist_image_url, ''),
+                       NULLIF(em.itunes_artist_image_url, ''),
+                       NULLIF(em.lastfm_artist_image_url, ''),
+                       NULLIF(em.deezer_artist_image_url, '')
+                    )
+                    FROM enriched_metadata em
+                    INNER JOIN track_artists ta ON ta.track_id = em.track_id
+                    WHERE ta.artist_id = a.id
+                      AND (em.spotify_artist_image_url IS NOT NULL OR em.itunes_artist_image_url IS NOT NULL 
+                           OR em.lastfm_artist_image_url IS NOT NULL OR em.deezer_artist_image_url IS NOT NULL)
+                    LIMIT 1),
+                   (SELECT COALESCE(NULLIF(t.album_art_url, ''), NULLIF(em2.album_art_url, ''))
+                    FROM tracks t
+                    LEFT JOIN enriched_metadata em2 ON t.id = em2.track_id
+                    WHERE (t.primary_artist_id = a.id OR t.artist = a.name)
+                      AND (t.album_art_url IS NOT NULL OR em2.album_art_url IS NOT NULL)
+                    LIMIT 1)
+               ) as image_url,
+               a.genres, a.musicbrainz_id, a.spotify_id, a.country, a.artist_type
+        FROM artists a
+        WHERE LOWER(a.name) LIKE '%' || LOWER(:query) || '%'
+        ORDER BY a.name ASC
+        LIMIT 50
+    """)
     suspend fun searchSync(query: String): List<Artist>
     
     // Lookup by External IDs

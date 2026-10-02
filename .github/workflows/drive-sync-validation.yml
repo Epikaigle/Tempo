@@ -72,7 +72,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
           cache: gradle
       - uses: android-actions/setup-android@v3
       - run: chmod +x gradlew
@@ -80,3 +80,5 @@ jobs:
         run: ./gradlew :app:compileDebugKotlin --stacktrace
       - name: Android unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
+      - name: Assemble Android debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace

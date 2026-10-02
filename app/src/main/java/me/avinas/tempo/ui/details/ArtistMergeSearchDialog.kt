@@ -276,13 +276,21 @@ private fun ArtistSearchItem(
                 .background(GlassFrostMedium),
             contentAlignment = Alignment.Center
         ) {
-            if (artist.imageUrl != null) {
+            if (!artist.imageUrl.isNullOrBlank()) {
                 CachedAsyncImage(
                     imageUrl = artist.imageUrl,
                     contentDescription = artist.name,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
-                    targetSizeDp = 44
+                    targetSizeDp = 44,
+                    error = {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = null,
+                            tint = TextTertiary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 )
             } else {
                 Icon(

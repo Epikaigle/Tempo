@@ -3,24 +3,8 @@ package me.avinas.tempo.utils
 import android.util.Log
 
 /**
- * Utility class for parsing and normalizing artist names from various formats.
- * 
- * Music apps and metadata sources use different conventions for multiple artists:
- * - "Artist1, Artist2" (comma-separated)
- * - "Artist1 & Artist2" (ampersand)
- * - "Artist1 feat. Artist2" or "Artist1 ft. Artist2" (featuring)
- * - "Artist1 x Artist2" (collaboration)
- * - "Artist1 / Artist2" (slash-separated)
- * - "Artist1 and Artist2"
- * - "Artist1 with Artist2"
- * - "Artist1 vs. Artist2" or "Artist1 vs Artist2"
- * - "Artist1 + Artist2"
- * 
- * This parser handles all these formats and provides utilities for:
- * - Extracting all artists from a string
- * - Getting the primary (main) artist
- * - Getting featured artists
- * - Normalizing artist names for search/comparison
+ * Splits, normalizes, and classifies multi-artist strings across delimiter conventions
+ * (commas, ampersands, featuring markers, slashes, collaborations).
  */
 object ArtistParser {
 
@@ -75,6 +59,8 @@ object ArtistParser {
     // Known bands that contain separators like &, and, +, etc.
     // This whitelist prevents them from being split into multiple artists.
     private val KNOWN_COMPLEX_BANDS = setOf(
+        "bigflo et oli",
+        "bigflo & oli",
         "dead & company",
         "derek & the dominos",
         "belle & sebastian",
@@ -497,10 +483,7 @@ object ArtistParser {
     }
 
     /**
-     * Get all artists as a list for comprehensive matching.
-     * 
-     * @param artistString The raw artist string
-     * @return List of all artists mentioned
+     * Extracts all parsed artist names from [artistString].
      */
     fun getAllArtists(artistString: String): List<String> {
         return parse(artistString).allArtists
@@ -604,7 +587,7 @@ object ArtistParser {
      */
     fun hasAnyMatchingArtist(artists1: String, artists2: String): Boolean {
         // Handle empty/unknown artists - they should match any artist for same title
-        // This handles the case where metadata arrives in stages
+        // Allow match when metadata arrives in partial stages with empty or unknown artist
         val isUnknown1 = isUnknownArtist(artists1)
         val isUnknown2 = isUnknownArtist(artists2)
         
@@ -635,6 +618,35 @@ object ArtistParser {
                normalized == "<unknown>" ||
                normalized == "various artists"
     }
+
+    /**
+     * Check if an artist string is a structural *placeholder label* rather than
+     * a real artist name.
+     *
+     * Google Takeout's YouTube watch-history entries describe their links with
+     * generic labels — the album/release link is literally named "Release",
+     * videos are "Video", playlists are "Playlist", and so on. When a parser
+     * grabs one of those labels positionally it ends up storing the label as
+     * the artist, pooling hundreds of unrelated songs under one bogus artist
+     * (imports affected by the newer Takeout layout reported "Release" as a
+     * top-3 artist with 500+ tracks).
+     *
+     * The list is deliberately tight — exact, case-insensitive matches of
+     * clearly structural words — so a real artist name is never rejected.
+     */
+    fun isPlaceholderArtistName(artist: String): Boolean {
+        val normalized = artist.trim().lowercase()
+        if (normalized.isEmpty()) return true
+        return normalized in PLACEHOLDER_ARTIST_NAMES
+    }
+
+    private val PLACEHOLDER_ARTIST_NAMES = setOf(
+        "release", "releases", "song", "songs", "video", "videos",
+        "album", "albums", "single", "ep", "lp", "mixtape", "playlist",
+        "topic", "channel", "artist", "various artists", "unknown artist",
+        "unknown", "official video", "official audio", "official music video",
+        "music video"
+    )
 
     /**
      * Clean track title by removing artist mentions that are often embedded.

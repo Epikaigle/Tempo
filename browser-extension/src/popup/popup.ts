@@ -11,7 +11,6 @@ import type { SocketState } from '../shared/types';
 import { signRequest, validatePingResponse, pairingAgeDays } from '../shared/security';
 import type { SyncStatus } from '../background/sync';
 
-// Constants
 
 const QR_TOKEN_KEY    = 'tempo_pairing_token';
 const QR_EXPIRY_KEY   = 'tempo_pairing_token_expiry';
@@ -120,7 +119,6 @@ async function discoveryPing(ip: string, token: string): Promise<string | null> 
   }
 }
 
-// State
 
 type DiscoveryState = 'qr' | 'scanning' | 'manual' | 'success';
 

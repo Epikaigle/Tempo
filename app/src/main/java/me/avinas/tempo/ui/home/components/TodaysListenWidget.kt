@@ -1,7 +1,8 @@
 package me.avinas.tempo.ui.home.components
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,21 +15,21 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingFlat
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
-import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +51,10 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+/**
+ * Today's listening summary card showing total listening time, play count,
+ * hourly activity equalizer wave, and the top track or artist.
+ */
 @Composable
 fun TodaysListenWidget(
     todayOverview: ListeningOverview?,
@@ -63,13 +68,13 @@ fun TodaysListenWidget(
     onOpenOverview: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val hasData = (todayOverview?.totalPlayCount ?: 0) > 0
-    if (!hasData) return
+    val totalPlays = todayOverview?.totalPlayCount ?: 0
+    if (totalPlays <= 0) return
 
-    val currentDateFormatted = remember {
-        val today = LocalDate.now()
-        val formatted = today.format(DateTimeFormatter.ofPattern("MMM d", Locale.US)).uppercase()
-        "TODAY · $formatted"
+    val overviewAction = onOpenOverview ?: onMoreInsightsClick
+
+    val currentDateLabel = remember {
+        LocalDate.now().format(DateTimeFormatter.ofPattern("MMM d", Locale.US)).uppercase()
     }
 
     GlassCard(
@@ -78,223 +83,133 @@ fun TodaysListenWidget(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                enabled = onOpenOverview != null,
+                enabled = overviewAction != null,
                 onClickLabel = "Open today's overview"
-            ) { onOpenOverview?.invoke() },
-        shape = RoundedCornerShape(24.dp),
+            ) { overviewAction?.invoke() },
+        shape = RoundedCornerShape(22.dp),
         accentColor = TempoPrimary,
         accentStrength = 0.05f,
         variant = GlassCardVariant.Obsidian,
-        contentPadding = PaddingValues(16.dp)
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(11.dp)
         ) {
+            // ─── Upper Zone: Metric & Day Cadence Wave (Side-by-Side) ───
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                // Left: Kicker + Headline Time + Volume subtitle
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(TempoPrimary.copy(alpha = 0.12f))
-                            .border(0.75.dp, TempoPrimary.copy(alpha = 0.22f), CircleShape),
-                        contentAlignment = Alignment.Center
+                    // Kicker line with trend
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Headphones,
-                            contentDescription = null,
-                            tint = TempoPrimary,
-                            modifier = Modifier.size(17.dp)
+                        Text(
+                            text = "TODAY · $currentDateLabel",
+                            style = KickerSmall,
+                            color = TempoPrimaryMuted,
+                            letterSpacing = 0.7.sp
+                        )
+
+                        Text(
+                            text = "·",
+                            style = CaptionSmall,
+                            color = TextQuaternary
+                        )
+
+                        DayOverDayTrendInline(
+                            periodComparison = periodComparison
                         )
                     }
 
-                    Text(
-                        text = "Today's listening",
-                        fontFamily = DisplayFontFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
-                        color = TextPrimary,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(100.dp))
-                        .background(GlassFrostSoft)
-                        .border(0.5.dp, GlassBorderSoft, RoundedCornerShape(100.dp))
-                        .padding(horizontal = 9.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = currentDateFormatted,
-                        style = KickerSmall,
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
-                        color = TextSecondary,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 6.dp),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = "LISTENING TIME",
-                        style = KickerSmall,
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
-                        color = TextTertiary,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-
-                    Spacer(modifier = Modifier.height(3.dp))
-
+                    // Headline listening time
                     Text(
                         text = formatListeningTime(todayOverview?.totalListeningTimeMs ?: 0),
                         fontFamily = DisplayFontFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 26.sp,
-                        lineHeight = 30.sp,
-                        color = TextPrimary,
-                        maxLines = 1,
-                        softWrap = false
+                        lineHeight = 29.sp,
+                        color = TextPrimary
                     )
 
-                    Spacer(modifier = Modifier.height(5.dp))
-
-                    DayOverDayTrend(
-                        periodComparison = periodComparison,
-                        playCount = todayOverview?.totalPlayCount ?: 0
+                    // Volume summary
+                    val tracksCount = todayOverview?.uniqueTracksCount ?: totalPlays
+                    Text(
+                        text = buildString {
+                            append("$totalPlays ${if (totalPlays == 1) "play" else "plays"}")
+                            if (tracksCount > 0) {
+                                append(" · $tracksCount ${if (tracksCount == 1) "track" else "tracks"}")
+                            }
+                        },
+                        style = CaptionSmall,
+                        color = TextSecondary
                     )
                 }
-
-                Box(
-                    modifier = Modifier
-                        .width(0.5.dp)
-                        .fillMaxHeight()
-                        .padding(vertical = 2.dp)
-                        .background(GlassBorderSoft)
-                )
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                Column(
+                // Right: Compact Day Cadence Equalizer
+                CompactDayCadenceEqualizer(
+                    hourlyDistribution = hourlyDistribution,
                     modifier = Modifier
-                        .weight(1.25f),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    HourlyEqualizerChart(hourlyDistribution = hourlyDistribution)
-                }
+                        .width(116.dp)
+                        .height(46.dp)
+                )
             }
 
+            // ─── Subtle Hairline Divider ───
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(
+                                Color.Transparent,
+                                GlassBorderSoft,
+                                GlassBorderSoft,
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            // ─── Lower Zone: Unboxed Media Row (Track or Artist) ───
             if (topTrack != null) {
-                MostPlayedTrackCard(
+                CompactTrackRow(
                     track = topTrack,
                     onClick = onTrackClick
                 )
             } else if (topArtist != null) {
-                TopArtistCard(
+                CompactArtistRow(
                     artist = topArtist,
                     onClick = onArtistClick
                 )
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(0.5.dp)
-                        .background(GlassBorderSoft)
+            } else {
+                CompactRecapFooter(
+                    totalPlays = totalPlays,
+                    todayOverview = todayOverview,
+                    onOpenOverview = overviewAction
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.GraphicEq,
-                            contentDescription = null,
-                            tint = TempoPrimary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        val tracksCount = todayOverview?.uniqueTracksCount ?: todayOverview?.totalPlayCount ?: 0
-                        val artistsCount = todayOverview?.uniqueArtistsCount ?: 0
-                        Text(
-                            text = buildString {
-                                append("$tracksCount ${if (tracksCount == 1) "track" else "tracks"}")
-                                if (artistsCount > 0) {
-                                    append(" · $artistsCount ${if (artistsCount == 1) "artist" else "artists"}")
-                                }
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.5.sp,
-                            color = TextPrimary
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(enabled = onMoreInsightsClick != null) {
-                                onMoreInsightsClick?.invoke()
-                            }
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = "More insights",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.5.sp,
-                            color = TempoAccent
-                        )
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                            contentDescription = null,
-                            tint = TempoAccent,
-                            modifier = Modifier.size(9.dp)
-                        )
-                    }
-                }
             }
         }
     }
 }
 
+/**
+ * Inline trend delta indicator.
+ */
 @Composable
-private fun DayOverDayTrend(
-    periodComparison: PeriodComparison?,
-    playCount: Int
+private fun DayOverDayTrendInline(
+    periodComparison: PeriodComparison?
 ) {
     if (periodComparison != null) {
         val timeChange = periodComparison.timeChangePercent
@@ -302,152 +217,180 @@ private fun DayOverDayTrend(
             timeChange > 0.5 -> {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.TrendingUp,
                         contentDescription = null,
                         tint = TempoPrimary,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(11.dp)
                     )
                     Text(
-                        text = "+${timeChange.roundToInt()}% vs yesterday",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = TempoPrimary,
-                        maxLines = 1,
-                        softWrap = false
+                        text = "+${timeChange.roundToInt()}%",
+                        style = CaptionSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TempoPrimary
                     )
                 }
             }
             timeChange < -0.5 -> {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.TrendingDown,
                         contentDescription = null,
                         tint = TextTertiary,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(11.dp)
                     )
                     Text(
-                        text = "-${abs(timeChange).roundToInt()}% vs yesterday",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
+                        text = "-${abs(timeChange).roundToInt()}%",
+                        style = CaptionSmall,
                         fontWeight = FontWeight.Medium,
-                        color = TextTertiary,
-                        maxLines = 1,
-                        softWrap = false
+                        color = TextTertiary
                     )
                 }
             }
             else -> {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.TrendingFlat,
                         contentDescription = null,
                         tint = TextSecondary,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(11.dp)
                     )
                     Text(
-                        text = "Same as yesterday",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
+                        text = "even",
+                        style = CaptionSmall,
                         fontWeight = FontWeight.Medium,
-                        color = TextSecondary,
-                        maxLines = 1,
-                        softWrap = false
+                        color = TextSecondary
                     )
                 }
             }
         }
     } else {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.GraphicEq,
-                contentDescription = null,
-                tint = TempoPrimary,
-                modifier = Modifier.size(13.dp)
-            )
-            Text(
-                text = "$playCount ${if (playCount == 1) "play" else "plays"} today",
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
-                color = TextSecondary,
-                maxLines = 1,
-                softWrap = false
-            )
-        }
+        Text(
+            text = "today",
+            style = CaptionSmall,
+            color = TextTertiary
+        )
     }
 }
 
+/**
+ * Compact, organic hourly cadence equalizer wave.
+ */
 @Composable
-private fun HourlyEqualizerChart(hourlyDistribution: List<HourlyDistribution>) {
+private fun CompactDayCadenceEqualizer(
+    hourlyDistribution: List<HourlyDistribution>,
+    modifier: Modifier = Modifier
+) {
     val currentHour = remember { LocalTime.now().hour }
+    val isReducedMotion = rememberReducedMotion()
+
+    val animProgress = remember { Animatable(if (isReducedMotion) 1f else 0f) }
+    LaunchedEffect(hourlyDistribution) {
+        if (!isReducedMotion) {
+            animProgress.snapTo(0f)
+            animProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing)
+            )
+        }
+    }
+
     val maxPlays = remember(hourlyDistribution) {
         hourlyDistribution.maxOfOrNull { it.playCount }?.coerceAtLeast(1) ?: 1
     }
 
     val startHour = remember(hourlyDistribution) {
-        val firstActive = hourlyDistribution.filter { it.playCount > 0 }.minOfOrNull { it.hour } ?: 9
-        firstActive.coerceAtMost(9).coerceAtLeast(6)
+        val firstActive = hourlyDistribution.filter { it.playCount > 0 }.minOfOrNull { it.hour } ?: 8
+        firstActive.coerceAtMost(8).coerceAtLeast(0)
     }
-    val endHour = remember(startHour, currentHour) {
-        currentHour.coerceAtLeast(startHour + 8).coerceAtMost(23)
+
+    val endHour = remember(startHour, currentHour, hourlyDistribution) {
+        val lastActive = hourlyDistribution.filter { it.playCount > 0 }.maxOfOrNull { it.hour } ?: currentHour
+        maxOf(currentHour, lastActive, startHour + 9).coerceAtMost(23)
     }
+
     val hoursToShow = remember(startHour, endHour) {
         (startHour..endHour).toList()
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        modifier = modifier,
+        verticalArrangement = Arrangement.SpaceBetween
     ) {
+        // The Bars
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(42.dp),
+                .weight(1f),
             horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             hoursToShow.forEach { hour ->
                 val hourData = hourlyDistribution.find { it.hour == hour }
                 val playCount = hourData?.playCount ?: 0
-                val heightPercent = (playCount.toFloat() / maxPlays).coerceIn(0.10f, 1f)
                 val isCurrentHour = hour == currentHour
+                val isPeak = playCount > 0 && playCount == maxPlays
+
+                val normalizedHeight = if (playCount > 0) {
+                    ((playCount.toFloat() / maxPlays) * animProgress.value).coerceIn(0.15f, 1f)
+                } else {
+                    0.08f
+                }
+                val barBrush: Brush = when {
+                    isCurrentHour && playCount > 0 -> {
+                        Brush.verticalGradient(
+                            listOf(
+                                TempoAccentBright,
+                                TempoPrimary
+                            )
+                        )
+                    }
+                    isPeak -> {
+                        Brush.verticalGradient(
+                            listOf(
+                                TempoAccent,
+                                TempoPrimary
+                            )
+                        )
+                    }
+                    playCount > 0 -> {
+                        val alpha = (0.7f + 0.3f * (playCount.toFloat() / maxPlays)).coerceIn(0.6f, 1f)
+                        Brush.verticalGradient(
+                            listOf(
+                                TempoPrimary.copy(alpha = alpha),
+                                TempoPrimaryDeep.copy(alpha = alpha * 0.85f)
+                            )
+                        )
+                    }
+                    isCurrentHour -> {
+                        SolidColor(TempoPrimary.copy(alpha = 0.35f))
+                    }
+                    else -> {
+                        SolidColor(Color.White.copy(alpha = 0.08f))
+                    }
+                }
 
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .then(
-                            if (playCount > 0) Modifier.fillMaxHeight(heightPercent)
-                            else Modifier.height(2.5.dp)
-                        )
-                        .clip(RoundedCornerShape(topStart = 2.5.dp, topEnd = 2.5.dp))
-                        .background(
-                            when {
-                                isCurrentHour && playCount > 0 -> TempoAccentBright
-                                isCurrentHour -> TempoPrimary.copy(alpha = 0.45f)
-                                playCount > 0 -> {
-                                    val alpha = 0.60f + (0.40f * (playCount.toFloat() / maxPlays))
-                                    TempoPrimary.copy(alpha = alpha)
-                                }
-                                else -> Color.White.copy(alpha = 0.08f)
-                            }
-                        )
+                        .fillMaxHeight(normalizedHeight)
+                        .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp, bottomStart = 1.dp, bottomEnd = 1.dp))
+                        .background(barBrush)
                 )
             }
         }
 
+        Spacer(modifier = Modifier.height(3.dp))
+
+        // Time axis labels
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -455,297 +398,307 @@ private fun HourlyEqualizerChart(hourlyDistribution: List<HourlyDistribution>) {
         ) {
             Text(
                 text = formatHourLabel(startHour),
-                style = KickerSmall,
-                fontSize = 8.5.sp,
-                fontWeight = FontWeight.Bold,
+                style = CaptionSmall,
+                fontSize = 10.sp,
                 color = TextQuaternary,
-                letterSpacing = 0.4.sp
+                letterSpacing = 0.2.sp
             )
 
             Text(
-                text = formatHourLabel(endHour),
-                style = KickerSmall,
-                fontSize = 8.5.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextQuaternary,
-                letterSpacing = 0.4.sp
+                text = if (endHour == currentHour) "NOW" else formatHourLabel(endHour),
+                style = CaptionSmall,
+                fontSize = 10.sp,
+                fontWeight = if (endHour == currentHour) FontWeight.Bold else FontWeight.Normal,
+                color = if (endHour == currentHour) TempoPrimary else TextQuaternary,
+                letterSpacing = 0.2.sp
             )
         }
     }
 }
 
+/**
+ * Row displaying today's top track with album art and play metrics.
+ */
 @Composable
-private fun MostPlayedTrackCard(
+private fun CompactTrackRow(
     track: TopTrack,
     onClick: (() -> Unit)?
 ) {
-    val cardModifier = if (onClick != null) {
-        Modifier
+    Row(
+        modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(GlassFrostSoft)
-            .border(0.5.dp, GlassBorderSoft, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(12.dp)
-    } else {
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(GlassFrostSoft)
-            .border(0.5.dp, GlassBorderSoft, RoundedCornerShape(16.dp))
-            .padding(12.dp)
-    }
-
-    Box(modifier = cardModifier) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(10.dp))
-            ) {
-                CachedAsyncImage(
-                    imageUrl = track.albumArtUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    placeholder = {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(TempoPrimary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.GraphicEq,
-                                contentDescription = null,
-                                tint = TempoPrimary.copy(alpha = 0.7f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                )
-
-                // Concentric vinyl groove circles
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val stroke = Stroke(width = 0.75f)
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.14f),
-                        radius = size.minDimension * 0.32f,
-                        center = center,
-                        style = stroke
-                    )
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.10f),
-                        radius = size.minDimension * 0.44f,
-                        center = center,
-                        style = stroke
-                    )
+            .clip(RoundedCornerShape(12.dp))
+            .then(
+                if (onClick != null) {
+                    Modifier.premiumClickable(onClick = onClick, pressedScale = 0.98f)
+                } else {
+                    Modifier
                 }
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = if (track.playCount > 1) "MOST PLAYED" else "TOP TRACK",
-                        style = KickerSmall,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TempoPrimary,
-                        letterSpacing = 0.8.sp
-                    )
-
-                    Text(
-                        text = "•",
-                        fontSize = 8.sp,
-                        color = TextQuaternary
-                    )
-
-                    Text(
-                        text = "${track.playCount} ${if (track.playCount == 1) "play" else "plays"}",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = TextTertiary
-                    )
-                }
-
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.5.sp,
-                    color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = track.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontSize = 11.5.sp,
-                        color = TextTertiary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-
-                    if (track.totalTimeMs > 0) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color.White.copy(alpha = 0.06f))
-                                .padding(horizontal = 4.dp, vertical = 1.5.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(6.dp)
-                                    .height(2.dp)
-                                    .clip(RoundedCornerShape(1.dp))
-                                    .background(TempoPrimary)
-                            )
-                            Text(
-                                text = formatTrackDuration(track.totalTimeMs),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 8.5.sp,
-                                color = TextTertiary
-                            )
-                        }
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(TempoPrimary.copy(alpha = 0.10f))
-                    .border(0.5.dp, TempoPrimary.copy(alpha = 0.20f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                    contentDescription = "View track details",
-                    tint = TempoPrimary,
-                    modifier = Modifier.size(11.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TopArtistCard(
-    artist: TopArtist,
-    onClick: (() -> Unit)?
-) {
-    val cardModifier = if (onClick != null) {
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(GlassFrostSoft)
-            .border(0.5.dp, GlassBorderSoft, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(12.dp)
-    } else {
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(GlassFrostSoft)
-            .border(0.5.dp, GlassBorderSoft, RoundedCornerShape(16.dp))
-            .padding(12.dp)
-    }
-
-    Box(modifier = cardModifier) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth()
+            )
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Album art
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(TempoDarkSurfaceElevated)
+                .border(0.5.dp, GlassBorderMedium, RoundedCornerShape(10.dp))
         ) {
             CachedAsyncImage(
-                imageUrl = artist.imageUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.05f)),
+                imageUrl = track.albumArtUrl,
+                contentDescription = "Album art for ${track.title}",
+                modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
                 placeholder = {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(TempoInfo.copy(alpha = 0.15f)),
+                            .background(TempoPrimary.copy(alpha = 0.12f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Person,
+                            imageVector = Icons.Rounded.MusicNote,
                             contentDescription = null,
-                            tint = TempoInfoSoft,
-                            modifier = Modifier.size(20.dp)
+                            tint = TempoPrimary.copy(alpha = 0.7f),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             )
+        }
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "TOP ARTIST",
-                    style = KickerSmall,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TempoInfoSoft,
-                    letterSpacing = 0.8.sp
-                )
-                Text(
-                    text = artist.artist,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.5.sp,
-                    color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${artist.playCount} ${if (artist.playCount == 1) "play" else "plays"} today",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.5.sp,
-                    color = TextTertiary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(TempoInfo.copy(alpha = 0.14f))
-                    .border(0.5.dp, TempoInfo.copy(alpha = 0.28f), CircleShape),
-                contentAlignment = Alignment.Center
+        // Title, artist, and plays
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                    contentDescription = "View artist details",
-                    tint = TempoInfoSoft,
-                    modifier = Modifier.size(11.dp)
+                Text(
+                    text = if (track.playCount > 1) "MOST PLAYED" else "LEAD TRACK",
+                    style = KickerSmall,
+                    fontSize = 10.5.sp,
+                    color = TempoPrimary,
+                    letterSpacing = 0.6.sp
                 )
+
+                Text(
+                    text = "·",
+                    style = CaptionSmall,
+                    color = TextQuaternary
+                )
+
+                Text(
+                    text = "${track.playCount} ${if (track.playCount == 1) "play" else "plays"}",
+                    style = CaptionSmall,
+                    color = TextTertiary
+                )
+
+                if (track.totalTimeMs > 0) {
+                    Text(
+                        text = "· ${formatTrackDuration(track.totalTimeMs)}",
+                        style = CaptionSmall,
+                        color = TextTertiary
+                    )
+                }
             }
+
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Text(
+                text = track.artist,
+                style = MaterialTheme.typography.bodySmall,
+                fontSize = 12.sp,
+                color = TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        // Circular chevron button
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(TempoPrimary.copy(alpha = 0.08f))
+                .border(0.5.dp, TempoPrimary.copy(alpha = 0.20f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                contentDescription = "View track details",
+                tint = TempoPrimary,
+                modifier = Modifier.size(10.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Row displaying today's top artist with avatar and play metrics.
+ */
+@Composable
+private fun CompactArtistRow(
+    artist: TopArtist,
+    onClick: (() -> Unit)?
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .then(
+                if (onClick != null) {
+                    Modifier.premiumClickable(onClick = onClick, pressedScale = 0.98f)
+                } else {
+                    Modifier
+                }
+            )
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Circular artist photo
+        CachedAsyncImage(
+            imageUrl = artist.imageUrl,
+            contentDescription = "Photo of ${artist.artist}",
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(TempoDarkSurfaceElevated)
+                .border(0.5.dp, GlassBorderMedium, CircleShape),
+            contentScale = ContentScale.Crop,
+            placeholder = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(TempoInfo.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = TempoInfoSoft,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        )
+
+        // Artist name and stats
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = "TOP ARTIST",
+                style = KickerSmall,
+                fontSize = 10.5.sp,
+                color = TempoInfoSoft,
+                letterSpacing = 0.6.sp
+            )
+            Text(
+                text = artist.artist,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${artist.playCount} ${if (artist.playCount == 1) "play" else "plays"} today",
+                style = CaptionSmall,
+                color = TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        // Circular chevron button
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(TempoInfo.copy(alpha = 0.10f))
+                .border(0.5.dp, TempoInfo.copy(alpha = 0.24f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                contentDescription = "View artist details",
+                tint = TempoInfoSoft,
+                modifier = Modifier.size(10.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Fallback recap row when neither top track nor top artist is present.
+ */
+@Composable
+private fun CompactRecapFooter(
+    totalPlays: Int,
+    todayOverview: ListeningOverview?,
+    onOpenOverview: (() -> Unit)?
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.GraphicEq,
+                contentDescription = null,
+                tint = TempoPrimary,
+                modifier = Modifier.size(14.dp)
+            )
+            val artistsCount = todayOverview?.uniqueArtistsCount ?: 0
+            Text(
+                text = if (artistsCount > 0) "$artistsCount artists active today" else "Today's recap",
+                style = CaptionSmall,
+                color = TextSecondary
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(100.dp))
+                .clickable(enabled = onOpenOverview != null) { onOpenOverview?.invoke() }
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = "Recap",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp,
+                color = TempoAccent
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.ArrowForwardIos,
+                contentDescription = null,
+                tint = TempoAccent,
+                modifier = Modifier.size(9.dp)
+            )
         }
     }
 }

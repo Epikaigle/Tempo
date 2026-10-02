@@ -585,17 +585,8 @@ class MusicBrainzEnrichmentService @Inject constructor(
     }
     
     /**
-     * Create or update Artist and Album entities to properly associate the track with an album.
-     * 
-     * Smart album detection workflow:
-     * 1. Find or create the Artist entity (by MusicBrainz ID or name)
-     * 2. Find or create the Album entity (by MusicBrainz ID first, then by title+artist)
-     * 3. Update album with artwork and metadata if needed
-     * 
-     * This ensures that:
-     * - Albums are properly linked to artists
-     * - Album artwork is stored for display
-     * - Deduplication works via MusicBrainz ID
+     * Resolves and links [Artist] and [Album] records for a MusicBrainz release,
+     * associating artwork and MBIDs.
      */
     private suspend fun createOrUpdateAlbumAssociation(
         artistName: String,
@@ -774,7 +765,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
                             ?: "${CoverArtArchiveApi.BASE_URL}release/$releaseMbid/front-1200")
                     )
                     
-                    // Sanity check: Ensure valid image URLs
+                    // Validate album art URL scheme and format
                     if (!isValidAlbumArtUrl(urls.medium)) {
                          Log.w(TAG, "Ignored invalid album art URL: ${urls.medium}")
                          return null

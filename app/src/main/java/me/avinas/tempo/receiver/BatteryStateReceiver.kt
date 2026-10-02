@@ -10,9 +10,8 @@ import me.avinas.tempo.service.MusicTrackingService
 import me.avinas.tempo.utils.BatteryUtils
 
 /**
- * BatteryStateReceiver listens for battery level changes and notifies
- * [MusicTrackingService] so it can smoothly resume tracking the moment
- * the battery recovers above the low-battery threshold.
+ * Listens for battery state changes and notifies [MusicTrackingService]
+ * to resume tracking when battery recovers above the low-battery threshold.
  *
  * We listen for both:
  *  - [Intent.ACTION_BATTERY_OKAY]   – system signal that battery is no longer low

@@ -157,8 +157,7 @@ class ITunesEnrichmentService @Inject constructor(
                 val bestMatch = results.find { result ->
                     val resultArtist = result.artistName ?: ""
                     
-                    // Crucial: Limit matches to correct artist using relaxed checking
-                    // Check if ANY artist in the result matches ANY artist in our input
+                    // Verify at least one artist token matches to reject wrong-artist results
                     val isArtistMatch = ArtistParser.hasAnyMatchingArtist(resultArtist, artist)
                     
                     if (!isArtistMatch) return@find false
@@ -631,10 +630,8 @@ class ITunesEnrichmentService @Inject constructor(
      *   Used to filter out images from related/similar artist sections.
      */
     private fun extractArtistImageFromHtml(html: String, phase: String, artistSlug: String? = null): String? {
-        // Strategy 1: Data-Testid header block extraction
-        // The most robust way to get the actual header image is to isolate the `<div data-testid="artist-detail-header">`
-        // block and extract the mzstatic URL from inside it. This bypasses the need to guess which CDN path Apple Music
-        // is using today, and it intrinsically prevents cross-contamination from "Related Artists" sections.
+        // Extract mzstatic URL from <div data-testid="artist-detail-header">
+        // to avoid picking up unrelated artists or covers from recommendation rails.
         val headerIndex = html.indexOf("""data-testid="artist-detail-header"""")
         if (headerIndex != -1) {
             // Extract a reasonable chunk of HTML containing the header (usually ~2000-3000 chars)
@@ -737,7 +734,7 @@ class ITunesEnrichmentService @Inject constructor(
         }
         
         // Strategy 8: Broad fallback - only AMCArtistImages URLs from any mzstatic match
-        // This ensures we NEVER return album art as an artist image.
+        // Restrict to AMCArtistImages paths to prevent album art falling through as artist image.
         val allMzstaticUrls = MZSTATIC_GENERIC_REGEX.findAll(html)
             .map { it.groupValues[1] }
             .filter { url ->
@@ -783,7 +780,7 @@ class ITunesEnrichmentService @Inject constructor(
     
     /**
      * Rewrite mzstatic.com URL to square dimensions.
-     * Apple CDN supports dynamic size via URL suffix:
+     * Apple CDN supports arbitrary dimension replacement via URL suffix:
      * /1200x630cw.png → /600x600cc.png (cc = center-crop)
      */
     private fun rewriteToSquare(url: String, size: Int): String {
@@ -825,7 +822,7 @@ class ITunesEnrichmentService @Inject constructor(
             
             // Strategy 4: Track name only (Fallback)
             // Useful if artist name on iTunes is completely different (e.g. "feat. X" vs "with X")
-            // The result validation loop will ensure we don't match wrong songs
+            // Result validation verifies artist tokens before accepting track-only matches
             strategies.add(cleanTrack)
         }
         

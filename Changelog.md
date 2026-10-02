@@ -2,8 +2,69 @@
 
 All notable changes to Tempo are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [Unreleased]
+
+### Fixed
+- The app no longer crashes on launch for users upgrading from schema 53 on Android 8, 8.1 and 9. Migration 53→54 deduped `daily_challenges` with a `ROW_NUMBER() OVER (PARTITION BY ...)` statement, but window functions need SQLite 3.25+ and those releases ship SQLite 3.18–3.22, so the migration threw `SQLiteException` every time Room opened the database and the app could not start until its data was cleared. The dedupe is now a correlated `EXISTS` (SQLite 3.7+ syntax) that keeps the identical row per challenge — completed first, then higher progress, then higher id — and the migration is individually idempotent (probe before `ALTER TABLE`, `IF NOT EXISTS` for the index) so an interrupted upgrade can be re-entered safely.
+- Foreground-service notification crashes (`CannotPostForegroundServiceNotificationException` / `BadForegroundServiceNotificationException`) on Android 13–16. The system posts the tracking notification on the app's behalf and kills the process asynchronously — not catchable around `startForeground()` — when the notification is invalid or its channel is missing. Tempo now verifies both channels exist and recreates them before every promotion, falls back to a minimal notification if the rich one cannot be built, requests immediate display so the system's deferred re-post path is not used, and promotes to foreground *before* the blocking database reads in `onCreate` that could otherwise delay or prevent it. Five workers also posted their notifications with the 108dp launcher vector as the status-bar small icon; they now use the dedicated notification icon.
+- A framework race could crash the process on the QueuedWork thread with `IllegalStateException: Broadcast already finished`. When `SharedPreferences.apply()` writes are still pending, `BroadcastReceiver.PendingResult.finish()` defers its completion to `QueuedWork`, and a second finish of the same result then throws outside any receiver's `try/catch` (AOSP b/257513022). Tempo's receivers never finish a broadcast themselves, so the duplicate comes from a library receiver; an uncaught-exception filter now drops exactly this bookkeeping race — matching only that message *and* the `PendingResult.sendFinished` frame — while every other crash still terminates and is reported as before.
+- Songs followed by ad-flagged content could be counted two or more times with inflated listening time: the MediaSession track-change path saved the outgoing song's session but left it in the active-session map when the incoming track was classified as an ad, so every later ad callback (and the next real track change, pause, stop, or service shutdown) saved the same session again — each repeat landing outside the queue's 5-second dedup window and including the ad's playback time. The outgoing session is now detached from the map before it is saved (in both the MediaSession and notification track-change paths), making the handoff atomic, and a terminal-save guard on the session itself blocks any second save of the same session with a warning in the logs.
+- Duplicate plays are now also blocked at the database boundary, not just in memory: the tracking manager refuses to write a second event for the same (session, track, start time) — in the batch writer, the direct-save fallback, and the offline retry queue — because in-memory guards cannot see across process restarts and the queue's time-window dedup expires long before a leaked re-save lands. Lookup failures fail open so listening data is never lost to a guard error.
+- Migration 55 removes existing duplicate plays written by the bug above, keeping the earliest (accurate) record of each session; later re-saves were the inflated ones. Legitimate plays are untouched: replays use a fresh session, imports carry no session id, and synthesized import history reuses session ids only with distinct timestamps.
+
+## [4.8.10] - 2026-09-20
+
+### Added
+- Anonymous app-health statistics, so crashes and broken features can actually be found and fixed. They cover crashes, errors, which screens and features are used, and whether background music detection is alive. Counts are sent as ranges rather than exact figures, and there is no account, no device identifier, and never any track, artist or listening history. On by default, off in one tap at **Settings → Your Data**, and completely inert in any build compiled from source.
+- **Settings → Your Data → Data & diagnostics**, one screen answering both data questions. "What we collect" lists every event Tempo can send and the exact data attached to each one; the diagnostics report is a user-initiated summary of how Tempo is running on your device — versions, library counts, music detection health and background work. Both stay collapsed until opened, and neither leaves your device unless you choose to share it, which is why the report can be far more detailed than the anonymous statistics and why it is the most useful thing to attach to a bug report.
+- Configurable tracking rules in the Supported apps screen: "Count a listen after" (1 second to 10 minutes, default 25 seconds), a default maximum music duration (default 20 minutes) with a per-app override or no limit, and a content-exceptions list that forces matching media to always count as music or always be excluded as video/non-music.
+- History entries gained "Always music" and "Video / non-music" actions per track and per artist. Corrections apply to matching history in place without deleting the track, and a more specific Always Music exception survives a later artist-wide correction.
+
+### Changed
+- Badge star tiers rebalanced so no badge is effectively impossible. Star 5 used to be a fixed 50× the unlock threshold for every badge, which scaled the largest badges into nonsense: *Legendary* (10,000 plays) needed 500,000 plays (~45 years) and *The Centennial* (Level 100) needed Level 5,000 (~400 years) for five stars. Each badge now has its own explicit, reachable five-star target — interpolated smoothly across the intermediate tiers — capping the hardest MYTHIC badge at roughly two years of dedicated listening while leaving ★1 unlocks untouched. Existing users can only keep or gain stars, never lose one.
+- Daily challenges stopped repeating the same family two days running and learned the user's schedule. The time challenge is now a 3-hour window around the typical first-listen hour (Early Bird, Prime Time, or Night Owl, with a 7–10 AM fallback), discovery targets scale with past discovery instead of sitting at the cap, and XP rewards are fixed per date so regenerating a day keeps the same payout.
+- The privacy policy now describes app-health reporting in full, including that a coarse country/region is derived from the request IP, and that the app never sends an identifier of any kind.
+
+### Fixed
+- Anonymous app-health statistics never being uploaded: the upload worker's first run was scheduled a full interval ahead (5 hours for the 6-hour cadence), and there was no one-shot upload anywhere, so a fresh install showed an empty dashboard until that window elapsed. Collection now triggers an immediate upload the moment the notice makes reporting legal, and on every app start.
+- Statistics uploads being limited to unmetered networks, which silenced reporting for anyone on mobile data only — and because events expire after 24 hours, a user who was never on Wi-Fi sent nothing at all. Uploads now use any available connection; the payload is a few hundred bytes per event and roughly 16 KB on a busy day.
+- The Home notice explaining anonymous app-health reporting removing itself in the frame it appeared: it marked itself as seen on first composition, and visibility was driven by that same flag. It now stays on screen until acknowledged or turned off, so the opt-out beside it is actually reachable.
+- YouTube Music Takeout imports mis-reading the newer watch-history layout: the first subtitle — the release link literally named "Release" — was stored as the artist for hundreds of songs (making "Release" a top-3 artist), albums were lost ("unknown"), and plays split across duplicate track rows so all-time counts stayed wrong. Artists and albums are now resolved by link role (channel URLs vs. playlist/release URLs) with a `details` fallback, and placeholder labels ("Release", "Song", "Playlist", etc.) can never be stored as an artist.
+- Repairs for installs already affected by the "Release" artifact: re-importing the same Takeout ZIP now detects those rows, fixes their artist/album in place (or merges them into the correct-artist track row), re-queues them for album/artwork/genre enrichment, and reports the count as "Tracks repaired" in the import summary. Already-imported plays are deduplicated by content fingerprint, so nothing is double-counted.
+- Split Artist silently doing nothing when the only group's default target name resolved to the source artist itself: the split now fails with a clear message instead of reporting a success with zero moves, and the source artist's name is no longer pre-filled as the move target.
+- Manual song merges keeping the bogus artist when merging into a placeholder-artist row (e.g. the "Release" copy): the surviving track now adopts the source track's real artist and is re-linked through the artist pipeline so stats, details, and junction rows all follow.
+- Albums showing no cover art in rankings, artist pages and album search even though their songs had artwork. The album-grouped stats queries read the art column without an aggregate, so SQLite resolved it from an arbitrary song in the group — an album whose first-scanned song had no art reported none, and an album whose first-scanned song had only local art hid the richer online cover. Artwork is now aggregated across the album, preferring the enriched URL over the on-device fallback.
+- Album details showing a blank cover while its own track list showed art, for albums that were never enriched at album level (imports, Takeout, desktop scrobbles). The header now falls back to a cover from the album's songs, preferring an online URL over a local file.
+- Cover art extraction blocking the UI thread on every new track: the bitmap downscale, JPEG encode and file write for the local fallback ran inline in the notification and MediaSession callbacks, which could stutter or ANR when skipping tracks quickly. That work now runs off the main thread.
+- Duplicate daily challenges double-counting XP when the midnight worker and the Profile screen generated the same day at once. Generation now runs in one transaction against a unique (challenge_id, date) index, and migration 54 dedupes existing rows keeping the most-progressed copy.
+- Pruning challenges older than 90 days subtracting their XP on the next recompute. Completed XP is now banked into user_level before deletion, so total XP and level survive pruning.
+- Genre challenges miscounting progress: combos like "rock|||pop" counted as one genre (or only the first segment) and tags were ignored. Genre progress now splits combos, falls back to tags, and "new genres" only counts genres never heard before today.
+- Explore-artist and explore-genre challenge IDs used String.hashCode and could collide, merging two artists into one row. IDs are now stable slugs, so different names can no longer share a challenge.
+
+## [4.8.7] - 2026-09-04
+
+### Added
+- Album merge tool in the album details menu to consolidate split albums, duplicate track history, and scrobble archives into a single target album.
+- Fullscreen level-up and badge celebration screens with particle effects and exportable achievement share cards.
+- Setting to toggle gamification on or off, hiding levels, badges, and XP counters across the app.
+- Listening overview sheet on the home screen with hourly listening distribution charts, period comparisons, and direct share export.
+- Top search drawer on the rankings screen for filtering artists, albums, and tracks in place.
+- Option to pause playback tracking when device battery drops below 20%.
+
+### Changed
+- Reworked share themes into six dedicated visual styles (Midnight, Glass, ASCII, Minimum, Daylight, and Glitch), including artwork-derived motion blur, scanlines, and RGB splits for Glitch.
+- Updated the album details screen layout to match the artist view, replacing the 2x2 stat grid with a hero play count and reformatting track rows with track numbers and play counts.
+- Redesigned the history screen header with a persistent search bar and a filter sheet for custom time ranges and playback sources.
+- Prefetched history pages four items before the end of the list to prevent scrolling hitches.
+- Offloaded profile unique artist calculations to IO threads and precomputed badge star progress.
+
+### Fixed
+- Switched Google Drive sign-in to Credential Manager to resolve authentication hangs and missing account states.
+- Isolated periodic Google Drive backup worker runs across retries to prevent overlapping jobs and state corruption.
+- Fixed background backup restore cancellation issues by preserving active backup identity and manual worker triggers.
+- Restricted post-restore bulk image pre-caching to known music CDN domains to prevent arbitrary background network requests from untrusted backup archives.
+- Restricted restored profile image paths strictly to verified internal storage URIs, dropping arbitrary schemes from backup data.
+- Constrained share theme background layers to card boundaries to stop visual overflow in export previews.
 
 ## [4.8.3] - 2026-08-19
 
