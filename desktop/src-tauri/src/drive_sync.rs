@@ -103,6 +103,7 @@ struct WireEvent {
     event_id: String,
     title: String,
     artist: String,
+    #[serde(deserialize_with = "deserialize_required_option")]
     album: Option<String>,
     timestamp_utc: i64,
     duration_ms: i64,
@@ -114,12 +115,24 @@ struct WireEvent {
     completion_percentage: i64,
     pause_count: i64,
     seek_count: i64,
+    #[serde(deserialize_with = "deserialize_required_option")]
     session_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_required_option")]
     site: Option<String>,
     content_type: String,
+    #[serde(deserialize_with = "deserialize_required_option")]
     volume_level: Option<i64>,
     total_pause_duration_ms: i64,
     position_updates_count: i64,
+}
+
+fn deserialize_required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    // Protocol-v1 nullable fields must be present, even when their value is null.
+    Option::<T>::deserialize(deserializer)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1860,6 +1873,11 @@ mod tests {
             let mut malformed = original.clone();
             *malformed.pointer_mut(pointer).unwrap() = value;
             assert!(decode_batch(&compress_json(&malformed)).is_err(), "{pointer}");
+        }
+        for field in ["album", "session_id", "site", "volume_level"] {
+            let mut malformed = original.clone();
+            malformed["events"][0].as_object_mut().unwrap().remove(field);
+            assert!(decode_batch(&compress_json(&malformed)).is_err(), "missing {field}");
         }
         let mut empty = fixture_batch();
         empty.events.clear();
