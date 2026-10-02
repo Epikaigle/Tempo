@@ -12,7 +12,9 @@ Tempo uses the same history protocol across Android, the browser extension, and 
 
 Drive history files use the `tempo_history_v1_` namespace and schema version 1. Current clients name batches as `tempo_history_v1_g<generation>_<device_id>_<batch_id>.json.gz` and store the same generation in the Drive app property `tempo_generation`. Clients generate stable SHA-256 event IDs and deterministic batch IDs so retries are idempotent. Imported events are not re-uploaded as new events, and temporal deduplication remains a fallback for overlapping capture sources.
 
-Files produced before generation metadata existed are treated as generation `0`, so development/test data from the earlier protocol draft remains readable and safely removable after a later deletion marker.
+Files produced before generation metadata existed are treated as generation `0`. Every readable batch must still carry valid identity metadata, a declared byte size and a matching `tempo_sha256` checksum. Earlier Desktop prototype uploads without this checksum are re-queued once after upgrading; stable event IDs prevent duplicate history.
+
+Downloads are limited to 10 MiB before and after decompression. A batch is validated as a whole, including its event IDs, deterministic batch ID, filename, device/platform metadata and numeric/text limits. Malformed batches are skipped. Database imports run in one transaction per batch, so an insertion failure cannot leave a partial batch behind.
 
 ## Privacy and permissions
 
@@ -61,6 +63,8 @@ Desktop reads its OAuth client ID at compile time from:
 
 The GitHub Desktop release workflow reads that value from the repository variable with the same name. Release builds fail early if the variable is missing, preventing an installer from being published with a non-functional Google Drive sign-in flow.
 
+Enable the Google Drive API and register a Desktop public client with a loopback callback. Android, Chrome, Firefox and Desktop must use clients from the same Google Cloud project to access the same hidden application-data namespace.
+
 The OAuth client ID is a public application identifier. Do not add an OAuth client secret to the Desktop app or repository: Tempo Desktop is a public/native client and uses Authorization Code + PKCE through the user's system browser.
 
 ## Local token storage
@@ -84,6 +88,7 @@ Before changing schema version 1, verify all three producers/consumers agree on:
 - file prefix: `tempo_history_v1_`
 - filename generation form: `tempo_history_v1_g<generation>_<device_id>_<batch_id>.json.gz`
 - Drive generation app property: `tempo_generation`
+- compressed batch SHA-256 app property: `tempo_sha256`
 - control marker: `tempo_history_control_v1.json`
 - `schema_version: 1`
 - snake_case JSON field names
@@ -97,3 +102,13 @@ Before changing schema version 1, verify all three producers/consumers agree on:
 - account-scoped Drive cursors/generation state
 
 Any incompatible wire-format change should introduce a new schema version rather than silently changing v1.
+
+## Remaining real-account validation
+
+CI uses a dummy public client ID for compilation and unit tests. Keep this PR as a draft until a real OAuth client is configured and these checks pass:
+
+1. Connect Desktop, Android and the browser extension to the same test account on different networks. Send history in both directions, retry and restart; each event must appear once.
+2. Switch Google accounts and verify no credential, cursor or deletion generation crosses the account boundary.
+3. Delete cloud history, deliberately re-enable one client, then wake a stale client. It must stop without deleting the newly accepted generation.
+4. Expire the access token and verify OS credential-store refresh. Disconnect with the store unavailable and verify local sync is disabled and the cleanup error is shown.
+5. Upgrade an earlier Desktop prototype with uploaded history and confirm its local events are re-sent with checksum metadata once.

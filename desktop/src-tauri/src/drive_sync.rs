@@ -31,6 +31,8 @@ const KEYRING_SERVICE: &str = "me.avinas.tempo.desktop.google-drive";
 const FILE_PREFIX: &str = "tempo_history_v1_";
 const DISABLE_MARKER_NAME: &str = "tempo_history_control_v1.json";
 const APP_PROPERTY_GENERATION: &str = "tempo_generation";
+const APP_PROPERTY_SHA256: &str = "tempo_sha256";
+const MAX_WIRE_INTEGER: i64 = 9_007_199_254_740_991;
 const SCHEMA_VERSION: i32 = 1;
 const BATCH_SIZE: usize = 50;
 const MAX_LOCAL_SCAN: usize = 5000;
@@ -218,10 +220,15 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             drive_uploaded_at INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_drive_origin_event ON drive_event_state(origin_event_id);
+        CREATE TABLE IF NOT EXISTS drive_sync_migrations (
+            name TEXT PRIMARY KEY
+        );
         INSERT OR IGNORE INTO drive_sync_state (id) VALUES (1);
         ",
     )
     .map_err(|e| e.to_string())?;
+
+    requeue_unverified_prototype_uploads(&conn)?;
 
     let current: String = conn
         .query_row(
@@ -244,6 +251,23 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(conn)
+}
+
+fn requeue_unverified_prototype_uploads(conn: &Connection) -> Result<(), String> {
+    let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let applied = transaction.execute(
+        "INSERT OR IGNORE INTO drive_sync_migrations (name) VALUES ('verified_batches_v1')",
+        [],
+    ).map_err(|e| e.to_string())?;
+    if applied == 1 {
+        // Earlier Desktop batches omitted tempo_sha256 and were rejected by
+        // Android/browser readers. Re-send local events once with verified metadata.
+        transaction.execute(
+            "UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0",
+            [],
+        ).map_err(|e| e.to_string())?;
+    }
+    transaction.commit().map_err(|e| e.to_string())
 }
 
 fn load_state(conn: &Connection) -> Result<StoredDriveState, String> {
@@ -747,12 +771,14 @@ async fn get_disable_marker_version(access_token: &str) -> Result<i64, String> {
     }
 }
 
-fn batch_generation(file: &DriveFileRecord) -> i64 {
-    file.app_properties
-        .get(APP_PROPERTY_GENERATION)
-        .and_then(|value| value.parse::<i64>().ok())
-        .filter(|value| *value >= 0)
-        .unwrap_or(0)
+fn batch_generation(file: &DriveFileRecord) -> Option<i64> {
+    match file.app_properties.get(APP_PROPERTY_GENERATION) {
+        None => Some(0),
+        Some(value) if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) => {
+            value.parse::<i64>().ok().filter(|value| (0..=MAX_WIRE_INTEGER).contains(value))
+        }
+        _ => None,
+    }
 }
 
 fn batch_file_name(generation: i64, device_id: &str, batch_id: &str) -> String {
@@ -790,10 +816,23 @@ async fn download_bytes(access_token: &str, file: &DriveFileRecord) -> Result<Ve
         }
         bytes.extend_from_slice(&chunk);
     }
+    validate_compressed_metadata(file, &bytes)?;
     Ok(bytes)
 }
 
+fn validate_compressed_metadata(file: &DriveFileRecord, bytes: &[u8]) -> Result<(), String> {
+    let declared_size = file.size.as_deref().and_then(|value| value.parse::<usize>().ok());
+    let expected_hash = file.app_properties.get(APP_PROPERTY_SHA256);
+    if declared_size != Some(bytes.len())
+        || !expected_hash.is_some_and(|hash| valid_sha256(hash) && *hash == hex::encode(Sha256::digest(bytes)))
+    {
+        return Err("Malformed Drive history batch: size or SHA-256 does not match metadata".to_string());
+    }
+    Ok(())
+}
+
 fn encode_batch(batch: &WireBatch) -> Result<Vec<u8>, String> {
+    validate_batch(batch)?;
     let json = serde_json::to_vec(batch).map_err(|e| e.to_string())?;
     if json.len() > MAX_BATCH_BYTES {
         return Err("Tempo Drive history batch exceeds the decompressed size limit".to_string());
@@ -808,6 +847,9 @@ fn encode_batch(batch: &WireBatch) -> Result<Vec<u8>, String> {
 }
 
 fn decode_batch(bytes: &[u8]) -> Result<WireBatch, String> {
+    if bytes.len() > MAX_BATCH_BYTES {
+        return Err("Tempo Drive history batch exceeds the compressed size limit".to_string());
+    }
     let decoder = GzDecoder::new(bytes);
     let mut decoded = Vec::new();
     decoder
@@ -818,16 +860,50 @@ fn decode_batch(bytes: &[u8]) -> Result<WireBatch, String> {
         return Err("Drive history batch expands beyond the safe size limit".to_string());
     }
     let batch: WireBatch = serde_json::from_slice(&decoded).map_err(|e| e.to_string())?;
+    validate_batch(&batch)?;
+    Ok(batch)
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn valid_identifier(value: &str, max_length: usize) -> bool {
+    !value.is_empty() && value.len() <= max_length
+        && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+}
+
+fn valid_text(value: &str) -> bool {
+    !value.trim().is_empty() && value.encode_utf16().count() <= 1000
+}
+
+fn valid_optional_text(value: &Option<String>) -> bool {
+    value.as_deref().map_or(true, |value| value.encode_utf16().count() <= 1000)
+}
+
+fn validate_batch(batch: &WireBatch) -> Result<(), String> {
     if batch.schema_version != SCHEMA_VERSION
-        || batch.batch_id.is_empty()
-        || batch.source_device_id.is_empty()
+        || !valid_sha256(&batch.batch_id)
+        || !valid_identifier(&batch.source_device_id, 200)
+        || !valid_text(&batch.source_device_name)
+        || !valid_identifier(&batch.source_platform, 100)
+        || !(1..=MAX_WIRE_INTEGER).contains(&batch.created_at_utc)
+        || batch.events.is_empty() || batch.events.len() > 1000
+        || !batch.events.iter().all(valid_event)
+        || batch.batch_id != batch_id(&batch.events)
     {
         return Err("Unsupported or malformed Tempo Drive history batch".to_string());
     }
-    if batch.events.len() > 1000 {
-        return Err("Tempo Drive history batch contains too many events".to_string());
-    }
-    Ok(batch)
+    Ok(())
+}
+
+fn matches_batch_metadata(file: &DriveFileRecord, batch: &WireBatch) -> bool {
+    batch_generation(file).is_some_and(|generation| {
+        file.name == batch_file_name(generation, &batch.source_device_id, &batch.batch_id)
+    }) && file.app_properties.get("tempo_kind").map(String::as_str) == Some("history_batch")
+        && file.app_properties.get("tempo_schema").map(String::as_str) == Some("1")
+        && file.app_properties.get("source_device_id") == Some(&batch.source_device_id)
+        && file.app_properties.get("source_platform") == Some(&batch.source_platform)
 }
 
 fn sha256_hex(value: &str) -> String {
@@ -960,8 +1036,13 @@ async fn upload_batch(
     generation: i64,
     compressed: &[u8],
 ) -> Result<(), String> {
-    if find_exact_file(access_token, file_name).await?.is_some() {
-        return Ok(());
+    if let Some(existing) = find_exact_file(access_token, file_name).await? {
+        if validate_compressed_metadata(&existing, compressed).is_ok() {
+            return Ok(());
+        }
+        // A same-name file with different bytes is not a successful retry.
+        // Publish the correct immutable payload; event IDs deduplicate readers.
+        log::warn!("Publishing a verified replacement batch for {}", file_name);
     }
 
     let boundary = format!("tempo_{}", Uuid::new_v4().simple());
@@ -973,7 +1054,8 @@ async fn upload_batch(
             "tempo_schema": SCHEMA_VERSION.to_string(),
             "source_device_id": device_id,
             "source_platform": "desktop",
-            APP_PROPERTY_GENERATION: generation.to_string()
+            APP_PROPERTY_GENERATION: generation.to_string(),
+            APP_PROPERTY_SHA256: hex::encode(Sha256::digest(compressed))
         }
     });
     let mut body = Vec::new();
@@ -1066,12 +1148,17 @@ async fn upload_local_history(
 }
 
 fn valid_event(event: &WireEvent) -> bool {
-    !event.event_id.is_empty()
-        && !event.title.trim().is_empty()
-        && event.title.len() <= 1000
-        && !event.artist.trim().is_empty()
-        && event.artist.len() <= 1000
-        && event.timestamp_utc > 0
+    valid_sha256(&event.event_id)
+        && valid_text(&event.title) && valid_text(&event.artist)
+        && valid_text(&event.source_app) && valid_text(&event.source) && valid_text(&event.content_type)
+        && valid_optional_text(&event.album) && valid_optional_text(&event.session_id) && valid_optional_text(&event.site)
+        && (1..=MAX_WIRE_INTEGER).contains(&event.timestamp_utc)
+        && [event.duration_ms, event.listened_ms, event.total_pause_duration_ms]
+            .iter().all(|value| (0..=MAX_WIRE_INTEGER).contains(value))
+        && [event.replay_count, event.pause_count, event.seek_count, event.position_updates_count]
+            .iter().all(|value| (0..=i32::MAX as i64).contains(value))
+        && (0..=100).contains(&event.completion_percentage)
+        && event.volume_level.map_or(true, |value| (0..=100).contains(&value))
 }
 
 fn insert_remote_event(
@@ -1188,7 +1275,12 @@ async fn download_remote_history(
 
     for file in files {
         let created = parse_time_ms(file.created_time.as_deref());
-        if batch_generation(&file) < accepted_generation {
+        let Some(generation) = batch_generation(&file) else {
+            log::warn!("Skipping Drive history batch with invalid generation: {}", file.name);
+            max_created = max_created.max(created);
+            continue;
+        };
+        if generation < accepted_generation {
             // Never allow a pre-delete batch (including an upload that completed
             // after the deletion request) to resurrect in a newly accepted
             // generation. Cleanup is best-effort so current history can proceed.
@@ -1226,11 +1318,11 @@ async fn download_remote_history(
 
         let bytes = match download_bytes(access_token, &file).await {
             Ok(bytes) => bytes,
-            Err(err) if err.contains("too large") => {
+            Err(err) if err.contains("too large") || err.starts_with("Malformed Drive history batch:") => {
                 // Permanently malformed/hostile payload. Consume this one file so
                 // it cannot block every later batch forever.
                 log::warn!(
-                    "Skipping oversized Drive history batch {}: {}",
+                    "Skipping invalid Drive history batch {}: {}",
                     file.name,
                     err
                 );
@@ -1256,20 +1348,24 @@ async fn download_remote_history(
                 continue;
             }
         };
+        if !matches_batch_metadata(&file, &batch) {
+            log::warn!("Skipping history batch whose payload does not match Drive metadata: {}", file.name);
+            max_created = max_created.max(created);
+            continue;
+        }
         if batch.source_device_id == device_id {
             max_created = max_created.max(created);
             continue;
         }
+        let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         for event in &batch.events {
-            if !valid_event(event) {
-                continue;
-            }
-            if insert_remote_event(&conn, &batch.source_device_id, event)? {
+            if insert_remote_event(&transaction, &batch.source_device_id, event)? {
                 imported += 1;
             } else {
                 duplicates += 1;
             }
         }
+        transaction.commit().map_err(|e| e.to_string())?;
         max_created = max_created.max(created);
     }
 
@@ -1304,7 +1400,11 @@ async fn delete_batches_before_generation(
     let files = list_batches(access_token, None).await?;
     let mut deleted = 0usize;
     for file in files {
-        if batch_generation(&file) >= generation {
+        let Some(file_generation) = batch_generation(&file) else {
+            log::warn!("Leaving Drive history batch with invalid generation untouched: {}", file.name);
+            continue;
+        };
+        if file_generation >= generation {
             continue;
         }
         delete_file(access_token, &file.id).await?;
@@ -1413,6 +1513,10 @@ async fn honor_remote_disable_if_needed(
 
 async fn run_sync(app_data_dir: &Path) -> Result<DriveSyncResult, String> {
     let _guard = SYNC_LOCK.lock().await;
+    run_sync_locked(app_data_dir).await
+}
+
+async fn run_sync_locked(app_data_dir: &Path) -> Result<DriveSyncResult, String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
     if !state.enabled {
@@ -1510,6 +1614,9 @@ pub async fn drive_connect(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<DriveSyncStatus, String> {
+    // Account selection, credential replacement and the first sync share the
+    // same lifecycle lock as disconnect/delete/background sync.
+    let _guard = SYNC_LOCK.lock().await;
     interactive_oauth(&app, &state.app_data_dir).await?;
     let token = access_token(&state.app_data_dir).await?;
     let marker_version = get_disable_marker_version(&token).await?;
@@ -1532,7 +1639,7 @@ pub async fn drive_connect(
     .map_err(|e| e.to_string())?;
     drop(conn);
 
-    if let Err(err) = run_sync(&state.app_data_dir).await {
+    if let Err(err) = run_sync_locked(&state.app_data_dir).await {
         let conn = open_sync_db(&state.app_data_dir)?;
         let _ = set_last_error(&conn, Some(&err));
         return Err(err);
@@ -1634,6 +1741,142 @@ pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<us
 mod tests {
     use super::*;
 
+    fn fixture_batch() -> WireBatch {
+        let event = WireEvent {
+            event_id: "69bd5521a322b3d1aaeca431b7380bd49f3a28e1c1d1b1dc0a754ca37e6a06b4".into(),
+            title: "Song".into(), artist: "Artist".into(), album: None,
+            timestamp_utc: 1_700_000_000_000, duration_ms: 180_000, listened_ms: 170_000,
+            source_app: "Spotify".into(), source: "desktop:Spotify".into(),
+            skipped: false, replay_count: 0, completion_percentage: 94, pause_count: 0, seek_count: 0,
+            session_id: None, site: None, content_type: "MUSIC".into(), volume_level: Some(50),
+            total_pause_duration_ms: 0, position_updates_count: 0,
+        };
+        WireBatch {
+            schema_version: 1, batch_id: batch_id(&[event.clone()]), source_device_id: "device-1".into(),
+            source_device_name: "Tempo Desktop".into(), source_platform: "desktop".into(),
+            created_at_utc: 1_700_000_000_000, events: vec![event],
+        }
+    }
+
+    fn fixture_file(batch: &WireBatch, bytes: &[u8]) -> DriveFileRecord {
+        DriveFileRecord {
+            id: "file-1".into(), name: batch_file_name(42, &batch.source_device_id, &batch.batch_id),
+            size: Some(bytes.len().to_string()), created_time: None, modified_time: None,
+            app_properties: HashMap::from([
+                ("tempo_kind".into(), "history_batch".into()),
+                ("tempo_schema".into(), "1".into()),
+                ("source_device_id".into(), batch.source_device_id.clone()),
+                ("source_platform".into(), batch.source_platform.clone()),
+                (APP_PROPERTY_GENERATION.into(), "42".into()),
+                (APP_PROPERTY_SHA256.into(), hex::encode(Sha256::digest(bytes))),
+            ]),
+        }
+    }
+
+    fn compress_json(value: &serde_json::Value) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&serde_json::to_vec(value).unwrap()).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn prototype_uploads_are_requeued_once_without_reuploading_imports() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE drive_sync_migrations (name TEXT PRIMARY KEY);
+             CREATE TABLE drive_event_state (
+                 scrobble_id INTEGER PRIMARY KEY, drive_imported INTEGER, drive_uploaded_at INTEGER
+             );
+             INSERT INTO drive_event_state VALUES (1, 0, 100), (2, 1, 100);"
+        ).unwrap();
+        requeue_unverified_prototype_uploads(&conn).unwrap();
+        let timestamps: Vec<Option<i64>> = conn.prepare(
+            "SELECT drive_uploaded_at FROM drive_event_state ORDER BY scrobble_id"
+        ).unwrap().query_map([], |row| row.get(0)).unwrap()
+            .collect::<Result<_, _>>().unwrap();
+        assert_eq!(timestamps, vec![None, Some(100)]);
+        conn.execute("UPDATE drive_event_state SET drive_uploaded_at = 200 WHERE scrobble_id = 1", []).unwrap();
+        requeue_unverified_prototype_uploads(&conn).unwrap();
+        let timestamp: Option<i64> = conn.query_row(
+            "SELECT drive_uploaded_at FROM drive_event_state WHERE scrobble_id = 1", [], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(timestamp, Some(200));
+    }
+
+    #[test]
+    fn protocol_batch_round_trip_and_integrity_metadata() {
+        let batch = fixture_batch();
+        let bytes = encode_batch(&batch).unwrap();
+        let decoded = decode_batch(&bytes).unwrap();
+        assert_eq!(decoded.batch_id, batch.batch_id);
+        let file = fixture_file(&batch, &bytes);
+        assert!(matches_batch_metadata(&file, &decoded));
+        assert!(validate_compressed_metadata(&file, &bytes).is_ok());
+        let mut corrupt = bytes.clone();
+        corrupt[0] ^= 1;
+        assert!(validate_compressed_metadata(&file, &corrupt).is_err());
+        let mut wrong_size = file.clone();
+        wrong_size.size = Some((bytes.len() + 1).to_string());
+        assert!(validate_compressed_metadata(&wrong_size, &bytes).is_err());
+        let mut missing_hash = file.clone();
+        missing_hash.app_properties.remove(APP_PROPERTY_SHA256);
+        assert!(validate_compressed_metadata(&missing_hash, &bytes).is_err());
+    }
+
+    #[test]
+    fn payload_identity_must_match_drive_filename_and_properties() {
+        let batch = fixture_batch();
+        let bytes = encode_batch(&batch).unwrap();
+        for property in ["source_device_id", "source_platform", "tempo_schema", "tempo_kind"] {
+            let mut file = fixture_file(&batch, &bytes);
+            file.app_properties.insert(property.into(), "wrong".into());
+            assert!(!matches_batch_metadata(&file, &batch), "{property}");
+        }
+        let mut file = fixture_file(&batch, &bytes);
+        file.name = batch_file_name(43, &batch.source_device_id, &batch.batch_id);
+        assert!(!matches_batch_metadata(&file, &batch));
+        for generation in ["-1", "+42", "", "NaN", "9007199254740992"] {
+            file.app_properties.insert(APP_PROPERTY_GENERATION.into(), generation.into());
+            assert_eq!(batch_generation(&file), None, "{generation}");
+        }
+    }
+
+    #[test]
+    fn malformed_batches_are_rejected_before_import() {
+        let original = serde_json::to_value(fixture_batch()).unwrap();
+        let mutations = [
+            ("/batch_id", serde_json::json!("0".repeat(64))),
+            ("/source_device_id", serde_json::json!("device/invalid")),
+            ("/created_at_utc", serde_json::json!(MAX_WIRE_INTEGER + 1)),
+            ("/events/0/event_id", serde_json::json!("not-a-hash")),
+            ("/events/0/duration_ms", serde_json::json!(-1)),
+            ("/events/0/listened_ms", serde_json::json!(12.5)),
+            ("/events/0/replay_count", serde_json::json!(i32::MAX as i64 + 1)),
+            ("/events/0/volume_level", serde_json::json!(101)),
+            ("/events/0/title", serde_json::json!(" ")),
+            ("/events/0/album", serde_json::json!("x".repeat(1001))),
+        ];
+        for (pointer, value) in mutations {
+            let mut malformed = original.clone();
+            *malformed.pointer_mut(pointer).unwrap() = value;
+            assert!(decode_batch(&compress_json(&malformed)).is_err(), "{pointer}");
+        }
+        let mut empty = fixture_batch();
+        empty.events.clear();
+        assert!(encode_batch(&empty).is_err());
+        let mut oversized = fixture_batch();
+        oversized.events = vec![oversized.events[0].clone(); 1001];
+        oversized.batch_id = batch_id(&oversized.events);
+        assert!(encode_batch(&oversized).is_err());
+    }
+
+    #[test]
+    fn oversized_compressed_and_expanded_payloads_are_rejected() {
+        assert!(decode_batch(&vec![0; MAX_BATCH_BYTES + 1]).is_err());
+        let expanded = serde_json::json!("x".repeat(MAX_BATCH_BYTES + 1));
+        assert!(decode_batch(&compress_json(&expanded)).is_err());
+    }
+
     #[test]
     fn stable_event_and_batch_ids_match_protocol_shape() {
         let play = LocalPlay {
@@ -1686,7 +1929,7 @@ mod tests {
             modified_time: None,
             app_properties: HashMap::new(),
         };
-        assert_eq!(batch_generation(&legacy), 0);
+        assert_eq!(batch_generation(&legacy), Some(0));
     }
 
     #[test]
