@@ -53,6 +53,7 @@ Readers also ignore and may best-effort remove batches older than their accepted
 Drive cursors and deletion-marker/generation acceptance are account-scoped. If the signed-in Google account changes, Tempo resets Drive-only upload/download state before accepting the new account.
 
 A refresh token from a previous Google account must never be reused for a newly selected account. If Google does not issue a fresh refresh token during an account switch, the connection is rejected and the user must connect again.
+Before replacing the OS credential, Desktop commits a disabled state with no usable token or accepted account identity. Identity is saved again only after credential replacement succeeds; sync is enabled after the shared marker is checked. A keyring or SQLite failure therefore requires reconnecting instead of allowing an account/token mismatch. Same-account reconnects preserve Drive cursors; a different or unverified previous account resets them.
 
 ## OAuth build configuration
 

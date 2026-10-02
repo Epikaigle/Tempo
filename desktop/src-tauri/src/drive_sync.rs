@@ -408,6 +408,9 @@ async fn refresh_token_for_state(
 async fn access_token(app_data_dir: &Path) -> Result<String, String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
+    if state.account_email.as_deref().map(str::trim).filter(|email| !email.is_empty()).is_none() {
+        return Err("Google account identity is unavailable. Connect Google again.".into());
+    }
     if let Some(token) = state.access_token.clone() {
         if !token.is_empty() && state.token_expires_at > now_ms() + 60_000 {
             return Ok(token);
@@ -467,6 +470,28 @@ fn random_pkce_verifier() -> String {
 
 fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
+fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bool) -> Result<(), String> {
+    let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    if reset_drive_state {
+        transaction.execute("UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0", [])
+            .map_err(|e| e.to_string())?;
+        transaction.execute(
+            "UPDATE drive_sync_state SET download_cursor = 0, accepted_disable_version = 0,
+             last_sync_time = NULL, last_uploaded = 0, last_imported = 0 WHERE id = 1", []
+        ).map_err(|e| e.to_string())?;
+    }
+    // SQLite and the OS credential store cannot share a transaction. Commit an
+    // inert, account-unknown state before replacing the keyring credential. If
+    // either the keyring write or the final SQLite write fails, no command can
+    // use that credential until account identity is verified and saved again.
+    transaction.execute(
+        "UPDATE drive_sync_state SET enabled = 0, access_token = NULL, refresh_token = NULL,
+         token_expires_at = 0, account_email = NULL, last_error = ?1 WHERE id = 1",
+        ["Google sign-in did not finish. Connect Google again."]
+    ).map_err(|e| e.to_string())?;
+    transaction.commit().map_err(|e| e.to_string())
 }
 
 fn parse_oauth_callback(line: &str, expected_state: &str) -> Option<Result<String, String>> {
@@ -623,23 +648,7 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
         .account_email
         .as_deref()
         .is_some_and(|old| old.eq_ignore_ascii_case(&email));
-    let account_changed = existing
-        .account_email
-        .as_deref()
-        .is_some_and(|old| !old.eq_ignore_ascii_case(&email));
-    if account_changed {
-        conn.execute(
-            "UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE drive_sync_state SET download_cursor = 0, accepted_disable_version = 0,
-             last_sync_time = NULL, last_uploaded = 0, last_imported = 0 WHERE id = 1",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    prepare_oauth_credentials(&conn, !previous_account_matches)?;
     let device_id = existing.device_id.clone();
     let legacy_refresh_token = existing
         .refresh_token
@@ -1757,6 +1766,63 @@ pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn oauth_storage_fixture() -> (std::path::PathBuf, Connection) {
+        let directory = std::env::temp_dir().join(format!("tempo-oauth-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let conn = Connection::open(db_path(&directory)).unwrap();
+        conn.execute_batch("CREATE TABLE scrobbles (id INTEGER PRIMARY KEY); INSERT INTO scrobbles VALUES (1), (2);").unwrap();
+        drop(conn);
+        let conn = open_sync_db(&directory).unwrap();
+        conn.execute_batch(
+            "UPDATE drive_sync_state SET enabled = 1, account_email = 'old@example.com',
+             access_token = 'old-access', refresh_token = 'old-refresh', token_expires_at = 9000000000000,
+             download_cursor = 123, accepted_disable_version = 100 WHERE id = 1;
+             INSERT INTO drive_event_state (scrobble_id, drive_imported, drive_uploaded_at) VALUES (1, 0, 200), (2, 1, 200);"
+        ).unwrap();
+        (directory, conn)
+    }
+
+    #[tokio::test]
+    async fn interrupted_credential_replacement_cannot_refresh_or_use_an_unknown_account() {
+        let (directory, conn) = oauth_storage_fixture();
+        prepare_oauth_credentials(&conn, true).unwrap();
+        let state = load_state(&conn).unwrap();
+        assert!(!state.enabled);
+        assert!(state.account_email.is_none() && state.access_token.is_none() && state.refresh_token.is_none());
+        assert_eq!((state.download_cursor, state.accepted_disable_version), (0, 0));
+        drop(conn);
+        assert!(access_token(&directory).await.unwrap_err().contains("identity is unavailable"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn reconnecting_the_same_account_stops_before_replacement_and_preserves_cursors() {
+        let (directory, conn) = oauth_storage_fixture();
+        prepare_oauth_credentials(&conn, false).unwrap();
+        let state = load_state(&conn).unwrap();
+        assert!(!state.enabled && state.account_email.is_none());
+        assert_eq!((state.download_cursor, state.accepted_disable_version), (123, 100));
+        let uploaded: i64 = conn.query_row("SELECT drive_uploaded_at FROM drive_event_state WHERE scrobble_id = 1", [], |row| row.get(0)).unwrap();
+        assert_eq!(uploaded, 200);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn failure_to_prepare_credentials_rolls_back_cursors_before_any_keyring_write() {
+        let (directory, conn) = oauth_storage_fixture();
+        conn.execute_batch("CREATE TRIGGER fail_oauth_stop BEFORE UPDATE OF enabled ON drive_sync_state BEGIN SELECT RAISE(ABORT, 'storage failure'); END;").unwrap();
+        assert!(prepare_oauth_credentials(&conn, true).is_err());
+        let state = load_state(&conn).unwrap();
+        assert!(state.enabled);
+        assert_eq!(state.account_email.as_deref(), Some("old@example.com"));
+        assert_eq!((state.download_cursor, state.accepted_disable_version), (123, 100));
+        let uploaded: i64 = conn.query_row("SELECT drive_uploaded_at FROM drive_event_state WHERE scrobble_id = 1", [], |row| row.get(0)).unwrap();
+        assert_eq!(uploaded, 200);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn oauth_callback_requires_the_expected_route_nonce_and_unambiguous_parameters() {
