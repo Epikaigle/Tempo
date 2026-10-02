@@ -1016,4 +1016,29 @@
     <string name="history_video_non_music_track_description">Supprimer les écoutes existantes et bloquer les futures correspondances</string>
     <string name="history_video_non_music_artist">Traiter %1$s comme vidéo ou contenu non musical</string>
     <string name="history_video_non_music_artist_description">Supprimer tout l’historique correspondant et bloquer les futures écoutes</string>
+    <!-- Browser extension history import -->
+    <string name="settings_import_extension">Importer les écoutes du navigateur</string>
+    <string name="settings_import_extension_desc">Ajoutez à votre historique les écoutes exportées depuis l’extension Tempo Stats</string>
+    <string name="extension_import_title">Importer les écoutes de l’extension</string>
+    <string name="extension_import_headline">Ajoutez vos écoutes du navigateur à Tempo</string>
+    <string name="extension_import_how_to">1. Ouvrez l’extension de navigateur Tempo Stats\n2. Dans son onglet Paramètres, appuyez sur Exporter les écoutes\n3. Sélectionnez ci-dessous le fichier tempo-plays téléchargé</string>
+    <string name="extension_import_choose_file">Choisir le fichier exporté</string>
+    <string name="extension_import_selected_files">%1$d fichier(s) sélectionné(s)</string>
+    <string name="extension_import_button">Importer les écoutes</string>
+    <string name="extension_import_running">Importation…</string>
+    <string name="extension_import_parsing">Lecture de %1$s…</string>
+    <string name="extension_import_file_counter">Fichier %1$d sur %2$d</string>
+    <string name="extension_import_progress">%1$d écoutes traitées</string>
+    <string name="extension_import_progress_added">%1$d ajoutées pour le moment</string>
+    <string name="extension_import_result_title">Importation terminée</string>
+    <string name="extension_import_stat_imported">Écoutes ajoutées</string>
+    <string name="extension_import_stat_duplicates">Déjà dans votre historique</string>
+    <string name="extension_import_stat_tracks">Nouveaux titres</string>
+    <string name="extension_import_stat_too_short">Trop courtes pour être comptées</string>
+    <string name="extension_import_stat_unreadable">Lignes illisibles</string>
+    <string name="extension_import_stat_files">Fichiers lus</string>
+    <string name="extension_import_truncated">Ce fichier contient plus d’écoutes qu’une seule importation ne peut lire. Importez-le à nouveau pour reprendre là où elle s’est arrêtée.</string>
+    <string name="extension_import_done">Terminé</string>
+    <string name="extension_import_failed_title">Échec de l’importation</string>
+    <string name="extension_import_retry">Réessayer</string>
 </resources>
