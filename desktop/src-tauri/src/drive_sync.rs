@@ -233,6 +233,17 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             drive_uploaded_at INTEGER
         );
         CREATE INDEX IF NOT EXISTS idx_drive_origin_event ON drive_event_state(origin_event_id);
+        CREATE TABLE IF NOT EXISTS drive_event_aliases (
+            origin_event_id TEXT PRIMARY KEY,
+            source_device_id TEXT NOT NULL,
+            scrobble_id INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_drive_alias_scrobble_device
+            ON drive_event_aliases(scrobble_id, source_device_id);
+        INSERT OR IGNORE INTO drive_event_aliases (origin_event_id, source_device_id, scrobble_id)
+            SELECT origin_event_id, origin_device_id, scrobble_id FROM drive_event_state
+            WHERE origin_event_id IS NOT NULL AND origin_device_id IS NOT NULL
+                AND origin_device_id <> '';
         CREATE TABLE IF NOT EXISTS drive_sync_migrations (
             name TEXT PRIMARY KEY
         );
@@ -242,6 +253,7 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
     .map_err(|e| e.to_string())?;
 
     requeue_unverified_prototype_uploads(&conn)?;
+    rescan_reconciled_origins(&conn)?;
 
     let current: String = conn
         .query_row(
@@ -263,6 +275,11 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         [],
     )
     .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM drive_event_aliases WHERE scrobble_id NOT IN (SELECT id FROM scrobbles)",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
@@ -279,6 +296,21 @@ fn requeue_unverified_prototype_uploads(conn: &Connection) -> Result<(), String>
             "UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0",
             [],
         ).map_err(|e| e.to_string())?;
+    }
+    transaction.commit().map_err(|e| e.to_string())
+}
+
+fn rescan_reconciled_origins(conn: &Connection) -> Result<(), String> {
+    let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let applied = transaction.execute(
+        "INSERT OR IGNORE INTO drive_sync_migrations (name) VALUES ('reconciled_origins_v1')",
+        [],
+    ).map_err(|e| e.to_string())?;
+    if applied == 1 {
+        // Older temporal reconciliation overwrote origins. Re-read retained
+        // cloud batches once to recover their identities and any skipped replays.
+        transaction.execute("UPDATE drive_sync_state SET download_cursor = 0 WHERE id = 1", [])
+            .map_err(|e| e.to_string())?;
     }
     transaction.commit().map_err(|e| e.to_string())
 }
@@ -1181,6 +1213,7 @@ async fn upload_local_history(
                 params![play.id, origin, device_id, uploaded_at],
             )
             .map_err(|e| e.to_string())?;
+            remember_origin(&tx, play.id, device_id, &origin)?;
         }
         tx.commit().map_err(|e| e.to_string())?;
         uploaded += chunk.len();
@@ -1202,6 +1235,26 @@ fn valid_event(event: &WireEvent) -> bool {
         && event.volume_level.map_or(true, |value| (0..=100).contains(&value))
 }
 
+fn remember_origin(
+    conn: &Connection,
+    scrobble_id: i64,
+    source_device_id: &str,
+    origin_event_id: &str,
+) -> Result<(), String> {
+    let affected = conn.execute(
+        "INSERT INTO drive_event_aliases (origin_event_id, source_device_id, scrobble_id)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(origin_event_id) DO UPDATE SET origin_event_id = excluded.origin_event_id
+             WHERE scrobble_id = excluded.scrobble_id AND source_device_id = excluded.source_device_id",
+        params![origin_event_id, source_device_id, scrobble_id],
+    )
+    .map_err(|e| e.to_string())?;
+    if affected != 1 {
+        return Err("Tempo Drive event identity already belongs to another local play".to_string());
+    }
+    Ok(())
+}
+
 fn insert_remote_event(
     conn: &Connection,
     source_device_id: &str,
@@ -1209,7 +1262,8 @@ fn insert_remote_event(
 ) -> Result<bool, String> {
     let existing_origin: Option<i64> = conn
         .query_row(
-            "SELECT scrobble_id FROM drive_event_state WHERE origin_event_id = ?1 LIMIT 1",
+            "SELECT scrobble_id FROM drive_event_aliases WHERE origin_event_id = ?1
+             UNION ALL SELECT scrobble_id FROM drive_event_state WHERE origin_event_id = ?1 LIMIT 1",
             [&event.event_id],
             |row| row.get(0),
         )
@@ -1222,38 +1276,53 @@ fn insert_remote_event(
     // The ±60s fallback exists to reconcile two different capture origins that
     // observed the same physical playback. Distinct event IDs from the same
     // originating device are legitimate rapid replays and must not be merged.
-    let existing_temporal: Option<i64> = conn
-        .query_row(
-            "SELECT s.id FROM scrobbles s
+    let title = event.title.trim().to_lowercase();
+    let artist = event.artist.trim().to_lowercase();
+    let existing_temporal = {
+        // SQLite lower() is ASCII-only. Normalize bounded candidates in Rust so
+        // accented names and whitespace use the same comparison as other clients.
+        let mut stmt = conn.prepare(
+            "SELECT s.id, s.title, s.artist FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
-             WHERE lower(s.title) = lower(?1) AND lower(s.artist) = lower(?2)
-               AND s.timestamp_utc BETWEEN ?3 AND ?4
-               AND (d.origin_device_id IS NULL OR d.origin_device_id <> ?6)
-             ORDER BY abs(s.timestamp_utc - ?5) ASC LIMIT 1",
+             WHERE s.timestamp_utc BETWEEN ?1 AND ?2
+               AND (d.origin_device_id IS NULL OR d.origin_device_id <> ?4)
+               AND NOT EXISTS (SELECT 1 FROM drive_event_aliases a
+                   WHERE a.scrobble_id = s.id AND a.source_device_id = ?4)
+             ORDER BY abs(s.timestamp_utc - ?3) ASC, s.id ASC",
+        ).map_err(|e| e.to_string())?;
+        let candidates = stmt.query_map(
             params![
-                event.title,
-                event.artist,
                 event.timestamp_utc - TEMPORAL_DEDUP_MS,
                 event.timestamp_utc + TEMPORAL_DEDUP_MS,
                 event.timestamp_utc,
                 source_device_id
             ],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| e.to_string())?;
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+        ).map_err(|e| e.to_string())?;
+        let mut found = None;
+        for candidate in candidates {
+            let (id, candidate_title, candidate_artist) = candidate.map_err(|e| e.to_string())?;
+            if candidate_title.trim().to_lowercase() == title
+                && candidate_artist.trim().to_lowercase() == artist
+            {
+                found = Some(id);
+                break;
+            }
+        }
+        found
+    };
 
     if let Some(id) = existing_temporal {
         conn.execute(
             "INSERT INTO drive_event_state
              (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
              VALUES (?1, ?2, ?3, 1, ?4)
-             ON CONFLICT(scrobble_id) DO UPDATE SET origin_event_id = excluded.origin_event_id,
-                origin_device_id = excluded.origin_device_id, drive_imported = 1,
+             ON CONFLICT(scrobble_id) DO UPDATE SET drive_imported = 1,
                 drive_uploaded_at = excluded.drive_uploaded_at",
             params![id, event.event_id, source_device_id, now_ms()],
         )
         .map_err(|e| e.to_string())?;
+        remember_origin(conn, id, source_device_id, &event.event_id)?;
         return Ok(false);
     }
 
@@ -1296,6 +1365,7 @@ fn insert_remote_event(
         params![scrobble_id, event.event_id, source_device_id, now_ms()],
     )
     .map_err(|e| e.to_string())?;
+    remember_origin(conn, scrobble_id, source_device_id, &event.event_id)?;
     Ok(true)
 }
 
@@ -1766,6 +1836,145 @@ pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<us
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn history_storage_fixture() -> (std::path::PathBuf, Connection) {
+        let directory = std::env::temp_dir().join(format!("tempo-drive-history-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        drop(crate::db::Database::new(&db_path(&directory)).unwrap());
+        let conn = open_sync_db(&directory).unwrap();
+        (directory, conn)
+    }
+
+    #[test]
+    fn temporal_dedup_normalizes_accents_and_whitespace_and_skips_other_candidates() {
+        let (directory, conn) = history_storage_fixture();
+        let mut event = fixture_batch().events[0].clone();
+        event.title = "été 🔊".into();
+        event.artist = "björk".into();
+        conn.execute("INSERT INTO scrobbles (title, artist, timestamp_utc) VALUES ('Other', 'Artist', ?1)",
+            [event.timestamp_utc]).unwrap();
+        conn.execute("INSERT INTO scrobbles (title, artist, timestamp_utc) VALUES ('  ÉTÉ 🔊  ', ' BJÖRK ', ?1)",
+            [event.timestamp_utc + 500]).unwrap();
+        let matching_id = conn.last_insert_rowid();
+        assert!(!insert_remote_event(&conn, "remote-device", &event).unwrap());
+        let (count, recorded): (i64, i64) = conn.query_row(
+            "SELECT (SELECT count(*) FROM scrobbles), scrobble_id FROM drive_event_aliases WHERE origin_event_id = ?1",
+            [&event.event_id], |row| Ok((row.get(0)?, row.get(1)?))
+        ).unwrap();
+        assert_eq!((count, recorded), (2, matching_id));
+        assert!(!insert_remote_event(&conn, "remote-device", &event).unwrap());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn every_reconciled_origin_survives_restart_without_collapsing_rapid_replays() {
+        let (directory, conn) = history_storage_fixture();
+        let first = fixture_batch().events[0].clone();
+        let mut second_capture = first.clone();
+        second_capture.event_id = "b".repeat(64);
+        second_capture.timestamp_utc += 50;
+        let mut third_capture = first.clone();
+        third_capture.event_id = "c".repeat(64);
+        third_capture.timestamp_utc += 100;
+        assert!(insert_remote_event(&conn, "device-a", &first).unwrap());
+        assert!(!insert_remote_event(&conn, "device-b", &second_capture).unwrap());
+        assert!(!insert_remote_event(&conn, "device-c", &third_capture).unwrap());
+        drop(conn);
+        let conn = open_sync_db(&directory).unwrap();
+        let mut replay = first.clone();
+        replay.event_id = "d".repeat(64);
+        replay.timestamp_utc += 1000;
+        let mut replay_b = replay.clone();
+        replay_b.event_id = "e".repeat(64);
+        replay_b.timestamp_utc += 50;
+        let mut replay_c = replay.clone();
+        replay_c.event_id = "f".repeat(64);
+        replay_c.timestamp_utc += 100;
+        assert!(insert_remote_event(&conn, "device-a", &replay).unwrap());
+        assert!(!insert_remote_event(&conn, "device-b", &replay_b).unwrap());
+        assert!(!insert_remote_event(&conn, "device-c", &replay_c).unwrap());
+        for (device, event) in [("device-a", &first), ("device-b", &second_capture),
+            ("device-c", &third_capture), ("device-a", &replay), ("device-b", &replay_b), ("device-c", &replay_c)]
+        {
+            assert!(!insert_remote_event(&conn, device, event).unwrap());
+        }
+        let counts: (i64, i64) = conn.query_row(
+            "SELECT (SELECT count(*) FROM scrobbles), (SELECT count(*) FROM drive_event_aliases)",
+            [], |row| Ok((row.get(0)?, row.get(1)?))
+        ).unwrap();
+        assert_eq!(counts, (2, 6));
+        let primary_origins: Vec<String> = conn.prepare("SELECT origin_event_id FROM drive_event_state ORDER BY scrobble_id")
+            .unwrap().query_map([], |row| row.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(primary_origins, vec![first.event_id, replay.event_id]);
+        assert!(pending_local_plays(&conn).unwrap().is_empty());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn legacy_origins_migrate_with_one_rescan_and_deleted_rows_release_their_aliases() {
+        let (directory, conn) = history_storage_fixture();
+        let event = fixture_batch().events[0].clone();
+        assert!(insert_remote_event(&conn, "device-a", &event).unwrap());
+        conn.execute_batch("DROP TABLE drive_event_aliases;
+            DELETE FROM drive_sync_migrations WHERE name = 'reconciled_origins_v1';
+            UPDATE drive_sync_state SET download_cursor = 123 WHERE id = 1;").unwrap();
+        drop(conn);
+        let conn = open_sync_db(&directory).unwrap();
+        assert_eq!(load_state(&conn).unwrap().download_cursor, 0);
+        let source: String = conn.query_row("SELECT source_device_id FROM drive_event_aliases WHERE origin_event_id = ?1",
+            [&event.event_id], |row| row.get(0)).unwrap();
+        assert_eq!(source, "device-a");
+        conn.execute("UPDATE drive_sync_state SET download_cursor = 999 WHERE id = 1", []).unwrap();
+        drop(conn);
+        let conn = open_sync_db(&directory).unwrap();
+        assert_eq!(load_state(&conn).unwrap().download_cursor, 999);
+        conn.execute("DELETE FROM scrobbles", []).unwrap();
+        drop(conn);
+        let conn = open_sync_db(&directory).unwrap();
+        let counts: (i64, i64) = conn.query_row(
+            "SELECT (SELECT count(*) FROM drive_event_state), (SELECT count(*) FROM drive_event_aliases)",
+            [], |row| Ok((row.get(0)?, row.get(1)?))
+        ).unwrap();
+        assert_eq!(counts, (0, 0));
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn origin_alias_failure_rolls_back_the_whole_import_transaction() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute_batch("CREATE TRIGGER fail_origin BEFORE INSERT ON drive_event_aliases
+            BEGIN SELECT RAISE(ABORT, 'storage failure'); END;").unwrap();
+        let transaction = conn.unchecked_transaction().unwrap();
+        assert!(insert_remote_event(&transaction, "device-a", &fixture_batch().events[0]).is_err());
+        drop(transaction);
+        let counts: (i64, i64, i64) = conn.query_row(
+            "SELECT (SELECT count(*) FROM scrobbles), (SELECT count(*) FROM drive_event_state), (SELECT count(*) FROM drive_event_aliases)",
+            [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        ).unwrap();
+        assert_eq!(counts, (0, 0, 0));
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rerecording_an_uploaded_origin_is_idempotent_and_cannot_move_its_identity() {
+        let (directory, conn) = history_storage_fixture();
+        let event = fixture_batch().events[0].clone();
+        assert!(insert_remote_event(&conn, "device-a", &event).unwrap());
+        let id: i64 = conn.query_row("SELECT id FROM scrobbles", [], |row| row.get(0)).unwrap();
+        remember_origin(&conn, id, "device-a", &event.event_id).unwrap();
+        remember_origin(&conn, id, "device-a", &event.event_id).unwrap();
+        assert!(remember_origin(&conn, id + 1, "device-a", &event.event_id).is_err());
+        assert!(remember_origin(&conn, id, "device-b", &event.event_id).is_err());
+        let recorded: (i64, String) = conn.query_row("SELECT scrobble_id, source_device_id FROM drive_event_aliases",
+            [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        assert_eq!(recorded, (id, "device-a".into()));
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     fn oauth_storage_fixture() -> (std::path::PathBuf, Connection) {
         let directory = std::env::temp_dir().join(format!("tempo-oauth-test-{}", Uuid::new_v4()));
