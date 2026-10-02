@@ -5,6 +5,7 @@ const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const FIREFOX_AUTH_STORAGE_KEY = 'tempoDriveFirefoxAuth';
 const TOKEN_EXPIRY_SAFETY_MS = 60_000;
+const GOOGLE_USERINFO_TIMEOUT_MS = 30_000;
 
 export const FIREFOX_DRIVE_DATA_COLLECTION = [
   'personallyIdentifyingInfo',
@@ -261,15 +262,21 @@ async function loadFirefoxAuth(): Promise<StoredFirefoxAuth | null> {
 }
 
 async function fetchGoogleEmail(accessToken: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GOOGLE_USERINFO_TIMEOUT_MS);
   try {
     const response = await fetch(GOOGLE_USERINFO_URL, {
       headers: { Authorization: `Bearer ${accessToken}` },
+      signal: controller.signal,
     });
     if (!response.ok) return null;
     const data = await response.json() as { email?: unknown };
     return typeof data.email === 'string' && data.email.trim() ? data.email.trim() : null;
   } catch {
     return null;
+  } finally {
+    // Keep the deadline through response.json(), not just the HTTP headers.
+    clearTimeout(timeout);
   }
 }
 
