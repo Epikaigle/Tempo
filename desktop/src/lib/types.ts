@@ -62,7 +62,19 @@ export interface Settings {
   start_on_boot: boolean;
   theme: string;
   low_battery_threshold: number;
+
+  /** Optional Google Drive cross-device transport. */
+  drive_sync_enabled: boolean;
+  drive_sync_configured: boolean;
+  drive_sync_connected: boolean;
+  drive_sync_account_email: string | null;
+  drive_sync_last_sync_time: number | null;
+  drive_sync_last_error: string | null;
+  drive_sync_last_uploaded: number;
+  drive_sync_last_imported: number;
 }
+
+export type DriveSyncAction = "connect" | "sync" | "disconnect" | "delete";
 
 export interface BatteryStatus {
   level: number;

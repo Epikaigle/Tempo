@@ -20,7 +20,8 @@ impl QueueManager {
     }
 }
 
-/// Background auto-sync loop with automatic retry of failed plays.
+/// Background auto-sync loop. LAN and Google Drive are independent transports:
+/// either may be unavailable/disabled without preventing the other from running.
 pub async fn start_auto_sync(app_handle: tauri::AppHandle) {
     info!("Starting auto-sync loop");
 
@@ -31,9 +32,9 @@ pub async fn start_auto_sync(app_handle: tauri::AppHandle) {
             db.get_settings()
                 .map(|s| s.sync_interval_minutes)
                 .unwrap_or(30)
+                .clamp(15, 1440)
         };
 
-        // Sleep for the configured interval
         tokio::time::sleep(tokio::time::Duration::from_secs(
             (interval_minutes as u64) * 60,
         ))
@@ -41,13 +42,12 @@ pub async fn start_auto_sync(app_handle: tauri::AppHandle) {
 
         info!("Auto-sync triggered (every {} minutes)", interval_minutes);
 
-        let should_attempt_sync = {
+        let should_attempt_lan = {
             let state = app_handle.state::<AppState>();
             let db = state.db.lock().await;
 
-            // First, reset any previously-failed plays back to queued for retry.
             match db.reset_failed_to_queued() {
-                Ok(n) if n > 0 => info!("Retrying {} previously-failed plays", n),
+                Ok(n) if n > 0 => info!("Retrying {} previously-failed LAN plays", n),
                 Ok(_) => {}
                 Err(e) => error!("Failed to reset failed plays: {}", e),
             }
@@ -57,19 +57,32 @@ pub async fn start_auto_sync(app_handle: tauri::AppHandle) {
             pairing_exists && queue_size > 0
         };
 
-        if !should_attempt_sync {
-            continue;
+        if should_attempt_lan {
+            match crate::network::sync_to_phone(&app_handle).await {
+                Ok(count) => {
+                    info!("LAN auto-sync successful: {} plays sent", count);
+                    let _ = app_handle.emit("sync-completed", count);
+                }
+                Err(e) => {
+                    error!("LAN auto-sync failed: {}", e);
+                    let _ = app_handle.emit("sync-failed", e.to_string());
+                }
+            }
         }
 
-        // Attempt sync
-        match crate::network::sync_to_phone(&app_handle).await {
-            Ok(count) => {
-                info!("Auto-sync successful: {} plays sent", count);
-                let _ = app_handle.emit("sync-completed", count);
-            }
-            Err(e) => {
-                error!("Auto-sync failed: {}", e);
-                let _ = app_handle.emit("sync-failed", e.to_string());
+        // Drive uses its own upload flags and can sync even when the phone is on
+        // another network or no LAN pairing exists at all.
+        let drive_enabled = {
+            let state = app_handle.state::<AppState>();
+            crate::commands::drive_sync::drive_get_status(state)
+                .await
+                .map(|status| status.enabled)
+                .unwrap_or(false)
+        };
+        if drive_enabled {
+            let state = app_handle.state::<AppState>();
+            if let Err(e) = crate::commands::drive_sync::drive_sync_now(state).await {
+                error!("Google Drive auto-sync failed: {}", e);
             }
         }
     }
