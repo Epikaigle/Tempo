@@ -32,7 +32,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         DailyChallenge::class, // Gamification: daily challenges
         DesktopPairingSession::class, // Desktop Satellite pairing sessions
     ],
-    version = 54, // Migration 54: unique daily_challenges(challenge_id,date) + user_level.banked_challenge_xp
+    version = 55, // Migration 55: dedupe listening_events by session identity (double-count fix)
     exportSchema = true, // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
@@ -75,7 +75,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val TAG = "AppDatabase"
 
         /** Current Room schema version — keep in sync with the @Database(version = ...) annotation. */
-        const val VERSION = 54
+        const val VERSION = 55
 
         /**
          * Migration from version 6 to 7: Add enhanced tracking columns to listening_events.
@@ -2523,14 +2523,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 53 to 54: enforce one row per challenge per day, and add the
-         * banked_challenge_xp column used to preserve XP when old challenges are pruned.
+         * Migration from version 53 to 54: deduplicate daily challenges by (challenge_id, date)
+         * and add banked_challenge_xp column.
          *
-         * daily_challenges previously had no uniqueness on (challenge_id, date), so the
-         * midnight worker / Profile-screen race could insert the same challenge twice and
-         * GamificationRepository would double-count its XP. This dedupes any existing
-         * duplicates (keeping the most-progressed row so completed status/XP are preserved)
-         * and then adds the UNIQUE index that makes generation idempotent.
+         * Keeps the highest-progress row (completed first, then progress, then highest id) before
+         * creating the unique index to prevent duplicate XP accumulation.
+         *
+         * Avoids ROW_NUMBER() window functions because SQLite 3.25+ is required, but Android 8.0-9
+         * (minSdk 26) ships SQLite 3.18-3.22. A correlated EXISTS is used instead for compatibility.
+         * Steps are idempotent to survive interrupted migrations or replays.
          */
         val MIGRATION_53_54 =
             object : Migration(53, 54) {
@@ -2539,15 +2540,20 @@ abstract class AppDatabase : RoomDatabase() {
                     db.execSQL(
                         """
                         DELETE FROM daily_challenges
-                        WHERE id NOT IN (
-                            SELECT id FROM (
-                                SELECT id,
-                                       ROW_NUMBER() OVER (
-                                           PARTITION BY challenge_id, date
-                                           ORDER BY is_completed DESC, current_progress DESC, id DESC
-                                       ) AS rn
-                                FROM daily_challenges
-                            ) WHERE rn = 1
+                        WHERE EXISTS (
+                            SELECT 1 FROM daily_challenges AS better
+                            WHERE better.challenge_id = daily_challenges.challenge_id
+                              AND better.date = daily_challenges.date
+                              AND (
+                                  better.is_completed > daily_challenges.is_completed
+                                  OR (better.is_completed = daily_challenges.is_completed
+                                      AND (
+                                          better.current_progress > daily_challenges.current_progress
+                                          OR (better.current_progress = daily_challenges.current_progress
+                                              AND better.id > daily_challenges.id)
+                                      )
+                                  )
+                              )
                         )
                         """.trimIndent(),
                     )
@@ -2555,10 +2561,46 @@ abstract class AppDatabase : RoomDatabase() {
                         "CREATE UNIQUE INDEX IF NOT EXISTS index_daily_challenges_challenge_id_date " +
                             "ON daily_challenges(challenge_id, date)",
                     )
-                    db.execSQL(
-                        "ALTER TABLE user_level ADD COLUMN banked_challenge_xp INTEGER NOT NULL DEFAULT 0",
-                    )
+
+                    // Check column existence first for migration idempotency.
+                    val userLevelColumns = mutableSetOf<String>()
+                    db.query("PRAGMA table_info(user_level)").use { cursor ->
+                        val nameIndex = cursor.getColumnIndex("name")
+                        while (cursor.moveToNext()) {
+                            userLevelColumns.add(cursor.getString(nameIndex))
+                        }
+                    }
+                    if (!userLevelColumns.contains("banked_challenge_xp")) {
+                        db.execSQL(
+                            "ALTER TABLE user_level ADD COLUMN banked_challenge_xp INTEGER NOT NULL DEFAULT 0",
+                        )
+                    } else {
+                        Log.i(TAG, "user_level.banked_challenge_xp already present; skipping ALTER")
+                    }
                     Log.i(TAG, "Migration from version 53 to 54 completed successfully")
+                }
+            }
+
+        /**
+         * Migration from version 54 to 55: deduplicates listening_events by (session_id, track_id, timestamp).
+         * Retains the earliest row (MIN id) where play duration was accurately captured before any re-save.
+         */
+        val MIGRATION_54_55 =
+            object : Migration(54, 55) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    Log.i(TAG, "Starting migration from version 54 to 55 - listening_events session dedupe")
+                    db.execSQL(
+                        """
+                        DELETE FROM listening_events
+                        WHERE session_id IS NOT NULL
+                          AND id NOT IN (
+                              SELECT MIN(id) FROM listening_events
+                              WHERE session_id IS NOT NULL
+                              GROUP BY session_id, track_id, timestamp
+                          )
+                        """.trimIndent(),
+                    )
+                    Log.i(TAG, "Migration from version 54 to 55 completed successfully")
                 }
             }
 
@@ -2615,6 +2657,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_51_52, // Reconcile divergent schema-51 lineages (public 4.8.2 vs internal)
                 MIGRATION_52_53, // Index tracks.musicbrainz_id (Last.fm/mbid track resolution)
                 MIGRATION_53_54, // Unique daily_challenges(challenge_id,date) + user_level.banked_challenge_xp
+                MIGRATION_54_55, // Dedupe listening_events by (session_id, track_id, timestamp)
             )
     }
 }

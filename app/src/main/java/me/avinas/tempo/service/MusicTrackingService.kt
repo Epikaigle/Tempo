@@ -32,13 +32,13 @@ import kotlinx.coroutines.flow.first
 import me.avinas.tempo.MainActivity
 import me.avinas.tempo.R
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
-import me.avinas.tempo.data.local.entities.ManualContentMark
-import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
-import me.avinas.tempo.data.preferences.TrackingRulesPreferences
-import me.avinas.tempo.data.preferences.TrackingRulesPreferences.ContentOverrideType
 import me.avinas.tempo.data.local.dao.UserPreferencesDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
+import me.avinas.tempo.data.local.entities.ManualContentMark
+import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
 import me.avinas.tempo.data.local.entities.Track
+import me.avinas.tempo.data.preferences.TrackingRulesPreferences
+import me.avinas.tempo.data.preferences.TrackingRulesPreferences.ContentOverrideType
 import me.avinas.tempo.data.repository.ArtistLinkingService
 import me.avinas.tempo.data.repository.EnrichedMetadataRepository
 import me.avinas.tempo.data.repository.ListeningRepository
@@ -1097,6 +1097,14 @@ class MusicTrackingService : NotificationListenerService() {
         var hasReceivedInitialPosition: Boolean = false,
     ) {
         /**
+         * Ensures a session produces at most one listening event.
+         * Claimed atomically in saveListeningEventSuspend before queueing.
+         */
+        val eventSaveClaimed =
+            java.util.concurrent.atomic
+                .AtomicBoolean(false)
+
+        /**
          * Calculate total play duration using ACTUAL POSITION DATA.
          * This is the key fix - we use position progress, not wall-clock time.
          */
@@ -1408,6 +1416,11 @@ class MusicTrackingService : NotificationListenerService() {
         startHeartbeat()
         trackingRules = TrackingRulesPreferences(applicationContext)
 
+        // Promote to foreground before blocking operations (like database migrations in
+        // initializeDependencies) to satisfy the foreground service start window.
+        createNotificationChannel()
+        startForegroundServiceWithNotification()
+
         // Initialize dependencies via Hilt EntryPoint
         // This is necessary because NotificationListenerService is managed by the system
         // and @AndroidEntryPoint doesn't work properly for it
@@ -1420,8 +1433,6 @@ class MusicTrackingService : NotificationListenerService() {
         // Recover any persisted sessions from previous runs
         recoverPersistedSessions()
 
-        createNotificationChannel()
-        startForegroundServiceWithNotification()
         // Initialize MediaSessionManager
         initializeMediaSessionManager()
 
@@ -1473,9 +1484,14 @@ class MusicTrackingService : NotificationListenerService() {
 
             // Manual overrides participate in synchronous MediaSession decisions, so load the
             // small Room table once before any session scan. A Flow keeps it fresh afterwards.
-            cachedManualContentMarks = runBlocking(Dispatchers.IO) {
-                try { manualContentMarkDao.getAllSync() } catch (_: Exception) { emptyList() }
-            }
+            cachedManualContentMarks =
+                runBlocking(Dispatchers.IO) {
+                    try {
+                        manualContentMarkDao.getAllSync()
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                }
 
             // Preload app preferences synchronously before the first MediaSession/notification
             // scan. Without this, a statically-known app that the user explicitly disabled
@@ -1667,13 +1683,21 @@ class MusicTrackingService : NotificationListenerService() {
 
     /** Configured minimum accumulated play time before an event is stored. */
     private fun minimumPlayDurationMs(): Long =
-        if (::trackingRules.isInitialized) trackingRules.minimumPlayDurationMs
-        else TrackingRulesPreferences.DEFAULT_MIN_PLAY_DURATION_MS
+        if (::trackingRules.isInitialized) {
+            trackingRules.minimumPlayDurationMs
+        } else {
+            TrackingRulesPreferences.DEFAULT_MIN_PLAY_DURATION_MS
+        }
 
-    private fun findManualContentMark(title: String, artist: String): ManualContentMark? =
-        ManualContentRuleResolver.resolve(cachedManualContentMarks, title, artist)
+    private fun findManualContentMark(
+        title: String,
+        artist: String,
+    ): ManualContentMark? = ManualContentRuleResolver.resolve(cachedManualContentMarks, title, artist)
 
-    private fun manualContentOverride(title: String, artist: String): ContentOverrideType? =
+    private fun manualContentOverride(
+        title: String,
+        artist: String,
+    ): ContentOverrideType? =
         when (findManualContentMark(title, artist)?.contentType?.uppercase()) {
             "ALWAYS_MUSIC" -> ContentOverrideType.MUSIC
             "NON_MUSIC", "VIDEO" -> ContentOverrideType.VIDEO
@@ -1689,15 +1713,21 @@ class MusicTrackingService : NotificationListenerService() {
         packageName: String,
         title: String,
         artist: String,
-        durationMs: Long
+        durationMs: Long,
     ): Boolean {
         when (manualContentOverride(title, artist)) {
             ContentOverrideType.VIDEO -> {
                 Log.d(TAG, "Rejecting manual video/non-music override: '$title' by '$artist'")
                 return true
             }
-            ContentOverrideType.MUSIC -> return false
-            null -> Unit
+
+            ContentOverrideType.MUSIC -> {
+                return false
+            }
+
+            null -> {
+                Unit
+            }
         }
 
         if (durationMs > 0L && ::trackingRules.isInitialized) {
@@ -1706,7 +1736,7 @@ class MusicTrackingService : NotificationListenerService() {
                 Log.d(
                     TAG,
                     "Rejecting content over configured music limit: '$title' by '$artist' " +
-                        "(${durationMs / 1000}s > ${maxDuration / 1000}s) from $packageName"
+                        "(${durationMs / 1000}s > ${maxDuration / 1000}s) from $packageName",
                 )
                 return true
             }
@@ -1722,14 +1752,19 @@ class MusicTrackingService : NotificationListenerService() {
         packageName: String,
         title: String,
         artist: String,
-        expectedSession: PlaybackSession? = null
+        expectedSession: PlaybackSession? = null,
     ) {
         val previous = expectedSession ?: playbackStates[packageName] ?: return
         if (!playbackStates.remove(packageName, previous)) return
-        val sameRejectedMedia = previous.title.equals(title, ignoreCase = true) &&
-            (previous.artist.equals(artist, ignoreCase = true) ||
-                me.avinas.tempo.utils.ArtistParser.isUnknownArtist(previous.artist) ||
-                me.avinas.tempo.utils.ArtistParser.isUnknownArtist(artist))
+        val sameRejectedMedia =
+            previous.title.equals(title, ignoreCase = true) &&
+                (
+                    previous.artist.equals(artist, ignoreCase = true) ||
+                        me.avinas.tempo.utils.ArtistParser
+                            .isUnknownArtist(previous.artist) ||
+                        me.avinas.tempo.utils.ArtistParser
+                            .isUnknownArtist(artist)
+                )
         previous.pause()
         if (!sameRejectedMedia) {
             saveListeningEvent(previous)
@@ -1737,9 +1772,7 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     /** Applies a freshly loaded app-preference list to the in-memory caches. */
-    private fun applyAppPreferenceCache(
-        apps: List<me.avinas.tempo.data.local.entities.AppPreference>
-    ) {
+    private fun applyAppPreferenceCache(apps: List<me.avinas.tempo.data.local.entities.AppPreference>) {
         cachedEnabledApps = apps.filter { it.isEnabled && !it.isBlocked }.map { it.packageName }.toSet()
         cachedBlockedApps = apps.filter { it.isBlocked }.map { it.packageName }.toSet()
         cachedAllKnownPackages = apps.map { it.packageName }.toSet()
@@ -1757,10 +1790,11 @@ class MusicTrackingService : NotificationListenerService() {
             appPreferenceDao.getAllApps().collect { apps ->
                 applyAppPreferenceCache(apps)
 
-                val packagesToStop = playbackStates.keys.filter { packageName ->
-                    packageName in cachedBlockedApps ||
-                        (packageName in cachedAllKnownPackages && packageName !in cachedEnabledApps)
-                }
+                val packagesToStop =
+                    playbackStates.keys.filter { packageName ->
+                        packageName in cachedBlockedApps ||
+                            (packageName in cachedAllKnownPackages && packageName !in cachedEnabledApps)
+                    }
                 packagesToStop.forEach(::cleanupSessionForPackage)
                 withContext(Dispatchers.Main) {
                     rescanActiveMediaSessions()
@@ -1793,22 +1827,24 @@ class MusicTrackingService : NotificationListenerService() {
      */
     private suspend fun reevaluateActiveContent() {
         playbackStates.values.toList().forEach { session ->
-            val rejectedByTrackingRule = shouldRejectByTrackingRules(
-                session.packageName,
-                session.title,
-                session.artist,
-                session.estimatedDurationMs ?: 0L
-            )
-            val filteredByContent = if (rejectedByTrackingRule) {
-                false
-            } else {
-                shouldFilterContent(
+            val rejectedByTrackingRule =
+                shouldRejectByTrackingRules(
                     session.packageName,
-                    session.trackId?.let { localMetadataCache.get(it) },
                     session.title,
-                    session.artist
+                    session.artist,
+                    session.estimatedDurationMs ?: 0L,
                 )
-            }
+            val filteredByContent =
+                if (rejectedByTrackingRule) {
+                    false
+                } else {
+                    shouldFilterContent(
+                        session.packageName,
+                        session.trackId?.let { localMetadataCache.get(it) },
+                        session.title,
+                        session.artist,
+                    )
+                }
             if (rejectedByTrackingRule || filteredByContent) {
                 removeRejectedSession(session.packageName, session.title, session.artist, session)
             }
@@ -1930,7 +1966,11 @@ class MusicTrackingService : NotificationListenerService() {
                             // rules as the live save paths before replaying a recovered session.
                             val reliableDuration =
                                 state.estimatedDurationMs?.takeIf { it > 0L } ?: try {
-                                    trackRepository.getById(trackId).first()?.duration?.takeIf { it > 0L }
+                                    trackRepository
+                                        .getById(trackId)
+                                        .first()
+                                        ?.duration
+                                        ?.takeIf { it > 0L }
                                         ?: getTrackDurationFromMetadata(trackId)
                                 } catch (e: Exception) {
                                     null
@@ -1940,7 +1980,7 @@ class MusicTrackingService : NotificationListenerService() {
                                     state.packageName,
                                     state.trackTitle,
                                     state.trackArtist,
-                                    reliableDuration ?: 0L
+                                    reliableDuration ?: 0L,
                                 )
                             ) {
                                 continue
@@ -1950,7 +1990,7 @@ class MusicTrackingService : NotificationListenerService() {
                                     state.packageName,
                                     localMetadataCache.get(trackId),
                                     state.trackTitle,
-                                    state.trackArtist
+                                    state.trackArtist,
                                 )
                             ) {
                                 continue
@@ -2537,8 +2577,9 @@ class MusicTrackingService : NotificationListenerService() {
                     return
                 }
 
-                // New track or different track - save previous session first
+                // Detach previous session before saving to prevent duplicate saves on subsequent returns.
                 if (existingSession != null) {
+                    playbackStates.remove(packageName, existingSession)
                     existingSession.pause()
                     saveListeningEvent(existingSession)
                 }
@@ -3269,8 +3310,11 @@ class MusicTrackingService : NotificationListenerService() {
                 session.packageName,
                 session.title,
                 session.artist,
-                session.estimatedDurationMs ?: 0L
-            )) return
+                session.estimatedDurationMs ?: 0L,
+            )
+        ) {
+            return
+        }
 
         var trackId = session.trackId
         if (trackId == null) {
@@ -3303,10 +3347,17 @@ class MusicTrackingService : NotificationListenerService() {
         // DB/enrichment duration at save time and re-apply the maximum then; never reject an
         // unknown duration merely because it was unknown at session start.
         if (session.estimatedDurationMs == null || session.estimatedDurationMs!! <= 0L) {
-            val reliableDuration = try {
-                trackRepository.getById(trackId).first()?.duration?.takeIf { it > 0L }
-                    ?: getTrackDurationFromMetadata(trackId)
-            } catch (e: Exception) { null }
+            val reliableDuration =
+                try {
+                    trackRepository
+                        .getById(trackId)
+                        .first()
+                        ?.duration
+                        ?.takeIf { it > 0L }
+                        ?: getTrackDurationFromMetadata(trackId)
+                } catch (e: Exception) {
+                    null
+                }
             if (reliableDuration != null && reliableDuration > 0L) {
                 session.estimatedDurationMs = reliableDuration
             }
@@ -3316,15 +3367,31 @@ class MusicTrackingService : NotificationListenerService() {
                 session.packageName,
                 session.title,
                 session.artist,
-                session.estimatedDurationMs ?: 0L
-            )) return
+                session.estimatedDurationMs ?: 0L,
+            )
+        ) {
+            return
+        }
 
         if (shouldFilterContent(
                 session.packageName,
                 localMetadataCache.get(trackId),
                 session.title,
-                session.artist
-            )) return
+                session.artist,
+            )
+        ) {
+            return
+        }
+
+        // Claim the session. If already claimed, skip saving to prevent duplicate listening events.
+        if (!session.eventSaveClaimed.compareAndSet(false, true)) {
+            Log.w(
+                TAG,
+                "Blocked duplicate save for session ${session.sessionId} " +
+                    "('${session.title}' by '${session.artist}') — session was already saved",
+            )
+            return
+        }
 
         insertListeningEvent(trackId, session)
     }
@@ -3474,11 +3541,14 @@ class MusicTrackingService : NotificationListenerService() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to queue listening event, falling back to direct insert", e)
-            // Fallback to direct insert
+            // Fallback to direct insert — routed through the manager so the
+            // session-identity dedup applies on this path as well.
             try {
-                listeningRepository.insert(event)
-                (statsRepository as? RoomStatsRepository)?.onNewListeningEvent(event.timestamp)
-                refreshCoordinator.notifyNewTrackRecorded()
+                val result = trackingManager.saveEventImmediate(event)
+                if (result.getOrDefault(0L) > 0L) {
+                    (statsRepository as? RoomStatsRepository)?.onNewListeningEvent(event.timestamp)
+                    refreshCoordinator.notifyNewTrackRecorded()
+                }
             } catch (fallbackError: Exception) {
                 Log.e(TAG, "Direct insert also failed", fallbackError)
             }
@@ -3642,19 +3712,27 @@ class MusicTrackingService : NotificationListenerService() {
         // ALWAYS_MUSIC bypasses content heuristics, NON_MUSIC/VIDEO excludes the content,
         // and the configured maximum duration rejects long-form media.
         val earlyMetadata = controller.metadata
-        val earlyTitle = earlyMetadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
-            ?: earlyMetadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
+        val earlyTitle =
+            earlyMetadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+                ?: earlyMetadata?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE)
         if (!earlyTitle.isNullOrBlank()) {
-            val earlyArtist = earlyMetadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
-                ?: earlyMetadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
-                ?: "Unknown Artist"
+            val earlyArtist =
+                earlyMetadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                    ?: earlyMetadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+                    ?: "Unknown Artist"
             when (manualContentOverride(earlyTitle, earlyArtist)) {
                 ContentOverrideType.VIDEO -> {
                     Log.d(TAG, "Rejecting manual video/non-music override: '$earlyTitle' by '$earlyArtist'")
                     return false
                 }
-                ContentOverrideType.MUSIC -> return true
-                null -> Unit
+
+                ContentOverrideType.MUSIC -> {
+                    return true
+                }
+
+                null -> {
+                    Unit
+                }
             }
             val earlyDuration = earlyMetadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
             if (shouldRejectByTrackingRules(packageName, earlyTitle, earlyArtist, earlyDuration)) {
@@ -3995,8 +4073,9 @@ class MusicTrackingService : NotificationListenerService() {
             }
 
             "NEW" -> {
-                // New track started (or replay detected - same track restarted)
+                // Detach previous session before saving so subsequent callbacks cannot re-save it.
                 session?.let {
+                    playbackStates.remove(packageName, it)
                     it.pause()
                     saveListeningEvent(it)
                 }
@@ -4146,44 +4225,78 @@ class MusicTrackingService : NotificationListenerService() {
 
     // Foreground service notification
 
+    /**
+     * Creates or refreshes both notification channels without throwing.
+     */
     private fun createNotificationChannel() {
-        // Main channel for when actively tracking music
-        val trackingChannel =
-            NotificationChannel(
-                CHANNEL_ID,
-                "Music Tracking",
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = "Shows when Tempo is actively tracking your music"
-                setShowBadge(false)
-                lockscreenVisibility = Notification.VISIBILITY_SECRET
-            }
+        try {
+            // Main channel for when actively tracking music
+            val trackingChannel =
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "Music Tracking",
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply {
+                    description = "Shows when Tempo is actively tracking your music"
+                    setShowBadge(false)
+                    lockscreenVisibility = Notification.VISIBILITY_SECRET
+                }
 
-        // Silent channel for background monitoring (minimal visibility)
-        val silentChannel =
-            NotificationChannel(
-                CHANNEL_ID + "_silent",
-                "Background Monitoring",
-                NotificationManager.IMPORTANCE_MIN, // Minimal importance - won't show on status bar
-            ).apply {
-                description = "Silent notification when waiting for music"
-                setShowBadge(false)
-                lockscreenVisibility = Notification.VISIBILITY_SECRET
-                setSound(null, null)
-                enableVibration(false)
-                enableLights(false)
-            }
+            // Silent channel for background monitoring (minimal visibility)
+            val silentChannel =
+                NotificationChannel(
+                    CHANNEL_ID + "_silent",
+                    "Background Monitoring",
+                    NotificationManager.IMPORTANCE_MIN, // Minimal importance - won't show on status bar
+                ).apply {
+                    description = "Silent notification when waiting for music"
+                    setShowBadge(false)
+                    lockscreenVisibility = Notification.VISIBILITY_SECRET
+                    setSound(null, null)
+                    enableVibration(false)
+                    enableLights(false)
+                }
 
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(trackingChannel)
+            manager.createNotificationChannel(silentChannel)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create notification channels", e)
+        }
+    }
+
+    /**
+     * Checks that both notification channels exist, recreating them if wiped by the system.
+     * Posting a foreground notification without a valid channel triggers BadForegroundServiceNotificationException.
+     */
+    private fun ensureNotificationChannelsExist(): Boolean {
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(trackingChannel)
-        manager.createNotificationChannel(silentChannel)
+        val missing =
+            listOf(CHANNEL_ID, CHANNEL_ID + "_silent")
+                .filter { manager.getNotificationChannel(it) == null }
+        if (missing.isEmpty()) return true
+
+        Log.w(TAG, "Notification channel(s) missing ($missing) — recreating before startForeground")
+        createNotificationChannel()
+
+        val stillMissing =
+            listOf(CHANNEL_ID, CHANNEL_ID + "_silent")
+                .filter { manager.getNotificationChannel(it) == null }
+        if (stillMissing.isNotEmpty()) {
+            Log.e(TAG, "Cannot create notification channel(s) $stillMissing; refusing to enter foreground")
+            return false
+        }
+        return true
     }
 
     private fun startForegroundServiceWithNotification() {
-        // Register channel before startForeground; restarts outside onCreate crash with
-        // BadForegroundServiceNotificationException if the channel is missing.
-        createNotificationChannel()
-        val notification = buildTrackingNotification(null, null)
+        // Verify channels exist before calling startForeground to avoid BadForegroundServiceNotificationException.
+        if (!ensureNotificationChannelsExist()) {
+            Log.e(TAG, "Skipping foreground promotion: notification channels unavailable")
+            return
+        }
+
+        val notification = buildTrackingNotificationSafely(null, null)
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -4205,6 +4318,30 @@ class MusicTrackingService : NotificationListenerService() {
             }
         }
     }
+
+    /**
+     * Builds the tracking notification, falling back to a minimal notification if state lookups fail.
+     */
+    private fun buildTrackingNotificationSafely(
+        currentTrack: String?,
+        currentArtist: String?,
+    ): Notification =
+        try {
+            buildTrackingNotification(currentTrack, currentArtist)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to build tracking notification; using minimal fallback", e)
+            NotificationCompat
+                .Builder(this, CHANNEL_ID)
+                .setContentTitle("Tempo")
+                .setContentText("Waiting for music...")
+                .setSmallIcon(R.drawable.ic_notification)
+                .setOngoing(true)
+                .setShowWhen(false)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                .build()
+        }
 
     private fun buildTrackingNotification(
         currentTrack: String?,
@@ -4233,6 +4370,7 @@ class MusicTrackingService : NotificationListenerService() {
                 .setContentIntent(contentIntent)
                 .setVisibility(NotificationCompat.VISIBILITY_SECRET)
                 .setSilent(true)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .build()
         }
 
@@ -4273,6 +4411,7 @@ class MusicTrackingService : NotificationListenerService() {
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setContentIntent(contentIntent)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // Show on lock screen when tracking
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .build()
         } else {
             // NOT TRACKING: Minimal silent notification (required by Android for foreground service)
@@ -4287,6 +4426,7 @@ class MusicTrackingService : NotificationListenerService() {
                 .setContentIntent(contentIntent)
                 .setVisibility(NotificationCompat.VISIBILITY_SECRET) // Hide from lock screen
                 .setSilent(true) // No sound/vibration
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .build()
         }
     }
@@ -4312,10 +4452,17 @@ class MusicTrackingService : NotificationListenerService() {
             return
         }
 
-        // Update notification
-        val notification = buildTrackingNotification(currentTrack, currentArtist)
+        // Verify channels exist to prevent SecurityException on foreground service notifications.
+        if (!ensureNotificationChannelsExist()) return
+
+        val notification = buildTrackingNotificationSafely(currentTrack, currentArtist)
         val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, notification)
+        try {
+            manager.notify(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update tracking notification", e)
+            return
+        }
 
         // Track last update
         lastNotificationUpdate = now

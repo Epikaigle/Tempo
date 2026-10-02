@@ -121,26 +121,26 @@ interface TrackDao {
     // Find by Title and Artist
     
     /**
-     * Find track by exact title and artist match.
+     * Find track by exact title and artist match (case-insensitive).
+     * COLLATE NOCASE allows SQLite to utilize existing title/artist indexes.
      */
     @Query("""
         SELECT * FROM tracks 
-        WHERE LOWER(title) = LOWER(:title) 
-        AND LOWER(artist) = LOWER(:artist) 
+        WHERE title = :title COLLATE NOCASE
+        AND artist = :artist COLLATE NOCASE
         LIMIT 1
     """)
     suspend fun findByTitleAndArtist(title: String, artist: String): Track?
     
     /**
      * Find track by title with fuzzy artist match.
-     * Uses INSTR instead of LIKE so '%'/'_' in artist names are matched
-     * literally, not as SQL wildcards.
+     * Uses INSTR instead of LIKE to avoid SQL wildcard matching on '%' or '_'.
      */
     @Query("""
         SELECT * FROM tracks 
-        WHERE LOWER(title) = LOWER(:title) 
+        WHERE title = :title COLLATE NOCASE
         AND (
-            LOWER(artist) = LOWER(:artist) 
+            artist = :artist COLLATE NOCASE
             OR INSTR(LOWER(artist), LOWER(:artist)) > 0
             OR INSTR(LOWER(:artist), LOWER(artist)) > 0
         )
@@ -152,7 +152,7 @@ interface TrackDao {
      * Return all tracks whose title matches exactly (case-insensitive).
      * Used for any-artist intersection matching when the strict/fuzzy queries miss.
      */
-    @Query("SELECT * FROM tracks WHERE LOWER(title) = LOWER(:title)")
+    @Query("SELECT * FROM tracks WHERE title = :title COLLATE NOCASE")
     suspend fun findCandidatesByTitle(title: String): List<Track>
 
     /**

@@ -26,6 +26,7 @@ import me.avinas.tempo.ui.lastfm.LastFmImportScreen
 import me.avinas.tempo.ui.settings.BackgroundProtectionScreen
 import me.avinas.tempo.ui.settings.BackupRestoreScreen
 import me.avinas.tempo.ui.settings.EnrichmentReportScreen
+import me.avinas.tempo.ui.settings.ExtensionImportScreen
 import me.avinas.tempo.ui.settings.SettingsScreen
 import me.avinas.tempo.ui.settings.SupportedAppsScreen
 import me.avinas.tempo.ui.settings.YourDataScreen
@@ -99,6 +100,8 @@ sealed class Screen(
 
     data object YouTubeMusicImport : Screen("youtube_music_import")
 
+    data object ExtensionImport : Screen("extension_import")
+
     data object DesktopLink : Screen("desktop_link")
 
     data object EnrichmentReport : Screen("enrichment_report")
@@ -139,8 +142,7 @@ fun AppNavigation(
         }
     }
 
-    // Dismiss any active walkthrough when navigating to a new screen, and report the
-    // destination for anonymous screen-usage stats.
+    // Dismiss active walkthrough on route changes and record detail-screen visits.
     androidx.compose.runtime.LaunchedEffect(currentRoute) {
         if (currentRoute != null) {
             walkthroughController.dismissCurrent()
@@ -251,6 +253,7 @@ fun AppNavigation(
                             onNavigateToSpotifyJsonImport = { navController.navigate(Screen.SpotifyJsonImport.route) },
                             onNavigateToDeezerImport = { navController.navigate(Screen.DeezerImport.route) },
                             onNavigateToYouTubeMusicImport = { navController.navigate(Screen.YouTubeMusicImport.route) },
+                            onNavigateToExtensionImport = { navController.navigate(Screen.ExtensionImport.route) },
                             onNavigateToDesktop = { navController.navigate(Screen.DesktopLink.route) },
                             onNavigateToEnrichmentReport = { navController.navigate(Screen.EnrichmentReport.route) },
                             onNavigateToYourData = { navController.navigate(Screen.YourData.route) },
@@ -295,6 +298,12 @@ fun AppNavigation(
 
                     composable(Screen.YouTubeMusicImport.route) {
                         me.avinas.tempo.ui.youtube.YouTubeMusicImportScreen(
+                            onNavigateBack = { navController.popBackStack() },
+                        )
+                    }
+
+                    composable(Screen.ExtensionImport.route) {
+                        ExtensionImportScreen(
                             onNavigateBack = { navController.popBackStack() },
                         )
                     }

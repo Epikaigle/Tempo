@@ -90,6 +90,9 @@ enum class TempoFeature {
     SPOTIFY_JSON_IMPORT,
     DEEZER_IMPORT,
     YTMUSIC_IMPORT,
+
+    /** Importing plays from a file exported by the Tempo Stats browser extension. */
+    EXTENSION_PLAYS_IMPORT,
     BACKUP_RESTORE,
     LOCAL_BACKUP,
     DRIVE_BACKUP,
@@ -108,8 +111,6 @@ enum class AccessResult { GRANTED, DENIED, REVOKED, DEFERRED }
 
 enum class ExemptionResult { GRANTED, DENIED, SKIPPED }
 
-enum class TrackingSource { NOTIFICATION, SPOTIFY_API, DESKTOP, IMPORT }
-
 enum class TrackingGapReason { SERVICE_KILLED, OEM_KILL, NO_MEDIA_NOTIF, PARSE_FAILED, AD_FILTERED }
 
 enum class RevivedBy { HEALTH_WORKER, BOOT }
@@ -120,20 +121,9 @@ enum class RevivedBy { HEALTH_WORKER, BOOT }
  */
 enum class RecoveryAction { REBIND, FORCE_RESTART, COMPONENT_REENABLE }
 
-enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, TEMPO_BACKUP }
+enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, TEMPO_BACKUP, BROWSER_EXTENSION }
 
 enum class ImportPhase { STARTED, COMPLETED, FAILED }
-
-enum class EnrichmentProvider {
-    SPOTIFY,
-    LASTFM_MBID,
-    MUSICBRAINZ,
-    LASTFM,
-    ITUNES,
-    DEEZER,
-    RECCOBEATS,
-    SPOTIFY_ARTIST_FEATURES,
-}
 
 /** Closed failure taxonomy. Never a message or a stack trace. */
 enum class FailureClass { IO, PARSE, NETWORK, DATABASE, PERMISSION, OUT_OF_MEMORY, CANCELLED, UNKNOWN }
@@ -223,13 +213,6 @@ data class BatteryExemptionResult(
     override val props: Map<String, Any> = mapOf("result" to result.name)
 }
 
-data class TrackingSourceActive(
-    val source: TrackingSource,
-) : AnalyticsEvent {
-    override val name = "tracking_source"
-    override val props: Map<String, Any> = mapOf("source" to source.name)
-}
-
 data class TrackingGap(
     val reason: TrackingGapReason,
     val gapMillis: Long,
@@ -298,20 +281,6 @@ data class ImportRun(
             put("dur", AnalyticsBucket.duration(durationMillis))
             failure?.let { put("error_class", it.name) }
         }
-}
-
-data class EnrichmentRun(
-    val provider: EnrichmentProvider,
-    val attempts: Int,
-    val successes: Int,
-) : AnalyticsEvent {
-    override val name = "enrichment_run"
-    override val props: Map<String, Any> =
-        mapOf(
-            "provider" to provider.name,
-            "ok" to AnalyticsBucket.count(successes),
-            "failed" to AnalyticsBucket.count(attempts - successes),
-        )
 }
 
 data class BackupRun(

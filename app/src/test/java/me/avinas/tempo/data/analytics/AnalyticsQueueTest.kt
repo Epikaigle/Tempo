@@ -9,10 +9,10 @@ class AnalyticsQueueTest {
 
     private val now = 1_700_000_000_000L
 
-    private fun event(ageMillis: Long = 0L, name: String = "screen_viewed") = QueuedAnalyticsEvent(
+    private fun event(ageMillis: Long = 0L, name: String = "feature_used") = QueuedAnalyticsEvent(
         timestampMillis = now - ageMillis,
         name = name,
-        stringProps = mapOf("screen" to "HOME"),
+        stringProps = mapOf("feature" to "SPOTLIGHT"),
         intProps = emptyMap()
     )
 

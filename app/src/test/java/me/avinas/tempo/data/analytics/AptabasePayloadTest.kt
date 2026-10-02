@@ -29,7 +29,7 @@ class AptabasePayloadTest {
 
     @Test
     fun `body is a json array`() {
-        val json = payloadOf(ScreenViewed(AnalyticsScreen.HOME))
+        val json = payloadOf(FeatureUsed(TempoFeature.SPOTLIGHT))
 
         assertTrue(json.startsWith("["))
         assertTrue(json.endsWith("]"))
@@ -72,7 +72,7 @@ class AptabasePayloadTest {
 
     @Test
     fun `timestamp is iso8601 utc with millis`() {
-        val json = payloadOf(ScreenViewed(AnalyticsScreen.STATS))
+        val json = payloadOf(FeatureUsed(TempoFeature.SPOTLIGHT))
 
         val match = Regex("\"timestamp\":\"([^\"]+)\"").find(json)
         assertTrue("no timestamp in $json", match != null)
@@ -85,7 +85,7 @@ class AptabasePayloadTest {
     /** A millisecond value of exactly zero must not shorten the format. */
     @Test
     fun `timestamp keeps millis when they are zero`() {
-        val event = ScreenViewed(AnalyticsScreen.HOME).toQueued(1_700_000_000_000L)
+        val event = FeatureUsed(TempoFeature.SPOTLIGHT).toQueued(1_700_000_000_000L)
 
         val json = AptabasePayload.build(listOf(event), "171351624706652714", system)
 
@@ -94,7 +94,7 @@ class AptabasePayloadTest {
 
     @Test
     fun `system props carry no identifier and are marked not-debug`() {
-        val json = payloadOf(ScreenViewed(AnalyticsScreen.HOME))
+        val json = payloadOf(FeatureUsed(TempoFeature.SPOTLIGHT))
 
         assertTrue(json.contains("\"locale\":\"en-GB\""))
         assertTrue(json.contains("\"deviceModel\":\"Pixel 7\""))
@@ -105,9 +105,9 @@ class AptabasePayloadTest {
     @Test
     fun `every event in the batch is emitted`() {
         val json = payloadOf(
-            ScreenViewed(AnalyticsScreen.HOME),
-            ScreenViewed(AnalyticsScreen.STATS),
-            ScreenViewed(AnalyticsScreen.HISTORY)
+            FeatureUsed(TempoFeature.SPOTLIGHT),
+            FeatureUsed(TempoFeature.SHARE_CARD),
+            FeatureUsed(TempoFeature.WIDGET)
         )
 
         assertEquals(3, json.split("\"eventName\"").size - 1)
@@ -134,7 +134,7 @@ class AptabasePayloadTest {
 
     @Test
     fun `no user or account field is ever emitted`() {
-        val json = payloadOf(ScreenViewed(AnalyticsScreen.HOME))
+        val json = payloadOf(FeatureUsed(TempoFeature.SPOTLIGHT))
 
         assertFalse(json.contains("\"userId\""))
         assertFalse(json.contains("\"distinctId\""))

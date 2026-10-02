@@ -8,10 +8,9 @@ import me.avinas.tempo.data.analytics.ScreenViewed
 import javax.inject.Inject
 
 /**
- * Reports which screens are reached.
+ * Observes navigation changes and reports detail-screen visits to [AnalyticsTracker].
  *
- * One observer at the NavHost level rather than a call in every screen, so a new screen
- * cannot forget to report itself and no screen can invent its own event name.
+ * Scoped to [TRACKED_SCREENS] to minimize analytics event volume.
  */
 @HiltViewModel
 class AnalyticsScreenViewModel @Inject constructor(
@@ -23,15 +22,22 @@ class AnalyticsScreenViewModel @Inject constructor(
     fun onRouteChanged(route: String?) {
         val screen = routeToAnalyticsScreen(route)
 
-        // Collapse consecutive repeats: recomposition and config changes would otherwise
-        // report the same screen many times over.
+        // Ignore duplicate consecutive routes caused by recomposition or configuration changes.
         if (screen == lastScreen) return
         lastScreen = screen
 
-        // An unmapped route means the mapping is out of date, not a real destination.
-        // AnalyticsScreenMappingTest fails before this can ship, so stay silent.
-        if (screen != AnalyticsScreen.UNKNOWN) {
+        // Non-detail screens are ignored to stay within analytics limits.
+        if (screen in TRACKED_SCREENS) {
             tracker.track(ScreenViewed(screen))
         }
+    }
+
+    companion object {
+        val TRACKED_SCREENS: Set<AnalyticsScreen> =
+            setOf(
+                AnalyticsScreen.SONG_DETAILS,
+                AnalyticsScreen.ARTIST_DETAILS,
+                AnalyticsScreen.ALBUM_DETAILS,
+            )
     }
 }

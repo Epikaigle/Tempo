@@ -9,6 +9,9 @@ import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.PreferencesRepository
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.data.spotify.SpotifyHistoryReconstructionService
 import me.avinas.tempo.data.lastfm.LastFmImportService
 import me.avinas.tempo.data.stats.TimeRange
@@ -35,6 +38,7 @@ class SpotlightViewModel @Inject constructor(
     private val preferencesRepository: PreferencesRepository,
     private val spotifyReconstructionService: SpotifyHistoryReconstructionService,
     private val lastFmImportService: LastFmImportService,
+    private val tracker: AnalyticsTracker,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -113,6 +117,13 @@ class SpotlightViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(selectedTimeRange = timeRange)
         checkIfStoryLocked(timeRange)
         loadCards(timeRange)
+    }
+
+    /**
+     * Records a single spotlight feature usage event when story playback starts.
+     */
+    fun trackStoryOpened() {
+        tracker.track(FeatureUsed(TempoFeature.SPOTLIGHT))
     }
 
     /**

@@ -21,8 +21,6 @@ import me.avinas.tempo.data.analytics.AppStartType
 import me.avinas.tempo.data.analytics.AppStarted
 import me.avinas.tempo.data.analytics.CrashSignatureRecorder
 import me.avinas.tempo.data.analytics.DbMigration
-import me.avinas.tempo.data.analytics.TrackingSource
-import me.avinas.tempo.data.analytics.TrackingSourceActive
 import me.avinas.tempo.data.drive.BackupInterval
 import me.avinas.tempo.data.drive.BackupSettingsManager
 import me.avinas.tempo.data.drive.LocalBackupStorage
@@ -33,6 +31,7 @@ import me.avinas.tempo.data.repository.AppPreferenceRepository
 import me.avinas.tempo.service.TrackingServiceHeartbeat
 import me.avinas.tempo.ui.onboarding.dataStore
 import me.avinas.tempo.utils.ArtistParser
+import me.avinas.tempo.utils.FrameworkRaceGuard
 import me.avinas.tempo.worker.AnalyticsFlushWorker
 import me.avinas.tempo.worker.ChallengeWorker
 import me.avinas.tempo.worker.DriveBackupWorker
@@ -110,6 +109,9 @@ class TempoApplication :
         // any signature left by the previous run is reported.
         crashSignatureRecorder.install()
         crashSignatureRecorder.reportPending()
+
+        // Installed after recorder so genuine crashes are still captured; filters QueuedWork framework race (b/257513022).
+        FrameworkRaceGuard.install()
 
         loadUserKnownArtists()
         seedDefaultAppPreferences()
@@ -354,15 +356,7 @@ class TempoApplication :
         applicationScope.launch {
             try {
                 val prefs = userPreferencesDao.getSync()
-                // Reported here because this is where the process already resolves whether
-                // Spotify polling is the active detection path. Once per app start.
-                val spotifyOnly = prefs?.spotifyApiOnlyMode == true
-                analyticsTracker.track(
-                    TrackingSourceActive(
-                        if (spotifyOnly) TrackingSource.SPOTIFY_API else TrackingSource.NOTIFICATION,
-                    ),
-                )
-                if (spotifyOnly) {
+                if (prefs?.spotifyApiOnlyMode == true) {
                     Handler(Looper.getMainLooper()).post {
                         SpotifyPollingWorker.schedule(this@TempoApplication)
                     }

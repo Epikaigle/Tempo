@@ -735,6 +735,32 @@
     <string name="deezer_import_notification_progress">Importing %1$d/%2$d entries</string>
     <string name="settings_import_youtube_music">Import YouTube Music Data</string>
     <string name="settings_import_youtube_music_desc">Import listening history from a YouTube Takeout ZIP (JSON or HTML)</string>
+
+    <!-- Browser extension plays: the extension's "Export Plays" file, imported in the app -->
+    <string name="settings_import_extension">Import Browser Extension Plays</string>
+    <string name="settings_import_extension_desc">Add plays exported from the Tempo Stats extension to your history</string>
+    <string name="extension_import_title">Import Extension Plays</string>
+    <string name="extension_import_headline">Bring your browser plays into Tempo</string>
+    <string name="extension_import_how_to">1. Open the Tempo Stats browser extension\n2. Go to its Settings tab and tap Export Plays\n3. Pick the downloaded tempo-plays file below</string>
+    <string name="extension_import_choose_file">Choose export file</string>
+    <string name="extension_import_selected_files">%1$d file(s) selected</string>
+    <string name="extension_import_button">Import plays</string>
+    <string name="extension_import_running">Importing…</string>
+    <string name="extension_import_parsing">Reading %1$s…</string>
+    <string name="extension_import_file_counter">File %1$d of %2$d</string>
+    <string name="extension_import_progress">%1$d plays processed</string>
+    <string name="extension_import_progress_added">%1$d added so far</string>
+    <string name="extension_import_result_title">Import complete</string>
+    <string name="extension_import_stat_imported">Plays added</string>
+    <string name="extension_import_stat_duplicates">Already in your history</string>
+    <string name="extension_import_stat_tracks">New tracks</string>
+    <string name="extension_import_stat_too_short">Too short to count</string>
+    <string name="extension_import_stat_unreadable">Unreadable rows</string>
+    <string name="extension_import_stat_files">Files read</string>
+    <string name="extension_import_truncated">This file holds more plays than a single import reads. Import it again to continue where it stopped.</string>
+    <string name="extension_import_done">Done</string>
+    <string name="extension_import_failed_title">Import failed</string>
+    <string name="extension_import_retry">Try again</string>
     <string name="settings_name_dialog_body">Choose the display name shown in your personal profile and stories.</string>
     <string name="settings_no_browser">No browser found</string>
 
