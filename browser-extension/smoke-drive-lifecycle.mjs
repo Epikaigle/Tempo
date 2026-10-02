@@ -99,4 +99,14 @@ await assert.rejects(drive.syncDriveHistory(), /Cleanup forbidden/);
 assert.equal(fixture.stored[stateKey].acceptedDisableVersion, 300);
 assert.equal(fixture.listCalls, 2);
 console.log('  ✓ newest control marker is read across all list pages');
-console.log('\n4 Drive lifecycle scenarios passed');
+
+for (const marker of [0, -1]) {
+  reset();
+  fixture.marker = marker;
+  await assert.rejects(drive.syncDriveHistory(), /valid deletion marker/);
+  assert.equal(fixture.writes, 0);
+  assert.equal(fixture.stored[stateKey].acceptedDisableVersion, 100);
+  assert.equal(fixture.cleared, 0);
+}
+console.log('  ✓ invalid server marker timestamps cannot authorize uploads or alter accepted state');
+console.log('\n5 Drive lifecycle scenarios passed');

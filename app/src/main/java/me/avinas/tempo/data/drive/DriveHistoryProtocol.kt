@@ -4,6 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.zip.GZIPInputStream
@@ -166,7 +168,11 @@ object DriveHistoryProtocol {
                 output.toByteArray()
             }
         }
-        val root = JSONObject(String(jsonBytes, Charsets.UTF_8))
+        val text = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(jsonBytes)).toString()
+        val root = JSONObject(text)
         val schema = root.requireInt("schema_version", 0, Int.MAX_VALUE)
         require(schema == SCHEMA_VERSION) {
             "Unsupported Tempo history schema: $schema"

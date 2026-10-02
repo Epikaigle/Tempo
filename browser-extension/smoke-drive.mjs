@@ -120,6 +120,16 @@ const compressed = await protocol.gzipJson(batch);
 const decoded = await protocol.ungzipJson(compressed);
 check('round trip preserves batch id', decoded.batch_id === batchId);
 check('round trip remains schema-valid', protocol.isValidBatch(decoded));
+const unicodeBatch = { ...batch, events: [{ ...event, title: 'é 🔊' }] };
+const unicodeDecoded = await protocol.ungzipJson(await protocol.gzipJson(unicodeBatch));
+check('valid UTF-8 accents and emoji survive decoding', unicodeDecoded.events[0].title === 'é 🔊');
+const invalidUtf8 = new TextEncoder().encode(JSON.stringify(unicodeBatch));
+invalidUtf8[invalidUtf8.indexOf(0xc3)] = 0xff;
+const corruptStream = new Blob([invalidUtf8]).stream().pipeThrough(new CompressionStream('gzip'));
+const corruptGzip = new Uint8Array(await new Response(corruptStream).arrayBuffer());
+let corruptRejected = false;
+try { await protocol.ungzipJson(corruptGzip); } catch { corruptRejected = true; }
+check('malformed UTF-8 is rejected instead of silently changing the title', corruptRejected);
 
 console.log('\n[Drive 4] Retry and lifecycle concurrency guards');
 check('GET requests may be retried', protocol.isDriveRequestRetrySafe(undefined));

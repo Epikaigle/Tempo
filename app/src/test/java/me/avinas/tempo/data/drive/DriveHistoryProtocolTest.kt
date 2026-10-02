@@ -15,6 +15,38 @@ import java.util.zip.GZIPOutputStream
 class DriveHistoryProtocolTest {
 
     @Test
+    fun `every deletion marker timestamp must be valid even when another marker is newer`() {
+        assertEquals(0L, DriveAppDataClient.markerVersion(emptyList()))
+        assertEquals(200L, DriveAppDataClient.markerVersion(listOf(100L, 200L)))
+        for (invalid in listOf(null, 0L, -1L)) {
+            assertTrue(runCatching { DriveAppDataClient.markerVersion(listOf(200L, invalid)) }
+                .exceptionOrNull() is DriveException.Server)
+        }
+    }
+
+    @Test
+    fun `decoder preserves valid unicode and rejects malformed UTF8 instead of changing the title`() {
+        val events = listOf(event("unicode", 1_700_000_000_000L).copy(title = "é 🔊"))
+        val batch = DriveHistoryBatch(
+            batchId = DriveHistoryProtocol.createBatchId(events), sourceDeviceId = "remote-device",
+            sourceDeviceName = "Tempo device", sourcePlatform = "test",
+            createdAtUtc = 1_700_000_000_000L, events = events
+        )
+        val valid = DriveHistoryProtocol.encodeCompressed(batch)
+        assertEquals("é 🔊", DriveHistoryProtocol.decodeCompressed(valid).events.single().title)
+        val bytes = GZIPInputStream(ByteArrayInputStream(valid)).use { it.readBytes() }
+        val index = bytes.indexOf(0xc3.toByte())
+        assertTrue(index >= 0)
+        bytes[index] = 0xff.toByte()
+        val corrupt = ByteArrayOutputStream().use { output ->
+            GZIPOutputStream(output).use { it.write(bytes) }
+            output.toByteArray()
+        }
+        assertTrue(runCatching { DriveHistoryProtocol.decodeCompressed(corrupt) }.exceptionOrNull()
+            is java.nio.charset.CharacterCodingException)
+    }
+
+    @Test
     fun `generation metadata matches the safe cross-client integer grammar`() {
         assertEquals(0L, DriveHistoryProtocol.parseGeneration(null))
         assertEquals(42L, DriveHistoryProtocol.parseGeneration("42"))

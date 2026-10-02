@@ -39,6 +39,14 @@ class DriveAppDataClient @Inject constructor(
         private const val DISABLE_MARKER_NAME = "tempo_history_control_v1.json"
         private const val MAX_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 1_500L
+
+        internal fun markerVersion(versions: List<Long?>): Long {
+            if (versions.isEmpty()) return 0L
+            if (versions.any { it == null || it <= 0L }) {
+                throw DriveException.Server("Google Drive did not return a valid deletion marker version")
+            }
+            return versions.maxOf { requireNotNull(it) }
+        }
     }
 
     @Volatile private var cachedClient: AuthorizedDriveClient? = null
@@ -265,12 +273,7 @@ class DriveAppDataClient @Inject constructor(
     suspend fun getHistoryDisableMarkerVersion(): Long = withContext(Dispatchers.IO) {
         executeWithRetry { api ->
             val markers = findFilesByExactName(api, DISABLE_MARKER_NAME)
-            if (markers.isEmpty()) return@executeWithRetry 0L
-            val versions = markers.map { it.modifiedTime?.value ?: 0L }
-            if (versions.any { it <= 0L }) {
-                throw DriveException.Server("Google Drive did not return a valid deletion marker version")
-            }
-            versions.max()
+            markerVersion(markers.map { it.modifiedTime?.value })
         }
     }
 
@@ -286,9 +289,8 @@ class DriveAppDataClient @Inject constructor(
                 .toString()
                 .toByteArray(Charsets.UTF_8)
             val media = ByteArrayContent(MIME_JSON, payload)
-            val previousVersion = findFilesByExactName(api, DISABLE_MARKER_NAME)
-                .maxOfOrNull { it.modifiedTime?.value ?: 0L }
-                ?: 0L
+            val previousVersion = markerVersion(findFilesByExactName(api, DISABLE_MARKER_NAME)
+                .map { it.modifiedTime?.value })
             var markers = findFilesByExactName(api, DISABLE_MARKER_NAME)
             if (markers.isEmpty()) {
                 api.files()
@@ -322,7 +324,7 @@ class DriveAppDataClient @Inject constructor(
                         )
                         .setFields("id,name,size,md5Checksum,createdTime,modifiedTime,appProperties")
                         .execute()
-                    markerVersion = maxOf(markerVersion, updated.modifiedTime?.value ?: 0L)
+                    markerVersion = maxOf(markerVersion, Companion.markerVersion(listOf(updated.modifiedTime?.value)))
                 }
                 if (markerVersion > previousVersion) break
                 if (attempt < 2) delay(5L)

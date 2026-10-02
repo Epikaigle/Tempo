@@ -708,7 +708,7 @@ async function getDisableMarkerVersion(accessToken: string): Promise<number> {
   const files = await findFilesByExactName(accessToken, DISABLE_MARKER_NAME);
   if (files.length === 0) return 0;
   const versions = files.map(file => file.modifiedTime ? Date.parse(file.modifiedTime) : NaN);
-  if (versions.some(version => !Number.isFinite(version))) {
+  if (versions.some(version => !Number.isSafeInteger(version) || version <= 0)) {
     throw new Error('Google Drive did not return a valid deletion marker version');
   }
   return Math.max(...versions);
@@ -760,7 +760,10 @@ async function bumpDisableMarker(accessToken: string): Promise<number> {
       await assertDriveResponse(response);
       const updated = await response.json() as DriveFileRecord;
       const parsed = updated.modifiedTime ? Date.parse(updated.modifiedTime) : NaN;
-      if (Number.isFinite(parsed)) markerVersion = Math.max(markerVersion, parsed);
+      if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        throw new Error('Google Drive did not return a valid deletion marker version');
+      }
+      markerVersion = Math.max(markerVersion, parsed);
     }
     if (markerVersion > previousVersion) return markerVersion;
     if (attempt < 2) await delayMs(10);
@@ -1072,7 +1075,7 @@ async function gzipJson(value: unknown): Promise<Uint8Array> {
 async function ungzipJson(bytes: Uint8Array): Promise<WireBatch> {
   const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'));
   const decoded = await readStreamBytesWithLimit(stream, MAX_BATCH_BYTES, 'decompressed');
-  const text = new TextDecoder().decode(decoded);
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(decoded);
   return JSON.parse(text) as WireBatch;
 }
 

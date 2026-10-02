@@ -43,6 +43,7 @@ The generation is Drive transport metadata; it does not change the v1 JSON paylo
 ## Batch encoding
 
 A batch is UTF-8 JSON compressed with gzip.
+Readers must reject malformed UTF-8 instead of replacing invalid byte sequences with substitute characters. Valid accents and emoji are preserved across clients.
 
 ```json
 {
