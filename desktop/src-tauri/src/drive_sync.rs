@@ -2342,6 +2342,19 @@ mod tests {
     }
 
     #[test]
+    fn lan_provenance_matches_drive_wire_identity() {
+        let (dir, conn) = history_storage_fixture();
+        let expected_device = load_state(&conn).unwrap().device_id;
+        drop(conn);
+        let actual_device = lan_device_id(&dir).unwrap();
+        assert_eq!(actual_device, expected_device);
+        assert_eq!(
+            lan_play_origin("device-1", 42, 1_700_000_000_000, " Song ", " Artist "),
+            "69bd5521a322b3d1aaeca431b7380bd49f3a28e1c1d1b1dc0a754ca37e6a06b4"
+        );
+    }
+
+    #[test]
     fn stable_event_and_batch_ids_match_protocol_shape() {
         let play = LocalPlay {
             id: 42,
