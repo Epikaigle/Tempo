@@ -198,25 +198,22 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "Desktop".to_string());
 
-    // The local device ID is independent of Google login. Read any previously
-    // published event IDs in the same DB pass; otherwise metadata edits could
-    // make the LAN retry advertise a different origin than the Drive upload.
-    let local_ids: Vec<i64> = plays.iter().filter_map(|play| play.id).collect();
-    let drive_identity = crate::commands::drive_sync::lan_origin_metadata(
-        &state.app_data_dir, &local_ids,
-    ).ok();
-    let drive_provenance: Vec<Option<(String, String)>> = plays.iter()
-        .map(|play| match (play.id, drive_identity.as_ref()) {
-            (Some(id), Some((device_id, known))) => Some((
-                device_id.clone(),
-                known.get(&id).cloned().unwrap_or_else(||
-                    crate::commands::drive_sync::lan_play_origin(
-                        device_id, id, play.timestamp_utc, &play.title, &play.artist
-                    )
-                ),
-            )),
-            _ => None,
+    // LAN and Drive must share the first stored producer ID and event ID,
+    // including if LAN is sent before Google sign-in or the track is renamed.
+    // A failed persistence step must not silently downgrade to an untracked
+    // origin: such a LAN delivery could later be duplicated by Drive.
+    let captures: Vec<(i64, i64, String, String)> = plays.iter()
+        .map(|play| {
+            play.id.map(|id| (id, play.timestamp_utc, play.title.clone(), play.artist.clone()))
+                .ok_or_else(|| SyncError::DatabaseError("Queued Desktop play is missing its ID".into()))
         })
+        .collect::<Result<_, _>>()?;
+    let (local_device_id, known_origins) =
+        crate::commands::drive_sync::persist_lan_origin_metadata(
+            &state.app_data_dir, &captures
+        ).map_err(SyncError::DatabaseError)?;
+    let drive_provenance: Vec<Option<(String, String)>> = plays.iter()
+        .map(|play| play.id.map(|id| (local_device_id.clone(), known_origins[&id].clone())))
         .collect();
     let payload = SyncPayload {
         auth_token: pairing.auth_token.clone(),
