@@ -170,4 +170,16 @@ assert.equal(localRecords[3].originEventId, 'owned-17');
 assert.ok(localRecords[0].driveUploadedAt > 0 && localRecords[3].driveUploadedAt > 0,
   'verified cloud upload sets its acknowledgement together with stable identity');
 
-console.log('\n12 IndexedDB durability, replay and own-device restoration scenarios passed');
+// LAN-first delivery must persist its origin before returning a payload, so
+// later title edits, retries and Drive sync cannot advertise a second ID.
+localRecords.push({ id: 99, title: 'Original', artist: 'Artist', timestampUtc: baseTime });
+const firstOrigin = 'a'.repeat(64);
+const pinned = await storage.ensureLocalOriginEventId(99, firstOrigin);
+assert.equal(pinned, firstOrigin);
+assert.equal(localRecords.find(play => play.id === 99)?.originEventId, firstOrigin);
+localRecords.find(play => play.id === 99).title = 'Corrected title';
+const retryId = await storage.ensureLocalOriginEventId(99, 'b'.repeat(64));
+assert.equal(retryId, firstOrigin, 'LAN-first origin survives later metadata changes');
+assert.equal(localRecords.find(play => play.id === 99)?.originEventId, firstOrigin);
+
+console.log('\n14 IndexedDB durability, replay and own-device restoration scenarios passed');
