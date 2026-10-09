@@ -20,6 +20,9 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | Chrome -> Firefox | Track Spotify Web in Chrome; sync on different network | One imported event in Firefox |
 | Firefox -> Chrome | Track YouTube Music in Firefox; sync | One imported event in Chrome |
 | Browser -> Desktop | Capture browser music on another machine; sync | Exactly one Desktop event |
+| LAN + Drive same origin | Send a Desktop/browser play to Android over LAN, then publish the sender's Drive batch | Same exact event ID is retained; Android counts once and never republishes it under an Android-owned ID |
+| LAN with Drive disabled | Send a Desktop/browser play to Android with Google Drive disabled on sender | No Google OAuth or connection is required merely to attach LAN provenance; local sync still works |
+| Mixed-version LAN | Use a previous Desktop/browser sender without origin fields | Legacy payloads still import through the existing bounded temporal fallback |
 | Desktop + Chrome same computer | Run both detectors for one physical play | One logical play after receiving both producers' batches |
 | Two quick replays | Play same 25-second song twice while both detectors are on | Exactly **two** plays, never zero, one or four |
 | Background/offline | Disable Wi-Fi, queue events, restart, reconnect | No loss; pending counts resolve; repeat sync adds zero events |
