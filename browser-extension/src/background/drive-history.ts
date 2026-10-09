@@ -410,7 +410,11 @@ async function downloadRemotePlays(
   // their first Drive upload, so sample-based dedup can miss an older imported
   // event. Scan the whole local store once per Drive download pass instead.
   const existing = await storage.getAllPlays(Number.MAX_SAFE_INTEGER);
-  const seenOriginIds = new Set(existing.map(p => p.originEventId).filter((x): x is string => !!x));
+  const seenOriginIds = new Set<string>();
+  for (const play of existing) {
+    if (play.originEventId) seenOriginIds.add(play.originEventId);
+    for (const alias of play.reconciledOrigins ?? []) seenOriginIds.add(alias.eventId);
+  }
   let imported = 0;
   let duplicates = 0;
   let maxCreated = state.downloadCreatedCursor;
@@ -516,6 +520,7 @@ async function downloadRemotePlays(
         event.artist,
         event.timestamp_utc,
         batch.source_device_id,
+        event.event_id,
       );
       if (temporalDupe) {
         seenOriginIds.add(event.event_id);
