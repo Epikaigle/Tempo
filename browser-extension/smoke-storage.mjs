@@ -47,4 +47,41 @@ for (const abort of [false, true]) {
     assert.equal((await observed).value, 42);
   }
 }
-console.log('\n5 IndexedDB durability and dedup-window scenarios passed');
+
+// Exercise the actual IndexedDB query: local callbacks and remote overlap use
+// different windows, while two distinct IDs from one remote device survive.
+globalThis.IDBKeyRange = { bound: (lower, upper) => ({ lower, upper }) };
+const baseTime = 1_700_000_000_000;
+let localRecords = [{
+  title: 'Song', artist: 'Artist', timestampUtc: baseTime,
+  originDeviceId: 'remote-A',
+}];
+database.transaction = () => ({
+  objectStore: () => ({
+    index: () => ({
+      openCursor(range) {
+        const entries = localRecords.filter(item =>
+          item.timestampUtc >= range.lower && item.timestampUtc <= range.upper);
+        const lookup = {};
+        let index = 0;
+        const next = () => {
+          const item = entries[index++];
+          lookup.result = item ? { value: item, continue: () => queueMicrotask(next) } : null;
+          lookup.onsuccess?.();
+        };
+        queueMicrotask(next);
+        return lookup;
+      },
+    }),
+  }),
+});
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 4_000), true);
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000), false,
+  'a real local short-track replay must not be dropped');
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000, 'remote-B'), true,
+  'different devices capturing the same play must reconcile');
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000, 'remote-A'), false,
+  'distinct quick replays from one origin must be preserved');
+assert.equal(await storage.hasRecentPlay('Different Song', 'Artist', baseTime + 2_000, 'remote-B'), false);
+
+console.log('\n10 IndexedDB durability and dedup scenarios passed');
