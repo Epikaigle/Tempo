@@ -15,6 +15,36 @@ import java.util.zip.GZIPOutputStream
 class DriveHistoryProtocolTest {
 
     @Test
+    fun `LAN-only plays relay with original Drive event identity`() {
+        val id = "a".repeat(64)
+        assertEquals(
+            "desktop:Spotify" to id,
+            DriveHistorySyncManager.lanRelayIdentity(
+                "lan:desktop-device:desktop:Spotify", "drive:v1:$id"
+            )
+        )
+        assertEquals(
+            "browser:YouTube Music" to id,
+            DriveHistorySyncManager.lanRelayIdentity(
+                "lan:browser-device:browser:YouTube Music", "drive:v1:$id"
+            )
+        )
+        // Cloud-downloaded events must never be re-uploaded by the Android relay.
+        assertNull(DriveHistorySyncManager.lanRelayIdentity(
+            "drive:desktop-device:desktop:Spotify", "drive:v1:$id"
+        ))
+        assertNull(DriveHistorySyncManager.lanRelayIdentity(
+            "lan::desktop:Spotify", "drive:v1:$id"
+        ))
+        assertNull(DriveHistorySyncManager.lanRelayIdentity(
+            "lan:desktop-device:desktop:Spotify", "invalid"
+        ))
+        assertNull(DriveHistorySyncManager.lanRelayIdentity(
+            "lan:desktop-device:desktop:Spotify", null
+        ))
+    }
+
+    @Test
     fun `text truncation preserves complete emoji at the UTF16 boundary`() {
         val prefix = "x".repeat(999)
         assertEquals(prefix, DriveHistoryProtocol.truncateText(prefix + "🔊"))
