@@ -681,6 +681,7 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
         device_name: deviceName,
         plays: await Promise.all(batch.map(async p => ({
           ...await getDriveLanOrigin(p),
+          origin_source: `browser:${p.sourceApp}`,
           title: p.title,
           artist: p.artist,
           album: p.album,
