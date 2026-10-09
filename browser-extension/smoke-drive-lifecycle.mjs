@@ -19,7 +19,7 @@ await esbuild.build({
       export const saveSettings = async value => { globalThis.fixture.settings = {...value}; };
       export const clearDriveUploadedFlags = async () => { globalThis.fixture.cleared++; };
       export const getDrivePendingPlays = async () => [];
-      export const getAllPlays = async () => [];
+      export const getDriveOriginEventIds = async () => new Set();
       export const markDriveUploaded = async () => {};
       export const insertPlay = async value => { globalThis.fixture.imported.push(value); };
       export const hasRecentPlay = async () => false;
