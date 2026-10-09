@@ -306,27 +306,30 @@ export async function getDrivePendingPlays(limit = Number.MAX_SAFE_INTEGER): Pro
   });
 }
 
-/** Mark locally-owned play rows as safely uploaded to Drive. */
-export async function markDriveUploaded(ids: number[]): Promise<void> {
-  if (ids.length === 0) return;
-  const idSet = new Set(ids);
+/** Mark uploaded rows by primary key, not by scanning every historic play.
+ * Persist the origin identity alongside the verified upload in one IndexedDB
+ * transaction: a later full restore can then recognize locally-owned events
+ * even if their display metadata has changed since first synchronization.
+ */
+export async function markDriveUploaded(
+  entries: Array<{ id: number; originEventId: string }>,
+): Promise<void> {
+  if (entries.length === 0) return;
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
     const store = tx.objectStore(PLAYS_STORE);
-    const request = store.openCursor();
     const uploadedAt = Date.now();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor) {
-        if (idSet.has(cursor.key as number)) {
-          const play = cursor.value as Play;
-          play.driveUploadedAt = uploadedAt;
-          cursor.update(play);
-        }
-        cursor.continue();
-      }
-    };
+    for (const entry of entries) {
+      const request = store.get(entry.id);
+      request.onsuccess = () => {
+        const play = request.result as Play | undefined;
+        if (!play || play.driveImported) return;
+        play.originEventId = entry.originEventId;
+        play.driveUploadedAt = uploadedAt;
+        store.put(play);
+      };
+    }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error ?? new Error('Drive upload flag transaction aborted'));
