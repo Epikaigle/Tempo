@@ -25,6 +25,7 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | Background/offline | Disable Wi-Fi, queue events, restart, reconnect | No loss; pending counts resolve; repeat sync adds zero events |
 | Post-create crash | Server accepts upload, then simulate client timeout before local acknowledgement | Retry preserves one logical event and a verified cloud copy |
 | Historical recovery | Import ten years of fixture batches, reset local receiver, choose Restore full history | All recoverable years and event IDs restored; no locally owned event deleted |
+| Own-device recovery | Keep the Tempo device identity, delete only its local play rows, then restore from the same device's Drive batches | Previously locally owned tracks are recovered; surviving local plays are not duplicated |
 | Local retention | Leave synced local plays older than 1 year/30 days/7 days; run routine maintenance | No listening-event rows automatically deleted |
 | Cloud delete with stale client | Disconnect one client, delete cloud history on another, re-enable a third, reconnect stale client | Stale client does not resurrect history or delete the new generation |
 | Account switching | Connect account A, switch to B on one client | No A history uploaded to B; explicit authorization needed |
