@@ -23,7 +23,8 @@ package me.avinas.tempo.data.local
 object SourceAuthority {
 
     fun rank(source: String): Int = when {
-        source.startsWith("drive:") && driveDeviceId(source) != null -> rank(unwrapDriveSource(source))
+        (source.startsWith("drive:") || source.startsWith("lan:")) &&
+            driveDeviceId(source) != null -> rank(unwrapDriveSource(source))
         source.startsWith("desktop:") -> 90
         source.contains("import.reconstructed") -> 40
         source.contains("fm.last.import") -> 50
@@ -36,10 +37,12 @@ object SourceAuthority {
     }
 
     fun driveDeviceId(source: String): String? {
-        if (!source.startsWith("drive:")) return null
+        if (!source.startsWith("drive:") && !source.startsWith("lan:")) return null
         return source.split(':', limit = 3).takeIf { it.size == 3 }?.get(1)?.takeIf { it.isNotBlank() }
     }
 
     private fun unwrapDriveSource(source: String): String =
-        source.split(':', limit = 3).takeIf { it.size == 3 && it[0] == "drive" }?.get(2) ?: source
+        source.split(':', limit = 3).takeIf {
+            it.size == 3 && (it[0] == "drive" || it[0] == "lan")
+        }?.get(2) ?: source
 }
