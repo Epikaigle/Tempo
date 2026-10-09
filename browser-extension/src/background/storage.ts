@@ -482,12 +482,13 @@ export async function deletePlay(id: number): Promise<void> {
 /**
  * Local retries use a short 5s window: a second short-track replay must not be
  * discarded just because it occurred within a minute of the first play.
- * Drive imports from other devices use the wider 60s reconciliation window to
- * account for different capture clocks. Different event IDs from the SAME
- * originating device are real replays and must remain distinct.
+ * Drive imports use a bounded 10s reconciliation window shared with
+ * Android. A full minute could conflate a real second short-track play from
+ * another device with the previous one. Two different IDs from the SAME
+ * originating device are always distinct, regardless of timestamp drift.
  */
 export function recentPlayWindowMs(incomingOriginDeviceId?: string): number {
-  return incomingOriginDeviceId ? 60_000 : 5_000;
+  return incomingOriginDeviceId ? 10_000 : 5_000;
 }
 export async function hasRecentPlay(
   title: string,
