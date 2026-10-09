@@ -378,7 +378,7 @@ async function uploadLocalPlays(accessToken: string, deviceId: string): Promise<
       source_device_id: deviceId,
       source_device_name: isFirefoxBuild() ? 'Firefox extension' : 'Chrome extension',
       source_platform: isFirefoxBuild() ? 'firefox_extension' : 'chrome_extension',
-      created_at_utc: Date.now(),
+      created_at_utc: Math.max(...events.map(event => event.timestamp_utc)),
       events,
     };
     if (!isValidBatch(batch)) {
