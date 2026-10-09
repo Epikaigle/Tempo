@@ -125,7 +125,7 @@ Build with the Firefox/WebExtension OAuth client ID:
 TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX="...apps.googleusercontent.com" npm run build:firefox
 ```
 
-Firefox uses `identity.launchWebAuthFlow`. Google normally requires redirect domains that the OAuth application can register/control, while Firefox's normal `identity.getRedirectURL()` uses Mozilla's extension domain. Tempo therefore uses Firefox's supported Google-compatible loopback alias:
+Firefox uses `identity.launchWebAuthFlow` with **OAuth authorization code + PKCE (S256)**, not the insecure implicit token-in-fragment flow. After checking the redirect URI and anti-forgery state, Tempo exchanges the short-lived code directly with Google's token endpoint, without bundling a client secret. Google normally requires redirect domains that the OAuth application can register/control, while Firefox's normal `identity.getRedirectURL()` uses Mozilla's extension domain. Tempo therefore uses Firefox's supported loopback alias:
 
 ```text
 http://127.0.0.1/mozoauth2/<firefox-extension-redirect-subdomain>
