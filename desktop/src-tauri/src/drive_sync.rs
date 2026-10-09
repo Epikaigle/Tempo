@@ -1373,6 +1373,7 @@ async fn download_remote_history(
     app_data_dir: &Path,
     access_token: &str,
     device_id: &str,
+    include_own_device_batches: bool,
 ) -> Result<(usize, usize), String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
@@ -1419,6 +1420,7 @@ async fn download_remote_history(
             .get("source_device_id")
             .map(String::as_str)
             == Some(device_id)
+            && !include_own_device_batches
         {
             max_created = max_created.max(created);
             continue;
@@ -1472,7 +1474,7 @@ async fn download_remote_history(
             max_created = max_created.max(created);
             continue;
         }
-        if batch.source_device_id == device_id {
+        if !include_own_device_batches && batch.source_device_id == device_id {
             max_created = max_created.max(created);
             continue;
         }
@@ -1632,6 +1634,13 @@ async fn run_sync(app_data_dir: &Path) -> Result<DriveSyncResult, String> {
 }
 
 async fn run_sync_locked(app_data_dir: &Path) -> Result<DriveSyncResult, String> {
+    run_sync_locked_with_restore(app_data_dir, false).await
+}
+
+async fn run_sync_locked_with_restore(
+    app_data_dir: &Path,
+    include_own_device_batches: bool,
+) -> Result<DriveSyncResult, String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
     if !state.enabled {
@@ -1659,7 +1668,7 @@ async fn run_sync_locked(app_data_dir: &Path) -> Result<DriveSyncResult, String>
     drop(conn);
 
     let uploaded = upload_local_history(app_data_dir, &token, &device_id).await?;
-    let (imported, duplicates) = download_remote_history(app_data_dir, &token, &device_id).await?;
+    let (imported, duplicates) = download_remote_history(app_data_dir, &token, &device_id, include_own_device_batches).await?;
 
     let conn = open_sync_db(app_data_dir)?;
     conn.execute(
@@ -1839,7 +1848,7 @@ pub async fn drive_restore_all_history(state: State<'_, AppState>) -> Result<Dri
     conn.execute("UPDATE drive_sync_state SET download_cursor = 0 WHERE id = 1", [])
         .map_err(|e| e.to_string())?;
     drop(conn);
-    let result = run_sync_locked(&state.app_data_dir).await;
+    let result = run_sync_locked_with_restore(&state.app_data_dir, true).await;
     if let Err(err) = &result {
         if let Ok(conn) = open_sync_db(&state.app_data_dir) {
             let _ = set_last_error(&conn, Some(err));
