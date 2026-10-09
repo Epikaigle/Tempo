@@ -135,6 +135,38 @@ interface ListeningEventDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertOriginAliases(aliases: List<ListeningEventOrigin>)
 
+    /** Keyset pagination for provenance backup; an event can have several origins.
+     * Sorting by (row ID, producer ID) avoids skips at page boundaries.
+     */
+    @Query(
+        "SELECT * FROM listening_event_origins WHERE " +
+            "(listeningEventId > :afterId OR " +
+            "(listeningEventId = :afterId AND sourceDeviceId > :afterDevice)) " +
+            "AND listeningEventId <= :maxEventId " +
+            "ORDER BY listeningEventId ASC, sourceDeviceId ASC LIMIT :limit",
+    )
+    suspend fun getOriginPage(
+        afterId: Long,
+        afterDevice: String,
+        maxEventId: Long,
+        limit: Int,
+    ): List<ListeningEventOrigin>
+
+    /** A restored row may have a different auto-generated primary key. Only
+     * recover its aliases when its identity can be matched unambiguously.
+     */
+    @Query(
+        "SELECT id FROM listening_events WHERE track_id = :trackId " +
+            "AND timestamp = :timestamp AND source = :source " +
+            "ORDER BY id ASC LIMIT 2",
+    )
+    suspend fun getBackupRestoredEventIds(
+        trackId: Long,
+        timestamp: Long,
+        source: String,
+    ): List<Long>
+
+
     /**
      * Layer 2: fetch a lightweight view of existing events for one track within a
      * time range, for cross-source temporal reconciliation. Bounded by the
