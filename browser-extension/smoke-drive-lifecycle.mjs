@@ -153,7 +153,25 @@ assert.equal(fixture.stored[stateKey].downloadCreatedCursor, 1_700_000_000_001);
 assert.equal(fixture.stored[stateKey].lastError, null);
 console.log('  ✓ a JSON null batch is consumed and does not block a later valid import');
 reset();
-fixture.stored.tempoDriveDeviceId = 'remote-device';
+// The module caches a stable local device ID. Make the fixture batch belong to
+// that SAME device, rather than pretending the device identity changed mid-run.
+fixture.stored.tempoDriveDeviceId = 'local-device';
+const ownBytes = gzipSync(JSON.stringify({
+  schema_version: 1, batch_id: batchId, source_device_id: 'local-device',
+  source_device_name: 'This browser', source_platform: 'chrome_extension',
+  created_at_utc: 1_700_000_000_000, events: [event],
+}));
+payloads[1] = ownBytes;
+files[1] = {
+  ...files[1],
+  name: `tempo_history_v1_g100_local-device_${batchId}.json.gz`,
+  size: String(ownBytes.length),
+  appProperties: {
+    ...files[1].appProperties,
+    source_device_id: 'local-device',
+    tempo_sha256: sha256(ownBytes),
+  },
+};
 const normalOwn = await drive.syncDriveHistory();
 assert.equal(normalOwn.imported, 0, 'normal sync does not replay our own Drive uploads');
 const restoredOwn = await drive.restoreDriveHistory();
