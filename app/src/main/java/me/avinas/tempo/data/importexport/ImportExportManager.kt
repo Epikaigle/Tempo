@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import androidx.room.withTransaction
 import me.avinas.tempo.BuildConfig
 import me.avinas.tempo.data.local.AppDatabase
+import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.profile.ProfileIdentityManager
 import me.avinas.tempo.utils.ImageUrlHostAllowlist
@@ -902,7 +903,7 @@ class ImportExportManager @Inject constructor(
                     } else if (exact.isEmpty()) {
                         // An alias-free target may have a different timestamp
                         // or source: use a bounded, unambiguous reconciliation.
-                        val window = dao.DRIVE_RECONCILIATION_WINDOW_MS
+                        val window = ListeningEventDao.DRIVE_RECONCILIATION_WINDOW_MS
                         val nearby = dao.getEventsForReconciliation(
                             event.track_id, event.timestamp - window, event.timestamp + window
                         )
