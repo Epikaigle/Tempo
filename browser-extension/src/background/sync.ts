@@ -852,17 +852,32 @@ async function sendWithRetry(url: string, payload: SyncPayload, authToken: strin
       clearTimeout(timeout);
 
       if (response.ok) {
+        // An HTTP 200 is NOT a durable acknowledgment unless the phone
+        // explicitly confirms the batch. A truncated/encrypted/invalid body
+        // must keep every queued play eligible for retry.
+        let data: SyncResponse;
         try {
           const isEncrypted = response.headers.get('X-Tempo-Encrypted') === '1';
           const responseText = await response.text();
           const decryptedText = isEncrypted
             ? await decryptBody(responseText, authToken)
             : responseText;
-          const data: SyncResponse = JSON.parse(decryptedText);
-          return data;
-        } catch {
-          return { ok: true };
+          data = JSON.parse(decryptedText) as SyncResponse;
+        } catch (error) {
+          throw new SyncError(
+            'Phone returned an unreadable LAN acknowledgment; keeping plays queued',
+            'network',
+            response.status,
+          );
         }
+        if (data?.ok !== true) {
+          throw new SyncError(
+            'Phone did not confirm the LAN play batch; keeping plays queued',
+            'rejected',
+            response.status,
+          );
+        }
+        return data;
       }
 
       const body = await response.text();
