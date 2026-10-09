@@ -133,4 +133,39 @@ assert.deepEqual(ownInputs, [
   { id: 17, title: 'Second local', artist: 'Band', timestampUtc: baseTime + 25_000 },
 ], 'restore recovers original locally-owned IDs, not imported or already-aliased rows');
 
-console.log('\n11 IndexedDB durability, replay and own-device restoration scenarios passed');
+// A cloud-upload acknowledgement must set the stable event ID on the exact
+// IndexedDB rows in one write transaction, without scanning the entire history.
+database.transaction = () => {
+  let pendingReads = 0;
+  const tx = {};
+  const store = {
+    get(id) {
+      pendingReads++;
+      const request = { result: localRecords.find(play => play.id === id) };
+      queueMicrotask(() => {
+        request.onsuccess?.();
+        if (--pendingReads === 0) queueMicrotask(() => tx.oncomplete?.());
+      });
+      return request;
+    },
+    put(play) {
+      const index = localRecords.findIndex(row => row.id === play.id);
+      if (index >= 0) localRecords[index] = play;
+    },
+  };
+  tx.objectStore = () => store;
+  return tx;
+};
+await storage.markDriveUploaded([
+  { id: 14, originEventId: 'owned-14' },
+  { id: 15, originEventId: 'should-not-overwrite-imported' },
+  { id: 17, originEventId: 'owned-17' },
+]);
+assert.equal(localRecords[0].originEventId, 'owned-14');
+assert.equal(localRecords[1].originEventId, 'external',
+  'imported plays must never be reclassified as locally-owned uploads');
+assert.equal(localRecords[3].originEventId, 'owned-17');
+assert.ok(localRecords[0].driveUploadedAt > 0 && localRecords[3].driveUploadedAt > 0,
+  'verified cloud upload sets its acknowledgement together with stable identity');
+
+console.log('\n12 IndexedDB durability, replay and own-device restoration scenarios passed');
