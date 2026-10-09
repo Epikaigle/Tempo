@@ -187,6 +187,7 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
             .map(|(s, origin)| SyncPlay {
                 origin_device_id: origin.as_ref().map(|value| value.0.clone()),
                 origin_event_id: origin.as_ref().map(|value| value.1.clone()),
+                origin_source: origin.as_ref().map(|_| format!("desktop:{}", s.source_app)),
                 title: s.title.clone(),
                 artist: s.artist.clone(),
                 album: s.album.clone(),
