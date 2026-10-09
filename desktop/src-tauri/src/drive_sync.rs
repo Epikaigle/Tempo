@@ -173,6 +173,9 @@ struct DriveListResponse {
 #[derive(Debug)]
 struct LocalPlay {
     id: i64,
+    /// Preserve the first published canonical identity even if title/artist
+    /// metadata is corrected before a cloud-delete retry or account change.
+    origin_event_id: Option<String>,
     title: String,
     artist: String,
     album: String,
@@ -979,6 +982,9 @@ fn sha256_hex(value: &str) -> String {
 }
 
 fn event_id(device_id: &str, play: &LocalPlay) -> String {
+    if let Some(origin) = play.origin_event_id.as_deref().filter(|value| valid_sha256(value)) {
+        return origin.to_string();
+    }
     sha256_hex(&format!(
         "tempo-history-v1|{}|{}|{}|{}|{}",
         device_id,
@@ -1082,7 +1088,7 @@ fn pending_local_plays(conn: &Connection) -> Result<Vec<LocalPlay>, String> {
             "SELECT s.id, s.title, s.artist, s.album, s.duration_ms, s.timestamp_utc,
                     s.source_app, s.listened_ms, s.skipped, s.replay_count, s.is_muted,
                     s.completion_percentage, s.pause_count, s.seek_count, s.session_id,
-                    s.site, s.content_type, s.volume_level
+                    s.site, s.content_type, s.volume_level, d.origin_event_id
              FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE COALESCE(d.drive_imported, 0) = 0 AND d.drive_uploaded_at IS NULL
@@ -1093,6 +1099,7 @@ fn pending_local_plays(conn: &Connection) -> Result<Vec<LocalPlay>, String> {
         .query_map([MAX_LOCAL_SCAN as i64], |row| {
             Ok(LocalPlay {
                 id: row.get(0)?,
+                origin_event_id: row.get(18)?,
                 title: row.get(1)?,
                 artist: row.get(2)?,
                 album: row.get(3)?,
@@ -2376,9 +2383,37 @@ mod tests {
     }
 
     #[test]
+    fn previously_uploaded_origin_is_stable_after_track_metadata_changes() {
+        let (directory, conn) = history_storage_fixture();
+        let id = conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('Original', 'Artist', 1700000000000)", [],
+        ).unwrap();
+        assert_eq!(id, 1);
+        let scrobble_id = conn.last_insert_rowid();
+        let first_identity = lan_play_origin("test-device", scrobble_id, 1_700_000_000_000,
+            "Original", "Artist");
+        conn.execute(
+            "INSERT INTO drive_event_state
+             (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
+             VALUES (?1, ?2, 'test-device', 0, NULL)",
+            params![scrobble_id, first_identity],
+        ).unwrap();
+        conn.execute("UPDATE scrobbles SET title = 'Corrected title' WHERE id = ?1",
+            [scrobble_id]).unwrap();
+        let pending = pending_local_plays(&conn).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(event_id("test-device", &pending[0]), first_identity,
+            "a metadata correction must not change a previously uploaded event ID");
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn stable_event_and_batch_ids_match_protocol_shape() {
         let play = LocalPlay {
             id: 42,
+            origin_event_id: None,
             title: " Song ".to_string(),
             artist: " Artist ".to_string(),
             album: String::new(),
@@ -2434,6 +2469,7 @@ mod tests {
     fn protocol_volume_uses_android_percent_scale() {
         let mut play = LocalPlay {
             id: 1,
+            origin_event_id: None,
             title: "Song".to_string(),
             artist: "Artist".to_string(),
             album: String::new(),
