@@ -54,7 +54,7 @@ You have complete control over all data handled by the extension:
 * **Disable Tracking:** You can toggle tracking off at any time from the extension popup.
 * **Queue Management:** You can view your pending playback queue in the popup, delete individual plays, or clear the entire queue at once.
 * **Remove Pairing:** You can clear the paired device credentials at any time, which deletes the local IP, port, and authentication token and revokes network permissions.
-* **Automatic Cleanup:** The extension automatically deletes successfully synced plays and limits local queue size to prevent resource bloat.
+* **Historical Retention:** Routine housekeeping does not automatically delete listening plays after seven days or after 5,000 rows. IndexedDB can still be cleared by the browser, browser-profile removal or storage eviction. Keep independent backups; optional Drive history sync is a transport, not an unconditional lifetime guarantee.
 * **Disconnect Google:** You can disconnect Google Drive without deleting your local listening history.
 * **Delete Cloud History:** The Drive panel can delete Tempo cross-device history batches from the connected Google account and publish a shared off marker. Local browser/Android history remains on each device.
 
