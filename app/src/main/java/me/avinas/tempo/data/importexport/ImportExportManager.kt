@@ -882,24 +882,37 @@ class ImportExportManager @Inject constructor(
             val claimsByRestoredId = mutableMapOf<Long, MutableMap<String, String>>()
             for ((event, exportedAliases) in chunk) {
                 if (exportedAliases.isEmpty()) continue
-                val exact = dao.getBackupRestoredEventIds(
-                    event.track_id, event.timestamp, event.source
-                )
-                val targetId = if (exact.size == 1) {
-                    exact.single()
-                } else if (exact.isEmpty()) {
-                    // If another source had already recorded this play, allow
-                    // an unambiguous five-second match. Never guess between
-                    // multiple rapid replays or associate an alias arbitrarily.
-                    val nearby = dao.getEventsForReconciliation(
-                        event.track_id, event.timestamp - 5_000L, event.timestamp + 5_000L
-                    )
-                    check(nearby.size == 1) {
-                        "Cannot safely restore producer aliases for event at ${event.timestamp}: ambiguous playback"
-                    }
-                    nearby.single().id
+                // Prefer immutable producer IDs. A previously-restored event
+                // may be represented by a different source or timestamp after
+                // another device reconciled it. Only fall back to time when no
+                // saved origin identifies the playback.
+                val byOrigin = exportedAliases.map { it.originEventId }.distinct()
+                    .chunked(900).flatMap { dao.getEventIdsForOriginAliases(it) }.distinct()
+                check(byOrigin.size <= 1) {
+                    "Cannot safely restore aliases: producer IDs point to different listening events"
+                }
+                val targetId = if (byOrigin.size == 1) {
+                    byOrigin.single()
                 } else {
-                    error("Cannot safely restore aliases: duplicate event identity")
+                    val exact = dao.getBackupRestoredEventIds(
+                        event.track_id, event.timestamp, event.source
+                    )
+                    if (exact.size == 1) {
+                        exact.single()
+                    } else if (exact.isEmpty()) {
+                        // An alias-free target may have a different timestamp
+                        // or source: use a bounded, unambiguous reconciliation.
+                        val window = dao.DRIVE_RECONCILIATION_WINDOW_MS
+                        val nearby = dao.getEventsForReconciliation(
+                            event.track_id, event.timestamp - window, event.timestamp + window
+                        )
+                        check(nearby.size == 1) {
+                            "Cannot safely restore producer aliases for event at ${event.timestamp}: ambiguous playback"
+                        }
+                        nearby.single().id
+                    } else {
+                        error("Cannot safely restore aliases: duplicate event identity")
+                    }
                 }
 
                 // Include aliases already staged for this same target in the
