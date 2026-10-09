@@ -438,43 +438,59 @@ export async function hasRecentPlay(
   artist: string,
   timestampUtc: number,
   incomingOriginDeviceId?: string,
+  incomingOriginEventId?: string,
 ): Promise<boolean> {
   const db = await openDb();
+  const rememberRemoteOrigin = !!incomingOriginDeviceId && !!incomingOriginEventId;
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readonly');
+    const tx = db.transaction(PLAYS_STORE, rememberRemoteOrigin ? 'readwrite' : 'readonly');
     const store = tx.objectStore(PLAYS_STORE);
     const index = store.index('timestampUtc');
     const windowMs = recentPlayWindowMs(incomingOriginDeviceId);
-    const windowStart = timestampUtc - windowMs;
-    const windowEnd = timestampUtc + windowMs;
-    const range = IDBKeyRange.bound(windowStart, windowEnd);
+    const range = IDBKeyRange.bound(timestampUtc - windowMs, timestampUtc + windowMs);
     const request = index.openCursor(range);
+    let matched = false;
 
     request.onsuccess = () => {
       const cursor = request.result;
       if (!cursor) {
-        resolve(false);
+        if (!matched) resolve(false);
         return;
       }
       const play = cursor.value as Play;
-      const sameOriginDevice = !!incomingOriginDeviceId &&
-        play.originDeviceId === incomingOriginDeviceId;
-      if (!sameOriginDevice &&
-        play.title.trim().toLowerCase() === title.trim().toLowerCase() &&
-        play.artist.trim().toLowerCase() === artist.trim().toLowerCase()
-      ) {
-        // A cursor does not fire a second success event without continue().
-        // Resolve immediately on a match; otherwise uploads/imports can hang.
-        resolve(true);
+      const aliases = play.reconciledOrigins ?? [];
+      const representedByOrigin =
+        (!!incomingOriginDeviceId && play.originDeviceId === incomingOriginDeviceId) ||
+        aliases.some(alias => alias.deviceId === incomingOriginDeviceId);
+      if (!representedByOrigin &&
+          play.title.trim().toLowerCase() === title.trim().toLowerCase() &&
+          play.artist.trim().toLowerCase() === artist.trim().toLowerCase()) {
+        matched = true;
+        if (rememberRemoteOrigin) {
+          // Persist the exact provenance in the same transaction as the match.
+          // Otherwise a second replay from this device would match this play
+          // again, and the first event's identity would be lost on restart.
+          cursor.update({
+            ...play,
+            reconciledOrigins: [...aliases, {
+              deviceId: incomingOriginDeviceId!,
+              eventId: incomingOriginEventId!,
+            }],
+          });
+          // Do not acknowledge an alias until IndexedDB commits it.
+        } else {
+          resolve(true);
+        }
         return;
       }
       cursor.continue();
     };
+    tx.oncomplete = () => { if (matched) resolve(true); };
     request.onerror = () => reject(request.error);
+    tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error ?? new Error('Recent-play lookup transaction aborted'));
   });
 }
-
 /**
  * Routine maintenance preserves all listening events.
  *
