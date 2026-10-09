@@ -401,7 +401,10 @@ async function uploadLocalPlays(accessToken: string, deviceId: string): Promise<
     const fileName = `${FILE_PREFIX}g${generation}_${deviceId}_${batchId}.json.gz`;
     await uploadBatch(accessToken, fileName, gzip, deviceId, generation);
 
-    await storage.markDriveUploaded(chunk.map(p => p.id!).filter(Number.isFinite));
+    await storage.markDriveUploaded(chunk.map((play, index) => ({
+      id: play.id!,
+      originEventId: events[index].event_id,
+    })));
     uploaded += chunk.length;
   }
   return uploaded;
