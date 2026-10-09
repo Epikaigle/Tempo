@@ -862,38 +862,107 @@ class ImportExportManager @Inject constructor(
      */
     private suspend fun replayStagedEvents(
         stagedFile: File,
+        stagedOriginsFile: File,
         trackIdMap: Map<Long, Long>
     ): Int {
         if (!stagedFile.exists() || stagedFile.length() == 0L) return 0
 
+        val dao = database.listeningEventDao()
         val eventAdapter = moshi.adapter(ListeningEvent::class.java)
+        val originAdapter = moshi.adapter(ListeningEventOrigin::class.java)
         var inserted = 0
-        var chunk = ArrayList<ListeningEvent>(EVENT_IMPORT_CHUNK)
+        var chunk = ArrayList<Pair<ListeningEvent, List<ListeningEventOrigin>>>(EVENT_IMPORT_CHUNK)
 
+        // Called inside the enclosing Room transaction. Restore aliases after
+        // resolving each event's NEW row ID; never reuse exported numeric IDs.
         suspend fun flush() {
             if (chunk.isEmpty()) return
-            val result = database.listeningEventDao().insertAllBatchedWithDedup(chunk)
-            inserted += result.inserted
+            inserted += dao.insertAllBatchedWithDedup(chunk.map { it.first }).inserted
+            val newAliases = mutableListOf<ListeningEventOrigin>()
+            for ((event, exportedAliases) in chunk) {
+                if (exportedAliases.isEmpty()) continue
+                val exact = dao.getBackupRestoredEventIds(
+                    event.track_id, event.timestamp, event.source
+                )
+                val targetId = if (exact.size == 1) {
+                    exact.single()
+                } else if (exact.isEmpty()) {
+                    // If another source had already recorded this play, allow
+                    // an unambiguous five-second match. Never guess between
+                    // multiple rapid replays or associate an alias arbitrarily.
+                    val nearby = dao.getEventsForReconciliation(
+                        event.track_id, event.timestamp - 5_000L, event.timestamp + 5_000L
+                    )
+                    check(nearby.size == 1) {
+                        "Cannot safely restore producer aliases for event at ${event.timestamp}: ambiguous playback"
+                    }
+                    nearby.single().id
+                } else {
+                    error("Cannot safely restore aliases: duplicate event identity")
+                }
+
+                val claimed = dao.getOriginClaimsForEvents(listOf(targetId))
+                    .associate { it.sourceDeviceId to it.originEventId }
+                    .toMutableMap()
+                for (origin in exportedAliases) {
+                    val existing = claimed[origin.sourceDeviceId]
+                    if (existing != null) {
+                        check(existing == origin.originEventId) {
+                            "Two different origins claim the same producer and playback"
+                        }
+                        continue
+                    }
+                    check(origin.originEventId.matches(Regex("^[0-9a-f]{64}$"))) {
+                        "Backup contains an invalid producer event ID"
+                    }
+                    newAliases.add(origin.copy(listeningEventId = targetId))
+                    claimed[origin.sourceDeviceId] = origin.originEventId
+                }
+            }
+            if (newAliases.isNotEmpty()) dao.insertOriginAliases(newAliases)
             chunk = ArrayList(EVENT_IMPORT_CHUNK)
         }
 
-        stagedFile.bufferedReader().useLines { lines ->
-            for (line in lines) {
-                if (line.isBlank()) continue
-                val event = try {
-                    eventAdapter.fromJson(line)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Skipping malformed staged listening event", e)
-                    null
-                } ?: continue
-                val newTrackId = trackIdMap[event.track_id] ?: continue
-                chunk.add(event.copy(id = 0, track_id = newTrackId))
-                if (chunk.size >= EVENT_IMPORT_CHUNK) {
-                    flush()
+        val originReader = stagedOriginsFile.takeIf { it.length() > 0L }?.bufferedReader()
+        try {
+            val originLines = originReader?.lineSequence()?.iterator()
+            fun readNextOrigin(): ListeningEventOrigin? {
+                if (originLines?.hasNext() != true) return null
+                return requireNotNull(originAdapter.fromJson(originLines.next())) {
+                    "Unexpected null origin entry in Tempo backup"
                 }
             }
+            var pendingOrigin = readNextOrigin()
+            stagedFile.bufferedReader().useLines { lines ->
+                for (line in lines) {
+                    if (line.isBlank()) continue
+                    val event = try {
+                        eventAdapter.fromJson(line)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Skipping malformed staged listening event", e)
+                        null
+                    } ?: continue
+                    // Both arrays are written in listening-event ID order.
+                    // Consume sidecar origins together with their original row.
+                    while (pendingOrigin != null &&
+                        requireNotNull(pendingOrigin).listeningEventId < event.id
+                    ) {
+                        pendingOrigin = readNextOrigin()
+                    }
+                    val aliases = mutableListOf<ListeningEventOrigin>()
+                    while (pendingOrigin?.listeningEventId == event.id) {
+                        aliases.add(requireNotNull(pendingOrigin))
+                        pendingOrigin = readNextOrigin()
+                    }
+                    val newTrackId = trackIdMap[event.track_id] ?: continue
+                    chunk.add(event.copy(id = 0, track_id = newTrackId) to aliases)
+                    if (chunk.size >= EVENT_IMPORT_CHUNK) flush()
+                }
+            }
+            flush()
+        } finally {
+            originReader?.close()
         }
-        flush()
         return inserted
     }
 
