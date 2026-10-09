@@ -24,6 +24,11 @@ interface ListeningEventDao {
         // using the tight [DUPLICATE_TOLERANCE_MS] so legitimate back-to-back plays
         // are never merged.
         const val RECONCILIATION_WINDOW_MS = 60_000L
+        // Drive clients record comparable playback completion timestamps.
+        // Re-using a 60s fallback for Drive imports silently removes genuine
+        // back-to-back plays (e.g. two 25s tracks) across separate batches.
+        // Keep the broader window for legacy imports with different time bases.
+        const val DRIVE_RECONCILIATION_WINDOW_MS = 10_000L
     }
 
     @Query("SELECT * FROM listening_events WHERE id = :id")
@@ -315,7 +320,12 @@ interface ListeningEventDao {
             val half = maxOf(slot.playDuration, incoming.playDuration) / 2L
             if (half < RECONCILIATION_WINDOW_MS) RECONCILIATION_WINDOW_MS else half
         }
-        return kotlin.math.abs(slot.timestamp - incoming.timestamp) <= window
+        val effectiveWindow = if (slotDriveDevice != null || incomingDriveDevice != null) {
+            minOf(window, DRIVE_RECONCILIATION_WINDOW_MS)
+        } else {
+            window
+        }
+        return kotlin.math.abs(slot.timestamp - incoming.timestamp) <= effectiveWindow
     }
 
     /**
