@@ -142,12 +142,6 @@ interface ListeningEventDao {
     )
     suspend fun getOriginClaimsByOriginIds(originIds: List<String>): List<OriginClaim>
 
-    /** Locate the actual playback through any previously restored producer identity.
-     * Unlike timestamps and source labels, these IDs survive cross-device drift.
-     */
-    @Query("SELECT DISTINCT listeningEventId FROM listening_event_origins WHERE originEventId IN (:originIds)")
-    suspend fun getEventIdsForOriginAliases(originIds: List<String>): List<Long>
-
     /** Keyset pagination for provenance backup; an event can have several origins.
      * Sorting by (row ID, producer ID) avoids skips at page boundaries.
      */
