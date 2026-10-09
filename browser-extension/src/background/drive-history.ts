@@ -424,6 +424,18 @@ async function downloadRemotePlays(
   // their first Drive upload, so sample-based dedup can miss an older imported
   // event. Scan the whole local store once per Drive download pass instead.
   const seenOriginIds = await storage.getDriveOriginEventIds();
+  if (includeOwnDeviceBatches) {
+    // Locally recorded plays usually do NOT persist their own hashed origin ID.
+    // Reconstruct those IDs before a full restore so reading this device's
+    // cloud batches cannot import a second copy of every surviving local play.
+    // Do this only for explicit recovery, not for each periodic background sync.
+    const ownPlays = await storage.getOwnPlayIdentityInputs();
+    for (let offset = 0; offset < ownPlays.length; offset += 256) {
+      const chunk = ownPlays.slice(offset, offset + 256);
+      const origins = await Promise.all(chunk.map(play => eventId(deviceId, play)));
+      for (const originId of origins) seenOriginIds.add(originId);
+    }
+  }
   let imported = 0;
   let duplicates = 0;
   let maxCreated = state.downloadCreatedCursor;
@@ -530,13 +542,17 @@ async function downloadRemotePlays(
       // The wide temporal fallback is only for two different capture origins
       // observing the same physical play. Two distinct event IDs from the same
       // originating device are legitimate replays and must both survive.
-      const temporalDupe = await storage.hasRecentPlay(
-        event.title,
-        event.artist,
-        event.timestamp_utc,
-        batch.source_device_id,
-        event.event_id,
-      );
+      // On own-device recovery, an exact event ID is the only reliable match:
+      // two independent rapid replays from this producer must not disappear
+      // merely because another producer reported a similar track nearby.
+      const temporalDupe = batch.source_device_id !== deviceId &&
+        await storage.hasRecentPlay(
+          event.title,
+          event.artist,
+          event.timestamp_utc,
+          batch.source_device_id,
+          event.event_id,
+        );
       if (temporalDupe) {
         seenOriginIds.add(event.event_id);
         duplicates++;
@@ -1067,7 +1083,7 @@ export async function getDriveLanOrigin(play: Play): Promise<{ origin_device_id:
   return { origin_device_id, origin_event_id };
 }
 
-async function eventId(deviceId: string, play: Play): Promise<string> {
+async function eventId(deviceId: string, play: Pick<Play, 'id' | 'timestampUtc' | 'title' | 'artist'>): Promise<string> {
   const canonical = [
     'tempo-history-v1',
     deviceId,
