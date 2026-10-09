@@ -266,7 +266,7 @@ class DriveHistorySyncManager @Inject constructor(
                     sourceDeviceId = deviceId,
                     sourceDeviceName = deviceName,
                     sourcePlatform = "android",
-                    createdAtUtc = System.currentTimeMillis(),
+                    createdAtUtc = events.maxOf { it.timestampUtc },
                     events = events
                 )
                 val bytes = DriveHistoryProtocol.encodeCompressed(batch)
