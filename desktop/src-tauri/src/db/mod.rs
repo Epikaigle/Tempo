@@ -238,7 +238,10 @@ impl Database {
     }
 
     pub fn has_recent_play(&self, title: &str, artist: &str, timestamp: i64) -> Result<bool, rusqlite::Error> {
-        let window = 60_000; // ±60 seconds
+        // Only de-duplicate repeated LOCAL detector callbacks, not two real
+        // short-track replays. Cross-device Drive imports reconcile separately
+        // with their own 60s temporal window and origin-event IDs.
+        let window = 5_000; // ±5 seconds
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM scrobbles WHERE title = ?1 AND artist = ?2
              AND timestamp_utc BETWEEN ?3 AND ?4",
@@ -818,5 +821,30 @@ impl Database {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         self.conn.execute(&sql, param_refs.as_slice())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod local_dedup_tests {
+    use super::*;
+
+    #[test]
+    fn detector_retries_are_ignored_but_distinct_short_track_replays_survive() {
+        let db = Database {
+            conn: Connection::open_in_memory().expect("in-memory db"),
+            db_path: std::path::PathBuf::new(),
+        };
+        db.initialize_tables().expect("db schema");
+        db.conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc) VALUES (?1, ?2, ?3)",
+            params!["Song", "Artist", 1_700_000_000_000_i64],
+        ).expect("first play");
+
+        assert!(db.has_recent_play("Song", "Artist", 1_700_000_004_000).unwrap(),
+            "the same detector callback within 5s is a duplicate");
+        assert!(!db.has_recent_play("Song", "Artist", 1_700_000_025_000).unwrap(),
+            "a genuine replay after 25s must be recorded");
+        assert!(!db.has_recent_play("Different Song", "Artist", 1_700_000_001_000).unwrap(),
+            "different songs are not duplicates");
     }
 }
