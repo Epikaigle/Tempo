@@ -1818,6 +1818,28 @@ pub async fn drive_sync_now(state: State<'_, AppState>) -> Result<DriveSyncResul
     result
 }
 
+/// Explicit full-history recovery. Normal synchronization keeps a cheap 24-hour
+/// overlap; this command deliberately re-enumerates every historical Drive batch.
+/// It is safe to retry: origin IDs and alias records make imports idempotent.
+#[tauri::command]
+pub async fn drive_restore_all_history(state: State<'_, AppState>) -> Result<DriveSyncResult, String> {
+    let _guard = SYNC_LOCK.lock().await;
+    let conn = open_sync_db(&state.app_data_dir)?;
+    if !load_state(&conn)?.enabled {
+        return Err("Connect Google Drive before restoring history".to_string());
+    }
+    conn.execute("UPDATE drive_sync_state SET download_cursor = 0 WHERE id = 1", [])
+        .map_err(|e| e.to_string())?;
+    drop(conn);
+    let result = run_sync_locked(&state.app_data_dir).await;
+    if let Err(err) = &result {
+        if let Ok(conn) = open_sync_db(&state.app_data_dir) {
+            let _ = set_last_error(&conn, Some(err));
+        }
+    }
+    result
+}
+
 #[tauri::command]
 pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<usize, String> {
     let _guard = SYNC_LOCK.lock().await;
