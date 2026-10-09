@@ -138,6 +138,21 @@ A retry of the same producer/event-ID sequence uses an event-derived, stable `cr
 
 Normal incremental receivers scan files by Drive creation time with a 24-hour overlap. A user-requested **Restore full history** resets only the receive cursor and enumerates all available batches, without clearing local listening history. Local pruning must never be mistaken for a confirmed durable backup. Google appDataFolder contents remain removable by the user/provider, so multi-year disaster recovery requires an independent export/backup as well.
 
+## Optional Android relay of LAN-only plays
+
+When Desktop or a browser extension sends plays over the paired local network, it can
+include its canonical Drive event ID and producer ID even if Google Drive is disabled.
+Android retains that origin identity as a local `lan:<device_id>:<music_source>` event.
+Unlike a history batch already downloaded from Drive, a LAN-only event may have
+**no cloud copy**. If Android's own Drive sync is enabled, it may therefore upload
+an Android-produced batch that preserves the original sender's `event_id` and
+unwrapped music source. A later upload by the original device uses the same event
+ID, so consumers treat these two transport copies as one listen. The batch
+`source_device_id` identifies the **uploader** (Android for the relay), while
+`event_id` remains the immutable identity of the original playback producer.
+Never replace this event ID with a new Android row identity or re-export normal
+Drive-downloaded events, as either would create unwanted duplicate histories.
+
 ## Import and deduplication
 
 Readers must treat `event_id` as the primary idempotency key. A successfully imported remote event records its origin event/device identity locally and must not be re-uploaded as a newly-owned event.
