@@ -51,6 +51,19 @@ class DriveHistorySyncManager @Inject constructor(
          * payloads with an intact producer ID and event fingerprint qualify.
          * Keep the original ID on Drive so relaying cannot double-count a play.
          */
+        internal fun lanBatchProducer(source: String): BatchProducer? {
+            val parts = source.split(':', limit = 3)
+            if (parts.size != 3 || parts[0] != "lan" ||
+                !DriveHistoryProtocol.isValidDeviceId(parts[1]) || parts[2].isBlank()
+            ) return null
+            val platform = when {
+                parts[2].startsWith("desktop:") -> "desktop"
+                parts[2].startsWith("browser:") -> "browser"
+                else -> "android"
+            }
+            return BatchProducer(parts[1], platform)
+        }
+
         internal fun lanRelayIdentity(source: String, fingerprint: String?): Pair<String, String>? {
             val parts = source.split(':', limit = 3)
             if (parts.size != 3 || parts[0] != "lan" ||
@@ -263,16 +276,8 @@ class DriveHistorySyncManager @Inject constructor(
         if (!event.source.startsWith("lan:")) {
             return BatchProducer(deviceId, "android")
         }
-        val parts = event.source.split(':', limit = 3)
-        check(parts.size == 3 && DriveHistoryProtocol.isValidDeviceId(parts[1])) {
-            "Cannot recover producer identity for relayed LAN listening event ${event.id}"
-        }
-        val platform = when {
-            parts[2].startsWith("desktop:") -> "desktop"
-            parts[2].startsWith("browser:") -> "browser"
-            else -> "android"
-        }
-        return BatchProducer(parts[1], platform)
+        return lanBatchProducer(event.source)
+            ?: error("Cannot recover producer identity for relayed LAN listening event ${event.id}")
     }
 
     /**
