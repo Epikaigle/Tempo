@@ -38,6 +38,8 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | Cloud delete with stale client | Disconnect one client, delete cloud history on another, re-enable a third, reconnect stale client | Stale client does not resurrect history or delete the new generation |
 | Account switching | Connect account A, switch to B on one client | No A history uploaded to B; explicit authorization needed |
 | Auth expiration | Expire/revoke access tokens; sync again | Safe refresh/reconnect, no silent account switch |
+| Firefox OAuth PKCE | Register signed Firefox redirect, connect with real Google account, let token expire, reconnect and simulate forged callback | Auth-code + S256 PKCE works without a client secret; state and callback URI are validated and implicit tokens are never accepted |
+| Own-browser restore without duplicates | Upload browser plays, keep some local records, then restore all same-device batches | Exact original event IDs prevent creating second copies of surviving plays |
 | Consent rejected | Decline Google sign-in and Firefox optional permission | Local/LAN tracking continues; no Drive requests |
 | Corrupt batch | Insert truncated gzip, invalid SHA, malformed Unicode, enormous payload in test account | Valid batches continue safely; corrupt data never committed |
 | Same-name legacy batch | Upload old same-name payload and retry with corrected deterministic payload | Last valid backup never removed before replacement is verified |
