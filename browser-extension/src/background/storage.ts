@@ -214,6 +214,33 @@ export async function getAllPlays(limit = 100): Promise<Play[]> {
   });
 }
 
+/** Collect only persistent origin identities, not complete playback rows.
+ * A ten-year archive may contain hundreds of thousands of plays; building an
+ * array of every full Play object for each periodic Drive sync is wasteful.
+ */
+export async function getDriveOriginEventIds(): Promise<Set<string>> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readonly');
+    const ids = new Set<string>();
+    const request = tx.objectStore(PLAYS_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) {
+        resolve(ids);
+        return;
+      }
+      const play = cursor.value as Play;
+      if (play.originEventId) ids.add(play.originEventId);
+      for (const alias of play.reconciledOrigins ?? []) ids.add(alias.eventId);
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Origin identity scan aborted'));
+  });
+}
+
 /**
  * Return locally-owned plays that still need their first Drive upload.
  * Scan oldest-first across the whole store: when Drive has been unavailable
