@@ -453,27 +453,29 @@ export async function hasRecentPlay(
     const windowEnd = timestampUtc + windowMs;
     const range = IDBKeyRange.bound(windowStart, windowEnd);
     const request = index.openCursor(range);
-    let found = false;
 
     request.onsuccess = () => {
       const cursor = request.result;
-      if (cursor && !found) {
-        const play = cursor.value as Play;
-        const sameOriginDevice = !!incomingOriginDeviceId &&
-          play.originDeviceId === incomingOriginDeviceId;
-        if (!sameOriginDevice &&
-          play.title.trim().toLowerCase() === title.trim().toLowerCase() &&
-          play.artist.trim().toLowerCase() === artist.trim().toLowerCase()
-        ) {
-          found = true;
-        } else {
-          cursor.continue();
-        }
-      } else {
-        resolve(found);
+      if (!cursor) {
+        resolve(false);
+        return;
       }
+      const play = cursor.value as Play;
+      const sameOriginDevice = !!incomingOriginDeviceId &&
+        play.originDeviceId === incomingOriginDeviceId;
+      if (!sameOriginDevice &&
+        play.title.trim().toLowerCase() === title.trim().toLowerCase() &&
+        play.artist.trim().toLowerCase() === artist.trim().toLowerCase()
+      ) {
+        // A cursor does not fire a second success event without continue().
+        // Resolve immediately on a match; otherwise uploads/imports can hang.
+        resolve(true);
+        return;
+      }
+      cursor.continue();
     };
     request.onerror = () => reject(request.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Recent-play lookup transaction aborted'));
   });
 }
 
