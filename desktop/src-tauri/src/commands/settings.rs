@@ -93,6 +93,9 @@ pub async fn update_settings(
         Some("sync") => {
             drive_sync::drive_sync_now(state).await?;
         }
+        Some("restore") => {
+            drive_sync::drive_restore_all_history(state).await?;
+        }
         Some("disconnect") => {
             drive_sync::drive_disconnect(state).await?;
         }
