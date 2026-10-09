@@ -543,7 +543,10 @@ class DesktopSatelliteServer @Inject constructor(
                     entry.optString("artist").length > MAX_FIELD_LENGTH ||
                     entry.optString("album").length > MAX_FIELD_LENGTH ||
                     entry.optString("source_app").length > MAX_FIELD_LENGTH ||
-                    entry.optString("device_name").length > MAX_FIELD_LENGTH) {
+                    entry.optString("device_name").length > MAX_FIELD_LENGTH ||
+                    entry.optString("origin_device_id").length > 200 ||
+                    entry.optString("origin_event_id").length > 64 ||
+                    entry.optString("origin_source").length > MAX_FIELD_LENGTH) {
                     return errorResponse(Response.Status.BAD_REQUEST, "field_too_long")
                 }
             }
