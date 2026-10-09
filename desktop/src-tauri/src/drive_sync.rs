@@ -998,9 +998,27 @@ fn event_id(device_id: &str, play: &LocalPlay) -> String {
 /// Stable provenance shared by the LAN and Google Drive transports.
  /// A paired Android phone can use this exact origin to avoid re-uploading
  /// a Desktop event under a new Android-owned identity.
-pub(crate) fn lan_device_id(app_data_dir: &Path) -> Result<String, String> {
+/// Fetch previously published IDs alongside the producer ID in one DB read,
+/// so LAN and Drive agree even after a local title/artist correction.
+pub(crate) fn lan_origin_metadata(
+    app_data_dir: &Path,
+    local_ids: &[i64],
+) -> Result<(String, HashMap<i64, String>), String> {
     let conn = open_sync_db(app_data_dir)?;
-    Ok(load_state(&conn)?.device_id)
+    let device_id = load_state(&conn)?.device_id;
+    let mut known = HashMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT origin_event_id FROM drive_event_state
+         WHERE scrobble_id = ?1 AND drive_imported = 0",
+    ).map_err(|e| e.to_string())?;
+    for id in local_ids {
+        let origin: Option<String> = stmt.query_row([id], |row| row.get(0))
+            .optional().map_err(|e| e.to_string())?;
+        if let Some(origin) = origin.filter(|value| valid_sha256(value)) {
+            known.insert(*id, origin);
+        }
+    }
+    Ok((device_id, known))
 }
 
 pub(crate) fn lan_play_origin(
@@ -2374,7 +2392,8 @@ mod tests {
         let (dir, conn) = history_storage_fixture();
         let expected_device = load_state(&conn).unwrap().device_id;
         drop(conn);
-        let actual_device = lan_device_id(&dir).unwrap();
+        let (actual_device, known) = lan_origin_metadata(&dir, &[]).unwrap();
+        assert!(known.is_empty());
         assert_eq!(actual_device, expected_device);
         assert_eq!(
             lan_play_origin("device-1", 42, 1_700_000_000_000, " Song ", " Artist "),
@@ -2401,6 +2420,9 @@ mod tests {
         ).unwrap();
         conn.execute("UPDATE scrobbles SET title = 'Corrected title' WHERE id = ?1",
             [scrobble_id]).unwrap();
+        let (_, known) = lan_origin_metadata(&directory, &[scrobble_id]).unwrap();
+        assert_eq!(known.get(&scrobble_id), Some(&first_identity),
+            "LAN must reuse the original Drive identity after metadata correction");
         let pending = pending_local_plays(&conn).unwrap();
         assert_eq!(pending.len(), 1);
         assert_eq!(event_id("test-device", &pending[0]), first_identity,
