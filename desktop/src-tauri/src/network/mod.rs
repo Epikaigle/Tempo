@@ -198,15 +198,21 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "Desktop".to_string());
 
-    // Access the SQLite-backed identity once per LAN batch, not once per song.
-    // This remains local-only and does not depend on Google sign-in.
-    let drive_device_id = crate::commands::drive_sync::lan_device_id(&state.app_data_dir).ok();
+    // The local device ID is independent of Google login. Read any previously
+    // published event IDs in the same DB pass; otherwise metadata edits could
+    // make the LAN retry advertise a different origin than the Drive upload.
+    let local_ids: Vec<i64> = plays.iter().filter_map(|play| play.id).collect();
+    let drive_identity = crate::commands::drive_sync::lan_origin_metadata(
+        &state.app_data_dir, &local_ids,
+    ).ok();
     let drive_provenance: Vec<Option<(String, String)>> = plays.iter()
-        .map(|s| match (s.id, drive_device_id.as_deref()) {
-            (Some(id), Some(device_id)) => Some((
-                device_id.to_string(),
-                crate::commands::drive_sync::lan_play_origin(
-                    device_id, id, s.timestamp_utc, &s.title, &s.artist
+        .map(|play| match (play.id, drive_identity.as_ref()) {
+            (Some(id), Some((device_id, known))) => Some((
+                device_id.clone(),
+                known.get(&id).cloned().unwrap_or_else(||
+                    crate::commands::drive_sync::lan_play_origin(
+                        device_id, id, play.timestamp_utc, &play.title, &play.artist
+                    )
                 ),
             )),
             _ => None,
