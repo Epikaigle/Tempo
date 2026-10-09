@@ -6,6 +6,7 @@
 
 import type { Play, SyncPayload, SyncPlay, SyncResponse, PairingInfo, ConnectionHistoryEntry } from '../shared/types';
 import * as storage from './storage';
+import { getDriveLanOrigin } from './drive-history';
 import { signRequest, buildJsonHeaders, encryptBody, decryptBody } from '../shared/security';
 
 const IS_FIREFOX = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox');
@@ -678,7 +679,8 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
       const payload: SyncPayload = {
         auth_token: pairing.authToken,
         device_name: deviceName,
-        plays: batch.map(p => ({
+        plays: await Promise.all(batch.map(async p => ({
+          ...await getDriveLanOrigin(p),
           title: p.title,
           artist: p.artist,
           album: p.album,
@@ -700,7 +702,7 @@ export async function syncToPhone(options: SyncOptions = {}): Promise<number> {
           anomalies: p.anomalies ?? [],
           total_pause_duration_ms: p.totalPauseDurationMs ?? 0,
           position_updates_count: p.positionUpdatesCount ?? 0,
-        })),
+        }))),
       };
 
       const url = `http://${address.ip}:${address.port}/api/plays`;
