@@ -428,11 +428,15 @@ export async function deletePlay(id: number): Promise<void> {
 }
 
 /**
- * Check whether another capture origin already recorded the same title+artist
- * within ±60s. Exact Drive event IDs are the idempotency key for the same
- * originating device, so a different event from that same device must remain a
- * distinct replay even when it happens inside this wider temporal window.
+ * Local retries use a short 5s window: a second short-track replay must not be
+ * discarded just because it occurred within a minute of the first play.
+ * Drive imports from other devices use the wider 60s reconciliation window to
+ * account for different capture clocks. Different event IDs from the SAME
+ * originating device are real replays and must remain distinct.
  */
+export function recentPlayWindowMs(incomingOriginDeviceId?: string): number {
+  return incomingOriginDeviceId ? 60_000 : 5_000;
+}
 export async function hasRecentPlay(
   title: string,
   artist: string,
@@ -444,8 +448,9 @@ export async function hasRecentPlay(
     const tx = db.transaction(PLAYS_STORE, 'readonly');
     const store = tx.objectStore(PLAYS_STORE);
     const index = store.index('timestampUtc');
-    const windowStart = timestampUtc - 60_000;
-    const windowEnd = timestampUtc + 60_000;
+    const windowMs = recentPlayWindowMs(incomingOriginDeviceId);
+    const windowStart = timestampUtc - windowMs;
+    const windowEnd = timestampUtc + windowMs;
     const range = IDBKeyRange.bound(windowStart, windowEnd);
     const request = index.openCursor(range);
     let found = false;
