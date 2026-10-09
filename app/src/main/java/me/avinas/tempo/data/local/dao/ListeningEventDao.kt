@@ -265,8 +265,13 @@ interface ListeningEventDao {
                         )
                     toInsert.add(incoming)
                 } else {
-                    // Existing/equal authority wins, or the slot was already taken
-                    // by an equal-higher-authority incoming sibling → drop this one.
+                    // A single physical playback can only match ONE distinct
+                    // event from any one Drive producer in this batch. Without
+                    // the provenance claim, a second quick replay from the same
+                    // device can be swallowed by this same existing slot.
+                    SourceAuthority.driveDeviceId(incoming.source)?.let {
+                        conflict.matchedDriveDevices.add(it)
+                    }
                     skipped++
                 }
             }
@@ -297,6 +302,8 @@ interface ListeningEventDao {
         val isExisting: Boolean,
         /** listening_events.id when this slot came from the database; null for incoming events. */
         val existingId: Long? = null,
+        /** Drive origins already matched to this physical playback in the current batch. */
+        val matchedDriveDevices: MutableSet<String> = mutableSetOf(),
     )
 
     /**
@@ -311,6 +318,7 @@ interface ListeningEventDao {
         // Layer 1 already removed an exact Drive event id. Distinct ids from the
         // same originating device are real rapid replays, not temporal dupes.
         if (slotDriveDevice != null && slotDriveDevice == incomingDriveDevice) return false
+        if (incomingDriveDevice != null && incomingDriveDevice in slot.matchedDriveDevices) return false
 
         val sameSource = slot.source == incoming.source &&
             slotDriveDevice == null && incomingDriveDevice == null
