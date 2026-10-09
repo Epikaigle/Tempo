@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import me.avinas.tempo.data.local.EventFingerprint
 import me.avinas.tempo.data.local.SourceAuthority
 import me.avinas.tempo.data.local.entities.ListeningEvent
+import me.avinas.tempo.data.local.entities.ListeningEventOrigin
 
 @Dao
 interface ListeningEventDao {
@@ -117,6 +118,23 @@ interface ListeningEventDao {
     )
     suspend fun getExistingFingerprints(fingerprints: List<String>): List<String>
 
+    /** An exact origin alias may represent a merged playback without being the
+     * primary row's content fingerprint. Query it before any temporal matching.
+     */
+    @Query("SELECT originEventId FROM listening_event_origins WHERE originEventId IN (:ids)")
+    suspend fun getKnownOriginAliases(ids: List<String>): List<String>
+
+    data class OriginClaim(val listeningEventId: Long, val sourceDeviceId: String, val originEventId: String)
+
+    @Query(
+        "SELECT listeningEventId, sourceDeviceId, originEventId " +
+            "FROM listening_event_origins WHERE listeningEventId IN (:ids)",
+    )
+    suspend fun getOriginClaimsForEvents(ids: List<Long>): List<OriginClaim>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertOriginAliases(aliases: List<ListeningEventOrigin>)
+
     /**
      * Layer 2: fetch a lightweight view of existing events for one track within a
      * time range, for cross-source temporal reconciliation. Bounded by the
@@ -166,130 +184,146 @@ interface ListeningEventDao {
      * Same-source comparisons keep using the tight [DUPLICATE_TOLERANCE_MS] so
      * legitimate back-to-back plays of a track are never merged.
      */
+    /**
+     * Recover a stable producer ID from the original Drive/LAN wire event.
+     * Non-Drive import fingerprints remain untouched by this transport table.
+     */
+    private fun originOf(event: ListeningEvent): Pair<String, String>? {
+        val device = SourceAuthority.driveDeviceId(event.source) ?: return null
+        val fingerprint = event.contentFingerprint ?: return null
+        if (!fingerprint.startsWith("drive:v1:")) return null
+        val id = fingerprint.removePrefix("drive:v1:")
+        if (id.length != 64 || !id.all { it in '0'..'9' || it in 'a'..'f' }) return null
+        return device to id
+    }
+
     @Transaction
     suspend fun insertAllBatchedWithDedup(events: List<ListeningEvent>): InsertResult {
         if (events.isEmpty()) return InsertResult(0, 0)
 
-        // ── Layer 1: fingerprint every incoming event ──────────────────────
-        val withFp =
-            events.map { e ->
-                if (e.contentFingerprint != null) {
-                    e
-                } else {
-                    e.copy(contentFingerprint = EventFingerprint.compute(e))
-                }
-            }
-
+        val withFp = events.map { event ->
+            if (event.contentFingerprint != null) event
+            else event.copy(contentFingerprint = EventFingerprint.compute(event))
+        }
         val incomingFps = withFp.mapNotNull { it.contentFingerprint }.distinct()
-        val existingFps: Set<String> =
-            if (incomingFps.isEmpty()) {
-                emptySet()
-            } else {
-                incomingFps.chunked(900).flatMap { getExistingFingerprints(it) }.toSet()
-            }
+        val existingFps = incomingFps.chunked(900)
+            .flatMap { getExistingFingerprints(it) }.toSet()
+        val originIds = withFp.mapNotNull { originOf(it)?.second }.distinct()
+        val knownAliases = originIds.chunked(900)
+            .flatMap { getKnownOriginAliases(it) }.toSet()
 
-        // Drop exact-fingerprint duplicates (DB or earlier in this batch).
         val seenFp = HashSet<String>(incomingFps.size)
-        val layer1Survivors = ArrayList<ListeningEvent>(withFp.size)
+        val survivors = ArrayList<ListeningEvent>(withFp.size)
         var skipped = 0
-        for (e in withFp) {
-            val fp = e.contentFingerprint
-            if (fp != null && (fp in existingFps || !seenFp.add(fp))) {
+        for (event in withFp) {
+            val fp = event.contentFingerprint
+            val originId = originOf(event)?.second
+            if ((fp != null && (fp in existingFps || !seenFp.add(fp))) ||
+                (originId != null && originId in knownAliases)
+            ) {
                 skipped++
             } else {
-                layer1Survivors.add(e)
+                survivors.add(event)
             }
         }
 
-        // ── Layer 2: cross-source temporal reconciliation ──────────────────
-        val toInsert = ArrayList<ListeningEvent>(layer1Survivors.size)
+        val toInsert = ArrayList<ListeningEvent>(survivors.size)
         val toDelete = mutableSetOf<Long>()
-
-        // Group by track for bounded per-track queries (uses the (track_id,
-        // timestamp) index). Process higher-authority events first within each
-        // track so they claim the slot and lower-authority siblings are dropped.
-        val byTrack = layer1Survivors.groupBy { it.track_id }
-        for ((trackId, trackEvents) in byTrack) {
+        val aliasesForExisting = mutableListOf<ListeningEventOrigin>()
+        val newSlots = mutableMapOf<String, Slot>()
+        for ((trackId, trackEvents) in survivors.groupBy { it.track_id }) {
             val minTs = trackEvents.minOf { it.timestamp } - RECONCILIATION_WINDOW_MS
             val maxTs = trackEvents.maxOf { it.timestamp } + RECONCILIATION_WINDOW_MS
-            val existing = getEventsForReconciliation(trackId, minTs, maxTs)
-
-            // Existing refs not yet marked for deletion.
-            val existingAlive = existing.filter { it.id !in toDelete }.toMutableList()
-
-            // Incoming events for this track, most authoritative first (tie → earliest).
-            val sortedIncoming =
-                trackEvents.sortedWith(
-                    compareByDescending<ListeningEvent> { SourceAuthority.rank(it.source) }
-                        .thenBy { it.timestamp },
-                )
-
-            // Timestamps already accepted (existing-kept + incoming-accepted) for
-            // same-play conflict checks on this track.
-            val acceptedSlots = ArrayList<Slot>(existingAlive.size + sortedIncoming.size)
-            for (ex in existingAlive) {
-                acceptedSlots.add(Slot(ex.timestamp, ex.end_timestamp, ex.playDuration, ex.source, true, ex.id))
+            val existingAlive = getEventsForReconciliation(trackId, minTs, maxTs)
+                .filter { it.id !in toDelete }.toMutableList()
+            val claims = if (existingAlive.isEmpty()) emptyList()
+                else existingAlive.map { it.id }.chunked(900)
+                    .flatMap { getOriginClaimsForEvents(it) }
+            val claimsByRow = claims.groupBy { it.listeningEventId }
+            val acceptedSlots = ArrayList<Slot>(existingAlive.size + trackEvents.size)
+            for (ref in existingAlive) {
+                val origins = claimsByRow[ref.id].orEmpty()
+                    .associate { it.sourceDeviceId to it.originEventId }.toMutableMap()
+                SourceAuthority.driveDeviceId(ref.source)?.let { origins.putIfAbsent(it, "") }
+                acceptedSlots.add(Slot(
+                    ref.timestamp, ref.end_timestamp, ref.playDuration, ref.source,
+                    true, ref.id, origins,
+                ))
             }
 
-            for (incoming in sortedIncoming) {
-                val incomingAuth = SourceAuthority.rank(incoming.source)
-                val conflictIdx = acceptedSlots.indexOfFirst { slot -> isSamePlay(slot, incoming) }
-
+            for (incoming in trackEvents.sortedWith(
+                compareByDescending<ListeningEvent> { SourceAuthority.rank(it.source) }
+                    .thenBy { it.timestamp },
+            )) {
+                val incomingOrigin = originOf(incoming)
+                val conflictIdx = acceptedSlots.indexOfFirst { isSamePlay(it, incoming) }
                 if (conflictIdx < 0) {
-                    // No conflict → accept the incoming event.
                     toInsert.add(incoming)
-                    acceptedSlots.add(
-                        Slot(incoming.timestamp, incoming.endTimestamp, incoming.playDuration, incoming.source, false),
+                    val originMap = mutableMapOf<String, String>()
+                    incomingOrigin?.let { (dev, id) -> originMap[dev] = id }
+                    val slot = Slot(
+                        incoming.timestamp, incoming.endTimestamp, incoming.playDuration,
+                        incoming.source, false, null, originMap,
                     )
+                    acceptedSlots.add(slot)
+                    incoming.contentFingerprint?.let { newSlots[it] = slot }
                     continue
                 }
 
                 val conflict = acceptedSlots[conflictIdx]
-                if (conflict.isExisting && incomingAuth > SourceAuthority.rank(conflict.source)) {
-                    // Incoming is more authoritative → it replaces the existing event.
-                    // Match by primary key, not by (timestamp, endTimestamp, source): two
-                    // legacy rows can share all three, and `first {}` would then delete the
-                    // wrong one. Every isExisting slot carries the id it came from.
+                if (conflict.isExisting &&
+                    SourceAuthority.rank(incoming.source) > SourceAuthority.rank(conflict.source)
+                ) {
                     val ref = existingAlive.first { it.id == conflict.existingId }
                     toDelete.add(ref.id)
                     existingAlive.remove(ref)
-                    // Replace the slot with the incoming event so later comparisons
-                    // see the new (higher-authority) representation.
-                    acceptedSlots[conflictIdx] =
-                        Slot(
-                            incoming.timestamp,
-                            incoming.endTimestamp,
-                            incoming.playDuration,
-                            incoming.source,
-                            false,
-                        )
+                    // Move aliases to the replacement within this Room transaction.
+                    // Otherwise the foreign-key cascade would drop their identities.
+                    val replacementOrigins = conflict.origins.toMutableMap()
+                    incomingOrigin?.let { (dev, id) -> replacementOrigins[dev] = id }
+                    val replacementSlot = Slot(
+                        incoming.timestamp, incoming.endTimestamp, incoming.playDuration,
+                        incoming.source, false, null, replacementOrigins,
+                    )
+                    acceptedSlots[conflictIdx] = replacementSlot
                     toInsert.add(incoming)
+                    incoming.contentFingerprint?.let { newSlots[it] = replacementSlot }
                 } else {
-                    // A single physical playback can only match ONE distinct
-                    // event from any one Drive producer in this batch. Without
-                    // the provenance claim, a second quick replay from the same
-                    // device can be swallowed by this same existing slot.
-                    SourceAuthority.driveDeviceId(incoming.source)?.let {
-                        conflict.matchedDriveDevices.add(it)
+                    incomingOrigin?.let { (dev, id) ->
+                        conflict.origins[dev] = id
+                        if (conflict.isExisting) {
+                            aliasesForExisting.add(ListeningEventOrigin(id, requireNotNull(conflict.existingId), dev))
+                        }
                     }
                     skipped++
                 }
             }
         }
 
-        // Delete the lower-authority events that were replaced.
         if (toDelete.isNotEmpty()) {
-            toDelete.chunked(900).forEach { ids -> deleteByIds(ids) }
+            toDelete.chunked(900).forEach { deleteByIds(it) }
         }
 
-        // Insert the survivors (fingerprint already set on each).
-        val inserted =
-            if (toInsert.isEmpty()) {
-                0
-            } else {
-                toInsert.chunked(BATCH_SIZE).sumOf { batch -> insertAll(batch).size }
+        val aliasWrites = aliasesForExisting.filter { it.listeningEventId !in toDelete }
+            .toMutableList()
+        var inserted = 0
+        for (batch in toInsert.chunked(BATCH_SIZE)) {
+            val rowIds = insertAll(batch)
+            inserted += rowIds.size
+            for ((index, event) in batch.withIndex()) {
+                val slot = newSlots[event.contentFingerprint]
+                if (slot != null) {
+                    for ((dev, originId) in slot.origins) {
+                        if (originId.isNotBlank()) {
+                            aliasWrites.add(ListeningEventOrigin(originId, rowIds[index], dev))
+                        }
+                    }
+                }
             }
-
+        }
+        if (aliasWrites.isNotEmpty()) {
+            insertOriginAliases(aliasWrites)
+        }
         return InsertResult(inserted = inserted, skipped = skipped, replaced = toDelete.size)
     }
 
@@ -302,8 +336,8 @@ interface ListeningEventDao {
         val isExisting: Boolean,
         /** listening_events.id when this slot came from the database; null for incoming events. */
         val existingId: Long? = null,
-        /** Drive origins already matched to this physical playback in the current batch. */
-        val matchedDriveDevices: MutableSet<String> = mutableSetOf(),
+        /** Durable producer -> origin identity claims attached to this playback. */
+        val origins: MutableMap<String, String> = mutableMapOf(),
     )
 
     /**
@@ -318,7 +352,7 @@ interface ListeningEventDao {
         // Layer 1 already removed an exact Drive event id. Distinct ids from the
         // same originating device are real rapid replays, not temporal dupes.
         if (slotDriveDevice != null && slotDriveDevice == incomingDriveDevice) return false
-        if (incomingDriveDevice != null && incomingDriveDevice in slot.matchedDriveDevices) return false
+        if (incomingDriveDevice != null && incomingDriveDevice in slot.origins) return false
 
         val sameSource = slot.source == incoming.source &&
             slotDriveDevice == null && incomingDriveDevice == null
