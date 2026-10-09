@@ -422,12 +422,7 @@ async function downloadRemotePlays(
   // exceed the normal 5k retention cap while locally-owned rows are waiting for
   // their first Drive upload, so sample-based dedup can miss an older imported
   // event. Scan the whole local store once per Drive download pass instead.
-  const existing = await storage.getAllPlays(Number.MAX_SAFE_INTEGER);
-  const seenOriginIds = new Set<string>();
-  for (const play of existing) {
-    if (play.originEventId) seenOriginIds.add(play.originEventId);
-    for (const alias of play.reconciledOrigins ?? []) seenOriginIds.add(alias.eventId);
-  }
+  const seenOriginIds = await storage.getDriveOriginEventIds();
   let imported = 0;
   let duplicates = 0;
   let maxCreated = state.downloadCreatedCursor;
