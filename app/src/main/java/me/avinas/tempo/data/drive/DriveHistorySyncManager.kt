@@ -255,7 +255,12 @@ class DriveHistorySyncManager @Inject constructor(
             val protocolEvents = mutableListOf<DriveHistoryEvent>()
             for (event in page) {
                 if (event.contentFingerprint?.startsWith(IMPORT_FINGERPRINT_PREFIX) == true) continue
-                localEventToProtocol(event)?.let(protocolEvents::add)
+                // Never move the persistent upload cursor past a local play that
+                // cannot be exported (for example, a temporarily missing Track).
+                // Surface the row ID and retry after its metadata is repaired.
+                val exported = localEventToProtocol(event)
+                    ?: error("Tempo cannot export listening event ${event.id}; restore its track metadata before retrying")
+                protocolEvents.add(exported)
             }
 
             for (events in protocolEvents.chunked(BATCH_SIZE)) {
