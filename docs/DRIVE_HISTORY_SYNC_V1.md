@@ -132,6 +132,12 @@ For a one-event batch containing the golden event above, expected `batch_id` is:
 
 The batch ID intentionally does not include the generation. The generation is included in the filename, so retrying the same event set within one generation remains idempotent while deliberately re-seeding after a deletion creates a distinct Drive filename.
 
+## Stable retry payloads and historical recovery
+
+A retry of the same producer/event-ID sequence uses an event-derived, stable `created_at_utc` timestamp. The immutable file name and compressed payload must remain stable across retries. If a legacy same-name object has different bytes, preserve it until a verified replacement has been uploaded rather than deleting the only cloud copy first. Consumers verify each batch independently and suppress duplicate event IDs.
+
+Normal incremental receivers scan files by Drive creation time with a 24-hour overlap. A user-requested **Restore full history** resets only the receive cursor and enumerates all available batches, without clearing local listening history. Local pruning must never be mistaken for a confirmed durable backup. Google appDataFolder contents remain removable by the user/provider, so multi-year disaster recovery requires an independent export/backup as well.
+
 ## Import and deduplication
 
 Readers must treat `event_id` as the primary idempotency key. A successfully imported remote event records its origin event/device identity locally and must not be re-uploaded as a newly-owned event.
