@@ -382,7 +382,12 @@ async function uploadLocalPlays(accessToken: string, deviceId: string): Promise<
   for (let offset = 0; offset < pending.length; offset += BATCH_SIZE) {
     const chunk = pending.slice(offset, offset + BATCH_SIZE);
     const events: WireEvent[] = [];
-    for (const play of chunk) events.push(await playToWire(play, deviceId));
+    for (const play of chunk) {
+      if (play.id == null) throw new Error('A local Drive play has no persistent ID');
+      const candidate = play.originEventId ?? await eventId(deviceId, play);
+      const pinnedId = await storage.ensureLocalOriginEventId(play.id, candidate);
+      events.push(await playToWire({ ...play, originEventId: pinnedId }, deviceId));
+    }
 
     const batchId = await deterministicBatchId(events);
     const batch: WireBatch = {
@@ -1032,9 +1037,9 @@ function isDriveRequestRetrySafe(method: string | undefined): boolean {
 }
 
 async function playToWire(play: Play, deviceId: string): Promise<WireEvent> {
-  const candidateId = play.originEventId ?? await eventId(deviceId, play);
-  if (play.id == null) throw new Error('A local Drive play has no persistent ID');
-  const id = await storage.ensureLocalOriginEventId(play.id, candidateId);
+  // Pure wire conversion. The upload caller persists the event's first ID
+  // before networking; pure protocol/golden-vector tests need no IndexedDB.
+  const id = play.originEventId ?? await eventId(deviceId, play);
   const title = truncateWireText(play.title.trim());
   const artist = truncateWireText(play.artist.trim());
   if (!title || !artist || !isPositiveWireInteger(play.timestampUtc)) {
