@@ -99,4 +99,38 @@ assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000, 'r
   'distinct quick replays from one origin must be preserved');
 assert.equal(await storage.hasRecentPlay('Different Song', 'Artist', baseTime + 2_000, 'remote-B'), false);
 
-console.log('\n10 IndexedDB durability and dedup scenarios passed');
+// Full-history restore must recover OWN local IDs before importing cloud data.
+// A previously uploaded local play has no originEventId field, so checking
+// only stored remote aliases used to duplicate the same device's whole archive.
+localRecords = [
+  { id: 14, title: ' Local ', artist: ' Artist ', timestampUtc: baseTime },
+  { id: 15, title: 'Cloud', artist: 'Artist', timestampUtc: baseTime, driveImported: true, originEventId: 'external' },
+  { id: 16, title: 'Own with alias', artist: 'Artist', timestampUtc: baseTime, originEventId: 'known' },
+  { id: 17, title: 'Second local', artist: 'Band', timestampUtc: baseTime + 25_000 },
+];
+database.transaction = () => {
+  const tx = {
+    objectStore: () => ({
+      openCursor() {
+        const req = {};
+        let i = 0;
+        const next = () => {
+          const value = localRecords[i++];
+          req.result = value ? { value, continue: () => queueMicrotask(next) } : null;
+          req.onsuccess?.();
+          if (!value) queueMicrotask(() => tx.oncomplete?.());
+        };
+        queueMicrotask(next);
+        return req;
+      },
+    }),
+  };
+  return tx;
+};
+const ownInputs = await storage.getOwnPlayIdentityInputs();
+assert.deepEqual(ownInputs, [
+  { id: 14, title: ' Local ', artist: ' Artist ', timestampUtc: baseTime },
+  { id: 17, title: 'Second local', artist: 'Band', timestampUtc: baseTime + 25_000 },
+], 'restore recovers original locally-owned IDs, not imported or already-aliased rows');
+
+console.log('\n11 IndexedDB durability, replay and own-device restoration scenarios passed');
