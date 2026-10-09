@@ -135,6 +135,13 @@ interface ListeningEventDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertOriginAliases(aliases: List<ListeningEventOrigin>)
 
+    /** Batched origin lookup for offline restore; avoids one SQL round trip per play. */
+    @Query(
+        "SELECT listeningEventId, sourceDeviceId, originEventId " +
+            "FROM listening_event_origins WHERE originEventId IN (:originIds)",
+    )
+    suspend fun getOriginClaimsByOriginIds(originIds: List<String>): List<OriginClaim>
+
     /** Locate the actual playback through any previously restored producer identity.
      * Unlike timestamps and source labels, these IDs survive cross-device drift.
      */
