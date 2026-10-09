@@ -45,6 +45,23 @@ class DriveHistoryProtocolTest {
     }
 
     @Test
+    fun `Android reupload keeps the original event ID after track metadata edits`() {
+        val created = DriveHistorySyncManager.stableLocalEventId(
+            null, "android-device", 142L, 1_700_000_000_000L, "Uncorrected title", "Artist"
+        )
+        val reuploaded = DriveHistorySyncManager.stableLocalEventId(
+            created, "android-device", 142L, 1_700_000_000_000L,
+            "Corrected title", "Corrected artist"
+        )
+        val regeneratedWithoutAlias = DriveHistorySyncManager.stableLocalEventId(
+            null, "android-device", 142L, 1_700_000_000_000L,
+            "Corrected title", "Corrected artist"
+        )
+        assertEquals(created, reuploaded)
+        assertNotEquals(created, regeneratedWithoutAlias)
+    }
+
+    @Test
     fun `LAN relay batches preserve actual desktop and browser producers`() {
         assertEquals(
             DriveHistorySyncManager.BatchProducer("desktop-device", "desktop"),
