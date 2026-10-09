@@ -891,11 +891,7 @@ class ImportExportManager @Inject constructor(
                 .flatMap { dao.getOriginClaimsByOriginIds(it) }
                 .associate { it.originEventId to it.listeningEventId }
             val newEvents = chunk.filter { (_, aliases) ->
-                val targets = aliases.mapNotNull { existingByOrigin[it.originEventId] }.distinct()
-                check(targets.size <= 1) {
-                    "Cannot safely restore aliases: producer IDs point to different listening events"
-                }
-                targets.isEmpty()
+                shouldImportOfflinePlayback(aliases, existingByOrigin)
             }.map { it.first }
             if (newEvents.isNotEmpty()) {
                 inserted += dao.insertAllBatchedWithDedup(newEvents).inserted
