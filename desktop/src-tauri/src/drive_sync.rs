@@ -1185,7 +1185,7 @@ async fn upload_local_history(
             // the operating-system hostname, which may contain a person's or company's name.
             source_device_name: "Tempo Desktop".to_string(),
             source_platform: "desktop".to_string(),
-            created_at_utc: now_ms(),
+            created_at_utc: events.iter().map(|event| event.timestamp_utc).max().unwrap_or(1),
             events,
         };
         let compressed = encode_batch(&batch)?;
