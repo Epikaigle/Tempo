@@ -375,8 +375,10 @@ class ImportExportManager @Inject constructor(
         // memory whole, so restores of huge libraries cannot OOM.
         val stagedEventsFile = File(context.cacheDir, "import_events.jsonl")
         val stagedArchiveFile = File(context.cacheDir, "import_archive.jsonl")
+        val stagedOriginsFile = File(context.cacheDir, "import_origins.jsonl")
         stagedEventsFile.delete()
         stagedArchiveFile.delete()
+        stagedOriginsFile.delete()
 
         try {
             _progress.value = ImportExportProgress("Reading backup file...", 0, 100, true)
@@ -387,6 +389,7 @@ class ImportExportManager @Inject constructor(
             var totalExtractedImageBytes = 0L
             var stagedEventCount = 0
             var stagedArchiveCount = 0
+            var stagedOriginCount = 0
             
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
                 ZipInputStream(BufferedInputStream(inputStream)).use { zipIn ->
@@ -399,8 +402,10 @@ class ImportExportManager @Inject constructor(
                                 val reader = JsonReader.of(zipIn.source().buffer())
                                 val eventAdapter = moshi.adapter(ListeningEvent::class.java)
                                 val archiveAdapter = moshi.adapter(ScrobbleArchive::class.java)
+                                val originAdapter = moshi.adapter(ListeningEventOrigin::class.java)
                                 val eventSink = stagedEventsFile.sink().buffer()
                                 val archiveSink = stagedArchiveFile.sink().buffer()
+                                val originSink = stagedOriginsFile.sink().buffer()
                                 try {
                                     exportData = codec.read(
                                         reader,
@@ -414,6 +419,11 @@ class ImportExportManager @Inject constructor(
                                                 archiveAdapter.toJson(archiveSink, row)
                                                 archiveSink.writeUtf8("\n")
                                                 stagedArchiveCount++
+                                            },
+                                            onListeningEventOrigin = { origin ->
+                                                originAdapter.toJson(originSink, origin)
+                                                originSink.writeUtf8("\n")
+                                                stagedOriginCount++
                                             }
                                         )
                                     )
@@ -421,6 +431,7 @@ class ImportExportManager @Inject constructor(
                                     // flush only — close() would close the ZipInputStream
                                     eventSink.flush()
                                     archiveSink.flush()
+                                    originSink.flush()
                                 }
                             }
                             entry.name.startsWith(IMAGES_DIR) && !entry.isDirectory -> {
@@ -454,7 +465,7 @@ class ImportExportManager @Inject constructor(
                 )
             }
             
-            Log.i(TAG, "Extracted ${extractedImages.size} images, staged $stagedEventCount events and $stagedArchiveCount archive rows")
+            Log.i(TAG, "Extracted ${extractedImages.size} images, staged $stagedEventCount events, $stagedOriginCount origin claims and $stagedArchiveCount archive rows")
             
             // Build path mapping: old file:// path -> new file:// path
             val pathMapping = data.localImageManifest.mapNotNull { (bundledName, originalPath) ->
@@ -633,7 +644,7 @@ class ImportExportManager @Inject constructor(
             // whose track could not be mapped are skipped. The pipeline deduplicates
             // against existing rows (fingerprint + temporal reconciliation), so a
             // re-import is a no-op and real listening data is never overwritten.
-            importedEvents = replayStagedEvents(stagedEventsFile, trackIdMap)
+            importedEvents = replayStagedEvents(stagedEventsFile, stagedOriginsFile, trackIdMap)
             Log.i(TAG, "Imported $importedEvents listening events from staged file")
             
             _progress.value = ImportExportProgress("Importing metadata...", 80, 100)
@@ -838,6 +849,7 @@ class ImportExportManager @Inject constructor(
         } finally {
             stagedEventsFile.delete()
             stagedArchiveFile.delete()
+            stagedOriginsFile.delete()
             _progress.value = null
             operationLease.release()
         }
