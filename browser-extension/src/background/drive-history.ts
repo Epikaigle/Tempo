@@ -252,7 +252,7 @@ export async function getDriveSyncStatus(): Promise<DriveSyncStatus> {
 export function restoreDriveHistory(): Promise<{ uploaded: number; imported: number; duplicates: number }> {
   return serializeDriveOperation(async () => {
     await patchRuntimeState({ downloadCreatedCursor: 0 });
-    return runSync({ interactiveAuth: true });
+    return runSync({ interactiveAuth: true, fullRestore: true });
   });
 }
 
@@ -266,7 +266,7 @@ export async function syncDriveHistory(
 }
 
 async function runSync(
-  options: { interactiveAuth?: boolean },
+  options: { interactiveAuth?: boolean; fullRestore?: boolean },
 ): Promise<{ uploaded: number; imported: number; duplicates: number }> {
   const settings = await storage.getSettings();
   if (!settings.driveSyncEnabled) return { uploaded: 0, imported: 0, duplicates: 0 };
@@ -319,7 +319,7 @@ async function runSync(
 
     const deviceId = await getDeviceId();
     const uploaded = await uploadLocalPlays(session.accessToken, deviceId);
-    const download = await downloadRemotePlays(session.accessToken, deviceId);
+    const download = await downloadRemotePlays(session.accessToken, deviceId, options.fullRestore === true);
     await patchRuntimeState({
       lastSyncTime: Date.now(),
       lastError: null,
@@ -410,6 +410,7 @@ async function uploadLocalPlays(accessToken: string, deviceId: string): Promise<
 async function downloadRemotePlays(
   accessToken: string,
   deviceId: string,
+  includeOwnDeviceBatches = false,
 ): Promise<{ imported: number; duplicates: number }> {
   const state = await getRuntimeState();
   const acceptedGeneration = Math.max(0, state.acceptedDisableVersion || 0);
@@ -467,7 +468,7 @@ async function downloadRemotePlays(
       continue;
     }
 
-    if (sourceDeviceId === deviceId) {
+    if (!includeOwnDeviceBatches && sourceDeviceId === deviceId) {
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
@@ -513,7 +514,7 @@ async function downloadRemotePlays(
     if (batch.source_device_id !== sourceDeviceId ||
       batch.source_platform !== sourcePlatform ||
       file.name !== expectedName ||
-      batch.source_device_id === deviceId
+      (!includeOwnDeviceBatches && batch.source_device_id === deviceId)
     ) {
       maxCreated = Math.max(maxCreated, created);
       continue;
