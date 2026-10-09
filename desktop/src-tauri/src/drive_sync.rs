@@ -2056,6 +2056,31 @@ mod tests {
     }
 
     #[test]
+    fn remote_copy_does_not_claim_a_legacy_unpinned_local_capture() {
+        let (directory, conn) = history_storage_fixture();
+        let event = fixture_batch().events[0].clone();
+        conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES (?1, ?2, ?3)",
+            params![event.title, event.artist, event.timestamp_utc],
+        ).unwrap();
+        let local_id = conn.last_insert_rowid();
+        assert!(!insert_remote_event(&conn, "other-producer", &event).unwrap());
+        let (imported, own_id, own_device): (i64, String, String) = conn.query_row(
+            "SELECT drive_imported, origin_event_id, origin_device_id
+             FROM drive_event_state WHERE scrobble_id = ?1",
+            [local_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(imported, 0);
+        assert_eq!(own_device, load_state(&conn).unwrap().device_id);
+        assert_ne!(own_id, event.event_id);
+        assert_eq!(pending_local_plays(&conn).unwrap().len(), 1);
+        assert!(!insert_remote_event(&conn, "other-producer", &event).unwrap());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn remote_temporal_match_never_converts_local_capture_into_imported_play() {
         let (directory, conn) = history_storage_fixture();
         let event = fixture_batch().events[0].clone();
