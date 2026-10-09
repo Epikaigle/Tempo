@@ -171,12 +171,19 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "Desktop".to_string());
 
+    // Access the SQLite-backed identity once per LAN batch, not once per song.
+    // This remains local-only and does not depend on Google sign-in.
+    let drive_device_id = crate::commands::drive_sync::lan_device_id(&state.app_data_dir).ok();
     let drive_provenance: Vec<Option<(String, String)>> = plays.iter()
-        .map(|s| s.id.and_then(|id|
-            crate::commands::drive_sync::lan_play_origin(
-                &state.app_data_dir, id, s.timestamp_utc, &s.title, &s.artist
-            ).ok()
-        ))
+        .map(|s| match (s.id, drive_device_id.as_deref()) {
+            (Some(id), Some(device_id)) => Some((
+                device_id.to_string(),
+                crate::commands::drive_sync::lan_play_origin(
+                    device_id, id, s.timestamp_utc, &s.title, &s.artist
+                ),
+            )),
+            _ => None,
+        })
         .collect();
     let payload = SyncPayload {
         auth_token: pairing.auth_token.clone(),
