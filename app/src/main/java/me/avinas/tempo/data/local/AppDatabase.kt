@@ -15,6 +15,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
     entities = [
         Track::class,
         ListeningEvent::class,
+        ListeningEventOrigin::class,
         Artist::class,
         Album::class,
         EnrichedMetadata::class,
@@ -32,7 +33,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         DailyChallenge::class, // Gamification: daily challenges
         DesktopPairingSession::class, // Desktop Satellite pairing sessions
     ],
-    version = 55, // Migration 55: dedupe listening_events by session identity (double-count fix)
+    version = 56, // Migration 56: persist Drive/LAN event origins across sync batches
     exportSchema = true, // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
@@ -75,7 +76,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val TAG = "AppDatabase"
 
         /** Current Room schema version — keep in sync with the @Database(version = ...) annotation. */
-        const val VERSION = 55
+        const val VERSION = 56
 
         /**
          * Migration from version 6 to 7: Add enhanced tracking columns to listening_events.
@@ -2605,6 +2606,62 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
+         * Add durable, one-to-one per-producer playback aliases. Previously the
+         * reconciler only remembered aliases in memory for its current batch.
+         * Backfill origins already attached directly to existing imported rows.
+         *
+         * This is additive and never rewrites or deletes listening_events.
+         * The SQL uses only SQLite constructs available on minSdk 26.
+         */
+        val MIGRATION_55_56 =
+            object : Migration(55, 56) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `listening_event_origins` (
+                            `originEventId` TEXT NOT NULL,
+                            `listeningEventId` INTEGER NOT NULL,
+                            `sourceDeviceId` TEXT NOT NULL,
+                            PRIMARY KEY(`originEventId`),
+                            FOREIGN KEY(`listeningEventId`) REFERENCES `listening_events`(`id`)
+                                ON UPDATE NO ACTION ON DELETE CASCADE
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS " +
+                            "`index_listening_event_origins_listeningEventId` " +
+                            "ON `listening_event_origins` (`listeningEventId`)",
+                    )
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                            "`index_listening_event_origins_listeningEventId_sourceDeviceId` " +
+                            "ON `listening_event_origins` (`listeningEventId`, `sourceDeviceId`)",
+                    )
+                    // Recover identities of surviving imported events from v55.
+                    // Cross-device aliases previously discarded at reconciliation
+                    // cannot be reconstructed; future batches persist them.
+                    db.execSQL(
+                        """
+                        INSERT OR IGNORE INTO listening_event_origins
+                            (originEventId, listeningEventId, sourceDeviceId)
+                        SELECT substr(content_fingerprint, 10), id,
+                            substr(
+                                source,
+                                instr(source, ':') + 1,
+                                instr(substr(source, instr(source, ':') + 1), ':') - 1
+                            )
+                        FROM listening_events
+                        WHERE length(content_fingerprint) = 73
+                          AND content_fingerprint LIKE 'drive:v1:%'
+                          AND (source LIKE 'drive:%:%' OR source LIKE 'lan:%:%')
+                          AND instr(substr(source, instr(source, ':') + 1), ':') > 1
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+        /**
          * All migrations in order.
          */
         val ALL_MIGRATIONS =
@@ -2658,6 +2715,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_52_53, // Index tracks.musicbrainz_id (Last.fm/mbid track resolution)
                 MIGRATION_53_54, // Unique daily_challenges(challenge_id,date) + user_level.banked_challenge_xp
                 MIGRATION_54_55, // Dedupe listening_events by (session_id, track_id, timestamp)
+                MIGRATION_55_56, // Persist exact producer aliases for Drive/LAN reconciliation
             )
     }
 }
