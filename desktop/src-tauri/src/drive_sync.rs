@@ -1444,6 +1444,23 @@ fn insert_remote_event(
     };
 
     if let Some(id) = existing_temporal {
+        // Legacy local rows can predate Drive origin-state initialization.
+        // Claim their original Desktop identity BEFORE recording the remote
+        // alias, otherwise an early incoming copy would classify the original
+        // local play as an import and suppress its future Drive upload.
+        let has_state: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM drive_event_state WHERE scrobble_id = ?1)",
+            [id], |row| row.get(0),
+        ).map_err(|e| e.to_string())?;
+        if !has_state {
+            let (local_title, local_artist, local_timestamp): (String, String, i64) =
+                conn.query_row(
+                    "SELECT title, artist, timestamp_utc FROM scrobbles WHERE id = ?1",
+                    [id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                ).map_err(|e| e.to_string())?;
+            let own_device = load_state(conn)?.device_id;
+            pin_local_origin(conn, &own_device, id, local_timestamp, &local_title, &local_artist)?;
+        }
         conn.execute(
             // A matching Desktop-origin play must remain Desktop-owned and
             // eligible for its own eventual Drive upload. Turning it into an
