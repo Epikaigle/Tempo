@@ -241,6 +241,8 @@ pub struct SyncPlay {
     pub origin_device_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_source: Option<String>,
     pub title: String,
     pub artist: String,
     pub album: String,
