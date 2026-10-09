@@ -102,7 +102,10 @@ class DriveHistorySyncManager @Inject constructor(
         settingsManager.setEnabled(false)
     }
 
-    suspend fun syncNow(): DriveHistorySyncResult = mutex.withLock {
+    /** Re-read all cloud batches for explicit historical recovery; never delete local plays. */
+    suspend fun restoreFullHistory(): DriveHistorySyncResult = syncNow(forceFullRestore = true)
+
+    suspend fun syncNow(forceFullRestore: Boolean = false): DriveHistorySyncResult = mutex.withLock {
         withContext(Dispatchers.IO) {
             val settings = settingsManager.settings.first()
             if (!settings.enabled) {
@@ -130,6 +133,12 @@ class DriveHistorySyncManager @Inject constructor(
                     if (remoteDisable != null) return@withAccountBoundSession remoteDisable
 
                     val uploaded = uploadLocalHistory()
+                    if (forceFullRestore) {
+                        // Clear only the receive cursor. If the download fails, retry
+                        // again from the beginning rather than losing an old batch.
+                        statePrefs.edit().remove(KEY_DOWNLOAD_CREATED_CURSOR).commit()
+                            .also { check(it) { "Could not persist Drive full-restore request" } }
+                    }
                     val download = downloadRemoteHistory()
                     settingsManager.markSuccess(
                         uploaded = uploaded,
