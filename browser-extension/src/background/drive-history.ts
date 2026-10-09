@@ -1032,7 +1032,9 @@ function isDriveRequestRetrySafe(method: string | undefined): boolean {
 }
 
 async function playToWire(play: Play, deviceId: string): Promise<WireEvent> {
-  const id = play.originEventId ?? await eventId(deviceId, play);
+  const candidateId = play.originEventId ?? await eventId(deviceId, play);
+  if (play.id == null) throw new Error('A local Drive play has no persistent ID');
+  const id = await storage.ensureLocalOriginEventId(play.id, candidateId);
   const title = truncateWireText(play.title.trim());
   const artist = truncateWireText(play.artist.trim());
   if (!title || !artist || !isPositiveWireInteger(play.timestampUtc)) {
@@ -1082,7 +1084,9 @@ function localVolumeFromWire(volume: number | null): number {
  */
 export async function getDriveLanOrigin(play: Play): Promise<{ origin_device_id: string; origin_event_id: string }> {
   const origin_device_id = await getDeviceId();
-  const origin_event_id = play.originEventId ?? await eventId(origin_device_id, play);
+  if (play.id == null) throw new Error('A queued LAN play has no persistent ID');
+  const candidate = play.originEventId ?? await eventId(origin_device_id, play);
+  const origin_event_id = await storage.ensureLocalOriginEventId(play.id, candidate);
   return { origin_device_id, origin_event_id };
 }
 
