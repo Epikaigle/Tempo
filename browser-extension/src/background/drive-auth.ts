@@ -197,7 +197,7 @@ function getFirefoxGoogleRedirectUri(): string {
 function base64Url(bytes: Uint8Array): string {
   let raw = '';
   for (const byte of bytes) raw += String.fromCharCode(byte);
-  return btoa(raw).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+  return btoa(raw).replace(/[+]/g, '-').replace(/[/]/g, '_').replace(/=+$/g, '');
 }
 
 async function newPkcePair(): Promise<{ verifier: string; challenge: string }> {
