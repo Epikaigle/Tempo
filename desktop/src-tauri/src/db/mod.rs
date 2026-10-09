@@ -284,13 +284,16 @@ impl Database {
         rows.collect()
     }
 
+    /// Android permits at most 100 plays per LAN request. Send bounded batches
+    /// and preserve the rest of an offline backlog for subsequent deliveries.
     pub fn get_queued_plays(&self) -> Result<Vec<Play>, rusqlite::Error> {
+        const MAX_LAN_BATCH_PLAYS: i64 = 50;
         let mut stmt = self.conn.prepare(
             "SELECT id, title, artist, album, duration_ms, timestamp_utc, source_app, status, listened_ms, skipped,
                     replay_count, is_muted, completion_percentage, pause_count, seek_count, session_id, site, content_type, volume_level
-             FROM scrobbles WHERE status = 'queued' ORDER BY timestamp_utc ASC",
+             FROM scrobbles WHERE status = 'queued' ORDER BY timestamp_utc ASC, id ASC LIMIT ?1",
         )?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map([MAX_LAN_BATCH_PLAYS], |row| {
             Ok(Play {
                 id: Some(row.get(0)?),
                 title: row.get(1)?,
@@ -845,6 +848,28 @@ mod local_dedup_tests {
         assert_eq!(db.conn.query_row::<i64, _, _>(
             "SELECT COUNT(*) FROM scrobbles", [], |row| row.get(0),
         ).unwrap(), 1);
+    }
+
+    #[test]
+    fn lan_queue_batches_old_backlog_without_dropping_plays() {
+        let db = Database {
+            conn: Connection::open_in_memory().unwrap(),
+            db_path: std::path::PathBuf::new(),
+        };
+        db.initialize_tables().unwrap();
+        for n in 0..125_i64 {
+            db.conn.execute(
+                "INSERT INTO scrobbles (title, artist, timestamp_utc, status)
+                 VALUES ('Offline track', 'Artist', ?1, 'queued')", [n],
+            ).unwrap();
+        }
+        let first = db.get_queued_plays().unwrap();
+        assert_eq!(first.len(), 50);
+        db.mark_plays_synced(&first.iter().filter_map(|p| p.id).collect::<Vec<_>>()).unwrap();
+        let second = db.get_queued_plays().unwrap();
+        assert_eq!(second.len(), 50);
+        db.mark_plays_synced(&second.iter().filter_map(|p| p.id).collect::<Vec<_>>()).unwrap();
+        assert_eq!(db.get_queued_plays().unwrap().len(), 25);
     }
 
     #[test]
