@@ -243,6 +243,19 @@ export async function getDriveSyncStatus(): Promise<DriveSyncStatus> {
   };
 }
 
+/** Explicit recovery mode: re-enumerate all appDataFolder history batches.
+ * The normal created-time cursor remains inexpensive for periodic sync, while
+ * this operation deliberately recovers old files after local data loss.
+ * The cursor reset is committed before the scan so an interrupted restoration
+ * is retried rather than marking old history as consumed.
+ */
+export function restoreDriveHistory(): Promise<{ uploaded: number; imported: number; duplicates: number }> {
+  return serializeDriveOperation(async () => {
+    await patchRuntimeState({ downloadCreatedCursor: 0 });
+    return runSync({ interactiveAuth: true });
+  });
+}
+
 export async function syncDriveHistory(
   options: { interactiveAuth?: boolean } = {},
 ): Promise<{ uploaded: number; imported: number; duplicates: number }> {
