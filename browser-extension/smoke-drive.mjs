@@ -77,10 +77,47 @@ globalThis.chrome = {
     set: async () => {},
   } },
 };
+// The LAN identity is pinned in IndexedDB before transmission. A minimal
+// transactional store lets this Node smoke fixture test the actual async
+// commit path without requiring a browser or external IndexedDB polyfill.
+const storedPlays = new Map([
+  [play.id, { ...play }],
+  [43, { ...play, id: 43, originEventId: 'f'.repeat(64) }],
+]);
+const database = {
+  transaction() {
+    const tx = {
+      objectStore() {
+        return {
+          get(id) {
+            const request = { result: storedPlays.get(id) };
+            queueMicrotask(() => {
+              request.onsuccess?.();
+              queueMicrotask(() => tx.oncomplete?.());
+            });
+            return request;
+          },
+          put(record) { storedPlays.set(record.id, { ...record }); },
+        };
+      },
+    };
+    return tx;
+  },
+};
+globalThis.indexedDB = {
+  open() {
+    const request = { result: database };
+    queueMicrotask(() => request.onsuccess?.());
+    return request;
+  },
+};
 const lanOrigin = await getDriveLanOrigin(play);
 check('LAN producer identity matches Drive without Google login',
   lanOrigin.origin_device_id === 'device-1' && lanOrigin.origin_event_id === eventId);
-const forwardedOrigin = await getDriveLanOrigin({ ...play, originEventId: 'f'.repeat(64) });
+const repeated = await getDriveLanOrigin({ ...play, title: 'Renamed song', artist: 'New artist' });
+check('LAN metadata edits reuse the origin committed by the first upload',
+  repeated.origin_event_id === eventId && storedPlays.get(play.id).originEventId === eventId);
+const forwardedOrigin = await getDriveLanOrigin({ ...play, id: 43, originEventId: 'f'.repeat(64) });
 check('LAN forwarding preserves existing source event ID',
   forwardedOrigin.origin_event_id === 'f'.repeat(64));
 
