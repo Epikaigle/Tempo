@@ -56,8 +56,9 @@ class DriveHistorySyncManager @Inject constructor(
             if (parts.size != 3 || parts[0] != "lan" ||
                 !DriveHistoryProtocol.isValidDeviceId(parts[1]) || parts[2].isBlank()
             ) return null
-            if (fingerprint?.startsWith(IMPORT_FINGERPRINT_PREFIX) != true) return null
-            val eventId = fingerprint.removePrefix(IMPORT_FINGERPRINT_PREFIX)
+            val rawFingerprint = fingerprint ?: return null
+            if (!rawFingerprint.startsWith(IMPORT_FINGERPRINT_PREFIX)) return null
+            val eventId = rawFingerprint.removePrefix(IMPORT_FINGERPRINT_PREFIX)
             if (!eventId.matches(Regex("^[0-9a-f]{64}$"))) return null
             return parts[2] to eventId
         }
