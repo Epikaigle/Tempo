@@ -647,7 +647,10 @@ async function uploadBatch(
   const platform = isFirefoxBuild() ? 'firefox_extension' : 'chrome_extension';
   const verified = existing.find(file => verifiedUpload(file, fileName, deviceId, platform, generation, checksum, gzip.byteLength));
   if (verified) return;
-  for (const file of existing) await deleteDriveFileStrict(accessToken, file.id);
+  // Preserve pre-existing same-name files until a replacement has been
+  // validated. Unverified legacy payloads may still hold the only cloud copy;
+  // deleting them first would risk permanent data loss on upload failure.
+  // Origin event IDs make an eventual second copy harmless on import.
 
   const boundary = `tempo_${crypto.randomUUID().replace(/-/g, '')}`;
   const metadata = JSON.stringify({
