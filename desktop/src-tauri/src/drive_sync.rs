@@ -1282,14 +1282,20 @@ async fn upload_local_history(
         // Persist canonical IDs before the HTTP upload: otherwise a successful
         // upload followed by a crash (or an earlier LAN delivery) could leave no
         // stored identity, and a later metadata correction would change the ID.
-        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        let mut pinned = HashMap::new();
-        for play in chunk {
-            pinned.insert(play.id, pin_local_origin(
-                &tx, device_id, play.id, play.timestamp_utc, &play.title, &play.artist
-            )?);
-        }
-        tx.commit().map_err(|e| e.to_string())?;
+        let pinned = {
+            // The SQLite transaction is deliberately scoped before HTTP await:
+            // holding a rusqlite Transaction across await makes this Tauri
+            // command future !Send on every supported operating system.
+            let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+            let mut pinned = HashMap::new();
+            for play in chunk {
+                pinned.insert(play.id, pin_local_origin(
+                    &tx, device_id, play.id, play.timestamp_utc, &play.title, &play.artist
+                )?);
+            }
+            tx.commit().map_err(|e| e.to_string())?;
+            pinned
+        };
         let events: Vec<WireEvent> = chunk
             .iter()
             .map(|play| {
