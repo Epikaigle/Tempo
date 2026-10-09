@@ -22,6 +22,8 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | Browser -> Desktop | Capture browser music on another machine; sync | Exactly one Desktop event |
 | LAN + Drive same origin | Send a Desktop/browser play to Android over LAN, then publish the sender's Drive batch | Same exact event ID is retained; Android counts once and never republishes it under an Android-owned ID |
 | LAN with Drive disabled | Send a Desktop/browser play to Android with Google Drive disabled on sender | No Google OAuth or connection is required merely to attach LAN provenance; local sync still works |
+| LAN-only origin relayed to cloud | Disable Drive on Desktop/extension, send LAN plays to an Android device with Drive enabled, sync Android, and restore on a separate client | Android relays original event IDs; all plays are recoverable without the original sender accessing Drive |
+| Original sender later enables Drive | After Android has relayed LAN plays, enable Google Drive on their original producer and sync all devices again | The two cloud copies represent one event per original event ID, not two listens |
 | Mixed-version LAN | Use a previous Desktop/browser sender without origin fields | Legacy payloads still import through the existing bounded temporal fallback |
 | Desktop + Chrome same computer | Run both detectors for one physical play | One logical play after receiving both producers' batches |
 | Two quick replays | Play same 25-second song twice while both detectors are on | Exactly **two** plays, never zero, one or four |
