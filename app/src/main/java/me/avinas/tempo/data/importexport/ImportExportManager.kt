@@ -879,6 +879,7 @@ class ImportExportManager @Inject constructor(
             if (chunk.isEmpty()) return
             inserted += dao.insertAllBatchedWithDedup(chunk.map { it.first }).inserted
             val newAliases = mutableListOf<ListeningEventOrigin>()
+            val claimsByRestoredId = mutableMapOf<Long, MutableMap<String, String>>()
             for ((event, exportedAliases) in chunk) {
                 if (exportedAliases.isEmpty()) continue
                 val exact = dao.getBackupRestoredEventIds(
@@ -901,9 +902,12 @@ class ImportExportManager @Inject constructor(
                     error("Cannot safely restore aliases: duplicate event identity")
                 }
 
-                val claimed = dao.getOriginClaimsForEvents(listOf(targetId))
-                    .associate { it.sourceDeviceId to it.originEventId }
-                    .toMutableMap()
+                // Include aliases already staged for this same target in the
+                // current chunk, not just those committed in an earlier chunk.
+                val claimed = claimsByRestoredId.getOrPut(targetId) {
+                    dao.getOriginClaimsForEvents(listOf(targetId))
+                        .associate { it.sourceDeviceId to it.originEventId }.toMutableMap()
+                }
                 for (origin in exportedAliases) {
                     val existing = claimed[origin.sourceDeviceId]
                     if (existing != null) {
@@ -912,8 +916,10 @@ class ImportExportManager @Inject constructor(
                         }
                         continue
                     }
-                    check(origin.originEventId.matches(Regex("^[0-9a-f]{64}$"))) {
-                        "Backup contains an invalid producer event ID"
+                    check(origin.originEventId.matches(Regex("^[0-9a-f]{64}$")) &&
+                        origin.sourceDeviceId.matches(Regex("^[A-Za-z0-9._-]{1,200}$"))
+                    ) {
+                        "Backup contains an invalid producer identity"
                     }
                     newAliases.add(origin.copy(listeningEventId = targetId))
                     claimed[origin.sourceDeviceId] = origin.originEventId
@@ -944,20 +950,27 @@ class ImportExportManager @Inject constructor(
                     } ?: continue
                     // Both arrays are written in listening-event ID order.
                     // Consume sidecar origins together with their original row.
-                    while (pendingOrigin != null &&
-                        requireNotNull(pendingOrigin).listeningEventId < event.id
-                    ) {
-                        pendingOrigin = readNextOrigin()
-                    }
+                    check(pendingOrigin == null ||
+                        requireNotNull(pendingOrigin).listeningEventId >= event.id
+                    ) { "Backup contains a producer alias with no corresponding listening event" }
                     val aliases = mutableListOf<ListeningEventOrigin>()
                     while (pendingOrigin?.listeningEventId == event.id) {
                         aliases.add(requireNotNull(pendingOrigin))
                         pendingOrigin = readNextOrigin()
                     }
-                    val newTrackId = trackIdMap[event.track_id] ?: continue
+                    val newTrackId = trackIdMap[event.track_id]
+                    if (newTrackId == null) {
+                        check(aliases.isEmpty()) {
+                            "Cannot restore producer aliases: the original track is missing"
+                        }
+                        continue
+                    }
                     chunk.add(event.copy(id = 0, track_id = newTrackId) to aliases)
                     if (chunk.size >= EVENT_IMPORT_CHUNK) flush()
                 }
+            }
+            check(pendingOrigin == null) {
+                "Backup contains a producer alias after the last listening event"
             }
             flush()
         } finally {
