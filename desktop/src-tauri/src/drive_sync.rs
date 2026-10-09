@@ -1021,6 +1021,64 @@ pub(crate) fn lan_origin_metadata(
     Ok((device_id, known))
 }
 
+/// Pin a local play's producer identity in SQLite before either LAN or
+/// Drive transmits it. This survives retries, metadata edits and process death.
+fn pin_local_origin(
+    conn: &Connection,
+    device_id: &str,
+    id: i64,
+    timestamp_utc: i64,
+    title: &str,
+    artist: &str,
+) -> Result<String, String> {
+    let generated = lan_play_origin(device_id, id, timestamp_utc, title, artist);
+    conn.execute(
+        "INSERT OR IGNORE INTO drive_event_state
+         (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
+         VALUES (?1, ?2, ?3, 0, NULL)",
+        params![id, generated, device_id],
+    ).map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE drive_event_state SET origin_event_id = ?2, origin_device_id = ?3
+         WHERE scrobble_id = ?1 AND drive_imported = 0 AND origin_event_id IS NULL
+           AND (origin_device_id IS NULL OR origin_device_id = ?3)",
+        params![id, generated, device_id],
+    ).map_err(|e| e.to_string())?;
+    let (origin, owner, imported): (Option<String>, Option<String>, i64) = conn
+        .query_row(
+            "SELECT origin_event_id, origin_device_id, drive_imported
+             FROM drive_event_state WHERE scrobble_id = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|e| e.to_string())?;
+    let origin = origin.ok_or("Tempo could not persist the original Desktop event ID")?;
+    if imported != 0 || owner.as_deref() != Some(device_id) || !valid_sha256(&origin) {
+        return Err("A remote or invalid event cannot be sent as a local Desktop origin".into());
+    }
+    remember_origin(conn, id, device_id, &origin)?;
+    Ok(origin)
+}
+
+/// Ensure LAN-first captures have the exact identity later used by Drive.
+/// The identity is saved atomically even if LAN delivery fails or is retried.
+pub(crate) fn persist_lan_origin_metadata(
+    app_data_dir: &Path,
+    captures: &[(i64, i64, String, String)],
+) -> Result<(String, HashMap<i64, String>), String> {
+    let conn = open_sync_db(app_data_dir)?;
+    let device_id = load_state(&conn)?.device_id;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut origins = HashMap::new();
+    for (id, timestamp_utc, title, artist) in captures {
+        let origin = pin_local_origin(
+            &tx, &device_id, *id, *timestamp_utc, title, artist
+        )?;
+        origins.insert(*id, origin);
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok((device_id, origins))
+}
+
 pub(crate) fn lan_play_origin(
     device_id: &str,
     local_id: i64,
@@ -1221,9 +1279,24 @@ async fn upload_local_history(
     let pending = pending_local_plays(&conn)?;
     let mut uploaded = 0usize;
     for chunk in pending.chunks(BATCH_SIZE) {
+        // Persist canonical IDs before the HTTP upload: otherwise a successful
+        // upload followed by a crash (or an earlier LAN delivery) could leave no
+        // stored identity, and a later metadata correction would change the ID.
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let mut pinned = HashMap::new();
+        for play in chunk {
+            pinned.insert(play.id, pin_local_origin(
+                &tx, device_id, play.id, play.timestamp_utc, &play.title, &play.artist
+            )?);
+        }
+        tx.commit().map_err(|e| e.to_string())?;
         let events: Vec<WireEvent> = chunk
             .iter()
-            .map(|play| local_to_wire(device_id, play))
+            .map(|play| {
+                let mut wire = local_to_wire(device_id, play);
+                wire.event_id = pinned[&play.id].clone();
+                wire
+            })
             .collect();
         if events.is_empty() {
             continue;
@@ -1254,7 +1327,7 @@ async fn upload_local_history(
         let uploaded_at = now_ms();
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         for play in chunk {
-            let origin = event_id(device_id, play);
+            let origin = &pinned[&play.id];
             tx.execute(
                 "INSERT INTO drive_event_state
                  (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
