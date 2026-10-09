@@ -370,7 +370,15 @@ class DriveHistorySyncManager @Inject constructor(
         var skipped = 0
         var replaced = 0
 
-        for (file in files.sortedBy { it.createdAt }) {
+        for ((index, file) in files.sortedBy { it.createdAt }.withIndex()) {
+            // Full restoration may process thousands of batches. Persist the
+            // last completed prefix periodically so process death or a work
+            // timeout does not force replaying the entire historic archive.
+            if (index > 0 && index % 50 == 0 && maxCreated > cursor) {
+                check(statePrefs.edit().putLong(KEY_DOWNLOAD_CREATED_CURSOR, maxCreated).commit()) {
+                    "Could not checkpoint Drive history restoration"
+                }
+            }
             val fileGeneration = DriveHistoryProtocol.parseGeneration(
                 file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION]
             )
