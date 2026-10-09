@@ -45,6 +45,24 @@ class DriveHistoryProtocolTest {
     }
 
     @Test
+    fun `LAN relay batches preserve actual desktop and browser producers`() {
+        assertEquals(
+            DriveHistorySyncManager.BatchProducer("desktop-device", "desktop"),
+            DriveHistorySyncManager.lanBatchProducer("lan:desktop-device:desktop:Spotify")
+        )
+        assertEquals(
+            DriveHistorySyncManager.BatchProducer("browser-device", "browser"),
+            DriveHistorySyncManager.lanBatchProducer("lan:browser-device:browser:YouTube Music")
+        )
+        assertEquals(
+            DriveHistorySyncManager.BatchProducer("legacy-device", "android"),
+            DriveHistorySyncManager.lanBatchProducer("lan:legacy-device:unclassified-source")
+        )
+        assertNull(DriveHistorySyncManager.lanBatchProducer("drive:desktop-device:desktop:Spotify"))
+        assertNull(DriveHistorySyncManager.lanBatchProducer("lan::desktop:Spotify"))
+    }
+
+    @Test
     fun `text truncation preserves complete emoji at the UTF16 boundary`() {
         val prefix = "x".repeat(999)
         assertEquals(prefix, DriveHistoryProtocol.truncateText(prefix + "🔊"))
