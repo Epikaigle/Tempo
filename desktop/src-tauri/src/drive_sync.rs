@@ -2475,6 +2475,73 @@ mod tests {
     }
 
     #[test]
+    fn lan_first_identity_is_pinned_before_google_drive_upload() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('Old title', 'Artist', 1700000000000)", [],
+        ).unwrap();
+        let scrobble_id = conn.last_insert_rowid();
+        let producer = load_state(&conn).unwrap().device_id;
+        drop(conn);
+
+        let (_, first) = persist_lan_origin_metadata(
+            &directory,
+            &[(scrobble_id, 1_700_000_000_000, "Old title".into(), "Artist".into())],
+        ).unwrap();
+        let origin = first[&scrobble_id].clone();
+        let conn = open_sync_db(&directory).unwrap();
+        let uploaded: Option<i64> = conn.query_row(
+            "SELECT drive_uploaded_at FROM drive_event_state WHERE scrobble_id = ?1",
+            [scrobble_id], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(uploaded, None, "sending via LAN must not mark a Drive upload");
+        conn.execute(
+            "UPDATE scrobbles SET title = 'Corrected title' WHERE id = ?1",
+            [scrobble_id],
+        ).unwrap();
+        drop(conn);
+
+        let (again_device, later) = persist_lan_origin_metadata(
+            &directory,
+            &[(scrobble_id, 1_700_000_000_000, "Corrected title".into(), "Artist".into())],
+        ).unwrap();
+        assert_eq!(producer, again_device);
+        assert_eq!(later[&scrobble_id], origin, "LAN retries must keep the first ID");
+        let conn = open_sync_db(&directory).unwrap();
+        let pending = pending_local_plays(&conn).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(event_id(&producer, &pending[0]), origin,
+            "subsequent Drive uploads must reuse the LAN-first origin ID");
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn pinned_drive_origin_survives_a_crash_before_server_acknowledgment() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('Track title', 'Performer', 1700000000000)", [],
+        ).unwrap();
+        let id = conn.last_insert_rowid();
+        let producer = load_state(&conn).unwrap().device_id;
+        let original = pin_local_origin(
+            &conn, &producer, id, 1_700_000_000_000, "Track title", "Performer"
+        ).unwrap();
+        drop(conn);
+        let reopened = open_sync_db(&directory).unwrap();
+        let later = pin_local_origin(
+            &reopened, &producer, id, 1_700_000_000_000, "Renamed", "Performer"
+        ).unwrap();
+        assert_eq!(original, later);
+        assert_eq!(pending_local_plays(&reopened).unwrap().len(), 1,
+            "pinning the ID must not mark a pending Drive upload as completed");
+        drop(reopened);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn previously_uploaded_origin_is_stable_after_track_metadata_changes() {
         let (directory, conn) = history_storage_fixture();
         let id = conn.execute(
