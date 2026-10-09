@@ -139,7 +139,7 @@ class DriveHistorySyncManager @Inject constructor(
                         statePrefs.edit().remove(KEY_DOWNLOAD_CREATED_CURSOR).commit()
                             .also { check(it) { "Could not persist Drive full-restore request" } }
                     }
-                    val download = downloadRemoteHistory()
+                    val download = downloadRemoteHistory(includeOwnDeviceBatches = forceFullRestore)
                     settingsManager.markSuccess(
                         uploaded = uploaded,
                         imported = download.inserted,
@@ -357,7 +357,7 @@ class DriveHistorySyncManager @Inject constructor(
      * the cursor resilient to delayed/out-of-order uploads; exact event ids plus
      * Tempo's temporal reconciliation make re-reading those files harmless.
      */
-    private suspend fun downloadRemoteHistory(): ImportSummary {
+    private suspend fun downloadRemoteHistory(includeOwnDeviceBatches: Boolean = false): ImportSummary {
         val cursor = statePrefs.getLong(KEY_DOWNLOAD_CREATED_CURSOR, 0L)
         val acceptedGeneration = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L).coerceAtLeast(0L)
         val createdAfter = if (cursor > 0L) {
@@ -411,7 +411,7 @@ class DriveHistorySyncManager @Inject constructor(
                 continue
             }
             val remoteDeviceId = requireNotNull(sourceDeviceId)
-            if (remoteDeviceId == deviceId) {
+            if (!includeOwnDeviceBatches && remoteDeviceId == deviceId) {
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
@@ -444,7 +444,7 @@ class DriveHistorySyncManager @Inject constructor(
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
-            if (batch.sourceDeviceId == deviceId) {
+            if (!includeOwnDeviceBatches && batch.sourceDeviceId == deviceId) {
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
