@@ -316,6 +316,15 @@ export default function Settings() {
               <button
                 className="btn btn-secondary"
                 disabled={driveBusy}
+                onClick={() => handleDriveAction("restore")}
+                title="Re-read all historical Drive batches without erasing local plays"
+              >
+                <RefreshCw size={16} />
+                Restore full history
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={driveBusy}
                 onClick={() => handleDriveAction("disconnect")}
               >
                 <LogOut size={16} />
