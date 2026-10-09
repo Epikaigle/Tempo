@@ -224,8 +224,14 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
     let mut last_error_reason = format!("primary ({}): no response", pairing.phone_ip);
 
     match send_with_retry(&phone_url, &payload).await {
-        Ok(()) => {
+        Ok(next_token) => {
             let db = state.db.lock().await;
+            if let Some(token) = next_token {
+                let mut updated_pairing = pairing.clone();
+                updated_pairing.auth_token = token;
+                db.save_pairing(&updated_pairing)
+                    .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
+            }
             db.mark_plays_synced(&ids)
                 .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
             db.record_sync(count as i64, "success", None)
@@ -270,13 +276,15 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
                 info!("Trying network-remembered IP for '{}': {}", net_id, net_url);
 
                 match send_with_retry(&net_url, &payload).await {
-                    Ok(()) => {
+                    Ok(next_token) => {
                         // Update stored primary IP too
                         let mut updated_pairing = pairing.clone();
                         updated_pairing.phone_ip = remembered_ip.clone();
                         updated_pairing.phone_port = remembered_port;
+                        if let Some(token) = next_token { updated_pairing.auth_token = token; }
                         let db = state.db.lock().await;
-                        let _ = db.save_pairing(&updated_pairing);
+                        db.save_pairing(&updated_pairing)
+                            .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
                         let _ = db.upsert_network_ip(net_id, &remembered_ip, remembered_port);
                         db.mark_plays_synced(&ids)
                             .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
@@ -313,15 +321,15 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         info!("mDNS discovered phone at {}, attempting sync...", mdns_url);
 
         match send_with_retry(&mdns_url, &payload).await {
-            Ok(()) => {
+            Ok(next_token) => {
                 // Update the stored IP so future syncs use the new address directly
                 let mut updated_pairing = pairing.clone();
                 updated_pairing.phone_ip = discovered.ip.clone();
                 updated_pairing.phone_port = discovered.port;
+                if let Some(token) = next_token { updated_pairing.auth_token = token; }
                 let db = state.db.lock().await;
-                if let Err(e) = db.save_pairing(&updated_pairing) {
-                    warn!("Failed to update pairing with new IP: {}", e);
-                }
+                db.save_pairing(&updated_pairing)
+                    .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
 
                 db.mark_plays_synced(&ids)
                     .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
@@ -363,14 +371,14 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         info!("Trying hotspot fallback: {}", fallback_url);
 
         match send_with_retry(&fallback_url, &payload).await {
-            Ok(()) => {
+            Ok(next_token) => {
                 // Update stored IP to gateway since that's where the phone is reachable
                 let mut updated_pairing = pairing.clone();
                 updated_pairing.phone_ip = gateway.clone();
+                if let Some(token) = next_token { updated_pairing.auth_token = token; }
                 let db = state.db.lock().await;
-                if let Err(e) = db.save_pairing(&updated_pairing) {
-                    warn!("Failed to update pairing with gateway IP: {}", e);
-                }
+                db.save_pairing(&updated_pairing)
+                    .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
 
                 db.mark_plays_synced(&ids)
                     .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
@@ -411,11 +419,13 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         info!("Subnet scan found phone at {}, attempting sync...", scan_url);
 
         match send_with_retry(&scan_url, &payload).await {
-            Ok(()) => {
+            Ok(next_token) => {
                 let mut updated_pairing = pairing.clone();
                 updated_pairing.phone_ip = found_ip.clone();
+                if let Some(token) = next_token { updated_pairing.auth_token = token; }
                 let db = state.db.lock().await;
-                let _ = db.save_pairing(&updated_pairing);
+                db.save_pairing(&updated_pairing)
+                    .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
                 if let Some(ref net_id) = current_network {
                     let _ = db.upsert_network_ip(net_id, &found_ip, pairing.phone_port);
                 }
