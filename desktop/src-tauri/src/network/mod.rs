@@ -504,8 +504,26 @@ pub async fn ping_phone(ip: &str, port: u16) -> bool {
     client.get(&url).send().await.map(|r| r.status().is_success()).unwrap_or(false)
 }
 
+/// HTTP 200 is not an acknowledgment unless the paired phone confirms the
+/// JSON body. Return the rotated LAN token, if any, so subsequent batches work.
+fn parse_lan_acknowledgment(body: &str) -> Result<Option<String>, SyncError> {
+    let value: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| SyncError::Network(format!("Unreadable LAN acknowledgment: {e}")))?;
+    if value.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
+        return Err(SyncError::Network(
+            "Phone did not confirm the LAN play batch".to_string()
+        ));
+    }
+    match value.get("next_token") {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(token)) if (16..=128).contains(&token.len()) =>
+            Ok(Some(token.clone())),
+        _ => Err(SyncError::Network("Phone returned an invalid LAN token".into())),
+    }
+}
+
 /// Send payload with exponential backoff retries and HMAC signature.
-async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<(), SyncError> {
+async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<Option<String>, SyncError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .build()
@@ -529,19 +547,22 @@ async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<(), SyncErr
             .await
         {
             Ok(response) => {
-                if response.status().is_success() {
-                    return Ok(());
-                }
                 let status = response.status();
                 let body = response.text().await.unwrap_or_default();
-                if body.contains("battery_critical") {
-                    return Err(SyncError::BatteryCritical);
+                if status.is_success() {
+                    match parse_lan_acknowledgment(&body) {
+                        Ok(rotated_token) => return Ok(rotated_token),
+                        Err(error) => last_error = error,
+                    }
+                } else {
+                    if body.contains("battery_critical") {
+                        return Err(SyncError::BatteryCritical);
+                    }
+                    if status.is_client_error() {
+                        return Err(SyncError::Rejected(format!("HTTP {} - {}", status, body)));
+                    }
+                    last_error = SyncError::Network(format!("HTTP {} - {}", status, body));
                 }
-                // Don't retry on auth errors (4xx)
-                if status.is_client_error() {
-                    return Err(SyncError::Rejected(format!("HTTP {} - {}", status, body)));
-                }
-                last_error = SyncError::Rejected(format!("HTTP {} - {}", status, body));
             }
             Err(e) => {
                 last_error = SyncError::Unreachable(e.to_string());
