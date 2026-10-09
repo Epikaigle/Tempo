@@ -57,6 +57,23 @@ export type SyncErrorKind =
   | 'battery'
   | 'unknown';
 
+/** Only an explicit JSON ok=true is a valid LAN batch acknowledgment.
+ * Neither an empty HTTP 200 nor a partially received response may empty the
+ * persistent queue. Kept pure so the regression cases can run without Chrome.
+ */
+export function parseLanAcknowledgment(body: string): SyncResponse {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    throw new SyncError('Phone LAN acknowledgment was not valid JSON', 'network');
+  }
+  if (!payload || typeof payload !== 'object' || (payload as SyncResponse).ok !== true) {
+    throw new SyncError('Phone did not confirm the LAN batch', 'network');
+  }
+  return payload as SyncResponse;
+}
+
 export class SyncError extends Error {
   constructor(
     message: string,
@@ -862,18 +879,11 @@ async function sendWithRetry(url: string, payload: SyncPayload, authToken: strin
           const decryptedText = isEncrypted
             ? await decryptBody(responseText, authToken)
             : responseText;
-          data = JSON.parse(decryptedText) as SyncResponse;
+          data = parseLanAcknowledgment(decryptedText);
         } catch (error) {
           throw new SyncError(
             'Phone returned an unreadable LAN acknowledgment; keeping plays queued',
             'network',
-            response.status,
-          );
-        }
-        if (data?.ok !== true) {
-          throw new SyncError(
-            'Phone did not confirm the LAN play batch; keeping plays queued',
-            'rejected',
             response.status,
           );
         }
