@@ -2039,6 +2039,43 @@ mod tests {
     }
 
     #[test]
+    fn remote_temporal_match_never_converts_local_capture_into_imported_play() {
+        let (directory, conn) = history_storage_fixture();
+        let event = fixture_batch().events[0].clone();
+        conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES (?1, ?2, ?3)",
+            params![event.title, event.artist, event.timestamp_utc],
+        ).unwrap();
+        let local_id = conn.last_insert_rowid();
+        let device_id = load_state(&conn).unwrap().device_id;
+        let own_origin = pin_local_origin(
+            &conn, &device_id, local_id, event.timestamp_utc,
+            &event.title, &event.artist,
+        ).unwrap();
+
+        assert!(!insert_remote_event(&conn, "other-producer", &event).unwrap());
+        let (original_id, is_imported, sent_at): (String, i64, Option<i64>) =
+            conn.query_row(
+                "SELECT origin_event_id, drive_imported, drive_uploaded_at
+                 FROM drive_event_state WHERE scrobble_id = ?1",
+                [local_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            ).unwrap();
+        assert_eq!(original_id, own_origin);
+        assert_eq!(is_imported, 0, "a local capture cannot become a cloud import");
+        assert_eq!(sent_at, None);
+        assert_eq!(pending_local_plays(&conn).unwrap().len(), 1,
+            "the Desktop producer must still be able to publish its own event");
+        let alias_id: i64 = conn.query_row(
+            "SELECT scrobble_id FROM drive_event_aliases WHERE origin_event_id = ?1",
+            [&event.event_id], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(alias_id, local_id);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn different_devices_playing_same_short_track_25_seconds_apart_stay_distinct() {
         let (directory, conn) = history_storage_fixture();
         let original = fixture_batch().events[0].clone();
