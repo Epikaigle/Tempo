@@ -8,7 +8,7 @@ Tempo uses the same history protocol across Android, the browser extension, and 
 
 - **Same local network:** the existing direct LAN transport can send history to the phone.
 - **Different networks:** when the user explicitly enables Google Drive sync, clients exchange immutable history batches through the Google Drive `appDataFolder` application-data space.
-- The Android database remains the primary Tempo history store. Drive is a synchronization transport, not a public music-history folder.
+- Every client retains its own local history and may operate without Android. Drive is a synchronization transport, not a public music-history folder.
 
 Drive history files use the `tempo_history_v1_` namespace and schema version 1. Current clients name batches as `tempo_history_v1_g<generation>_<device_id>_<batch_id>.json.gz` and store the same generation in the Drive app property `tempo_generation`. Clients generate stable SHA-256 event IDs and deterministic batch IDs so retries are idempotent. Imported events are not re-uploaded as new events, and temporal deduplication remains a fallback for overlapping capture sources.
 
@@ -108,6 +108,12 @@ Before changing schema version 1, verify all three producers/consumers agree on:
 - account-scoped Drive cursors/generation state
 
 Any incompatible wire-format change should introduce a new schema version rather than silently changing v1.
+
+## Historical retention and full recovery
+
+Tempo Desktop no longer deletes local synced scrobbles after 30 days during routine maintenance. Its **Restore full history** action resets only the Drive receive cursor, then re-enumerates all current appDataFolder batches with idempotent event/origin reconciliation. This is distinct from normal incremental sync, which keeps a 24-hour listing overlap.
+
+Drive is not a guaranteed ten-year backup: removal of application data, account loss, or revoked authorization can make those cloud files unavailable. Export separate backups for disaster recovery, and verify that a restored device reconstructs the expected year-by-year history. Batch uploads now serialize a stable event-derived creation timestamp; conflicting same-name files are never interpreted as proof of a successful upload unless the size, checksum and producer metadata match.
 
 ## Remaining real-account validation
 
