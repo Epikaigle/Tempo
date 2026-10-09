@@ -1058,6 +1058,15 @@ function localVolumeFromWire(volume: number | null): number {
   return volume == null ? -1 : volume / 100;
 }
 
+/** LAN and Drive must advertise the same locally-owned event identity.
+ * No Google account or network permission is required to compute this ID.
+ */
+export async function getDriveLanOrigin(play: Play): Promise<{ origin_device_id: string; origin_event_id: string }> {
+  const origin_device_id = await getDeviceId();
+  const origin_event_id = play.originEventId ?? await eventId(origin_device_id, play);
+  return { origin_device_id, origin_event_id };
+}
+
 async function eventId(deviceId: string, play: Play): Promise<string> {
   const canonical = [
     'tempo-history-v1',
