@@ -241,6 +241,40 @@ export async function getDriveOriginEventIds(): Promise<Set<string>> {
   });
 }
 
+/** Minimal local-origin inputs for an explicit own-device history restore.
+ * Existing locally-owned rows have no originEventId: their identity is derived
+ * from device ID plus IndexedDB row ID and track metadata. Never await hashing
+ * inside an active IndexedDB transaction; collect only these four small fields.
+ */
+export async function getOwnPlayIdentityInputs(): Promise<Array<
+  Pick<Play, 'id' | 'timestampUtc' | 'title' | 'artist'>
+>> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readonly');
+    const inputs: Array<Pick<Play, 'id' | 'timestampUtc' | 'title' | 'artist'>> = [];
+    const request = tx.objectStore(PLAYS_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const play = cursor.value as Play;
+      if (!play.driveImported && !play.originEventId && play.id != null) {
+        inputs.push({
+          id: play.id,
+          timestampUtc: play.timestampUtc,
+          title: play.title,
+          artist: play.artist,
+        });
+      }
+      cursor.continue();
+    };
+    tx.oncomplete = () => resolve(inputs);
+    request.onerror = () => reject(request.error);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Local identity scan aborted'));
+  });
+}
+
 /**
  * Return locally-owned plays that still need their first Drive upload.
  * Scan oldest-first across the whole store: when Drive has been unavailable
