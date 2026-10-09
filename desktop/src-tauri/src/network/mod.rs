@@ -171,12 +171,22 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "Desktop".to_string());
 
+    let drive_provenance: Vec<Option<(String, String)>> = plays.iter()
+        .map(|s| s.id.and_then(|id|
+            crate::commands::drive_sync::lan_play_origin(
+                &state.app_data_dir, id, s.timestamp_utc, &s.title, &s.artist
+            ).ok()
+        ))
+        .collect();
     let payload = SyncPayload {
         auth_token: pairing.auth_token.clone(),
         device_name,
         plays: plays
             .iter()
-            .map(|s| SyncPlay {
+            .zip(drive_provenance.iter())
+            .map(|(s, origin)| SyncPlay {
+                origin_device_id: origin.as_ref().map(|value| value.0.clone()),
+                origin_event_id: origin.as_ref().map(|value| value.1.clone()),
                 title: s.title.clone(),
                 artist: s.artist.clone(),
                 album: s.album.clone(),
