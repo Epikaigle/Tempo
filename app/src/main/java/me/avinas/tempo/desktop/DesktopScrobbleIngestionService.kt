@@ -7,6 +7,7 @@ import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import me.avinas.tempo.data.repository.ArtistLinkingService
 import me.avinas.tempo.data.repository.EnrichedMetadataRepository
+import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.repository.ListeningRepository
@@ -59,6 +60,7 @@ class DesktopPlayIngestionService @Inject constructor(
     private val pairingManager: DesktopPairingManager,
     private val trackRepository: TrackRepository,
     private val listeningRepository: ListeningRepository,
+    private val listeningEventDao: ListeningEventDao,
     private val enrichedMetadataRepository: EnrichedMetadataRepository,
     private val artistLinkingService: ArtistLinkingService,
     private val refreshCoordinator: RefreshCoordinator
@@ -68,6 +70,8 @@ class DesktopPlayIngestionService @Inject constructor(
 
         /** Deduplication window: skip if same track exists within ±5 min. */
         private const val DEDUP_WINDOW_MS = 10_000L
+        private val DRIVE_DEVICE_ID = Regex("^[A-Za-z0-9._-]{1,200}$")
+        private val DRIVE_EVENT_ID = Regex("^[0-9a-f]{64}$")
 
         /** Minimum sensible play duration to accept (5 seconds). */
         private const val MIN_PLAY_DURATION_MS = 5_000L
@@ -134,6 +138,15 @@ class DesktopPlayIngestionService @Inject constructor(
             // don't send this field.
             val listenedMs = entry.optLong("listened_ms", 0L).takeIf { it > 0L } ?: durationMs
             val sourceApp = entry.optString("source_app", "Desktop").trim()
+            val declaredDeviceId = entry.optString("origin_device_id", "")
+            val declaredEventId = entry.optString("origin_event_id", "")
+            // Older LAN senders omit these fields, so keep their existing
+            // heuristic path. New senders reuse their exact Google Drive event
+            // identity, eliminating LAN -> Android -> Drive publication loops.
+            val stableOrigin = if (
+                DRIVE_DEVICE_ID.matches(declaredDeviceId) &&
+                DRIVE_EVENT_ID.matches(declaredEventId)
+            ) declaredDeviceId to declaredEventId else null
 
             // Guard: ignore implausibly short plays
             if (durationMs in 1 until MIN_PLAY_DURATION_MS) {
@@ -186,7 +199,7 @@ class DesktopPlayIngestionService @Inject constructor(
                 }
 
                 // 4. Deduplication: skip if an event for this track exists within ±60 s
-                val isDuplicate = checkDuplicate(trackId, timestampUtc)
+                val isDuplicate = stableOrigin == null && checkDuplicate(trackId, timestampUtc)
                 if (isDuplicate) {
                     Log.d(TAG, "Duplicate skipped: $title @ $timestampUtc")
                     duplicates++
@@ -202,18 +215,26 @@ class DesktopPlayIngestionService @Inject constructor(
                 } else {
                     DESKTOP_COMPLETION_PERCENT
                 }
+                val originSource = entry.optString("origin_source", "desktop:$sourceApp")
                 val event = ListeningEvent(
                     track_id = trackId,
                     timestamp = timestampUtc,
                     playDuration = listenedMs.coerceAtLeast(0L),
                     completionPercentage = completionPct,
-                    source = "desktop:$sourceApp",
+                    source = stableOrigin?.let { "drive:${it.first}:$originSource" } ?: "desktop:$sourceApp",
                     wasSkipped = completionPct < 30,
                     isReplay = false,
-                    estimatedDurationMs = durationMs.takeIf { it > 0L }
+                    estimatedDurationMs = durationMs.takeIf { it > 0L },
+                    contentFingerprint = stableOrigin?.let { "drive:v1:${it.second}" }
                 )
-                listeningRepository.insert(event)
-                accepted++
+                if (stableOrigin == null) {
+                    listeningRepository.insert(event)
+                    accepted++
+                } else {
+                    val result = listeningEventDao.insertAllBatchedWithDedup(listOf(event))
+                    accepted += result.inserted
+                    duplicates += result.skipped
+                }
                 Log.d(TAG, "Accepted: $title by $artist @ $timestampUtc")
 
             } catch (e: Exception) {
