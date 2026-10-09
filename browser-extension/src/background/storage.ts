@@ -15,12 +15,6 @@ const PLAYS_STORE = 'plays';
 const SYNC_HISTORY_STORE = 'syncHistory';
 
 
-// Cheap in-memory lower-bound-ish estimate of total plays, used by
-// enforceMaxRecords() to skip the store.count() + cursor scan entirely while
-// the collection is far below the cap. Starts unknown (+Inf) so the first
-// run measures the real value.
-let _playCountEstimate = Number.POSITIVE_INFINITY;
-
 interface SettingsStorageResult {
   settings?: Settings;
 }
@@ -144,7 +138,6 @@ export async function insertPlay(play: Omit<Play, 'id'>): Promise<number> {
     tx.oncomplete = () => {
       invalidateQueueCountCache();
       invalidateStatsCache();
-      _playCountEstimate++;
       resolve(request.result as number);
     };
     request.onerror = () => reject(request.error);
@@ -169,7 +162,6 @@ export async function insertPlaysBatch(plays: Array<Omit<Play, 'id'>>): Promise<
     tx.oncomplete = () => {
       invalidateQueueCountCache();
       invalidateStatsCache();
-      _playCountEstimate += ids.length;
       resolve(ids);
     };
     tx.onerror = () => reject(tx.error);
@@ -406,7 +398,7 @@ export async function clearQueue(): Promise<number> {
       if (play.id) store.delete(play.id);
     }
 
-    tx.oncomplete = () => { invalidateQueueCountCache(); invalidateStatsCache(); _playCountEstimate -= queued.length; resolve(queued.length); };
+    tx.oncomplete = () => { invalidateQueueCountCache(); invalidateStatsCache(); resolve(queued.length); };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -418,7 +410,7 @@ export async function deletePlay(id: number): Promise<void> {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
     const store = tx.objectStore(PLAYS_STORE);
     store.delete(id);
-    tx.oncomplete = () => { invalidateQueueCountCache(); invalidateStatsCache(); _playCountEstimate--; resolve(); };
+    tx.oncomplete = () => { invalidateQueueCountCache(); invalidateStatsCache(); resolve(); };
     tx.onerror = () => reject(tx.error);
   });
 }
