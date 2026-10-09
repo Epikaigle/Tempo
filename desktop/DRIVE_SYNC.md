@@ -109,6 +109,10 @@ Before changing schema version 1, verify all three producers/consumers agree on:
 
 Any incompatible wire-format change should introduce a new schema version rather than silently changing v1.
 
+## LAN acknowledgment and token continuity
+
+The paired LAN transport requires explicit `{"ok":true}` JSON in the Android HTTP response; HTTP 200 alone is not a durable batch acknowledgment. Malformed, truncated or unconfirmed responses retain queued plays for retry. When the phone rotates its pairing token and returns `next_token`, Desktop persists the new token before marking plays as synced, on all five discovery routes. An error saving the token does not mark the batch as delivered. Cloud Google Drive sync remains independently optional.
+
 ## Historical retention and full recovery
 
 Tempo Desktop no longer deletes local synced scrobbles after 30 days during routine maintenance. Its **Restore full history** action resets only the Drive receive cursor, then re-enumerates all current appDataFolder batches with idempotent event/origin reconciliation. This is distinct from normal incremental sync, which keeps a 24-hour listing overlap.
