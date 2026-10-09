@@ -276,6 +276,8 @@ class ImportExportManager @Inject constructor(
                     var lastEventId = 0L
                     var eventsWritten = 0
                     var lastArchiveId = 0L
+                    var lastOriginEventId = 0L
+                    var lastOriginDevice = ""
 
                     zipOut.putNextEntry(ZipEntry(TempoExportData.DATA_FILENAME))
                     val dataSink = zipOut.sink().buffer()
@@ -296,6 +298,16 @@ class ImportExportManager @Inject constructor(
                             val page = database.scrobbleArchiveDao()
                                 .getArchivePage(lastArchiveId, maxArchiveId, EXPORT_PAGE_SIZE)
                             if (page.isNotEmpty()) lastArchiveId = page.last().id
+                            page
+                        },
+                        originPages = {
+                            val page = database.listeningEventDao().getOriginPage(
+                                lastOriginEventId, lastOriginDevice, maxEventId, EXPORT_PAGE_SIZE
+                            )
+                            if (page.isNotEmpty()) {
+                                lastOriginEventId = page.last().listeningEventId
+                                lastOriginDevice = page.last().sourceDeviceId
+                            }
                             page
                         }
                     )
