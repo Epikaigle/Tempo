@@ -83,6 +83,10 @@ export interface Play {
   originEventId?: string;
   /** Stable random Tempo device id that originally created the play. */
   originDeviceId?: string;
+  /** Other producer event IDs reconciled to this physical play, retained across restarts.
+   * Each origin is allowed to match this row once; later distinct event IDs from
+   * the same producer are genuine replays and must not be swallowed. */
+  reconciledOrigins?: Array<{ deviceId: string; eventId: string }>;
   /** Epoch ms when this locally-owned play was safely uploaded to appDataFolder. */
   driveUploadedAt?: number;
 }
