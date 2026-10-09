@@ -14,10 +14,6 @@ const DB_VERSION = 2;
 const PLAYS_STORE = 'plays';
 const SYNC_HISTORY_STORE = 'syncHistory';
 
-// Maximum age for synced/failed records before auto-cleanup (7 days)
-const MAX_RECORD_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-// Maximum number of play records to keep
-const MAX_PLAY_RECORDS = 5000;
 
 // Cheap in-memory lower-bound-ish estimate of total plays, used by
 // enforceMaxRecords() to skip the store.count() + cursor scan entirely while
@@ -480,134 +476,21 @@ export async function hasRecentPlay(
 }
 
 /**
- * Clean up old synced/failed records and enforce max record count.
- * Called periodically to prevent unbounded DB growth.
- * Optimized: uses the timestampUtc index to skip non-matching records.
+ * Routine maintenance preserves all listening events.
+ *
+ * Drive is an optional transport, not proof of recoverable backup. A browser
+ * extension may be the user's ONLY Tempo client, so neither the previous
+ * seven-day expiry nor a 5,000-row cap may silently erase listening history.
+ * Sync diagnostic records are separate disposable metadata.
  */
 export async function cleanupOldRecords(): Promise<number> {
-  const cutoff = Date.now() - MAX_RECORD_AGE_MS;
-  const driveSyncEnabled = (await getSettings()).driveSyncEnabled;
-  let deleted = 0;
-
-  const db = await openDb();
-  deleted = await new Promise((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readwrite');
-    const store = tx.objectStore(PLAYS_STORE);
-    const index = store.index('timestampUtc');
-    // Only scan records older than cutoff (fast — uses index)
-    const range = IDBKeyRange.upperBound(cutoff);
-    const request = index.openCursor(range);
-
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor) {
-        const play = cursor.value as Play;
-        const driveSafe = !driveSyncEnabled || play.driveImported || !!play.driveUploadedAt;
-        if ((play.status === 'synced' || play.status === 'failed') && driveSafe) {
-          cursor.delete();
-          deleted++;
-        }
-        cursor.continue();
-      }
-    };
-
-    tx.oncomplete = () => {
-      if (deleted > 0) {
-        console.log(`[Tempo] Cleaned up ${deleted} old play records`);
-      }
-      invalidateQueueCountCache();
-      invalidateStatsCache();
-      _playCountEstimate -= deleted;
-      resolve(deleted);
-    };
-    tx.onerror = () => reject(tx.error);
-  });
-
-  // Same housekeeping pass also prunes sync history (age + hard cap).
   await pruneSyncHistory();
-  return deleted;
+  return 0;
 }
 
-/**
- * Enforce maximum record count by deleting oldest entries.
- * Optimized: uses reverse cursor to find excess records directly
- * instead of loading all records into memory.
- */
+/** No automatic play deletion: preserve multi-year local history. */
 export async function enforceMaxRecords(): Promise<void> {
-  // Skip the store.count() + cursor scan entirely while our estimate says the
-  // collection is comfortably below the cap.
-  if (_playCountEstimate < MAX_PLAY_RECORDS) return;
-
-  const driveSyncEnabled = (await getSettings()).driveSyncEnabled;
-  const db = await openDb();
-
-  // First, count total records
-  const totalCount = await new Promise<number>((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readonly');
-    const store = tx.objectStore(PLAYS_STORE);
-    const request = store.count();
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-  // Refresh the estimate with the measured value on every actual run.
-  _playCountEstimate = totalCount;
-
-  if (totalCount <= MAX_PLAY_RECORDS) return;
-
-  const excess = totalCount - MAX_PLAY_RECORDS;
-  const toDelete: number[] = [];
-
-  // Collect oldest record IDs (ascending order = oldest first)
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readonly');
-    const store = tx.objectStore(PLAYS_STORE);
-    const index = store.index('timestampUtc');
-    const request = index.openCursor();
-    let collected = 0;
-
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor && collected < excess) {
-        const play = cursor.value as Play;
-        const driveSafe = !driveSyncEnabled || play.driveImported || !!play.driveUploadedAt;
-        if (play.id != null && driveSafe) {
-          toDelete.push(play.id);
-          collected++;
-        }
-        cursor.continue();
-      } else {
-        resolve();
-      }
-    };
-    request.onerror = () => reject(request.error);
-  });
-
-  if (toDelete.length === 0) {
-    if (driveSyncEnabled) {
-      console.warn(`[Tempo] Keeping ${excess} excess play records until Drive upload completes`);
-    }
-    return;
-  }
-
-  // Delete in a single transaction
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readwrite');
-    const store = tx.objectStore(PLAYS_STORE);
-    for (const id of toDelete) {
-      store.delete(id);
-    }
-    tx.oncomplete = () => { _playCountEstimate = totalCount - toDelete.length; resolve(); };
-    tx.onerror = () => reject(tx.error);
-  });
-
-  invalidateQueueCountCache();
-  invalidateStatsCache();
-  console.log(`[Tempo] Pruned ${toDelete.length} excess play records`);
-  const remaining = totalCount - toDelete.length;
-  if (driveSyncEnabled && remaining > MAX_PLAY_RECORDS) {
-    console.warn(`[Tempo] Keeping ${remaining - MAX_PLAY_RECORDS} excess play records until Drive upload completes`);
-  }
+  // Intentionally empty. Leave explicit user-requested deletion paths alone.
 }
 
 // Sync History
