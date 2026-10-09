@@ -67,7 +67,7 @@ class DesktopPlayIngestionService @Inject constructor(
         private const val TAG = "DesktopIngestion"
 
         /** Deduplication window: skip if same track exists within ±5 min. */
-        private const val DEDUP_WINDOW_MS = 300_000L
+        private const val DEDUP_WINDOW_MS = 10_000L
 
         /** Minimum sensible play duration to accept (5 seconds). */
         private const val MIN_PLAY_DURATION_MS = 5_000L
