@@ -3,6 +3,8 @@ declare const __TEMPO_BROWSER_TARGET__: 'chrome' | 'firefox';
 
 const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GOOGLE_TOKEN_TIMEOUT_MS = 30_000;
 const FIREFOX_AUTH_STORAGE_KEY = 'tempoDriveFirefoxAuth';
 const TOKEN_EXPIRY_SAFETY_MS = 60_000;
 const GOOGLE_USERINFO_TIMEOUT_MS = 30_000;
@@ -191,13 +193,70 @@ function getFirefoxGoogleRedirectUri(): string {
   return `http://127.0.0.1/mozoauth2/${subdomain}`;
 }
 
+/** Base64url without padding, as required for an RFC 7636 PKCE challenge. */
+function base64Url(bytes: Uint8Array): string {
+  let raw = '';
+  for (const byte of bytes) raw += String.fromCharCode(byte);
+  return btoa(raw).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+}
+
+async function newPkcePair(): Promise<{ verifier: string; challenge: string }> {
+  const random = crypto.getRandomValues(new Uint8Array(32));
+  const verifier = base64Url(random);
+  const challenge = base64Url(new Uint8Array(await crypto.subtle.digest(
+    'SHA-256', new TextEncoder().encode(verifier),
+  )));
+  return { verifier, challenge };
+}
+
+async function exchangeFirefoxAuthorizationCode(
+  code: string, verifier: string, redirectUri: string,
+): Promise<{ accessToken: string; expiresIn: number }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GOOGLE_TOKEN_TIMEOUT_MS);
+  try {
+    // The public Firefox extension MUST NOT embed a client secret. Google
+    // exchanges a one-time authorization code using its PKCE verifier.
+    const response = await fetch(GOOGLE_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: __TEMPO_GOOGLE_OAUTH_CLIENT_ID__,
+        code_verifier: verifier,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }).toString(),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Google token exchange failed (HTTP ${response.status})`);
+    const result = await response.json() as {
+      access_token?: unknown; expires_in?: unknown;
+    };
+    if (typeof result.access_token !== 'string' || !result.access_token) {
+      throw new Error('Google token exchange did not return an access token');
+    }
+    const expiresIn = Number(result.expires_in);
+    if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
+      throw new Error('Google returned an invalid token expiry');
+    }
+    return { accessToken: result.access_token, expiresIn };
+  } finally {
+    // Includes response body reading, not only the initial HTTP headers.
+    clearTimeout(timeout);
+  }
+}
+
 async function authorizeFirefox(interactive: boolean): Promise<DriveAuthSession | null> {
   const state = randomState();
   const redirectUri = getFirefoxGoogleRedirectUri();
+  const { verifier, challenge } = await newPkcePair();
   const params = new URLSearchParams({
     client_id: __TEMPO_GOOGLE_OAUTH_CLIENT_ID__,
     redirect_uri: redirectUri,
-    response_type: 'token',
+    response_type: 'code',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
     scope: [
       'openid',
       'email',
@@ -215,31 +274,39 @@ async function authorizeFirefox(interactive: boolean): Promise<DriveAuthSession 
       interactive,
     });
   } catch (err) {
-    // A silent flow is expected to fail when Google needs UI (login_required,
-    // interaction_required, etc.). Treat that as "needs interactive auth" rather
-    // than surfacing it as an auto-sync error.
     if (!interactive) return null;
     throw err;
   }
   if (!responseUrl) return null;
 
   const parsed = new URL(responseUrl);
-  const hash = new URLSearchParams(parsed.hash.replace(/^#/, ''));
-  if (hash.get('state') !== state) throw new Error('Google OAuth state validation failed');
-  const error = hash.get('error');
+  const expectedRedirect = new URL(redirectUri);
+  if (parsed.origin !== expectedRedirect.origin ||
+      parsed.pathname !== expectedRedirect.pathname ||
+      parsed.hash || parsed.searchParams.getAll('state').length !== 1
+  ) {
+    throw new Error('Google OAuth callback location or parameters are invalid');
+  }
+  if (parsed.searchParams.get('state') !== state) {
+    throw new Error('Google OAuth state validation failed');
+  }
+  const error = parsed.searchParams.get('error');
   if (error) {
     if (!interactive) return null;
     throw new Error(`Google authorization failed: ${error}`);
   }
-
-  const accessToken = hash.get('access_token');
-  if (!accessToken) {
+  if (parsed.searchParams.getAll('code').length !== 1) {
     if (!interactive) return null;
-    throw new Error('Google authorization did not return an access token');
+    throw new Error('Google authorization returned an invalid code');
   }
-
-  const expiresInRaw = Number(hash.get('expires_in') ?? '3600');
-  const expiresIn = Number.isFinite(expiresInRaw) ? Math.max(60, expiresInRaw) : 3600;
+  const code = parsed.searchParams.get('code');
+  if (!code) {
+    if (!interactive) return null;
+    throw new Error('Google authorization did not return an authorization code');
+  }
+  const { accessToken, expiresIn } = await exchangeFirefoxAuthorizationCode(
+    code, verifier, redirectUri,
+  );
   const accountEmail = await fetchGoogleEmail(accessToken);
   if (!accountEmail) {
     if (!interactive) return null;
@@ -247,7 +314,7 @@ async function authorizeFirefox(interactive: boolean): Promise<DriveAuthSession 
   }
   const auth: StoredFirefoxAuth = {
     accessToken,
-    expiresAt: Date.now() + expiresIn * 1000,
+    expiresAt: Date.now() + Math.floor(expiresIn) * 1000,
     accountEmail,
   };
   await chrome.storage.local.set({ [FIREFOX_AUTH_STORAGE_KEY]: auth });
