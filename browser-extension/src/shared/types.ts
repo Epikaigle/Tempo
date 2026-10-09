@@ -109,6 +109,7 @@ export interface SyncPlay {
   /** Stable event provenance, shared by LAN and Google Drive. */
   origin_device_id?: string;
   origin_event_id?: string;
+  origin_source?: string;
   title: string;
   artist: string;
   album: string;
