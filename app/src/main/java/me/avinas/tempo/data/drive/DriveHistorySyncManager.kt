@@ -47,6 +47,22 @@ class DriveHistorySyncManager @Inject constructor(
         private const val IMPORT_FINGERPRINT_PREFIX = "drive:v1:"
 
         /**
+         * Original identity of a LAN-delivered event. Only authenticated LAN
+         * payloads with an intact producer ID and event fingerprint qualify.
+         * Keep the original ID on Drive so relaying cannot double-count a play.
+         */
+        internal fun lanRelayIdentity(source: String, fingerprint: String?): Pair<String, String>? {
+            val parts = source.split(':', limit = 3)
+            if (parts.size != 3 || parts[0] != "lan" ||
+                !DriveHistoryProtocol.isValidDeviceId(parts[1]) || parts[2].isBlank()
+            ) return null
+            if (fingerprint?.startsWith(IMPORT_FINGERPRINT_PREFIX) != true) return null
+            val eventId = fingerprint.removePrefix(IMPORT_FINGERPRINT_PREFIX)
+            if (!eventId.matches(Regex("^[0-9a-f]{64}$"))) return null
+            return parts[2] to eventId
+        }
+
+        /**
          * Android stores the device-specific audio stream index, not a portable
          * percentage. Preserve a known mute as 0 and report non-zero indices as
          * unknown instead of misrepresenting (for example) level 8/15 as 8%.
@@ -324,22 +340,17 @@ class DriveHistorySyncManager @Inject constructor(
         // used Drive itself; the remote clients will deduplicate using event_id.
         // A *cloud* import never enters this export path.
         val lanRelay = event.source.startsWith("lan:")
-        val originalSource = if (lanRelay) {
-            event.source.split(':', limit = 3).getOrNull(2) ?: return null
-        } else event.source
+        val origin = if (lanRelay) {
+            lanRelayIdentity(event.source, event.contentFingerprint) ?: return null
+        } else null
+        val originalSource = origin?.first ?: event.source
         val sourceApp = originalSource
             .removePrefix("desktop:")
             .removePrefix("browser:")
             .ifBlank { "android" }
             .let { DriveHistoryProtocol.truncateText(it) }
         val source = DriveHistoryProtocol.truncateText(originalSource.ifBlank { "android" })
-        val originalEventId = if (lanRelay) {
-            event.contentFingerprint
-                ?.takeIf { it.startsWith(IMPORT_FINGERPRINT_PREFIX) }
-                ?.removePrefix(IMPORT_FINGERPRINT_PREFIX)
-                ?.takeIf { it.matches(Regex("^[0-9a-f]{64}$")) }
-                ?: return null
-        } else null
+        val originalEventId = origin?.second
 
         return DriveHistoryEvent(
             eventId = originalEventId ?: DriveHistoryProtocol.createEventId(
