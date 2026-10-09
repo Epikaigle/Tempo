@@ -432,7 +432,13 @@ async function downloadRemotePlays(
   let duplicates = 0;
   let maxCreated = state.downloadCreatedCursor;
 
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
+    // Full-history restores can span thousands of files. Persist progress every
+    // 50 consumed batches so worker suspension/restart resumes near the point
+    // of interruption instead of re-reading ten years from zero.
+    if (index > 0 && index % 50 === 0 && maxCreated > state.downloadCreatedCursor) {
+      await patchRuntimeState({ downloadCreatedCursor: maxCreated });
+    }
     const createdRaw = file.createdTime ? Date.parse(file.createdTime) : 0;
     const created = Number.isFinite(createdRaw) ? createdRaw : 0;
     const generation = batchGeneration(file);
