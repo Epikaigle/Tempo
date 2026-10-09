@@ -884,9 +884,10 @@ class ImportExportManager @Inject constructor(
             // listening row before the alias resolver finds the real original.
             // Query these immutable identities once per chunk and do not insert
             // a second playback for an already-represented origin.
-            val existingByOrigin = chunk.asSequence()
+            val restoredOriginIds = chunk.asSequence()
                 .flatMap { (_, aliases) -> aliases.asSequence().map { it.originEventId } }
-                .distinct().toList().chunked(900)
+                .distinct().toList()
+            val existingByOrigin = restoredOriginIds.chunked(900)
                 .flatMap { dao.getOriginClaimsByOriginIds(it) }
                 .associate { it.originEventId to it.listeningEventId }
             val newEvents = chunk.filter { (_, aliases) ->
@@ -899,6 +900,13 @@ class ImportExportManager @Inject constructor(
             if (newEvents.isNotEmpty()) {
                 inserted += dao.insertAllBatchedWithDedup(newEvents).inserted
             }
+            // The dedup insert may have created new claims. Refresh once per
+            // chunk, rather than issuing a separate query for every playback.
+            // Ten years of listening history can contain hundreds of thousands
+            // of aliases; round trips must scale with pages, not row count.
+            val currentOriginRows = restoredOriginIds.chunked(900)
+                .flatMap { dao.getOriginClaimsByOriginIds(it) }
+                .associate { it.originEventId to it.listeningEventId }
             val newAliases = mutableListOf<ListeningEventOrigin>()
             val claimsByRestoredId = mutableMapOf<Long, MutableMap<String, String>>()
             for ((event, exportedAliases) in chunk) {
@@ -907,8 +915,7 @@ class ImportExportManager @Inject constructor(
                 // may be represented by a different source or timestamp after
                 // another device reconciled it. Only fall back to time when no
                 // saved origin identifies the playback.
-                val byOrigin = exportedAliases.map { it.originEventId }.distinct()
-                    .chunked(900).flatMap { dao.getEventIdsForOriginAliases(it) }.distinct()
+                val byOrigin = exportedAliases.mapNotNull { currentOriginRows[it.originEventId] }.distinct()
                 check(byOrigin.size <= 1) {
                     "Cannot safely restore aliases: producer IDs point to different listening events"
                 }
