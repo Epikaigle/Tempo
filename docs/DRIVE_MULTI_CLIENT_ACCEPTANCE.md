@@ -20,6 +20,9 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | Chrome -> Firefox | Track Spotify Web in Chrome; sync on different network | One imported event in Firefox |
 | Firefox -> Chrome | Track YouTube Music in Firefox; sync | One imported event in Chrome |
 | Browser -> Desktop | Capture browser music on another machine; sync | Exactly one Desktop event |
+| LAN incomplete persistence | Fail one Android database write in the middle of a paired LAN batch | Android returns HTTP 503; sender retries without treating the incomplete batch as delivered |
+| LAN invalid acknowledgment | Return HTTP 200 with empty, malformed, or `ok:false` JSON from a test phone | Desktop and browser both retain every queued play; neither counts the response as success |
+| LAN token rotation | Send two successive batches from Desktop via each available discovery method | Desktop persists `next_token` before acknowledging each batch, and the second batch authenticates without re-pairing |
 | LAN + Drive same origin | Send a Desktop/browser play to Android over LAN, then publish the sender's Drive batch | Same exact event ID is retained; Android counts once and never republishes it under an Android-owned ID |
 | LAN with Drive disabled | Send a Desktop/browser play to Android with Google Drive disabled on sender | No Google OAuth or connection is required merely to attach LAN provenance; local sync still works |
 | LAN-only origin relayed to cloud | Disable Drive on Desktop/extension, send LAN plays to an Android device with Drive enabled, sync Android, and restore on a separate client | Android relays original event IDs; all plays are recoverable without the original sender accessing Drive |
