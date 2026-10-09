@@ -22,6 +22,12 @@ globalThis.indexedDB = { open() {
   return opening;
 } };
 const storage = await import(pathToFileURL(out).href);
+assert.equal(storage.recentPlayWindowMs(), 5_000,
+  'local detector callbacks must use a short tolerance so real replays survive');
+assert.equal(storage.recentPlayWindowMs(''), 5_000);
+assert.equal(storage.recentPlayWindowMs('other-device'), 60_000,
+  'cross-device imports still reconcile a minute of timestamp drift');
+
 for (const abort of [false, true]) {
   let settled = false;
   const insertion = storage.insertPlay({ title: 'Song', artist: 'Artist' });
@@ -41,4 +47,4 @@ for (const abort of [false, true]) {
     assert.equal((await observed).value, 42);
   }
 }
-console.log('\n2 IndexedDB durability scenarios passed');
+console.log('\n5 IndexedDB durability and dedup-window scenarios passed');
