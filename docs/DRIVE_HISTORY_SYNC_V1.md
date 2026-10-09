@@ -136,6 +136,10 @@ The batch ID intentionally does not include the generation. The generation is in
 
 Android Room schema v56 introduces the `listening_event_origins` table with a foreign key to existing listening events, a unique canonical origin event ID and a unique (listening event, producer device) constraint. When several clients capture the same physical play, the secondary event ID is retained on that same local row, even if the duplicate arrived through a different Drive/LAN batch or after a restart. A later, *different* event from the same producer is therefore never temporally merged into that claimed playback. Aliases of an event replaced by a higher-authority record are transferred transactionally; deletions cascade to the alias rows. Migration 55→56 adds the table without deleting listening history and backfills origin IDs already present in imported events.
 
+
+
+The independent `.tempo` local backup format is now **v10**: both listening events and producer-alias rows are streamed in keyset pages. During import, aliases are restored against the new local listening-event IDs in a Room transaction, and ambiguous or orphaned claims cause a visible error rather than silently attaching to the wrong play. Backups made with the previous v9 format remain readable (they do not contain producer-alias rows).
+
 ## Stable retry payloads and historical recovery
 
 A retry of the same producer/event-ID sequence uses an event-derived, stable `created_at_utc` timestamp. The immutable file name and compressed payload must remain stable across retries. If a legacy same-name object has different bytes, preserve it until a verified replacement has been uploaded rather than deleting the only cloud copy first. Consumers verify each batch independently and suppress duplicate event IDs.
