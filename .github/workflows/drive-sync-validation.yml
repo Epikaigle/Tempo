@@ -8,6 +8,10 @@ on:
       - "app/build.gradle.kts"
       - "app/src/main/java/me/avinas/tempo/TempoApplication.kt"
       - "app/src/main/java/me/avinas/tempo/data/drive/**"
+      - "app/src/main/java/me/avinas/tempo/data/local/**"
+      - "app/src/main/java/me/avinas/tempo/desktop/**"
+      - "app/src/test/java/me/avinas/tempo/data/local/**"
+      - "app/schemas/**"
       - "app/src/main/java/me/avinas/tempo/di/DriveModule.kt"
       - "app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreScreen.kt"
       - "app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreViewModel.kt"
@@ -23,6 +27,10 @@ on:
       - "app/build.gradle.kts"
       - "app/src/main/java/me/avinas/tempo/TempoApplication.kt"
       - "app/src/main/java/me/avinas/tempo/data/drive/**"
+      - "app/src/main/java/me/avinas/tempo/data/local/**"
+      - "app/src/main/java/me/avinas/tempo/desktop/**"
+      - "app/src/test/java/me/avinas/tempo/data/local/**"
+      - "app/schemas/**"
       - "app/src/main/java/me/avinas/tempo/di/DriveModule.kt"
       - "app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreScreen.kt"
       - "app/src/main/java/me/avinas/tempo/ui/settings/BackupRestoreViewModel.kt"
@@ -81,14 +89,6 @@ jobs:
       - run: chmod +x gradlew
       - name: Compile Android Kotlin
         run: ./gradlew :app:compileDebugKotlin --stacktrace
-      # Transient review step: use the compiler-exported schema, including its
-      # authentic Room identity hash, instead of guessing the v56 JSON.
-      - name: Output generated Room 56 schema for migration review
-        run: |
-          test -f app/schemas/me.avinas.tempo.data.local.AppDatabase/56.json
-          echo TEMPO_ROOM56_START
-          base64 app/schemas/me.avinas.tempo.data.local.AppDatabase/56.json
-          echo TEMPO_ROOM56_END
       - name: Android unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Assemble Android debug APK
