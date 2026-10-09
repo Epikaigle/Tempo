@@ -22,7 +22,7 @@ await esbuild.build({
   },
 });
 
-const { driveProtocolTest: protocol } = await import(pathToFileURL(out).href);
+const { driveProtocolTest: protocol, getDriveLanOrigin } = await import(pathToFileURL(out).href);
 let pass = 0;
 let fail = 0;
 
@@ -68,6 +68,22 @@ check(
   eventId === '69bd5521a322b3d1aaeca431b7380bd49f3a28e1c1d1b1dc0a754ca37e6a06b4',
   eventId,
 );
+
+// Sending the same stored row over Wi-Fi and Drive must preserve its origin ID.
+// This also works without any Google authorization: it only reads local storage.
+globalThis.chrome = {
+  storage: { local: {
+    get: async key => ({ [key]: 'device-1' }),
+    set: async () => {},
+  } },
+};
+const lanOrigin = await getDriveLanOrigin(play);
+check('LAN producer identity matches Drive without Google login',
+  lanOrigin.origin_device_id === 'device-1' && lanOrigin.origin_event_id === eventId);
+const forwardedOrigin = await getDriveLanOrigin({ ...play, originEventId: 'f'.repeat(64) });
+check('LAN forwarding preserves existing source event ID',
+  forwardedOrigin.origin_event_id === 'f'.repeat(64));
+
 
 const event = {
   event_id: eventId,
