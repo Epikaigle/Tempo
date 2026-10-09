@@ -250,6 +250,31 @@ class DriveHistorySyncManager @Inject constructor(
         }
     }
 
+    /** The authenticated LAN producer is the owner of relayed events.
+     * Writing all relays as Android-origin batches would wrongly classify two
+     * distinct producers' captures as two events from one producer, breaking
+     * one-to-one deduplication on the receiving clients.
+     */
+    internal data class BatchProducer(val deviceId: String, val platform: String) {
+        val displayName: String get() = "Tempo ${platform.replaceFirstChar { it.uppercase() }}"
+    }
+
+    private fun uploadProducer(event: ListeningEvent): BatchProducer {
+        if (!event.source.startsWith("lan:")) {
+            return BatchProducer(deviceId, "android")
+        }
+        val parts = event.source.split(':', limit = 3)
+        check(parts.size == 3 && DriveHistoryProtocol.isValidDeviceId(parts[1])) {
+            "Cannot recover producer identity for relayed LAN listening event ${event.id}"
+        }
+        val platform = when {
+            parts[2].startsWith("desktop:") -> "desktop"
+            parts[2].startsWith("browser:") -> "browser"
+            else -> "android"
+        }
+        return BatchProducer(parts[1], platform)
+    }
+
     /**
      * Uploads locally-owned Room events in id order. Imported Drive events are
      * skipped so another device's event can never bounce back into Drive as a new
@@ -278,7 +303,7 @@ class DriveHistorySyncManager @Inject constructor(
             val page = dao.getEventsPage(afterId, maxId, PAGE_SIZE)
             if (page.isEmpty()) break
 
-            val protocolEvents = mutableListOf<DriveHistoryEvent>()
+            val eventsByProducer = linkedMapOf<BatchProducer, MutableList<DriveHistoryEvent>>()
             for (event in page) {
                 // Downloaded Drive history must not bounce back into the cloud.
                 // LAN history is different: the sender can have Drive disabled,
@@ -291,33 +316,36 @@ class DriveHistorySyncManager @Inject constructor(
                 // Surface the row ID and retry after its metadata is repaired.
                 val exported = localEventToProtocol(event)
                     ?: error("Tempo cannot export listening event ${event.id}; restore its track metadata before retrying")
-                protocolEvents.add(exported)
+                eventsByProducer.getOrPut(uploadProducer(event)) { mutableListOf() }.add(exported)
             }
 
-            for (events in protocolEvents.chunked(BATCH_SIZE)) {
-                if (events.isEmpty()) continue
-                val batchId = DriveHistoryProtocol.createBatchId(events)
-                val batch = DriveHistoryBatch(
-                    batchId = batchId,
-                    sourceDeviceId = deviceId,
-                    sourceDeviceName = deviceName,
-                    sourcePlatform = "android",
-                    createdAtUtc = events.maxOf { it.timestampUtc },
-                    events = events
-                )
-                val bytes = DriveHistoryProtocol.encodeCompressed(batch)
-                appDataClient.uploadHistoryBatch(
-                    fileName = DriveHistoryProtocol.fileName(deviceId, batchId, generation),
-                    compressedBytes = bytes,
-                    appProperties = mapOf(
-                        DriveHistoryProtocol.APP_PROPERTY_KIND to DriveHistoryProtocol.KIND_HISTORY_BATCH,
-                        DriveHistoryProtocol.APP_PROPERTY_SCHEMA to DriveHistoryProtocol.SCHEMA_VERSION.toString(),
-                        DriveHistoryProtocol.APP_PROPERTY_DEVICE_ID to deviceId,
-                        DriveHistoryProtocol.APP_PROPERTY_PLATFORM to "android",
-                        DriveHistoryProtocol.APP_PROPERTY_GENERATION to generation.toString()
+            // Keep each producer's events in its own immutable Drive batch.
+            // Event IDs and batch IDs are still deterministic across retries.
+            for ((producer, producerEvents) in eventsByProducer) {
+                for (events in producerEvents.chunked(BATCH_SIZE)) {
+                    val batchId = DriveHistoryProtocol.createBatchId(events)
+                    val batch = DriveHistoryBatch(
+                        batchId = batchId,
+                        sourceDeviceId = producer.deviceId,
+                        sourceDeviceName = producer.displayName,
+                        sourcePlatform = producer.platform,
+                        createdAtUtc = events.maxOf { it.timestampUtc },
+                        events = events
                     )
-                )
-                uploaded += events.size
+                    val bytes = DriveHistoryProtocol.encodeCompressed(batch)
+                    appDataClient.uploadHistoryBatch(
+                        fileName = DriveHistoryProtocol.fileName(producer.deviceId, batchId, generation),
+                        compressedBytes = bytes,
+                        appProperties = mapOf(
+                            DriveHistoryProtocol.APP_PROPERTY_KIND to DriveHistoryProtocol.KIND_HISTORY_BATCH,
+                            DriveHistoryProtocol.APP_PROPERTY_SCHEMA to DriveHistoryProtocol.SCHEMA_VERSION.toString(),
+                            DriveHistoryProtocol.APP_PROPERTY_DEVICE_ID to producer.deviceId,
+                            DriveHistoryProtocol.APP_PROPERTY_PLATFORM to producer.platform,
+                            DriveHistoryProtocol.APP_PROPERTY_GENERATION to generation.toString()
+                        )
+                    )
+                    uploaded += events.size
+                }
             }
 
             afterId = page.last().id
