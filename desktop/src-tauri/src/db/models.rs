@@ -235,6 +235,12 @@ pub struct SyncPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncPlay {
+    /// Original Tempo identity shared between LAN and Google Drive; optional
+    /// for compatibility with older paired Android clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_device_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_event_id: Option<String>,
     pub title: String,
     pub artist: String,
     pub album: String,
