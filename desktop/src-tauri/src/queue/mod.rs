@@ -58,25 +58,15 @@ pub async fn start_auto_sync(app_handle: tauri::AppHandle) {
         };
 
         if should_attempt_lan {
-            // The phone accepts at most 100 events per HTTP request. The DB
-            // returns batches of 50; drain a bounded backlog during one wakeup
-            // instead of requiring 15-30 minutes per batch after time offline.
-            // Limit bursts to 20 requests to respect phone rate/battery limits.
-            for _ in 0..20 {
-                match crate::network::sync_to_phone(&app_handle).await {
-                    Ok(count) => {
-                        info!("LAN auto-sync successful: {} plays sent", count);
-                        let _ = app_handle.emit("sync-completed", count);
-                        if count < 50 {
-                            break;
-                        }
-                    }
-                    Err(crate::network::SyncError::EmptyQueue) => break,
-                    Err(e) => {
-                        error!("LAN auto-sync failed: {}", e);
-                        let _ = app_handle.emit("sync-failed", e.to_string());
-                        break;
-                    }
+            match crate::network::sync_pending_to_phone(&app_handle).await {
+                Ok(count) => {
+                    info!("LAN auto-sync successful: {} plays sent", count);
+                    let _ = app_handle.emit("sync-completed", count);
+                }
+                Err(crate::network::SyncError::EmptyQueue) => {}
+                Err(e) => {
+                    error!("LAN auto-sync failed: {}", e);
+                    let _ = app_handle.emit("sync-failed", e.to_string());
                 }
             }
         }
