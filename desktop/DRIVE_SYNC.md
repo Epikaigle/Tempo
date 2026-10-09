@@ -113,6 +113,16 @@ Any incompatible wire-format change should introduce a new schema version rather
 
 The paired LAN transport requires explicit `{"ok":true}` JSON in the Android HTTP response; HTTP 200 alone is not a durable batch acknowledgment. Malformed, truncated or unconfirmed responses retain queued plays for retry. When the phone rotates its pairing token and returns `next_token`, Desktop persists the new token before marking plays as synced, on all five discovery routes. An error saving the token does not mark the batch as delivered. Cloud Google Drive sync remains independently optional.
 
+## Long offline periods and LAN delivery limits
+
+The existing Android LAN endpoint accepts at most **100 plays in one HTTP request**.
+Desktop now selects at most **50 queued plays** per request, in deterministic
+timestamp/row-ID order. Both **Sync now** and the periodic LAN sync can drain up
+to **20 successive batches (1,000 plays)** per invocation, stopping on errors
+or when the queue is empty. Remaining local plays stay queued for another
+attempt. This prevents an old offline backlog from being rejected as an
+oversized LAN upload; Drive's independent upload bookkeeping is unaffected.
+
 ## Historical retention and full recovery
 
 Tempo Desktop no longer deletes local synced scrobbles after 30 days during routine maintenance. Its **Restore full history** action resets only the Drive receive cursor, then re-enumerates all current appDataFolder batches with idempotent event/origin reconciliation. This is distinct from normal incremental sync, which keeps a 24-hour listing overlap.
