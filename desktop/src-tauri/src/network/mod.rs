@@ -34,6 +34,33 @@ pub enum SyncError {
     BatteryCritical,
 }
 
+/// Drain a bounded number of LAN batches during one manual or background
+/// action. Android accepts at most 100 plays per HTTP request; each invocation
+/// of sync_to_phone loads only 50. Stop on errors without claiming the remaining
+/// queued history was delivered. A future wakeup can resume safely.
+pub async fn sync_pending_to_phone(
+    app_handle: &tauri::AppHandle,
+) -> Result<usize, SyncError> {
+    let mut total = 0usize;
+    for _ in 0..20 {
+        match sync_to_phone(app_handle).await {
+            Ok(count) => {
+                total += count;
+                if count < 50 {
+                    break;
+                }
+            }
+            Err(SyncError::EmptyQueue) if total > 0 => break,
+            Err(error) => return Err(error),
+        }
+    }
+    if total == 0 {
+        Err(SyncError::EmptyQueue)
+    } else {
+        Ok(total)
+    }
+}
+
 /// Compute HMAC-SHA256 signature for a payload using the auth token as key.
 fn compute_hmac(auth_token: &str, payload_json: &str) -> String {
     use hmac::{Hmac, Mac};
