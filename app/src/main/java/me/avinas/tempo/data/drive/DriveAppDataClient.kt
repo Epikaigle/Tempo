@@ -179,12 +179,13 @@ class DriveAppDataClient @Inject constructor(
                 Log.d(TAG, "Verified existing history batch; treating retry as success: $fileName")
                 return@executeWithRetry existing.toAppDataFile()
             }
-            // A same-name object with different bytes is never a successful
-            // idempotent retry. Remove it before publishing the deterministic
-            // payload so later clients cannot accept corrupted history.
-            findFilesByExactName(api, fileName).forEach { existing ->
-                api.files().delete(existing.id).execute()
-            }
+            // Do not delete an older same-name object before a validated
+            // replacement exists. A previous app version may have serialized
+            // created_at_utc differently; removing the only cloud copy during
+            // an upload retry would risk irreversible history loss. Drive permits
+            // same-name appDataFolder objects. Readers validate each checksum
+            // and de-duplicate by originating event ID.
+            // The stable batch timestamp now makes ordinary retries byte-identical.
 
             val metadata = DriveFile().apply {
                 name = fileName
