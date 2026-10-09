@@ -56,30 +56,45 @@ let localRecords = [{
   title: 'Song', artist: 'Artist', timestampUtc: baseTime,
   originDeviceId: 'remote-A',
 }];
-database.transaction = () => ({
-  objectStore: () => ({
-    index: () => ({
-      openCursor(range) {
-        const entries = localRecords.filter(item =>
-          item.timestampUtc >= range.lower && item.timestampUtc <= range.upper);
-        const lookup = {};
-        let index = 0;
-        const next = () => {
-          const item = entries[index++];
-          lookup.result = item ? { value: item, continue: () => queueMicrotask(next) } : null;
-          lookup.onsuccess?.();
-        };
-        queueMicrotask(next);
-        return lookup;
-      },
+database.transaction = () => {
+  const tx = {
+    objectStore: () => ({
+      index: () => ({
+        openCursor(range) {
+          const entries = localRecords.filter(item =>
+            item.timestampUtc >= range.lower && item.timestampUtc <= range.upper);
+          const lookup = {};
+          let index = 0;
+          const next = () => {
+            const item = entries[index++];
+            lookup.result = item ? {
+              value: item,
+              continue: () => queueMicrotask(next),
+              update(newValue) {
+                const position = localRecords.indexOf(item);
+                localRecords[position] = newValue;
+                queueMicrotask(() => tx.oncomplete?.());
+              },
+            } : null;
+            lookup.onsuccess?.();
+          };
+          queueMicrotask(next);
+          return lookup;
+        },
+      }),
     }),
-  }),
-});
+  };
+  return tx;
+};
 assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 4_000), true);
 assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000), false,
   'a real local short-track replay must not be dropped');
-assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000, 'remote-B'), true,
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000, 'remote-B', 'event-B1'), true,
   'different devices capturing the same play must reconcile');
+assert.deepEqual(localRecords[0].reconciledOrigins, [{ deviceId: 'remote-B', eventId: 'event-B1' }],
+  'matched producer/event ID must be durable before acknowledging the duplicate');
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 27_000, 'remote-B', 'event-B2'), false,
+  'another replay from the same producer must not be swallowed by the first alias');
 assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000, 'remote-A'), false,
   'distinct quick replays from one origin must be preserved');
 assert.equal(await storage.hasRecentPlay('Different Song', 'Artist', baseTime + 2_000, 'remote-B'), false);
