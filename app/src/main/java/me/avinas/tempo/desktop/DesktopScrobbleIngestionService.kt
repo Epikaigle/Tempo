@@ -235,7 +235,11 @@ class DesktopPlayIngestionService @Inject constructor(
                     timestamp = timestampUtc,
                     playDuration = listenedMs.coerceAtLeast(0L),
                     completionPercentage = completionPct,
-                    source = stableOrigin?.let { "drive:${it.first}:$originSource" } ?: "desktop:$sourceApp",
+                    // A LAN-delivered play is not necessarily present on Drive:
+                    // the sender may have disabled Google sync. Keep its exact
+                    // producer/event ID, but distinguish LAN from cloud imports
+                    // so Android can relay this play without generating a new ID.
+                    source = stableOrigin?.let { "lan:${it.first}:$originSource" } ?: "desktop:$sourceApp",
                     wasSkipped = completionPct < 30,
                     isReplay = false,
                     estimatedDurationMs = durationMs.takeIf { it > 0L },
