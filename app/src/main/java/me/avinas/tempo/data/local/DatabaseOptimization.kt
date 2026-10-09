@@ -318,8 +318,11 @@ class DatabaseOptimization @Inject constructor(
         // Analyze for query optimization
         analyzeDatabase()
         
-        // Cleanup old data
-        val deletedEvents = cleanupOldData()
+        // Long-term history is user data, not a disposable cache. Routine
+        // maintenance must never silently erase events after one year.
+        // cleanupOldData(retentionDays) remains an explicitly-invoked operation,
+        // but it is NOT part of routine full maintenance.
+        val deletedEvents = 0
         
         // Vacuum if needed
         val statsBeforeVacuum = getDatabaseStats()
