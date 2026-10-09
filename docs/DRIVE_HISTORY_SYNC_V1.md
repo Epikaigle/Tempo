@@ -211,7 +211,7 @@ the same Google account.
 |---|---|---|
 | Android | `GOOGLE_WEB_CLIENT_ID` in local.properties, or `TEMPO_GOOGLE_WEB_CLIENT_ID` in the build environment | Register the Android package and signing certificate, and configure the associated Web client. Request `drive.file` and `drive.appdata`. |
 | Chrome | `TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME` | Register the released extension identity. Request `openid`, `email` and `drive.appdata`. |
-| Firefox | `TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX` | Register the loopback redirect produced for the signed Firefox extension identity. Request `openid`, `email` and `drive.appdata`. |
+| Firefox | `TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX` | Configure the Firefox extension's exact `http://127.0.0.1/mozoauth2/<extension-subdomain>` loopback redirect with a compatible public Google OAuth client. Use authorization code + S256 PKCE (no implicit grant or bundled secret), and request `openid`, `email`, `drive.appdata`. Validate real-account code exchange and silent renewal on Firefox. |
 | Desktop | `TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP` | Register a Desktop public client with a loopback callback. Request `openid`, `email` and `drive.appdata`. |
 
 Client IDs are public identifiers. Do not put OAuth client secrets or refresh
