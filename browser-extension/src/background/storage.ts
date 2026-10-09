@@ -306,6 +306,43 @@ export async function getDrivePendingPlays(limit = Number.MAX_SAFE_INTEGER): Pro
   });
 }
 
+/** Persist the first canonical local event ID before either LAN or Drive
+ * transmits it. The transaction must commit before the caller uses the ID;
+ * retries and title/artist edits then reuse exactly the same identity.
+ */
+export async function ensureLocalOriginEventId(playId: number, candidateId: string): Promise<string> {
+  if (!/^[0-9a-f]{64}$/.test(candidateId)) throw new Error('Invalid local origin identity');
+  const db = await openDb();
+  return new Promise<string>((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readwrite');
+    const store = tx.objectStore(PLAYS_STORE);
+    let pinnedId: string | null = null;
+    const request = store.get(playId);
+    request.onsuccess = () => {
+      const play = request.result as Play | undefined;
+      if (!play || play.driveImported) {
+        tx.abort();
+        return;
+      }
+      if (play.originEventId && !/^[0-9a-f]{64}$/.test(play.originEventId)) {
+        tx.abort();
+        return;
+      }
+      pinnedId = play.originEventId ?? candidateId;
+      if (!play.originEventId) {
+        play.originEventId = pinnedId;
+        store.put(play);
+      }
+    };
+    tx.oncomplete = () => {
+      if (pinnedId) resolve(pinnedId);
+      else reject(new Error('Could not pin local event identity'));
+    };
+    tx.onerror = () => reject(tx.error ?? new Error('Failed to persist event identity'));
+    tx.onabort = () => reject(tx.error ?? new Error('Cannot pin an absent, imported, or invalid play'));
+  });
+}
+
 /** Mark uploaded rows by primary key, not by scanning every historic play.
  * Persist the origin identity alongside the verified upload in one IndexedDB
  * transaction: a later full restore can then recognize locally-owned events
