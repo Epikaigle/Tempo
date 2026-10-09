@@ -878,7 +878,27 @@ class ImportExportManager @Inject constructor(
         // resolving each event's NEW row ID; never reuse exported numeric IDs.
         suspend fun flush() {
             if (chunk.isEmpty()) return
-            inserted += dao.insertAllBatchedWithDedup(chunk.map { it.first }).inserted
+            // Re-imported producer identities may already belong to a row with
+            // different track metadata, source or timestamp. Replaying such an
+            // event through temporal dedup first can create a duplicate local
+            // listening row before the alias resolver finds the real original.
+            // Query these immutable identities once per chunk and do not insert
+            // a second playback for an already-represented origin.
+            val existingByOrigin = chunk.asSequence()
+                .flatMap { (_, aliases) -> aliases.asSequence().map { it.originEventId } }
+                .distinct().toList().chunked(900)
+                .flatMap { dao.getOriginClaimsByOriginIds(it) }
+                .associate { it.originEventId to it.listeningEventId }
+            val newEvents = chunk.filter { (_, aliases) ->
+                val targets = aliases.mapNotNull { existingByOrigin[it.originEventId] }.distinct()
+                check(targets.size <= 1) {
+                    "Cannot safely restore aliases: producer IDs point to different listening events"
+                }
+                targets.isEmpty()
+            }.map { it.first }
+            if (newEvents.isNotEmpty()) {
+                inserted += dao.insertAllBatchedWithDedup(newEvents).inserted
+            }
             val newAliases = mutableListOf<ListeningEventOrigin>()
             val claimsByRestoredId = mutableMapOf<Long, MutableMap<String, String>>()
             for ((event, exportedAliases) in chunk) {
