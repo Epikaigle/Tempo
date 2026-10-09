@@ -103,6 +103,12 @@ class DriveHistorySyncViewModel @Inject constructor(
         }
     }
 
+    fun restoreFullHistory() {
+        launchExclusive {
+            syncResultToUi(syncManager.restoreFullHistory())
+        }
+    }
+
     fun deleteCloudHistory() {
         launchExclusive {
             try {
@@ -227,6 +233,20 @@ fun DriveHistorySyncSection(
                             Text("Sync now")
                         }
                     }
+
+                    OutlinedButton(
+                        onClick = viewModel::restoreFullHistory,
+                        enabled = operation !is DriveHistoryUiOperation.Running,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Text("Restore full history from Drive")
+                    }
+                    Text(
+                        "Rechecks all historical Drive batches without removing local listening data.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.65f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
 
                     when (val op = operation) {
                         is DriveHistoryUiOperation.Success -> Text(
