@@ -125,13 +125,27 @@ class DesktopPlayIngestionService @Inject constructor(
         var duplicates = 0
         val newTrackIds = mutableSetOf<Long>()
 
+        // Reject malformed batches instead of acknowledging plays we silently
+        // discarded. LAN senders remove whole batches on a successful response,
+        // so a missing title/artist/timestamp would otherwise be lost forever.
         for (i in 0 until playsArray.length()) {
-            val entry = playsArray.optJSONObject(i) ?: continue
+            val entry = playsArray.optJSONObject(i)
+                ?: return IngestionResult.Error("invalid_play_at_index_$i")
+            if (entry.optString("title").isBlank() ||
+                entry.optString("artist").isBlank() ||
+                entry.optLong("timestamp_utc", 0L) <= 0L
+            ) {
+                return IngestionResult.Error("invalid_play_at_index_$i")
+            }
+        }
 
-            val title = entry.optString("title").trim().takeIf { it.isNotBlank() } ?: continue
-            val artist = entry.optString("artist").trim().takeIf { it.isNotBlank() } ?: continue
+        for (i in 0 until playsArray.length()) {
+            val entry = playsArray.getJSONObject(i)
+
+            val title = entry.getString("title").trim()
+            val artist = entry.getString("artist").trim()
             val album = entry.optString("album").takeIf { it.isNotBlank() }
-            val timestampUtc = entry.optLong("timestamp_utc", 0L).takeIf { it > 0L } ?: continue
+            val timestampUtc = entry.getLong("timestamp_utc")
             val durationMs = entry.optLong("duration_ms", 0L)
             // listened_ms is sent by the browser extension and represents actual listened time.
             // Fall back to duration_ms (full track duration) for desktop app plays that
@@ -237,9 +251,15 @@ class DesktopPlayIngestionService @Inject constructor(
                 }
                 Log.d(TAG, "Accepted: $title by $artist @ $timestampUtc")
 
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing play [$title / $artist]", e)
-                // Continue with remaining entries rather than aborting the whole batch
+                Log.e(TAG, "Could not durably ingest LAN play [$title / $artist] at index $i", e)
+                // The sender acknowledges and clears the entire LAN batch on
+                // success. Return a non-2xx error instead; already committed
+                // events are safe to retry because of their stable origin IDs.
+                // Never rotate the pairing token on a failed batch.
+                return IngestionResult.Error("ingestion_failed_retry_batch")
             }
         }
 
