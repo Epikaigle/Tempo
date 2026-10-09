@@ -591,3 +591,25 @@ async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<Option<Stri
 
     Err(last_error)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lan_ack_requires_confirmed_json_before_deleting_local_plays() {
+        for invalid in [
+            "", "not json", "{}", "{\"ok\":false}", "{\"ok\":\"true\"}",
+            "{\"accepted\":10}", "{\"ok\":true,\"next_token\":\"short\"}",
+        ] {
+            assert!(parse_lan_acknowledgment(invalid).is_err(), "{invalid}");
+        }
+        assert_eq!(
+            parse_lan_acknowledgment("{\"ok\":true,\"accepted\":1,\"duplicates\":0}").unwrap(),
+            None,
+        );
+        let token = "a".repeat(48);
+        let ack = format!("{{\"ok\":true,\"next_token\":\"{token}\"}}");
+        assert_eq!(parse_lan_acknowledgment(&ack).unwrap(), Some(token));
+    }
+}
