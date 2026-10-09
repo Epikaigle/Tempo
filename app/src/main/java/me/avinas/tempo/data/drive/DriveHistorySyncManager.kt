@@ -51,6 +51,33 @@ class DriveHistorySyncManager @Inject constructor(
          * payloads with an intact producer ID and event fingerprint qualify.
          * Keep the original ID on Drive so relaying cannot double-count a play.
          */
+        /**
+         * Once an Android-native play has an origin ID, its identity must not
+         * change if the user later corrects the track's title or artist.
+         */
+        internal fun stableLocalEventId(
+            existingOriginId: String?,
+            deviceId: String,
+            localEventId: Long,
+            timestampUtc: Long,
+            title: String,
+            artist: String
+        ): String {
+            if (existingOriginId != null) {
+                require(existingOriginId.matches(Regex("^[0-9a-f]{64}$"))) {
+                    "Invalid persisted Android playback origin"
+                }
+                return existingOriginId
+            }
+            return DriveHistoryProtocol.createEventId(
+                deviceId = deviceId,
+                localEventId = localEventId,
+                timestampUtc = timestampUtc,
+                title = title,
+                artist = artist
+            )
+        }
+
         internal fun lanBatchProducer(source: String): BatchProducer? {
             val parts = source.split(':', limit = 3)
             if (parts.size != 3 || parts[0] != "lan" ||
@@ -308,6 +335,14 @@ class DriveHistorySyncManager @Inject constructor(
             val page = dao.getEventsPage(afterId, maxId, PAGE_SIZE)
             if (page.isEmpty()) break
 
+            // Resolve per-play identities before serialization. Persist new
+            // Android-native IDs BEFORE network I/O: a crash after the Drive
+            // upload must never allow a later metadata correction to change
+            // the event ID on the retry or a full-history restore.
+            val ownOrigins = dao.getOriginClaimsForEvents(page.map { it.id })
+                .filter { it.sourceDeviceId == deviceId }
+                .associate { it.listeningEventId to it.originEventId }
+            val newOwnOrigins = mutableListOf<ListeningEventOrigin>()
             val eventsByProducer = linkedMapOf<BatchProducer, MutableList<DriveHistoryEvent>>()
             for (event in page) {
                 // Downloaded Drive history must not bounce back into the cloud.
@@ -319,10 +354,16 @@ class DriveHistorySyncManager @Inject constructor(
                 // Never move the persistent upload cursor past a local play that
                 // cannot be exported (for example, a temporarily missing Track).
                 // Surface the row ID and retry after its metadata is repaired.
-                val exported = localEventToProtocol(event)
+                val exported = localEventToProtocol(event, ownOrigins[event.id])
                     ?: error("Tempo cannot export listening event ${event.id}; restore its track metadata before retrying")
+                if (!event.source.startsWith("lan:") && !event.source.startsWith("drive:") &&
+                    ownOrigins[event.id] == null
+                ) {
+                    newOwnOrigins.add(ListeningEventOrigin(exported.eventId, event.id, deviceId))
+                }
                 eventsByProducer.getOrPut(uploadProducer(event)) { mutableListOf() }.add(exported)
             }
+            if (newOwnOrigins.isNotEmpty()) dao.insertOriginAliases(newOwnOrigins)
 
             // Keep each producer's events in its own immutable Drive batch.
             // Event IDs and batch IDs are still deterministic across retries.
@@ -360,7 +401,10 @@ class DriveHistorySyncManager @Inject constructor(
         return uploaded
     }
 
-    private suspend fun localEventToProtocol(event: ListeningEvent): DriveHistoryEvent? {
+    private suspend fun localEventToProtocol(
+        event: ListeningEvent,
+        persistedOriginId: String?
+    ): DriveHistoryEvent? {
         val track = database.trackDao().getTrackById(event.track_id) ?: return null
         val title = DriveHistoryProtocol.truncateText(track.title.trim()).takeIf { it.isNotBlank() } ?: return null
         val artist = DriveHistoryProtocol.truncateText(track.artist.trim()).takeIf { it.isNotBlank() } ?: return null
@@ -387,7 +431,8 @@ class DriveHistorySyncManager @Inject constructor(
         val originalEventId = origin?.second
 
         return DriveHistoryEvent(
-            eventId = originalEventId ?: DriveHistoryProtocol.createEventId(
+            eventId = originalEventId ?: stableLocalEventId(
+                existingOriginId = persistedOriginId,
                 deviceId = deviceId,
                 localEventId = event.id,
                 timestampUtc = event.timestamp,
