@@ -38,7 +38,9 @@ const BATCH_SIZE: usize = 50;
 const MAX_LOCAL_SCAN: usize = 5000;
 const MAX_BATCH_BYTES: usize = 10 * 1024 * 1024;
 const DOWNLOAD_OVERLAP_MS: i64 = 24 * 60 * 60 * 1000;
-const TEMPORAL_DEDUP_MS: i64 = 60_000;
+// Match Android and browser Drive imports: a full-minute overlap can hide
+// a genuine second play of a short track captured by another device.
+const TEMPORAL_DEDUP_MS: i64 = 10_000;
 
 static SYNC_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 
@@ -1298,9 +1300,9 @@ fn insert_remote_event(
         return Ok(false);
     }
 
-    // The ±60s fallback exists to reconcile two different capture origins that
-    // observed the same physical playback. Distinct event IDs from the same
-    // originating device are legitimate rapid replays and must not be merged.
+    // The bounded ±10s fallback reconciles near-simultaneous captures from
+    // different producers without swallowing real 25-second track replays.
+    // Distinct IDs from the same device must never be merged temporally.
     let title = event.title.trim().to_lowercase();
     let artist = event.artist.trim().to_lowercase();
     let existing_temporal = {
@@ -1927,6 +1929,25 @@ mod tests {
         ).unwrap();
         assert_eq!((count, recorded), (2, matching_id));
         assert!(!insert_remote_event(&conn, "remote-device", &event).unwrap());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn different_devices_playing_same_short_track_25_seconds_apart_stay_distinct() {
+        let (directory, conn) = history_storage_fixture();
+        let original = fixture_batch().events[0].clone();
+        let mut second_play = original.clone();
+        second_play.event_id = "a".repeat(64);
+        second_play.timestamp_utc += 25_000;
+        assert!(insert_remote_event(&conn, "device-one", &original).unwrap());
+        assert!(insert_remote_event(&conn, "device-two", &second_play).unwrap(),
+            "a second 25-second replay on another device cannot be deduplicated");
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM scrobbles", [],
+            |row| row.get(0)).unwrap();
+        assert_eq!(count, 2);
+        assert!(!insert_remote_event(&conn, "device-two", &second_play).unwrap(),
+            "the second play must still be idempotent by its exact event ID");
         drop(conn);
         std::fs::remove_dir_all(directory).unwrap();
     }
