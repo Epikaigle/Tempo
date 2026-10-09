@@ -413,13 +413,12 @@ impl Database {
         Ok(count)
     }
 
-    /// Remove old synced scrobbles (>30 days) and old sync_history entries (>90 days)
-    /// to prevent unbounded table growth.
+    /// Retain all listening events, including those synced over LAN/Drive.
+    /// Users need a multi-year local history: successful delivery to another
+    /// device is not permission to erase their only local copy. Only prune the
+    /// diagnostic sync log, never the scrobbles themselves.
     pub fn prune_old_data(&self) -> Result<(usize, usize), rusqlite::Error> {
-        let scrobbles_pruned = self.conn.execute(
-            "DELETE FROM scrobbles WHERE status = 'synced' AND timestamp_utc < strftime('%s', 'now', '-30 days') * 1000",
-            [],
-        )?;
+        let scrobbles_pruned = 0usize;
         let history_pruned = self.conn.execute(
             "DELETE FROM sync_history WHERE synced_at < datetime('now', '-90 days')",
             [],
@@ -827,6 +826,26 @@ impl Database {
 #[cfg(test)]
 mod local_dedup_tests {
     use super::*;
+
+
+    #[test]
+    fn routine_maintenance_keeps_synced_plays_for_long_term_history() {
+        let db = Database {
+            conn: Connection::open_in_memory().unwrap(),
+            db_path: std::path::PathBuf::new(),
+        };
+        db.initialize_tables().unwrap();
+        db.conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc, status)
+             VALUES ('Old song', 'Artist', 1, 'synced')",
+            [],
+        ).unwrap();
+        let (removed, _) = db.prune_old_data().unwrap();
+        assert_eq!(removed, 0);
+        assert_eq!(db.conn.query_row::<i64, _, _>(
+            "SELECT COUNT(*) FROM scrobbles", [], |row| row.get(0),
+        ).unwrap(), 1);
+    }
 
     #[test]
     fn detector_retries_are_ignored_but_distinct_short_track_replays_survive() {
