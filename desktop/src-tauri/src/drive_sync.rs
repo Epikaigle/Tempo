@@ -1384,7 +1384,15 @@ async fn download_remote_history(
     let mut duplicates = 0usize;
     let mut max_created = state.download_cursor;
 
-    for file in files {
+    for (index, file) in files.into_iter().enumerate() {
+        // Incremental checkpoints make ten-year history recovery resumable
+        // after a process crash, without advancing past an uncommitted batch.
+        if index > 0 && index % 50 == 0 && max_created > state.download_cursor {
+            conn.execute(
+                "UPDATE drive_sync_state SET download_cursor = ?1 WHERE id = 1",
+                [max_created],
+            ).map_err(|e| e.to_string())?;
+        }
         let created = parse_time_ms(file.created_time.as_deref());
         let Some(generation) = batch_generation(&file) else {
             log::warn!("Skipping Drive history batch with invalid generation: {}", file.name);
