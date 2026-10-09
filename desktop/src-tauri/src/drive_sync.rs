@@ -1445,11 +1445,12 @@ fn insert_remote_event(
 
     if let Some(id) = existing_temporal {
         conn.execute(
-            "INSERT INTO drive_event_state
+            // A matching Desktop-origin play must remain Desktop-owned and
+            // eligible for its own eventual Drive upload. Turning it into an
+            // imported row here would silently strand the local producer event.
+            "INSERT OR IGNORE INTO drive_event_state
              (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
-             VALUES (?1, ?2, ?3, 1, ?4)
-             ON CONFLICT(scrobble_id) DO UPDATE SET drive_imported = 1,
-                drive_uploaded_at = excluded.drive_uploaded_at",
+             VALUES (?1, ?2, ?3, 1, ?4)",
             params![id, event.event_id, source_device_id, now_ms()],
         )
         .map_err(|e| e.to_string())?;
