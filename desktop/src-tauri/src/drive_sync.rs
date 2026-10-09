@@ -987,6 +987,29 @@ fn event_id(device_id: &str, play: &LocalPlay) -> String {
     ))
 }
 
+/// Stable provenance shared by the LAN and Google Drive transports.
+ /// A paired Android phone can use this exact origin to avoid re-uploading
+ /// a Desktop event under a new Android-owned identity.
+pub(crate) fn lan_play_origin(
+    app_data_dir: &Path,
+    local_id: i64,
+    timestamp_utc: i64,
+    title: &str,
+    artist: &str,
+) -> Result<(String, String), String> {
+    let conn = open_sync_db(app_data_dir)?;
+    let device_id = load_state(&conn)?.device_id;
+    let origin = sha256_hex(&format!(
+        "tempo-history-v1|{}|{}|{}|{}|{}",
+        device_id,
+        local_id,
+        timestamp_utc,
+        title.trim().to_lowercase(),
+        artist.trim().to_lowercase()
+    ));
+    Ok((device_id, origin))
+}
+
 fn batch_id(events: &[WireEvent]) -> String {
     let mut canonical = String::from("tempo-batch-v1");
     for event in events {
