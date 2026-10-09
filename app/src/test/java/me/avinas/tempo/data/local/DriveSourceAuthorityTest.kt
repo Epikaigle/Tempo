@@ -16,6 +16,14 @@ class DriveSourceAuthorityTest {
             SourceAuthority.rank("desktop:windows"),
             SourceAuthority.rank("drive:remote-device:desktop:windows")
         )
+        assertEquals(
+            SourceAuthority.rank("desktop:Spotify"),
+            SourceAuthority.rank("lan:desktop-device:desktop:Spotify")
+        )
+        assertEquals(
+            SourceAuthority.rank("browser:Spotify"),
+            SourceAuthority.rank("drive:android-relay:browser:Spotify")
+        )
         assertEquals(100, SourceAuthority.rank("drive:remote-device"))
         assertEquals(100, SourceAuthority.rank("drive::android"))
     }
@@ -25,6 +33,10 @@ class DriveSourceAuthorityTest {
         assertEquals(
             "remote-device",
             SourceAuthority.driveDeviceId("drive:remote-device:android")
+        )
+        assertEquals(
+            "desktop-device",
+            SourceAuthority.driveDeviceId("lan:desktop-device:desktop:Spotify")
         )
         assertNull(SourceAuthority.driveDeviceId("android"))
         assertNull(SourceAuthority.driveDeviceId("drive::android"))
