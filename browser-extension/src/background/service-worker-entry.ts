@@ -9,6 +9,7 @@ import {
   DRIVE_SYNC_ALARM_NAME,
   getDriveSyncStatus,
   initDriveHistorySync,
+  restoreDriveHistory,
   syncDriveHistory,
 } from './drive-history';
 
@@ -72,6 +73,10 @@ async function handleDriveCommand(message: any): Promise<Record<string, unknown>
       return { status: await disconnectDrive() };
     case 'sync': {
       const result = await syncDriveHistory({ interactiveAuth: true });
+      return { result, status: await getDriveSyncStatus() };
+    }
+    case 'restore': {
+      const result = await restoreDriveHistory();
       return { result, status: await getDriveSyncStatus() };
     }
     case 'delete': {
