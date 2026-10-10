@@ -126,10 +126,13 @@ interface ListeningEventDao {
         "AND (:accountSubject IS NULL OR accountSubject = :accountSubject)")
     suspend fun getKnownOriginAliases(ids: List<String>, accountSubject: String?): List<String>
 
-    data class OriginClaim(val listeningEventId: Long, val sourceDeviceId: String, val originEventId: String)
+    data class OriginClaim(
+        val listeningEventId: Long, val sourceDeviceId: String,
+        val originEventId: String, val accountSubject: String,
+    )
 
     @Query(
-        "SELECT listeningEventId, sourceDeviceId, originEventId " +
+        "SELECT listeningEventId, sourceDeviceId, originEventId, accountSubject " +
             "FROM listening_event_origins WHERE listeningEventId IN (:ids)",
     )
     suspend fun getOriginClaimsForEvents(ids: List<Long>): List<OriginClaim>
@@ -139,7 +142,7 @@ interface ListeningEventDao {
 
     /** Batched origin lookup for offline restore; avoids one SQL round trip per play. */
     @Query(
-        "SELECT listeningEventId, sourceDeviceId, originEventId " +
+        "SELECT listeningEventId, sourceDeviceId, originEventId, accountSubject " +
             "FROM listening_event_origins WHERE originEventId IN (:originIds)",
     )
     suspend fun getOriginClaimsByOriginIds(originIds: List<String>): List<OriginClaim>
@@ -167,12 +170,15 @@ interface ListeningEventDao {
     @Query(
         "SELECT id FROM listening_events WHERE track_id = :trackId " +
             "AND timestamp = :timestamp AND source = :source " +
+            "AND ((:accountSubject IS NULL AND drive_account_subject IS NULL) " +
+            "OR drive_account_subject = :accountSubject) " +
             "ORDER BY id ASC LIMIT 2",
     )
     suspend fun getBackupRestoredEventIds(
         trackId: Long,
         timestamp: Long,
         source: String,
+        accountSubject: String?,
     ): List<Long>
 
 
