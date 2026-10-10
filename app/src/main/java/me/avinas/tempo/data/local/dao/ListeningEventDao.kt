@@ -237,8 +237,17 @@ interface ListeningEventDao {
         return device to id
     }
 
+    @Query("UPDATE listening_events SET drive_account_subject = :subject WHERE drive_account_subject IS NULL")
+    suspend fun claimUnownedDriveHistory(subject: String): Int
+
+    @Query("SELECT * FROM listening_events WHERE id IN (:ids)")
+    suspend fun getDriveRetryRows(ids: List<Long>): List<ListeningEvent>
+
     @Transaction
-    suspend fun insertAllBatchedWithDedup(events: List<ListeningEvent>): InsertResult {
+    suspend fun insertAllBatchedWithDedup(
+        events: List<ListeningEvent>,
+        accountSubject: String? = null,
+    ): InsertResult {
         if (events.isEmpty()) return InsertResult(0, 0)
 
         val withFp = events.map { event ->
@@ -275,7 +284,9 @@ interface ListeningEventDao {
             val minTs = trackEvents.minOf { it.timestamp } - RECONCILIATION_WINDOW_MS
             val maxTs = trackEvents.maxOf { it.timestamp } + RECONCILIATION_WINDOW_MS
             val existingAlive = getEventsForReconciliation(trackId, minTs, maxTs)
-                .filter { it.id !in toDelete }.toMutableList()
+                .filter { it.id !in toDelete &&
+                    (accountSubject == null || it.driveAccountSubject == null ||
+                        it.driveAccountSubject == accountSubject) }.toMutableList()
             val claims = if (existingAlive.isEmpty()) emptyList()
                 else existingAlive.map { it.id }.chunked(900)
                     .flatMap { getOriginClaimsForEvents(it) }
