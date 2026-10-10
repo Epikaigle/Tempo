@@ -139,8 +139,8 @@ function verifiedAccountChanged(previous: string | null, current: string | null)
 /**
  * Explicit opt-in. A shared cloud-deletion marker is acknowledged only here,
  * never silently by an alarm. If the marker advanced while this browser was
- * offline/disabled, clear local Drive-upload flags so the user's deliberate
- * re-enable can seed the now-empty cloud again from locally-owned history.
+ * offline/disabled, suppress old local plays; reconnecting alone is not
+ * permission to republish a deleted Drive archive.
  *
  * Drive cursors are also account-scoped. Switching Google accounts resets all
  * Drive-only cursors/flags before the new account is accepted explicitly.
@@ -175,7 +175,7 @@ async function connectDriveUnlocked(): Promise<DriveSyncStatus> {
 
   const markerVersion = await getDisableMarkerVersion(session.accessToken);
   if (markerVersion > acceptedDisableVersion) {
-    await storage.clearDriveUploadedFlags(currentAccount);
+    await storage.suppressDeletedDriveHistory(currentAccount);
     downloadCreatedCursor = 0;
   }
   acceptedDisableVersion = markerVersion;
@@ -378,7 +378,7 @@ async function stopForDeletionMarker(
   const settings = await storage.getSettings();
   await storage.saveSettings({ ...settings, driveSyncEnabled: false });
   await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
-  await storage.clearDriveUploadedFlags(accountSubject);
+  await storage.suppressDeletedDriveHistory(accountSubject);
   await saveRuntimeState({
     ...state,
     acceptedDisableVersion: markerVersion,
@@ -655,6 +655,27 @@ async function downloadRemotePlays(
  * generations and turn Drive sync off locally. A client deliberately re-enabled
  * after the marker update can safely seed the new generation immediately.
  */
+/** Releasing old local captures to Drive is a distinct user-confirmed action.
+ * Require a verified active session and check for remote deletion first.
+ */
+export function shareOlderLocalHistory(): Promise<{ uploaded: number; imported: number; duplicates: number }> {
+  return serializeDriveOperation(async () => {
+    const settings = await storage.getSettings();
+    if (!settings.driveSyncEnabled) throw new Error('Connect Google Drive first');
+    const session = await getDriveAuthSession(true);
+    if (!session) throw new Error('Google authorization is required');
+    const state = await getRuntimeState();
+    if (session.accountSubject !== state.lastAuthorizedAccountSubject) {
+      throw new Error('Google account changed; reconnect before uploading old history');
+    }
+    if (await honorRemoteDisableIfNeeded(session.accessToken)) {
+      throw new Error('Cloud history was deleted by another device; reconnect before uploading');
+    }
+    await storage.authorizeOlderDriveHistory(session.accountSubject);
+    return runSync({ interactiveAuth: false });
+  });
+}
+
 export function deleteDriveHistory(): Promise<number> {
   return serializeDriveOperation(deleteDriveHistoryUnlocked);
 }
@@ -1141,7 +1162,7 @@ export async function getDriveLanOrigin(play: Play): Promise<{ origin_device_id:
   // for that verified account. LAN-only plays remain available on the phone.
   const [settings, state] = await Promise.all([storage.getSettings(), getRuntimeState()]);
   const relaySubject = settings.driveSyncEnabled && state.accountEmail &&
-    state.lastAuthorizedAccountSubject === play.driveAccountSubject
+    !play.cloudSuppressed && state.lastAuthorizedAccountSubject === play.driveAccountSubject
       ? play.driveAccountSubject : undefined;
   return { origin_device_id, origin_event_id,
     ...(relaySubject ? { origin_account_subject: relaySubject } : {}) };
