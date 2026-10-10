@@ -903,8 +903,10 @@ class ImportExportManager @Inject constructor(
             val currentOriginRows = restoredOriginIds.chunked(900)
                 .flatMap { dao.getOriginClaimsByOriginIds(it) }
                 .associate { it.originEventId to it.listeningEventId }
-            val newAliases = mutableListOf<ListeningEventOrigin>()
-            val claimsByRestoredId = mutableMapOf<Long, MutableMap<String, String>>()
+            // Resolve target rows first, then fetch every target's existing
+            // producer claims in bounded chunks. Avoid issuing one Room query
+            // per event during multi-year offline backup restores.
+            val resolvedTargets = mutableListOf<Pair<Long, List<ListeningEventOrigin>>>()
             for ((event, exportedAliases) in chunk) {
                 if (exportedAliases.isEmpty()) continue
                 // Prefer immutable producer IDs. A previously-restored event
@@ -939,12 +941,20 @@ class ImportExportManager @Inject constructor(
                     }
                 }
 
-                // Include aliases already staged for this same target in the
-                // current chunk, not just those committed in an earlier chunk.
-                val claimed = claimsByRestoredId.getOrPut(targetId) {
-                    dao.getOriginClaimsForEvents(listOf(targetId))
-                        .associate { it.sourceDeviceId to it.originEventId }.toMutableMap()
-                }
+                resolvedTargets.add(targetId to exportedAliases)
+            }
+            val savedClaims = resolvedTargets.asSequence().map { it.first }.distinct()
+                .toList().chunked(900)
+                .flatMap { dao.getOriginClaimsForEvents(it) }
+                .groupBy { it.listeningEventId }
+            val claimsByRestoredId = savedClaims.mapValues { (_, origins) ->
+                origins.associate { it.sourceDeviceId to it.originEventId }.toMutableMap()
+            }.toMutableMap()
+            val newAliases = mutableListOf<ListeningEventOrigin>()
+            for ((targetId, exportedAliases) in resolvedTargets) {
+                // Mutate the map as aliases are staged so repeated entries in
+                // the same chunk are checked against each other as well.
+                val claimed = claimsByRestoredId.getOrPut(targetId) { mutableMapOf() }
                 for (origin in exportedAliases) {
                     val existing = claimed[origin.sourceDeviceId]
                     if (existing != null) {
