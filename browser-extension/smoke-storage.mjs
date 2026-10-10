@@ -184,4 +184,47 @@ const retryId = await storage.ensureLocalOriginEventId(99, 'b'.repeat(64));
 assert.equal(retryId, firstOrigin, 'LAN-first origin survives later metadata changes');
 assert.equal(localRecords.find(play => play.id === 99)?.originEventId, firstOrigin);
 
-console.log('\n14 IndexedDB durability, replay and own-device restoration scenarios passed');
+
+// Clearing the Drive deletion marker must not invalidate another Google
+// account's upload acknowledgements or locally imported records.
+const scopedRows = [
+  { id: 1, driveAccountSubject: 'google-a', driveUploadedAt: 111 },
+  { id: 2, driveAccountSubject: 'google-b', driveUploadedAt: 222 },
+  { id: 3, driveAccountSubject: 'google-a', driveUploadedAt: 333, driveImported: true },
+  { id: 4, driveUploadedAt: 444 },
+];
+database.transaction = () => {
+  const tx = {};
+  tx.objectStore = () => ({
+    openCursor() {
+      const req = {};
+      let position = 0;
+      const next = () => {
+        const row = scopedRows[position++];
+        req.result = row ? {
+          value: row,
+          update(updated) {
+            scopedRows[position - 1] = updated;
+          },
+          continue: () => queueMicrotask(next),
+        } : null;
+        req.onsuccess?.();
+        if (!row) queueMicrotask(() => tx.oncomplete?.());
+      };
+      queueMicrotask(next);
+      return req;
+    },
+  });
+  return tx;
+};
+await assert.rejects(storage.clearDriveUploadedFlags(''), /verified Google subject/);
+await storage.clearDriveUploadedFlags('google-a');
+assert.equal(scopedRows[0].driveUploadedAt, undefined);
+assert.equal(scopedRows[1].driveUploadedAt, 222,
+  'Google B must keep its upload acknowledgement when Google A deletes history');
+assert.equal(scopedRows[2].driveUploadedAt, 333,
+  'cloud-imported rows are never re-uploaded by clearing flags');
+assert.equal(scopedRows[3].driveUploadedAt, 444,
+  'unowned legacy rows must not be silently claimed or invalidated');
+
+console.log('\n15 IndexedDB durability, replay, account isolation and restoration scenarios passed');
