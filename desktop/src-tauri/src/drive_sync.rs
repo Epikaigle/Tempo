@@ -289,7 +289,8 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
     // Email-only installations cannot prove who owns previously collected
     // scrobbles. Quarantine them rather than uploading them to another account.
     let unverified_account: bool = conn.query_row(
-        "SELECT account_subject IS NULL AND account_email IS NOT NULL
+        "SELECT (account_subject IS NULL OR account_subject = '')
+            AND (account_email IS NOT NULL OR enabled != 0)
          FROM drive_sync_state WHERE id = 1", [], |row| row.get(0)
     ).map_err(|e| e.to_string())?;
     if unverified_account {
@@ -1765,8 +1766,11 @@ async fn delete_file(access_token: &str, id: &str) -> Result<(), String> {
 // Owner-initiated cleanup removes invalid-generation Tempo history files.
 // A stale client may only delete provably older generations, never unknowns.
 fn should_delete_history_batch(file: &DriveFileRecord, generation: i64, owner_delete: bool) -> bool {
-    if !file.name.starts_with(FILE_PREFIX) || !file.name.ends_with(".json.gz") {
+    if !file.name.starts_with(FILE_PREFIX) {
         return false;
+    }
+    if !file.name.ends_with(".json.gz") {
+        return owner_delete;
     }
     match batch_generation(file) {
         Some(file_generation) => file_generation < generation,
@@ -1779,7 +1783,10 @@ async fn delete_batches_before_generation(
     generation: i64,
     owner_delete: bool,
 ) -> Result<usize, String> {
-    let files = list_batches(access_token, None).await?;
+    // Include even malformed filenames in Tempo's private history namespace:
+    // explicit cloud deletion must not strand an invalid old upload.
+    let files = list_files(access_token,
+        &format!("name contains '{FILE_PREFIX}' and trashed = false"), None).await?;
     let mut deleted = 0usize;
     for file in files {
         if !should_delete_history_batch(&file, generation, owner_delete) {
@@ -2962,6 +2969,9 @@ mod tests {
         file.app_properties.insert(APP_PROPERTY_GENERATION.into(), "invalid".into());
         assert!(!should_delete_history_batch(&file, 20, false));
         assert!(should_delete_history_batch(&file, 20, true));
+        file.name = "tempo_history_v1_corrupt-without-extension".into();
+        assert!(should_delete_history_batch(&file, 20, true));
+        assert!(!should_delete_history_batch(&file, 20, false));
         file.name = "unrelated_tempo_history_v1_file.json.gz".into();
         assert!(!should_delete_history_batch(&file, 20, true));
     }
