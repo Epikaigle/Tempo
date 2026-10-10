@@ -89,6 +89,9 @@ export interface Play {
   reconciledOrigins?: Array<{ deviceId: string; eventId: string }>;
   /** Epoch ms when this locally-owned play was safely uploaded to appDataFolder. */
   driveUploadedAt?: number;
+  /** Previously recorded history must not be republished after a cloud deletion
+   * until the user explicitly chooses to upload old local history. */
+  cloudSuppressed?: boolean;
   /** Immutable Google OpenID subject owning this sync/import record. */
   driveAccountSubject?: string;
   /** Materialized provenance keys, indexed in IndexedDB without a full scan. */
