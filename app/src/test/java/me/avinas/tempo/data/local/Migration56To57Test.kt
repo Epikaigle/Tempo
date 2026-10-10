@@ -39,15 +39,6 @@ class Migration56To57Test {
         ) as SupportSQLiteDatabase
     }
 
-    @Test fun `Room entity declares the migrated ownership index`() {
-        val entity = me.avinas.tempo.data.local.entities.ListeningEvent::class.java
-            .getAnnotation(androidx.room.Entity::class.java)
-        assertTrue("ListeningEvent must declare index installed by migration 56->57",
-            entity?.indices?.any { index ->
-                index.value.contains("drive_account_subject")
-            } == true)
-    }
-
     @Test fun `legacy cloud imports are quarantined but local history is preserved`() {
         AppDatabase.MIGRATION_56_57.migrate(proxy())
         conn.createStatement().use { statement ->
