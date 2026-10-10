@@ -2052,7 +2052,7 @@ pub async fn drive_disconnect(state: State<'_, AppState>) -> Result<DriveSyncSta
     let conn = open_sync_db(&state.app_data_dir)?;
     conn.execute(
         "UPDATE drive_sync_state SET enabled = 0, access_token = NULL, refresh_token = NULL,
-         token_expires_at = 0, account_email = NULL, account_subject = NULL, last_error = NULL WHERE id = 1",
+         token_expires_at = 0, last_error = NULL WHERE id = 1",
         [],
     )
     .map_err(|e| e.to_string())?;
@@ -2468,6 +2468,12 @@ mod tests {
         pin_local_origin(&conn, &old_device, old_id, 1_700_000_000_000,
             "Old", "Artist").unwrap();
         assert_eq!(pending_local_plays(&conn).unwrap().len(), 1);
+        // The real settings UI disconnects before selecting another account.
+        // Keep only the last verified subject (no usable token) until the next
+        // sign-in so previously owned tracks remain account-isolated.
+        conn.execute("UPDATE drive_sync_state SET enabled = 0, access_token = NULL,
+            refresh_token = NULL, token_expires_at = 0 WHERE id = 1", []).unwrap();
+        assert_eq!(load_state(&conn).unwrap().account_subject.as_deref(), Some("account-a"));
         prepare_oauth_credentials(&conn, true).unwrap();
         conn.execute("UPDATE drive_sync_state SET enabled = 1,
             account_subject = 'account-b', account_email = 'b@example.com' WHERE id = 1", []).unwrap();
