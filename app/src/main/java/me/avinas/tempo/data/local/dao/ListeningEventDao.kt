@@ -181,7 +181,7 @@ interface ListeningEventDao {
      */
     @Query(
         """
-        SELECT id, track_id, timestamp, playDuration, source, content_fingerprint, end_timestamp
+        SELECT id, track_id, timestamp, playDuration, source, content_fingerprint, end_timestamp, drive_account_subject
         FROM listening_events
         WHERE track_id = :trackId
         AND timestamp BETWEEN :tsMin AND :tsMax
@@ -479,6 +479,7 @@ interface ListeningEventDao {
         val source: String,
         val content_fingerprint: String?,
         val end_timestamp: Long?,
+        val driveAccountSubject: String?,
     )
 
     /** Desktop source → count breakdown. */
