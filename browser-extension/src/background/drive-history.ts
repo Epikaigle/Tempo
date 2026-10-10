@@ -389,42 +389,59 @@ async function stopForDeletionMarker(state: DriveRuntimeState, markerVersion: nu
 async function uploadLocalPlays(accessToken: string, deviceId: string, accountSubject: string): Promise<number> {
   const state = await getRuntimeState();
   const generation = Math.max(0, state.acceptedDisableVersion || 0);
-  const pending = (await storage.getDrivePendingPlays(MAX_LOCAL_SCAN, accountSubject))
-    .sort((a, b) => a.timestampUtc - b.timestampUtc || (a.id ?? 0) - (b.id ?? 0));
-
   let uploaded = 0;
-  for (let offset = 0; offset < pending.length; offset += BATCH_SIZE) {
-    const chunk = pending.slice(offset, offset + BATCH_SIZE);
-    const events: WireEvent[] = [];
-    for (const play of chunk) {
-      if (play.id == null) throw new Error('A local Drive play has no persistent ID');
-      const candidate = play.originEventId ?? await eventId(deviceId, play);
-      const pinnedId = await storage.ensureLocalOriginEventId(play.id, candidate, accountSubject);
-      events.push(await playToWire({ ...play, originEventId: pinnedId }, deviceId));
-    }
+  let skipped = 0;
+  let cursor: { timestampUtc: number; id: number } | undefined;
+  // Read bounded keyset pages. Invalid rows stay in IndexedDB; scanning can
+  // advance past them without losing legitimate plays recorded afterwards.
+  while (uploaded < MAX_LOCAL_SCAN) {
+    const pending = (await storage.getDrivePendingPlays(MAX_LOCAL_SCAN, accountSubject, cursor))
+      .sort((a, b) => a.timestampUtc - b.timestampUtc || (a.id ?? 0) - (b.id ?? 0));
+    if (pending.length === 0) break;
+    const last = pending[pending.length - 1];
+    cursor = { timestampUtc: last.timestampUtc, id: last.id! };
 
-    const batchId = await deterministicBatchId(events);
-    const batch: WireBatch = {
-      schema_version: SCHEMA_VERSION,
-      batch_id: batchId,
-      source_device_id: deviceId,
-      source_device_name: isFirefoxBuild() ? 'Firefox extension' : 'Chrome extension',
-      source_platform: isFirefoxBuild() ? 'firefox_extension' : 'chrome_extension',
-      created_at_utc: Math.max(...events.map(event => event.timestamp_utc)),
-      events,
-    };
-    if (!isValidBatch(batch)) {
-      throw new Error('A local browser play cannot be represented safely in the Drive history protocol');
+    for (let offset = 0; offset < pending.length; offset += BATCH_SIZE) {
+      const chunk = pending.slice(offset, offset + BATCH_SIZE);
+      const events: WireEvent[] = [];
+      const valid: Play[] = [];
+      for (const play of chunk) {
+        try {
+          if (play.id == null) throw new Error('A local play lacks its persistent ID');
+          const candidate = play.originEventId ?? await eventId(deviceId, play);
+          const pinnedId = await storage.ensureLocalOriginEventId(play.id, candidate, accountSubject);
+          const wire = await playToWire({ ...play, originEventId: pinnedId }, deviceId);
+          events.push(wire);
+          valid.push(play);
+        } catch (err) {
+          skipped++;
+          console.warn('[Tempo] Retaining invalid local Drive play', play.id, err);
+        }
+      }
+      if (events.length === 0) continue;
+      const batchId = await deterministicBatchId(events);
+      const batch: WireBatch = {
+        schema_version: SCHEMA_VERSION,
+        batch_id: batchId,
+        source_device_id: deviceId,
+        source_device_name: isFirefoxBuild() ? 'Firefox extension' : 'Chrome extension',
+        source_platform: isFirefoxBuild() ? 'firefox_extension' : 'chrome_extension',
+        created_at_utc: Math.max(...events.map(event => event.timestamp_utc)),
+        events,
+      };
+      if (!isValidBatch(batch)) throw new Error('Unexpected malformed browser Drive batch');
+      const gzip = await gzipJson(batch);
+      const fileName = `${FILE_PREFIX}g${generation}_${deviceId}_${batchId}.json.gz`;
+      await uploadBatch(accessToken, fileName, gzip, deviceId, generation);
+      await storage.markDriveUploaded(valid.map((play, index) => ({
+        id: play.id!, originEventId: events[index].event_id,
+      })));
+      uploaded += valid.length;
     }
-    const gzip = await gzipJson(batch);
-    const fileName = `${FILE_PREFIX}g${generation}_${deviceId}_${batchId}.json.gz`;
-    await uploadBatch(accessToken, fileName, gzip, deviceId, generation);
-
-    await storage.markDriveUploaded(chunk.map((play, index) => ({
-      id: play.id!,
-      originEventId: events[index].event_id,
-    })));
-    uploaded += chunk.length;
+    if (pending.length < MAX_LOCAL_SCAN) break;
+  }
+  if (skipped > 0) {
+    console.warn(`[Tempo] ${skipped} invalid local plays were preserved for metadata repair`);
   }
   return uploaded;
 }
