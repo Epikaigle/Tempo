@@ -444,13 +444,33 @@ fn http_client() -> Result<Client, String> {
         .map_err(|e| e.to_string())
 }
 
-async fn secure_refresh_token_get(device_id: &str) -> Result<Option<String>, String> {
+// The OS keyring is keyed by device, so the entry itself must also carry
+// a verified Google subject. Otherwise a crash while switching accounts can
+// leave account B's refresh token behind A's SQLite identity.
+#[derive(Debug, Serialize, Deserialize)]
+struct SubjectBoundRefreshToken {
+    sub: String,
+    refresh_token: String,
+}
+
+async fn secure_refresh_token_get(
+    device_id: &str,
+    expected_subject: &str,
+) -> Result<Option<String>, String> {
     let username = device_id.to_string();
+    let expected_subject = expected_subject.to_string();
     tokio::task::spawn_blocking(move || {
         let entry = keyring::Entry::new(KEYRING_SERVICE, &username)
             .map_err(|e| format!("Could not open the OS credential store: {e}"))?;
         match entry.get_password() {
-            Ok(value) if !value.is_empty() => Ok(Some(value)),
+            Ok(value) if !value.is_empty() => {
+                let stored: SubjectBoundRefreshToken = serde_json::from_str(&value)
+                    .map_err(|_| "Google credential format is outdated. Reconnect Google securely.".to_string())?;
+                if stored.sub != expected_subject || stored.refresh_token.is_empty() {
+                    return Err("Google credential belongs to a different account. Reconnect securely.".to_string());
+                }
+                Ok(Some(stored.refresh_token))
+            }
             Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(format!(
                 "Could not read the Google Drive credential from the OS credential store: {e}"
@@ -461,12 +481,15 @@ async fn secure_refresh_token_get(device_id: &str) -> Result<Option<String>, Str
     .map_err(|e| format!("OS credential store task failed: {e}"))?
 }
 
-async fn secure_refresh_token_set(device_id: &str, refresh_token: &str) -> Result<(), String> {
-    if refresh_token.is_empty() {
-        return Err("Refusing to store an empty Google refresh token".to_string());
+async fn secure_refresh_token_set(device_id: &str, subject: &str, refresh_token: &str) -> Result<(), String> {
+    if refresh_token.is_empty() || subject.trim().is_empty() {
+        return Err("Refusing to store a Google credential without a verified subject and token".to_string());
     }
     let username = device_id.to_string();
-    let secret = refresh_token.to_string();
+    let secret = serde_json::to_string(&SubjectBoundRefreshToken {
+        sub: subject.to_string(),
+        refresh_token: refresh_token.to_string(),
+    }).map_err(|e| e.to_string())?;
     tokio::task::spawn_blocking(move || {
         let entry = keyring::Entry::new(KEYRING_SERVICE, &username)
             .map_err(|e| format!("Could not open the OS credential store: {e}"))?;
@@ -497,28 +520,18 @@ async fn secure_refresh_token_delete(device_id: &str) -> Result<(), String> {
 }
 
 async fn refresh_token_for_state(
-    app_data_dir: &Path,
+    _app_data_dir: &Path,
     state: &StoredDriveState,
 ) -> Result<String, String> {
-    // One-time migration for builds that previously stored the long-lived token
-    // in SQLite. Do not erase the legacy value until the native store accepted it.
-    if let Some(legacy) = state
-        .refresh_token
-        .clone()
-        .filter(|value| !value.is_empty())
-    {
-        secure_refresh_token_set(&state.device_id, &legacy).await?;
-        let conn = open_sync_db(app_data_dir)?;
-        conn.execute(
-            "UPDATE drive_sync_state SET refresh_token = NULL WHERE id = 1",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-        return Ok(legacy);
+    let subject = state.account_subject.as_deref()
+        .filter(|subject| !subject.trim().is_empty())
+        .ok_or("Google account identity is unavailable. Connect Google again.")?;
+    // Old plaintext SQLite/keyring credentials carry no cryptographic account
+    // binding. Never adopt one into a new identity without re-authenticating.
+    if state.refresh_token.as_deref().is_some_and(|value| !value.is_empty()) {
+        return Err("Legacy Google credential is unverified. Reconnect Google securely.".into());
     }
-
-    secure_refresh_token_get(&state.device_id)
-        .await?
+    secure_refresh_token_get(&state.device_id, subject).await?
         .ok_or_else(|| "Google Drive needs you to reconnect".to_string())
 }
 
@@ -561,12 +574,24 @@ async fn access_token(app_data_dir: &Path) -> Result<String, String> {
         ));
     }
     let token: OAuthTokenResponse = response.json().await.map_err(|e| e.to_string())?;
-    if let Some(rotated) = token
-        .refresh_token
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        secure_refresh_token_set(&state.device_id, rotated).await?;
+    // A successfully refreshed OAuth token must still belong to the expected
+    // Google subject. A mismatched/corrupt native credential cannot silently
+    // move history into a different Drive account.
+    let user_info = http_client()?
+        .get(USERINFO_ENDPOINT)
+        .bearer_auth(&token.access_token)
+        .send().await
+        .map_err(|e| format!("Could not verify refreshed Google account: {e}"))?;
+    if !user_info.status().is_success() {
+        return Err(format!("Could not verify refreshed Google account (HTTP {})", user_info.status()));
+    }
+    let info: GoogleUserInfo = user_info.json().await.map_err(|e| e.to_string())?;
+    if info.sub.as_deref() != state.account_subject.as_deref() {
+        return Err("Google refreshed a token for a different account. Reconnect Google securely.".into());
+    }
+    if let Some(rotated) = token.refresh_token.as_deref().filter(|value| !value.is_empty()) {
+        secure_refresh_token_set(&state.device_id,
+            state.account_subject.as_deref().unwrap_or_default(), rotated).await?;
     }
     let expires_at = now_ms() + token.expires_in.max(60) * 1000;
     let conn = open_sync_db(app_data_dir)?;
@@ -798,7 +823,7 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
         if let Some(value) = legacy_refresh_token {
             value
         } else {
-            secure_refresh_token_get(&device_id).await?.ok_or_else(|| {
+            secure_refresh_token_get(&device_id, &subject).await?.ok_or_else(|| {
                 "Google did not issue a refresh token. Disconnect and connect again.".to_string()
             })?
         }
@@ -819,7 +844,7 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
         );
     };
 
-    secure_refresh_token_set(&device_id, &refresh_token).await?;
+    secure_refresh_token_set(&device_id, &subject, &refresh_token).await?;
     let expires_at = now_ms() + token.expires_in.max(60) * 1000;
     let conn = open_sync_db(app_data_dir)?;
     conn.execute(
@@ -2047,7 +2072,8 @@ async fn status_for(app_data_dir: &Path) -> Result<DriveSyncStatus, String> {
         .as_deref()
         .is_some_and(|value| !value.is_empty());
     let has_secure_refresh = if state.enabled && !has_legacy_refresh {
-        secure_refresh_token_get(&state.device_id)
+        secure_refresh_token_get(&state.device_id,
+            state.account_subject.as_deref().unwrap_or_default())
             .await
             .unwrap_or(None)
             .is_some()
@@ -2129,7 +2155,10 @@ pub async fn drive_disconnect(state: State<'_, AppState>) -> Result<DriveSyncSta
     // credential store must not leave background Drive sync enabled locally.
     // Read/revoke is best-effort; deletion errors are reported only after the
     // local database has been made safe and inert.
-    let secure_refresh = secure_refresh_token_get(&state_before.device_id)
+    let secure_refresh = secure_refresh_token_get(
+        &state_before.device_id,
+        state_before.account_subject.as_deref().unwrap_or_default(),
+    )
         .await
         .ok()
         .flatten();
