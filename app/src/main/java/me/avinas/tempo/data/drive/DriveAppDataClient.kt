@@ -229,7 +229,6 @@ class DriveAppDataClient @Inject constructor(
                     val result = api.files().list()
                         .setSpaces(APP_DATA_FOLDER)
                         .setQ(query)
-                        .setOrderBy("createdTime asc")
                         .setPageSize(1_000)
                         .setPageToken(pageToken)
                         .setFields("nextPageToken,files(id,name,size,md5Checksum,createdTime,modifiedTime,appProperties)")
@@ -237,7 +236,9 @@ class DriveAppDataClient @Inject constructor(
                     result.files.orEmpty().forEach { files += it.toAppDataFile() }
                     pageToken = result.nextPageToken
                 } while (!pageToken.isNullOrBlank())
-                files
+                // Avoid expensive server-side ordering for large Drive archives.
+                // Checkpoint consumers require oldest-first processing.
+                files.sortedWith(compareBy<DriveAppDataFile> { it.createdAt }.thenBy { it.fileId })
             }
         }
 
