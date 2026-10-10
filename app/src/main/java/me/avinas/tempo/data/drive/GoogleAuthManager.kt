@@ -163,7 +163,7 @@ class GoogleAuthManager @Inject constructor(
                 email = email,
                 displayName = googleIdCredential.displayName,
                 photoUrl = googleIdCredential.profilePictureUri?.toString(),
-                subject = googleIdCredential.id.trim().takeIf { it.isNotEmpty() }
+                subject = googleIdCredential.uniqueId.trim().takeIf { it.isNotEmpty() }
             )
             // A newly-selected identity starts a new authorization boundary.
             // Clear the previous account's token before any consent/failure path
