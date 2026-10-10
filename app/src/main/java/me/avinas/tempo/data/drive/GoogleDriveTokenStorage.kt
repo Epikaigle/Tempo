@@ -35,6 +35,7 @@ class GoogleDriveTokenStorage @Inject constructor(
         
         // Account info keys
         private const val KEY_ACCOUNT_EMAIL = "account_email"
+        private const val KEY_ACCOUNT_SUBJECT = "account_subject"
         private const val KEY_ACCOUNT_DISPLAY_NAME = "account_display_name"
         private const val KEY_ACCOUNT_PHOTO_URL = "account_photo_url"
         
@@ -153,10 +154,12 @@ class GoogleDriveTokenStorage @Inject constructor(
     /**
      * Save the Google account information.
      */
-    fun saveAccountInfo(email: String, displayName: String?, photoUrl: String?) {
+    fun saveAccountInfo(email: String, displayName: String?, photoUrl: String?, subject: String? = null) {
         require(email.isNotBlank()) { "Google account email must not be blank" }
         encryptedPrefs.edit().apply {
             putString(KEY_ACCOUNT_EMAIL, email)
+            if (!subject.isNullOrBlank()) putString(KEY_ACCOUNT_SUBJECT, subject)
+            else remove(KEY_ACCOUNT_SUBJECT)
             if (displayName != null) {
                 putString(KEY_ACCOUNT_DISPLAY_NAME, displayName)
             } else {
@@ -210,7 +213,8 @@ class GoogleDriveTokenStorage @Inject constructor(
         return GoogleAccount(
             email = email,
             displayName = getAccountDisplayName(),
-            photoUrl = getAccountPhotoUrl()
+            photoUrl = getAccountPhotoUrl(),
+            subject = encryptedPrefs.getString(KEY_ACCOUNT_SUBJECT, null)
         )
     }
     
@@ -220,6 +224,7 @@ class GoogleDriveTokenStorage @Inject constructor(
     fun clearAccountInfo() {
         encryptedPrefs.edit().apply {
             remove(KEY_ACCOUNT_EMAIL)
+            remove(KEY_ACCOUNT_SUBJECT)
             remove(KEY_ACCOUNT_DISPLAY_NAME)
             remove(KEY_ACCOUNT_PHOTO_URL)
             apply()
