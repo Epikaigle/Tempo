@@ -30,7 +30,7 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | Mixed-version LAN | Use a previous Desktop/browser sender without origin fields | Legacy payloads still import through the existing bounded temporal fallback |
 | Desktop + Chrome same computer | Run both detectors for one physical play | One logical play after receiving both producers' batches |
 | Two quick replays | Play same 25-second song twice while both detectors are on | Exactly **two** plays, never zero, one or four |
-| Android cross-batch origin claims | Device A captures a play. Device B sends its capture to Android in batch 1, then sends a different short-track replay in batch 2 with timestamps within 10 seconds | The first matches the existing physical play; Android persists B's origin alias and inserts the second distinct B event (two total), including after app restart |
+| Android cross-batch origin claims | Device A captures a play. Device B sends its same-play capture within 1 second in batch 1, then sends a different short-track replay seven seconds later in batch 2 | The first matches the existing physical play; Android persists B's origin alias and inserts the second distinct B event (two total), including after app restart |
 | Android v55→v56 upgrade | Update a populated v55 Room database containing LAN/Drive imports, then restart and delete one listening row | All previous plays survive; existing producer IDs are backfilled; unrelated events remain; deleting a play cascades to its aliases |
 | Background/offline | Disable Wi-Fi, queue events, restart, reconnect | No loss; pending counts resolve; repeat sync adds zero events |
 | Post-create crash | Server accepts upload, then simulate client timeout before local acknowledgement | Retry preserves one logical event and a verified cloud copy |
@@ -63,3 +63,10 @@ application's hidden data or lose access to the account. Keep an independent use
 backup/export and test restoration from it. The extension's long-lived IndexedDB store can
 also be evicted or cleared by the browser; never interpret a cloud-upload flag alone as a
 guarantee of recoverability.
+
+### Shared Drive deduplication — acceptance update
+
+- Import the same song from independent devices seven seconds apart: Desktop, Android and both browser extensions must retain **two** plays, regardless of the order the batches arrive.
+- Import parallel captures of one playback one second apart: all importers may reconcile to one play while preserving the two producer/origin aliases, including when the apps use different local session IDs.
+- Switch accounts and verify previously imported records (or imports whose previous owner is unknown) are not eligible for temporal matching against the new account. Older local events must not upload across account boundaries without explicit consent.
+- Exact origin IDs are mandatory for idempotency. Two truly independent plays within two seconds can still be indistinguishable using only title, artist and timestamp; avoid treating the temporal fallback as proof of exact playback identity.
