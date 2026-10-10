@@ -1322,21 +1322,24 @@ fn pending_local_plays_page(
                 origin_event_id: row.get(18)?,
                 title: row.get(1)?,
                 artist: row.get(2)?,
-                album: row.get(3)?,
-                duration_ms: row.get(4)?,
+                // Older local SQLite schemas permitted NULL in fields with
+                // defaults. Treat NULL as an absent optional value, rather than
+                // allowing one legacy row to abort all history scanning.
+                album: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                duration_ms: row.get::<_, Option<i64>>(4)?.unwrap_or(0),
                 timestamp_utc: row.get(5)?,
-                source_app: row.get(6)?,
-                listened_ms: row.get(7)?,
-                skipped: row.get::<_, i64>(8)? != 0,
-                replay_count: row.get(9)?,
-                is_muted: row.get::<_, i64>(10)? != 0,
-                completion_percentage: row.get(11)?,
-                pause_count: row.get(12)?,
-                seek_count: row.get(13)?,
-                session_id: row.get(14)?,
-                site: row.get(15)?,
-                content_type: row.get(16)?,
-                volume_level: row.get(17)?,
+                source_app: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+                listened_ms: row.get::<_, Option<i64>>(7)?.unwrap_or(0),
+                skipped: row.get::<_, Option<i64>>(8)?.unwrap_or(0) != 0,
+                replay_count: row.get::<_, Option<i64>>(9)?.unwrap_or(0),
+                is_muted: row.get::<_, Option<i64>>(10)?.unwrap_or(0) != 0,
+                completion_percentage: row.get::<_, Option<f64>>(11)?.unwrap_or(0.0),
+                pause_count: row.get::<_, Option<i64>>(12)?.unwrap_or(0),
+                seek_count: row.get::<_, Option<i64>>(13)?.unwrap_or(0),
+                session_id: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
+                site: row.get::<_, Option<String>>(15)?.unwrap_or_default(),
+                content_type: row.get::<_, Option<String>>(16)?.unwrap_or_default(),
+                volume_level: row.get::<_, Option<f64>>(17)?.unwrap_or(-1.0),
             })
         })
         .map_err(|e| e.to_string())?;
@@ -1589,7 +1592,7 @@ fn insert_remote_event(
                 row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(3)?.unwrap_or_default(),
             )),
         ).map_err(|e| e.to_string())?;
         let mut found = None;
@@ -2693,6 +2696,40 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
 
+
+
+    #[test]
+    fn nullable_legacy_metadata_does_not_block_local_export_scanning() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute(
+            "INSERT INTO scrobbles
+             (title, artist, timestamp_utc, album, session_id, volume_level)
+             VALUES ('Valid title', 'Valid artist', 1700000000000, NULL, NULL, NULL)",
+            [],
+        ).unwrap();
+        let play = pending_local_plays(&conn).unwrap().pop().unwrap();
+        let producer = load_state(&conn).unwrap().device_id;
+        assert!(valid_event(&local_to_wire(&producer, &play)));
+        assert_eq!(play.album, "");
+        assert_eq!(play.session_id, "");
+        assert_eq!(play.volume_level, -1.0);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn nullable_legacy_session_does_not_abort_remote_duplicate_scan() {
+        let (directory, conn) = history_storage_fixture();
+        let event = fixture_batch().events[0].clone();
+        conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc, session_id)
+             VALUES (?1, ?2, ?3, NULL)",
+            params![event.title, event.artist, event.timestamp_utc],
+        ).unwrap();
+        assert!(!insert_remote_event(&conn, "other-source", &event).unwrap());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn invalid_local_play_does_not_block_the_following_page() {
