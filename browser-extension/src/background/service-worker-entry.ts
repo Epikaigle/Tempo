@@ -10,6 +10,7 @@ import {
   getDriveSyncStatus,
   initDriveHistorySync,
   restoreDriveHistory,
+  shareOlderLocalHistory,
   syncDriveHistory,
 } from './drive-history';
 
@@ -77,6 +78,10 @@ async function handleDriveCommand(message: any): Promise<Record<string, unknown>
     }
     case 'restore': {
       const result = await restoreDriveHistory();
+      return { result, status: await getDriveSyncStatus() };
+    }
+    case 'share-history': {
+      const result = await shareOlderLocalHistory();
       return { result, status: await getDriveSyncStatus() };
     }
     case 'delete': {
