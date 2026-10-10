@@ -20,6 +20,8 @@ await esbuild.build({
       export const clearDriveUploadedFlags = async () => { globalThis.fixture.cleared++; };
       export const getDrivePendingPlays = async () => [];
       export const getDriveOriginEventIds = async () => new Set();
+       export const hasDriveOriginEventId = async () => false;
+       export const claimUnownedDrivePlays = async () => {};
       export const getOwnPlayIdentityInputs = async () => globalThis.fixture.ownLocalPlays ?? [];
       export const markDriveUploaded = async () => {};
       export const insertPlay = async value => { globalThis.fixture.imported.push(value); };
@@ -39,10 +41,10 @@ const stateKey = 'tempoDriveHistoryState';
 function reset() {
   globalThis.fixture = {
     settings: { driveSyncEnabled: true, syncIntervalMinutes: 30 },
-    session: { accessToken: 'token-a', accountEmail: 'a@example.com' }, cleared: 0, marker: 100,
+    session: { accessToken: 'token-a', accountEmail: 'a@example.com', accountSubject: 'google-a' }, cleared: 0, marker: 100,
     writes: 0, listCalls: 0, paginated: false, imported: [],
     stored: { [stateKey]: { acceptedDisableVersion: 100, downloadCreatedCursor: 90,
-      lastUploaded: 5, lastImported: 6, lastAuthorizedAccountEmail: 'a@example.com', accountEmail: 'a@example.com' } },
+      lastUploaded: 5, lastImported: 6, lastAuthorizedAccountEmail: 'a@example.com', lastAuthorizedAccountSubject: 'google-a', accountEmail: 'a@example.com' } },
   };
 }
 globalThis.chrome = {
@@ -91,6 +93,7 @@ console.log('  ✓ explicit deletion persists the stop and surfaces cleanup erro
 
 reset();
 fixture.session.accountEmail = 'b@example.com';
+fixture.session.accountSubject = 'google-b';
 await assert.rejects(drive.deleteDriveHistory(), /account changed/);
 assert.equal(fixture.writes, 0);
 assert.equal(fixture.listCalls, 0);
