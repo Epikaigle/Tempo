@@ -154,6 +154,12 @@ class DesktopPlayIngestionService @Inject constructor(
             val sourceApp = entry.optString("source_app", "Desktop").trim()
             val declaredDeviceId = entry.optString("origin_device_id", "")
             val declaredEventId = entry.optString("origin_event_id", "")
+            // An authenticated pairing proves the sender device, not ownership
+            // of a Google account. Only explicitly supplied provenance can
+            // authorise a future cloud relay. Missing/invalid stays LAN-only.
+            val senderAccount = entry.optString("origin_account_subject", "").trim()
+                .takeIf { it.isNotBlank() && it.length <= 255 &&
+                    !it.contains('@') && it != "legacy-unverified" }
             // Older LAN senders omit these fields, so keep their existing
             // heuristic path. New senders reuse their exact Google Drive event
             // identity, eliminating LAN -> Android -> Drive publication loops.
@@ -243,7 +249,9 @@ class DesktopPlayIngestionService @Inject constructor(
                     wasSkipped = completionPct < 30,
                     isReplay = false,
                     estimatedDurationMs = durationMs.takeIf { it > 0L },
-                    contentFingerprint = stableOrigin?.let { "drive:v1:${it.second}" }
+                    contentFingerprint = stableOrigin?.let { "drive:v1:${it.second}" },
+                    driveAccountSubject = if (stableOrigin == null) "lan-unverified"
+                        else senderAccount ?: "lan-unverified"
                 )
                 if (stableOrigin == null) {
                     listeningRepository.insert(event)
