@@ -381,14 +381,34 @@ fn migrate_legacy_import_account_and_aliases(conn: &Connection) -> Result<(), St
             "DELETE FROM drive_event_state WHERE scrobble_id NOT IN (SELECT id FROM scrobbles)",
             []
         ).map_err(|e| e.to_string())?;
-        transaction.execute(
-            "INSERT OR IGNORE INTO drive_event_aliases
-             (origin_event_id, source_device_id, scrobble_id)
-             SELECT origin_event_id, origin_device_id, scrobble_id
-             FROM drive_event_state
-             WHERE origin_event_id IS NOT NULL AND origin_device_id IS NOT NULL
-               AND origin_device_id <> ''", []
-        ).map_err(|e| e.to_string())?;
+        let scoped = {
+            let mut stmt = transaction.prepare("PRAGMA table_info(drive_event_aliases)")
+                .map_err(|e| e.to_string())?;
+            let names = stmt.query_map([], |row| row.get::<_, String>(1))
+                .map_err(|e| e.to_string())?;
+            names.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+                .contains(&"account_subject".to_string())
+        };
+        if scoped {
+            transaction.execute(
+                "INSERT OR IGNORE INTO drive_event_aliases
+                  (account_subject, origin_event_id, source_device_id, scrobble_id)
+                 SELECT COALESCE(NULLIF(owner_account_subject, ''), 'legacy-unverified'),
+                        origin_event_id, origin_device_id, scrobble_id
+                 FROM drive_event_state
+                 WHERE origin_event_id IS NOT NULL AND origin_device_id IS NOT NULL
+                       AND origin_device_id <> ''", []
+            ).map_err(|e| e.to_string())?;
+        } else {
+            transaction.execute(
+                "INSERT OR IGNORE INTO drive_event_aliases
+                  (origin_event_id, source_device_id, scrobble_id)
+                 SELECT origin_event_id, origin_device_id, scrobble_id
+                 FROM drive_event_state
+                 WHERE origin_event_id IS NOT NULL AND origin_device_id IS NOT NULL
+                       AND origin_device_id <> ''", []
+            ).map_err(|e| e.to_string())?;
+        }
         // Older releases did not record the Google owner of imported events.
         // No current-account guess can safely prove which account provided
         // them; quarantine their temporal matches until explicitly restored.
@@ -1685,7 +1705,8 @@ fn remember_origin(
         "SELECT owner_account_subject FROM drive_event_state WHERE scrobble_id = ?1",
         [scrobble_id], |row| row.get(0)
     ).optional().map_err(|e| e.to_string())?.flatten();
-    let owner = owner.filter(|s| !s.is_empty()).unwrap_or_else(|| LEGACY_UNVERIFIED_ACCOUNT.to_string());
+    let owner = owner.ok_or("Tempo cannot alias an event with no stored playback state")?;
+    let owner = if owner.is_empty() { LEGACY_UNVERIFIED_ACCOUNT.to_string() } else { owner };
     let affected = conn.execute(
         "INSERT INTO drive_event_aliases
             (account_subject, origin_event_id, source_device_id, scrobble_id)
@@ -1804,6 +1825,16 @@ fn insert_remote_event_for_account(
             params![id, event.event_id, source_device_id, now_ms(), account_subject],
         )
         .map_err(|e| e.to_string())?;
+        // The local row may have been created without a Drive session. Now
+        // that it matches a verified account, claim its existing aliases too;
+        // otherwise the same producer replay can evade exact-id deduplication.
+        conn.execute("UPDATE drive_event_state SET owner_account_subject = ?2
+                      WHERE scrobble_id = ?1 AND owner_account_subject IS NULL",
+            params![id, account_subject]).map_err(|e| e.to_string())?;
+        conn.execute("UPDATE drive_event_aliases SET account_subject = ?2
+                      WHERE scrobble_id = ?1 AND account_subject = ?3",
+            params![id, account_subject, LEGACY_UNVERIFIED_ACCOUNT])
+            .map_err(|e| e.to_string())?;
         remember_origin(conn, id, source_device_id, &event.event_id)?;
         return Ok(false);
     }
