@@ -260,36 +260,60 @@ class DriveHistorySyncManager @Inject constructor(
      * account. The caller decides whether that account change is an explicit
      * opt-in (enableSync) or must stop a background/manual sync (syncNow).
      */
+    private fun uploadCursorKey(accountSubject: String): String = "${KEY_UPLOAD_CURSOR}:${accountSubject}"
+
     private suspend fun reconcileGoogleAccountBoundary(current: String): Boolean {
         require(current.isNotBlank()) { "Google account subject cannot be empty" }
         val dao = database.listeningEventDao()
         val previous = statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
             ?.takeIf { it.isNotBlank() }
-        val oldEmail = statePrefs.getString(KEY_GOOGLE_ACCOUNT_EMAIL, null)
-            ?.trim()?.lowercase()
+        val previousEmail = statePrefs.getString(KEY_GOOGLE_ACCOUNT_EMAIL, null)
+            ?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         val currentEmail = authManager.currentAccount.value?.email?.trim()?.lowercase()
         if (previous == current) return false
 
-        val changed = previous != null || (oldEmail != null && oldEmail != currentEmail)
-        // Claim unowned legacy captures BEFORE a new account can export or
-        // reconcile them. Old imports without a verified owner were already
-        // quarantined by Room migration 56->57.
-        val legacyOwner = previous ?: if (oldEmail == null || oldEmail == currentEmail) {
-            current
-        } else {
-            "legacy-unverified"
+        // Pre-fix GoogleIdTokenCredential.id returned email, NOT a stable
+        // subject. Migrate only rows matching the email verified by the
+        // newly selected Google identity; never reassign quarantined imports.
+        val legacySameAccount = previous != null && previous == currentEmail
+        if (currentEmail != null && currentEmail != current) {
+            dao.upgradeLegacyEmailOwner(currentEmail, current)
         }
+
+        val changed = (previous != null && !legacySameAccount) ||
+            (previous == null && previousEmail != null && previousEmail != currentEmail)
+        val legacyOwner = when {
+            previous != null -> if (legacySameAccount) current else previous
+            previousEmail == null || previousEmail == currentEmail -> current
+            else -> "legacy-unverified"
+        }
+        // Claim rows before moving the active account pointer. If a failure
+        // occurs here, the old credentials and preferences remain unchanged.
         dao.claimUnownedDriveHistory(legacyOwner)
 
+        val globalCursor = statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L)
+        val maxId = dao.getMaxEventId()
+        val scopedCursor = uploadCursorKey(current)
+        val oldEmailCursor = currentEmail?.let { uploadCursorKey(it) }
+        val resumedCursor = when {
+            statePrefs.contains(scopedCursor) -> statePrefs.getLong(scopedCursor, 0L)
+            oldEmailCursor != null && statePrefs.contains(oldEmailCursor) ->
+                statePrefs.getLong(oldEmailCursor, 0L)
+            !changed -> globalCursor
+            else -> maxId // New account: never export old account-owned rows.
+        }
         val editor = statePrefs.edit()
-            .putString(KEY_GOOGLE_ACCOUNT_SUBJECT, current)
+        if (previous != null) {
+            // This is the last successfully checkpointed cursor of the old
+            // account, including pending plays not yet transmitted to Drive.
+            editor.putLong(uploadCursorKey(previous), globalCursor)
+        }
+        editor.putString(KEY_GOOGLE_ACCOUNT_SUBJECT, current)
             .putString(KEY_GOOGLE_ACCOUNT_EMAIL, currentEmail)
+            .putLong(KEY_UPLOAD_CURSOR, resumedCursor)
+            .putLong(scopedCursor, resumedCursor)
         if (changed) {
-            // New account uploads only new Room rows captured *after* opt-in.
-            // Never reset upload position to zero and publish the old account's
-            // historical recordings automatically.
-            editor.putLong(KEY_UPLOAD_CURSOR, dao.getMaxEventId())
-                .remove(KEY_DOWNLOAD_CREATED_CURSOR)
+            editor.remove(KEY_DOWNLOAD_CREATED_CURSOR)
                 .remove(KEY_ACCEPTED_DISABLE_VERSION)
         }
         check(editor.commit()) { "Could not persist Google Drive account boundary" }
@@ -319,7 +343,10 @@ class DriveHistorySyncManager @Inject constructor(
             // Persist the stop before network cleanup, which may fail or be cancelled.
             settingsManager.markStopped(message ?: "Cloud history sync was turned off after deletion")
             statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, marker)
-                .remove(KEY_UPLOAD_CURSOR).remove(KEY_DOWNLOAD_CREATED_CURSOR).apply()
+                .remove(KEY_UPLOAD_CURSOR)
+                .remove(statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
+                    ?.let(::uploadCursorKey) ?: KEY_UPLOAD_CURSOR)
+                .remove(KEY_DOWNLOAD_CREATED_CURSOR).apply()
         }
     }
 
@@ -349,7 +376,8 @@ class DriveHistorySyncManager @Inject constructor(
     private suspend fun uploadLocalHistory(accountSubject: String): Int {
         val dao = database.listeningEventDao()
         val maxId = dao.getMaxEventId()
-        val storedCursor = statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L)
+        val storedCursor = statePrefs.getLong(uploadCursorKey(accountSubject),
+            statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
         val generation = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L).coerceAtLeast(0L)
         // A database restore can move Room row ids backwards while SharedPreferences
         // survive. If the persisted cursor is now beyond the database snapshot,
@@ -357,7 +385,7 @@ class DriveHistorySyncManager @Inject constructor(
         // ids eventually caught up. Restart from zero instead; deterministic Drive
         // event/batch ids make replay safe and preferable to silently losing plays.
         var afterId = if (storedCursor > maxId) {
-            statePrefs.edit().remove(KEY_UPLOAD_CURSOR).apply()
+            statePrefs.edit().remove(KEY_UPLOAD_CURSOR).remove(uploadCursorKey(accountSubject)).apply()
             0L
         } else {
             storedCursor
@@ -445,6 +473,7 @@ class DriveHistorySyncManager @Inject constructor(
             retrying = false
             check(statePrefs.edit()
                 .putLong(KEY_UPLOAD_CURSOR, afterId)
+                .putLong(uploadCursorKey(accountSubject), afterId)
                 .putStringSet("${KEY_INVALID_EXPORT_IDS}:${accountSubject}", stillInvalid.map(Long::toString).toSet())
                 .commit()) { "Could not checkpoint Drive upload history and invalid rows" }
         }
@@ -704,6 +733,8 @@ class DriveHistorySyncManager @Inject constructor(
     private fun resetCursorsLocked() {
         statePrefs.edit()
             .remove(KEY_UPLOAD_CURSOR)
+            .remove(statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
+                ?.let(::uploadCursorKey) ?: KEY_UPLOAD_CURSOR)
             .remove(KEY_DOWNLOAD_CREATED_CURSOR)
             .apply()
     }
