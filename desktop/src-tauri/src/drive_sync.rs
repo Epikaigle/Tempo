@@ -342,6 +342,7 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
     migrate_legacy_import_account_and_aliases(&conn)?;
     requeue_unverified_prototype_uploads(&conn)?;
     rescan_reconciled_origins(&conn)?;
+    migrate_account_scoped_origin_keys(&conn)?;
 
     let current: String = conn
         .query_row(
@@ -430,6 +431,64 @@ fn rescan_reconciled_origins(conn: &Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     transaction.commit().map_err(|e| e.to_string())
+}
+
+/// Rebuild old globally-unique producer IDs as (Google subject, event ID).
+/// Preserve every listening row; unverified legacy identities stay quarantined.
+/// This runs once and commits the schema change and migration flag together.
+fn migrate_account_scoped_origin_keys(conn: &Connection) -> Result<(), String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let applied = tx.execute(
+        "INSERT OR IGNORE INTO drive_sync_migrations (name)
+         VALUES ('account_scoped_origin_keys_v1')", []
+    ).map_err(|e| e.to_string())?;
+    if applied == 1 {
+        tx.execute_batch(
+            "DROP TRIGGER IF EXISTS tempo_drive_scrobble_delete;
+             DROP INDEX IF EXISTS idx_drive_origin_event;
+             ALTER TABLE drive_event_state RENAME TO drive_event_state_legacy;
+             CREATE TABLE drive_event_state (
+                 scrobble_id INTEGER PRIMARY KEY,
+                 origin_event_id TEXT,
+                 origin_device_id TEXT,
+                 drive_imported INTEGER NOT NULL DEFAULT 0,
+                 drive_uploaded_at INTEGER,
+                 owner_account_subject TEXT
+             );
+             INSERT INTO drive_event_state
+                 (scrobble_id, origin_event_id, origin_device_id,
+                  drive_imported, drive_uploaded_at, owner_account_subject)
+             SELECT scrobble_id, origin_event_id, origin_device_id,
+                    drive_imported, drive_uploaded_at, owner_account_subject
+             FROM drive_event_state_legacy;
+             DROP TABLE drive_event_state_legacy;
+             CREATE INDEX idx_drive_origin_event ON drive_event_state(origin_event_id);
+             ALTER TABLE drive_event_aliases RENAME TO drive_event_aliases_legacy;
+             CREATE TABLE drive_event_aliases (
+                 account_subject TEXT NOT NULL,
+                 origin_event_id TEXT NOT NULL,
+                 source_device_id TEXT NOT NULL,
+                 scrobble_id INTEGER NOT NULL,
+                 PRIMARY KEY (account_subject, origin_event_id)
+             );
+             INSERT INTO drive_event_aliases
+                 (account_subject, origin_event_id, source_device_id, scrobble_id)
+             SELECT COALESCE(NULLIF(d.owner_account_subject, ''), 'legacy-unverified'),
+                    a.origin_event_id, a.source_device_id, a.scrobble_id
+             FROM drive_event_aliases_legacy a
+             JOIN drive_event_state d ON d.scrobble_id = a.scrobble_id;
+             DROP TABLE drive_event_aliases_legacy;
+             CREATE INDEX idx_drive_alias_scrobble_device
+                 ON drive_event_aliases(scrobble_id, source_device_id);
+             CREATE TRIGGER tempo_drive_scrobble_delete
+             AFTER DELETE ON scrobbles
+             BEGIN
+                 DELETE FROM drive_event_aliases WHERE scrobble_id = OLD.id;
+                 DELETE FROM drive_event_state WHERE scrobble_id = OLD.id;
+             END;"
+        ).map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())
 }
 
 fn load_state(conn: &Connection) -> Result<StoredDriveState, String> {
@@ -1622,12 +1681,20 @@ fn remember_origin(
     source_device_id: &str,
     origin_event_id: &str,
 ) -> Result<(), String> {
+    let owner: Option<String> = conn.query_row(
+        "SELECT owner_account_subject FROM drive_event_state WHERE scrobble_id = ?1",
+        [scrobble_id], |row| row.get(0)
+    ).optional().map_err(|e| e.to_string())?.flatten();
+    let owner = owner.filter(|s| !s.is_empty()).unwrap_or_else(|| LEGACY_UNVERIFIED_ACCOUNT.to_string());
     let affected = conn.execute(
-        "INSERT INTO drive_event_aliases (origin_event_id, source_device_id, scrobble_id)
-         VALUES (?1, ?2, ?3)
-         ON CONFLICT(origin_event_id) DO UPDATE SET origin_event_id = excluded.origin_event_id
-             WHERE scrobble_id = excluded.scrobble_id AND source_device_id = excluded.source_device_id",
-        params![origin_event_id, source_device_id, scrobble_id],
+        "INSERT INTO drive_event_aliases
+            (account_subject, origin_event_id, source_device_id, scrobble_id)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(account_subject, origin_event_id)
+         DO UPDATE SET origin_event_id = excluded.origin_event_id
+           WHERE scrobble_id = excluded.scrobble_id
+             AND source_device_id = excluded.source_device_id",
+        params![owner, origin_event_id, source_device_id, scrobble_id],
     )
     .map_err(|e| e.to_string())?;
     if affected != 1 {
@@ -1644,9 +1711,11 @@ fn insert_remote_event_for_account(
 ) -> Result<bool, String> {
     let existing_origin: Option<i64> = conn
         .query_row(
-            "SELECT scrobble_id FROM drive_event_aliases WHERE origin_event_id = ?1
-             UNION ALL SELECT scrobble_id FROM drive_event_state WHERE origin_event_id = ?1 LIMIT 1",
-            [&event.event_id],
+            "SELECT scrobble_id FROM drive_event_aliases
+             WHERE origin_event_id = ?1 AND account_subject = ?2
+             UNION ALL SELECT scrobble_id FROM drive_event_state
+             WHERE origin_event_id = ?1 AND owner_account_subject = ?2 LIMIT 1",
+            params![event.event_id, account_subject],
             |row| row.get(0),
         )
         .optional()
@@ -1702,6 +1771,12 @@ fn insert_remote_event_for_account(
     };
 
     if let Some(id) = existing_temporal {
+        // A local capture without a cloud owner may be reconciled with the
+        // verified active Google account. Pin it before inserting an alias;
+        // imported A rows never match B because of the temporal owner filter.
+        conn.execute("UPDATE drive_event_state SET owner_account_subject = ?2
+                      WHERE scrobble_id = ?1 AND owner_account_subject IS NULL",
+            params![id, account_subject]).map_err(|e| e.to_string())?;
         // Legacy local rows can predate Drive origin-state initialization.
         // Claim their original Desktop identity BEFORE recording the remote
         // alias, otherwise an early incoming copy would classify the original
