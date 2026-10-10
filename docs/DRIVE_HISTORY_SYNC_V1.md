@@ -289,3 +289,11 @@ Drive sync performs two bounded indexed lookups (verified owner and newly
 unowned captures) instead of traversing the user's entire listening archive.
 Account claims, uploads, remote-reconciliation aliases, and cloud deletions
 update the pending key transactionally. Index upgrades retain v3 origin aliases.
+
+
+## Restoration safety follow-up (2026-10-10)
+
+- Multi-account offline ZIP backups key producer claims by **(Google subject, origin ID)**. A and B may carry the same 64-character origin without deleting or merging each other's listening rows. Import deduplication is grouped by the original per-event Google owner, and fallback track/time lookup never crosses to another account.
+- A paired LAN play with `drive_account_subject = lan-unverified` stays local-only until an independently verified Drive import of **exactly the same origin ID** arrives. Only then does Android adopt its owner and producer aliases in a single Room transaction. No title/time heuristic may assign an unknown LAN record to a Google account.
+- A local database restore can remap every event primary key. The restore mutex invalidates the active/global download and upload cursors **and all per-account upload and invalid-row retry sets** so A→B→A cannot silently miss restored events. Cloud deletion markers continue to reset the active account only.
+- Regression checks cover multi-account backup origin keys, exact LAN/Drive ownership reconciliation in SQLite, and per-account restore-state key invalidation. CI does not replace a real 5–10-year archive restore and live Google-account tests.
