@@ -1324,12 +1324,12 @@ fn pin_local_origin(
     artist: &str,
 ) -> Result<String, String> {
     let generated = lan_play_origin(device_id, id, timestamp_utc, title, artist);
+    // Keep an unowned legacy row unclaimed while pinning its local origin:
+    // reconciliation will assign a *verified* account after matching. Real
+    // newly captured offline plays are already tagged local-only atomically by
+    // Database::insert_play; this function never overrides that owner.
     let state = load_state(conn)?;
-    let subject = if state.enabled {
-        state.account_subject
-    } else {
-        Some(LEGACY_UNVERIFIED_ACCOUNT.to_string())
-    };
+    let subject = if state.enabled { state.account_subject } else { None };
     conn.execute(
         "INSERT OR IGNORE INTO drive_event_state
          (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at, owner_account_subject)
