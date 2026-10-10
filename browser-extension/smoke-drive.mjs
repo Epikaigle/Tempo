@@ -73,7 +73,13 @@ check(
 // This also works without any Google authorization: it only reads local storage.
 globalThis.chrome = {
   storage: { local: {
-    get: async key => ({ [key]: 'device-1' }),
+    // Drive's settings helper uses callback-style chrome.storage.get; the
+    // origin helper must still work when Drive is disabled (LAN-only).
+    get: (key, callback) => {
+      const result = { [key]: key === 'settings' ? { driveSyncEnabled: false } : 'device-1' };
+      if (callback) queueMicrotask(() => callback(result));
+      return Promise.resolve(result);
+    },
     set: async () => {},
   } },
 };
