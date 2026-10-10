@@ -1339,6 +1339,13 @@ pub(crate) fn lan_play_account_owners(
     play_ids: &[i64],
 ) -> Result<HashMap<i64, String>, String> {
     let conn = open_sync_db(app_data_dir)?;
+    let state = load_state(&conn)?;
+    // An explicit Drive disconnect disables cloud publication, including a
+    // relay through an otherwise paired Android client.
+    if !state.enabled || state.account_subject.is_none() {
+        return Ok(HashMap::new());
+    }
+    let current_subject = state.account_subject.unwrap();
     let mut stmt = conn.prepare(
         "SELECT owner_account_subject FROM drive_event_state
          WHERE scrobble_id = ?1 AND drive_imported = 0",
@@ -1350,7 +1357,9 @@ pub(crate) fn lan_play_account_owners(
         if let Some(owner) = owner.filter(|v|
             !v.is_empty() && v != LEGACY_UNVERIFIED_ACCOUNT && !v.contains('@')
         ) {
-            owners.insert(*id, owner);
+            if owner == current_subject {
+                owners.insert(*id, owner);
+            }
         }
     }
     Ok(owners)
