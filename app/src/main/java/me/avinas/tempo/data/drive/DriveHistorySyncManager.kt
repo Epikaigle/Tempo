@@ -846,17 +846,22 @@ class DriveHistorySyncManager @Inject constructor(
         try {
             block()
         } finally {
-            // Room restore can remap primary keys and move previously deleted
-            // history above its prior ID ceiling. Keep all suppressed accounts
-            // blocked through the new snapshot until they explicitly opt in.
-            val ceiling = database.listeningEventDao().getMaxEventId()
-            val editor = statePrefs.edit()
-            statePrefs.all.keys.filter { it.startsWith("${KEY_SUPPRESSED_THROUGH}:") }
-                .forEach { key ->
-                    editor.putLong(key, maxOf(statePrefs.getLong(key, 0L), ceiling))
-                }
-            check(editor.commit()) { "Could not preserve deletion suppression after restore" }
-            resetCursorsLocked(clearEveryAccount = true)
+            try {
+                // Room restore can remap primary keys and move previously
+                // deleted history above its prior ID ceiling. Conservatively
+                // fence all restored rows for suppressed Google accounts.
+                val ceiling = database.listeningEventDao().getMaxEventId()
+                val editor = statePrefs.edit()
+                statePrefs.all.keys.filter { it.startsWith("${KEY_SUPPRESSED_THROUGH}:") }
+                    .forEach { key ->
+                        editor.putLong(key, maxOf(statePrefs.getLong(key, 0L), ceiling))
+                    }
+                check(editor.commit()) { "Could not preserve deletion suppression after restore" }
+            } finally {
+                // Invalidate stale Room row-ID upload cursors even if a restore
+                // or a suppression-fence update fails.
+                resetCursorsLocked(clearEveryAccount = true)
+            }
         }
     }
 
