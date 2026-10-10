@@ -257,7 +257,9 @@ class DesktopPlayIngestionService @Inject constructor(
                     listeningRepository.insert(event)
                     accepted++
                 } else {
-                    val result = listeningEventDao.insertAllBatchedWithDedup(listOf(event))
+                    val result = listeningEventDao.insertAllBatchedWithDedup(
+                        listOf(event), event.driveAccountSubject
+                    )
                     accepted += result.inserted
                     duplicates += result.skipped
                 }
