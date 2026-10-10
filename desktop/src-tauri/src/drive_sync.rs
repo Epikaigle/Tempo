@@ -40,9 +40,10 @@ const MAX_BATCH_BYTES: usize = 10 * 1024 * 1024;
 const DOWNLOAD_OVERLAP_MS: i64 = 24 * 60 * 60 * 1000;
 const DRIVE_REQUEST_RETRIES: usize = 3;
 const LEGACY_UNVERIFIED_ACCOUNT: &str = "legacy-unverified";
-// Match Android and browser Drive imports: a full-minute overlap can hide
-// a genuine second play of a short track captured by another device.
-const TEMPORAL_DEDUP_MS: i64 = 10_000;
+// Cross-producer temporal reconciliation is a fallback, not a proof of origin.
+// A narrow two-second window reduces false merges of independently replayed
+// short tracks; exact origin IDs remain the primary deduplication mechanism.
+const TEMPORAL_DEDUP_MS: i64 = 2_000;
 
 static SYNC_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 
@@ -1559,8 +1560,9 @@ fn insert_remote_event(
         return Ok(false);
     }
 
-    // The bounded ±10s fallback reconciles near-simultaneous captures from
-    // different producers without swallowing real 25-second track replays.
+    // Narrow ±2s fallback for near-simultaneous captures from different
+    // producers. Exact origin IDs take precedence; truly independent plays
+    // even a few seconds apart must not be silently collapsed.
     // Distinct IDs from the same device must never be merged temporally.
     let title = event.title.trim().to_lowercase();
     let artist = event.artist.trim().to_lowercase();
@@ -1568,7 +1570,7 @@ fn insert_remote_event(
         // SQLite lower() is ASCII-only. Normalize bounded candidates in Rust so
         // accented names and whitespace use the same comparison as other clients.
         let mut stmt = conn.prepare(
-            "SELECT s.id, s.title, s.artist FROM scrobbles s
+            "SELECT s.id, s.title, s.artist, s.session_id FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE s.timestamp_utc BETWEEN ?1 AND ?2
                AND (d.origin_device_id IS NULL OR d.origin_device_id <> ?4)
@@ -1583,12 +1585,25 @@ fn insert_remote_event(
                 event.timestamp_utc,
                 source_device_id
             ],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+            |row| Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            )),
         ).map_err(|e| e.to_string())?;
         let mut found = None;
         for candidate in candidates {
-            let (id, candidate_title, candidate_artist) = candidate.map_err(|e| e.to_string())?;
-            if candidate_title.trim().to_lowercase() == title
+            let (id, candidate_title, candidate_artist, candidate_session) =
+                candidate.map_err(|e| e.to_string())?;
+            // Distinct explicit playback sessions are positive evidence that
+            // these are separate listens even when timestamps coincide.
+            let distinct_sessions = event.session_id.as_deref()
+                .filter(|session| !session.trim().is_empty())
+                .is_some_and(|incoming| !candidate_session.trim().is_empty()
+                    && candidate_session != incoming);
+            if !distinct_sessions
+                && candidate_title.trim().to_lowercase() == title
                 && candidate_artist.trim().to_lowercase() == artist
             {
                 found = Some(id);
@@ -2333,6 +2348,43 @@ mod tests {
             [&event.event_id], |row| row.get(0),
         ).unwrap();
         assert_eq!(alias_id, local_id);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+
+    #[test]
+    fn independent_cross_device_replay_seven_seconds_later_stays_distinct() {
+        let (directory, conn) = history_storage_fixture();
+        let original = fixture_batch().events[0].clone();
+        let mut replay = original.clone();
+        replay.event_id = "a".repeat(64);
+        replay.timestamp_utc += 7_000;
+        assert!(insert_remote_event(&conn, "device-one", &original).unwrap());
+        assert!(insert_remote_event(&conn, "device-two", &replay).unwrap(),
+            "a 7-second independent replay must not be lost to temporal deduplication");
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM scrobbles", [],
+            |row| row.get(0)).unwrap();
+        assert_eq!(count, 2);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn two_distinct_sessions_never_merge_even_with_matching_timestamps() {
+        let (directory, conn) = history_storage_fixture();
+        let mut first = fixture_batch().events[0].clone();
+        first.session_id = Some("session-one".into());
+        let mut second = first.clone();
+        second.session_id = Some("session-two".into());
+        second.event_id = "a".repeat(64);
+        second.timestamp_utc += 500;
+        assert!(insert_remote_event(&conn, "device-one", &first).unwrap());
+        assert!(insert_remote_event(&conn, "device-two", &second).unwrap(),
+            "two explicit playback sessions cannot be treated as one play");
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM scrobbles", [],
+            |row| row.get(0)).unwrap();
+        assert_eq!(count, 2);
         drop(conn);
         std::fs::remove_dir_all(directory).unwrap();
     }
