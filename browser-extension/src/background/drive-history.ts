@@ -479,7 +479,7 @@ async function downloadRemotePlays(
     // Reconstruct those IDs before a full restore so reading this device's
     // cloud batches cannot import a second copy of every surviving local play.
     // Do this only for explicit recovery, not for each periodic background sync.
-    const ownPlays = await storage.getOwnPlayIdentityInputs();
+    const ownPlays = await storage.getOwnPlayIdentityInputs(accountSubject);
     for (let offset = 0; offset < ownPlays.length; offset += 256) {
       const chunk = ownPlays.slice(offset, offset + 256);
       const origins = await Promise.all(chunk.map(play => eventId(deviceId, play)));
