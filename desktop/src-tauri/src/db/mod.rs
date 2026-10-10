@@ -226,12 +226,19 @@ impl Database {
             ],
         )?;
         let id = tx.last_insert_rowid();
-        let has_drive_state: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master
-                WHERE type = 'table' AND name = 'drive_sync_state')",
+        // An older installation may still have an email-only Drive schema
+        // when music detection runs, before open_sync_db upgrades it. Never
+        // fail to record a play just because optional Drive tables are old.
+        let ready_drive_schema: bool = tx.query_row(
+            "SELECT
+                (SELECT COUNT(*) FROM pragma_table_info('drive_sync_state')
+                 WHERE name IN ('enabled', 'account_subject',
+                                'last_verified_account_subject')) = 3
+                AND EXISTS(SELECT 1 FROM sqlite_master
+                           WHERE type = 'table' AND name = 'drive_event_state')",
             [], |row| row.get(0),
         )?;
-        if has_drive_state {
+        if ready_drive_schema {
             tx.execute(
                 "INSERT OR IGNORE INTO drive_event_state
                  (scrobble_id, drive_imported, owner_account_subject)
@@ -891,6 +898,18 @@ mod local_dedup_tests {
              WHERE scrobble_id = ?1", [first_time], |row| row.get(0)
         ).unwrap();
         assert_eq!(unknown_owner, None);
+
+        let legacy = Database {
+            conn: Connection::open_in_memory().unwrap(),
+            db_path: std::path::PathBuf::new(),
+        };
+        legacy.initialize_tables().unwrap();
+        legacy.conn.execute_batch(
+            "CREATE TABLE drive_sync_state (id INTEGER PRIMARY KEY, enabled INTEGER);
+             INSERT INTO drive_sync_state VALUES (1, 0);"
+        ).unwrap();
+        assert!(legacy.insert_play(&play).unwrap() > 0,
+            "old Drive schema must not break the local music recorder");
     }
 
 
