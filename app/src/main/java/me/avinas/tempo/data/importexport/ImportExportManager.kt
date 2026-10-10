@@ -884,17 +884,27 @@ class ImportExportManager @Inject constructor(
             // listening row before the alias resolver finds the real original.
             // Query these immutable identities once per chunk and do not insert
             // a second playback for an already-represented origin.
-            val restoredOriginIds = chunk.asSequence()
-                .flatMap { (_, aliases) -> aliases.asSequence().map { it.originEventId } }
+            val restoredOriginKeys = chunk.asSequence()
+                .flatMap { (_, aliases) -> aliases.asSequence().map { it.restoredKey() } }
                 .distinct().toList()
+            val restoredOriginIds = restoredOriginKeys.map { it.originEventId }.distinct()
             val existingByOrigin = restoredOriginIds.chunked(900)
                 .flatMap { dao.getOriginClaimsByOriginIds(it) }
-                .associate { it.originEventId to it.listeningEventId }
+                .associate { RestoredOriginKey(it.accountSubject, it.originEventId) to it.listeningEventId }
+            for ((event, aliases) in chunk) {
+                val expectedOwner = event.driveAccountSubject ?: "legacy-unverified"
+                check(aliases.all { it.accountSubject == expectedOwner }) {
+                    "Backup contains producer aliases whose Google owner differs from the listening event"
+                }
+            }
             val newEvents = chunk.filter { (_, aliases) ->
                 shouldImportOfflinePlayback(aliases, existingByOrigin)
             }.map { it.first }
-            if (newEvents.isNotEmpty()) {
-                inserted += dao.insertAllBatchedWithDedup(newEvents).inserted
+            // A mixed-account ZIP must not use the global dedup scope. Without
+            // grouping, identical content fingerprints from Google A and B
+            // silently discard one archive before alias reconciliation.
+            for ((owner, ownedEvents) in newEvents.groupBy { it.driveAccountSubject }) {
+                inserted += dao.insertAllBatchedWithDedup(ownedEvents, owner).inserted
             }
             // The dedup insert may have created new claims. Refresh once per
             // chunk, rather than issuing a separate query for every playback.
@@ -902,7 +912,7 @@ class ImportExportManager @Inject constructor(
             // of aliases; round trips must scale with pages, not row count.
             val currentOriginRows = restoredOriginIds.chunked(900)
                 .flatMap { dao.getOriginClaimsByOriginIds(it) }
-                .associate { it.originEventId to it.listeningEventId }
+                .associate { RestoredOriginKey(it.accountSubject, it.originEventId) to it.listeningEventId }
             // Resolve target rows first, then fetch every target's existing
             // producer claims in bounded chunks. Avoid issuing one Room query
             // per event during multi-year offline backup restores.
@@ -913,7 +923,7 @@ class ImportExportManager @Inject constructor(
                 // may be represented by a different source or timestamp after
                 // another device reconciled it. Only fall back to time when no
                 // saved origin identifies the playback.
-                val byOrigin = exportedAliases.mapNotNull { currentOriginRows[it.originEventId] }.distinct()
+                val byOrigin = exportedAliases.mapNotNull { currentOriginRows[it.restoredKey()] }.distinct()
                 check(byOrigin.size <= 1) {
                     "Cannot safely restore aliases: producer IDs point to different listening events"
                 }
@@ -921,7 +931,8 @@ class ImportExportManager @Inject constructor(
                     byOrigin.single()
                 } else {
                     val exact = dao.getBackupRestoredEventIds(
-                        event.track_id, event.timestamp, event.source
+                        event.track_id, event.timestamp, event.source,
+                        event.driveAccountSubject,
                     )
                     if (exact.size == 1) {
                         exact.single()
@@ -931,7 +942,7 @@ class ImportExportManager @Inject constructor(
                         val window = ListeningEventDao.DRIVE_RECONCILIATION_WINDOW_MS
                         val nearby = dao.getEventsForReconciliation(
                             event.track_id, event.timestamp - window, event.timestamp + window
-                        )
+                        ).filter { it.driveAccountSubject == event.driveAccountSubject }
                         check(nearby.size == 1) {
                             "Cannot safely restore producer aliases for event at ${event.timestamp}: ambiguous playback"
                         }
@@ -948,7 +959,7 @@ class ImportExportManager @Inject constructor(
                 .flatMap { dao.getOriginClaimsForEvents(it) }
                 .groupBy { it.listeningEventId }
             val claimsByRestoredId = savedClaims.mapValues { (_, origins) ->
-                origins.associate { it.sourceDeviceId to it.originEventId }.toMutableMap()
+                origins.associate { (it.accountSubject to it.sourceDeviceId) to it.originEventId }.toMutableMap()
             }.toMutableMap()
             val newAliases = mutableListOf<ListeningEventOrigin>()
             for ((targetId, exportedAliases) in resolvedTargets) {
@@ -956,7 +967,8 @@ class ImportExportManager @Inject constructor(
                 // the same chunk are checked against each other as well.
                 val claimed = claimsByRestoredId.getOrPut(targetId) { mutableMapOf() }
                 for (origin in exportedAliases) {
-                    val existing = claimed[origin.sourceDeviceId]
+                    val claimKey = origin.accountSubject to origin.sourceDeviceId
+                    val existing = claimed[claimKey]
                     if (existing != null) {
                         check(existing == origin.originEventId) {
                             "Two different origins claim the same producer and playback"
@@ -969,7 +981,7 @@ class ImportExportManager @Inject constructor(
                         "Backup contains an invalid producer identity"
                     }
                     newAliases.add(origin.copy(listeningEventId = targetId))
-                    claimed[origin.sourceDeviceId] = origin.originEventId
+                    claimed[claimKey] = origin.originEventId
                 }
             }
             if (newAliases.isNotEmpty()) dao.insertOriginAliases(newAliases)
