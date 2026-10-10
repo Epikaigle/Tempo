@@ -107,10 +107,10 @@ assert.equal(await storage.hasRecentPlay('Different Song', 'Artist', baseTime + 
 // A previously uploaded local play has no originEventId field, so checking
 // only stored remote aliases used to duplicate the same device's whole archive.
 localRecords = [
-  { id: 14, title: ' Local ', artist: ' Artist ', timestampUtc: baseTime, driveAccountSubject: 'google-a' }
+  { id: 14, title: ' Local ', artist: ' Artist ', timestampUtc: baseTime, driveAccountSubject: 'google-a' },
   { id: 15, title: 'Cloud', artist: 'Artist', timestampUtc: baseTime, driveImported: true, originEventId: 'external' },
   { id: 16, title: 'Own with alias', artist: 'Artist', timestampUtc: baseTime, originEventId: 'known' },
-  { id: 17, title: 'Second local', artist: 'Band', timestampUtc: baseTime + 25_000, driveAccountSubject: 'google-b' }
+  { id: 17, title: 'Second local', artist: 'Band', timestampUtc: baseTime + 25_000, driveAccountSubject: 'google-b' },
 ];
 database.transaction = () => {
   const tx = {
