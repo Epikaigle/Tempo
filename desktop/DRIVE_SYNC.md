@@ -162,3 +162,25 @@ CI uses a dummy public client ID for compilation and unit tests. Keep this PR as
 9. Simulate a crash after writing a Google B refresh token into the OS keyring but before storing B's identity in SQLite, then sign in to A. The keyring subject and subsequent token refresh must be rejected if mismatched. Verify legacy unbound refresh credentials prompt for reconnect.
 10. Import a same-title/time event from A, switch to B, and import a different B event at nearly the same timestamp. Both records must survive, and A's quarantined/legacy imports must never become B temporal aliases.
 11. Reopen the Desktop database repeatedly with a large legacy archive and confirm origin-alias migration runs only once, while incremental origin writes remain durable.
+
+
+## Per-account event identities and safe LAN provenance
+
+The account-scoped alias migration replaces global uniqueness of producer
+event IDs with `(account_subject, origin_event_id)`. The primary event-state
+table retains one row per local scrobble but permits the same cloud origin ID
+for separate Google archives. Old aliases are copied under their verified
+event owner or `legacy-unverified`; the existing deletion trigger is rebuilt,
+and migration is transactional and one-time. Exact-id and temporal matching
+both scope their results to the authorized account.
+
+A paired phone receives an `origin_account_subject` for Desktop plays only
+when Desktop Drive is enabled and the stored play owner matches the active
+verified subject. LAN synchronization remains available with Drive disabled,
+but those unidentified plays are local-only on Android, not silently copied
+into another Google account. This intentionally favors explicit cloud consent
+over forwarding unmatched or unverified histories.
+
+Before merging, repeat same-origin A/B/A restore on real Google accounts,
+upgrade a populated Desktop database and verify the legacy aliases survived,
+and try paired-LAN sending with both matching and mismatched Google subjects.
