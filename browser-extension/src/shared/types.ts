@@ -114,6 +114,8 @@ export interface SyncPlay {
   origin_device_id?: string;
   origin_event_id?: string;
   origin_source?: string;
+  /** Verified sender Google subject when known; absent means LAN-only. */
+  origin_account_subject?: string;
   title: string;
   artist: string;
   album: string;
