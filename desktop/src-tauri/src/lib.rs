@@ -500,11 +500,14 @@ fn register_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         if event.state == ShortcutState::Pressed {
             let app_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::network::sync_to_phone(&app_handle).await {
-                    log::warn!("Shortcut sync failed: {}", e);
-                    let _ = app_handle.emit("sync-failed", e.to_string());
-                } else {
-                    let _ = app_handle.emit("sync-completed", 0);
+                match crate::network::sync_pending_to_phone(&app_handle).await {
+                    Ok(count) => {
+                        let _ = app_handle.emit("sync-completed", count);
+                    }
+                    Err(e) => {
+                        log::warn!("Shortcut sync failed: {}", e);
+                        let _ = app_handle.emit("sync-failed", e.to_string());
+                    }
                 }
             });
         }
