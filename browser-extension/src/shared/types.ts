@@ -89,6 +89,8 @@ export interface Play {
   reconciledOrigins?: Array<{ deviceId: string; eventId: string }>;
   /** Epoch ms when this locally-owned play was safely uploaded to appDataFolder. */
   driveUploadedAt?: number;
+  /** Immutable Google OpenID subject owning this sync/import record. */
+  driveAccountSubject?: string;
 }
 
 export interface SyncPayload {
