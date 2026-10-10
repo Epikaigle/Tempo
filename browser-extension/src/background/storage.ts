@@ -218,7 +218,7 @@ export async function getAllPlays(limit = 100): Promise<Play[]> {
  * A ten-year archive may contain hundreds of thousands of plays; building an
  * array of every full Play object for each periodic Drive sync is wasteful.
  */
-export async function getDriveOriginEventIds(): Promise<Set<string>> {
+export async function getDriveOriginEventIds(accountSubject?: string): Promise<Set<string>> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readonly');
@@ -231,8 +231,10 @@ export async function getDriveOriginEventIds(): Promise<Set<string>> {
         return;
       }
       const play = cursor.value as Play;
-      if (play.originEventId) ids.add(play.originEventId);
-      for (const alias of play.reconciledOrigins ?? []) ids.add(alias.eventId);
+      if (!accountSubject || play.driveAccountSubject === accountSubject) {
+        if (play.originEventId) ids.add(play.originEventId);
+        for (const alias of play.reconciledOrigins ?? []) ids.add(alias.eventId);
+      }
       cursor.continue();
     };
     request.onerror = () => reject(request.error);
@@ -281,7 +283,10 @@ export async function getOwnPlayIdentityInputs(): Promise<Array<
  * for a long time the database may temporarily exceed the normal 5k cap,
  * and those older pending rows must not become unreachable.
  */
-export async function getDrivePendingPlays(limit = Number.MAX_SAFE_INTEGER): Promise<Play[]> {
+export async function getDrivePendingPlays(
+  limit = Number.MAX_SAFE_INTEGER,
+  accountSubject?: string,
+): Promise<Play[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readonly');
@@ -294,7 +299,8 @@ export async function getDrivePendingPlays(limit = Number.MAX_SAFE_INTEGER): Pro
       const cursor = request.result;
       if (cursor && plays.length < limit) {
         const play = cursor.value as Play;
-        if (play.id != null && !play.driveImported && !play.driveUploadedAt) {
+        if (play.id != null && !play.driveImported && !play.driveUploadedAt &&
+            (!accountSubject || !play.driveAccountSubject || play.driveAccountSubject === accountSubject)) {
           plays.push(play);
         }
         cursor.continue();
@@ -306,11 +312,40 @@ export async function getDrivePendingPlays(limit = Number.MAX_SAFE_INTEGER): Pro
   });
 }
 
+/**
+ * Preserve ownership of every existing play before switching Google accounts.
+ * This transaction commits BEFORE the new account can sync. Rows recorded after
+ * the switch remain unowned until their first Drive operation on that account.
+ * A legacy installation with unverifiable prior identity is quarantined.
+ */
+export async function claimUnownedDrivePlays(accountSubject: string): Promise<void> {
+  if (!accountSubject.trim()) throw new Error('Missing verified Google account subject');
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readwrite');
+    const request = tx.objectStore(PLAYS_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const play = cursor.value as Play;
+      if (!play.driveAccountSubject) {
+        cursor.update({ ...play, driveAccountSubject: accountSubject });
+      }
+      cursor.continue();
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Google owner migration aborted'));
+  });
+}
+
 /** Persist the first canonical local event ID before either LAN or Drive
  * transmits it. The transaction must commit before the caller uses the ID;
  * retries and title/artist edits then reuse exactly the same identity.
  */
-export async function ensureLocalOriginEventId(playId: number, candidateId: string): Promise<string> {
+export async function ensureLocalOriginEventId(
+  playId: number, candidateId: string, accountSubject?: string,
+): Promise<string> {
   if (!/^[0-9a-f]{64}$/.test(candidateId)) throw new Error('Invalid local origin identity');
   const db = await openDb();
   return new Promise<string>((resolve, reject) => {
@@ -320,7 +355,8 @@ export async function ensureLocalOriginEventId(playId: number, candidateId: stri
     const request = store.get(playId);
     request.onsuccess = () => {
       const play = request.result as Play | undefined;
-      if (!play || play.driveImported) {
+      if (!play || play.driveImported ||
+          (accountSubject && play.driveAccountSubject && play.driveAccountSubject !== accountSubject)) {
         tx.abort();
         return;
       }
@@ -329,8 +365,9 @@ export async function ensureLocalOriginEventId(playId: number, candidateId: stri
         return;
       }
       pinnedId = play.originEventId ?? candidateId;
-      if (!play.originEventId) {
+      if (!play.originEventId || (accountSubject && !play.driveAccountSubject)) {
         play.originEventId = pinnedId;
+        if (accountSubject) play.driveAccountSubject = accountSubject;
         store.put(play);
       }
     };
@@ -533,6 +570,7 @@ export async function hasRecentPlay(
   timestampUtc: number,
   incomingOriginDeviceId?: string,
   incomingOriginEventId?: string,
+  accountSubject?: string,
 ): Promise<boolean> {
   const db = await openDb();
   const rememberRemoteOrigin = !!incomingOriginDeviceId && !!incomingOriginEventId;
@@ -556,7 +594,8 @@ export async function hasRecentPlay(
       const representedByOrigin =
         (!!incomingOriginDeviceId && play.originDeviceId === incomingOriginDeviceId) ||
         aliases.some(alias => alias.deviceId === incomingOriginDeviceId);
-      if (!representedByOrigin &&
+      if ((!accountSubject || !play.driveAccountSubject || play.driveAccountSubject === accountSubject) &&
+          !representedByOrigin &&
           play.title.trim().toLowerCase() === title.trim().toLowerCase() &&
           play.artist.trim().toLowerCase() === artist.trim().toLowerCase()) {
         matched = true;
@@ -566,6 +605,7 @@ export async function hasRecentPlay(
           // again, and the first event's identity would be lost on restart.
           cursor.update({
             ...play,
+            driveAccountSubject: accountSubject ?? play.driveAccountSubject,
             reconciledOrigins: [...aliases, {
               deviceId: incomingOriginDeviceId!,
               eventId: incomingOriginEventId!,
