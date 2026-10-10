@@ -460,7 +460,7 @@ class DriveHistorySyncManager @Inject constructor(
                 if (!event.source.startsWith("lan:") && !event.source.startsWith("drive:") &&
                     ownOrigins[event.id] == null
                 ) {
-                    newOwnOrigins.add(ListeningEventOrigin(exported.eventId, event.id, deviceId))
+                    newOwnOrigins.add(ListeningEventOrigin(exported.eventId, event.id, deviceId, accountSubject))
                 }
                 eventsByProducer.getOrPut(uploadProducer(event)) { mutableListOf() }.add(exported)
             }
