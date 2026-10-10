@@ -239,6 +239,8 @@ impl Database {
                     CASE WHEN enabled != 0 AND account_subject IS NOT NULL
                                AND account_subject != ''
                          THEN account_subject
+                         WHEN last_verified_account_subject IS NULL
+                         THEN NULL
                          ELSE 'legacy-unverified' END
                  FROM drive_sync_state WHERE id = 1",
                 [id],
@@ -850,8 +852,9 @@ mod local_dedup_tests {
         db.initialize_tables().unwrap();
         db.conn.execute_batch(
             "CREATE TABLE drive_sync_state (id INTEGER PRIMARY KEY,
-                enabled INTEGER, account_subject TEXT);
-             INSERT INTO drive_sync_state VALUES (1, 1, 'google-a');
+                enabled INTEGER, account_subject TEXT,
+                last_verified_account_subject TEXT);
+             INSERT INTO drive_sync_state VALUES (1, 1, 'google-a', 'google-a');
              CREATE TABLE drive_event_state (
                 scrobble_id INTEGER PRIMARY KEY, drive_imported INTEGER,
                 owner_account_subject TEXT);"
@@ -878,6 +881,16 @@ mod local_dedup_tests {
         assert_eq!(owner(owned_a), "google-a");
         assert_eq!(owner(local_only), "legacy-unverified");
         assert_eq!(owner(owned_b), "google-b");
+        // A fresh installation never linked to Google may share its initial
+        // archive when the user opts in with Connect Google for the first time.
+        db.conn.execute("UPDATE drive_sync_state SET enabled = 0,
+            account_subject = NULL, last_verified_account_subject = NULL", []).unwrap();
+        let first_time = db.insert_play(&play).unwrap();
+        let unknown_owner: Option<String> = db.conn.query_row(
+            "SELECT owner_account_subject FROM drive_event_state
+             WHERE scrobble_id = ?1", [first_time], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(unknown_owner, None);
     }
 
 
