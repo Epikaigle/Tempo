@@ -467,7 +467,9 @@ export async function markDriveUploaded(
 }
 
 /** Clear Drive-upload bookkeeping while preserving all local listening history. */
-export async function clearDriveUploadedFlags(): Promise<void> {
+/** Reset only the owning Google account after its deletion marker advances. */
+export async function clearDriveUploadedFlags(accountSubject: string): Promise<void> {
+  if (!accountSubject.trim()) throw new Error('A verified Google subject is required');
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
@@ -477,7 +479,8 @@ export async function clearDriveUploadedFlags(): Promise<void> {
       const cursor = request.result;
       if (cursor) {
         const play = cursor.value as Play;
-        if (!play.driveImported && play.driveUploadedAt) {
+        if (!play.driveImported && play.driveUploadedAt &&
+            play.driveAccountSubject === accountSubject) {
           delete play.driveUploadedAt;
           cursor.update(play);
         }
