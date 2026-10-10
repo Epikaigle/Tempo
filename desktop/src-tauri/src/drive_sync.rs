@@ -2499,6 +2499,36 @@ mod tests {
     }
 
     #[test]
+    fn the_same_producer_id_can_be_imported_into_two_google_accounts() {
+        let (directory, conn) = history_storage_fixture();
+        let original = fixture_batch().events[0].clone();
+        assert!(insert_remote_event_for_account(
+            &conn, "source-device", &original, "subject-a").unwrap());
+        assert!(!insert_remote_event_for_account(
+            &conn, "source-device", &original, "subject-a").unwrap());
+        assert!(insert_remote_event_for_account(
+            &conn, "source-device", &original, "subject-b").unwrap());
+        let state_count: i64 = conn.query_row(
+            "SELECT count(*) FROM drive_event_state
+             WHERE origin_event_id = ?1",
+            [&original.event_id], |row| row.get(0),
+        ).unwrap();
+        let alias_count: i64 = conn.query_row(
+            "SELECT count(*) FROM drive_event_aliases
+             WHERE origin_event_id = ?1",
+            [&original.event_id], |row| row.get(0),
+        ).unwrap();
+        assert_eq!((state_count, alias_count), (2, 2));
+        assert_eq!(conn.query_row(
+            "SELECT count(DISTINCT account_subject) FROM drive_event_aliases
+             WHERE origin_event_id = ?1",
+            [&original.event_id], |row| row.get::<_, i64>(0),
+        ).unwrap(), 2);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn scrobble_deletion_prunes_origin_rows_without_a_full_reopen_scan() {
         let (directory, conn) = history_storage_fixture();
         let event = fixture_batch().events[0].clone();
