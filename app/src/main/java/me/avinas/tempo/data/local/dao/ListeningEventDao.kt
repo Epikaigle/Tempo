@@ -363,9 +363,13 @@ interface ListeningEventDao {
             val minTs = trackEvents.minOf { it.timestamp } - RECONCILIATION_WINDOW_MS
             val maxTs = trackEvents.maxOf { it.timestamp } + RECONCILIATION_WINDOW_MS
             val existingAlive = getEventsForReconciliation(trackId, minTs, maxTs)
+                // A verified cloud import can reconcile only against events
+                // already proven to belong to that Google account. Previously
+                // unowned LAN captures are adopted above ONLY on exact producer
+                // identity, not merely because title/timestamp happen to match.
                 .filter { it.id !in toDelete &&
-                    (accountSubject == null || it.driveAccountSubject == null ||
-                        it.driveAccountSubject == accountSubject) }.toMutableList()
+                    (accountSubject == null || it.driveAccountSubject == accountSubject)
+                }.toMutableList()
             val claims = if (existingAlive.isEmpty()) emptyList()
                 else existingAlive.map { it.id }.chunked(900)
                     .flatMap { getOriginClaimsForEvents(it) }
