@@ -102,3 +102,10 @@ guarantee of recoverability.
   affects only its own owner. Confirm all older play IDs and origin aliases survive
 - Keep independent offline backups. Passing CI cannot substitute for actual
   multi-client OAuth, years-old archive restore or mobile database migration tests
+
+
+### Restore and LAN/Drive race regressions (2026-10-10)
+
+- Restore an offline ZIP containing the same event ID for two Google accounts A and B; both listening rows and their distinct producer aliases must survive, including altered metadata and repeated restore.
+- Pair an extension/Desktop while its cloud sync is disabled. Ingest a play by LAN as `lan-unverified`, then later enable the sender's cloud sync and download exactly that producer ID to Android. The phone must retain **one** listening record, adopt the verified account, and preserve its alias; a merely similar title/time must not cause ownership promotion. Repeat with distinct A/B owners.
+- Restore an Android database whose auto-incremented IDs change while older A and B upload cursors and failed-row retry sets exist. Switch A→B→A and ensure no eligible restored plays are lost. Do not reset the server deletion-generation marker when resetting local row-ID state.
