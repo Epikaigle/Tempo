@@ -43,6 +43,7 @@ interface DriveRuntimeState {
   accountEmail: string | null;
   /** Last Google account that owned these Drive cursors; survives disconnect. */
   lastAuthorizedAccountEmail: string | null;
+  lastAuthorizedAccountSubject: string | null;
 }
 
 interface WireEvent {
@@ -98,6 +99,7 @@ const DEFAULT_STATE: DriveRuntimeState = {
   lastImported: 0,
   accountEmail: null,
   lastAuthorizedAccountEmail: null,
+  lastAuthorizedAccountSubject: null,
 };
 
 let syncPromise: Promise<{ uploaded: number; imported: number; duplicates: number }> | null = null;
@@ -157,15 +159,18 @@ async function connectDriveUnlocked(): Promise<DriveSyncStatus> {
   if (!session) throw new Error('Google Drive sign-in was cancelled or unavailable');
 
   const state = await getRuntimeState();
-  const currentAccount = normalizeAccountEmail(session.accountEmail);
-  const previousAccount = normalizeAccountEmail(state.lastAuthorizedAccountEmail);
-  const accountChanged = verifiedAccountChanged(previousAccount, currentAccount);
+  const currentAccount = session.accountSubject;
+  const previousAccount = state.lastAuthorizedAccountSubject;
+  const previousEmail = normalizeAccountEmail(state.lastAuthorizedAccountEmail);
+  const accountChanged = verifiedAccountChanged(previousAccount, currentAccount) ||
+    (!previousAccount && !!previousEmail && previousEmail !== normalizeAccountEmail(session.accountEmail));
+  // Attribute existing unowned rows to their last verified identity before switch.
+  await storage.claimUnownedDrivePlays(previousAccount ??
+    (previousEmail === normalizeAccountEmail(session.accountEmail) ? currentAccount : 'legacy-unverified'));
 
   let acceptedDisableVersion = accountChanged ? 0 : state.acceptedDisableVersion;
   let downloadCreatedCursor = accountChanged ? 0 : state.downloadCreatedCursor;
-  if (accountChanged) {
-    await storage.clearDriveUploadedFlags();
-  }
+  // Preserve previous account's upload status when switching identities.
 
   const markerVersion = await getDisableMarkerVersion(session.accessToken);
   if (markerVersion > acceptedDisableVersion) {
@@ -179,7 +184,8 @@ async function connectDriveUnlocked(): Promise<DriveSyncStatus> {
     acceptedDisableVersion,
     downloadCreatedCursor,
     accountEmail: session.accountEmail,
-    lastAuthorizedAccountEmail: currentAccount ?? previousAccount,
+    lastAuthorizedAccountEmail: session.accountEmail,
+    lastAuthorizedAccountSubject: currentAccount,
     lastError: null,
     lastUploaded: accountChanged ? 0 : state.lastUploaded,
     lastImported: accountChanged ? 0 : state.lastImported,
@@ -281,13 +287,13 @@ async function runSync(
 
   try {
     const state = await getRuntimeState();
-    const currentAccount = normalizeAccountEmail(session.accountEmail);
-    const previousAccount = normalizeAccountEmail(state.lastAuthorizedAccountEmail);
+    const currentAccount = session.accountSubject;
+    const previousAccount = state.lastAuthorizedAccountSubject;
 
     if (verifiedAccountChanged(previousAccount, currentAccount)) {
       // Never write to a different account automatically. Clear only Drive-side
       // bookkeeping; the user's local listening history is untouched.
-      await storage.clearDriveUploadedFlags();
+      await storage.claimUnownedDrivePlays(previousAccount);
       await storage.saveSettings({ ...settings, driveSyncEnabled: false });
       await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
       const message = 'Google account changed. Cross-device sync was turned off; connect Google again to use the new Drive account.';
@@ -296,7 +302,8 @@ async function runSync(
         downloadCreatedCursor: 0,
         acceptedDisableVersion: 0,
         accountEmail: session.accountEmail,
-        lastAuthorizedAccountEmail: currentAccount,
+        lastAuthorizedAccountEmail: session.accountEmail,
+        lastAuthorizedAccountSubject: currentAccount,
         lastUploaded: 0,
         lastImported: 0,
         lastError: message,
@@ -305,11 +312,13 @@ async function runSync(
     }
 
     if (!previousAccount && currentAccount) {
-      // One-time migration for users who enabled Drive before account-boundary
-      // state existed. Recording the current identity does not alter any cursor.
+      const legacyMatches = normalizeAccountEmail(state.lastAuthorizedAccountEmail) ===
+        normalizeAccountEmail(session.accountEmail);
+      await storage.claimUnownedDrivePlays(legacyMatches ? currentAccount : 'legacy-unverified');
       await patchRuntimeState({
         accountEmail: session.accountEmail,
-        lastAuthorizedAccountEmail: currentAccount,
+        lastAuthorizedAccountEmail: session.accountEmail,
+        lastAuthorizedAccountSubject: currentAccount,
       });
     }
 
@@ -318,17 +327,22 @@ async function runSync(
     }
 
     const deviceId = await getDeviceId();
-    const uploaded = await uploadLocalPlays(session.accessToken, deviceId);
-    const download = await downloadRemotePlays(session.accessToken, deviceId, options.fullRestore === true);
+    const upload = await uploadLocalPlays(session.accessToken, deviceId, currentAccount)
+      .then(uploaded => ({ uploaded, error: null as Error | null }))
+      .catch(error => ({ uploaded: 0, error: error instanceof Error ? error : new Error(String(error)) }));
+    const download = await downloadRemotePlays(session.accessToken, deviceId,
+      options.fullRestore === true, currentAccount);
+    if (upload.error) throw upload.error;
     await patchRuntimeState({
       lastSyncTime: Date.now(),
       lastError: null,
-      lastUploaded: uploaded,
+      lastUploaded: upload.uploaded,
       lastImported: download.imported,
       accountEmail: session.accountEmail,
-      lastAuthorizedAccountEmail: currentAccount ?? previousAccount,
+      lastAuthorizedAccountEmail: session.accountEmail,
+      lastAuthorizedAccountSubject: currentAccount,
     });
-    return { uploaded, imported: download.imported, duplicates: download.duplicates };
+    return { uploaded: upload.uploaded, imported: download.imported, duplicates: download.duplicates };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await patchRuntimeState({ lastError: message });
@@ -372,10 +386,10 @@ async function stopForDeletionMarker(state: DriveRuntimeState, markerVersion: nu
  * Drive ownership is independent from the existing LAN status flag. A play can
  * already be marked `synced` to the phone and still need its first Drive upload.
  */
-async function uploadLocalPlays(accessToken: string, deviceId: string): Promise<number> {
+async function uploadLocalPlays(accessToken: string, deviceId: string, accountSubject: string): Promise<number> {
   const state = await getRuntimeState();
   const generation = Math.max(0, state.acceptedDisableVersion || 0);
-  const pending = (await storage.getDrivePendingPlays(MAX_LOCAL_SCAN))
+  const pending = (await storage.getDrivePendingPlays(MAX_LOCAL_SCAN, accountSubject))
     .sort((a, b) => a.timestampUtc - b.timestampUtc || (a.id ?? 0) - (b.id ?? 0));
 
   let uploaded = 0;
@@ -385,7 +399,7 @@ async function uploadLocalPlays(accessToken: string, deviceId: string): Promise<
     for (const play of chunk) {
       if (play.id == null) throw new Error('A local Drive play has no persistent ID');
       const candidate = play.originEventId ?? await eventId(deviceId, play);
-      const pinnedId = await storage.ensureLocalOriginEventId(play.id, candidate);
+      const pinnedId = await storage.ensureLocalOriginEventId(play.id, candidate, accountSubject);
       events.push(await playToWire({ ...play, originEventId: pinnedId }, deviceId));
     }
 
@@ -419,6 +433,7 @@ async function downloadRemotePlays(
   accessToken: string,
   deviceId: string,
   includeOwnDeviceBatches = false,
+  accountSubject?: string,
 ): Promise<{ imported: number; duplicates: number }> {
   const state = await getRuntimeState();
   const acceptedGeneration = Math.max(0, state.acceptedDisableVersion || 0);
@@ -431,7 +446,7 @@ async function downloadRemotePlays(
   // exceed the normal 5k retention cap while locally-owned rows are waiting for
   // their first Drive upload, so sample-based dedup can miss an older imported
   // event. Scan the whole local store once per Drive download pass instead.
-  const seenOriginIds = await storage.getDriveOriginEventIds();
+  const seenOriginIds = await storage.getDriveOriginEventIds(accountSubject);
   if (includeOwnDeviceBatches) {
     // Locally recorded plays usually do NOT persist their own hashed origin ID.
     // Reconstruct those IDs before a full restore so reading this device's
@@ -560,6 +575,7 @@ async function downloadRemotePlays(
           event.timestamp_utc,
           batch.source_device_id,
           event.event_id,
+          accountSubject,
         );
       if (temporalDupe) {
         seenOriginIds.add(event.event_id);
@@ -590,6 +606,7 @@ async function downloadRemotePlays(
         totalPauseDurationMs: Math.max(0, event.total_pause_duration_ms || 0),
         positionUpdatesCount: Math.max(0, event.position_updates_count || 0),
         driveImported: true,
+        driveAccountSubject: accountSubject,
         originEventId: event.event_id,
         originDeviceId: batch.source_device_id,
         driveUploadedAt: Date.now(),
@@ -623,8 +640,8 @@ async function deleteDriveHistoryUnlocked(): Promise<number> {
     const session = await getDriveAuthSession(true);
     if (!session) throw new Error('Google Drive sign-in is required');
     const state = await getRuntimeState();
-    const currentAccount = normalizeAccountEmail(session.accountEmail);
-    const previousAccount = normalizeAccountEmail(state.lastAuthorizedAccountEmail);
+    const currentAccount = session.accountSubject;
+    const previousAccount = state.lastAuthorizedAccountSubject;
     if (verifiedAccountChanged(previousAccount, currentAccount)) {
       // A delete is destructive and must never silently cross an account
       // boundary. Reset Drive-only bookkeeping and require an explicit connect
@@ -637,7 +654,8 @@ async function deleteDriveHistoryUnlocked(): Promise<number> {
         downloadCreatedCursor: 0,
         acceptedDisableVersion: 0,
         accountEmail: session.accountEmail,
-        lastAuthorizedAccountEmail: currentAccount,
+        lastAuthorizedAccountEmail: session.accountEmail,
+        lastAuthorizedAccountSubject: currentAccount,
         lastUploaded: 0,
         lastImported: 0,
         lastError: 'Google account changed. Connect Google again before deleting cloud history.',
@@ -1091,7 +1109,7 @@ export async function getDriveLanOrigin(play: Play): Promise<{ origin_device_id:
   const origin_device_id = await getDeviceId();
   if (play.id == null) throw new Error('A queued LAN play has no persistent ID');
   const candidate = play.originEventId ?? await eventId(origin_device_id, play);
-  const origin_event_id = await storage.ensureLocalOriginEventId(play.id, candidate);
+  const origin_event_id = await storage.ensureLocalOriginEventId(play.id, candidate, accountSubject);
   return { origin_device_id, origin_event_id };
 }
 
@@ -1264,6 +1282,8 @@ async function getRuntimeState(): Promise<DriveRuntimeState> {
     lastAuthorizedAccountEmail: typeof raw.lastAuthorizedAccountEmail === 'string'
       ? raw.lastAuthorizedAccountEmail
       : null,
+    lastAuthorizedAccountSubject: typeof raw.lastAuthorizedAccountSubject === 'string'
+      ? raw.lastAuthorizedAccountSubject : null,
   };
 }
 
