@@ -7,7 +7,9 @@ import org.junit.Test
 class DriveAccountUploadCursorTest {
     @Test
     fun pendingOldAccountHistorySurvivesRoundTrip() {
-        val select = DriveHistorySyncManager::chooseAccountUploadCursor
+        val select = { scoped: Long?, legacy: Long?, switched: Boolean, current: Long, max: Long ->
+            DriveHistorySyncManager.chooseAccountUploadCursor(scoped, legacy, switched, current, max)
+        }
 
         // A has only uploaded rows <=90, but has 100 local rows.
         val newB = select(null, null, true, 90L, 100L)
@@ -21,7 +23,9 @@ class DriveAccountUploadCursorTest {
 
     @Test
     fun legacyEmailCursorCanBeRecoveredAfterStableIdMigration() {
-        val select = DriveHistorySyncManager::chooseAccountUploadCursor
+        val select = { scoped: Long?, legacy: Long?, switched: Boolean, current: Long, max: Long ->
+            DriveHistorySyncManager.chooseAccountUploadCursor(scoped, legacy, switched, current, max)
+        }
         assertEquals(90L, select(null, 90L, true, 130L, 135L))
         assertEquals(75L, select(75L, 90L, true, 130L, 135L))
     }
