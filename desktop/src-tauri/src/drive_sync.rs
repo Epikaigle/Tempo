@@ -77,6 +77,7 @@ struct StoredDriveState {
     token_expires_at: i64,
     account_email: Option<String>,
     account_subject: Option<String>,
+    last_verified_account_subject: Option<String>,
     download_cursor: i64,
     accepted_disable_version: i64,
     last_sync_time: Option<i64>,
@@ -228,6 +229,7 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             token_expires_at INTEGER NOT NULL DEFAULT 0,
             account_email TEXT,
             account_subject TEXT,
+            last_verified_account_subject TEXT,
             download_cursor INTEGER NOT NULL DEFAULT 0,
             accepted_disable_version INTEGER NOT NULL DEFAULT 0,
             last_sync_time INTEGER,
@@ -274,6 +276,27 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         conn.execute("ALTER TABLE drive_sync_state ADD COLUMN account_subject TEXT", [])
             .map_err(|e| e.to_string())?;
     }
+    // Preserve the last verified subject even if authorization subsequently
+    // fails. The active subject is intentionally cleared while replacing
+    // credentials; the durable value retains event ownership across crashes.
+    let has_verified_column = {
+        let mut stmt = conn.prepare("PRAGMA table_info(drive_sync_state)")
+            .map_err(|e| e.to_string())?;
+        let names = stmt.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| e.to_string())?;
+        names.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+            .iter().any(|name| name == "last_verified_account_subject")
+    };
+    if !has_verified_column {
+        conn.execute(
+            "ALTER TABLE drive_sync_state ADD COLUMN last_verified_account_subject TEXT", []
+        ).map_err(|e| e.to_string())?;
+    }
+    conn.execute(
+        "UPDATE drive_sync_state SET last_verified_account_subject = account_subject
+         WHERE last_verified_account_subject IS NULL AND account_subject IS NOT NULL", []
+    ).map_err(|e| e.to_string())?;
+
     let has_owner_column = {
         let mut stmt = conn.prepare("PRAGMA table_info(drive_event_state)")
             .map_err(|e| e.to_string())?;
@@ -290,6 +313,7 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
     // scrobbles. Quarantine them rather than uploading them to another account.
     let unverified_account: bool = conn.query_row(
         "SELECT (account_subject IS NULL OR account_subject = '')
+            AND (last_verified_account_subject IS NULL OR last_verified_account_subject = '')
             AND (account_email IS NOT NULL OR enabled != 0)
          FROM drive_sync_state WHERE id = 1", [], |row| row.get(0)
     ).map_err(|e| e.to_string())?;
@@ -376,7 +400,8 @@ fn load_state(conn: &Connection) -> Result<StoredDriveState, String> {
     conn.query_row(
         "SELECT enabled, device_id, access_token, refresh_token, token_expires_at,
                 account_email, download_cursor, accepted_disable_version,
-                last_sync_time, last_error, last_uploaded, last_imported, account_subject
+                last_sync_time, last_error, last_uploaded, last_imported, account_subject,
+                last_verified_account_subject
          FROM drive_sync_state WHERE id = 1",
         [],
         |row| {
@@ -388,6 +413,7 @@ fn load_state(conn: &Connection) -> Result<StoredDriveState, String> {
                 token_expires_at: row.get(4)?,
                 account_email: row.get(5)?,
                 account_subject: row.get(12)?,
+                last_verified_account_subject: row.get(13)?,
                 download_cursor: row.get(6)?,
                 accepted_disable_version: row.get(7)?,
                 last_sync_time: row.get(8)?,
@@ -566,7 +592,8 @@ fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bool) -> Resu
     let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     if reset_drive_state {
         let previous_subject: Option<String> = transaction.query_row(
-            "SELECT account_subject FROM drive_sync_state WHERE id = 1",
+            "SELECT COALESCE(account_subject, last_verified_account_subject)
+             FROM drive_sync_state WHERE id = 1",
             [], |row| row.get(0)
         ).map_err(|e| e.to_string())?;
         if let Some(previous_subject) = previous_subject {
@@ -750,7 +777,8 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
 
     let conn = open_sync_db(app_data_dir)?;
     let existing = load_state(&conn)?;
-    let previous_account_matches = existing.account_subject.as_deref() == Some(subject.as_str());
+    let previous_account_matches = existing.last_verified_account_subject
+        .as_deref() == Some(subject.as_str());
     prepare_oauth_credentials(&conn, !previous_account_matches)?;
     let device_id = existing.device_id.clone();
     let legacy_refresh_token = existing
@@ -794,7 +822,8 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
     let expires_at = now_ms() + token.expires_in.max(60) * 1000;
     let conn = open_sync_db(app_data_dir)?;
     conn.execute(
-        "UPDATE drive_sync_state SET access_token = ?1, refresh_token = NULL, token_expires_at = ?2, account_email = ?3, account_subject = ?4, last_error = NULL WHERE id = 1",
+        "UPDATE drive_sync_state SET access_token = ?1, refresh_token = NULL, token_expires_at = ?2, account_email = ?3, account_subject = ?4,
+          last_verified_account_subject = ?4, last_error = NULL WHERE id = 1",
         params![token.access_token, expires_at, email, subject],
     )
     .map_err(|e| e.to_string())?;
@@ -2526,6 +2555,58 @@ mod tests {
         assert_eq!(pending_local_plays(&conn).unwrap().len(), 1);
         assert_eq!(pending_local_plays(&conn).unwrap()[0].id, old_id);
         drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+
+    #[test]
+    fn interrupted_oauth_keeps_verified_ownership_for_next_account_switch() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute(
+            "UPDATE drive_sync_state SET enabled = 1, account_subject = 'account-a',
+             last_verified_account_subject = 'account-a', account_email = 'a@example.com'",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('Old capture', 'Artist', 1700000000000)", [],
+        ).unwrap();
+        let old_id = conn.last_insert_rowid();
+        let owner = load_state(&conn).unwrap().device_id;
+        // Simulate a crash after prepare (before receiving the new OAuth identity).
+        prepare_oauth_credentials(&conn, false).unwrap();
+        assert_eq!(load_state(&conn).unwrap().last_verified_account_subject.as_deref(),
+            Some("account-a"));
+        assert!(load_state(&conn).unwrap().account_subject.is_none());
+        // Next login is B: even though the active account is temporarily null,
+        // the last verified A identity must still claim the original history.
+        prepare_oauth_credentials(&conn, true).unwrap();
+        conn.execute(
+            "UPDATE drive_sync_state SET account_subject = 'account-b',
+             last_verified_account_subject = 'account-b', enabled = 1", [],
+        ).unwrap();
+        assert!(pending_local_plays(&conn).unwrap().is_empty(),
+            "previous owner's uncatalogued plays cannot leak to B");
+        let tagged: String = conn.query_row(
+            "SELECT owner_account_subject FROM drive_event_state WHERE scrobble_id = ?1",
+            [old_id], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(tagged, "account-a");
+        assert!(!owner.is_empty());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn existing_active_subject_migrates_to_durable_last_verified_subject() {
+        let (directory, conn) = oauth_storage_fixture();
+        conn.execute("UPDATE drive_sync_state SET last_verified_account_subject = NULL WHERE id = 1",
+            []).unwrap();
+        drop(conn);
+        let again = open_sync_db(&directory).unwrap();
+        assert_eq!(load_state(&again).unwrap().last_verified_account_subject.as_deref(),
+            Some("google-stable-123"));
+        drop(again);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
