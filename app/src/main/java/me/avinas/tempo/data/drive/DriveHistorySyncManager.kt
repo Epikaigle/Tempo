@@ -81,6 +81,18 @@ class DriveHistorySyncManager @Inject constructor(
             )
         }
 
+        /** Pure resume rule: existing per-subject progress always wins over
+         * global progress from the account that happened to be active last.
+         */
+        internal fun chooseAccountUploadCursor(
+            savedForSubject: Long?,
+            legacyEmailCursor: Long?,
+            isNewAccount: Boolean,
+            previouslyActiveCursor: Long,
+            newestLocalRow: Long,
+        ): Long = savedForSubject ?: legacyEmailCursor ?:
+            if (isNewAccount) newestLocalRow else previouslyActiveCursor
+
         internal fun lanBatchProducer(source: String): BatchProducer? {
             val parts = source.split(':', limit = 3)
             if (parts.size != 3 || parts[0] != "lan" ||
@@ -295,13 +307,15 @@ class DriveHistorySyncManager @Inject constructor(
         val maxId = dao.getMaxEventId()
         val scopedCursor = uploadCursorKey(current)
         val oldEmailCursor = currentEmail?.let { uploadCursorKey(it) }
-        val resumedCursor = when {
-            statePrefs.contains(scopedCursor) -> statePrefs.getLong(scopedCursor, 0L)
-            oldEmailCursor != null && statePrefs.contains(oldEmailCursor) ->
-                statePrefs.getLong(oldEmailCursor, 0L)
-            !changed -> globalCursor
-            else -> maxId // New account: never export old account-owned rows.
-        }
+        val resumedCursor = chooseAccountUploadCursor(
+            savedForSubject = statePrefs.getLong(scopedCursor, 0L)
+                .takeIf { statePrefs.contains(scopedCursor) },
+            legacyEmailCursor = oldEmailCursor?.takeIf(statePrefs::contains)
+                ?.let { statePrefs.getLong(it, 0L) },
+            isNewAccount = changed,
+            previouslyActiveCursor = globalCursor,
+            newestLocalRow = maxId,
+        )
         val editor = statePrefs.edit()
         if (previous != null) {
             // This is the last successfully checkpointed cursor of the old
