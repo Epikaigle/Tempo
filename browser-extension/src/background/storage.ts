@@ -90,31 +90,33 @@ function openDb(): Promise<IDBDatabase> {
       }
 
       const plays = request.transaction!.objectStore(PLAYS_STORE);
-      if (!plays.indexNames.contains('driveOriginLookupIds')) {
+      const needsOrigins = !plays.indexNames.contains('driveOriginLookupIds');
+      const needsPending = !plays.indexNames.contains('drivePendingIndexKey');
+      if (needsOrigins) {
         plays.createIndex('driveOriginLookupIds', 'driveOriginLookupIds',
           { unique: false, multiEntry: true });
-        const scan = plays.openCursor();
-        scan.onsuccess = () => {
-          const cursor = scan.result;
-          if (!cursor) return;
-          const play = cursor.value as Play;
-          const ids = [play.originEventId,
-            ...(play.reconciledOrigins ?? []).map(alias => alias.eventId)]
-            .filter((id): id is string => typeof id === 'string' && id.length > 0);
-          if (ids.length) cursor.update({ ...play, driveOriginLookupIds: [...new Set(ids)] });
-          cursor.continue();
-        };
       }
-
-      if (!plays.indexNames.contains('drivePendingIndexKey')) {
+      if (needsPending) {
         plays.createIndex('drivePendingIndexKey', 'drivePendingIndexKey');
+      }
+      // One atomic pass for v1/v2 -> v4 upgrades. Two independent cursor
+      // updaters could overwrite one another's fields, losing existing source
+      // aliases when both the origin and pending indexes are introduced.
+      if (needsOrigins || needsPending) {
         const scan = plays.openCursor();
         scan.onsuccess = () => {
           const cursor = scan.result;
           if (!cursor) return;
           const play = cursor.value as Play;
-          const record = withDrivePendingKey(play);
-          if (record.drivePendingIndexKey) cursor.update(record);
+          let record: Play = { ...play };
+          if (needsOrigins) {
+            const ids = [play.originEventId,
+              ...(play.reconciledOrigins ?? []).map(alias => alias.eventId)]
+              .filter((id): id is string => typeof id === 'string' && id.length > 0);
+            if (ids.length) record.driveOriginLookupIds = [...new Set(ids)];
+          }
+          if (needsPending) record = withDrivePendingKey(record);
+          cursor.update(record);
           cursor.continue();
         };
       }
