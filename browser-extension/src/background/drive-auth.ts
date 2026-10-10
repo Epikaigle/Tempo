@@ -19,11 +19,13 @@ interface StoredFirefoxAuth {
   accessToken: string;
   expiresAt: number;
   accountEmail: string | null;
+  accountSubject?: string;
 }
 
 export interface DriveAuthSession {
   accessToken: string;
   accountEmail: string | null;
+  accountSubject: string;
 }
 
 export function isDriveOAuthConfigured(): boolean {
@@ -105,13 +107,13 @@ async function getChromeSession(interactive: boolean): Promise<DriveAuthSession 
   // Drive cursors and uploaded flags are scoped to one Google account. Never
   // accept a token whose account identity cannot be verified, otherwise a
   // transient userinfo failure could make a later account switch look safe.
-  const accountEmail = await fetchGoogleEmail(token);
-  if (!accountEmail) {
+  const identity = await fetchGoogleIdentity(token);
+  if (!identity) {
     await invalidateDriveAccessToken(token);
     if (!interactive) return null;
     throw new Error('Google account identity could not be verified. Try connecting again.');
   }
-  return { accessToken: token, accountEmail };
+  return { accessToken: token, ...identity };
 }
 
 async function getChromeAuthToken(interactive: boolean): Promise<string | null> {
@@ -160,10 +162,16 @@ async function getFirefoxSession(interactive: boolean): Promise<DriveAuthSession
   if (!(await hasFirefoxDriveDataConsent())) return null;
 
   const stored = await loadFirefoxAuth();
-  if (stored && stored.expiresAt - TOKEN_EXPIRY_SAFETY_MS > Date.now() && stored.accountEmail) {
-    return { accessToken: stored.accessToken, accountEmail: stored.accountEmail };
+  if (stored && stored.expiresAt - TOKEN_EXPIRY_SAFETY_MS > Date.now() && stored.accountEmail && stored.accountSubject) {
+    // Reverify even cached access tokens. A previously cached email is not an
+    // immutable account identity, and explicit account switching must fail closed.
+    const identity = await fetchGoogleIdentity(stored.accessToken);
+    if (identity && identity.accountSubject === stored.accountSubject) {
+      return { accessToken: stored.accessToken, ...identity };
+    }
+    await chrome.storage.local.remove(FIREFOX_AUTH_STORAGE_KEY);
   }
-  if (stored && !stored.accountEmail) {
+  if (stored && (!stored.accountEmail || !stored.accountSubject)) {
     // Migrate old state that could persist a token without a verified identity.
     await chrome.storage.local.remove(FIREFOX_AUTH_STORAGE_KEY);
   }
@@ -307,18 +315,19 @@ async function authorizeFirefox(interactive: boolean): Promise<DriveAuthSession 
   const { accessToken, expiresIn } = await exchangeFirefoxAuthorizationCode(
     code, verifier, redirectUri,
   );
-  const accountEmail = await fetchGoogleEmail(accessToken);
-  if (!accountEmail) {
+  const identity = await fetchGoogleIdentity(accessToken);
+  if (!identity) {
     if (!interactive) return null;
     throw new Error('Google account identity could not be verified. Try connecting again.');
   }
   const auth: StoredFirefoxAuth = {
     accessToken,
     expiresAt: Date.now() + Math.floor(expiresIn) * 1000,
-    accountEmail,
+    accountEmail: identity.accountEmail,
+    accountSubject: identity.accountSubject,
   };
   await chrome.storage.local.set({ [FIREFOX_AUTH_STORAGE_KEY]: auth });
-  return { accessToken, accountEmail };
+  return { accessToken, ...identity };
 }
 
 async function loadFirefoxAuth(): Promise<StoredFirefoxAuth | null> {
@@ -328,7 +337,7 @@ async function loadFirefoxAuth(): Promise<StoredFirefoxAuth | null> {
   return auth;
 }
 
-async function fetchGoogleEmail(accessToken: string): Promise<string | null> {
+async function fetchGoogleIdentity(accessToken: string): Promise<{ accountEmail: string; accountSubject: string } | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GOOGLE_USERINFO_TIMEOUT_MS);
   try {
@@ -337,8 +346,10 @@ async function fetchGoogleEmail(accessToken: string): Promise<string | null> {
       signal: controller.signal,
     });
     if (!response.ok) return null;
-    const data = await response.json() as { email?: unknown };
-    return typeof data.email === 'string' && data.email.trim() ? data.email.trim() : null;
+    const data = await response.json() as { email?: unknown; sub?: unknown };
+    if (typeof data.email !== 'string' || !data.email.trim() ||
+        typeof data.sub !== 'string' || !data.sub.trim()) return null;
+    return { accountEmail: data.email.trim(), accountSubject: data.sub.trim() };
   } catch {
     return null;
   } finally {
