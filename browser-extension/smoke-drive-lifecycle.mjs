@@ -17,7 +17,12 @@ await esbuild.build({
     build.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ contents: args.path === './storage' ? `
       export const getSettings = async () => ({...globalThis.fixture.settings});
       export const saveSettings = async value => { globalThis.fixture.settings = {...value}; };
-      export const clearDriveUploadedFlags = async () => { globalThis.fixture.cleared++; };
+      export const suppressDeletedDriveHistory = async subject => {
+        globalThis.fixture.suppressed.push(subject);
+      };
+      export const authorizeOlderDriveHistory = async subject => {
+        globalThis.fixture.authorized.push(subject);
+      };
       export const getDrivePendingPlays = async () => [];
       export const getDriveOriginEventIds = async () => new Set();
        export const hasDriveOriginEventId = async () => false;
@@ -43,6 +48,7 @@ function reset() {
     settings: { driveSyncEnabled: true, syncIntervalMinutes: 30 },
     session: { accessToken: 'token-a', accountEmail: 'a@example.com', accountSubject: 'google-a' }, cleared: 0, marker: 100,
     writes: 0, listCalls: 0, paginated: false, imported: [], claimed: [],
+    suppressed: [], authorized: [],
     stored: { [stateKey]: { acceptedDisableVersion: 100, downloadCreatedCursor: 90,
       lastUploaded: 5, lastImported: 6, lastAuthorizedAccountEmail: 'a@example.com', lastAuthorizedAccountSubject: 'google-a', accountEmail: 'a@example.com' } },
   };
@@ -79,7 +85,8 @@ await assert.rejects(drive.syncDriveHistory(), /Cleanup forbidden/);
 assert.equal(fixture.settings.driveSyncEnabled, false);
 assert.equal(fixture.stored[stateKey].acceptedDisableVersion, 200);
 assert.equal(fixture.stored[stateKey].downloadCreatedCursor, 0);
-assert.equal(fixture.cleared, 1);
+assert.deepEqual(fixture.suppressed, ['google-a'],
+  'a deletion must suppress local history rather than clear upload confirmations');
 console.log('  ✓ remote deletion stays disabled after cleanup failure');
 
 reset();
@@ -99,7 +106,7 @@ assert.equal(fixture.writes, 0);
 assert.equal(fixture.listCalls, 0);
 assert.equal(fixture.settings.driveSyncEnabled, false);
 assert.deepEqual(fixture.claimed, ['google-a'], 'old unowned plays must be claimed by A');
-assert.equal(fixture.cleared, 0, 'switching accounts must preserve prior upload bookkeeping');
+assert.deepEqual(fixture.suppressed, [], 'switching accounts must preserve prior upload bookkeeping');
 console.log('  ✓ account switching prevents destructive cloud requests');
 
 reset();
@@ -115,7 +122,7 @@ for (const marker of [0, -1]) {
   await assert.rejects(drive.syncDriveHistory(), /valid deletion marker/);
   assert.equal(fixture.writes, 0);
   assert.equal(fixture.stored[stateKey].acceptedDisableVersion, 100);
-  assert.equal(fixture.cleared, 0);
+  assert.deepEqual(fixture.suppressed, []);
 }
 console.log('  ✓ invalid server marker timestamps cannot authorize uploads or alter accepted state');
 
