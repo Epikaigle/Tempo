@@ -540,6 +540,14 @@ class GoogleAuthManager @Inject constructor(
         if (configuredWebClientId() == null || !tokenStorage.hasAccountInfo()) return@withContext false
 
         val storedAccount = tokenStorage.getStoredAccount() ?: return@withContext false
+        if (storedAccount.subject.isNullOrBlank()) {
+            // An older app saved GoogleIdTokenCredential.id (the email) as its
+            // account subject. Require interactive Google sign-in to establish
+            // uniqueId before any background Drive access can resume.
+            tokenStorage.clearToken()
+            _currentAccount.value = null
+            return@withContext false
+        }
         _currentAccount.value = storedAccount
 
         try {
