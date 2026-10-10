@@ -210,31 +210,42 @@ impl Database {
     // --- Plays ---
 
     pub fn insert_play(&self, play: &Play) -> Result<i64, rusqlite::Error> {
-        self.conn.execute(
+        // Capture-time account attribution is atomic with the listening row.
+        // A later account switch must never claim a previous account's plays.
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
             "INSERT INTO scrobbles (title, artist, album, duration_ms, timestamp_utc, source_app, status, listened_ms, skipped, replay_count, is_muted, completion_percentage, pause_count, seek_count, session_id, site, content_type, volume_level)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
-                play.title,
-                play.artist,
-                play.album,
-                play.duration_ms,
-                play.timestamp_utc,
-                play.source_app,
-                play.status.as_str(),
-                play.listened_ms,
-                play.skipped as i32,
-                play.replay_count,
-                play.is_muted as i32,
-                play.completion_percentage,
-                play.pause_count,
-                play.seek_count,
-                play.session_id,
-                play.site,
-                play.content_type,
+                play.title, play.artist, play.album, play.duration_ms,
+                play.timestamp_utc, play.source_app, play.status.as_str(),
+                play.listened_ms, play.skipped as i32, play.replay_count,
+                play.is_muted as i32, play.completion_percentage, play.pause_count,
+                play.seek_count, play.session_id, play.site, play.content_type,
                 play.volume_level,
             ],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        let id = tx.last_insert_rowid();
+        let has_drive_state: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+                WHERE type = 'table' AND name = 'drive_sync_state')",
+            [], |row| row.get(0),
+        )?;
+        if has_drive_state {
+            tx.execute(
+                "INSERT OR IGNORE INTO drive_event_state
+                 (scrobble_id, drive_imported, owner_account_subject)
+                 SELECT ?1, 0,
+                    CASE WHEN enabled != 0 AND account_subject IS NOT NULL
+                               AND account_subject != ''
+                         THEN account_subject
+                         ELSE 'legacy-unverified' END
+                 FROM drive_sync_state WHERE id = 1",
+                [id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(id)
     }
 
     pub fn has_recent_play(&self, title: &str, artist: &str, timestamp: i64) -> Result<bool, rusqlite::Error> {
@@ -829,6 +840,46 @@ impl Database {
 #[cfg(test)]
 mod local_dedup_tests {
     use super::*;
+
+    #[test]
+    fn recorded_play_owner_is_pinned_before_account_switch() {
+        let db = Database {
+            conn: Connection::open_in_memory().unwrap(),
+            db_path: std::path::PathBuf::new(),
+        };
+        db.initialize_tables().unwrap();
+        db.conn.execute_batch(
+            "CREATE TABLE drive_sync_state (id INTEGER PRIMARY KEY,
+                enabled INTEGER, account_subject TEXT);
+             INSERT INTO drive_sync_state VALUES (1, 1, 'google-a');
+             CREATE TABLE drive_event_state (
+                scrobble_id INTEGER PRIMARY KEY, drive_imported INTEGER,
+                owner_account_subject TEXT);"
+        ).unwrap();
+        let play = Play {
+            id: None, title: "Music".into(), artist: "Artist".into(),
+            album: String::new(), duration_ms: 180000, timestamp_utc: 1700000000000,
+            source_app: "Spotify".into(), status: PlayStatus::Queued,
+            listened_ms: 60000, skipped: false, replay_count: 0,
+            is_muted: false, completion_percentage: 33.0,
+            pause_count: 0, seek_count: 0, session_id: String::new(),
+            site: String::new(), content_type: "MUSIC".into(), volume_level: 0.5,
+        };
+        let owned_a = db.insert_play(&play).unwrap();
+        db.conn.execute("UPDATE drive_sync_state SET enabled = 0", []).unwrap();
+        let local_only = db.insert_play(&play).unwrap();
+        db.conn.execute("UPDATE drive_sync_state SET enabled = 1,
+                         account_subject = 'google-b'", []).unwrap();
+        let owned_b = db.insert_play(&play).unwrap();
+        let owner = |id: i64| -> String {
+            db.conn.query_row("SELECT owner_account_subject FROM drive_event_state
+                               WHERE scrobble_id = ?1", [id], |row| row.get(0)).unwrap()
+        };
+        assert_eq!(owner(owned_a), "google-a");
+        assert_eq!(owner(local_only), "legacy-unverified");
+        assert_eq!(owner(owned_b), "google-b");
+    }
+
 
 
     #[test]
