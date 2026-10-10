@@ -47,6 +47,27 @@ class NearestPlaybackMatchTest {
     }
 
     @Test
+    fun `Drive imports preserve independent seven-second replays`() {
+        val origin = 1_700_000_000_000L
+        val slots = listOf(Candidate(origin))
+        val withinWindow = nearestEligiblePlaybackIndex(
+            slots, origin + 1_000L,
+            timestampOf = { it.timestamp },
+            eligible = { kotlin.math.abs(it.timestamp - (origin + 1_000L)) <=
+                ListeningEventDao.DRIVE_RECONCILIATION_WINDOW_MS },
+        )
+        assertEquals(0, withinWindow)
+
+        val independentReplay = nearestEligiblePlaybackIndex(
+            slots, origin + 7_000L,
+            timestampOf = { it.timestamp },
+            eligible = { kotlin.math.abs(it.timestamp - (origin + 7_000L)) <=
+                ListeningEventDao.DRIVE_RECONCILIATION_WINDOW_MS },
+        )
+        assertEquals(-1, independentReplay)
+    }
+
+    @Test
     fun `equidistant candidates deterministically keep first ordering`() {
         assertEquals(0, nearestEligiblePlaybackIndex(
             listOf(Candidate(1_000L), Candidate(3_000L)), 2_000L,
