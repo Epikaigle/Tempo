@@ -39,8 +39,10 @@ All clients share `tempo_history_control_v1.json` as a server-timestamped disabl
 When a user deletes shared cloud history, a client must:
 
 1. update/create the disable marker first and obtain the new server generation `N`;
-2. atomically store `N`, disable Drive history sync locally and reset Drive-only cursors/upload flags;
+2. atomically store `N`, disable Drive history sync locally, reset the download cursor and suppress pre-existing local history from automatic republication;
 3. delete history batches whose valid `tempo_generation` is less than `N`; an explicit user-initiated deletion also removes batches in the Tempo history namespace with malformed generation metadata.
+
+Reconnecting to the same Google account does **not** automatically republish deleted cloud history. Local plays that already existed when the deletion marker was accepted, including unsent plays, are marked `cloud_suppressed` for that Google account. They remain available locally. **Upload older local history** is the explicit opt-in to re-upload those records. New plays recorded after re-enabling Drive can sync normally. A cloud deletion on account A must not suppress account B's locally owned records.
 
 Cloud cleanup failure must not resume local synchronization. Duplicate same-name control markers are paged through and validated; the newest Google-server timestamp is authoritative, independent of list order. An upload retry succeeds only when filename, size, checksum and producer/schema/generation metadata all match.
 
@@ -65,11 +67,11 @@ The OS keyring credential now contains both the **verified immutable Google subj
 Imported events are likewise tagged with their Google account. Temporal reconciliation never matches an imported event owned by a different account; old imported records whose owner was not stored are quarantined under an unverified owner rather than guessed. On first upgrade, legacy origin-alias backfill is a one-time SQLite migration, avoiding a full-table scan on every sync/status request.
 
 A refresh token from a previous Google account must never be reused for a newly selected account. If Google does not issue a fresh refresh token during an account switch, the connection is rejected and the user must connect again.
-Before replacing the OS credential, Desktop commits a disabled state with no usable token or accepted account identity. Identity is saved again only after credential replacement succeeds; sync is enabled after the shared marker is checked. A keyring or SQLite failure therefore requires reconnecting instead of allowing an account/token mismatch. Same-account reconnects preserve Drive cursors; a different or unverified previous account resets them. Disconnect removes credentials but retains the last verified `sub` identity, so later account changes cannot accidentally claim previously captured events for another account. Desktop tags local producer events with their owning account; changing accounts cannot silently upload that account's earlier captures to the newly selected Drive account.
+Before replacing the OS credential, Desktop commits a disabled state with no usable token or accepted account identity. Identity is saved again only after credential replacement succeeds; sync is enabled after the shared marker is checked. A keyring or SQLite failure therefore requires reconnecting instead of allowing an account/token mismatch. Same-account reconnects preserve Drive cursors; a different or unverified previous account resets them. Disconnect deletes only Desktop's OS credential and disables its cloud sync. It intentionally does **not** call Google's project-wide token revocation endpoint: doing so would also revoke grants used by Android and browser clients. The last verified `sub` is retained for attribution, while new plays captured with Desktop Drive disabled are tagged `legacy-unverified` (local-only). Later account changes cannot silently claim these plays for another Google account. Desktop tags local producer events with their owning account; changing accounts cannot silently upload that account's earlier captures to the newly selected Drive account.
 
 ### Explicitly sharing older local history
 
-The optional **Upload older local history** button requires a confirmation that includes the risk of uploading plays previously associated with another Google account. It reassigns locally owned Desktop plays to the current verified Google subject and starts a normal bounded upload; later sync cycles drain the remaining backlog. It never intentionally re-exports Drive-imported events. Use this action when migrating an old email-only Desktop installation or deliberately transferring a history archive between accounts. The ordinary **Sync now** action never performs this reassignment.
+The optional **Upload older local history** button requires a confirmation that includes the risk of uploading plays previously associated with another Google account. It reassigns locally owned Desktop plays to the current verified Google subject, clears any cloud-suppression flags and starts a normal bounded upload; later sync cycles drain the remaining backlog. It never intentionally re-exports Drive-imported events. Use this action when migrating an old email-only Desktop installation or deliberately transferring a history archive between accounts. The ordinary **Sync now** action never performs this reassignment.
 
 ### Invalid local records and independent inbound sync
 
@@ -153,7 +155,7 @@ CI uses a dummy public client ID for compilation and unit tests. Keep this PR as
 
 1. Connect Desktop, Android and the browser extension to the same test account on different networks. Send history in both directions, retry and restart; each event must appear once.
 2. Switch Google accounts using Disconnect → Connect **and** cancel a reconnect between database credential preparation and Google token exchange, then connect a different account. Verify the last verified `sub` remains authoritative and no credentials, cursors or locally owned plays leak across the boundary. Test changed email for the same `sub` and distinct `sub` identities.
-3. Delete cloud history, including a malformed-generation history object, deliberately re-enable one client, then wake a stale client. It must stop without deleting the newly accepted generation.
+3. Delete cloud history, including a malformed-generation history object, deliberately re-enable one client, then wake a stale client. It must stop without deleting the newly accepted generation. Verify that old local history does not reappear until the user explicitly chooses to share it.
 4. Simulate HTTP 429/503 during Drive list/download/delete and verify bounded retries. Simulate an upload timeout and confirm name/checksum verification prevents a duplicate logical event on retry.
 5. Expire the access token and verify OS credential-store refresh. Disconnect with the store unavailable and verify local sync is disabled and the cleanup error is shown.
 6. Upgrade an earlier Desktop prototype with uploaded history; confirm its old events are retained locally and not uploaded automatically while the account is unverified. Reconnect, approve **Upload older local history**, then confirm that the events are re-sent with checksum metadata once.
@@ -181,6 +183,6 @@ but those unidentified plays are local-only on Android, not silently copied
 into another Google account. This intentionally favors explicit cloud consent
 over forwarding unmatched or unverified histories.
 
-Before merging, repeat same-origin A/B/A restore on real Google accounts,
+Before merging, confirm Desktop-only Disconnect does not invalidate Android/browser grants, test manual/background LAN calls starting simultaneously, repeat same-origin A/B/A restore on real Google accounts,
 upgrade a populated Desktop database and verify the legacy aliases survived,
 and try paired-LAN sending with both matching and mismatched Google subjects.
