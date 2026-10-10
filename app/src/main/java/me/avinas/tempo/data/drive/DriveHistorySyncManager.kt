@@ -394,14 +394,26 @@ class DriveHistorySyncManager @Inject constructor(
         val retryIds = statePrefs.getStringSet("${KEY_INVALID_EXPORT_IDS}:${accountSubject}", emptySet()).orEmpty()
             .mapNotNull { it.toLongOrNull() }.toSet()
         val stillInvalid = retryIds.toMutableSet()
-        // Room/SQLite bind parameter limits apply to large repair queues.
-        val retryRows = retryIds.toList().chunked(900)
-            .flatMap { dao.getDriveRetryRows(it) }
-        var retrying = retryRows.isNotEmpty()
+        // Every SQL query AND every serialization page must remain bounded.
+        // The old implementation fetched in chunks, then concatenated the
+        // entire repair queue before getOriginClaimsForEvents(IN (...)), which
+        // could overflow SQLite's 999-variable limit on older Android.
+        val repairPages = retryIds.toList().sorted().chunked(PAGE_SIZE)
+        var repairIndex = 0
 
-        while (afterId < maxId || retrying) {
-            val page = if (retrying) retryRows else dao.getEventsPage(afterId, maxId, PAGE_SIZE)
-            if (page.isEmpty()) break
+        while (afterId < maxId || repairIndex < repairPages.size) {
+            val retrying = repairIndex < repairPages.size
+            val requestedRepairIds = if (retrying) repairPages[repairIndex++] else emptyList()
+            val page = if (retrying) dao.getDriveRetryRows(requestedRepairIds)
+                else dao.getEventsPage(afterId, maxId, PAGE_SIZE)
+            if (retrying) {
+                // Removed rows cannot be repaired and should not accumulate
+                // as ghost IDs in the persistent retry queue.
+                val present = page.mapTo(HashSet()) { it.id }
+                stillInvalid.removeAll(requestedRepairIds.filterNot(present::contains).toSet())
+            }
+            if (page.isEmpty() && !retrying) break
+            if (page.isEmpty()) continue
 
             // Resolve per-play identities before serialization. Persist new
             // Android-native IDs BEFORE network I/O: a crash after the Drive
