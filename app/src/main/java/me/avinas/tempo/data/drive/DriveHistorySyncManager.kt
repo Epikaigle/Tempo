@@ -44,6 +44,7 @@ class DriveHistorySyncManager @Inject constructor(
         private const val KEY_GOOGLE_ACCOUNT_EMAIL = "google_account_email"
         private const val KEY_GOOGLE_ACCOUNT_SUBJECT = "google_account_subject"
         private const val KEY_INVALID_EXPORT_IDS = "invalid_drive_export_ids"
+        private const val KEY_SUPPRESSED_THROUGH = "drive_cloud_suppressed_through"
         private const val PAGE_SIZE = 200
         private const val BATCH_SIZE = 50
         private const val DOWNLOAD_OVERLAP_MS = 24L * 60L * 60L * 1000L
@@ -154,9 +155,8 @@ class DriveHistorySyncManager @Inject constructor(
 
     /**
      * Explicit user opt-in. A shared deletion marker is acknowledged only here,
-     * never silently by a background worker. If cloud history was deleted while
-     * this device was disabled/offline, reset cursors so the user's explicit
-     * re-enable can intentionally seed Drive again from locally-owned history.
+     * never silently by a background worker. Re-enabling does not authorize
+     * republishing history previously removed from Drive.
      */
     suspend fun enableSync(): Boolean = mutex.withLock {
         withContext(Dispatchers.IO) {
@@ -166,9 +166,19 @@ class DriveHistorySyncManager @Inject constructor(
                 val currentMarker = appDataClient.getHistoryDisableMarkerVersion()
                 val acceptedMarker = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L)
                 if (currentMarker > acceptedMarker) {
-                    resetCursorsLocked()
+                    // An offline phone must not resurrect a deleted cloud
+                    // archive just because the user reconnects.
+                    val subject = statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
+                        ?: error("Missing verified Google subject")
+                    val ceiling = database.listeningEventDao().getMaxEventId()
+                    val key = suppressedThroughKey(subject)
+                    val existing = statePrefs.getLong(key, 0L)
+                    check(statePrefs.edit()
+                        .putLong(key, maxOf(existing, ceiling))
+                        .remove(KEY_DOWNLOAD_CREATED_CURSOR)
+                        .putLong(KEY_ACCEPTED_DISABLE_VERSION, currentMarker)
+                        .commit()) { "Could not persist Google Drive deletion boundary" }
                 }
-                statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, currentMarker).apply()
                 settingsManager.setEnabled(true)
                 true
             }
@@ -177,6 +187,35 @@ class DriveHistorySyncManager @Inject constructor(
 
     suspend fun disableSync() = mutex.withLock {
         settingsManager.setEnabled(false)
+    }
+
+    /** Explicit consent, separate from merely enabling Drive, to republish old
+     * local recordings previously suppressed by a cloud deletion.
+     */
+    suspend fun shareOlderLocalHistory(): DriveHistorySyncResult = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            if (!settingsManager.settings.first().enabled || !ensureAuthorized()) {
+                return@withContext DriveHistorySyncResult.Error("Connect Google Drive first")
+            }
+            appDataClient.withAccountBoundSession { accountSubject ->
+                if (reconcileGoogleAccountBoundary(accountSubject)) {
+                    settingsManager.setEnabled(false)
+                    return@withAccountBoundSession DriveHistorySyncResult.Error(
+                        "Google account changed; reconnect before sharing old history"
+                    )
+                }
+                val remoteDisabled = handleRemoteDisableIfNeeded()
+                if (remoteDisabled != null) return@withAccountBoundSession remoteDisabled
+                val key = suppressedThroughKey(accountSubject)
+                check(statePrefs.edit().remove(key)
+                    .remove(KEY_UPLOAD_CURSOR)
+                    .remove(uploadCursorKey(accountSubject)).commit()) {
+                    "Could not authorize the local Drive history upload"
+                }
+                // Reuse the normal sync path after releasing the mutex.
+                DriveHistorySyncResult.Success(0, 0, 0)
+            }
+        }
     }
 
     /** Re-read all cloud batches for explicit historical recovery; never delete local plays. */
@@ -278,6 +317,14 @@ class DriveHistorySyncManager @Inject constructor(
      * opt-in (enableSync) or must stop a background/manual sync (syncNow).
      */
     private fun uploadCursorKey(accountSubject: String): String = "${KEY_UPLOAD_CURSOR}:${accountSubject}"
+    private fun suppressedThroughKey(accountSubject: String): String =
+        "${KEY_SUPPRESSED_THROUGH}:${accountSubject}"
+
+    /** A cloud deletion blocks existing local rows by their durable primary key.
+     * Fresh captures with larger IDs remain eligible for Drive sync.
+     */
+    internal fun isCloudSuppressedRow(eventId: Long, suppressedThrough: Long): Boolean =
+        eventId <= suppressedThrough
 
     private suspend fun reconcileGoogleAccountBoundary(current: String): Boolean {
         require(current.isNotBlank()) { "Google account subject cannot be empty" }
@@ -359,13 +406,19 @@ class DriveHistorySyncManager @Inject constructor(
 
     private suspend fun acceptDeletionMarker(marker: Long, message: String? = null) {
         withContext(NonCancellable) {
-            // Persist the stop before network cleanup, which may fail or be cancelled.
+            // Stop before cleanup; keep local plays and their cloud suppression
+            // durable even if the network or process fails afterwards.
             settingsManager.markStopped(message ?: "Cloud history sync was turned off after deletion")
-            statePrefs.edit().putLong(KEY_ACCEPTED_DISABLE_VERSION, marker)
-                .remove(KEY_UPLOAD_CURSOR)
-                .remove(statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
-                    ?.let(::uploadCursorKey) ?: KEY_UPLOAD_CURSOR)
-                .remove(KEY_DOWNLOAD_CREATED_CURSOR).apply()
+            val subject = statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
+                ?: error("Missing verified Google subject")
+            val ceiling = database.listeningEventDao().getMaxEventId()
+            val suppressionKey = suppressedThroughKey(subject)
+            val previous = statePrefs.getLong(suppressionKey, 0L)
+            check(statePrefs.edit()
+                .putLong(KEY_ACCEPTED_DISABLE_VERSION, marker)
+                .putLong(suppressionKey, maxOf(previous, ceiling))
+                .remove(KEY_DOWNLOAD_CREATED_CURSOR)
+                .commit()) { "Could not persist Drive history deletion marker" }
         }
     }
 
@@ -398,6 +451,7 @@ class DriveHistorySyncManager @Inject constructor(
         val storedCursor = statePrefs.getLong(uploadCursorKey(accountSubject),
             statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
         val generation = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L).coerceAtLeast(0L)
+        val suppressedThrough = statePrefs.getLong(suppressedThroughKey(accountSubject), 0L)
         // A database restore can move Room row ids backwards while SharedPreferences
         // survive. If the persisted cursor is now beyond the database snapshot,
         // keeping it would make every newly-created row look already scanned until
@@ -444,6 +498,7 @@ class DriveHistorySyncManager @Inject constructor(
             val newOwnOrigins = mutableListOf<ListeningEventOrigin>()
             val eventsByProducer = linkedMapOf<BatchProducer, MutableList<DriveHistoryEvent>>()
             for (event in page) {
+                if (isCloudSuppressedRow(event.id, suppressedThrough)) continue
                 if (event.driveAccountSubject != null &&
                     event.driveAccountSubject != accountSubject) continue
                 // Downloaded Drive history must not bounce back into the cloud.
@@ -792,6 +847,16 @@ class DriveHistorySyncManager @Inject constructor(
         try {
             block()
         } finally {
+            // Room restore can remap primary keys and move previously deleted
+            // history above its prior ID ceiling. Keep all suppressed accounts
+            // blocked through the new snapshot until they explicitly opt in.
+            val ceiling = database.listeningEventDao().getMaxEventId()
+            val editor = statePrefs.edit()
+            statePrefs.all.keys.filter { it.startsWith("${KEY_SUPPRESSED_THROUGH}:") }
+                .forEach { key ->
+                    editor.putLong(key, maxOf(statePrefs.getLong(key, 0L), ceiling))
+                }
+            check(editor.commit()) { "Could not preserve deletion suppression after restore" }
             resetCursorsLocked(clearEveryAccount = true)
         }
     }
