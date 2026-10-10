@@ -2376,6 +2376,13 @@ pub async fn drive_connect(
     let marker_version = get_disable_marker_version(&token).await?;
 
     let conn = open_sync_db(&state.app_data_dir)?;
+    let previous = load_state(&conn)?;
+    if marker_version > previous.accepted_disable_version {
+        // This computer may have been disconnected while Android or another
+        // browser deleted the cloud archive. Apply the deletion fence BEFORE
+        // accepting the new generation or starting any upload.
+        accept_deletion_marker(&conn, marker_version, None)?;
+    }
     // Reconnection never implicitly republishes history suppressed by deletion.
     conn.execute(
         "UPDATE drive_sync_state SET enabled = 1, accepted_disable_version = ?1,
