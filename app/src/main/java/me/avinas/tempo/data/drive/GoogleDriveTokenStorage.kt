@@ -214,7 +214,11 @@ class GoogleDriveTokenStorage @Inject constructor(
             email = email,
             displayName = getAccountDisplayName(),
             photoUrl = getAccountPhotoUrl(),
+            // Older releases accidentally persisted GoogleIdTokenCredential.id
+            // (an email) as subject. Do not reuse this mutable identifier as
+            // a verified account boundary after upgrading.
             subject = encryptedPrefs.getString(KEY_ACCOUNT_SUBJECT, null)
+                ?.takeIf { it.isNotBlank() && !it.contains('@') }
         )
     }
     
