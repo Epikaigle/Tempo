@@ -38,9 +38,15 @@ pub enum SyncError {
 /// action. Android accepts at most 100 plays per HTTP request; each invocation
 /// of sync_to_phone loads only 50. Stop on errors without claiming the remaining
 /// queued history was delivered. A future wakeup can resume safely.
+static LAN_SYNC_LOCK: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
+    once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
+
 pub async fn sync_pending_to_phone(
     app_handle: &tauri::AppHandle,
 ) -> Result<usize, SyncError> {
+    // Serialize the whole backlog so manual and background jobs cannot send
+    // the same rows simultaneously or race while storing rotated LAN tokens.
+    let _guard = LAN_SYNC_LOCK.lock().await;
     let mut total = 0usize;
     for _ in 0..20 {
         match sync_to_phone(app_handle).await {
@@ -630,6 +636,15 @@ async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<Option<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn simultaneous_lan_batch_runs_share_one_lock() {
+        let first = LAN_SYNC_LOCK.lock().await;
+        assert!(LAN_SYNC_LOCK.try_lock().is_err());
+        drop(first);
+        assert!(LAN_SYNC_LOCK.try_lock().is_ok());
+    }
+
 
     #[test]
     fn lan_ack_requires_confirmed_json_before_deleting_local_plays() {
