@@ -263,3 +263,29 @@ checks have been completed.
 - Invalid Android export retries are processed in 200-row pages throughout serialization and origin-alias SQLite lookups; no whole-retry-list `IN (...)` can exceed Android's SQLite variable limit
 - Browser cloud-deletion/disable markers clear upload acknowledgements only for the verified account that received the marker. Unowned legacy rows, imports and another Google account's upload flags remain untouched
 - The canonical KSP-generated Room v57 schema includes `index_listening_events_drive_account_subject`, matching the 56→57 migration. CI runs the SQLite migration and A→B→A cursor regressions. Release still requires a real existing-v56 database migration and real-device Drive recovery tests
+
+
+## Verified-origin isolation and indexed sending (Room 58, IndexedDB 4)
+
+Room migration **57→58** rebuilds `listening_event_origins` with composite primary key
+`(accountSubject, originEventId)`, preserving older aliases using each event's
+stored Google owner or `legacy-unverified` for unattributed history. Exact event
+fingerprints and origin-alias queries now filter by verified subject, so the same
+producer ID may legitimately appear in A and B without either archive swallowing
+the other. Migration 56→57 remains part of the upgrade path.
+
+LAN transmissions may include `origin_account_subject` only when the sender
+has enabled Drive for that verified account and the *individual play* belongs to
+it. Android preserves the sender's account on the received play and must not
+relay account-A or unknown-origin LAN events into account B. Missing provenance
+uses the local-only `lan-unverified` quarantine identity. This is deliberate:
+a source with Drive disabled can still share plays with a paired phone locally,
+but automatic cloud re-publication requires verified matching provenance. A
+future separate opt-in sharing UI may explicitly authorize cross-account export.
+
+Browser IndexedDB v4 materializes `drivePendingIndexKey = [owner, timestamp]`
+only for unsent local plays, including freshly captured unowned rows. Normal
+Drive sync performs two bounded indexed lookups (verified owner and newly
+unowned captures) instead of traversing the user's entire listening archive.
+Account claims, uploads, remote-reconciliation aliases, and cloud deletions
+update the pending key transactionally. Index upgrades retain v3 origin aliases.
