@@ -1599,7 +1599,7 @@ fn remember_origin(
     Ok(())
 }
 
-fn insert_remote_event(
+fn insert_remote_event_for_account(
     conn: &Connection,
     source_device_id: &str,
     event: &WireEvent,
@@ -1751,6 +1751,17 @@ fn insert_remote_event(
     Ok(true)
 }
 
+#[cfg(test)]
+fn insert_remote_event(
+    conn: &Connection,
+    source_device_id: &str,
+    event: &WireEvent,
+) -> Result<bool, String> {
+    let subject = load_state(conn)?.account_subject
+        .unwrap_or_else(|| "test-account".to_string());
+    insert_remote_event_for_account(conn, source_device_id, event, &subject)
+}
+
 async fn download_remote_history(
     app_data_dir: &Path,
     access_token: &str,
@@ -1865,7 +1876,7 @@ async fn download_remote_history(
         }
         let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         for event in &batch.events {
-            if insert_remote_event(&transaction, &batch.source_device_id, event, account_subject)? {
+            if insert_remote_event_for_account(&transaction, &batch.source_device_id, event, account_subject)? {
                 imported += 1;
             } else {
                 duplicates += 1;
