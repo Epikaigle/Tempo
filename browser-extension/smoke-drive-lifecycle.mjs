@@ -21,7 +21,7 @@ await esbuild.build({
       export const getDrivePendingPlays = async () => [];
       export const getDriveOriginEventIds = async () => new Set();
        export const hasDriveOriginEventId = async () => false;
-       export const claimUnownedDrivePlays = async () => {};
+       export const claimUnownedDrivePlays = async subject => { globalThis.fixture.claimed.push(subject); };
       export const getOwnPlayIdentityInputs = async () => globalThis.fixture.ownLocalPlays ?? [];
       export const markDriveUploaded = async () => {};
       export const insertPlay = async value => { globalThis.fixture.imported.push(value); };
@@ -42,7 +42,7 @@ function reset() {
   globalThis.fixture = {
     settings: { driveSyncEnabled: true, syncIntervalMinutes: 30 },
     session: { accessToken: 'token-a', accountEmail: 'a@example.com', accountSubject: 'google-a' }, cleared: 0, marker: 100,
-    writes: 0, listCalls: 0, paginated: false, imported: [],
+    writes: 0, listCalls: 0, paginated: false, imported: [], claimed: [],
     stored: { [stateKey]: { acceptedDisableVersion: 100, downloadCreatedCursor: 90,
       lastUploaded: 5, lastImported: 6, lastAuthorizedAccountEmail: 'a@example.com', lastAuthorizedAccountSubject: 'google-a', accountEmail: 'a@example.com' } },
   };
@@ -98,6 +98,8 @@ await assert.rejects(drive.deleteDriveHistory(), /account changed/);
 assert.equal(fixture.writes, 0);
 assert.equal(fixture.listCalls, 0);
 assert.equal(fixture.settings.driveSyncEnabled, false);
+assert.deepEqual(fixture.claimed, ['google-a'], 'old unowned plays must be claimed by A');
+assert.equal(fixture.cleared, 0, 'switching accounts must preserve prior upload bookkeeping');
 console.log('  ✓ account switching prevents destructive cloud requests');
 
 reset();
