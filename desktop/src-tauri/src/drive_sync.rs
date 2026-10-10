@@ -1619,8 +1619,9 @@ fn insert_remote_event_for_account(
     }
 
     // Narrow ±2s fallback for near-simultaneous captures from different
-    // producers. Exact origin IDs take precedence; truly independent plays
-    // even a few seconds apart must not be silently collapsed.
+    // producers, matching the Android and browser importers. Exact origin
+    // IDs remain authoritative; session IDs are source-local and cannot
+    // establish independence between two separate capture applications.
     // Distinct IDs from the same device must never be merged temporally.
     let title = event.title.trim().to_lowercase();
     let artist = event.artist.trim().to_lowercase();
@@ -1628,7 +1629,7 @@ fn insert_remote_event_for_account(
         // SQLite lower() is ASCII-only. Normalize bounded candidates in Rust so
         // accented names and whitespace use the same comparison as other clients.
         let mut stmt = conn.prepare(
-            "SELECT s.id, s.title, s.artist, s.session_id FROM scrobbles s
+            "SELECT s.id, s.title, s.artist FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE s.timestamp_utc BETWEEN ?1 AND ?2
                AND (d.origin_device_id IS NULL OR d.origin_device_id <> ?4)
@@ -1648,25 +1649,12 @@ fn insert_remote_event_for_account(
                 source_device_id,
                 account_subject
             ],
-            |row| Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-            )),
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
         ).map_err(|e| e.to_string())?;
         let mut found = None;
         for candidate in candidates {
-            let (id, candidate_title, candidate_artist, candidate_session) =
-                candidate.map_err(|e| e.to_string())?;
-            // Distinct explicit playback sessions are positive evidence that
-            // these are separate listens even when timestamps coincide.
-            let distinct_sessions = event.session_id.as_deref()
-                .filter(|session| !session.trim().is_empty())
-                .is_some_and(|incoming| !candidate_session.trim().is_empty()
-                    && candidate_session != incoming);
-            if !distinct_sessions
-                && candidate_title.trim().to_lowercase() == title
+            let (id, candidate_title, candidate_artist) = candidate.map_err(|e| e.to_string())?;
+            if candidate_title.trim().to_lowercase() == title
                 && candidate_artist.trim().to_lowercase() == artist
             {
                 found = Some(id);
@@ -2349,6 +2337,87 @@ mod tests {
         (directory, conn)
     }
 
+
+    #[test]
+    fn cross_account_imports_do_not_merge_same_title_and_timestamp() {
+        let (directory, conn) = history_storage_fixture();
+        let first = fixture_batch().events[0].clone();
+        assert!(insert_remote_event_for_account(
+            &conn, "remote-a", &first, "google-account-a").unwrap());
+        let mut second = first.clone();
+        second.event_id = "b".repeat(64);
+        second.timestamp_utc += 500;
+        assert!(insert_remote_event_for_account(
+            &conn, "remote-b", &second, "google-account-b").unwrap(),
+            "an imported play from account A cannot consume B's distinct event");
+        let owners: Vec<String> = conn.prepare(
+            "SELECT owner_account_subject FROM drive_event_state ORDER BY scrobble_id"
+        ).unwrap().query_map([], |row| row.get(0)).unwrap()
+            .collect::<Result<_, _>>().unwrap();
+        assert_eq!(owners, vec!["google-account-a", "google-account-b"]);
+        assert!(!insert_remote_event_for_account(
+            &conn, "remote-b", &second, "google-account-b").unwrap());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn unknown_legacy_import_owner_is_quarantined_and_never_matches_new_account() {
+        let (directory, conn) = history_storage_fixture();
+        let first = fixture_batch().events[0].clone();
+        assert!(insert_remote_event_for_account(
+            &conn, "remote-a", &first, "google-account-a").unwrap());
+        conn.execute("UPDATE drive_event_state SET owner_account_subject = NULL
+             WHERE drive_imported = 1", []).unwrap();
+        conn.execute("DELETE FROM drive_sync_migrations
+             WHERE name = 'legacy_aliases_and_account_v1'", []).unwrap();
+        drop(conn);
+        let conn = open_sync_db(&directory).unwrap();
+        let quarantined: String = conn.query_row(
+            "SELECT owner_account_subject FROM drive_event_state WHERE drive_imported = 1",
+            [], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(quarantined, LEGACY_UNVERIFIED_ACCOUNT);
+        let mut second = first.clone();
+        second.event_id = "c".repeat(64);
+        assert!(insert_remote_event_for_account(
+            &conn, "remote-b", &second, "google-account-b").unwrap());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn alias_backfill_runs_once_and_keeps_legacy_origin_mapping() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute("INSERT INTO scrobbles (title, artist, timestamp_utc)
+            VALUES ('Track', 'Artist', 1700000000000)", []).unwrap();
+        let id = conn.last_insert_rowid();
+        let origin = "d".repeat(64);
+        conn.execute("INSERT INTO drive_event_state
+            (scrobble_id, origin_event_id, origin_device_id, drive_imported)
+            VALUES (?1, ?2, 'old-desktop', 0)", params![id, origin]).unwrap();
+        conn.execute("DELETE FROM drive_sync_migrations
+            WHERE name = 'legacy_aliases_and_account_v1'", []).unwrap();
+        drop(conn);
+        let conn = open_sync_db(&directory).unwrap();
+        let mapped: i64 = conn.query_row(
+            "SELECT scrobble_id FROM drive_event_aliases WHERE origin_event_id = ?1",
+            [&origin], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(mapped, id);
+        conn.execute("DELETE FROM drive_event_aliases WHERE origin_event_id = ?1",
+            [&origin]).unwrap();
+        drop(conn);
+        let conn = open_sync_db(&directory).unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT count(*) FROM drive_event_aliases WHERE origin_event_id = ?1",
+            [&origin], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(count, 0, "backfill must not rescan all history on each open");
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn temporal_dedup_normalizes_accents_and_whitespace_and_skips_other_candidates() {
         let (directory, conn) = history_storage_fixture();
@@ -2452,7 +2521,7 @@ mod tests {
     }
 
     #[test]
-    fn two_distinct_sessions_never_merge_even_with_matching_timestamps() {
+    fn separate_capture_app_session_ids_do_not_hide_a_single_play() {
         let (directory, conn) = history_storage_fixture();
         let mut first = fixture_batch().events[0].clone();
         first.session_id = Some("session-one".into());
@@ -2461,11 +2530,11 @@ mod tests {
         second.event_id = "a".repeat(64);
         second.timestamp_utc += 500;
         assert!(insert_remote_event(&conn, "device-one", &first).unwrap());
-        assert!(insert_remote_event(&conn, "device-two", &second).unwrap(),
-            "two explicit playback sessions cannot be treated as one play");
+        assert!(!insert_remote_event(&conn, "device-two", &second).unwrap(),
+            "source-local session IDs are not proof of distinct physical plays");
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM scrobbles", [],
             |row| row.get(0)).unwrap();
-        assert_eq!(count, 2);
+        assert_eq!(count, 1);
         drop(conn);
         std::fs::remove_dir_all(directory).unwrap();
     }
@@ -2540,7 +2609,8 @@ mod tests {
         let event = fixture_batch().events[0].clone();
         assert!(insert_remote_event(&conn, "device-a", &event).unwrap());
         conn.execute_batch("DROP TABLE drive_event_aliases;
-            DELETE FROM drive_sync_migrations WHERE name = 'reconciled_origins_v1';
+            DELETE FROM drive_sync_migrations WHERE name IN
+                ('reconciled_origins_v1', 'legacy_aliases_and_account_v1');
             UPDATE drive_sync_state SET download_cursor = 123 WHERE id = 1;").unwrap();
         drop(conn);
         let conn = open_sync_db(&directory).unwrap();
