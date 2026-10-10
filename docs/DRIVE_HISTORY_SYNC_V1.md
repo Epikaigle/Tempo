@@ -242,3 +242,14 @@ Before release, test Android, Chrome, Firefox and Desktop with a real test accou
 These real-account checks remain required even when compilation, unit tests and
 extension builds pass. Keep the PRs as drafts until configuration and these
 checks have been completed.
+
+
+## Account-safe ownership and multi-year performance (Android v57, extension v3)
+
+- Android binds Drive sessions and cursors to the stable user identifier from the Google ID token instead of relying on a mutable email. On a verified account switch, existing unowned history is claimed for the previous verified account and the new account starts exporting only later Room rows. Room schema 57 stores `drive_account_subject`; legacy cloud imports without provable ownership are quarantined as `legacy-unverified` while retained for local playback/statistics
+- Android records missing/invalid export rows in a persistent **per-account** retry queue, skips them without deleting the underlying events and retries them if metadata is later repaired. It attempts incoming sync even if the outgoing transfer fails; retry IDs are fetched in bounded SQLite chunks
+- Chrome/Firefox now verify Google's immutable `userinfo.sub` (including cached Firefox sessions), persist the owner alongside each playback, and preserve earlier account upload bookkeeping. Source aliases and imports from one Google owner cannot silently absorb another owner's listening records
+- Browser IndexedDB version 3 adds a persistent multi-entry origin-ID index. Routine downloads use individual indexed lookups instead of collecting every origin in a multi-year archive; the one-time index migration retains existing producer aliases. An explicit own-device full restore may still scan legacy unpinned source events
+- Both browser extensions skip individual malformed local rows during upload while retaining the original entry. A failed outgoing transfer does not suppress the independent inbound download attempt
+
+**Security note:** If Android was previously signed in without a stored immutable Google identifier, an interactive Google sign-in can be required to establish the account before Drive history sync is resumed. Automatic transfer of old account-owned recordings to another Google account is intentionally disabled.
