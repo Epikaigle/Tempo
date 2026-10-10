@@ -253,3 +253,13 @@ checks have been completed.
 - Both browser extensions skip individual malformed local rows during upload while retaining the original entry. A failed outgoing transfer does not suppress the independent inbound download attempt
 
 **Security note:** If Android was previously signed in without a stored immutable Google identifier, an interactive Google sign-in can be required to establish the account before Drive history sync is resumed. Automatic transfer of old account-owned recordings to another Google account is intentionally disabled.
+
+
+## Account-boundary follow-up after v57 audit
+
+- Android reads `GoogleIdTokenCredential.uniqueId` (the immutable OpenID subject); the deprecated `id` is an email and must **never** be treated as a stable subject. Persisted email-shaped subjects fail closed and require fresh sign-in
+- Android persists both a global active-account upload cursor and durable `upload_cursor:<sub>` checkpoints. A newly selected account starts after the existing local rows, while reconnecting a previous account resumes its **own** checkpoint (including not-yet-uploaded plays). First-time opt-in still includes the user's existing local history
+- Existing email-keyed Google-owned rows and cursors are migrated only when the newly verified identity matches their email. Legacy unknown cloud imports remain quarantined, not reassigned
+- Invalid Android export retries are processed in 200-row pages throughout serialization and origin-alias SQLite lookups; no whole-retry-list `IN (...)` can exceed Android's SQLite variable limit
+- Browser cloud-deletion/disable markers clear upload acknowledgements only for the verified account that received the marker. Unowned legacy rows, imports and another Google account's upload flags remain untouched
+- The canonical KSP-generated Room v57 schema includes `index_listening_events_drive_account_subject`, matching the 56→57 migration. CI runs the SQLite migration and A→B→A cursor regressions. Release still requires a real existing-v56 database migration and real-device Drive recovery tests
