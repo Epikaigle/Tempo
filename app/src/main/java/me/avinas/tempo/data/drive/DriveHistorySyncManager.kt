@@ -755,13 +755,24 @@ class DriveHistorySyncManager @Inject constructor(
      * Re-enabling Drive history sync later intentionally republishes locally-owned
      * history if a newer shared deletion marker was acknowledged.
      */
-    private fun resetCursorsLocked() {
-        statePrefs.edit()
+    /** A database restore may change primary keys for every Google owner.
+     * Invalid-row retry IDs also refer to old primary keys and must be cleared.
+     * A cloud deletion marker, by contrast, resets only the active account.
+     */
+    private fun resetCursorsLocked(clearEveryAccount: Boolean = false) {
+        val editor = statePrefs.edit()
             .remove(KEY_UPLOAD_CURSOR)
-            .remove(statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
-                ?.let(::uploadCursorKey) ?: KEY_UPLOAD_CURSOR)
             .remove(KEY_DOWNLOAD_CREATED_CURSOR)
-            .apply()
+        if (clearEveryAccount) {
+            statePrefs.all.keys.filter { key ->
+                key.startsWith("${KEY_UPLOAD_CURSOR}:") ||
+                    key.startsWith("${KEY_INVALID_EXPORT_IDS}:")
+            }.forEach(editor::remove)
+        } else {
+            statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
+                ?.let(::uploadCursorKey)?.let(editor::remove)
+        }
+        check(editor.commit()) { "Could not invalidate Google Drive cursors after history change" }
     }
 
     /**
@@ -777,7 +788,7 @@ class DriveHistorySyncManager @Inject constructor(
         try {
             block()
         } finally {
-            resetCursorsLocked()
+            resetCursorsLocked(clearEveryAccount = true)
         }
     }
 
