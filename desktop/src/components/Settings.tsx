@@ -111,6 +111,15 @@ export default function Settings() {
       return;
     }
 
+    if (
+      action === "share-history" &&
+      !window.confirm(
+        "Upload all locally recorded Desktop history to the connected Google account, including plays previously associated with a different account? Do this only if you want that account to receive those records. Large backlogs will finish on later syncs."
+      )
+    ) {
+      return;
+    }
+
     setDriveBusy(true);
     setError("");
     try {
@@ -321,6 +330,15 @@ export default function Settings() {
               >
                 <RefreshCw size={16} />
                 Restore full history
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={driveBusy}
+                onClick={() => handleDriveAction("share-history")}
+                title="Authorize older Desktop records for this Google account"
+              >
+                <Cloud size={16} />
+                Upload older local history
               </button>
               <button
                 className="btn btn-secondary"
