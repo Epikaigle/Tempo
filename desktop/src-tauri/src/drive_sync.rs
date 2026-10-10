@@ -2526,6 +2526,26 @@ pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<us
 mod tests {
     use super::*;
 
+    #[test]
+    fn unordered_drive_pages_are_sorted_before_cursor_checkpointing() {
+        let make = |id: &str, created: &str| DriveFileRecord {
+            id: id.to_string(), name: "history.json.gz".into(), size: None,
+            created_time: Some(created.to_string()), modified_time: None,
+            app_properties: HashMap::new(),
+        };
+        let mut files = vec![
+            make("late", "2026-01-03T00:00:00Z"),
+            make("tie-z", "2026-01-02T00:00:00Z"),
+            make("early", "2026-01-01T00:00:00Z"),
+            make("tie-a", "2026-01-02T00:00:00Z"),
+        ];
+        sort_batches_oldest_first(&mut files);
+        assert_eq!(
+            files.iter().map(|file| file.id.as_str()).collect::<Vec<_>>(),
+            vec!["early", "tie-a", "tie-z", "late"]
+        );
+    }
+
     fn history_storage_fixture() -> (std::path::PathBuf, Connection) {
         let directory = std::env::temp_dir().join(format!("tempo-drive-history-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
