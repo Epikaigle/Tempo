@@ -254,6 +254,15 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         );
         CREATE INDEX IF NOT EXISTS idx_drive_alias_scrobble_device
             ON drive_event_aliases(scrobble_id, source_device_id);
+        -- Keep provenance consistent without rescanning 100k+ event rows every
+        -- time the UI requests sync status. SQLite applies both deletes inside
+        -- the same transaction as any local scrobble removal.
+        CREATE TRIGGER IF NOT EXISTS tempo_drive_scrobble_delete
+        AFTER DELETE ON scrobbles
+        BEGIN
+            DELETE FROM drive_event_aliases WHERE scrobble_id = OLD.id;
+            DELETE FROM drive_event_state WHERE scrobble_id = OLD.id;
+        END;
         CREATE TABLE IF NOT EXISTS drive_sync_migrations (
             name TEXT PRIMARY KEY
         );
@@ -349,16 +358,6 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         .map_err(|e| e.to_string())?;
     }
 
-    conn.execute(
-        "DELETE FROM drive_event_state WHERE scrobble_id NOT IN (SELECT id FROM scrobbles)",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
-    conn.execute(
-        "DELETE FROM drive_event_aliases WHERE scrobble_id NOT IN (SELECT id FROM scrobbles)",
-        [],
-    )
-    .map_err(|e| e.to_string())?;
     Ok(conn)
 }
 
@@ -371,6 +370,16 @@ fn migrate_legacy_import_account_and_aliases(conn: &Connection) -> Result<(), St
          VALUES ('legacy_aliases_and_account_v1')", []
     ).map_err(|e| e.to_string())?;
     if applied == 1 {
+        // Before introducing deletion triggers, old installations could have
+        // orphaned provenance. Prune it once, then the trigger maintains it.
+        transaction.execute(
+            "DELETE FROM drive_event_aliases WHERE scrobble_id NOT IN (SELECT id FROM scrobbles)",
+            []
+        ).map_err(|e| e.to_string())?;
+        transaction.execute(
+            "DELETE FROM drive_event_state WHERE scrobble_id NOT IN (SELECT id FROM scrobbles)",
+            []
+        ).map_err(|e| e.to_string())?;
         transaction.execute(
             "INSERT OR IGNORE INTO drive_event_aliases
              (origin_event_id, source_device_id, scrobble_id)
@@ -2386,6 +2395,24 @@ mod tests {
         second.event_id = "c".repeat(64);
         assert!(insert_remote_event_for_account(
             &conn, "remote-b", &second, "google-account-b").unwrap());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn scrobble_deletion_prunes_origin_rows_without_a_full_reopen_scan() {
+        let (directory, conn) = history_storage_fixture();
+        let event = fixture_batch().events[0].clone();
+        assert!(insert_remote_event(&conn, "device-a", &event).unwrap());
+        let id: i64 = conn.query_row("SELECT id FROM scrobbles", [],
+            |row| row.get(0)).unwrap();
+        conn.execute("DELETE FROM scrobbles WHERE id = ?1", [id]).unwrap();
+        let (states, aliases): (i64, i64) = conn.query_row(
+            "SELECT (SELECT count(*) FROM drive_event_state),
+                    (SELECT count(*) FROM drive_event_aliases)",
+            [], |row| Ok((row.get(0)?, row.get(1)?))
+        ).unwrap();
+        assert_eq!((states, aliases), (0, 0));
         drop(conn);
         std::fs::remove_dir_all(directory).unwrap();
     }
