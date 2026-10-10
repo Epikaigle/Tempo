@@ -240,6 +240,14 @@ interface ListeningEventDao {
     @Query("UPDATE listening_events SET drive_account_subject = :subject WHERE drive_account_subject IS NULL")
     suspend fun claimUnownedDriveHistory(subject: String): Int
 
+    /** Upgrades the deprecated GoogleIdTokenCredential.id (email) ownership
+     * to its immutable uniqueId when the same verified email signs in again.
+     * Never touches imported rows quarantined as legacy-unverified.
+     */
+    @Query("UPDATE listening_events SET drive_account_subject = :subject " +
+        "WHERE drive_account_subject = :oldEmail")
+    suspend fun upgradeLegacyEmailOwner(oldEmail: String, subject: String): Int
+
     @Query("SELECT * FROM listening_events WHERE id IN (:ids)")
     suspend fun getDriveRetryRows(ids: List<Long>): List<ListeningEvent>
 
