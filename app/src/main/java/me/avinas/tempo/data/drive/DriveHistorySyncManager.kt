@@ -192,7 +192,17 @@ class DriveHistorySyncManager @Inject constructor(
                     val remoteDisable = handleRemoteDisableIfNeeded()
                     if (remoteDisable != null) return@withAccountBoundSession remoteDisable
 
-                    val uploaded = uploadLocalHistory(accountEmail)
+                    var uploadFailure: Exception? = null
+                    val uploaded = try {
+                        uploadLocalHistory(accountEmail)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        // Failed outgoing transport must not stop independent
+                        // inbound Drive history from updating this device.
+                        uploadFailure = failure
+                        0
+                    }
                     if (forceFullRestore) {
                         // Clear only the receive cursor. If the download fails, retry
                         // again from the beginning rather than losing an old batch.
@@ -200,12 +210,17 @@ class DriveHistorySyncManager @Inject constructor(
                             .also { check(it) { "Could not persist Drive full-restore request" } }
                     }
                     val download = downloadRemoteHistory(includeOwnDeviceBatches = forceFullRestore, accountSubject = accountEmail)
+                    uploadFailure?.let { throw it }
+                    val invalidCount = statePrefs.getStringSet(KEY_INVALID_EXPORT_IDS, emptySet())
+                        .orEmpty().size
                     settingsManager.markSuccess(
                         uploaded = uploaded,
                         imported = download.inserted,
-                        message = if (download.skipped > 0) {
-                            "${download.skipped} duplicate event(s) ignored"
-                        } else null
+                        message = when {
+                            invalidCount > 0 -> "${invalidCount} local event(s) need metadata repair; preserved on device"
+                            download.skipped > 0 -> "${download.skipped} duplicate event(s) ignored"
+                            else -> null
+                        }
                     )
                     DriveHistorySyncResult.Success(
                         uploaded = uploaded,
