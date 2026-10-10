@@ -166,7 +166,8 @@ async function connectDriveUnlocked(): Promise<DriveSyncStatus> {
     (!previousAccount && !!previousEmail && previousEmail !== normalizeAccountEmail(session.accountEmail));
   // Attribute existing unowned rows to their last verified identity before switch.
   await storage.claimUnownedDrivePlays(previousAccount ??
-    (previousEmail === normalizeAccountEmail(session.accountEmail) ? currentAccount : 'legacy-unverified'));
+    (!previousEmail || previousEmail === normalizeAccountEmail(session.accountEmail)
+      ? currentAccount : 'legacy-unverified'));
 
   let acceptedDisableVersion = accountChanged ? 0 : state.acceptedDisableVersion;
   let downloadCreatedCursor = accountChanged ? 0 : state.downloadCreatedCursor;
@@ -312,8 +313,9 @@ async function runSync(
     }
 
     if (!previousAccount && currentAccount) {
-      const legacyMatches = normalizeAccountEmail(state.lastAuthorizedAccountEmail) ===
-        normalizeAccountEmail(session.accountEmail);
+      const legacyEmail = normalizeAccountEmail(state.lastAuthorizedAccountEmail);
+      const legacyMatches = !legacyEmail ||
+        legacyEmail === normalizeAccountEmail(session.accountEmail);
       await storage.claimUnownedDrivePlays(legacyMatches ? currentAccount : 'legacy-unverified');
       await patchRuntimeState({
         accountEmail: session.accountEmail,
