@@ -81,3 +81,24 @@ guarantee of recoverability.
 - Browser: upgrade IndexedDB v2 to v3 with an archive of reconciled producers. Every origin ID must be present in the new multi-entry index. Normal Drive sync must use indexed lookups instead of scanning the entire ten-year play collection; full own-device restore may explicitly scan missing legacy origins
 - Browser: one malformed local play must not prevent uploading later valid plays or receiving inbound history. The invalid original record must remain available for repair
 - Both: verify current user identity from Google's immutable subject rather than mutable email, including sign-in restart, token refresh and Firefox consent
+
+
+### Multi-account source identities and schema migrations (v58/v4)
+
+- Upgrade a non-empty real Android Room v57 database to v58; assert the original
+  aliases survive and `(subject A, event X)` and `(subject B, event X)` can both
+  exist while original `listening_events` rows and foreign-key cascade remain valid
+- Import exactly the same verified remote producer ID first from Google A, then
+  from Google B: Android and Desktop must retain separate records; replay within
+  each account must remain idempotent. Legacy unverified aliases must not count as
+  proof of a duplicate in a newly authorized account
+- Pair Desktop on A with an Android phone on B over LAN; the phone retains the
+  play locally but never uploads it to B. Repeat with matching A accounts; when
+  the sending client explicitly disables Drive, the phone must not silently
+  circumvent that choice. Test legacy LAN payloads with no account provenance
+- Upgrade Chrome/Firefox IndexedDB v3 to v4 with 100,000+ uploaded plays and a
+  few pending owner/unowned plays. Verify the indexed pending query returns only
+  relevant unsent records, sorted by timestamp/keyset, and that a cloud deletion
+  affects only its own owner. Confirm all older play IDs and origin aliases survive
+- Keep independent offline backups. Passing CI cannot substitute for actual
+  multi-client OAuth, years-old archive restore or mobile database migration tests
