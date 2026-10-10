@@ -8,7 +8,7 @@ import type { Play, PairingInfo, Settings, SyncRecord, TabTrackState, Connection
 import { DEFAULT_SETTINGS } from '../shared/types';
 
 const DB_NAME = 'TempoStatsDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 // Store names
 const PLAYS_STORE = 'plays';
@@ -75,6 +75,23 @@ function openDb(): Promise<IDBDatabase> {
         store.createIndex('timestampUtc', 'timestampUtc', { unique: false });
       }
 
+      const plays = request.transaction!.objectStore(PLAYS_STORE);
+      if (!plays.indexNames.contains('driveOriginLookupIds')) {
+        plays.createIndex('driveOriginLookupIds', 'driveOriginLookupIds',
+          { unique: false, multiEntry: true });
+        const scan = plays.openCursor();
+        scan.onsuccess = () => {
+          const cursor = scan.result;
+          if (!cursor) return;
+          const play = cursor.value as Play;
+          const ids = [play.originEventId,
+            ...(play.reconciledOrigins ?? []).map(alias => alias.eventId)]
+            .filter((id): id is string => typeof id === 'string' && id.length > 0);
+          if (ids.length) cursor.update({ ...play, driveOriginLookupIds: [...new Set(ids)] });
+          cursor.continue();
+        };
+      }
+
       if (!db.objectStoreNames.contains(SYNC_HISTORY_STORE)) {
         const store = db.createObjectStore(SYNC_HISTORY_STORE, { keyPath: 'id', autoIncrement: true });
         store.createIndex('syncedAt', 'syncedAt', { unique: false });
@@ -132,7 +149,12 @@ export async function insertPlay(play: Omit<Play, 'id'>): Promise<number> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
     const store = tx.objectStore(PLAYS_STORE);
-    const request = store.add(play);
+    const record = play.originEventId ? {
+      ...play,
+      driveOriginLookupIds: [...new Set([play.originEventId,
+        ...(play.reconciledOrigins ?? []).map(alias => alias.eventId)])],
+    } : play;
+    const request = store.add(record);
     // An add request can succeed before its transaction is committed. Drive
     // must not advance its cursor until this row is durably stored.
     tx.oncomplete = () => {
@@ -154,7 +176,12 @@ export async function insertPlaysBatch(plays: Array<Omit<Play, 'id'>>): Promise<
     const store = tx.objectStore(PLAYS_STORE);
     const ids: number[] = [];
     for (const play of plays) {
-      const request = store.add(play);
+      const record = play.originEventId ? {
+        ...play,
+        driveOriginLookupIds: [...new Set([play.originEventId,
+          ...(play.reconciledOrigins ?? []).map(alias => alias.eventId)])],
+      } : play;
+      const request = store.add(record);
       request.onsuccess = () => {
         ids.push(request.result as number);
       };
@@ -218,6 +245,26 @@ export async function getAllPlays(limit = 100): Promise<Play[]> {
  * A ten-year archive may contain hundreds of thousands of plays; building an
  * array of every full Play object for each periodic Drive sync is wasteful.
  */
+/** Durable indexed lookup rather than a full event-history scan per sync. */
+export async function hasDriveOriginEventId(eventId: string, accountSubject: string): Promise<boolean> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readonly');
+    const req = tx.objectStore(PLAYS_STORE).index('driveOriginLookupIds')
+      .openCursor(IDBKeyRange.only(eventId));
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) { resolve(false); return; }
+      const play = cursor.value as Play;
+      if (play.driveAccountSubject === accountSubject) { resolve(true); return; }
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Drive provenance lookup aborted'));
+  });
+}
+
 export async function getDriveOriginEventIds(accountSubject?: string): Promise<Set<string>> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -373,6 +420,7 @@ export async function ensureLocalOriginEventId(
       if (!play.originEventId || (accountSubject && !play.driveAccountSubject)) {
         play.originEventId = pinnedId;
         if (accountSubject) play.driveAccountSubject = accountSubject;
+        play.driveOriginLookupIds = [...new Set([...(play.driveOriginLookupIds ?? []), pinnedId])];
         store.put(play);
       }
     };
@@ -405,6 +453,9 @@ export async function markDriveUploaded(
         const play = request.result as Play | undefined;
         if (!play || play.driveImported) return;
         play.originEventId = entry.originEventId;
+        play.driveOriginLookupIds = [...new Set([
+          ...(play.driveOriginLookupIds ?? []), entry.originEventId,
+        ])];
         play.driveUploadedAt = uploadedAt;
         store.put(play);
       };
@@ -615,6 +666,12 @@ export async function hasRecentPlay(
               deviceId: incomingOriginDeviceId!,
               eventId: incomingOriginEventId!,
             }],
+            driveOriginLookupIds: [...new Set([
+              ...(play.driveOriginLookupIds ?? []),
+              ...(play.originEventId ? [play.originEventId] : []),
+              ...aliases.map(alias => alias.eventId),
+              incomingOriginEventId!,
+            ])],
           });
           // Do not acknowledge an alias until IndexedDB commits it.
         } else {
