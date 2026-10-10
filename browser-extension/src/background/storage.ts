@@ -8,7 +8,21 @@ import type { Play, PairingInfo, Settings, SyncRecord, TabTrackState, Connection
 import { DEFAULT_SETTINGS } from '../shared/types';
 
 const DB_NAME = 'TempoStatsDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
+const UNOWNED_DRIVE_QUEUE = 'tempo-unowned';
+function pendingDriveKey(play: Play | Omit<Play, 'id'>): [string, number] | undefined {
+  if (play.driveImported || play.driveUploadedAt) return undefined;
+  return [play.driveAccountSubject ?? UNOWNED_DRIVE_QUEUE,
+    Number.isFinite(play.timestampUtc) ? play.timestampUtc : 0];
+}
+function withDrivePendingKey<T extends Play | Omit<Play, 'id'>>(play: T): T {
+  const key = pendingDriveKey(play);
+  const record = { ...play };
+  if (key) record.drivePendingIndexKey = key;
+  else delete record.drivePendingIndexKey;
+  return record as T;
+}
+
 
 // Store names
 const PLAYS_STORE = 'plays';
@@ -92,6 +106,18 @@ function openDb(): Promise<IDBDatabase> {
         };
       }
 
+      if (!plays.indexNames.contains('drivePendingIndexKey')) {
+        plays.createIndex('drivePendingIndexKey', 'drivePendingIndexKey');
+        const scan = plays.openCursor();
+        scan.onsuccess = () => {
+          const cursor = scan.result;
+          if (!cursor) return;
+          const play = cursor.value as Play;
+          const record = withDrivePendingKey(play);
+          if (record.drivePendingIndexKey) cursor.update(record);
+          cursor.continue();
+        };
+      }
       if (!db.objectStoreNames.contains(SYNC_HISTORY_STORE)) {
         const store = db.createObjectStore(SYNC_HISTORY_STORE, { keyPath: 'id', autoIncrement: true });
         store.createIndex('syncedAt', 'syncedAt', { unique: false });
@@ -154,7 +180,7 @@ export async function insertPlay(play: Omit<Play, 'id'>): Promise<number> {
       driveOriginLookupIds: [...new Set([play.originEventId,
         ...(play.reconciledOrigins ?? []).map(alias => alias.eventId)])],
     } : play;
-    const request = store.add(record);
+    const request = store.add(withDrivePendingKey(record));
     // An add request can succeed before its transaction is committed. Drive
     // must not advance its cursor until this row is durably stored.
     tx.oncomplete = () => {
@@ -181,7 +207,7 @@ export async function insertPlaysBatch(plays: Array<Omit<Play, 'id'>>): Promise<
         driveOriginLookupIds: [...new Set([play.originEventId,
           ...(play.reconciledOrigins ?? []).map(alias => alias.eventId)])],
       } : play;
-      const request = store.add(record);
+      const request = store.add(withDrivePendingKey(record));
       request.onsuccess = () => {
         ids.push(request.result as number);
       };
@@ -381,7 +407,7 @@ export async function claimUnownedDrivePlays(accountSubject: string): Promise<vo
       if (!cursor) return;
       const play = cursor.value as Play;
       if (!play.driveAccountSubject) {
-        cursor.update({ ...play, driveAccountSubject: accountSubject });
+        cursor.update(withDrivePendingKey({ ...play, driveAccountSubject: accountSubject }));
       }
       cursor.continue();
     };
@@ -421,7 +447,7 @@ export async function ensureLocalOriginEventId(
         play.originEventId = pinnedId;
         if (accountSubject) play.driveAccountSubject = accountSubject;
         play.driveOriginLookupIds = [...new Set([...(play.driveOriginLookupIds ?? []), pinnedId])];
-        store.put(play);
+        store.put(withDrivePendingKey(play));
       }
     };
     tx.oncomplete = () => {
@@ -457,7 +483,7 @@ export async function markDriveUploaded(
           ...(play.driveOriginLookupIds ?? []), entry.originEventId,
         ])];
         play.driveUploadedAt = uploadedAt;
-        store.put(play);
+        store.put(withDrivePendingKey(play));
       };
     }
     tx.oncomplete = () => resolve();
@@ -482,7 +508,7 @@ export async function clearDriveUploadedFlags(accountSubject: string): Promise<v
         if (!play.driveImported && play.driveUploadedAt &&
             play.driveAccountSubject === accountSubject) {
           delete play.driveUploadedAt;
-          cursor.update(play);
+          cursor.update(withDrivePendingKey(play));
         }
         cursor.continue();
       }
@@ -675,6 +701,9 @@ export async function hasRecentPlay(
               ...aliases.map(alias => alias.eventId),
               incomingOriginEventId!,
             ])],
+            drivePendingIndexKey: pendingDriveKey({
+              ...play, driveAccountSubject: accountSubject ?? play.driveAccountSubject,
+            }),
           });
           // Do not acknowledge an alias until IndexedDB commits it.
         } else {
