@@ -1379,7 +1379,8 @@ pub(crate) fn lan_play_account_owners(
     let current_subject = state.account_subject.unwrap();
     let mut stmt = conn.prepare(
         "SELECT owner_account_subject FROM drive_event_state
-         WHERE scrobble_id = ?1 AND drive_imported = 0",
+         WHERE scrobble_id = ?1 AND drive_imported = 0
+           AND COALESCE(cloud_suppressed, 0) = 0",
     ).map_err(|e| e.to_string())?;
     let mut owners = HashMap::new();
     for id in play_ids {
@@ -3298,8 +3299,12 @@ mod tests {
         accept_deletion_marker(&conn, 200, None).unwrap();
         conn.execute("UPDATE drive_sync_state SET enabled = 1 WHERE id = 1", []).unwrap();
         assert!(pending_local_plays(&conn).unwrap().is_empty());
+        assert!(lan_play_account_owners(&directory, &[old_id]).unwrap().is_empty(),
+            "LAN must not relay a cloud-suppressed event back to Android Drive");
         assert_eq!(authorize_existing_local_history(&conn, "google-a").unwrap(), 1);
         assert_eq!(pending_local_plays(&conn).unwrap()[0].id, old_id);
+        assert_eq!(lan_play_account_owners(&directory, &[old_id]).unwrap().get(&old_id),
+            Some(&"google-a".to_string()));
         drop(conn);
         std::fs::remove_dir_all(directory).unwrap();
     }
