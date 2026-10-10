@@ -496,7 +496,6 @@ class DriveHistorySyncManager @Inject constructor(
             }
 
             if (!retrying) afterId = page.last().id
-            retrying = false
             check(statePrefs.edit()
                 .putLong(KEY_UPLOAD_CURSOR, afterId)
                 .putLong(uploadCursorKey(accountSubject), afterId)
