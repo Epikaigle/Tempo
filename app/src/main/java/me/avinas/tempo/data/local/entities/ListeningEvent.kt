@@ -62,7 +62,11 @@ data class ListeningEvent(
     // Import reconciliation: deterministic SHA-256 of (source|track_id|timestamp|
     // playDuration|endTimestamp). Guarantees re-importing the same data is a no-op.
     // NULL for legacy rows written before this column existed (fall back to temporal dedup).
-    @ColumnInfo(name = "content_fingerprint", defaultValue = "NULL") val contentFingerprint: String? = null
+    @ColumnInfo(name = "content_fingerprint", defaultValue = "NULL") val contentFingerprint: String? = null,
+    // Identity of the Google account that imported or initially owned this
+    // event. Unattributed historic Drive imports are quarantined by migration.
+    @ColumnInfo(name = "drive_account_subject", defaultValue = "NULL")
+    val driveAccountSubject: String? = null
 ) {
     /**
      * Check if volume was explicitly 0 (muted). Legacy records (null) are treated as audible.
