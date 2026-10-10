@@ -48,7 +48,7 @@ Cloud cleanup failure must not resume local synchronization. Duplicate same-name
 
 Clients retry idempotent Drive reads, deletes and control-marker overwrites after transient HTTP 429/5xx failures with bounded exponential backoff. An uncertain batch-creation POST is deliberately **not** blindly retried; the next sync first verifies an existing file by exact name, size, checksum and producer metadata.
 
-Other linked clients check the marker before uploading. If they observe a newer marker than the one they explicitly accepted, they stop Drive sync, clear their Drive-upload cursors/flags, clean only older generations, and require explicit re-enablement.
+Other linked clients check the marker before uploading. If they observe a newer marker than the one they explicitly accepted, they stop Drive sync, reset the download cursor, suppress existing local captures for that account, clean only older generations, and require explicit re-enablement.
 
 If another client deliberately re-enables after the marker update, it publishes generation `N`. A stale Desktop/browser/Android client that wakes later may still clean generations older than `N`, but it must never erase the freshly seeded generation `N`. This keeps deletion effective without creating a second race where a late stale client destroys newly re-enabled cloud history.
 
