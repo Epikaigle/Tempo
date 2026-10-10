@@ -293,7 +293,7 @@ async function runSync(
     if (verifiedAccountChanged(previousAccount, currentAccount)) {
       // Never write to a different account automatically. Clear only Drive-side
       // bookkeeping; the user's local listening history is untouched.
-      await storage.claimUnownedDrivePlays(previousAccount);
+      await storage.claimUnownedDrivePlays(previousAccount!);
       await storage.saveSettings({ ...settings, driveSyncEnabled: false });
       await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
       const message = 'Google account changed. Cross-device sync was turned off; connect Google again to use the new Drive account.';
@@ -667,7 +667,7 @@ async function deleteDriveHistoryUnlocked(): Promise<number> {
       // before the user can target data in the newly authorized account.
       const settings = await storage.getSettings();
       await storage.saveSettings({ ...settings, driveSyncEnabled: false });
-      await storage.claimUnownedDrivePlays(previousAccount);
+      await storage.claimUnownedDrivePlays(previousAccount!);
       await saveRuntimeState({
         ...state,
         downloadCreatedCursor: 0,
