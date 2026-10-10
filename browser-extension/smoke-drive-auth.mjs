@@ -35,9 +35,9 @@ assert.equal(await auth.getDriveAuthSession(false), null);
 assert.equal(invalidated, 1);
 console.log('  ✓ stalled identity response times out and cannot authorize an unknown account');
 
-globalThis.fetch = async () => Response.json({ email: ' verified@example.com ' });
+globalThis.fetch = async () => Response.json({ email: ' verified@example.com ', sub: 'verified-uid' });
 assert.deepEqual(await auth.getDriveAuthSession(false), {
-  accessToken: 'test-token', accountEmail: 'verified@example.com',
+  accessToken: 'test-token', accountEmail: 'verified@example.com', accountSubject: 'verified-uid',
 });
 assert.equal(invalidated, 1);
 globalThis.setTimeout = nativeTimeout;
@@ -104,12 +104,12 @@ globalThis.fetch = async (url, options) => {
     return Response.json({ access_token: 'firefox-test-token', expires_in: 3600 });
   }
   if (url === 'https://openidconnect.googleapis.com/v1/userinfo') {
-    return Response.json({ email: ' firefox@example.com ' });
+    return Response.json({ email: ' firefox@example.com ', sub: 'firefox-uid' });
   }
   throw new Error('Unexpected auth URL ' + url);
 };
 assert.deepEqual(await firefoxAuth.getDriveAuthSession(true), {
-  accessToken: 'firefox-test-token', accountEmail: 'firefox@example.com',
+  accessToken: 'firefox-test-token', accountEmail: 'firefox@example.com', accountSubject: 'firefox-uid',
 });
 assert.equal(tokenExchanges, 1);
 assert.ok(saved.tempoDriveFirefoxAuth.expiresAt > Date.now());
