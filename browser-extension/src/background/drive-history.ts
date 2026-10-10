@@ -1136,9 +1136,15 @@ export async function getDriveLanOrigin(play: Play): Promise<{ origin_device_id:
   if (play.id == null) throw new Error('A queued LAN play has no persistent ID');
   const candidate = play.originEventId ?? await eventId(origin_device_id, play);
   const origin_event_id = await storage.ensureLocalOriginEventId(play.id, candidate);
+  // A paired Android device must not override the sender's Drive opt-out.
+  // Only emit a cloud owner while THIS extension explicitly has Drive enabled
+  // for that verified account. LAN-only plays remain available on the phone.
+  const [settings, state] = await Promise.all([storage.getSettings(), getRuntimeState()]);
+  const relaySubject = settings.driveSyncEnabled && state.accountEmail &&
+    state.lastAuthorizedAccountSubject === play.driveAccountSubject
+      ? play.driveAccountSubject : undefined;
   return { origin_device_id, origin_event_id,
-    ...(play.driveAccountSubject && play.driveAccountSubject !== 'legacy-unverified' ?
-      { origin_account_subject: play.driveAccountSubject } : {}) };
+    ...(relaySubject ? { origin_account_subject: relaySubject } : {}) };
 }
 
 async function eventId(deviceId: string, play: Pick<Play, 'id' | 'timestampUtc' | 'title' | 'artist'>): Promise<string> {
