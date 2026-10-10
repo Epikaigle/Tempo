@@ -323,7 +323,7 @@ export async function getDriveOriginEventIds(accountSubject?: string): Promise<S
  * from device ID plus IndexedDB row ID and track metadata. Never await hashing
  * inside an active IndexedDB transaction; collect only these four small fields.
  */
-export async function getOwnPlayIdentityInputs(): Promise<Array<
+export async function getOwnPlayIdentityInputs(accountSubject?: string): Promise<Array<
   Pick<Play, 'id' | 'timestampUtc' | 'title' | 'artist'>
 >> {
   const db = await openDb();
@@ -335,7 +335,9 @@ export async function getOwnPlayIdentityInputs(): Promise<Array<
       const cursor = request.result;
       if (!cursor) return;
       const play = cursor.value as Play;
-      if (!play.driveImported && !play.originEventId && play.id != null) {
+      if (!play.driveImported && !play.originEventId && play.id != null &&
+          (!accountSubject || !play.driveAccountSubject ||
+            play.driveAccountSubject === accountSubject)) {
         inputs.push({
           id: play.id,
           timestampUtc: play.timestampUtc,
