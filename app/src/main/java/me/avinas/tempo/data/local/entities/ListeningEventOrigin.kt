@@ -13,7 +13,7 @@ import androidx.room.Index
  */
 @Entity(
     tableName = "listening_event_origins",
-    primaryKeys = ["originEventId"],
+    primaryKeys = ["accountSubject", "originEventId"],
     foreignKeys = [
         ForeignKey(
             entity = ListeningEvent::class,
@@ -31,4 +31,6 @@ data class ListeningEventOrigin(
     val originEventId: String,
     val listeningEventId: Long,
     val sourceDeviceId: String,
+    /** Immutable Google owner; unknown LAN/legacy origins remain quarantined. */
+    val accountSubject: String = "legacy-unverified",
 )
