@@ -215,6 +215,10 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
     let drive_provenance: Vec<Option<(String, String)>> = plays.iter()
         .map(|play| play.id.map(|id| (local_device_id.clone(), known_origins[&id].clone())))
         .collect();
+    let verified_owners = crate::commands::drive_sync::lan_play_account_owners(
+        &state.app_data_dir,
+        &captures.iter().map(|(id, _, _, _)| *id).collect::<Vec<_>>(),
+    ).map_err(SyncError::DatabaseError)?;
     let payload = SyncPayload {
         auth_token: pairing.auth_token.clone(),
         device_name,
@@ -225,6 +229,7 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
                 origin_device_id: origin.as_ref().map(|value| value.0.clone()),
                 origin_event_id: origin.as_ref().map(|value| value.1.clone()),
                 origin_source: origin.as_ref().map(|_| format!("desktop:{}", s.source_app)),
+                origin_account_subject: s.id.and_then(|id| verified_owners.get(&id).cloned()),
                 title: s.title.clone(),
                 artist: s.artist.clone(),
                 album: s.album.clone(),
