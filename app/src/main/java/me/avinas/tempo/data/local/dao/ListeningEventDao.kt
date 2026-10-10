@@ -114,15 +114,17 @@ interface ListeningEventDao {
         """
         SELECT DISTINCT content_fingerprint FROM listening_events
         WHERE content_fingerprint IN (:fingerprints)
+          AND (:accountSubject IS NULL OR drive_account_subject = :accountSubject)
     """,
     )
-    suspend fun getExistingFingerprints(fingerprints: List<String>): List<String>
+    suspend fun getExistingFingerprints(fingerprints: List<String>, accountSubject: String?): List<String>
 
     /** An exact origin alias may represent a merged playback without being the
      * primary row's content fingerprint. Query it before any temporal matching.
      */
-    @Query("SELECT originEventId FROM listening_event_origins WHERE originEventId IN (:ids)")
-    suspend fun getKnownOriginAliases(ids: List<String>): List<String>
+    @Query("SELECT originEventId FROM listening_event_origins WHERE originEventId IN (:ids) " +
+        "AND (:accountSubject IS NULL OR accountSubject = :accountSubject)")
+    suspend fun getKnownOriginAliases(ids: List<String>, accountSubject: String?): List<String>
 
     data class OriginClaim(val listeningEventId: Long, val sourceDeviceId: String, val originEventId: String)
 
@@ -238,7 +240,19 @@ interface ListeningEventDao {
     }
 
     @Query("UPDATE listening_events SET drive_account_subject = :subject WHERE drive_account_subject IS NULL")
-    suspend fun claimUnownedDriveHistory(subject: String): Int
+    suspend fun claimUnownedDriveHistoryRows(subject: String): Int
+
+    @Query("UPDATE listening_event_origins SET accountSubject = :subject " +
+        "WHERE accountSubject = 'legacy-unverified' AND listeningEventId IN " +
+        "(SELECT id FROM listening_events WHERE drive_account_subject = :subject)")
+    suspend fun claimUnownedDriveOriginAliases(subject: String): Int
+
+    @Transaction
+    suspend fun claimUnownedDriveHistory(subject: String): Int {
+        val claimed = claimUnownedDriveHistoryRows(subject)
+        claimUnownedDriveOriginAliases(subject)
+        return claimed
+    }
 
     /** Upgrades the deprecated GoogleIdTokenCredential.id (email) ownership
      * to its immutable uniqueId when the same verified email signs in again.
@@ -246,7 +260,18 @@ interface ListeningEventDao {
      */
     @Query("UPDATE listening_events SET drive_account_subject = :subject " +
         "WHERE drive_account_subject = :oldEmail")
-    suspend fun upgradeLegacyEmailOwner(oldEmail: String, subject: String): Int
+    suspend fun upgradeLegacyEmailOwnerRows(oldEmail: String, subject: String): Int
+
+    @Query("UPDATE listening_event_origins SET accountSubject = :subject " +
+        "WHERE accountSubject = :oldEmail")
+    suspend fun upgradeLegacyEmailOriginAliases(oldEmail: String, subject: String): Int
+
+    @Transaction
+    suspend fun upgradeLegacyEmailOwner(oldEmail: String, subject: String): Int {
+        val count = upgradeLegacyEmailOwnerRows(oldEmail, subject)
+        upgradeLegacyEmailOriginAliases(oldEmail, subject)
+        return count
+    }
 
     @Query("SELECT * FROM listening_events WHERE id IN (:ids)")
     suspend fun getDriveRetryRows(ids: List<Long>): List<ListeningEvent>
@@ -264,10 +289,10 @@ interface ListeningEventDao {
         }
         val incomingFps = withFp.mapNotNull { it.contentFingerprint }.distinct()
         val existingFps = incomingFps.chunked(900)
-            .flatMap { getExistingFingerprints(it) }.toSet()
+            .flatMap { getExistingFingerprints(it, accountSubject) }.toSet()
         val originIds = withFp.mapNotNull { originOf(it)?.second }.distinct()
         val knownAliases = originIds.chunked(900)
-            .flatMap { getKnownOriginAliases(it) }.toSet()
+            .flatMap { getKnownOriginAliases(it, accountSubject) }.toSet()
 
         val seenFp = HashSet<String>(incomingFps.size)
         val survivors = ArrayList<ListeningEvent>(withFp.size)
@@ -359,7 +384,8 @@ interface ListeningEventDao {
                     incomingOrigin?.let { (dev, id) ->
                         conflict.origins[dev] = id
                         if (conflict.isExisting) {
-                            aliasesForExisting.add(ListeningEventOrigin(id, requireNotNull(conflict.existingId), dev))
+                            aliasesForExisting.add(ListeningEventOrigin(id, requireNotNull(conflict.existingId), dev,
+                                accountSubject ?: "legacy-unverified"))
                         }
                     }
                     skipped++
@@ -382,7 +408,8 @@ interface ListeningEventDao {
                 if (slot != null) {
                     for ((dev, originId) in slot.origins) {
                         if (originId.isNotBlank()) {
-                            aliasWrites.add(ListeningEventOrigin(originId, rowIds[index], dev))
+                            aliasWrites.add(ListeningEventOrigin(originId, rowIds[index], dev,
+                                accountSubject ?: event.driveAccountSubject ?: "legacy-unverified"))
                         }
                     }
                 }
