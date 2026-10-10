@@ -185,6 +185,7 @@ interface ListeningEventDao {
         FROM listening_events
         WHERE track_id = :trackId
         AND timestamp BETWEEN :tsMin AND :tsMax
+        ORDER BY timestamp ASC, id ASC
     """,
     )
     suspend fun getEventsForReconciliation(
