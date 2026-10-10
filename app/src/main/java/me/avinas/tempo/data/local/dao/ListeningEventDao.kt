@@ -279,6 +279,32 @@ interface ListeningEventDao {
         return count
     }
 
+    /** A verified cloud copy of an exact producer event establishes the owner
+     * of a previously paired LAN-only record. Do not infer ownership from
+     * title/time or from a different Google subject.
+     */
+    @Query(
+        "UPDATE listening_events SET drive_account_subject = :subject " +
+            "WHERE source LIKE 'lan:%' AND drive_account_subject = 'lan-unverified' " +
+            "AND content_fingerprint IN (:fingerprints) " +
+            "AND NOT EXISTS (SELECT 1 FROM listening_events owned " +
+            "WHERE owned.drive_account_subject = :subject " +
+            "AND owned.content_fingerprint = listening_events.content_fingerprint)"
+    )
+    suspend fun assignVerifiedLanOwners(fingerprints: List<String>, subject: String): Int
+
+    @Query(
+        "UPDATE listening_event_origins SET accountSubject = :subject " +
+            "WHERE accountSubject = 'lan-unverified' " +
+            "AND listeningEventId IN (SELECT id FROM listening_events " +
+            "WHERE drive_account_subject = :subject AND source LIKE 'lan:%' " +
+            "AND content_fingerprint IN (:fingerprints)) " +
+            "AND NOT EXISTS (SELECT 1 FROM listening_event_origins claimed " +
+            "WHERE claimed.accountSubject = :subject " +
+            "AND claimed.originEventId = listening_event_origins.originEventId)"
+    )
+    suspend fun assignVerifiedLanAliases(fingerprints: List<String>, subject: String): Int
+
     @Query("SELECT * FROM listening_events WHERE id IN (:ids)")
     suspend fun getDriveRetryRows(ids: List<Long>): List<ListeningEvent>
 
@@ -294,6 +320,20 @@ interface ListeningEventDao {
             else event.copy(contentFingerprint = EventFingerprint.compute(event))
         }
         val incomingFps = withFp.mapNotNull { it.contentFingerprint }.distinct()
+        // A paired LAN play may have reached this phone before the sender
+        // enabled Drive. Its source and exact 64-hex producer ID survive the LAN
+        // transfer, but its cloud owner was unknowable at that point. When the
+        // *same exact producer event* later arrives from a verified Drive account,
+        // claim that LAN row and its aliases rather than importing a second copy.
+        // No temporal/title-based attribution and never reassign an A/B owner.
+        if (accountSubject != null) {
+            val cloudFingerprints = withFp.filter { it.source.startsWith("drive:") &&
+                originOf(it) != null }.mapNotNull { it.contentFingerprint }.distinct()
+            for (fingerprints in cloudFingerprints.chunked(900)) {
+                assignVerifiedLanOwners(fingerprints, accountSubject)
+                assignVerifiedLanAliases(fingerprints, accountSubject)
+            }
+        }
         val existingFps = incomingFps.chunked(900)
             .flatMap { getExistingFingerprints(it, accountSubject) }.toSet()
         val originIds = withFp.mapNotNull { originOf(it)?.second }.distinct()
