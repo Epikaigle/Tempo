@@ -186,3 +186,22 @@ over forwarding unmatched or unverified histories.
 Before merging, confirm Desktop-only Disconnect does not invalidate Android/browser grants, test manual/background LAN calls starting simultaneously, repeat same-origin A/B/A restore on real Google accounts,
 upgrade a populated Desktop database and verify the legacy aliases survived,
 and try paired-LAN sending with both matching and mismatched Google subjects.
+
+
+## LAN shortcut, OAuth status and large-archive hardening (2026-10-11)
+
+- The global Cmd/Ctrl+Shift+S shortcut shares the same serialized LAN backlog
+  queue as scheduled and settings-triggered sends. Its completion event carries
+  the number of acknowledged plays instead of an unconditional zero.
+- If Drive remains enabled but Google credentials are unusable, Settings offers
+  **Reconnect Google** without blocking local listening history or paired LAN.
+- Google Drive history listings omit server-side `orderBy=createdTime asc`
+  (which can time out for large archives), then sort all paginated batch metadata
+  oldest-first before any partial download checkpoint.
+- A Desktop client that reconnects after another client deleted the cloud
+  applies the deletion fence **before** it accepts the new generation. A normal
+  reconnect cannot upload old local plays; **Upload older local history** is
+  the separate, confirmed opt-in.
+- Android, Chrome and Firefox implement the same no-silent-republication
+  behavior in PR #2. Cross-client real-device deletion/reconnect testing remains
+  a release gate.
