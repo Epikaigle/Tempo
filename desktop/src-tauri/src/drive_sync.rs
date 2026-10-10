@@ -39,6 +39,7 @@ const MAX_LOCAL_SCAN: usize = 5000;
 const MAX_BATCH_BYTES: usize = 10 * 1024 * 1024;
 const DOWNLOAD_OVERLAP_MS: i64 = 24 * 60 * 60 * 1000;
 const DRIVE_REQUEST_RETRIES: usize = 3;
+const LEGACY_UNVERIFIED_ACCOUNT: &str = "legacy-unverified";
 // Match Android and browser Drive imports: a full-minute overlap can hide
 // a genuine second play of a short track captured by another device.
 const TEMPORAL_DEDUP_MS: i64 = 10_000;
@@ -239,7 +240,8 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             origin_event_id TEXT UNIQUE,
             origin_device_id TEXT,
             drive_imported INTEGER NOT NULL DEFAULT 0,
-            drive_uploaded_at INTEGER
+            drive_uploaded_at INTEGER,
+            owner_account_subject TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_drive_origin_event ON drive_event_state(origin_event_id);
         CREATE TABLE IF NOT EXISTS drive_event_aliases (
@@ -272,10 +274,39 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         conn.execute("ALTER TABLE drive_sync_state ADD COLUMN account_subject TEXT", [])
             .map_err(|e| e.to_string())?;
     }
-    conn.execute("UPDATE drive_sync_state SET enabled = 0, access_token = NULL,
-        refresh_token = NULL, token_expires_at = 0, account_email = NULL
-        WHERE enabled != 0 AND (account_subject IS NULL OR account_subject = '')", [])
-        .map_err(|e| e.to_string())?;
+    let has_owner_column = {
+        let mut stmt = conn.prepare("PRAGMA table_info(drive_event_state)")
+            .map_err(|e| e.to_string())?;
+        let names = stmt.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| e.to_string())?;
+        names.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+            .iter().any(|name| name == "owner_account_subject")
+    };
+    if !has_owner_column {
+        conn.execute("ALTER TABLE drive_event_state ADD COLUMN owner_account_subject TEXT", [])
+            .map_err(|e| e.to_string())?;
+    }
+    // Email-only installations cannot prove who owns previously collected
+    // scrobbles. Quarantine them rather than uploading them to another account.
+    let unverified_account: bool = conn.query_row(
+        "SELECT account_subject IS NULL AND account_email IS NOT NULL
+         FROM drive_sync_state WHERE id = 1", [], |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+    if unverified_account {
+        conn.execute(
+            "INSERT OR IGNORE INTO drive_event_state (scrobble_id, drive_imported, owner_account_subject)
+             SELECT id, 0, ?1 FROM scrobbles", [LEGACY_UNVERIFIED_ACCOUNT]
+        ).map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE drive_event_state SET owner_account_subject = ?1
+             WHERE drive_imported = 0 AND owner_account_subject IS NULL",
+            [LEGACY_UNVERIFIED_ACCOUNT]
+        ).map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE drive_sync_state SET enabled = 0, access_token = NULL,
+             refresh_token = NULL, token_expires_at = 0, account_email = NULL WHERE id = 1", []
+        ).map_err(|e| e.to_string())?;
+    }
 
     requeue_unverified_prototype_uploads(&conn)?;
     rescan_reconciled_origins(&conn)?;
@@ -533,6 +564,25 @@ fn pkce_challenge(verifier: &str) -> String {
 fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bool) -> Result<(), String> {
     let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     if reset_drive_state {
+        let previous_subject: Option<String> = transaction.query_row(
+            "SELECT account_subject FROM drive_sync_state WHERE id = 1",
+            [], |row| row.get(0)
+        ).map_err(|e| e.to_string())?;
+        if let Some(previous_subject) = previous_subject {
+            // Mark even never-uploaded local plays as belonging to the old
+            // account BEFORE the new account can enable its first sync.
+            transaction.execute(
+                "INSERT OR IGNORE INTO drive_event_state
+                 (scrobble_id, drive_imported, owner_account_subject)
+                 SELECT id, 0, ?1 FROM scrobbles",
+                [&previous_subject]
+            ).map_err(|e| e.to_string())?;
+            transaction.execute(
+                "UPDATE drive_event_state SET owner_account_subject = ?1
+                 WHERE drive_imported = 0 AND owner_account_subject IS NULL",
+                [&previous_subject]
+            ).map_err(|e| e.to_string())?;
+        }
         transaction.execute("UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0", [])
             .map_err(|e| e.to_string())?;
         transaction.execute(
@@ -1074,11 +1124,18 @@ fn pin_local_origin(
     artist: &str,
 ) -> Result<String, String> {
     let generated = lan_play_origin(device_id, id, timestamp_utc, title, artist);
+    let subject = load_state(conn)?.account_subject;
     conn.execute(
         "INSERT OR IGNORE INTO drive_event_state
-         (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
-         VALUES (?1, ?2, ?3, 0, NULL)",
-        params![id, generated, device_id],
+         (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at, owner_account_subject)
+         VALUES (?1, ?2, ?3, 0, NULL, ?4)",
+        params![id, generated, device_id, subject],
+    ).map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE drive_event_state SET owner_account_subject = ?2
+         WHERE scrobble_id = ?1 AND drive_imported = 0
+           AND owner_account_subject IS NULL AND ?2 IS NOT NULL",
+        params![id, subject],
     ).map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE drive_event_state SET origin_event_id = ?2, origin_device_id = ?3
@@ -1201,6 +1258,7 @@ fn local_to_wire(device_id: &str, play: &LocalPlay) -> WireEvent {
 }
 
 fn pending_local_plays(conn: &Connection) -> Result<Vec<LocalPlay>, String> {
+    let subject = load_state(conn)?.account_subject;
     let mut stmt = conn
         .prepare(
             "SELECT s.id, s.title, s.artist, s.album, s.duration_ms, s.timestamp_utc,
@@ -1210,11 +1268,12 @@ fn pending_local_plays(conn: &Connection) -> Result<Vec<LocalPlay>, String> {
              FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE COALESCE(d.drive_imported, 0) = 0 AND d.drive_uploaded_at IS NULL
+               AND (?2 IS NULL OR d.owner_account_subject IS NULL OR d.owner_account_subject = ?2)
              ORDER BY s.timestamp_utc ASC, s.id ASC LIMIT ?1",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([MAX_LOCAL_SCAN as i64], |row| {
+        .query_map(params![MAX_LOCAL_SCAN as i64, subject], |row| {
             Ok(LocalPlay {
                 id: row.get(0)?,
                 origin_event_id: row.get(18)?,
@@ -2353,6 +2412,44 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
 
+
+    #[test]
+    fn switching_google_accounts_does_not_republish_previous_local_history() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute("UPDATE drive_sync_state SET account_subject = 'account-a',
+            account_email = 'a@example.com', enabled = 1 WHERE id = 1", []).unwrap();
+        conn.execute("INSERT INTO scrobbles (title, artist, timestamp_utc)
+            VALUES ('Old', 'Artist', 1700000000000)", []).unwrap();
+        let old_id = conn.last_insert_rowid();
+        let old_device = load_state(&conn).unwrap().device_id;
+        pin_local_origin(&conn, &old_device, old_id, 1_700_000_000_000,
+            "Old", "Artist").unwrap();
+        assert_eq!(pending_local_plays(&conn).unwrap().len(), 1);
+        prepare_oauth_credentials(&conn, true).unwrap();
+        conn.execute("UPDATE drive_sync_state SET enabled = 1,
+            account_subject = 'account-b', account_email = 'b@example.com' WHERE id = 1", []).unwrap();
+        assert!(pending_local_plays(&conn).unwrap().is_empty(),
+            "account A plays must not upload to B");
+        conn.execute("INSERT INTO scrobbles (title, artist, timestamp_utc)
+            VALUES ('New', 'Artist', 1700000001000)", []).unwrap();
+        let new_id = conn.last_insert_rowid();
+        assert_eq!(pending_local_plays(&conn).unwrap().len(), 1);
+        pin_local_origin(&conn, &old_device, new_id, 1_700_000_001_000,
+            "New", "Artist").unwrap();
+        let owner: String = conn.query_row(
+            "SELECT owner_account_subject FROM drive_event_state WHERE scrobble_id = ?1",
+            [new_id], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(owner, "account-b");
+        prepare_oauth_credentials(&conn, true).unwrap();
+        conn.execute("UPDATE drive_sync_state SET enabled = 1,
+            account_subject = 'account-a', account_email = 'a@example.com' WHERE id = 1", []).unwrap();
+        let old_pending = pending_local_plays(&conn).unwrap();
+        assert_eq!(old_pending.len(), 1, "returning to A must not upload B plays");
+        assert_eq!(old_pending[0].id, old_id);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn legacy_email_only_sessions_are_disabled_without_losing_cursors() {
