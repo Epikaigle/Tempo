@@ -1504,7 +1504,10 @@ async fn upload_local_history(
             tx.commit().map_err(|e| e.to_string())?;
             progress.uploaded += chunk.len();
         }
-        if count < MAX_LOCAL_SCAN {
+        // Preserve the original per-run upload budget. A very large backlog
+        // must not postpone incoming cloud history indefinitely; future syncs
+        // resume. Invalid rows do not consume this useful-upload budget.
+        if count < MAX_LOCAL_SCAN || progress.uploaded >= MAX_LOCAL_SCAN {
             break;
         }
     }
@@ -2012,7 +2015,7 @@ async fn run_sync_locked_with_restore(
     let (imported, duplicates) = download?;
     let progress = upload?;
     let warning = progress.first_rejected_id.map(|first_id| format!(
-        "{} local Desktop play(s) could not be exported (first local ID {}).          They remain saved locally. Correct their metadata to retry.",
+        "{} local Desktop play(s) could not be exported (first local ID {}). They remain saved locally. Correct their metadata to retry.",
         progress.rejected, first_id
     ));
     let conn = open_sync_db(app_data_dir)?;
