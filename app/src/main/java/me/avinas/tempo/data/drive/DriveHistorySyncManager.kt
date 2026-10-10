@@ -366,9 +366,9 @@ class DriveHistorySyncManager @Inject constructor(
         val retryIds = statePrefs.getStringSet("${KEY_INVALID_EXPORT_IDS}:${accountSubject}", emptySet()).orEmpty()
             .mapNotNull { it.toLongOrNull() }.toSet()
         val stillInvalid = retryIds.toMutableSet()
-        val retryRows = if (retryIds.isNotEmpty()) {
-            dao.getDriveRetryRows(retryIds.toList())
-        } else emptyList()
+        // Room/SQLite bind parameter limits apply to large repair queues.
+        val retryRows = retryIds.toList().chunked(900)
+            .flatMap { dao.getDriveRetryRows(it) }
         var retrying = retryRows.isNotEmpty()
 
         while (afterId < maxId || retrying) {
