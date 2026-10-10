@@ -1131,12 +1131,14 @@ function localVolumeFromWire(volume: number | null): number {
 /** LAN and Drive must advertise the same locally-owned event identity.
  * No Google account or network permission is required to compute this ID.
  */
-export async function getDriveLanOrigin(play: Play): Promise<{ origin_device_id: string; origin_event_id: string }> {
+export async function getDriveLanOrigin(play: Play): Promise<{ origin_device_id: string; origin_event_id: string; origin_account_subject?: string }> {
   const origin_device_id = await getDeviceId();
   if (play.id == null) throw new Error('A queued LAN play has no persistent ID');
   const candidate = play.originEventId ?? await eventId(origin_device_id, play);
   const origin_event_id = await storage.ensureLocalOriginEventId(play.id, candidate);
-  return { origin_device_id, origin_event_id };
+  return { origin_device_id, origin_event_id,
+    ...(play.driveAccountSubject && play.driveAccountSubject !== 'legacy-unverified' ?
+      { origin_account_subject: play.driveAccountSubject } : {}) };
 }
 
 async function eventId(deviceId: string, play: Pick<Play, 'id' | 'timestampUtc' | 'title' | 'artist'>): Promise<string> {
