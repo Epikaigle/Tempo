@@ -56,6 +56,7 @@ class BackupRestoreViewModel @Inject constructor(
     private val googleAuthManager: GoogleAuthManager,
     private val driveService: GoogleDriveService,
     private val backupSettingsManager: BackupSettingsManager,
+    private val driveHistorySyncManager: DriveHistorySyncManager,
     private val applicationScope: CoroutineScope,
     private val tracker: AnalyticsTracker
 ) : ViewModel() {
@@ -422,7 +423,9 @@ class BackupRestoreViewModel @Inject constructor(
     fun importData(uri: Uri, strategy: ImportConflictStrategy) {
         _showConflictDialog.value = null
         applicationScope.launch {
-            val result = importExportManager.importData(uri, strategy)
+            val result = driveHistorySyncManager.withLocalHistoryRestore {
+                importExportManager.importData(uri, strategy)
+            }
             _importExportResult.value = result
             // Refresh stats after import
             calculateStats()
@@ -842,14 +845,15 @@ class BackupRestoreViewModel @Inject constructor(
                         _driveOperation.value = DriveOperationState.Restoring
 
                         val importResult = try {
-                            importExportManager.importData(
-                                Uri.fromFile(downloadResult.localFile),
-                                strategy
-                            )
+                            driveHistorySyncManager.withLocalHistoryRestore {
+                                importExportManager.importData(
+                                    Uri.fromFile(downloadResult.localFile),
+                                    strategy
+                                )
+                            }
                         } finally {
                             downloadResult.localFile.delete()
                         }
-                        
                         when (importResult) {
                             is ImportExportResult.Success -> {
                                 calculateStats()

@@ -263,6 +263,11 @@ fun BackupRestoreScreen(
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
+                if (isSignedIn) {
+                    DriveHistorySyncSection()
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
                 // Local Backup Section
                 LocalBackupSection(
                     uiState = uiState,

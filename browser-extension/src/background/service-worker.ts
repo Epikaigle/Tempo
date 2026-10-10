@@ -32,9 +32,10 @@ const phoneSocket = new PhoneSocket(
   async () => !!(await storage.getPairing()) && !_settings.offlineMode,
 );
 
-// Dedup: recent play keys (title|artist → timestamp_utc)
+// In-memory guard for duplicate callbacks of a LOCAL playback. Use the same
+// short tolerance as IndexedDB; 60s would erase legitimate quick replays.
 const recentPlayKeys = new Map<string, number>();
-const DEDUP_WINDOW_MS = 60_000;
+const DEDUP_WINDOW_MS = 5_000;
 
 // Now-playing push dedup: push to the phone immediately when the track key
 // changes; position-only updates of an unchanged track are throttled so a
