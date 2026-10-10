@@ -348,9 +348,16 @@ class DriveHistorySyncManager @Inject constructor(
             storedCursor
         }
         var uploaded = 0
+        val retryIds = statePrefs.getStringSet(KEY_INVALID_EXPORT_IDS, emptySet()).orEmpty()
+            .mapNotNull { it.toLongOrNull() }.toSet()
+        val stillInvalid = retryIds.toMutableSet()
+        val retryRows = if (retryIds.isNotEmpty()) {
+            dao.getDriveRetryRows(retryIds.toList())
+        } else emptyList()
+        var retrying = retryRows.isNotEmpty()
 
-        while (afterId < maxId) {
-            val page = dao.getEventsPage(afterId, maxId, PAGE_SIZE)
+        while (afterId < maxId || retrying) {
+            val page = if (retrying) retryRows else dao.getEventsPage(afterId, maxId, PAGE_SIZE)
             if (page.isEmpty()) break
 
             // Resolve per-play identities before serialization. Persist new
@@ -375,7 +382,12 @@ class DriveHistorySyncManager @Inject constructor(
                 // cannot be exported (for example, a temporarily missing Track).
                 // Surface the row ID and retry after its metadata is repaired.
                 val exported = localEventToProtocol(event, ownOrigins[event.id])
-                    ?: error("Tempo cannot export listening event ${event.id}; restore its track metadata before retrying")
+                if (exported == null) {
+                    stillInvalid.add(event.id)
+                    Log.w(TAG, "Retaining invalid Drive export row ${event.id} for later repair")
+                    continue
+                }
+                stillInvalid.remove(event.id)
                 if (!event.source.startsWith("lan:") && !event.source.startsWith("drive:") &&
                     ownOrigins[event.id] == null
                 ) {
@@ -414,8 +426,12 @@ class DriveHistorySyncManager @Inject constructor(
                 }
             }
 
-            afterId = page.last().id
-            statePrefs.edit().putLong(KEY_UPLOAD_CURSOR, afterId).apply()
+            if (!retrying) afterId = page.last().id
+            retrying = false
+            check(statePrefs.edit()
+                .putLong(KEY_UPLOAD_CURSOR, afterId)
+                .putStringSet(KEY_INVALID_EXPORT_IDS, stillInvalid.map(Long::toString).toSet())
+                .commit()) { "Could not checkpoint Drive upload history and invalid rows" }
         }
 
         return uploaded
