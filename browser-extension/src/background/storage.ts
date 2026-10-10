@@ -286,6 +286,7 @@ export async function getOwnPlayIdentityInputs(): Promise<Array<
 export async function getDrivePendingPlays(
   limit = Number.MAX_SAFE_INTEGER,
   accountSubject?: string,
+  after?: { timestampUtc: number; id: number },
 ): Promise<Play[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -293,13 +294,17 @@ export async function getDrivePendingPlays(
     const store = tx.objectStore(PLAYS_STORE);
     const index = store.index('timestampUtc');
     const plays: Play[] = [];
-    const request = index.openCursor();
+    const request = index.openCursor(after
+      ? IDBKeyRange.lowerBound(after.timestampUtc) : undefined);
 
     request.onsuccess = () => {
       const cursor = request.result;
       if (cursor && plays.length < limit) {
         const play = cursor.value as Play;
-        if (play.id != null && !play.driveImported && !play.driveUploadedAt &&
+        if (play.id != null &&
+            (!after || play.timestampUtc > after.timestampUtc ||
+              (play.timestampUtc === after.timestampUtc && play.id > after.id)) &&
+            !play.driveImported && !play.driveUploadedAt &&
             (!accountSubject || !play.driveAccountSubject || play.driveAccountSubject === accountSubject)) {
           plays.push(play);
         }
