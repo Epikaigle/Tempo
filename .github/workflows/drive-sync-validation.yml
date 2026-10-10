@@ -89,6 +89,12 @@ jobs:
       - run: chmod +x gradlew
       - name: Compile Android Kotlin
         run: ./gradlew :app:compileDebugKotlin --stacktrace
+      - name: Capture generated canonical Room v57 schema
+        run: |
+          echo TEMPO_ROOM57_BEGIN
+          base64 -w0 app/schemas/me.avinas.tempo.data.local.AppDatabase/57.json
+          echo
+          echo TEMPO_ROOM57_END
       - name: Android unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
       - name: Assemble Android debug APK
