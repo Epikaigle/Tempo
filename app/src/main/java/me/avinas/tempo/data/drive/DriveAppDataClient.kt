@@ -50,7 +50,7 @@ class DriveAppDataClient @Inject constructor(
     }
 
     @Volatile private var cachedClient: AuthorizedDriveClient? = null
-    private val accountSession = DriveAccountSession { authManager.currentAccount.value?.email }
+    private val accountSession = DriveAccountSession { authManager.currentAccount.value?.subject }
 
     suspend fun <T> withAccountBoundSession(block: suspend (String) -> T): T =
         accountSession.withAccount(block)
