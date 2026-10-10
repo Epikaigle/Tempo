@@ -44,6 +44,7 @@ async function initDrivePanel(): Promise<void> {
       <button class="btn btn-primary btn-sm" id="btn-drive-connect">Connect Google</button>
       <button class="btn btn-ghost btn-sm" id="btn-drive-sync" style="display:none;">Sync now</button>
       <button class="btn btn-ghost btn-sm" id="btn-drive-restore" style="display:none;">Restore full history</button>
+      <button class="btn btn-ghost btn-sm" id="btn-drive-share" style="display:none;">Upload older local history</button>
       <button class="btn btn-ghost btn-sm" id="btn-drive-disconnect" style="display:none;">Disconnect</button>
       <button class="btn btn-danger btn-sm" id="btn-drive-delete" style="display:none;">Delete cloud history</button>
     </div>
@@ -57,6 +58,7 @@ async function initDrivePanel(): Promise<void> {
   document.getElementById('btn-drive-connect')?.addEventListener('click', () => void connectGoogle());
   document.getElementById('btn-drive-sync')?.addEventListener('click', () => void execute('sync'));
   document.getElementById('btn-drive-restore')?.addEventListener('click', () => void execute('restore'));
+  document.getElementById('btn-drive-share')?.addEventListener('click', () => void shareHistory());
   document.getElementById('btn-drive-disconnect')?.addEventListener('click', () => void execute('disconnect'));
   document.getElementById('btn-drive-delete')?.addEventListener('click', () => void deleteCloudHistory());
 
@@ -87,7 +89,12 @@ async function deleteCloudHistory(): Promise<void> {
   await execute('delete');
 }
 
-async function execute(command: 'connect' | 'disconnect' | 'sync' | 'restore' | 'delete'): Promise<void> {
+async function shareHistory(): Promise<void> {
+  if (!confirm('Upload older local listening history to this Google account, including history previously deleted from Drive? This action intentionally republishes those plays.')) return;
+  await execute('share-history');
+}
+
+async function execute(command: 'connect' | 'disconnect' | 'sync' | 'restore' | 'share-history' | 'delete'): Promise<void> {
   if (busy) return;
   busy = true;
   setButtonsDisabled(true);
@@ -96,7 +103,7 @@ async function execute(command: 'connect' | 'disconnect' | 'sync' | 'restore' | 
   try {
     const response = await sendDriveCommand(command);
     if (!response.ok) throw new Error(response.error || 'Drive operation failed');
-    if ((command === 'sync' || command === 'restore') && response.result) {
+    if ((command === 'sync' || command === 'restore' || command === 'share-history') && response.result) {
       setInlineStatus(
         `Synced: ${response.result.uploaded} sent · ${response.result.imported} received · ${response.result.duplicates} duplicates ignored`,
       );
@@ -138,6 +145,7 @@ async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Pro
   const connect = document.getElementById('btn-drive-connect') as HTMLButtonElement | null;
   const sync = document.getElementById('btn-drive-sync') as HTMLButtonElement | null;
   const restore = document.getElementById('btn-drive-restore') as HTMLButtonElement | null;
+  const share = document.getElementById('btn-drive-share') as HTMLButtonElement | null;
   const disconnect = document.getElementById('btn-drive-disconnect') as HTMLButtonElement | null;
   const del = document.getElementById('btn-drive-delete') as HTMLButtonElement | null;
 
@@ -145,6 +153,7 @@ async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Pro
     if (connect) connect.style.display = '';
     if (sync) sync.style.display = 'none';
     if (restore) restore.style.display = 'none';
+    if (share) share.style.display = 'none';
     if (disconnect) disconnect.style.display = 'none';
     if (del) del.style.display = 'none';
     if (connect) connect.disabled = true;
@@ -160,6 +169,7 @@ async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Pro
   }
   if (sync) sync.style.display = active && !needsReconnect ? '' : 'none';
   if (restore) restore.style.display = active && !needsReconnect ? '' : 'none';
+  if (share) share.style.display = active && !needsReconnect ? '' : 'none';
   if (disconnect) disconnect.style.display = active ? '' : 'none';
   if (del) del.style.display = active && !needsReconnect ? '' : 'none';
 
@@ -226,7 +236,7 @@ function setInlineStatus(message: string, isError = false): void {
 }
 
 function setButtonsDisabled(disabled: boolean): void {
-  for (const id of ['btn-drive-connect', 'btn-drive-sync', 'btn-drive-restore', 'btn-drive-disconnect', 'btn-drive-delete']) {
+  for (const id of ['btn-drive-connect', 'btn-drive-sync', 'btn-drive-restore', 'btn-drive-share', 'btn-drive-disconnect', 'btn-drive-delete']) {
     const button = document.getElementById(id) as HTMLButtonElement | null;
     if (button) button.disabled = disabled || (id === 'btn-drive-connect' && !oauthConfigured);
   }
