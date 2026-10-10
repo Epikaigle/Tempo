@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 57,
-    "identityHash": "3e9492e46f0d9daf76cefb6d2e61328e",
+    "identityHash": "c267e959e49a1e7406a8ea8a11f06cac",
     "entities": [
       {
         "tableName": "tracks",
@@ -392,6 +392,15 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_listening_events_content_fingerprint` ON `${TABLE_NAME}` (`content_fingerprint`)"
+          },
+          {
+            "name": "index_listening_events_drive_account_subject",
+            "unique": false,
+            "columnNames": [
+              "drive_account_subject"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_listening_events_drive_account_subject` ON `${TABLE_NAME}` (`drive_account_subject`)"
           }
         ],
         "foreignKeys": [
@@ -2305,7 +2314,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3e9492e46f0d9daf76cefb6d2e61328e')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c267e959e49a1e7406a8ea8a11f06cac')"
     ]
   }
 }
