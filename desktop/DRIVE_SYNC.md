@@ -40,19 +40,23 @@ When a user deletes shared cloud history, a client must:
 
 1. update/create the disable marker first and obtain the new server generation `N`;
 2. atomically store `N`, disable Drive history sync locally and reset Drive-only cursors/upload flags;
-3. delete only history batches whose `tempo_generation` is less than `N`.
+3. delete history batches whose valid `tempo_generation` is less than `N`; an explicit user-initiated deletion also removes batches in the Tempo history namespace with malformed generation metadata.
 
 Cloud cleanup failure must not resume local synchronization. Duplicate same-name control markers are paged through and validated; the newest Google-server timestamp is authoritative, independent of list order. An upload retry succeeds only when filename, size, checksum and producer/schema/generation metadata all match.
+
+Clients retry idempotent Drive reads, deletes and control-marker overwrites after transient HTTP 429/5xx failures with bounded exponential backoff. An uncertain batch-creation POST is deliberately **not** blindly retried; the next sync first verifies an existing file by exact name, size, checksum and producer metadata.
 
 Other linked clients check the marker before uploading. If they observe a newer marker than the one they explicitly accepted, they stop Drive sync, clear their Drive-upload cursors/flags, clean only older generations, and require explicit re-enablement.
 
 If another client deliberately re-enables after the marker update, it publishes generation `N`. A stale Desktop/browser/Android client that wakes later may still clean generations older than `N`, but it must never erase the freshly seeded generation `N`. This keeps deletion effective without creating a second race where a late stale client destroys newly re-enabled cloud history.
 
+Stale clients never delete batches with unknown/malformed generation metadata, because they cannot prove such a batch is older than the accepted marker. Only the client handling the user's explicit cloud-delete action removes those files, scoped to Tempo's own history filename prefix/suffix. Clients never delete a known current or newer generation.
+
 Readers also ignore and may best-effort remove batches older than their accepted generation. This prevents an upload that was already in flight during deletion from resurrecting old history after it eventually reaches Drive.
 
 ## Google account boundaries
 
-Drive cursors and deletion-marker/generation acceptance are account-scoped. If the signed-in Google account changes, Tempo resets Drive-only upload/download state before accepting the new account.
+Drive cursors and deletion-marker/generation acceptance are account-scoped. Desktop binds the session to Google's immutable OpenID Connect `sub` identity, not an email address that may change or be reassigned. If the signed-in Google account changes, Tempo resets Drive-only upload/download state before accepting the new account. Older Desktop sessions saved with an email but without `sub` are disabled during migration and require explicit reconnection.
 
 A refresh token from a previous Google account must never be reused for a newly selected account. If Google does not issue a fresh refresh token during an account switch, the connection is rejected and the user must connect again.
 Before replacing the OS credential, Desktop commits a disabled state with no usable token or accepted account identity. Identity is saved again only after credential replacement succeeds; sync is enabled after the shared marker is checked. A keyring or SQLite failure therefore requires reconnecting instead of allowing an account/token mismatch. Same-account reconnects preserve Drive cursors; a different or unverified previous account resets them.
@@ -134,7 +138,8 @@ Drive is not a guaranteed ten-year backup: removal of application data, account 
 CI uses a dummy public client ID for compilation and unit tests. Keep this PR as a draft until a real OAuth client is configured and these checks pass:
 
 1. Connect Desktop, Android and the browser extension to the same test account on different networks. Send history in both directions, retry and restart; each event must appear once.
-2. Switch Google accounts and verify no credential, cursor or deletion generation crosses the account boundary.
-3. Delete cloud history, deliberately re-enable one client, then wake a stale client. It must stop without deleting the newly accepted generation.
-4. Expire the access token and verify OS credential-store refresh. Disconnect with the store unavailable and verify local sync is disabled and the cleanup error is shown.
+2. Switch Google accounts and verify no credential, cursor or deletion generation crosses the account boundary. Test email changes for the same Google `sub` as well as separate `sub` identities.
+3. Delete cloud history, including a malformed-generation history object, deliberately re-enable one client, then wake a stale client. It must stop without deleting the newly accepted generation.
+4. Simulate HTTP 429/503 during Drive list/download/delete and verify bounded retries. Simulate an upload timeout and confirm name/checksum verification prevents a duplicate logical event on retry.
+5. Expire the access token and verify OS credential-store refresh. Disconnect with the store unavailable and verify local sync is disabled and the cleanup error is shown.
 5. Upgrade an earlier Desktop prototype with uploaded history and confirm its local events are re-sent with checksum metadata once.
