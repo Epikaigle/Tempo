@@ -227,4 +227,58 @@ assert.equal(scopedRows[2].driveUploadedAt, 333,
 assert.equal(scopedRows[3].driveUploadedAt, 444,
   'unowned legacy rows must not be silently claimed or invalidated');
 
-console.log('\n15 IndexedDB durability, replay, account isolation and restoration scenarios passed');
+
+// The regular Drive upload lookup must use the IndexedDB owner/time index,
+// not read every already-uploaded play in a multi-year local archive.
+const pendingRows = [
+  { id: 1, title: 'A', timestampUtc: baseTime, driveAccountSubject: 'google-a',
+    drivePendingIndexKey: ['google-a', baseTime] },
+  { id: 2, title: 'B', timestampUtc: baseTime + 1000, driveAccountSubject: 'google-b',
+    drivePendingIndexKey: ['google-b', baseTime + 1000] },
+  { id: 3, title: 'New', timestampUtc: baseTime + 2000,
+    drivePendingIndexKey: ['tempo-unowned', baseTime + 2000] },
+  { id: 4, title: 'Done', timestampUtc: baseTime - 1000,
+    driveAccountSubject: 'google-a', driveUploadedAt: 123 },
+  { id: 5, title: 'A2', timestampUtc: baseTime + 3000,
+    driveAccountSubject: 'google-a', drivePendingIndexKey: ['google-a', baseTime + 3000] },
+];
+let indexedReads = 0;
+database.transaction = () => {
+  const tx = {};
+  tx.objectStore = () => ({
+    index(name) {
+      assert.equal(name, 'drivePendingIndexKey', 'pending sync must not scan timestamps globally');
+      return {
+        openCursor(range) {
+          const owner = range.lower[0];
+          const entries = pendingRows.filter(row => row.drivePendingIndexKey &&
+            row.drivePendingIndexKey[0] === owner &&
+            row.drivePendingIndexKey[1] >= range.lower[1] &&
+            row.drivePendingIndexKey[1] <= range.upper[1])
+            .sort((a, b) => a.timestampUtc - b.timestampUtc || a.id - b.id);
+          const req = {};
+          let at = 0;
+          const next = () => {
+            const value = entries[at++];
+            if (value) indexedReads++;
+            req.result = value ? { value, continue: () => queueMicrotask(next) } : null;
+            req.onsuccess?.();
+            if (!value) queueMicrotask(() => tx.oncomplete?.());
+          };
+          queueMicrotask(next);
+          return req;
+        },
+      };
+    },
+  });
+  return tx;
+};
+const pendingA = await storage.getDrivePendingPlays(10, 'google-a');
+assert.deepEqual(pendingA.map(row => row.id), [1, 3, 5],
+  'Google A receives own pending plays and new unclaimed plays, never B');
+assert.ok(indexedReads <= 3, 'already-synced archive must not be scanned');
+assert.deepEqual((await storage.getDrivePendingPlays(10, 'google-a',
+  { timestampUtc: baseTime + 2000, id: 3 })).map(row => row.id), [5],
+  'composite indexed pagination must resume after the last submitted row');
+
+console.log('\n16 IndexedDB durability, replay, account isolation and indexed queue scenarios passed');
