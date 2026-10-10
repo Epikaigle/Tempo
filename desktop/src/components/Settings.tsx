@@ -343,6 +343,7 @@ export default function Settings() {
               <button
                 className="btn btn-secondary"
                 disabled={driveBusy}
+                title="Disconnect only this computer; Android and browser sync remain connected."
                 onClick={() => handleDriveAction("disconnect")}
               >
                 <LogOut size={16} />
@@ -362,7 +363,9 @@ export default function Settings() {
         )}
 
         <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 14 }}>
-          Google Drive is a separate transport. LAN pairing remains available independently, and local listening history stays on this computer.
+          Google Drive is independent from LAN. Disconnect affects this computer only.
+          After Delete cloud history, reconnection does not re-upload your old recordings.
+          Use “Upload older local history” to authorize restoring that archive.
         </div>
       </div>
 
