@@ -38,6 +38,12 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | Own-device recovery | Keep the Tempo device identity, delete only its local play rows, then restore from the same device's Drive batches | Previously locally owned tracks are recovered; surviving local plays are not duplicated |
 | Local retention | Leave synced local plays older than 1 year/30 days/7 days; run routine maintenance | No listening-event rows automatically deleted |
 | Cloud delete with stale client | Disconnect one client, delete cloud history on another, re-enable a third, reconnect stale client | Stale client does not resurrect history or delete the new generation |
+| Delete and ordinary reconnect | Record A's history on all four clients, delete Drive batches, then simply reconnect without opting in to republish | None of the pre-delete local recordings reappear on Drive; new recordings after reconnect do sync |
+| Explicit deleted-history republish | After deletion, choose **Upload older local history** on one client and confirm | Only that user's authorized archive is republished; a different Google account's history remains separate |
+| Restore after deletion | Delete cloud history, restore an old Android database with remapped Room IDs, reconnect | Deletion fence remains effective even when restored rows receive larger database IDs |
+| Shortcut LAN concurrency | Trigger Ctrl/Cmd+Shift+S while automatic LAN backlog delivery is in flight | Only one stream of authenticated batches, no duplicated acknowledgments or token-rotation race |
+| Missing Drive credentials | Invalidate Desktop's Google credential without disabling its persisted Drive state | Desktop prompts to reconnect; LAN and listening capture remain available |
+| Drive listing at scale | Restore 100,000+ events where Drive list API pages arrive out of creation order | All pages are processed in timestamp order before cursor checkpointing; no server-side `orderBy` timeout |
 | Account switching | Connect account A, switch to B on one client | No A history uploaded to B; explicit authorization needed |
 | Auth expiration | Expire/revoke access tokens; sync again | Safe refresh/reconnect, no silent account switch |
 | Firefox OAuth PKCE | Register signed Firefox redirect, connect with real Google account, let token expire, reconnect and simulate forged callback | Auth-code + S256 PKCE works without a client secret; state and callback URI are validated and implicit tokens are never accepted |
