@@ -91,6 +91,8 @@ export interface Play {
   driveUploadedAt?: number;
   /** Immutable Google OpenID subject owning this sync/import record. */
   driveAccountSubject?: string;
+  /** Materialized provenance keys, indexed in IndexedDB without a full scan. */
+  driveOriginLookupIds?: string[];
 }
 
 export interface SyncPayload {
