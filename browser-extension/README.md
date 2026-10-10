@@ -133,7 +133,7 @@ http://127.0.0.1/mozoauth2/<firefox-extension-redirect-subdomain>
 
 The `<firefox-extension-redirect-subdomain>` is derived at runtime from the subdomain of `identity.getRedirectURL()` for the signed extension ID. Register that exact loopback URI as an authorized redirect for the Firefox OAuth client in the same Tempo Google Cloud project.
 
-Firefox currently uses Google's supported browser implicit access-token flow because WebExtensions have no confidential client secret/backend. Tempo stores only the short-lived access token and first attempts a non-interactive `prompt=none` renewal; if Google requires user interaction again, the UI asks the user to reconnect. No OAuth client secret is bundled.
+Firefox uses authorization code with PKCE (S256), without bundling a client secret. Access tokens are short-lived; if a session expires and cannot be renewed without interaction, Tempo asks the user to reconnect.
 
 Drive sync is optional. Firefox's `data_collection_permissions` declares the relevant optional data categories, and the popup requests that permission only from the user's **Connect Google** action.
 
