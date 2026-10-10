@@ -1701,12 +1701,13 @@ fn remember_origin(
     source_device_id: &str,
     origin_event_id: &str,
 ) -> Result<(), String> {
-    let owner: Option<String> = conn.query_row(
+    let state_owner: Option<Option<String>> = conn.query_row(
         "SELECT owner_account_subject FROM drive_event_state WHERE scrobble_id = ?1",
         [scrobble_id], |row| row.get(0)
-    ).optional().map_err(|e| e.to_string())?.flatten();
-    let owner = owner.ok_or("Tempo cannot alias an event with no stored playback state")?;
-    let owner = if owner.is_empty() { LEGACY_UNVERIFIED_ACCOUNT.to_string() } else { owner };
+    ).optional().map_err(|e| e.to_string())?;
+    let owner = state_owner.ok_or("Tempo cannot alias an event with no stored playback state")?
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| LEGACY_UNVERIFIED_ACCOUNT.to_string());
     let affected = conn.execute(
         "INSERT INTO drive_event_aliases
             (account_subject, origin_event_id, source_device_id, scrobble_id)
