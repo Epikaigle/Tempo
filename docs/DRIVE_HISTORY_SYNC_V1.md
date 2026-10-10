@@ -166,7 +166,7 @@ Drive-downloaded events, as either would create unwanted duplicate histories.
 Readers must treat `event_id` as the primary idempotency key. A successfully imported remote event records its origin event/device identity locally and must not be re-uploaded as a newly-owned event.
 An import is successful only after the local database transaction commits; a successful write request alone must not advance the download cursor. A malformed batch, including a JSON `null` root, is skipped so later valid batches can still be imported.
 
-A temporal title/artist reconciliation may be used as a secondary duplicate guard when independent capture sources recorded the same playback and therefore legitimately have different origin IDs. Distinct event IDs from the same originating device must not be collapsed merely because they occur close together; they can represent legitimate rapid replays.
+A temporal title/artist reconciliation may be used as a secondary duplicate guard when independent capture sources recorded the same playback and therefore legitimately have different origin IDs. All three Drive importers (Android, Desktop, Chrome/Firefox extension) use a conservative **±2-second** cross-producer fallback. Source-specific session IDs are not shared playback identifiers. Real independent listens closer than two seconds can remain ambiguous, so exact origin IDs and persistent aliases take priority. Distinct event IDs from the same originating device must not be collapsed merely because they occur close together; they can represent legitimate rapid replays.
 
 Readers use an overlap around their Drive created-time cursor so delayed/out-of-order files can still be discovered. Re-reading overlapping files must be harmless because event IDs are idempotent.
 
