@@ -142,4 +142,4 @@ CI uses a dummy public client ID for compilation and unit tests. Keep this PR as
 3. Delete cloud history, including a malformed-generation history object, deliberately re-enable one client, then wake a stale client. It must stop without deleting the newly accepted generation.
 4. Simulate HTTP 429/503 during Drive list/download/delete and verify bounded retries. Simulate an upload timeout and confirm name/checksum verification prevents a duplicate logical event on retry.
 5. Expire the access token and verify OS credential-store refresh. Disconnect with the store unavailable and verify local sync is disabled and the cleanup error is shown.
-5. Upgrade an earlier Desktop prototype with uploaded history and confirm its local events are re-sent with checksum metadata once.
+6. Upgrade an earlier Desktop prototype with uploaded history and confirm its local events are re-sent with checksum metadata once.
