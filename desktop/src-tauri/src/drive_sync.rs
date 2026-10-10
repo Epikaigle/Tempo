@@ -1099,6 +1099,16 @@ async fn list_files(
     Ok(files)
 }
 
+// Every batch must be processed oldest-first before we checkpoint a createdTime
+// cursor. Sorting by the file id gives stable ordering for equal timestamps.
+fn sort_batches_oldest_first(files: &mut [DriveFileRecord]) {
+    files.sort_by(|a, b| {
+        parse_time_ms(a.created_time.as_deref())
+            .cmp(&parse_time_ms(b.created_time.as_deref()))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
 async fn list_batches(
     access_token: &str,
     created_after: Option<i64>,
@@ -1112,10 +1122,15 @@ async fn list_batches(
             ));
         }
     }
-    Ok(list_files(access_token, &query, Some("createdTime asc")).await?
+    // Google Drive can time out on ordered listings of large appDataFolder
+    // archives. List without server-side ordering, then order in memory so
+    // incremental download checkpoints never skip an older file after a crash.
+    let mut files: Vec<DriveFileRecord> = list_files(access_token, &query, None).await?
         .into_iter()
         .filter(|file| file.name.starts_with(FILE_PREFIX) && file.name.ends_with(".json.gz"))
-        .collect())
+        .collect();
+    sort_batches_oldest_first(&mut files);
+    Ok(files)
 }
 
 async fn find_exact_files(
