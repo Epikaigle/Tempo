@@ -213,7 +213,7 @@ class DriveHistorySyncManager @Inject constructor(
                     "Could not authorize the local Drive history upload"
                 }
                 // Reuse the normal sync path after releasing the mutex.
-                DriveHistorySyncResult.Success(0, 0, 0)
+                DriveHistorySyncResult.Success(0, 0, 0, 0)
             }
         }
     }
