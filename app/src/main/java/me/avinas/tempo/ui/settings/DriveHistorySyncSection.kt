@@ -109,6 +109,15 @@ class DriveHistorySyncViewModel @Inject constructor(
         }
     }
 
+    fun shareOlderLocalHistory() {
+        launchExclusive {
+            when (val result = syncManager.shareOlderLocalHistory()) {
+                is DriveHistorySyncResult.Success -> syncResultToUi(syncManager.syncNow())
+                else -> syncResultToUi(result)
+            }
+        }
+    }
+
     fun deleteCloudHistory() {
         launchExclusive {
             try {
@@ -173,6 +182,7 @@ fun DriveHistorySyncSection(
     val settings by viewModel.settings.collectAsState()
     val operation by viewModel.operation.collectAsState()
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmShare by remember { mutableStateOf(false) }
 
     Text(
         text = "CROSS-DEVICE HISTORY",
@@ -248,6 +258,20 @@ fun DriveHistorySyncSection(
                         modifier = Modifier.padding(top = 4.dp)
                     )
 
+                    OutlinedButton(
+                        onClick = { confirmShare = true },
+                        enabled = operation !is DriveHistoryUiOperation.Running,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Text("Upload older local history")
+                    }
+                    Text(
+                        "Only choose this to deliberately restore recordings removed from Drive.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.65f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
                     when (val op = operation) {
                         is DriveHistoryUiOperation.Success -> Text(
                             text = op.message,
@@ -275,6 +299,25 @@ fun DriveHistorySyncSection(
                 }
             }
         }
+    }
+
+    if (confirmShare) {
+        AlertDialog(
+            onDismissRequest = { confirmShare = false },
+            title = { Text("Upload older local listening history?") },
+            text = {
+                Text("This intentionally republishes older recordings to this Google account, including history previously deleted from Drive. A normal reconnection does not do this.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmShare = false
+                    viewModel.shareOlderLocalHistory()
+                }) { Text("Upload older history") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmShare = false }) { Text("Cancel") }
+            }
+        )
     }
 
     if (confirmDelete) {
