@@ -295,7 +295,15 @@ interface ListeningEventDao {
                     .thenBy { it.timestamp },
             )) {
                 val incomingOrigin = originOf(incoming)
-                val conflictIdx = acceptedSlots.indexOfFirst { isSamePlay(it, incoming) }
+                // A track can have two distinct quick replays inside this
+                // window. A first match depends on SQLite's unspecified row
+                // order and can bind the origin to the wrong playback.
+                val conflictIdx = nearestEligiblePlaybackIndex(
+                    acceptedSlots,
+                    incoming.timestamp,
+                    timestampOf = { it.timestamp },
+                    eligible = { isSamePlay(it, incoming) },
+                )
                 if (conflictIdx < 0) {
                     toInsert.add(incoming)
                     val originMap = mutableMapOf<String, String>()
