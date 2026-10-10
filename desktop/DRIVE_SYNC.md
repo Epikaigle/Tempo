@@ -56,10 +56,14 @@ Readers also ignore and may best-effort remove batches older than their accepted
 
 ## Google account boundaries
 
-Drive cursors and deletion-marker/generation acceptance are account-scoped. Desktop binds the session to Google's immutable OpenID Connect `sub` identity, not an email address that may change or be reassigned. If the signed-in Google account changes, Tempo resets Drive-only upload/download state before accepting the new account. Older Desktop sessions saved with an email but without `sub` are disabled during migration and require explicit reconnection.
+Drive cursors and deletion-marker/generation acceptance are account-scoped. Desktop binds the session to Google's immutable OpenID Connect `sub` identity, not an email address that may change or be reassigned. If the signed-in Google account changes, Tempo resets Drive-only upload/download state before accepting the new account. Older Desktop sessions saved with an email but without `sub` are disabled during migration and require explicit reconnection. Their existing locally owned events are quarantined from automatic uploads until the user explicitly chooses the account to receive them.
 
 A refresh token from a previous Google account must never be reused for a newly selected account. If Google does not issue a fresh refresh token during an account switch, the connection is rejected and the user must connect again.
-Before replacing the OS credential, Desktop commits a disabled state with no usable token or accepted account identity. Identity is saved again only after credential replacement succeeds; sync is enabled after the shared marker is checked. A keyring or SQLite failure therefore requires reconnecting instead of allowing an account/token mismatch. Same-account reconnects preserve Drive cursors; a different or unverified previous account resets them.
+Before replacing the OS credential, Desktop commits a disabled state with no usable token or accepted account identity. Identity is saved again only after credential replacement succeeds; sync is enabled after the shared marker is checked. A keyring or SQLite failure therefore requires reconnecting instead of allowing an account/token mismatch. Same-account reconnects preserve Drive cursors; a different or unverified previous account resets them. Disconnect removes credentials but retains the last verified `sub` identity, so later account changes cannot accidentally claim previously captured events for another account. Desktop tags local producer events with their owning account; changing accounts cannot silently upload that account's earlier captures to the newly selected Drive account.
+
+### Explicitly sharing older local history
+
+The optional **Upload older local history** button requires a confirmation that includes the risk of uploading plays previously associated with another Google account. It reassigns locally owned Desktop plays to the current verified Google subject and starts a normal bounded upload; later sync cycles drain the remaining backlog. It never intentionally re-exports Drive-imported events. Use this action when migrating an old email-only Desktop installation or deliberately transferring a history archive between accounts. The ordinary **Sync now** action never performs this reassignment.
 
 ## OAuth build configuration
 
@@ -138,8 +142,8 @@ Drive is not a guaranteed ten-year backup: removal of application data, account 
 CI uses a dummy public client ID for compilation and unit tests. Keep this PR as a draft until a real OAuth client is configured and these checks pass:
 
 1. Connect Desktop, Android and the browser extension to the same test account on different networks. Send history in both directions, retry and restart; each event must appear once.
-2. Switch Google accounts and verify no credential, cursor or deletion generation crosses the account boundary. Test email changes for the same Google `sub` as well as separate `sub` identities.
+2. Switch Google accounts using Disconnect → Connect and verify no credential, cursor, locally owned history or deletion generation crosses the account boundary automatically. Test email changes for the same Google `sub` as well as separate `sub` identities.
 3. Delete cloud history, including a malformed-generation history object, deliberately re-enable one client, then wake a stale client. It must stop without deleting the newly accepted generation.
 4. Simulate HTTP 429/503 during Drive list/download/delete and verify bounded retries. Simulate an upload timeout and confirm name/checksum verification prevents a duplicate logical event on retry.
 5. Expire the access token and verify OS credential-store refresh. Disconnect with the store unavailable and verify local sync is disabled and the cleanup error is shown.
-6. Upgrade an earlier Desktop prototype with uploaded history and confirm its local events are re-sent with checksum metadata once.
+6. Upgrade an earlier Desktop prototype with uploaded history; confirm its old events are retained locally and not uploaded automatically while the account is unverified. Reconnect, approve **Upload older local history**, then confirm that the events are re-sent with checksum metadata once.
