@@ -175,7 +175,7 @@ async function connectDriveUnlocked(): Promise<DriveSyncStatus> {
 
   const markerVersion = await getDisableMarkerVersion(session.accessToken);
   if (markerVersion > acceptedDisableVersion) {
-    await storage.clearDriveUploadedFlags();
+    await storage.clearDriveUploadedFlags(currentAccount);
     downloadCreatedCursor = 0;
   }
   acceptedDisableVersion = markerVersion;
@@ -363,17 +363,22 @@ async function honorRemoteDisableIfNeeded(accessToken: string): Promise<boolean>
   const markerVersion = await getDisableMarkerVersion(accessToken);
   if (markerVersion <= state.acceptedDisableVersion) return false;
 
+  const owner = state.lastAuthorizedAccountSubject;
+  if (!owner) throw new Error('No verified Google account is bound to this Drive sync');
   await stopForDeletionMarker(state, markerVersion,
-    'Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history.');
+    'Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history.', owner);
   await deleteBatchesBeforeGeneration(accessToken, markerVersion);
   return true;
 }
 
-async function stopForDeletionMarker(state: DriveRuntimeState, markerVersion: number, message: string | null): Promise<void> {
+async function stopForDeletionMarker(
+  state: DriveRuntimeState, markerVersion: number, message: string | null,
+  accountSubject: string,
+): Promise<void> {
   const settings = await storage.getSettings();
   await storage.saveSettings({ ...settings, driveSyncEnabled: false });
   await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
-  await storage.clearDriveUploadedFlags();
+  await storage.clearDriveUploadedFlags(accountSubject);
   await saveRuntimeState({
     ...state,
     acceptedDisableVersion: markerVersion,
@@ -685,7 +690,7 @@ async function deleteDriveHistoryUnlocked(): Promise<number> {
     }
 
     const markerVersion = await bumpDisableMarker(session.accessToken);
-    await stopForDeletionMarker(state, markerVersion, null);
+    await stopForDeletionMarker(state, markerVersion, null, currentAccount);
     return await deleteBatchesBeforeGeneration(session.accessToken, markerVersion);
   } catch (err) {
     // A confirmed marker leaves sync off even if cleanup failed. If publishing
