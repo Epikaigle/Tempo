@@ -33,7 +33,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         DailyChallenge::class, // Gamification: daily challenges
         DesktopPairingSession::class, // Desktop Satellite pairing sessions
     ],
-    version = 57, // Migration 57: account-scoped listening history
+    version = 58, // Migration 58: scope producer aliases to Google account
     exportSchema = true, // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
@@ -76,7 +76,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val TAG = "AppDatabase"
 
         /** Current Room schema version — keep in sync with the @Database(version = ...) annotation. */
-        const val VERSION = 57
+        const val VERSION = 58
 
         /**
          * Migration from version 6 to 7: Add enhanced tracking columns to listening_events.
@@ -2675,6 +2675,38 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Preserve all origin claims while replacing the old global primary key.
+         * A cloud event ID may legitimately appear in two distinct Google archives.
+         */
+        val MIGRATION_57_58 = object : Migration(57, 58) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS listening_event_origins_new (" +
+                    "originEventId TEXT NOT NULL, listeningEventId INTEGER NOT NULL, " +
+                    "sourceDeviceId TEXT NOT NULL, " +
+                    "accountSubject TEXT NOT NULL DEFAULT 'legacy-unverified', " +
+                    "PRIMARY KEY(accountSubject, originEventId), " +
+                    "FOREIGN KEY(listeningEventId) REFERENCES listening_events(id) " +
+                    "ON UPDATE NO ACTION ON DELETE CASCADE)"
+                )
+                db.execSQL(
+                    "INSERT INTO listening_event_origins_new " +
+                    "(originEventId, listeningEventId, sourceDeviceId, accountSubject) " +
+                    "SELECT a.originEventId, a.listeningEventId, a.sourceDeviceId, " +
+                    "COALESCE(NULLIF(e.drive_account_subject, ''), 'legacy-unverified') " +
+                    "FROM listening_event_origins a " +
+                    "JOIN listening_events e ON e.id = a.listeningEventId"
+                )
+                db.execSQL("DROP TABLE listening_event_origins")
+                db.execSQL("ALTER TABLE listening_event_origins_new RENAME TO listening_event_origins")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_event_origins_listeningEventId " +
+                    "ON listening_event_origins(listeningEventId)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS " +
+                    "index_listening_event_origins_listeningEventId_sourceDeviceId " +
+                    "ON listening_event_origins(listeningEventId, sourceDeviceId)")
+            }
+        }
+
         val ALL_MIGRATIONS =
             arrayOf(
                 MIGRATION_6_7,
@@ -2728,6 +2760,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_54_55, // Dedupe listening_events by (session_id, track_id, timestamp)
                 MIGRATION_55_56, // Persist exact producer aliases for Drive/LAN reconciliation
                 MIGRATION_56_57, // Tag Drive imports with account identity and quarantine old unknowns
+                MIGRATION_57_58, // Scope producer origin IDs per verified Google account
             )
     }
 }
