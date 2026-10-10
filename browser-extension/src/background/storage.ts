@@ -11,7 +11,7 @@ const DB_NAME = 'TempoStatsDB';
 const DB_VERSION = 4;
 const UNOWNED_DRIVE_QUEUE = 'tempo-unowned';
 function pendingDriveKey(play: Play | Omit<Play, 'id'>): [string, number] | undefined {
-  if (play.driveImported || play.driveUploadedAt) return undefined;
+  if (play.driveImported || play.driveUploadedAt || play.cloudSuppressed) return undefined;
   return [play.driveAccountSubject ?? UNOWNED_DRIVE_QUEUE,
     Number.isFinite(play.timestampUtc) ? play.timestampUtc : 0];
 }
@@ -523,6 +523,57 @@ export async function markDriveUploaded(
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error ?? new Error('Drive upload flag transaction aborted'));
+  });
+}
+
+/** Apply a cloud-deletion marker durably, including locally captured plays
+ * that never reached Drive. Account B's history is never touched by A's marker.
+ */
+export async function suppressDeletedDriveHistory(accountSubject: string): Promise<void> {
+  if (!accountSubject.trim()) throw new Error('Verified Google account required');
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readwrite');
+    const request = tx.objectStore(PLAYS_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const play = cursor.value as Play;
+      if (!play.driveImported && (!play.driveAccountSubject ||
+          play.driveAccountSubject === accountSubject)) {
+        cursor.update(withDrivePendingKey({
+          ...play, driveAccountSubject: accountSubject, cloudSuppressed: true,
+        }));
+      }
+      cursor.continue();
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Drive deletion suppression failed'));
+  });
+}
+
+/** Explicit, user-confirmed republishing for this same Google account only. */
+export async function authorizeOlderDriveHistory(accountSubject: string): Promise<void> {
+  if (!accountSubject.trim()) throw new Error('Verified Google account required');
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readwrite');
+    const request = tx.objectStore(PLAYS_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const play = cursor.value as Play;
+      if (!play.driveImported && play.driveAccountSubject === accountSubject) {
+        const updated: Play = { ...play, cloudSuppressed: false };
+        delete updated.driveUploadedAt;
+        cursor.update(withDrivePendingKey(updated));
+      }
+      cursor.continue();
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Older Drive history authorization failed'));
   });
 }
 
