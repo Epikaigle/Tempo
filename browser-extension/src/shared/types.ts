@@ -93,6 +93,8 @@ export interface Play {
   driveAccountSubject?: string;
   /** Materialized provenance keys, indexed in IndexedDB without a full scan. */
   driveOriginLookupIds?: string[];
+  /** Indexed pending queue key: [account owner, timestamp], absent if uploaded/imported. */
+  drivePendingIndexKey?: [string, number];
 }
 
 export interface SyncPayload {
