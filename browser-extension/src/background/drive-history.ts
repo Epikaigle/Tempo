@@ -648,7 +648,7 @@ async function deleteDriveHistoryUnlocked(): Promise<number> {
       // before the user can target data in the newly authorized account.
       const settings = await storage.getSettings();
       await storage.saveSettings({ ...settings, driveSyncEnabled: false });
-      await storage.clearDriveUploadedFlags();
+      await storage.claimUnownedDrivePlays(previousAccount);
       await saveRuntimeState({
         ...state,
         downloadCreatedCursor: 0,
@@ -1109,7 +1109,7 @@ export async function getDriveLanOrigin(play: Play): Promise<{ origin_device_id:
   const origin_device_id = await getDeviceId();
   if (play.id == null) throw new Error('A queued LAN play has no persistent ID');
   const candidate = play.originEventId ?? await eventId(origin_device_id, play);
-  const origin_event_id = await storage.ensureLocalOriginEventId(play.id, candidate, accountSubject);
+  const origin_event_id = await storage.ensureLocalOriginEventId(play.id, candidate);
   return { origin_device_id, origin_event_id };
 }
 
