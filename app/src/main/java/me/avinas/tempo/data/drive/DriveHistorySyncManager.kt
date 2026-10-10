@@ -42,6 +42,8 @@ class DriveHistorySyncManager @Inject constructor(
         private const val KEY_DOWNLOAD_CREATED_CURSOR = "download_created_cursor"
         private const val KEY_ACCEPTED_DISABLE_VERSION = "accepted_disable_marker_version"
         private const val KEY_GOOGLE_ACCOUNT_EMAIL = "google_account_email"
+        private const val KEY_GOOGLE_ACCOUNT_SUBJECT = "google_account_subject"
+        private const val KEY_INVALID_EXPORT_IDS = "invalid_drive_export_ids"
         private const val PAGE_SIZE = 200
         private const val BATCH_SIZE = 50
         private const val DOWNLOAD_OVERLAP_MS = 24L * 60L * 60L * 1000L
@@ -190,14 +192,14 @@ class DriveHistorySyncManager @Inject constructor(
                     val remoteDisable = handleRemoteDisableIfNeeded()
                     if (remoteDisable != null) return@withAccountBoundSession remoteDisable
 
-                    val uploaded = uploadLocalHistory()
+                    val uploaded = uploadLocalHistory(accountEmail)
                     if (forceFullRestore) {
                         // Clear only the receive cursor. If the download fails, retry
                         // again from the beginning rather than losing an old batch.
                         statePrefs.edit().remove(KEY_DOWNLOAD_CREATED_CURSOR).commit()
                             .also { check(it) { "Could not persist Drive full-restore request" } }
                     }
-                    val download = downloadRemoteHistory(includeOwnDeviceBatches = forceFullRestore)
+                    val download = downloadRemoteHistory(includeOwnDeviceBatches = forceFullRestore, accountSubject = accountEmail)
                     settingsManager.markSuccess(
                         uploaded = uploaded,
                         imported = download.inserted,
@@ -243,24 +245,39 @@ class DriveHistorySyncManager @Inject constructor(
      * account. The caller decides whether that account change is an explicit
      * opt-in (enableSync) or must stop a background/manual sync (syncNow).
      */
-    private fun reconcileGoogleAccountBoundary(current: String): Boolean {
-        val previous = statePrefs.getString(KEY_GOOGLE_ACCOUNT_EMAIL, null)
-            ?.trim()
-            ?.lowercase()
+    private suspend fun reconcileGoogleAccountBoundary(current: String): Boolean {
+        require(current.isNotBlank()) { "Google account subject cannot be empty" }
+        val dao = database.listeningEventDao()
+        val previous = statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
             ?.takeIf { it.isNotBlank() }
-
+        val oldEmail = statePrefs.getString(KEY_GOOGLE_ACCOUNT_EMAIL, null)
+            ?.trim()?.lowercase()
+        val currentEmail = authManager.currentAccount.value?.email?.trim()?.lowercase()
         if (previous == current) return false
 
-        val changed = previous != null
+        val changed = previous != null || (oldEmail != null && oldEmail != currentEmail)
+        // Claim unowned legacy captures BEFORE a new account can export or
+        // reconcile them. Old imports without a verified owner were already
+        // quarantined by Room migration 56->57.
+        val legacyOwner = previous ?: if (oldEmail == null || oldEmail == currentEmail) {
+            current
+        } else {
+            "legacy-unverified"
+        }
+        dao.claimUnownedDriveHistory(legacyOwner)
+
         val editor = statePrefs.edit()
-            .putString(KEY_GOOGLE_ACCOUNT_EMAIL, current)
+            .putString(KEY_GOOGLE_ACCOUNT_SUBJECT, current)
+            .putString(KEY_GOOGLE_ACCOUNT_EMAIL, currentEmail)
         if (changed) {
-            editor
-                .remove(KEY_UPLOAD_CURSOR)
+            // New account uploads only new Room rows captured *after* opt-in.
+            // Never reset upload position to zero and publish the old account's
+            // historical recordings automatically.
+            editor.putLong(KEY_UPLOAD_CURSOR, dao.getMaxEventId())
                 .remove(KEY_DOWNLOAD_CREATED_CURSOR)
                 .remove(KEY_ACCEPTED_DISABLE_VERSION)
         }
-        editor.apply()
+        check(editor.commit()) { "Could not persist Google Drive account boundary" }
         return changed
     }
 
@@ -314,7 +331,7 @@ class DriveHistorySyncManager @Inject constructor(
      * event. The cursor advances only after every eligible event in a page has
      * been safely uploaded.
      */
-    private suspend fun uploadLocalHistory(): Int {
+    private suspend fun uploadLocalHistory(accountSubject: String): Int {
         val dao = database.listeningEventDao()
         val maxId = dao.getMaxEventId()
         val storedCursor = statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L)
@@ -346,6 +363,8 @@ class DriveHistorySyncManager @Inject constructor(
             val newOwnOrigins = mutableListOf<ListeningEventOrigin>()
             val eventsByProducer = linkedMapOf<BatchProducer, MutableList<DriveHistoryEvent>>()
             for (event in page) {
+                if (event.driveAccountSubject != null &&
+                    event.driveAccountSubject != accountSubject) continue
                 // Downloaded Drive history must not bounce back into the cloud.
                 // LAN history is different: the sender can have Drive disabled,
                 // so Android relays it once using the sender's original event ID.
@@ -468,7 +487,10 @@ class DriveHistorySyncManager @Inject constructor(
      * the cursor resilient to delayed/out-of-order uploads; exact event ids plus
      * Tempo's temporal reconciliation make re-reading those files harmless.
      */
-    private suspend fun downloadRemoteHistory(includeOwnDeviceBatches: Boolean = false): ImportSummary {
+    private suspend fun downloadRemoteHistory(
+        includeOwnDeviceBatches: Boolean = false,
+        accountSubject: String,
+    ): ImportSummary {
         val cursor = statePrefs.getLong(KEY_DOWNLOAD_CREATED_CURSOR, 0L)
         val acceptedGeneration = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L).coerceAtLeast(0L)
         val createdAfter = if (cursor > 0L) {
@@ -562,13 +584,15 @@ class DriveHistorySyncManager @Inject constructor(
 
             val incoming = mutableListOf<ListeningEvent>()
             for (event in batch.events) {
-                protocolEventToLocal(event, batch.sourceDeviceId)?.let(incoming::add)
+                protocolEventToLocal(event, batch.sourceDeviceId)?.let {
+                    incoming.add(it.copy(driveAccountSubject = accountSubject))
+                }
             }
 
             // Resolver/database failures are not safe to skip. Let them abort this
             // sync so the cursor remains behind the uncommitted batch and the next
             // run can retry it idempotently.
-            val result = database.listeningEventDao().insertAllBatchedWithDedup(incoming)
+            val result = database.listeningEventDao().insertAllBatchedWithDedup(incoming, accountSubject)
             inserted += result.inserted
             skipped += result.skipped
             replaced += result.replaced
