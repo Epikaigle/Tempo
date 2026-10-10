@@ -21,7 +21,6 @@ use crate::AppState;
 
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
-const REVOKE_ENDPOINT: &str = "https://oauth2.googleapis.com/revoke";
 const USERINFO_ENDPOINT: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 const DRIVE_API: &str = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API: &str = "https://www.googleapis.com/upload/drive/v3";
@@ -244,7 +243,8 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             origin_device_id TEXT,
             drive_imported INTEGER NOT NULL DEFAULT 0,
             drive_uploaded_at INTEGER,
-            owner_account_subject TEXT
+            owner_account_subject TEXT,
+            cloud_suppressed INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_drive_origin_event ON drive_event_state(origin_event_id);
         CREATE TABLE IF NOT EXISTS drive_event_aliases (
@@ -315,6 +315,31 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         conn.execute("ALTER TABLE drive_event_state ADD COLUMN owner_account_subject TEXT", [])
             .map_err(|e| e.to_string())?;
     }
+    // Existing databases need the suppression flag before the table migration.
+    let has_suppression = {
+        let mut stmt = conn.prepare("PRAGMA table_info(drive_event_state)")
+            .map_err(|e| e.to_string())?;
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        columns.contains(&"cloud_suppressed".to_string())
+    };
+    if !has_suppression {
+        conn.execute(
+            "ALTER TABLE drive_event_state ADD COLUMN cloud_suppressed INTEGER NOT NULL DEFAULT 0", []
+        ).map_err(|e| e.to_string())?;
+    }
+
+    // After a prior Google connection, unowned captures that were left behind
+    // during a disconnected session must not be claimed by the next account.
+    conn.execute(
+        "INSERT OR IGNORE INTO drive_event_state (scrobble_id, drive_imported, owner_account_subject)
+         SELECT id, 0, ?1 FROM scrobbles
+         WHERE (SELECT enabled FROM drive_sync_state WHERE id = 1) = 0
+           AND (SELECT last_verified_account_subject FROM drive_sync_state WHERE id = 1) IS NOT NULL",
+        [LEGACY_UNVERIFIED_ACCOUNT],
+    ).map_err(|e| e.to_string())?;
+
     // Email-only installations cannot prove who owns previously collected
     // scrobbles. Quarantine them rather than uploading them to another account.
     let unverified_account: bool = conn.query_row(
@@ -473,13 +498,14 @@ fn migrate_account_scoped_origin_keys(conn: &Connection) -> Result<(), String> {
                  origin_device_id TEXT,
                  drive_imported INTEGER NOT NULL DEFAULT 0,
                  drive_uploaded_at INTEGER,
-                 owner_account_subject TEXT
+                 owner_account_subject TEXT,
+                 cloud_suppressed INTEGER NOT NULL DEFAULT 0
              );
              INSERT INTO drive_event_state
                  (scrobble_id, origin_event_id, origin_device_id,
-                  drive_imported, drive_uploaded_at, owner_account_subject)
+                  drive_imported, drive_uploaded_at, owner_account_subject, cloud_suppressed)
              SELECT scrobble_id, origin_event_id, origin_device_id,
-                    drive_imported, drive_uploaded_at, owner_account_subject
+                    drive_imported, drive_uploaded_at, owner_account_subject, cloud_suppressed
              FROM drive_event_state_legacy;
              DROP TABLE drive_event_state_legacy;
              CREATE INDEX idx_drive_origin_event ON drive_event_state(origin_event_id);
@@ -755,8 +781,8 @@ fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bool) -> Resu
                 [&previous_subject]
             ).map_err(|e| e.to_string())?;
         }
-        transaction.execute("UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0", [])
-            .map_err(|e| e.to_string())?;
+        // Preserve account-owned uploads across switches. Resetting them here
+        // could resurrect an archive deliberately deleted from Drive.
         transaction.execute(
             "UPDATE drive_sync_state SET download_cursor = 0, accepted_disable_version = 0,
              last_sync_time = NULL, last_uploaded = 0, last_imported = 0 WHERE id = 1", []
@@ -1298,7 +1324,12 @@ fn pin_local_origin(
     artist: &str,
 ) -> Result<String, String> {
     let generated = lan_play_origin(device_id, id, timestamp_utc, title, artist);
-    let subject = load_state(conn)?.account_subject;
+    let state = load_state(conn)?;
+    let subject = if state.enabled {
+        state.account_subject
+    } else {
+        Some(LEGACY_UNVERIFIED_ACCOUNT.to_string())
+    };
     conn.execute(
         "INSERT OR IGNORE INTO drive_event_state
          (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at, owner_account_subject)
@@ -1485,6 +1516,7 @@ fn pending_local_plays_page(
              FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE COALESCE(d.drive_imported, 0) = 0 AND d.drive_uploaded_at IS NULL
+               AND COALESCE(d.cloud_suppressed, 0) = 0
                AND (?2 IS NULL OR d.owner_account_subject IS NULL OR d.owner_account_subject = ?2)
                AND (?3 IS NULL OR s.timestamp_utc > ?3
                     OR (s.timestamp_utc = ?3 AND s.id > ?4))
@@ -2150,8 +2182,30 @@ async fn bump_disable_marker(access_token: &str) -> Result<i64, String> {
 
 fn accept_deletion_marker(conn: &Connection, marker_version: i64, message: Option<&str>) -> Result<(), String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    tx.execute("UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0", [])
-        .map_err(|e| e.to_string())?;
+    let subject: String = tx.query_row(
+        "SELECT account_subject FROM drive_sync_state WHERE id = 1",
+        [], |row| row.get::<_, Option<String>>(0)
+    ).map_err(|e| e.to_string())?
+        .filter(|value| !value.trim().is_empty())
+        .ok_or("Cannot apply a Drive deletion without a verified Google account")?;
+
+    // Deleting the cloud archive must not silently cause its restoration.
+    // Keep uploaded_at unchanged and suppress all older local captures.
+    tx.execute(
+        "INSERT OR IGNORE INTO drive_event_state
+         (scrobble_id, drive_imported, owner_account_subject, cloud_suppressed)
+         SELECT s.id, 0, ?1, 1 FROM scrobbles s
+         WHERE NOT EXISTS (SELECT 1 FROM drive_event_state d WHERE d.scrobble_id = s.id)",
+        [&subject],
+    ).map_err(|e| e.to_string())?;
+    tx.execute(
+        "UPDATE drive_event_state SET
+             owner_account_subject = COALESCE(owner_account_subject, ?1),
+             cloud_suppressed = 1
+         WHERE drive_imported = 0
+           AND (owner_account_subject IS NULL OR owner_account_subject = ?1)",
+        [&subject],
+    ).map_err(|e| e.to_string())?;
     tx.execute(
         "UPDATE drive_sync_state SET enabled = 0, accepted_disable_version = ?1,
          download_cursor = 0, last_uploaded = 0, last_imported = 0, last_error = ?2 WHERE id = 1",
@@ -2306,14 +2360,7 @@ pub async fn drive_connect(
     let marker_version = get_disable_marker_version(&token).await?;
 
     let conn = open_sync_db(&state.app_data_dir)?;
-    let previous = load_state(&conn)?;
-    if marker_version > previous.accepted_disable_version {
-        conn.execute(
-            "UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0",
-            [],
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    // Reconnection never implicitly republishes history suppressed by deletion.
     conn.execute(
         "UPDATE drive_sync_state SET enabled = 1, accepted_disable_version = ?1,
          download_cursor = CASE WHEN ?1 > accepted_disable_version THEN 0 ELSE download_cursor END,
@@ -2335,53 +2382,21 @@ pub async fn drive_connect(
 pub async fn drive_disconnect(state: State<'_, AppState>) -> Result<DriveSyncStatus, String> {
     let _guard = SYNC_LOCK.lock().await;
     let conn = open_sync_db(&state.app_data_dir)?;
-    let state_before = load_state(&conn)?;
-    drop(conn);
-
-    // The user explicitly asked to disconnect. A broken/unavailable native
-    // credential store must not leave background Drive sync enabled locally.
-    // Read/revoke is best-effort; deletion errors are reported only after the
-    // local database has been made safe and inert.
-    let secure_refresh = secure_refresh_token_get(
-        &state_before.device_id,
-        state_before.account_subject.as_deref().unwrap_or_default(),
-    )
-        .await
-        .ok()
-        .flatten();
-    let credential_delete_error = secure_refresh_token_delete(&state_before.device_id)
-        .await
-        .err();
-
-    let conn = open_sync_db(&state.app_data_dir)?;
+    let before = load_state(&conn)?;
+    // Commit a local stop first, even if keyring cleanup subsequently fails.
     conn.execute(
         "UPDATE drive_sync_state SET enabled = 0, access_token = NULL, refresh_token = NULL,
          token_expires_at = 0, last_error = NULL WHERE id = 1",
         [],
-    )
-    .map_err(|e| e.to_string())?;
+    ).map_err(|e| e.to_string())?;
     drop(conn);
 
-    let token_to_revoke = secure_refresh
-        .or(state_before.refresh_token)
-        .or(state_before.access_token);
-    if let Some(token) = token_to_revoke {
-        let revoke_body = {
-            let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-            serializer.append_pair("token", &token);
-            serializer.finish()
-        };
-        let _ = http_client()?
-            .post(REVOKE_ENDPOINT)
-            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-            .body(revoke_body)
-            .send()
-            .await;
-    }
-
-    if let Some(err) = credential_delete_error {
+    // Google's OAuth revoke endpoint revokes the *project-wide* grant,
+    // potentially disconnecting Android, Chrome and Firefox as well.
+    // A Desktop-only disconnect therefore only deletes the local credential.
+    if let Err(err) = secure_refresh_token_delete(&before.device_id).await {
         return Err(format!(
-            "Google Drive was disabled locally, but Tempo could not remove the OS credential: {err}"
+            "Google Drive was disabled locally, but Tempo could not remove its OS credential: {err}"
         ));
     }
     status_for(&state.app_data_dir).await
@@ -2433,7 +2448,8 @@ fn authorize_existing_local_history(conn: &Connection, subject: &str) -> Result<
          SELECT id, 0, ?1 FROM scrobbles", [subject]
     ).map_err(|e| e.to_string())?;
     let reassigned = tx.execute(
-        "UPDATE drive_event_state SET owner_account_subject = ?1, drive_uploaded_at = NULL
+        "UPDATE drive_event_state SET owner_account_subject = ?1, drive_uploaded_at = NULL,
+             cloud_suppressed = 0
          WHERE drive_imported = 0", [subject]
     ).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
@@ -2466,6 +2482,11 @@ pub async fn drive_share_existing_local_history(state: State<'_, AppState>) -> R
 #[tauri::command]
 pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<usize, String> {
     let _guard = SYNC_LOCK.lock().await;
+    let conn = open_sync_db(&state.app_data_dir)?;
+    if !load_state(&conn)?.enabled {
+        return Err("Connect Google Drive before deleting cloud history".to_string());
+    }
+    drop(conn);
     let token = access_token(&state.app_data_dir).await?;
     // Publish the shared generation marker first, then remove only older batches.
     // A client explicitly re-enabled after the marker update may safely publish
@@ -3237,13 +3258,21 @@ mod tests {
     fn deletion_stop_and_cursors_are_committed_before_cloud_cleanup() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
-            "CREATE TABLE drive_event_state (drive_imported INTEGER, drive_uploaded_at INTEGER);
-             INSERT INTO drive_event_state VALUES (0, 100), (1, 100);
-             CREATE TABLE drive_sync_state (
-                id INTEGER PRIMARY KEY, enabled INTEGER, accepted_disable_version INTEGER,
-                download_cursor INTEGER, last_uploaded INTEGER, last_imported INTEGER, last_error TEXT
+            "CREATE TABLE scrobbles (id INTEGER PRIMARY KEY);
+             INSERT INTO scrobbles VALUES (1), (2), (3);
+             CREATE TABLE drive_event_state (
+                 scrobble_id INTEGER PRIMARY KEY, drive_imported INTEGER,
+                 drive_uploaded_at INTEGER, owner_account_subject TEXT,
+                 cloud_suppressed INTEGER DEFAULT 0
              );
-             INSERT INTO drive_sync_state VALUES (1, 1, 0, 123, 4, 5, NULL);"
+             INSERT INTO drive_event_state VALUES (1, 0, 100, 'google-a', 0),
+                 (2, 1, 100, 'google-a', 0);
+             CREATE TABLE drive_sync_state (
+                id INTEGER PRIMARY KEY, enabled INTEGER, account_subject TEXT,
+                accepted_disable_version INTEGER, download_cursor INTEGER,
+                last_uploaded INTEGER, last_imported INTEGER, last_error TEXT
+             );
+             INSERT INTO drive_sync_state VALUES (1, 1, 'google-a', 0, 123, 4, 5, NULL);"
         ).unwrap();
         accept_deletion_marker(&conn, 200, Some("remote deletion")).unwrap();
         let state: (i64, i64, i64, i64, i64) = conn.query_row(
@@ -3251,15 +3280,31 @@ mod tests {
             [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
         ).unwrap();
         assert_eq!(state, (0, 200, 0, 0, 0));
-        let imported_timestamp: Option<i64> = conn.query_row(
-            "SELECT drive_uploaded_at FROM drive_event_state WHERE drive_imported = 1", [], |row| row.get(0)
-        ).unwrap();
-        assert_eq!(imported_timestamp, Some(100));
-        let pending_timestamp: Option<i64> = conn.query_row(
-            "SELECT drive_uploaded_at FROM drive_event_state WHERE drive_imported = 0", [], |row| row.get(0)
-        ).unwrap();
-        assert_eq!(pending_timestamp, None);
+        let rows: Vec<(i64, Option<i64>, i64)> = conn.prepare(
+            "SELECT scrobble_id, drive_uploaded_at, cloud_suppressed FROM drive_event_state ORDER BY scrobble_id"
+        ).unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap()
+            .collect::<Result<_, _>>().unwrap();
+        assert_eq!(rows, vec![(1, Some(100), 1), (2, Some(100), 0), (3, None, 1)]);
     }
+
+    #[test]
+    fn deleted_cloud_archive_requires_explicit_opt_in_to_republish() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute("UPDATE drive_sync_state SET enabled = 1, account_subject = 'google-a' WHERE id = 1", []).unwrap();
+        conn.execute("INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('Earlier play', 'Artist', 1700000000000)", []).unwrap();
+        let old_id = conn.last_insert_rowid();
+        assert_eq!(pending_local_plays(&conn).unwrap().len(), 1);
+        accept_deletion_marker(&conn, 200, None).unwrap();
+        conn.execute("UPDATE drive_sync_state SET enabled = 1 WHERE id = 1", []).unwrap();
+        assert!(pending_local_plays(&conn).unwrap().is_empty());
+        assert_eq!(authorize_existing_local_history(&conn, "google-a").unwrap(), 1);
+        assert_eq!(pending_local_plays(&conn).unwrap()[0].id, old_id);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+
 
     fn fixture_batch() -> WireBatch {
         let event = WireEvent {
