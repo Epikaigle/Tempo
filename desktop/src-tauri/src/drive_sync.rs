@@ -2116,6 +2116,49 @@ pub async fn drive_restore_all_history(state: State<'_, AppState>) -> Result<Dri
     result
 }
 
+// An explicit opt-in can assign older local captures to the currently linked
+// account. Imported cloud events are never rebroadcast as new local origins.
+fn authorize_existing_local_history(conn: &Connection, subject: &str) -> Result<usize, String> {
+    if subject.trim().is_empty() {
+        return Err("Google account identity is missing".into());
+    }
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT OR IGNORE INTO drive_event_state
+         (scrobble_id, drive_imported, owner_account_subject)
+         SELECT id, 0, ?1 FROM scrobbles", [subject]
+    ).map_err(|e| e.to_string())?;
+    let reassigned = tx.execute(
+        "UPDATE drive_event_state SET owner_account_subject = ?1, drive_uploaded_at = NULL
+         WHERE drive_imported = 0", [subject]
+    ).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(reassigned)
+}
+
+#[tauri::command]
+pub async fn drive_share_existing_local_history(state: State<'_, AppState>) -> Result<DriveSyncResult, String> {
+    let _guard = SYNC_LOCK.lock().await;
+    let conn = open_sync_db(&state.app_data_dir)?;
+    let account = load_state(&conn)?;
+    if !account.enabled {
+        return Err("Connect Google Drive before choosing to upload existing local history".into());
+    }
+    let subject = account.account_subject
+        .ok_or("Google account identity is missing; reconnect securely")?;
+    drop(conn);
+
+    let token = access_token(&state.app_data_dir).await?;
+    if honor_remote_disable_if_needed(&state.app_data_dir, &token).await? {
+        return Err("Cloud history was deleted by another device; reconnect Google before uploading".into());
+    }
+
+    let conn = open_sync_db(&state.app_data_dir)?;
+    authorize_existing_local_history(&conn, &subject)?;
+    drop(conn);
+    run_sync_locked(&state.app_data_dir).await
+}
+
 #[tauri::command]
 pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<usize, String> {
     let _guard = SYNC_LOCK.lock().await;
@@ -2447,6 +2490,28 @@ mod tests {
         let old_pending = pending_local_plays(&conn).unwrap();
         assert_eq!(old_pending.len(), 1, "returning to A must not upload B plays");
         assert_eq!(old_pending[0].id, old_id);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn explicit_reassignment_reuploads_local_only_without_relaying_imports() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute("UPDATE drive_sync_state SET account_subject = 'account-b',
+            enabled = 1 WHERE id = 1", []).unwrap();
+        let event = fixture_batch().events[0].clone();
+        conn.execute("INSERT INTO scrobbles (title, artist, timestamp_utc)
+            VALUES ('Old', 'Artist', 1700000000000)", []).unwrap();
+        let old_id = conn.last_insert_rowid();
+        conn.execute("INSERT INTO drive_event_state
+            (scrobble_id, drive_imported, owner_account_subject)
+            VALUES (?1, 0, 'account-a')", [old_id]).unwrap();
+        assert!(pending_local_plays(&conn).unwrap().is_empty());
+        assert!(insert_remote_event(&conn, "remote-device", &event).unwrap());
+        let reassigned = authorize_existing_local_history(&conn, "account-b").unwrap();
+        assert_eq!(reassigned, 1, "one local-owned play may be explicitly transferred");
+        assert_eq!(pending_local_plays(&conn).unwrap().len(), 1);
+        assert_eq!(pending_local_plays(&conn).unwrap()[0].id, old_id);
         drop(conn);
         std::fs::remove_dir_all(directory).unwrap();
     }
