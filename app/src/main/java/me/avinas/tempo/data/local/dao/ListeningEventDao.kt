@@ -28,8 +28,8 @@ interface ListeningEventDao {
         // Drive clients record comparable playback completion timestamps.
         // Re-using a 60s fallback for Drive imports silently removes genuine
         // back-to-back plays (e.g. two 25s tracks) across separate batches.
-        // Keep the broader window for legacy imports with different time bases.
-        const val DRIVE_RECONCILIATION_WINDOW_MS = 10_000L
+        // Align the Drive-specific fallback with Desktop and browser clients. Exact origin aliases handle retries; a short window reduces false merges of rapid replays.
+        const val DRIVE_RECONCILIATION_WINDOW_MS = 2_000L
     }
 
     @Query("SELECT * FROM listening_events WHERE id = :id")
