@@ -3,7 +3,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use once_cell::sync::Lazy;
 use rand::RngCore;
-use reqwest::{header, Client};
+use reqwest::{header, Client, RequestBuilder, Response, StatusCode};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -38,6 +38,7 @@ const BATCH_SIZE: usize = 50;
 const MAX_LOCAL_SCAN: usize = 5000;
 const MAX_BATCH_BYTES: usize = 10 * 1024 * 1024;
 const DOWNLOAD_OVERLAP_MS: i64 = 24 * 60 * 60 * 1000;
+const DRIVE_REQUEST_RETRIES: usize = 3;
 // Match Android and browser Drive imports: a full-minute overlap can hide
 // a genuine second play of a short track captured by another device.
 const TEMPORAL_DEDUP_MS: i64 = 10_000;
@@ -753,16 +754,43 @@ fn require_server_time(value: Option<&str>, label: &str) -> Result<i64, String> 
     }
 }
 
+fn transient_drive_response(status: StatusCode) -> bool {
+    matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504)
+}
+
+// Retry only idempotent requests: GET, DELETE, and overwrite-by-ID PATCH.
+// Retrying a create/upload POST blindly can leave duplicate cloud objects.
+async fn send_drive_idempotent(request: RequestBuilder) -> Result<Response, String> {
+    for attempt in 0..DRIVE_REQUEST_RETRIES {
+        let replay = request.try_clone().ok_or("Drive request cannot be retried safely")?;
+        match replay.send().await {
+            Ok(response) if transient_drive_response(response.status()) &&
+                    attempt + 1 < DRIVE_REQUEST_RETRIES => {
+                let seconds = response.headers().get(header::RETRY_AFTER)
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(|s| s.min(5));
+                tokio::time::sleep(seconds.map(Duration::from_secs)
+                    .unwrap_or_else(|| Duration::from_millis(500u64 * (1 << attempt)))).await;
+            }
+            Ok(response) => return Ok(response),
+            Err(error) if attempt + 1 < DRIVE_REQUEST_RETRIES &&
+                 (error.is_timeout() || error.is_connect()) => {
+                tokio::time::sleep(Duration::from_millis(500u64 * (1 << attempt))).await;
+            }
+            Err(error) => return Err(format!("Google Drive request failed: {error}")),
+        }
+    }
+    Err("Google Drive retry budget exhausted".into())
+}
+
 async fn drive_json<T: for<'de> Deserialize<'de>>(
     access_token: &str,
     url: Url,
 ) -> Result<T, String> {
-    let response = http_client()?
-        .get(url)
-        .bearer_auth(access_token)
-        .send()
-        .await
-        .map_err(|e| format!("Google Drive request failed: {e}"))?;
+    let response = send_drive_idempotent(
+        http_client()?.get(url).bearer_auth(access_token)
+    ).await?;
     if !response.status().is_success() {
         return Err(format!(
             "Google Drive request failed (HTTP {})",
@@ -820,7 +848,10 @@ async fn list_batches(
             ));
         }
     }
-    list_files(access_token, &query, Some("createdTime asc")).await
+    Ok(list_files(access_token, &query, Some("createdTime asc")).await?
+        .into_iter()
+        .filter(|file| file.name.starts_with(FILE_PREFIX) && file.name.ends_with(".json.gz"))
+        .collect())
 }
 
 async fn find_exact_files(
@@ -867,12 +898,9 @@ async fn download_bytes(access_token: &str, file: &DriveFileRecord) -> Result<Ve
         }
     }
     let url = format!("{DRIVE_API}/files/{}?alt=media", file.id);
-    let response = http_client()?
-        .get(url)
-        .bearer_auth(access_token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let response = send_drive_idempotent(
+        http_client()?.get(url).bearer_auth(access_token)
+    ).await?;
     if !response.status().is_success() {
         return Err(format!(
             "Drive download failed (HTTP {})",
@@ -1650,12 +1678,10 @@ async fn download_remote_history(
 }
 
 async fn delete_file(access_token: &str, id: &str) -> Result<(), String> {
-    let response = http_client()?
-        .delete(format!("{DRIVE_API}/files/{id}"))
-        .bearer_auth(access_token)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let response = send_drive_idempotent(
+        http_client()?.delete(format!("{DRIVE_API}/files/{id}"))
+            .bearer_auth(access_token)
+    ).await?;
     if response.status().is_success() || response.status().as_u16() == 404 {
         Ok(())
     } else {
@@ -1663,18 +1689,27 @@ async fn delete_file(access_token: &str, id: &str) -> Result<(), String> {
     }
 }
 
+// Owner-initiated cleanup removes invalid-generation Tempo history files.
+// A stale client may only delete provably older generations, never unknowns.
+fn should_delete_history_batch(file: &DriveFileRecord, generation: i64, owner_delete: bool) -> bool {
+    if !file.name.starts_with(FILE_PREFIX) || !file.name.ends_with(".json.gz") {
+        return false;
+    }
+    match batch_generation(file) {
+        Some(file_generation) => file_generation < generation,
+        None => owner_delete,
+    }
+}
+
 async fn delete_batches_before_generation(
     access_token: &str,
     generation: i64,
+    owner_delete: bool,
 ) -> Result<usize, String> {
     let files = list_batches(access_token, None).await?;
     let mut deleted = 0usize;
     for file in files {
-        let Some(file_generation) = batch_generation(&file) else {
-            log::warn!("Leaving Drive history batch with invalid generation untouched: {}", file.name);
-            continue;
-        };
-        if file_generation >= generation {
+        if !should_delete_history_batch(&file, generation, owner_delete) {
             continue;
         }
         delete_file(access_token, &file.id).await?;
@@ -1728,12 +1763,13 @@ async fn bump_disable_marker(access_token: &str) -> Result<i64, String> {
         let markers = find_exact_files(access_token, DISABLE_MARKER_NAME).await?;
         let mut updated = Vec::new();
         for marker in markers {
-            let response = http_client()?
-                .patch(format!("{DRIVE_UPLOAD_API}/files/{}?uploadType=media&fields=id,name,modifiedTime", marker.id))
-                .bearer_auth(access_token)
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(marker_body.clone())
-                .send().await.map_err(|e| e.to_string())?;
+            let response = send_drive_idempotent(
+                http_client()?
+                    .patch(format!("{DRIVE_UPLOAD_API}/files/{}?uploadType=media&fields=id,name,modifiedTime", marker.id))
+                    .bearer_auth(access_token)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(marker_body.clone())
+            ).await?;
             if !response.status().is_success() {
                 return Err(format!("Could not update Drive disable marker (HTTP {})", response.status()));
             }
@@ -1773,7 +1809,7 @@ async fn honor_remote_disable_if_needed(
         "Cross-device sync was turned off because another linked Tempo device deleted the shared Drive history."
     ))?;
     // Cleanup is allowed to fail after the local stop has been committed.
-    delete_batches_before_generation(access_token, marker_version).await?;
+    delete_batches_before_generation(access_token, marker_version, false).await?;
     Ok(true)
 }
 
@@ -2016,7 +2052,7 @@ pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<us
     let marker_version = bump_disable_marker(&token).await?;
     let conn = open_sync_db(&state.app_data_dir)?;
     accept_deletion_marker(&conn, marker_version, None)?;
-    let result = delete_batches_before_generation(&token, marker_version).await;
+    let result = delete_batches_before_generation(&token, marker_version, true).await;
     if let Err(err) = &result { let _ = set_last_error(&conn, Some(err)); }
     result
 }
@@ -2713,6 +2749,33 @@ mod tests {
         assert_eq!(batch_generation(&legacy), Some(0));
     }
 
+
+    #[test]
+    fn user_delete_cleans_invalid_generations_but_stale_client_cannot() {
+        let mut file = fixture_file(&fixture_batch(), b"fixture");
+        file.name = batch_file_name(10, "device-1", &"a".repeat(64));
+        file.app_properties.insert(APP_PROPERTY_GENERATION.into(), "10".into());
+        assert!(should_delete_history_batch(&file, 20, false));
+        file.app_properties.insert(APP_PROPERTY_GENERATION.into(), "20".into());
+        assert!(!should_delete_history_batch(&file, 20, true));
+        file.app_properties.insert(APP_PROPERTY_GENERATION.into(), "21".into());
+        assert!(!should_delete_history_batch(&file, 20, true));
+        file.app_properties.insert(APP_PROPERTY_GENERATION.into(), "invalid".into());
+        assert!(!should_delete_history_batch(&file, 20, false));
+        assert!(should_delete_history_batch(&file, 20, true));
+        file.name = "unrelated_tempo_history_v1_file.json.gz".into();
+        assert!(!should_delete_history_batch(&file, 20, true));
+    }
+
+    #[test]
+    fn retries_only_transient_drive_status_codes() {
+        assert!(transient_drive_response(StatusCode::TOO_MANY_REQUESTS));
+        assert!(transient_drive_response(StatusCode::SERVICE_UNAVAILABLE));
+        assert!(transient_drive_response(StatusCode::GATEWAY_TIMEOUT));
+        assert!(!transient_drive_response(StatusCode::BAD_REQUEST));
+        assert!(!transient_drive_response(StatusCode::FORBIDDEN));
+        assert!(!transient_drive_response(StatusCode::UNAUTHORIZED));
+    }
     #[test]
     fn protocol_volume_uses_android_percent_scale() {
         let mut play = LocalPlay {
