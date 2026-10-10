@@ -3,6 +3,7 @@ package me.avinas.tempo.data.local.entities
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
+import androidx.room.ColumnInfo
 
 /**
  * Stable producer identity for one physical listening event.
@@ -32,5 +33,6 @@ data class ListeningEventOrigin(
     val listeningEventId: Long,
     val sourceDeviceId: String,
     /** Immutable Google owner; unknown LAN/legacy origins remain quarantined. */
+    @ColumnInfo(defaultValue = "'legacy-unverified'")
     val accountSubject: String = "legacy-unverified",
 )
