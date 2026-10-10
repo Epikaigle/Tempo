@@ -29,7 +29,8 @@ import androidx.room.PrimaryKey
         Index(name = "index_listening_events_timestamp_track_id", value = ["timestamp", "track_id"]),
         Index(name = "index_listening_events_track_id_timestamp", value = ["track_id", "timestamp"]),
         Index(name = "index_listening_events_stats", value = ["timestamp", "track_id", "playDuration", "completionPercentage"]),
-        Index(value = ["content_fingerprint"])  // Layer 1 idempotency lookups
+        Index(value = ["content_fingerprint"]), // Layer 1 idempotency lookups
+        Index(value = ["drive_account_subject"]) // Room schema must match migration 56->57
     ]
 )
 data class ListeningEvent(
