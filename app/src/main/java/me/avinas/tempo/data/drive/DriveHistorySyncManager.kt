@@ -211,7 +211,7 @@ class DriveHistorySyncManager @Inject constructor(
                     }
                     val download = downloadRemoteHistory(includeOwnDeviceBatches = forceFullRestore, accountSubject = accountEmail)
                     uploadFailure?.let { throw it }
-                    val invalidCount = statePrefs.getStringSet(KEY_INVALID_EXPORT_IDS, emptySet())
+                    val invalidCount = statePrefs.getStringSet("${KEY_INVALID_EXPORT_IDS}:${accountEmail}", emptySet())
                         .orEmpty().size
                     settingsManager.markSuccess(
                         uploaded = uploaded,
@@ -363,7 +363,7 @@ class DriveHistorySyncManager @Inject constructor(
             storedCursor
         }
         var uploaded = 0
-        val retryIds = statePrefs.getStringSet(KEY_INVALID_EXPORT_IDS, emptySet()).orEmpty()
+        val retryIds = statePrefs.getStringSet("${KEY_INVALID_EXPORT_IDS}:${accountSubject}", emptySet()).orEmpty()
             .mapNotNull { it.toLongOrNull() }.toSet()
         val stillInvalid = retryIds.toMutableSet()
         val retryRows = if (retryIds.isNotEmpty()) {
@@ -445,7 +445,7 @@ class DriveHistorySyncManager @Inject constructor(
             retrying = false
             check(statePrefs.edit()
                 .putLong(KEY_UPLOAD_CURSOR, afterId)
-                .putStringSet(KEY_INVALID_EXPORT_IDS, stillInvalid.map(Long::toString).toSet())
+                .putStringSet("${KEY_INVALID_EXPORT_IDS}:${accountSubject}", stillInvalid.map(Long::toString).toSet())
                 .commit()) { "Could not checkpoint Drive upload history and invalid rows" }
         }
 
