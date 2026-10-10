@@ -463,7 +463,10 @@ async function downloadRemotePlays(
   // exceed the normal 5k retention cap while locally-owned rows are waiting for
   // their first Drive upload, so sample-based dedup can miss an older imported
   // event. Scan the whole local store once per Drive download pass instead.
-  const seenOriginIds = await storage.getDriveOriginEventIds(accountSubject);
+  if (!accountSubject) throw new Error('Verified Google subject is required to import Drive history');
+  // Own-device full restore may need to reconstruct IDs for older unpinned
+  // local captures. Normal sync uses the durable IDB provenance index.
+  const seenOwnOrigins = new Set<string>();
   if (includeOwnDeviceBatches) {
     // Locally recorded plays usually do NOT persist their own hashed origin ID.
     // Reconstruct those IDs before a full restore so reading this device's
@@ -473,7 +476,7 @@ async function downloadRemotePlays(
     for (let offset = 0; offset < ownPlays.length; offset += 256) {
       const chunk = ownPlays.slice(offset, offset + 256);
       const origins = await Promise.all(chunk.map(play => eventId(deviceId, play)));
-      for (const originId of origins) seenOriginIds.add(originId);
+      for (const originId of origins) seenOwnOrigins.add(originId);
     }
   }
   let imported = 0;
@@ -574,7 +577,8 @@ async function downloadRemotePlays(
 
     for (const event of batch.events) {
       if (!isValidEvent(event)) continue;
-      if (seenOriginIds.has(event.event_id)) {
+      if (seenOwnOrigins.has(event.event_id) ||
+          await storage.hasDriveOriginEventId(event.event_id, accountSubject)) {
         duplicates++;
         continue;
       }
@@ -595,7 +599,6 @@ async function downloadRemotePlays(
           accountSubject,
         );
       if (temporalDupe) {
-        seenOriginIds.add(event.event_id);
         duplicates++;
         continue;
       }
@@ -629,7 +632,6 @@ async function downloadRemotePlays(
         driveUploadedAt: Date.now(),
       };
       await storage.insertPlay(play);
-      seenOriginIds.add(event.event_id);
       imported++;
     }
     maxCreated = Math.max(maxCreated, created);
