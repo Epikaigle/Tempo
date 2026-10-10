@@ -75,6 +75,7 @@ struct StoredDriveState {
     refresh_token: Option<String>,
     token_expires_at: i64,
     account_email: Option<String>,
+    account_subject: Option<String>,
     download_cursor: i64,
     accepted_disable_version: i64,
     last_sync_time: Option<i64>,
@@ -99,6 +100,7 @@ fn default_expires_in() -> i64 {
 #[derive(Debug, Deserialize)]
 struct GoogleUserInfo {
     email: Option<String>,
+    sub: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,6 +226,7 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             refresh_token TEXT,
             token_expires_at INTEGER NOT NULL DEFAULT 0,
             account_email TEXT,
+            account_subject TEXT,
             download_cursor INTEGER NOT NULL DEFAULT 0,
             accepted_disable_version INTEGER NOT NULL DEFAULT 0,
             last_sync_time INTEGER,
@@ -257,6 +260,22 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         ",
     )
     .map_err(|e| e.to_string())?;
+
+    // An existing email-only credential cannot prove the Google account.
+    let has_subject = {
+        let mut stmt = conn.prepare("PRAGMA table_info(drive_sync_state)").map_err(|e| e.to_string())?;
+        let names = stmt.query_map([], |row| row.get::<_, String>(1)).map_err(|e| e.to_string())?;
+        names.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+            .iter().any(|name| name == "account_subject")
+    };
+    if !has_subject {
+        conn.execute("ALTER TABLE drive_sync_state ADD COLUMN account_subject TEXT", [])
+            .map_err(|e| e.to_string())?;
+    }
+    conn.execute("UPDATE drive_sync_state SET enabled = 0, access_token = NULL,
+        refresh_token = NULL, token_expires_at = 0, account_email = NULL
+        WHERE enabled != 0 AND (account_subject IS NULL OR account_subject = '')", [])
+        .map_err(|e| e.to_string())?;
 
     requeue_unverified_prototype_uploads(&conn)?;
     rescan_reconciled_origins(&conn)?;
@@ -325,7 +344,7 @@ fn load_state(conn: &Connection) -> Result<StoredDriveState, String> {
     conn.query_row(
         "SELECT enabled, device_id, access_token, refresh_token, token_expires_at,
                 account_email, download_cursor, accepted_disable_version,
-                last_sync_time, last_error, last_uploaded, last_imported
+                last_sync_time, last_error, last_uploaded, last_imported, account_subject
          FROM drive_sync_state WHERE id = 1",
         [],
         |row| {
@@ -336,6 +355,7 @@ fn load_state(conn: &Connection) -> Result<StoredDriveState, String> {
                 refresh_token: row.get(3)?,
                 token_expires_at: row.get(4)?,
                 account_email: row.get(5)?,
+                account_subject: row.get(12)?,
                 download_cursor: row.get(6)?,
                 accepted_disable_version: row.get(7)?,
                 last_sync_time: row.get(8)?,
@@ -446,7 +466,7 @@ async fn refresh_token_for_state(
 async fn access_token(app_data_dir: &Path) -> Result<String, String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
-    if state.account_email.as_deref().map(str::trim).filter(|email| !email.is_empty()).is_none() {
+    if state.account_subject.as_deref().map(str::trim).filter(|subject| !subject.is_empty()).is_none() {
         return Err("Google account identity is unavailable. Connect Google again.".into());
     }
     if let Some(token) = state.access_token.clone() {
@@ -526,7 +546,7 @@ fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bool) -> Resu
     // use that credential until account identity is verified and saved again.
     transaction.execute(
         "UPDATE drive_sync_state SET enabled = 0, access_token = NULL, refresh_token = NULL,
-         token_expires_at = 0, account_email = NULL, last_error = ?1 WHERE id = 1",
+         token_expires_at = 0, account_email = NULL, account_subject = NULL, last_error = ?1 WHERE id = 1",
         ["Google sign-in did not finish. Connect Google again."]
     ).map_err(|e| e.to_string())?;
     transaction.commit().map_err(|e| e.to_string())
@@ -669,23 +689,17 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
             user_info.status()
         ));
     }
-    let email = user_info
-        .json::<GoogleUserInfo>()
-        .await
-        .map_err(|e| format!("Could not parse Google account info: {e}"))?
-        .email
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            "Google account email is unavailable; refusing to reuse Drive sync state".to_string()
-        })?;
+    let info = user_info.json::<GoogleUserInfo>().await
+        .map_err(|e| format!("Could not parse Google account info: {e}"))?;
+    let email = info.email.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+        .ok_or("Google account email is unavailable; refusing Drive sync state reuse")?;
+    // OIDC subject, not the editable email, identifies a Google account.
+    let subject = info.sub.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+        .ok_or("Google account subject is unavailable; reconnect securely")?;
 
     let conn = open_sync_db(app_data_dir)?;
     let existing = load_state(&conn)?;
-    let previous_account_matches = existing
-        .account_email
-        .as_deref()
-        .is_some_and(|old| old.eq_ignore_ascii_case(&email));
+    let previous_account_matches = existing.account_subject.as_deref() == Some(subject.as_str());
     prepare_oauth_credentials(&conn, !previous_account_matches)?;
     let device_id = existing.device_id.clone();
     let legacy_refresh_token = existing
@@ -729,8 +743,8 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
     let expires_at = now_ms() + token.expires_in.max(60) * 1000;
     let conn = open_sync_db(app_data_dir)?;
     conn.execute(
-        "UPDATE drive_sync_state SET access_token = ?1, refresh_token = NULL, token_expires_at = ?2, account_email = ?3, last_error = NULL WHERE id = 1",
-        params![token.access_token, expires_at, email],
+        "UPDATE drive_sync_state SET access_token = ?1, refresh_token = NULL, token_expires_at = ?2, account_email = ?3, account_subject = ?4, last_error = NULL WHERE id = 1",
+        params![token.access_token, expires_at, email, subject],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -1899,6 +1913,7 @@ async fn status_for(app_data_dir: &Path) -> Result<DriveSyncStatus, String> {
         .is_some_and(|value| !value.trim().is_empty());
     let connected = state.enabled
         && has_account_identity
+        && state.account_subject.as_deref().is_some_and(|v| !v.trim().is_empty())
         && (has_valid_access || has_legacy_refresh || has_secure_refresh);
 
     Ok(DriveSyncStatus {
@@ -1978,7 +1993,7 @@ pub async fn drive_disconnect(state: State<'_, AppState>) -> Result<DriveSyncSta
     let conn = open_sync_db(&state.app_data_dir)?;
     conn.execute(
         "UPDATE drive_sync_state SET enabled = 0, access_token = NULL, refresh_token = NULL,
-         token_expires_at = 0, last_error = NULL WHERE id = 1",
+         token_expires_at = 0, account_email = NULL, account_subject = NULL, last_error = NULL WHERE id = 1",
         [],
     )
     .map_err(|e| e.to_string())?;
@@ -2289,7 +2304,7 @@ mod tests {
         drop(conn);
         let conn = open_sync_db(&directory).unwrap();
         conn.execute_batch(
-            "UPDATE drive_sync_state SET enabled = 1, account_email = 'old@example.com',
+            "UPDATE drive_sync_state SET enabled = 1, account_email = 'old@example.com', account_subject = 'google-stable-123',
              access_token = 'old-access', refresh_token = 'old-refresh', token_expires_at = 9000000000000,
              download_cursor = 123, accepted_disable_version = 100 WHERE id = 1;
              INSERT INTO drive_event_state (scrobble_id, drive_imported, drive_uploaded_at) VALUES (1, 0, 200), (2, 1, 200);"
@@ -2303,7 +2318,7 @@ mod tests {
         prepare_oauth_credentials(&conn, true).unwrap();
         let state = load_state(&conn).unwrap();
         assert!(!state.enabled);
-        assert!(state.account_email.is_none() && state.access_token.is_none() && state.refresh_token.is_none());
+        assert!(state.account_email.is_none() && state.account_subject.is_none() && state.access_token.is_none() && state.refresh_token.is_none());
         assert_eq!((state.download_cursor, state.accepted_disable_version), (0, 0));
         drop(conn);
         assert!(access_token(&directory).await.unwrap_err().contains("identity is unavailable"));
@@ -2315,7 +2330,7 @@ mod tests {
         let (directory, conn) = oauth_storage_fixture();
         prepare_oauth_credentials(&conn, false).unwrap();
         let state = load_state(&conn).unwrap();
-        assert!(!state.enabled && state.account_email.is_none());
+        assert!(!state.enabled && state.account_email.is_none() && state.account_subject.is_none());
         assert_eq!((state.download_cursor, state.accepted_disable_version), (123, 100));
         let uploaded: i64 = conn.query_row("SELECT drive_uploaded_at FROM drive_event_state WHERE scrobble_id = 1", [], |row| row.get(0)).unwrap();
         assert_eq!(uploaded, 200);
@@ -2335,6 +2350,22 @@ mod tests {
         let uploaded: i64 = conn.query_row("SELECT drive_uploaded_at FROM drive_event_state WHERE scrobble_id = 1", [], |row| row.get(0)).unwrap();
         assert_eq!(uploaded, 200);
         drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+
+    #[test]
+    fn legacy_email_only_sessions_are_disabled_without_losing_cursors() {
+        let (directory, conn) = oauth_storage_fixture();
+        assert_eq!(load_state(&conn).unwrap().account_subject.as_deref(), Some("google-stable-123"));
+        conn.execute("UPDATE drive_sync_state SET account_subject = NULL WHERE id = 1", []).unwrap();
+        drop(conn);
+        let reopened = open_sync_db(&directory).unwrap();
+        let state = load_state(&reopened).unwrap();
+        assert!(!state.enabled && state.access_token.is_none());
+        assert!(state.account_email.is_none() && state.account_subject.is_none());
+        assert_eq!((state.download_cursor, state.accepted_disable_version), (123, 100));
+        drop(reopened);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
