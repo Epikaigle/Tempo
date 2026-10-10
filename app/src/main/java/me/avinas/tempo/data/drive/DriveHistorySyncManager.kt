@@ -84,6 +84,11 @@ class DriveHistorySyncManager @Inject constructor(
         /** Pure resume rule: existing per-subject progress always wins over
          * global progress from the account that happened to be active last.
          */
+        /** A restored database can remap row IDs in *every* Google account. */
+        internal fun isPerAccountRestoreStateKey(key: String): Boolean =
+            key.startsWith("${KEY_UPLOAD_CURSOR}:") ||
+                key.startsWith("${KEY_INVALID_EXPORT_IDS}:")
+
         internal fun chooseAccountUploadCursor(
             savedForSubject: Long?,
             legacyEmailCursor: Long?,
@@ -764,10 +769,9 @@ class DriveHistorySyncManager @Inject constructor(
             .remove(KEY_UPLOAD_CURSOR)
             .remove(KEY_DOWNLOAD_CREATED_CURSOR)
         if (clearEveryAccount) {
-            statePrefs.all.keys.filter { key ->
-                key.startsWith("${KEY_UPLOAD_CURSOR}:") ||
-                    key.startsWith("${KEY_INVALID_EXPORT_IDS}:")
-            }.forEach(editor::remove)
+            statePrefs.all.keys.filter(::isPerAccountRestoreStateKey)
+                .forEach(editor::remove)
+            editor.remove(KEY_INVALID_EXPORT_IDS)
         } else {
             statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
                 ?.let(::uploadCursorKey)?.let(editor::remove)
