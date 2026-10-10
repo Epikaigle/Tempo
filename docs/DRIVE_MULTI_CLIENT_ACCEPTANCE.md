@@ -70,3 +70,14 @@ guarantee of recoverability.
 - Import parallel captures of one playback one second apart: all importers may reconcile to one play while preserving the two producer/origin aliases, including when the apps use different local session IDs.
 - Switch accounts and verify previously imported records (or imports whose previous owner is unknown) are not eligible for temporal matching against the new account. Older local events must not upload across account boundaries without explicit consent.
 - Exact origin IDs are mandatory for idempotency. Two truly independent plays within two seconds can still be indistinguishable using only title, artist and timestamp; avoid treating the temporal fallback as proof of exact playback identity.
+
+
+### Google-account ownership and invalid-row recovery (v57)
+
+- Android: create old-account history, then switch to another Google `sub`. Verify the existing rows are tagged with the old owner, the next account starts at the current maximum Room row ID, and only new captures upload. Changing an email for the same Google `sub` must not be treated as a new account
+- Android: migrate Room from schema 56 to 57. Imported Drive rows without provable ownership become `legacy-unverified` and stay visible locally; local rows remain intact. A restored older account must not supply temporal dedup matches for a different account
+- Android: delete a local track while retaining its listening row or create malformed metadata; verify the record is retained, separately recorded for retry, valid later plays still upload, and incoming Drive batches download despite an outgoing error
+- Browser: switch Google accounts with a mix of uploaded, never-uploaded, imported and reconciled plays. Existing rows must retain their original account identity and upload status. Reconnect the original account and verify no cross-account publishing
+- Browser: upgrade IndexedDB v2 to v3 with an archive of reconciled producers. Every origin ID must be present in the new multi-entry index. Normal Drive sync must use indexed lookups instead of scanning the entire ten-year play collection; full own-device restore may explicitly scan missing legacy origins
+- Browser: one malformed local play must not prevent uploading later valid plays or receiving inbound history. The invalid original record must remain available for repair
+- Both: verify current user identity from Google's immutable subject rather than mutable email, including sign-in restart, token refresh and Firefox consent
