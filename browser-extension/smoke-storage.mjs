@@ -285,3 +285,52 @@ assert.deepEqual((await storage.getDrivePendingPlays(10, 'google-a',
   'composite indexed pagination must resume after the last submitted row');
 
 console.log('\n16 IndexedDB durability, replay, account isolation and indexed queue scenarios passed');
+
+
+// Cloud deletion must fence all prior local captures, including never-uploaded
+// rows, while preserving other Google accounts and actual imported plays.
+localRecords = [
+  { id: 1, title: 'Owned A', artist: 'Artist', timestampUtc: baseTime,
+    driveAccountSubject: 'google-a', driveUploadedAt: 999 },
+  { id: 2, title: 'Unsent', artist: 'Artist', timestampUtc: baseTime + 1 },
+  { id: 3, title: 'Owned B', artist: 'Artist', timestampUtc: baseTime + 2,
+    driveAccountSubject: 'google-b' },
+  { id: 4, title: 'Imported', artist: 'Artist', timestampUtc: baseTime + 3,
+    driveImported: true, driveAccountSubject: 'google-a' },
+];
+database.transaction = () => {
+  const tx = {};
+  tx.objectStore = () => ({
+    openCursor() {
+      const req = {};
+      let i = 0;
+      const next = () => {
+        const at = i++;
+        req.result = at < localRecords.length ? {
+          value: localRecords[at],
+          update(value) { localRecords[at] = value; },
+          continue: () => queueMicrotask(next),
+        } : null;
+        req.onsuccess?.();
+        if (!req.result) queueMicrotask(() => tx.oncomplete?.());
+      };
+      queueMicrotask(next);
+      return req;
+    },
+  });
+  return tx;
+};
+await storage.suppressDeletedDriveHistory('google-a');
+assert.equal(localRecords[0].cloudSuppressed, true);
+assert.equal(localRecords[1].cloudSuppressed, true);
+assert.equal(localRecords[1].driveAccountSubject, 'google-a');
+assert.equal(localRecords[2].cloudSuppressed, undefined);
+assert.equal(localRecords[3].cloudSuppressed, undefined);
+assert.equal(localRecords[0].driveUploadedAt, 999,
+  'deletion must not clear existing Drive acknowledgements');
+await storage.authorizeOlderDriveHistory('google-a');
+assert.equal(localRecords[0].cloudSuppressed, false);
+assert.equal(localRecords[1].cloudSuppressed, false);
+assert.equal(localRecords[0].driveUploadedAt, undefined);
+assert.equal(localRecords[2].driveAccountSubject, 'google-b');
+console.log('  ✓ cloud deletion blocks earlier browser plays until explicit account-scoped authorization');
