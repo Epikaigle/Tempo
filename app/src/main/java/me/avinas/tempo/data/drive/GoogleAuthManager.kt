@@ -162,7 +162,8 @@ class GoogleAuthManager @Inject constructor(
             val account = GoogleAccount(
                 email = email,
                 displayName = googleIdCredential.displayName,
-                photoUrl = googleIdCredential.profilePictureUri?.toString()
+                photoUrl = googleIdCredential.profilePictureUri?.toString(),
+                subject = googleIdCredential.id.trim().takeIf { it.isNotEmpty() }
             )
             // A newly-selected identity starts a new authorization boundary.
             // Clear the previous account's token before any consent/failure path
@@ -172,7 +173,7 @@ class GoogleAuthManager @Inject constructor(
             _needsDriveConsent.value = false
             tokenStorage.clearToken()
 
-            tokenStorage.saveAccountInfo(account.email, account.displayName, account.photoUrl)
+            tokenStorage.saveAccountInfo(account.email, account.displayName, account.photoUrl, account.subject)
             _currentAccount.value = account
             _isSignedIn.value = true
 
