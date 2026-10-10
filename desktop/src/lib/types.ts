@@ -74,7 +74,7 @@ export interface Settings {
   drive_sync_last_imported: number;
 }
 
-export type DriveSyncAction = "connect" | "sync" | "restore" | "disconnect" | "delete";
+export type DriveSyncAction = "connect" | "sync" | "restore" | "share-history" | "disconnect" | "delete";
 
 export interface BatteryStatus {
   level: number;
