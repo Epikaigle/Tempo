@@ -25,8 +25,8 @@ const storage = await import(pathToFileURL(out).href);
 assert.equal(storage.recentPlayWindowMs(), 5_000,
   'local detector callbacks must use a short tolerance so real replays survive');
 assert.equal(storage.recentPlayWindowMs(''), 5_000);
-assert.equal(storage.recentPlayWindowMs('other-device'), 10_000,
-  'cross-device imports use a 10-second window so real replays survive');
+assert.equal(storage.recentPlayWindowMs('other-device'), 2_000,
+  'cross-device imports use a 2-second window to preserve independent rapid replays');
 
 for (const abort of [false, true]) {
   let settled = false;
@@ -89,8 +89,10 @@ database.transaction = () => {
 assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 4_000), true);
 assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000), false,
   'a real local short-track replay must not be dropped');
-assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 7_000, 'remote-B', 'event-B1'), true,
-  'different devices capturing the same play within 10 seconds must reconcile');
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 7_000, 'remote-B', 'event-B1'), false,
+  'an independent cross-device replay seven seconds later must survive');
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 1_000, 'remote-B', 'event-B1'), true,
+  'captures within two seconds can reconcile across sources');
 assert.deepEqual(localRecords[0].reconciledOrigins, [{ deviceId: 'remote-B', eventId: 'event-B1' }],
   'matched producer/event ID must be durable before acknowledging the duplicate');
 assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 27_000, 'remote-B', 'event-B2'), false,
