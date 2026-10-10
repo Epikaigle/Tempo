@@ -254,10 +254,6 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         );
         CREATE INDEX IF NOT EXISTS idx_drive_alias_scrobble_device
             ON drive_event_aliases(scrobble_id, source_device_id);
-        INSERT OR IGNORE INTO drive_event_aliases (origin_event_id, source_device_id, scrobble_id)
-            SELECT origin_event_id, origin_device_id, scrobble_id FROM drive_event_state
-            WHERE origin_event_id IS NOT NULL AND origin_device_id IS NOT NULL
-                AND origin_device_id <> '';
         CREATE TABLE IF NOT EXISTS drive_sync_migrations (
             name TEXT PRIMARY KEY
         );
@@ -334,6 +330,7 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         ).map_err(|e| e.to_string())?;
     }
 
+    migrate_legacy_import_account_and_aliases(&conn)?;
     requeue_unverified_prototype_uploads(&conn)?;
     rescan_reconciled_origins(&conn)?;
 
@@ -363,6 +360,35 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
     )
     .map_err(|e| e.to_string())?;
     Ok(conn)
+}
+
+// Run this historical backfill once, rather than doing a full alias-table
+// INSERT/SELECT on every settings read or background sync.
+fn migrate_legacy_import_account_and_aliases(conn: &Connection) -> Result<(), String> {
+    let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let applied = transaction.execute(
+        "INSERT OR IGNORE INTO drive_sync_migrations (name)
+         VALUES ('legacy_aliases_and_account_v1')", []
+    ).map_err(|e| e.to_string())?;
+    if applied == 1 {
+        transaction.execute(
+            "INSERT OR IGNORE INTO drive_event_aliases
+             (origin_event_id, source_device_id, scrobble_id)
+             SELECT origin_event_id, origin_device_id, scrobble_id
+             FROM drive_event_state
+             WHERE origin_event_id IS NOT NULL AND origin_device_id IS NOT NULL
+               AND origin_device_id <> ''", []
+        ).map_err(|e| e.to_string())?;
+        // Older releases did not record the Google owner of imported events.
+        // No current-account guess can safely prove which account provided
+        // them; quarantine their temporal matches until explicitly restored.
+        transaction.execute(
+            "UPDATE drive_event_state SET owner_account_subject = ?1
+             WHERE drive_imported != 0 AND owner_account_subject IS NULL",
+            [LEGACY_UNVERIFIED_ACCOUNT],
+        ).map_err(|e| e.to_string())?;
+    }
+    transaction.commit().map_err(|e| e.to_string())
 }
 
 fn requeue_unverified_prototype_uploads(conn: &Connection) -> Result<(), String> {
@@ -1577,6 +1603,7 @@ fn insert_remote_event(
     conn: &Connection,
     source_device_id: &str,
     event: &WireEvent,
+    account_subject: &str,
 ) -> Result<bool, String> {
     let existing_origin: Option<i64> = conn
         .query_row(
@@ -1605,6 +1632,10 @@ fn insert_remote_event(
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE s.timestamp_utc BETWEEN ?1 AND ?2
                AND (d.origin_device_id IS NULL OR d.origin_device_id <> ?4)
+               AND (CASE WHEN COALESCE(d.drive_imported, 0) != 0
+                         THEN d.owner_account_subject = ?5
+                         ELSE (d.owner_account_subject IS NULL
+                               OR d.owner_account_subject = ?5) END)
                AND NOT EXISTS (SELECT 1 FROM drive_event_aliases a
                    WHERE a.scrobble_id = s.id AND a.source_device_id = ?4)
              ORDER BY abs(s.timestamp_utc - ?3) ASC, s.id ASC",
@@ -1614,7 +1645,8 @@ fn insert_remote_event(
                 event.timestamp_utc - TEMPORAL_DEDUP_MS,
                 event.timestamp_utc + TEMPORAL_DEDUP_MS,
                 event.timestamp_utc,
-                source_device_id
+                source_device_id,
+                account_subject
             ],
             |row| Ok((
                 row.get::<_, i64>(0)?,
@@ -1667,9 +1699,9 @@ fn insert_remote_event(
             // eligible for its own eventual Drive upload. Turning it into an
             // imported row here would silently strand the local producer event.
             "INSERT OR IGNORE INTO drive_event_state
-             (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
-             VALUES (?1, ?2, ?3, 1, ?4)",
-            params![id, event.event_id, source_device_id, now_ms()],
+             (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at, owner_account_subject)
+             VALUES (?1, ?2, ?3, 1, ?4, ?5)",
+            params![id, event.event_id, source_device_id, now_ms(), account_subject],
         )
         .map_err(|e| e.to_string())?;
         remember_origin(conn, id, source_device_id, &event.event_id)?;
@@ -1710,9 +1742,9 @@ fn insert_remote_event(
     let scrobble_id = conn.last_insert_rowid();
     conn.execute(
         "INSERT INTO drive_event_state
-         (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
-         VALUES (?1, ?2, ?3, 1, ?4)",
-        params![scrobble_id, event.event_id, source_device_id, now_ms()],
+         (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at, owner_account_subject)
+         VALUES (?1, ?2, ?3, 1, ?4, ?5)",
+        params![scrobble_id, event.event_id, source_device_id, now_ms(), account_subject],
     )
     .map_err(|e| e.to_string())?;
     remember_origin(conn, scrobble_id, source_device_id, &event.event_id)?;
@@ -1727,6 +1759,9 @@ async fn download_remote_history(
 ) -> Result<(usize, usize), String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
+    let account_subject = state.account_subject.as_deref()
+        .filter(|subject| !subject.trim().is_empty())
+        .ok_or("Google account identity is missing; reconnect securely")?;
     let accepted_generation = state.accepted_disable_version.max(0);
     let after =
         (state.download_cursor > 0).then_some((state.download_cursor - DOWNLOAD_OVERLAP_MS).max(0));
@@ -1830,7 +1865,7 @@ async fn download_remote_history(
         }
         let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         for event in &batch.events {
-            if insert_remote_event(&transaction, &batch.source_device_id, event)? {
+            if insert_remote_event(&transaction, &batch.source_device_id, event, account_subject)? {
                 imported += 1;
             } else {
                 duplicates += 1;
