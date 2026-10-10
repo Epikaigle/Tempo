@@ -1,6 +1,6 @@
 # 🛰️ Tempo Desktop
 
-A lightweight, cross-platform companion app that captures your desktop listening history and syncs it to the **Tempo Android app** over your local network. No cloud servers, no middleman, just a direct, secure connection between your desktop and phone.
+A lightweight, cross-platform companion app that captures your desktop listening history and syncs it to the **Tempo Android app** over your local network. Optional Google Drive history sync also connects devices on different networks.
 
 ---
 
@@ -14,6 +14,8 @@ A lightweight, cross-platform companion app that captures your desktop listening
 - **QR Code Pairing** — Scan a QR code from your phone's Tempo app to pair instantly. No manual IP entry required.
 
 - **Local-First Sync** — Scrobbles are sent directly to your phone over WiFi. Zero cloud dependency.
+
+- **Optional Google Drive Sync** — Exchange history with Android and the browser extension across different networks. Requires Google sign-in and a configured Desktop OAuth client; see [Drive setup and validation](DRIVE_SYNC.md).
 
 - **Smart Batching** — Scrobbles queue locally and sync at configurable intervals (15 min to 24 hours) to save battery.
 
@@ -225,8 +227,8 @@ desktop/
 ## 🔐 Security
 
 - Auth tokens are generated locally using UUID v4
-- All data stays on your local network
-- No outbound internet connections for sync
+- LAN sync keeps history on your local network
+- Enabling Google Drive sync uploads listening-history batches to Google's hidden application-data folder
 - Token validation on every payload
 - **HMAC-SHA256** signing of all sync payloads for integrity verification
 - SQLite WAL mode with database backup and integrity checks

@@ -34,6 +34,39 @@ pub enum SyncError {
     BatteryCritical,
 }
 
+/// Drain a bounded number of LAN batches during one manual or background
+/// action. Android accepts at most 100 plays per HTTP request; each invocation
+/// of sync_to_phone loads only 50. Stop on errors without claiming the remaining
+/// queued history was delivered. A future wakeup can resume safely.
+static LAN_SYNC_LOCK: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
+    once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
+
+pub async fn sync_pending_to_phone(
+    app_handle: &tauri::AppHandle,
+) -> Result<usize, SyncError> {
+    // Serialize the whole backlog so manual and background jobs cannot send
+    // the same rows simultaneously or race while storing rotated LAN tokens.
+    let _guard = LAN_SYNC_LOCK.lock().await;
+    let mut total = 0usize;
+    for _ in 0..20 {
+        match sync_to_phone(app_handle).await {
+            Ok(count) => {
+                total += count;
+                if count < 50 {
+                    break;
+                }
+            }
+            Err(SyncError::EmptyQueue) if total > 0 => break,
+            Err(error) => return Err(error),
+        }
+    }
+    if total == 0 {
+        Err(SyncError::EmptyQueue)
+    } else {
+        Ok(total)
+    }
+}
+
 /// Compute HMAC-SHA256 signature for a payload using the auth token as key.
 fn compute_hmac(auth_token: &str, payload_json: &str) -> String {
     use hmac::{Hmac, Mac};
@@ -171,12 +204,38 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         .and_then(|h| h.into_string().ok())
         .unwrap_or_else(|| "Desktop".to_string());
 
+    // LAN and Drive must share the first stored producer ID and event ID,
+    // including if LAN is sent before Google sign-in or the track is renamed.
+    // A failed persistence step must not silently downgrade to an untracked
+    // origin: such a LAN delivery could later be duplicated by Drive.
+    let captures: Vec<(i64, i64, String, String)> = plays.iter()
+        .map(|play| {
+            play.id.map(|id| (id, play.timestamp_utc, play.title.clone(), play.artist.clone()))
+                .ok_or_else(|| SyncError::DatabaseError("Queued Desktop play is missing its ID".into()))
+        })
+        .collect::<Result<_, _>>()?;
+    let (local_device_id, known_origins) =
+        crate::commands::drive_sync::persist_lan_origin_metadata(
+            &state.app_data_dir, &captures
+        ).map_err(SyncError::DatabaseError)?;
+    let drive_provenance: Vec<Option<(String, String)>> = plays.iter()
+        .map(|play| play.id.map(|id| (local_device_id.clone(), known_origins[&id].clone())))
+        .collect();
+    let verified_owners = crate::commands::drive_sync::lan_play_account_owners(
+        &state.app_data_dir,
+        &captures.iter().map(|(id, _, _, _)| *id).collect::<Vec<_>>(),
+    ).map_err(SyncError::DatabaseError)?;
     let payload = SyncPayload {
         auth_token: pairing.auth_token.clone(),
         device_name,
         plays: plays
             .iter()
-            .map(|s| SyncPlay {
+            .zip(drive_provenance.iter())
+            .map(|(s, origin)| SyncPlay {
+                origin_device_id: origin.as_ref().map(|value| value.0.clone()),
+                origin_event_id: origin.as_ref().map(|value| value.1.clone()),
+                origin_source: origin.as_ref().map(|_| format!("desktop:{}", s.source_app)),
+                origin_account_subject: s.id.and_then(|id| verified_owners.get(&id).cloned()),
                 title: s.title.clone(),
                 artist: s.artist.clone(),
                 album: s.album.clone(),
@@ -206,8 +265,14 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
     let mut last_error_reason = format!("primary ({}): no response", pairing.phone_ip);
 
     match send_with_retry(&phone_url, &payload).await {
-        Ok(()) => {
+        Ok(next_token) => {
             let db = state.db.lock().await;
+            if let Some(token) = next_token {
+                let mut updated_pairing = pairing.clone();
+                updated_pairing.auth_token = token;
+                db.save_pairing(&updated_pairing)
+                    .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
+            }
             db.mark_plays_synced(&ids)
                 .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
             db.record_sync(count as i64, "success", None)
@@ -252,13 +317,15 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
                 info!("Trying network-remembered IP for '{}': {}", net_id, net_url);
 
                 match send_with_retry(&net_url, &payload).await {
-                    Ok(()) => {
+                    Ok(next_token) => {
                         // Update stored primary IP too
                         let mut updated_pairing = pairing.clone();
                         updated_pairing.phone_ip = remembered_ip.clone();
                         updated_pairing.phone_port = remembered_port;
+                        if let Some(token) = next_token { updated_pairing.auth_token = token; }
                         let db = state.db.lock().await;
-                        let _ = db.save_pairing(&updated_pairing);
+                        db.save_pairing(&updated_pairing)
+                            .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
                         let _ = db.upsert_network_ip(net_id, &remembered_ip, remembered_port);
                         db.mark_plays_synced(&ids)
                             .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
@@ -295,15 +362,15 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         info!("mDNS discovered phone at {}, attempting sync...", mdns_url);
 
         match send_with_retry(&mdns_url, &payload).await {
-            Ok(()) => {
+            Ok(next_token) => {
                 // Update the stored IP so future syncs use the new address directly
                 let mut updated_pairing = pairing.clone();
                 updated_pairing.phone_ip = discovered.ip.clone();
                 updated_pairing.phone_port = discovered.port;
+                if let Some(token) = next_token { updated_pairing.auth_token = token; }
                 let db = state.db.lock().await;
-                if let Err(e) = db.save_pairing(&updated_pairing) {
-                    warn!("Failed to update pairing with new IP: {}", e);
-                }
+                db.save_pairing(&updated_pairing)
+                    .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
 
                 db.mark_plays_synced(&ids)
                     .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
@@ -345,14 +412,14 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         info!("Trying hotspot fallback: {}", fallback_url);
 
         match send_with_retry(&fallback_url, &payload).await {
-            Ok(()) => {
+            Ok(next_token) => {
                 // Update stored IP to gateway since that's where the phone is reachable
                 let mut updated_pairing = pairing.clone();
                 updated_pairing.phone_ip = gateway.clone();
+                if let Some(token) = next_token { updated_pairing.auth_token = token; }
                 let db = state.db.lock().await;
-                if let Err(e) = db.save_pairing(&updated_pairing) {
-                    warn!("Failed to update pairing with gateway IP: {}", e);
-                }
+                db.save_pairing(&updated_pairing)
+                    .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
 
                 db.mark_plays_synced(&ids)
                     .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
@@ -393,11 +460,13 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
         info!("Subnet scan found phone at {}, attempting sync...", scan_url);
 
         match send_with_retry(&scan_url, &payload).await {
-            Ok(()) => {
+            Ok(next_token) => {
                 let mut updated_pairing = pairing.clone();
                 updated_pairing.phone_ip = found_ip.clone();
+                if let Some(token) = next_token { updated_pairing.auth_token = token; }
                 let db = state.db.lock().await;
-                let _ = db.save_pairing(&updated_pairing);
+                db.save_pairing(&updated_pairing)
+                    .map_err(|e| SyncError::DatabaseError(e.to_string()))?;
                 if let Some(ref net_id) = current_network {
                     let _ = db.upsert_network_ip(net_id, &found_ip, pairing.phone_port);
                 }
@@ -486,8 +555,26 @@ pub async fn ping_phone(ip: &str, port: u16) -> bool {
     client.get(&url).send().await.map(|r| r.status().is_success()).unwrap_or(false)
 }
 
+/// HTTP 200 is not an acknowledgment unless the paired phone confirms the
+/// JSON body. Return the rotated LAN token, if any, so subsequent batches work.
+fn parse_lan_acknowledgment(body: &str) -> Result<Option<String>, SyncError> {
+    let value: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| SyncError::Network(format!("Unreadable LAN acknowledgment: {e}")))?;
+    if value.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
+        return Err(SyncError::Network(
+            "Phone did not confirm the LAN play batch".to_string()
+        ));
+    }
+    match value.get("next_token") {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(token)) if (16..=128).contains(&token.len()) =>
+            Ok(Some(token.clone())),
+        _ => Err(SyncError::Network("Phone returned an invalid LAN token".into())),
+    }
+}
+
 /// Send payload with exponential backoff retries and HMAC signature.
-async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<(), SyncError> {
+async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<Option<String>, SyncError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
         .build()
@@ -511,19 +598,22 @@ async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<(), SyncErr
             .await
         {
             Ok(response) => {
-                if response.status().is_success() {
-                    return Ok(());
-                }
                 let status = response.status();
                 let body = response.text().await.unwrap_or_default();
-                if body.contains("battery_critical") {
-                    return Err(SyncError::BatteryCritical);
+                if status.is_success() {
+                    match parse_lan_acknowledgment(&body) {
+                        Ok(rotated_token) => return Ok(rotated_token),
+                        Err(error) => last_error = error,
+                    }
+                } else {
+                    if body.contains("battery_critical") {
+                        return Err(SyncError::BatteryCritical);
+                    }
+                    if status.is_client_error() {
+                        return Err(SyncError::Rejected(format!("HTTP {} - {}", status, body)));
+                    }
+                    last_error = SyncError::Network(format!("HTTP {} - {}", status, body));
                 }
-                // Don't retry on auth errors (4xx)
-                if status.is_client_error() {
-                    return Err(SyncError::Rejected(format!("HTTP {} - {}", status, body)));
-                }
-                last_error = SyncError::Rejected(format!("HTTP {} - {}", status, body));
             }
             Err(e) => {
                 last_error = SyncError::Unreachable(e.to_string());
@@ -541,4 +631,35 @@ async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<(), SyncErr
     }
 
     Err(last_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn simultaneous_lan_batch_runs_share_one_lock() {
+        let first = LAN_SYNC_LOCK.lock().await;
+        assert!(LAN_SYNC_LOCK.try_lock().is_err());
+        drop(first);
+        assert!(LAN_SYNC_LOCK.try_lock().is_ok());
+    }
+
+
+    #[test]
+    fn lan_ack_requires_confirmed_json_before_deleting_local_plays() {
+        for invalid in [
+            "", "not json", "{}", "{\"ok\":false}", "{\"ok\":\"true\"}",
+            "{\"accepted\":10}", "{\"ok\":true,\"next_token\":\"short\"}",
+        ] {
+            assert!(parse_lan_acknowledgment(invalid).is_err(), "{invalid}");
+        }
+        assert_eq!(
+            parse_lan_acknowledgment("{\"ok\":true,\"accepted\":1,\"duplicates\":0}").unwrap(),
+            None,
+        );
+        let token = "a".repeat(48);
+        let ack = format!("{{\"ok\":true,\"next_token\":\"{token}\"}}");
+        assert_eq!(parse_lan_acknowledgment(&ack).unwrap(), Some(token));
+    }
 }

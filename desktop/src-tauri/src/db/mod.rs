@@ -210,35 +210,58 @@ impl Database {
     // --- Plays ---
 
     pub fn insert_play(&self, play: &Play) -> Result<i64, rusqlite::Error> {
-        self.conn.execute(
+        // Capture-time account attribution is atomic with the listening row.
+        // A later account switch must never claim a previous account's plays.
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
             "INSERT INTO scrobbles (title, artist, album, duration_ms, timestamp_utc, source_app, status, listened_ms, skipped, replay_count, is_muted, completion_percentage, pause_count, seek_count, session_id, site, content_type, volume_level)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
-                play.title,
-                play.artist,
-                play.album,
-                play.duration_ms,
-                play.timestamp_utc,
-                play.source_app,
-                play.status.as_str(),
-                play.listened_ms,
-                play.skipped as i32,
-                play.replay_count,
-                play.is_muted as i32,
-                play.completion_percentage,
-                play.pause_count,
-                play.seek_count,
-                play.session_id,
-                play.site,
-                play.content_type,
+                play.title, play.artist, play.album, play.duration_ms,
+                play.timestamp_utc, play.source_app, play.status.as_str(),
+                play.listened_ms, play.skipped as i32, play.replay_count,
+                play.is_muted as i32, play.completion_percentage, play.pause_count,
+                play.seek_count, play.session_id, play.site, play.content_type,
                 play.volume_level,
             ],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        let id = tx.last_insert_rowid();
+        // An older installation may still have an email-only Drive schema
+        // when music detection runs, before open_sync_db upgrades it. Never
+        // fail to record a play just because optional Drive tables are old.
+        let ready_drive_schema: bool = tx.query_row(
+            "SELECT
+                (SELECT COUNT(*) FROM pragma_table_info('drive_sync_state')
+                 WHERE name IN ('enabled', 'account_subject',
+                                'last_verified_account_subject')) = 3
+                AND EXISTS(SELECT 1 FROM sqlite_master
+                           WHERE type = 'table' AND name = 'drive_event_state')",
+            [], |row| row.get(0),
+        )?;
+        if ready_drive_schema {
+            tx.execute(
+                "INSERT OR IGNORE INTO drive_event_state
+                 (scrobble_id, drive_imported, owner_account_subject)
+                 SELECT ?1, 0,
+                    CASE WHEN enabled != 0 AND account_subject IS NOT NULL
+                               AND account_subject != ''
+                         THEN account_subject
+                         WHEN last_verified_account_subject IS NULL
+                         THEN NULL
+                         ELSE 'legacy-unverified' END
+                 FROM drive_sync_state WHERE id = 1",
+                [id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(id)
     }
 
     pub fn has_recent_play(&self, title: &str, artist: &str, timestamp: i64) -> Result<bool, rusqlite::Error> {
-        let window = 60_000; // ±60 seconds
+        // Only de-duplicate repeated LOCAL detector callbacks, not two real
+        // short-track replays. Cross-device Drive imports reconcile separately
+        // with their own 60s temporal window and origin-event IDs.
+        let window = 5_000; // ±5 seconds
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM scrobbles WHERE title = ?1 AND artist = ?2
              AND timestamp_utc BETWEEN ?3 AND ?4",
@@ -281,13 +304,16 @@ impl Database {
         rows.collect()
     }
 
+    /// Android permits at most 100 plays per LAN request. Send bounded batches
+    /// and preserve the rest of an offline backlog for subsequent deliveries.
     pub fn get_queued_plays(&self) -> Result<Vec<Play>, rusqlite::Error> {
+        const MAX_LAN_BATCH_PLAYS: i64 = 50;
         let mut stmt = self.conn.prepare(
             "SELECT id, title, artist, album, duration_ms, timestamp_utc, source_app, status, listened_ms, skipped,
                     replay_count, is_muted, completion_percentage, pause_count, seek_count, session_id, site, content_type, volume_level
-             FROM scrobbles WHERE status = 'queued' ORDER BY timestamp_utc ASC",
+             FROM scrobbles WHERE status = 'queued' ORDER BY timestamp_utc ASC, id ASC LIMIT ?1",
         )?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map([MAX_LAN_BATCH_PLAYS], |row| {
             Ok(Play {
                 id: Some(row.get(0)?),
                 title: row.get(1)?,
@@ -410,13 +436,12 @@ impl Database {
         Ok(count)
     }
 
-    /// Remove old synced scrobbles (>30 days) and old sync_history entries (>90 days)
-    /// to prevent unbounded table growth.
+    /// Retain all listening events, including those synced over LAN/Drive.
+    /// Users need a multi-year local history: successful delivery to another
+    /// device is not permission to erase their only local copy. Only prune the
+    /// diagnostic sync log, never the scrobbles themselves.
     pub fn prune_old_data(&self) -> Result<(usize, usize), rusqlite::Error> {
-        let scrobbles_pruned = self.conn.execute(
-            "DELETE FROM scrobbles WHERE status = 'synced' AND timestamp_utc < strftime('%s', 'now', '-30 days') * 1000",
-            [],
-        )?;
+        let scrobbles_pruned = 0usize;
         let history_pruned = self.conn.execute(
             "DELETE FROM sync_history WHERE synced_at < datetime('now', '-90 days')",
             [],
@@ -818,5 +843,135 @@ impl Database {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         self.conn.execute(&sql, param_refs.as_slice())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod local_dedup_tests {
+    use super::*;
+
+    #[test]
+    fn recorded_play_owner_is_pinned_before_account_switch() {
+        let db = Database {
+            conn: Connection::open_in_memory().unwrap(),
+            db_path: std::path::PathBuf::new(),
+        };
+        db.initialize_tables().unwrap();
+        db.conn.execute_batch(
+            "CREATE TABLE drive_sync_state (id INTEGER PRIMARY KEY,
+                enabled INTEGER, account_subject TEXT,
+                last_verified_account_subject TEXT);
+             INSERT INTO drive_sync_state VALUES (1, 1, 'google-a', 'google-a');
+             CREATE TABLE drive_event_state (
+                scrobble_id INTEGER PRIMARY KEY, drive_imported INTEGER,
+                owner_account_subject TEXT);"
+        ).unwrap();
+        let play = Play {
+            id: None, title: "Music".into(), artist: "Artist".into(),
+            album: String::new(), duration_ms: 180000, timestamp_utc: 1700000000000,
+            source_app: "Spotify".into(), status: PlayStatus::Queued,
+            listened_ms: 60000, skipped: false, replay_count: 0,
+            is_muted: false, completion_percentage: 33.0,
+            pause_count: 0, seek_count: 0, session_id: String::new(),
+            site: String::new(), content_type: "MUSIC".into(), volume_level: 0.5,
+        };
+        let owned_a = db.insert_play(&play).unwrap();
+        db.conn.execute("UPDATE drive_sync_state SET enabled = 0", []).unwrap();
+        let local_only = db.insert_play(&play).unwrap();
+        db.conn.execute("UPDATE drive_sync_state SET enabled = 1,
+                         account_subject = 'google-b'", []).unwrap();
+        let owned_b = db.insert_play(&play).unwrap();
+        let owner = |id: i64| -> String {
+            db.conn.query_row("SELECT owner_account_subject FROM drive_event_state
+                               WHERE scrobble_id = ?1", [id], |row| row.get(0)).unwrap()
+        };
+        assert_eq!(owner(owned_a), "google-a");
+        assert_eq!(owner(local_only), "legacy-unverified");
+        assert_eq!(owner(owned_b), "google-b");
+        // A fresh installation never linked to Google may share its initial
+        // archive when the user opts in with Connect Google for the first time.
+        db.conn.execute("UPDATE drive_sync_state SET enabled = 0,
+            account_subject = NULL, last_verified_account_subject = NULL", []).unwrap();
+        let first_time = db.insert_play(&play).unwrap();
+        let unknown_owner: Option<String> = db.conn.query_row(
+            "SELECT owner_account_subject FROM drive_event_state
+             WHERE scrobble_id = ?1", [first_time], |row| row.get(0)
+        ).unwrap();
+        assert_eq!(unknown_owner, None);
+
+        let legacy = Database {
+            conn: Connection::open_in_memory().unwrap(),
+            db_path: std::path::PathBuf::new(),
+        };
+        legacy.initialize_tables().unwrap();
+        legacy.conn.execute_batch(
+            "CREATE TABLE drive_sync_state (id INTEGER PRIMARY KEY, enabled INTEGER);
+             INSERT INTO drive_sync_state VALUES (1, 0);"
+        ).unwrap();
+        assert!(legacy.insert_play(&play).unwrap() > 0,
+            "old Drive schema must not break the local music recorder");
+    }
+
+
+
+    #[test]
+    fn routine_maintenance_keeps_synced_plays_for_long_term_history() {
+        let db = Database {
+            conn: Connection::open_in_memory().unwrap(),
+            db_path: std::path::PathBuf::new(),
+        };
+        db.initialize_tables().unwrap();
+        db.conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc, status)
+             VALUES ('Old song', 'Artist', 1, 'synced')",
+            [],
+        ).unwrap();
+        let (removed, _) = db.prune_old_data().unwrap();
+        assert_eq!(removed, 0);
+        assert_eq!(db.conn.query_row::<i64, _, _>(
+            "SELECT COUNT(*) FROM scrobbles", [], |row| row.get(0),
+        ).unwrap(), 1);
+    }
+
+    #[test]
+    fn lan_queue_batches_old_backlog_without_dropping_plays() {
+        let db = Database {
+            conn: Connection::open_in_memory().unwrap(),
+            db_path: std::path::PathBuf::new(),
+        };
+        db.initialize_tables().unwrap();
+        for n in 0..125_i64 {
+            db.conn.execute(
+                "INSERT INTO scrobbles (title, artist, timestamp_utc, status)
+                 VALUES ('Offline track', 'Artist', ?1, 'queued')", [n],
+            ).unwrap();
+        }
+        let first = db.get_queued_plays().unwrap();
+        assert_eq!(first.len(), 50);
+        db.mark_plays_synced(&first.iter().filter_map(|p| p.id).collect::<Vec<_>>()).unwrap();
+        let second = db.get_queued_plays().unwrap();
+        assert_eq!(second.len(), 50);
+        db.mark_plays_synced(&second.iter().filter_map(|p| p.id).collect::<Vec<_>>()).unwrap();
+        assert_eq!(db.get_queued_plays().unwrap().len(), 25);
+    }
+
+    #[test]
+    fn detector_retries_are_ignored_but_distinct_short_track_replays_survive() {
+        let db = Database {
+            conn: Connection::open_in_memory().expect("in-memory db"),
+            db_path: std::path::PathBuf::new(),
+        };
+        db.initialize_tables().expect("db schema");
+        db.conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc) VALUES (?1, ?2, ?3)",
+            params!["Song", "Artist", 1_700_000_000_000_i64],
+        ).expect("first play");
+
+        assert!(db.has_recent_play("Song", "Artist", 1_700_000_004_000).unwrap(),
+            "the same detector callback within 5s is a duplicate");
+        assert!(!db.has_recent_play("Song", "Artist", 1_700_000_025_000).unwrap(),
+            "a genuine replay after 25s must be recorded");
+        assert!(!db.has_recent_play("Different Song", "Artist", 1_700_000_001_000).unwrap(),
+            "different songs are not duplicates");
     }
 }

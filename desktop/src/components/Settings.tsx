@@ -1,7 +1,26 @@
 import { useEffect, useState } from "react";
-import { Save, RotateCcw, Keyboard, Battery, BatteryWarning } from "lucide-react";
-import { getSettings, updateSettings, setLogLevel, getAutostartEnabled, setAutostartEnabled, getBatteryStatus, getBatterySaverActive } from "../lib/api";
-import type { Settings as SettingsType, BatteryStatus } from "../lib/types";
+import {
+  Save,
+  RotateCcw,
+  Keyboard,
+  Battery,
+  BatteryWarning,
+  Cloud,
+  RefreshCw,
+  LogOut,
+  Trash2,
+} from "lucide-react";
+import {
+  getSettings,
+  updateSettings,
+  runDriveSyncAction,
+  setLogLevel,
+  getAutostartEnabled,
+  setAutostartEnabled,
+  getBatteryStatus,
+  getBatterySaverActive,
+} from "../lib/api";
+import type { Settings as SettingsType, BatteryStatus, DriveSyncAction } from "../lib/types";
 
 const defaultSettings: SettingsType = {
   sync_interval_minutes: 30,
@@ -11,7 +30,34 @@ const defaultSettings: SettingsType = {
   start_on_boot: false,
   theme: "dark",
   low_battery_threshold: 15,
+  drive_sync_enabled: false,
+  drive_sync_configured: false,
+  drive_sync_connected: false,
+  drive_sync_account_email: null,
+  drive_sync_last_sync_time: null,
+  drive_sync_last_error: null,
+  drive_sync_last_uploaded: 0,
+  drive_sync_last_imported: 0,
 };
+
+function withDriveStatus(core: SettingsType, current: SettingsType): SettingsType {
+  return {
+    ...core,
+    drive_sync_enabled: current.drive_sync_enabled,
+    drive_sync_configured: current.drive_sync_configured,
+    drive_sync_connected: current.drive_sync_connected,
+    drive_sync_account_email: current.drive_sync_account_email,
+    drive_sync_last_sync_time: current.drive_sync_last_sync_time,
+    drive_sync_last_error: current.drive_sync_last_error,
+    drive_sync_last_uploaded: current.drive_sync_last_uploaded,
+    drive_sync_last_imported: current.drive_sync_last_imported,
+  };
+}
+
+function formatDriveSyncTime(timestamp: number | null): string {
+  if (!timestamp) return "Never";
+  return new Date(timestamp).toLocaleString();
+}
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType>(defaultSettings);
@@ -21,6 +67,7 @@ export default function Settings() {
   const [autostartEnabled, setAutostartEnabledLocal] = useState(false);
   const [batteryStatus, setBatteryStatus] = useState<BatteryStatus | null>(null);
   const [batterySaverActive, setBatterySaverActive] = useState(false);
+  const [driveBusy, setDriveBusy] = useState(false);
 
   useEffect(() => {
     getSettings()
@@ -41,15 +88,57 @@ export default function Settings() {
     setError("");
     try {
       await updateSettings(settings);
-      // Sync autostart with OS
       if (settings.start_on_boot !== autostartEnabled) {
         await setAutostartEnabled(settings.start_on_boot);
         setAutostartEnabledLocal(settings.start_on_boot);
       }
+      setSettings(await getSettings());
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       setError(String(e));
+    }
+  };
+
+  const handleDriveAction = async (action: DriveSyncAction) => {
+    if (driveBusy) return;
+    if (
+      action === "delete" &&
+      !window.confirm(
+        "Delete all Tempo cross-device history batches from Google Drive? Local listening history will stay on your devices, and Drive sync will be turned off on linked Tempo clients as they reconnect."
+      )
+    ) {
+      return;
+    }
+
+    if (
+      action === "share-history" &&
+      !window.confirm(
+        "Upload all locally recorded Desktop history to the connected Google account, including plays previously associated with a different account? Do this only if you want that account to receive those records. Large backlogs will finish on later syncs."
+      )
+    ) {
+      return;
+    }
+
+    setDriveBusy(true);
+    setError("");
+    try {
+      const refreshed = await runDriveSyncAction(settings, action);
+      // Refresh only Drive status. Keep unsaved ordinary form edits in the UI;
+      // a Drive action must never behave like an implicit Save button.
+      setSettings((current) => withDriveStatus(current, refreshed));
+    } catch (e) {
+      setError(String(e));
+      // The backend may update Drive error/connection state even when the action
+      // fails. Refresh only that status and preserve every unsaved ordinary form
+      // edit, exactly like the success path.
+      getSettings()
+        .then((refreshed) => {
+          setSettings((current) => withDriveStatus(current, refreshed));
+        })
+        .catch(() => {});
+    } finally {
+      setDriveBusy(false);
     }
   };
 
@@ -63,10 +152,13 @@ export default function Settings() {
   };
 
   const handleReset = async () => {
-    setSettings(defaultSettings);
     setError("");
     try {
-      await updateSettings(defaultSettings);
+      // Reset ordinary Desktop behavior only. Google Drive is an independent
+      // opt-in and must never be disconnected by a generic settings reset.
+      const reset = withDriveStatus(defaultSettings, settings);
+      await updateSettings(reset);
+      setSettings(await getSettings());
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -146,7 +238,7 @@ export default function Settings() {
         <div className="toggle-row">
           <div className="toggle-info">
             <h4>Auto-sync interval</h4>
-            <p>How often to batch-send queued plays to your phone</p>
+            <p>How often to batch-sync through enabled transports (LAN and optional Google Drive)</p>
           </div>
           <select
             className="form-select"
@@ -164,6 +256,136 @@ export default function Settings() {
             <option value="720">Every 12 hours</option>
             <option value="1440">Every 24 hours</option>
           </select>
+        </div>
+      </div>
+
+      {/* Google Drive cross-device sync */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+          <Cloud size={18} style={{ color: "var(--accent)" }} />
+          <div>
+            <h3 className="section-title" style={{ margin: 0 }}>Google Drive Cross-Device History</h3>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
+              Optional. Links Desktop, Android and browser history even when they are on different networks.
+            </div>
+          </div>
+        </div>
+
+        {!settings.drive_sync_configured ? (
+          <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+            Google Drive sync is unavailable in this build because its Desktop OAuth client is not configured.
+            Local tracking and direct LAN sync continue to work normally.
+          </div>
+        ) : settings.drive_sync_enabled && !settings.drive_sync_connected ? (
+          <div>
+            <p role="alert" style={{ fontSize: 13, color: "var(--danger)", marginTop: 0 }}>
+              Google Drive sync is enabled but the Google session is unavailable.
+              Reconnect Google to resume cloud transfers; local history and LAN sync are unaffected.
+            </p>
+            {settings.drive_sync_last_error && (
+              <p style={{ fontSize: 13, color: "var(--danger)" }}>{settings.drive_sync_last_error}</p>
+            )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn btn-primary" disabled={driveBusy}
+                onClick={() => handleDriveAction("connect")}>
+                <Cloud size={16} />{driveBusy ? "Connecting…" : "Reconnect Google"}
+              </button>
+              <button className="btn btn-secondary" disabled={driveBusy}
+                onClick={() => handleDriveAction("disconnect")}>
+                <LogOut size={16} />Disconnect locally
+              </button>
+            </div>
+          </div>
+        ) : !settings.drive_sync_enabled ? (
+          <div>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 0 }}>
+              Drive sync is off. Tempo will only use your private Google Drive application-data space after you connect explicitly.
+            </p>
+            <button
+              className="btn btn-primary"
+              disabled={driveBusy}
+              onClick={() => handleDriveAction("connect")}
+            >
+              <Cloud size={16} />
+              {driveBusy ? "Connecting…" : "Connect Google"}
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: "grid", gap: 6, fontSize: 13, marginBottom: 14 }}>
+              <div>
+                <strong>Account:</strong>{" "}
+                <span style={{ color: "var(--text-secondary)" }}>
+                  {settings.drive_sync_account_email ?? "Connected Google account"}
+                </span>
+              </div>
+              <div>
+                <strong>Last sync:</strong>{" "}
+                <span style={{ color: "var(--text-secondary)" }}>
+                  {formatDriveSyncTime(settings.drive_sync_last_sync_time)}
+                </span>
+              </div>
+              <div style={{ color: "var(--text-secondary)" }}>
+                Last run: {settings.drive_sync_last_uploaded} sent · {settings.drive_sync_last_imported} received
+              </div>
+              {settings.drive_sync_last_error && (
+                <div style={{ color: "var(--danger)" }}>{settings.drive_sync_last_error}</div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                className="btn btn-primary"
+                disabled={driveBusy}
+                onClick={() => handleDriveAction("sync")}
+              >
+                <RefreshCw size={16} />
+                {driveBusy ? "Working…" : "Sync now"}
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={driveBusy}
+                onClick={() => handleDriveAction("restore")}
+                title="Re-read all historical Drive batches without erasing local plays"
+              >
+                <RefreshCw size={16} />
+                Restore full history
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={driveBusy}
+                onClick={() => handleDriveAction("share-history")}
+                title="Authorize older Desktop records for this Google account"
+              >
+                <Cloud size={16} />
+                Upload older local history
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={driveBusy}
+                title="Disconnect only this computer; Android and browser sync remain connected."
+                onClick={() => handleDriveAction("disconnect")}
+              >
+                <LogOut size={16} />
+                Disconnect
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={driveBusy}
+                onClick={() => handleDriveAction("delete")}
+                style={{ color: "var(--danger)" }}
+              >
+                <Trash2 size={16} />
+                Delete cloud history
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 14 }}>
+          Google Drive is independent from LAN. Disconnect affects this computer only.
+          After Delete cloud history, reconnection does not re-upload your old recordings.
+          Use “Upload older local history” to authorize restoring that archive.
         </div>
       </div>
 
