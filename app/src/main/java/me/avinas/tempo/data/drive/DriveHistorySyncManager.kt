@@ -811,11 +811,10 @@ class DriveHistorySyncManager @Inject constructor(
     }
 
     /**
-     * Reset only cloud-sync cursors. Local listening history is never deleted.
-     * Re-enabling Drive history sync later intentionally republishes locally-owned
-     * history if a newer shared deletion marker was acknowledged.
-     */
-    /** A database restore may change primary keys for every Google owner.
+     * Reset cloud-sync cursors without deleting local history. A separate
+     * per-account suppression fence prevents cloud-deleted plays from being
+     * republished on an ordinary reconnect.
+     * A database restore may change primary keys for every Google owner.
      * Invalid-row retry IDs also refer to old primary keys and must be cleared.
      * A cloud deletion marker, by contrast, resets only the active account.
      */
