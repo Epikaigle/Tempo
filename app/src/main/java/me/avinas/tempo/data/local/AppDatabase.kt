@@ -76,7 +76,7 @@ abstract class AppDatabase : RoomDatabase() {
         private const val TAG = "AppDatabase"
 
         /** Current Room schema version — keep in sync with the @Database(version = ...) annotation. */
-        const val VERSION = 56
+        const val VERSION = 57
 
         /**
          * Migration from version 6 to 7: Add enhanced tracking columns to listening_events.
