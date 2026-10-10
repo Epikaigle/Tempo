@@ -901,7 +901,6 @@ async function listBatches(accessToken: string, createdAfter: number | null): Pr
     const params = new URLSearchParams({
       spaces: 'appDataFolder',
       q: clauses.join(' and '),
-      orderBy: 'createdTime asc',
       pageSize: '1000',
       fields: 'nextPageToken,files(id,name,size,md5Checksum,createdTime,modifiedTime,appProperties)',
     });
@@ -914,6 +913,14 @@ async function listBatches(accessToken: string, createdAfter: number | null): Pr
     files.push(...(data.files ?? []));
     pageToken = data.nextPageToken ?? null;
   } while (pageToken);
+  // Server-side createdTime sorting can time out on very large Drive archives.
+  // Locally sort all enumerated pages before advancing an import checkpoint.
+  files.sort((a, b) => {
+    const at = a.createdTime ? Date.parse(a.createdTime) : 0;
+    const bt = b.createdTime ? Date.parse(b.createdTime) : 0;
+    return (Number.isFinite(at) ? at : 0) - (Number.isFinite(bt) ? bt : 0) ||
+      a.id.localeCompare(b.id);
+  });
   return files;
 }
 
