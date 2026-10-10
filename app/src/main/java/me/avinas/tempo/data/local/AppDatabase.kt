@@ -33,7 +33,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         DailyChallenge::class, // Gamification: daily challenges
         DesktopPairingSession::class, // Desktop Satellite pairing sessions
     ],
-    version = 56, // Migration 56: persist Drive/LAN event origins across sync batches
+    version = 57, // Migration 57: account-scoped listening history
     exportSchema = true, // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
@@ -2664,6 +2664,17 @@ abstract class AppDatabase : RoomDatabase() {
         /**
          * All migrations in order.
          */
+        /** The owner of older imported records cannot be verified from Room alone. */
+        val MIGRATION_56_57 = object : Migration(56, 57) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE listening_events ADD COLUMN drive_account_subject TEXT DEFAULT NULL")
+                db.execSQL("UPDATE listening_events SET drive_account_subject = 'legacy-unverified' " +
+                    "WHERE source LIKE 'drive:%'")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_drive_account_subject " +
+                    "ON listening_events(drive_account_subject)")
+            }
+        }
+
         val ALL_MIGRATIONS =
             arrayOf(
                 MIGRATION_6_7,
@@ -2716,6 +2727,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_53_54, // Unique daily_challenges(challenge_id,date) + user_level.banked_challenge_xp
                 MIGRATION_54_55, // Dedupe listening_events by (session_id, track_id, timestamp)
                 MIGRATION_55_56, // Persist exact producer aliases for Drive/LAN reconciliation
+                MIGRATION_56_57, // Tag Drive imports with account identity and quarantine old unknowns
             )
     }
 }
