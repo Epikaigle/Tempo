@@ -362,32 +362,62 @@ export async function getDrivePendingPlays(
   after?: { timestampUtc: number; id: number },
 ): Promise<Play[]> {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readonly');
-    const store = tx.objectStore(PLAYS_STORE);
-    const index = store.index('timestampUtc');
-    const plays: Play[] = [];
-    const request = index.openCursor(after
-      ? IDBKeyRange.lowerBound(after.timestampUtc) : undefined);
+  if (!accountSubject) {
+    // Compatibility for non-Drive consumers; production Drive sync always
+    // supplies a verified Google subject and uses the indexed code below.
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(PLAYS_STORE, 'readonly');
+      const matches: Play[] = [];
+      const request = tx.objectStore(PLAYS_STORE).index('timestampUtc')
+        .openCursor(after ? IDBKeyRange.lowerBound(after.timestampUtc) : undefined);
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || matches.length >= limit) { resolve(matches); return; }
+        const play = cursor.value as Play;
+        if (play.id != null && !play.driveImported && !play.driveUploadedAt &&
+          (!after || play.timestampUtc > after.timestampUtc ||
+            (play.timestampUtc === after.timestampUtc && play.id > after.id))) matches.push(play);
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('Drive queue scan failed'));
+    });
+  }
 
+  const readOwner = (owner: string) => new Promise<Play[]>((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readonly');
+    const result: Play[] = [];
+    const floor = after && Number.isFinite(after.timestampUtc) ? after.timestampUtc : 0;
+    const request = tx.objectStore(PLAYS_STORE).index('drivePendingIndexKey')
+      .openCursor(IDBKeyRange.bound([owner, after ? floor : -Number.MAX_SAFE_INTEGER],
+                                    [owner, Number.MAX_SAFE_INTEGER]));
     request.onsuccess = () => {
       const cursor = request.result;
-      if (cursor && plays.length < limit) {
-        const play = cursor.value as Play;
-        if (play.id != null &&
-            (!after || play.timestampUtc > after.timestampUtc ||
-              (play.timestampUtc === after.timestampUtc && play.id > after.id)) &&
-            !play.driveImported && !play.driveUploadedAt &&
-            (!accountSubject || !play.driveAccountSubject || play.driveAccountSubject === accountSubject)) {
-          plays.push(play);
-        }
-        cursor.continue();
-      } else {
-        resolve(plays);
-      }
+      if (!cursor || result.length >= limit) { resolve(result); return; }
+      const play = cursor.value as Play;
+      const ts = Number.isFinite(play.timestampUtc) ? play.timestampUtc : 0;
+      if (play.id != null && !play.driveImported && !play.driveUploadedAt &&
+          (!after || ts > floor || (ts === floor && play.id > after.id))) result.push(play);
+      cursor.continue();
     };
     request.onerror = () => reject(request.error);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Indexed Drive queue read failed'));
   });
+  // Unowned plays captured after sign-in belong to the current account until
+  // their first Drive operation persists that association. Previously owned
+  // plays have a distinct owner key and are never searched for this account.
+  const [owned, unowned] = await Promise.all([
+    readOwner(accountSubject), readOwner(UNOWNED_DRIVE_QUEUE),
+  ]);
+  return [...owned, ...unowned]
+    .sort((a, b) => {
+      const at = Number.isFinite(a.timestampUtc) ? a.timestampUtc : 0;
+      const bt = Number.isFinite(b.timestampUtc) ? b.timestampUtc : 0;
+      return at - bt || (a.id ?? 0) - (b.id ?? 0);
+    })
+    .slice(0, limit);
 }
 
 /**
