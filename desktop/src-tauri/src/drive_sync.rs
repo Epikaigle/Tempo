@@ -1253,6 +1253,30 @@ fn pin_local_origin(
     Ok(origin)
 }
 
+/// Read each queued LAN playback's verified Google owner. Do not substitute
+/// the account selected *today* for a recording owned by a previous account.
+pub(crate) fn lan_play_account_owners(
+    app_data_dir: &Path,
+    play_ids: &[i64],
+) -> Result<HashMap<i64, String>, String> {
+    let conn = open_sync_db(app_data_dir)?;
+    let mut stmt = conn.prepare(
+        "SELECT owner_account_subject FROM drive_event_state
+         WHERE scrobble_id = ?1 AND drive_imported = 0",
+    ).map_err(|e| e.to_string())?;
+    let mut owners = HashMap::new();
+    for id in play_ids {
+        let owner: Option<String> = stmt.query_row([id], |row| row.get(0))
+            .optional().map_err(|e| e.to_string())?.flatten();
+        if let Some(owner) = owner.filter(|v|
+            !v.is_empty() && v != LEGACY_UNVERIFIED_ACCOUNT && !v.contains('@')
+        ) {
+            owners.insert(*id, owner);
+        }
+    }
+    Ok(owners)
+}
+
 /// Ensure LAN-first captures have the exact identity later used by Drive.
 /// The identity is saved atomically even if LAN delivery fails or is retried.
 pub(crate) fn persist_lan_origin_metadata(
