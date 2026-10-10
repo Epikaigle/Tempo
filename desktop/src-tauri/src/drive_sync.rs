@@ -479,6 +479,15 @@ struct SubjectBoundRefreshToken {
     refresh_token: String,
 }
 
+fn decode_subject_bound_token(value: &str, expected_subject: &str) -> Result<String, String> {
+    let stored: SubjectBoundRefreshToken = serde_json::from_str(value)
+        .map_err(|_| "Google credential format is outdated. Reconnect Google securely.".to_string())?;
+    if stored.sub != expected_subject || stored.refresh_token.is_empty() {
+        return Err("Google credential belongs to a different account. Reconnect securely.".to_string());
+    }
+    Ok(stored.refresh_token)
+}
+
 async fn secure_refresh_token_get(
     device_id: &str,
     expected_subject: &str,
@@ -490,12 +499,7 @@ async fn secure_refresh_token_get(
             .map_err(|e| format!("Could not open the OS credential store: {e}"))?;
         match entry.get_password() {
             Ok(value) if !value.is_empty() => {
-                let stored: SubjectBoundRefreshToken = serde_json::from_str(&value)
-                    .map_err(|_| "Google credential format is outdated. Reconnect Google securely.".to_string())?;
-                if stored.sub != expected_subject || stored.refresh_token.is_empty() {
-                    return Err("Google credential belongs to a different account. Reconnect securely.".to_string());
-                }
-                Ok(Some(stored.refresh_token))
+                Ok(Some(decode_subject_bound_token(&value, &expected_subject)?))
             }
             Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(format!(
@@ -2682,6 +2686,23 @@ mod tests {
              INSERT INTO drive_event_state (scrobble_id, drive_imported, drive_uploaded_at) VALUES (1, 0, 200), (2, 1, 200);"
         ).unwrap();
         (directory, conn)
+    }
+
+
+    #[test]
+    fn keyring_credentials_are_never_reused_across_google_subjects() {
+        let account_a = serde_json::to_string(&SubjectBoundRefreshToken {
+            sub: "google-a".into(), refresh_token: "secret-a".into(),
+        }).unwrap();
+        let account_b = serde_json::to_string(&SubjectBoundRefreshToken {
+            sub: "google-b".into(), refresh_token: "secret-b".into(),
+        }).unwrap();
+        assert_eq!(decode_subject_bound_token(&account_a, "google-a").unwrap(), "secret-a");
+        assert_eq!(decode_subject_bound_token(&account_b, "google-b").unwrap(), "secret-b");
+        assert!(decode_subject_bound_token(&account_b, "google-a").is_err(),
+            "an interrupted B sign-in must not later refresh account A with B's keyring token");
+        assert!(decode_subject_bound_token("old-plaintext-refresh-token", "google-a").is_err(),
+            "unbound legacy credentials require fresh consent");
     }
 
     #[tokio::test]
