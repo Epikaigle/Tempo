@@ -1288,6 +1288,16 @@ fn local_to_wire(device_id: &str, play: &LocalPlay) -> WireEvent {
 }
 
 fn pending_local_plays(conn: &Connection) -> Result<Vec<LocalPlay>, String> {
+    pending_local_plays_page(conn, None, MAX_LOCAL_SCAN)
+}
+
+// The ordered keyset cursor keeps scanning after invalid records without
+// relying on OFFSET (the pending set shrinks as good records are uploaded).
+fn pending_local_plays_page(
+    conn: &Connection,
+    after: Option<(i64, i64)>,
+    limit: usize,
+) -> Result<Vec<LocalPlay>, String> {
     let subject = load_state(conn)?.account_subject;
     let mut stmt = conn
         .prepare(
@@ -1299,11 +1309,13 @@ fn pending_local_plays(conn: &Connection) -> Result<Vec<LocalPlay>, String> {
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE COALESCE(d.drive_imported, 0) = 0 AND d.drive_uploaded_at IS NULL
                AND (?2 IS NULL OR d.owner_account_subject IS NULL OR d.owner_account_subject = ?2)
+               AND (?3 IS NULL OR s.timestamp_utc > ?3
+                    OR (s.timestamp_utc = ?3 AND s.id > ?4))
              ORDER BY s.timestamp_utc ASC, s.id ASC LIMIT ?1",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(params![MAX_LOCAL_SCAN as i64, subject], |row| {
+        .query_map(params![limit as i64, subject, after.map(|v| v.0), after.map(|v| v.1)], |row| {
             Ok(LocalPlay {
                 id: row.get(0)?,
                 origin_event_id: row.get(18)?,
@@ -1400,87 +1412,99 @@ async fn upload_batch(
     Ok(())
 }
 
+#[derive(Default)]
+struct DriveUploadProgress {
+    uploaded: usize,
+    rejected: usize,
+    first_rejected_id: Option<i64>,
+}
+
 async fn upload_local_history(
     app_data_dir: &Path,
     access_token: &str,
     device_id: &str,
-) -> Result<usize, String> {
+) -> Result<DriveUploadProgress, String> {
     let conn = open_sync_db(app_data_dir)?;
     let generation = load_state(&conn)?.accepted_disable_version.max(0);
-    let pending = pending_local_plays(&conn)?;
-    let mut uploaded = 0usize;
-    for chunk in pending.chunks(BATCH_SIZE) {
-        // Persist canonical IDs before the HTTP upload: otherwise a successful
-        // upload followed by a crash (or an earlier LAN delivery) could leave no
-        // stored identity, and a later metadata correction would change the ID.
-        let pinned = {
-            // The SQLite transaction is deliberately scoped before HTTP await:
-            // holding a rusqlite Transaction across await makes this Tauri
-            // command future !Send on every supported operating system.
-            let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-            let mut pinned = HashMap::new();
-            for play in chunk {
-                pinned.insert(play.id, pin_local_origin(
-                    &tx, device_id, play.id, play.timestamp_utc, &play.title, &play.artist
-                )?);
+    let mut progress = DriveUploadProgress::default();
+    let mut after: Option<(i64, i64)> = None;
+    loop {
+        let pending = pending_local_plays_page(&conn, after, MAX_LOCAL_SCAN)?;
+        if pending.is_empty() {
+            break;
+        }
+        after = pending.last().map(|play| (play.timestamp_utc, play.id));
+        let count = pending.len();
+        let mut valid_plays = Vec::new();
+        for play in &pending {
+            let wire = local_to_wire(device_id, play);
+            if valid_event(&wire) {
+                valid_plays.push(play);
+            } else {
+                progress.rejected += 1;
+                progress.first_rejected_id.get_or_insert(play.id);
+                log::warn!(
+                    "Cannot upload Desktop play {}: metadata exceeds protocol-v1 limits or required data is missing",
+                    play.id
+                );
             }
-            tx.commit().map_err(|e| e.to_string())?;
-            pinned
-        };
-        let events: Vec<WireEvent> = chunk
-            .iter()
-            .map(|play| {
+        }
+        // An invalid legacy local record must not poison the other events in
+        // its batch. The record stays in SQLite for repair and future retries.
+        for chunk in valid_plays.chunks(BATCH_SIZE) {
+            let pinned = {
+                let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+                let mut pinned = HashMap::new();
+                for play in chunk {
+                    pinned.insert(play.id, pin_local_origin(
+                        &tx, device_id, play.id, play.timestamp_utc, &play.title, &play.artist
+                    )?);
+                }
+                tx.commit().map_err(|e| e.to_string())?;
+                pinned
+            };
+            let events: Vec<WireEvent> = chunk.iter().map(|play| {
                 let mut wire = local_to_wire(device_id, play);
                 wire.event_id = pinned[&play.id].clone();
                 wire
-            })
-            .collect();
-        if events.is_empty() {
-            continue;
-        }
-        let id = batch_id(&events);
-        let batch = WireBatch {
-            schema_version: SCHEMA_VERSION,
-            batch_id: id.clone(),
-            source_device_id: device_id.to_string(),
-            // The random Tempo device UUID already identifies the producer. Do not upload
-            // the operating-system hostname, which may contain a person's or company's name.
-            source_device_name: "Tempo Desktop".to_string(),
-            source_platform: "desktop".to_string(),
-            created_at_utc: events.iter().map(|event| event.timestamp_utc).max().unwrap_or(1),
-            events,
-        };
-        let compressed = encode_batch(&batch)?;
-        let file_name = batch_file_name(generation, device_id, &id);
-        upload_batch(
-            access_token,
-            &file_name,
-            device_id,
-            generation,
-            &compressed,
-        )
-        .await?;
+            }).collect();
+            let id = batch_id(&events);
+            let batch = WireBatch {
+                schema_version: SCHEMA_VERSION,
+                batch_id: id.clone(),
+                source_device_id: device_id.to_string(),
+                source_device_name: "Tempo Desktop".to_string(),
+                source_platform: "desktop".to_string(),
+                created_at_utc: events.iter().map(|event| event.timestamp_utc).max().unwrap_or(1),
+                events,
+            };
+            let compressed = encode_batch(&batch)?;
+            let file_name = batch_file_name(generation, device_id, &id);
+            upload_batch(access_token, &file_name, device_id, generation, &compressed).await?;
 
-        let uploaded_at = now_ms();
-        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        for play in chunk {
-            let origin = &pinned[&play.id];
-            tx.execute(
-                "INSERT INTO drive_event_state
-                 (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
-                 VALUES (?1, ?2, ?3, 0, ?4)
-                 ON CONFLICT(scrobble_id) DO UPDATE SET origin_event_id = excluded.origin_event_id,
-                    origin_device_id = excluded.origin_device_id, drive_imported = 0,
-                    drive_uploaded_at = excluded.drive_uploaded_at",
-                params![play.id, origin, device_id, uploaded_at],
-            )
-            .map_err(|e| e.to_string())?;
-            remember_origin(&tx, play.id, device_id, &origin)?;
+            let uploaded_at = now_ms();
+            let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+            for play in chunk {
+                let origin = &pinned[&play.id];
+                tx.execute(
+                    "INSERT INTO drive_event_state
+                     (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at)
+                     VALUES (?1, ?2, ?3, 0, ?4)
+                     ON CONFLICT(scrobble_id) DO UPDATE SET origin_event_id = excluded.origin_event_id,
+                        origin_device_id = excluded.origin_device_id, drive_imported = 0,
+                        drive_uploaded_at = excluded.drive_uploaded_at",
+                    params![play.id, origin, device_id, uploaded_at],
+                ).map_err(|e| e.to_string())?;
+                remember_origin(&tx, play.id, device_id, &origin)?;
+            }
+            tx.commit().map_err(|e| e.to_string())?;
+            progress.uploaded += chunk.len();
         }
-        tx.commit().map_err(|e| e.to_string())?;
-        uploaded += chunk.len();
+        if count < MAX_LOCAL_SCAN {
+            break;
+        }
     }
-    Ok(uploaded)
+    Ok(progress)
 }
 
 fn valid_event(event: &WireEvent) -> bool {
@@ -1961,19 +1985,26 @@ async fn run_sync_locked_with_restore(
     let device_id = load_state(&conn)?.device_id;
     drop(conn);
 
-    let uploaded = upload_local_history(app_data_dir, &token, &device_id).await?;
-    let (imported, duplicates) = download_remote_history(app_data_dir, &token, &device_id, include_own_device_batches).await?;
-
+    // A transient upload error must not prevent receiving other devices'
+    // history. Both transports are attempted before surfacing an error.
+    let upload = upload_local_history(app_data_dir, &token, &device_id).await;
+    let download = download_remote_history(
+        app_data_dir, &token, &device_id, include_own_device_batches
+    ).await;
+    let (imported, duplicates) = download?;
+    let progress = upload?;
+    let warning = progress.first_rejected_id.map(|first_id| format!(
+        "{} local Desktop play(s) could not be exported (first local ID {}).          They remain saved locally. Correct their metadata to retry.",
+        progress.rejected, first_id
+    ));
     let conn = open_sync_db(app_data_dir)?;
     conn.execute(
-        "UPDATE drive_sync_state SET last_sync_time = ?1, last_error = NULL,
+        "UPDATE drive_sync_state SET last_sync_time = ?1, last_error = ?4,
          last_uploaded = ?2, last_imported = ?3 WHERE id = 1",
-        params![now_ms(), uploaded as i64, imported as i64],
-    )
-    .map_err(|e| e.to_string())?;
-
+        params![now_ms(), progress.uploaded as i64, imported as i64, warning],
+    ).map_err(|e| e.to_string())?;
     Ok(DriveSyncResult {
-        uploaded,
+        uploaded: progress.uploaded,
         imported,
         duplicates,
         disabled_by_remote_delete: false,
@@ -2607,6 +2638,53 @@ mod tests {
         assert_eq!(load_state(&again).unwrap().last_verified_account_subject.as_deref(),
             Some("google-stable-123"));
         drop(again);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+
+    #[test]
+    fn invalid_local_play_does_not_block_the_following_page() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute_batch(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('', 'Artist', 1700000000000);
+             INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('Valid', 'Artist', 1700000000001);
+             INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('Later', 'Artist', 1700000000002);",
+        ).unwrap();
+        let producer = load_state(&conn).unwrap().device_id;
+        let first = pending_local_plays_page(&conn, None, 2).unwrap();
+        assert_eq!(first.len(), 2);
+        assert!(!valid_event(&local_to_wire(&producer, &first[0])));
+        assert!(valid_event(&local_to_wire(&producer, &first[1])));
+        let tail = pending_local_plays_page(
+            &conn, Some((first[1].timestamp_utc, first[1].id)), 2
+        ).unwrap();
+        assert_eq!(tail.len(), 1);
+        assert!(valid_event(&local_to_wire(&producer, &tail[0])));
+        let still_pending: i64 = conn.query_row("SELECT COUNT(*) FROM scrobbles",
+            [], |row| row.get(0)).unwrap();
+        assert_eq!(still_pending, 3, "invalid local events must never be deleted");
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn oversized_local_metadata_is_rejected_without_mutating_sqlite() {
+        let (directory, conn) = history_storage_fixture();
+        let title = "A".repeat(1200);
+        conn.execute("INSERT INTO scrobbles (title, artist, timestamp_utc)
+            VALUES (?1, 'Artist', 1700000000000)", [&title]).unwrap();
+        let producer = load_state(&conn).unwrap().device_id;
+        let pending = pending_local_plays(&conn).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert!(!valid_event(&local_to_wire(&producer, &pending[0])));
+        let persisted: String = conn.query_row(
+            "SELECT title FROM scrobbles", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(persisted, title);
+        drop(conn);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
