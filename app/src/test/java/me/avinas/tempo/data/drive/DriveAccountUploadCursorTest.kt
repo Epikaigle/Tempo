@@ -31,6 +31,15 @@ class DriveAccountUploadCursorTest {
     }
 
     @Test
+    fun deletionSuppressesOldRecordsButAllowsLaterCaptures() {
+        val deletedThrough = 500L
+        assertEquals(true, DriveHistorySyncManager.isCloudSuppressedRow(1L, deletedThrough))
+        assertEquals(true, DriveHistorySyncManager.isCloudSuppressedRow(500L, deletedThrough))
+        assertEquals(false, DriveHistorySyncManager.isCloudSuppressedRow(501L, deletedThrough))
+        assertEquals(false, DriveHistorySyncManager.isCloudSuppressedRow(1L, 0L))
+    }
+
+    @Test
     fun firstExplicitOptInDoesNotDiscardExistingLocalHistory() {
         assertEquals(0L, DriveHistorySyncManager.chooseAccountUploadCursor(
             null, null, false, 0L, 5000L,
