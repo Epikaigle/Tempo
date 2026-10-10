@@ -276,6 +276,26 @@ export default function Settings() {
             Google Drive sync is unavailable in this build because its Desktop OAuth client is not configured.
             Local tracking and direct LAN sync continue to work normally.
           </div>
+        ) : settings.drive_sync_enabled && !settings.drive_sync_connected ? (
+          <div>
+            <p role="alert" style={{ fontSize: 13, color: "var(--danger)", marginTop: 0 }}>
+              Google Drive sync is enabled but the Google session is unavailable.
+              Reconnect Google to resume cloud transfers; local history and LAN sync are unaffected.
+            </p>
+            {settings.drive_sync_last_error && (
+              <p style={{ fontSize: 13, color: "var(--danger)" }}>{settings.drive_sync_last_error}</p>
+            )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn btn-primary" disabled={driveBusy}
+                onClick={() => handleDriveAction("connect")}>
+                <Cloud size={16} />{driveBusy ? "Connecting…" : "Reconnect Google"}
+              </button>
+              <button className="btn btn-secondary" disabled={driveBusy}
+                onClick={() => handleDriveAction("disconnect")}>
+                <LogOut size={16} />Disconnect locally
+              </button>
+            </div>
+          </div>
         ) : !settings.drive_sync_enabled ? (
           <div>
             <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 0 }}>
