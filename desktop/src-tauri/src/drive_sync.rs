@@ -2798,6 +2798,28 @@ mod tests {
         assert!(!should_delete_history_batch(&file, 20, true));
     }
 
+    #[tokio::test]
+    async fn transient_drive_response_retries_then_succeeds() {
+        // Loopback stub exercises the real reqwest request and response code.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/test", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            for status in ["503 Service Unavailable", "200 OK"] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = [0u8; 1024];
+                socket.read(&mut request).await.unwrap();
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nRetry-After: 0\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        let response = send_drive_idempotent(http_client().unwrap().get(url))
+            .await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        server.await.unwrap();
+    }
+
     #[test]
     fn retries_only_transient_drive_status_codes() {
         assert!(transient_drive_response(StatusCode::TOO_MANY_REQUESTS));
