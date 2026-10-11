@@ -55,6 +55,28 @@ class DriveAccountUploadCursorTest {
     }
 
     @Test
+    fun lanRelayNeverChangesGoogleOwnerWithoutExplicitConsent() {
+        val permits = DriveHistorySyncManager::canRelayLanToCloud
+        val marker = 1_700_000_000_000L
+        val oldPlay = marker - 5_000L
+        val newPlay = marker + 5_000L
+
+        // A device pairing proves the sender, not the account that owns its music.
+        assertEquals(false, permits("lan-unverified", "google-b", oldPlay, 501L, 0L, 0L))
+        assertEquals(false, permits("google-a", "google-b", oldPlay, 501L, marker, 0L))
+        assertEquals(false, permits(null, "google-b", newPlay, 501L, marker, 0L))
+
+        // A late LAN delivery created before cloud deletion must not resurrect it.
+        assertEquals(false, permits("google-a", "google-a", oldPlay, 501L, marker, 0L))
+        assertEquals(true, permits("google-a", "google-a", newPlay, 501L, marker, 0L))
+
+        // The user may authorize only records present in the approved snapshot.
+        assertEquals(true, permits("google-a", "google-a", oldPlay, 500L, marker, 500L))
+        assertEquals(false, permits("google-a", "google-a", oldPlay, 501L, marker, 500L))
+        assertEquals(true, permits("google-a", "google-a", oldPlay, 10L, 0L, 0L))
+    }
+
+    @Test
     fun firstExplicitOptInDoesNotDiscardExistingLocalHistory() {
         assertEquals(0L, DriveHistorySyncManager.chooseAccountUploadCursor(
             null, null, false, 0L, 5000L,
