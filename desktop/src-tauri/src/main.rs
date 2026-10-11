@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    tempo_desktop_lib::run()
+    tempo_desktop_lib::run();
 }

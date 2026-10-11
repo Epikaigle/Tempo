@@ -2632,7 +2632,7 @@ mod tests {
         let first = fixture_batch().events[0].clone();
         assert!(insert_remote_event_for_account(
             &conn, "remote-a", &first, "google-account-a").unwrap());
-        let mut second = first.clone();
+        let mut second = first;
         second.event_id = "b".repeat(64);
         second.timestamp_utc += 500;
         assert!(insert_remote_event_for_account(
@@ -2666,7 +2666,7 @@ mod tests {
             [], |row| row.get(0)
         ).unwrap();
         assert_eq!(quarantined, LEGACY_UNVERIFIED_ACCOUNT);
-        let mut second = first.clone();
+        let mut second = first;
         second.event_id = "c".repeat(64);
         assert!(insert_remote_event_for_account(
             &conn, "remote-b", &second, "google-account-b").unwrap());
@@ -3509,7 +3509,7 @@ mod tests {
         let mut wrong_size = file.clone();
         wrong_size.size = Some((bytes.len() + 1).to_string());
         assert!(validate_compressed_metadata(&wrong_size, &bytes).is_err());
-        let mut missing_hash = file.clone();
+        let mut missing_hash = file;
         missing_hash.app_properties.remove(APP_PROPERTY_SHA256);
         assert!(validate_compressed_metadata(&missing_hash, &bytes).is_err());
     }

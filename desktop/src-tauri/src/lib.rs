@@ -101,10 +101,10 @@ pub fn run() {
                 .port();
 
             app.manage(AppState {
-                db: db.clone(),
-                queue: queue.clone(),
-                media: media.clone(),
-                app_data_dir: app_data_dir.clone(),
+                db,
+                queue,
+                media,
+                app_data_dir,
                 pairing_callback_port,
                 last_sync_time: Arc::new(AtomicI64::new(0)),
             });
