@@ -713,6 +713,19 @@ pub(crate) async fn download_remote_history(
             continue;
         };
         if generation < accepted_generation {
+            // A file with missing generation metadata can still be a newly
+            // re-seeded batch: its immutable filename is the deletion guard.
+            // Report conflicting metadata instead of deleting valid new history.
+            if !should_delete_history_batch(&file, accepted_generation, false) {
+                mark_rejected_batch(
+                    &conn,
+                    account_subject,
+                    &file,
+                    "Generation metadata conflicts with newer batch filename",
+                )?;
+                max_created = max_created.max(created);
+                continue;
+            }
             clear_rejected_batch(&conn, account_subject, &file.id)?;
             // Never allow a pre-delete batch (including an upload that completed
             // after the deletion request) to resurrect in a newly accepted
