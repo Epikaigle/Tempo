@@ -2234,9 +2234,9 @@ fn accept_deletion_marker(conn: &Connection, marker_version: i64, message: Optio
              cloud_suppressed = 1
          WHERE drive_imported = 0
            AND (owner_account_subject IS NULL OR owner_account_subject = ?1)
-           AND scrobble_id IN (
+           AND (drive_uploaded_at IS NOT NULL OR scrobble_id IN (
                SELECT id FROM scrobbles WHERE timestamp_utc <= ?2
-           )",
+           ))",
         params![subject, marker_version],
     ).map_err(|e| e.to_string())?;
     tx.execute(
