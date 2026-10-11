@@ -268,6 +268,29 @@ class DriveHistoryProtocolTest {
     }
 
     @Test
+    fun `Drive cleanup protects current batches with missing or corrupt generation metadata`() {
+        val id = "a".repeat(64)
+        val current = DriveHistoryProtocol.fileName("device-a", id, 200L)
+        val newer = DriveHistoryProtocol.fileName("device-a", id, 201L)
+        val older = DriveHistoryProtocol.fileName("device-a", id, 100L)
+        for (ownerDelete in listOf(false, true)) {
+            assertFalse(DriveHistoryProtocol.shouldDeleteHistoryBatch(current, null, 200L, ownerDelete))
+            assertFalse(DriveHistoryProtocol.shouldDeleteHistoryBatch(newer, "invalid", 200L, ownerDelete))
+        }
+        assertFalse(DriveHistoryProtocol.shouldDeleteHistoryBatch(older, "invalid", 200L, false))
+        assertTrue(DriveHistoryProtocol.shouldDeleteHistoryBatch(older, "invalid", 200L, true))
+        assertTrue(DriveHistoryProtocol.shouldDeleteHistoryBatch(older, null, 200L, false))
+        assertTrue(DriveHistoryProtocol.shouldDeleteHistoryBatch(
+            "tempo_history_v1_legacy.json.gz", null, 200L, false))
+        assertFalse(DriveHistoryProtocol.shouldDeleteHistoryBatch(
+            "tempo_history_v1_corrupt-no-extension", "invalid", 200L, false))
+        assertTrue(DriveHistoryProtocol.shouldDeleteHistoryBatch(
+            "tempo_history_v1_corrupt-no-extension", "invalid", 200L, true))
+        assertFalse(DriveHistoryProtocol.shouldDeleteHistoryBatch(
+            "unrelated.json.gz", "invalid", 200L, true))
+    }
+
+    @Test
     fun `late auth failures match only the token that actually failed`() {
         assertTrue(GoogleAuthManager.failedTokenIsStillCurrent("token-a", "token-a"))
         assertFalse(GoogleAuthManager.failedTokenIsStillCurrent("token-a", "token-b"))

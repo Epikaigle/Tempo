@@ -871,6 +871,17 @@ class DriveHistorySyncManager @Inject constructor(
                 continue
             }
             if (fileGeneration < acceptedGeneration) {
+                if (!DriveHistoryProtocol.shouldDeleteHistoryBatch(
+                        file.fileName,
+                        file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION],
+                        acceptedGeneration,
+                        ownerDelete = false
+                    )) {
+                    markRejectedBatch(accountSubject, file.fileId, file.fileName,
+                        "Generation metadata conflicts with newer batch filename")
+                    maxCreated = maxOf(maxCreated, file.createdAt)
+                    continue
+                }
                 // Pre-delete data (including an upload that finished after the
                 // delete request) is never allowed to resurrect. Cleanup is best
                 // effort here because failing to delete stale data must not block
@@ -1019,7 +1030,7 @@ class DriveHistorySyncManager @Inject constructor(
                 // generation N and is therefore protected from stale-device cleanup.
                 val markerVersion = appDataClient.bumpHistoryDisableMarker()
                 acceptDeletionMarker(markerVersion)
-                val deleted = appDataClient.deleteHistoryBatchesBeforeGeneration(markerVersion)
+                val deleted = appDataClient.deleteHistoryBatchesBeforeGeneration(markerVersion, ownerDelete = true)
                 clearAllRejectedBatches(accountEmail)
                 deleted
             }

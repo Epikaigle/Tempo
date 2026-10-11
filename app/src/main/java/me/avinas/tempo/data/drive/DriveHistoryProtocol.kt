@@ -65,6 +65,30 @@ object DriveHistoryProtocol {
         return value.toLongOrNull()?.takeIf { it in 0..MAX_WIRE_INTEGER }
     }
 
+    /** Decide cleanup using both the immutable filename and Drive metadata.
+     * Damaged/missing appProperties cannot make a current-generation filename
+     * look like an old batch. Only the account owner's deliberate delete may
+     * remove a file whose generation is unrecognizable.
+     */
+    fun shouldDeleteHistoryBatch(
+        fileName: String,
+        metadataGeneration: String?,
+        markerGeneration: Long,
+        ownerDelete: Boolean,
+    ): Boolean {
+        if (!fileName.startsWith(FILE_PREFIX)) return false
+        if (!fileName.endsWith(".json.gz")) return ownerDelete
+
+        val encoded = fileName.removePrefix(FILE_PREFIX).substringBefore('_')
+        val nameGeneration = encoded.takeIf { it.startsWith('g') }?.drop(1)
+            ?.takeIf { it.isNotEmpty() && it.all { char -> char in '0'..'9' } }
+            ?.toLongOrNull()?.takeIf { it in 0..MAX_WIRE_INTEGER }
+        if (nameGeneration != null && nameGeneration >= markerGeneration) return false
+
+        val declaredGeneration = parseGeneration(metadataGeneration)
+        return declaredGeneration?.let { it < markerGeneration } ?: ownerDelete
+    }
+
     /** The wire limit counts UTF-16 units; never split a supplementary code point. */
     internal fun truncateText(value: String, maxLength: Int = MAX_PRIMARY_TEXT_LENGTH): String {
         require(maxLength >= 0)

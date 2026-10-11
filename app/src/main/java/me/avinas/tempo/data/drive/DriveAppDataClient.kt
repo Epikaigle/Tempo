@@ -357,16 +357,18 @@ class DriveAppDataClient @Inject constructor(
      * starts publishing generation N, a stale device honoring the deletion marker
      * may clean generation < N but can never erase the newly seeded generation N.
      */
-    suspend fun deleteHistoryBatchesBeforeGeneration(generation: Long): Int =
+    suspend fun deleteHistoryBatchesBeforeGeneration(generation: Long, ownerDelete: Boolean = false): Int =
         withContext(Dispatchers.IO) {
             require(generation >= 0L) { "Drive history generation cannot be negative" }
             val files = listHistoryBatches()
             var deleted = 0
             for (file in files) {
-                val fileGeneration = DriveHistoryProtocol.parseGeneration(
-                    file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION]
-                ) ?: continue
-                if (fileGeneration >= generation) continue
+                if (!DriveHistoryProtocol.shouldDeleteHistoryBatch(
+                        file.fileName,
+                        file.appProperties[DriveHistoryProtocol.APP_PROPERTY_GENERATION],
+                        generation,
+                        ownerDelete
+                    )) continue
                 deleteStrict(file.fileId)
                 deleted++
             }

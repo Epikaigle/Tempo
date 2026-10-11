@@ -621,6 +621,12 @@ async function downloadRemotePlays(
       continue;
     }
     if (generation < acceptedGeneration) {
+      if (!shouldDeleteHistoryBatch(file, acceptedGeneration, false)) {
+        rejectedMap = markRejectedBatchRecord(rejectedMap, accountSubject, file.id, file.name,
+          'Generation metadata conflicts with newer batch filename');
+        maxCreated = Math.max(maxCreated, created);
+        continue;
+      }
       // A pre-delete/in-flight stale batch must never resurrect after generation
       // N was accepted. Cleanup is best effort so current-generation sync can
       // continue even if this stale file races another client's deletion.
@@ -868,7 +874,7 @@ async function deleteDriveHistoryUnlocked(): Promise<number> {
       null,
       currentAccount,
     );
-    return await deleteBatchesBeforeGeneration(session.accessToken, markerVersion);
+    return await deleteBatchesBeforeGeneration(session.accessToken, markerVersion, true);
   } catch (err) {
     // A confirmed marker leaves sync off even if cleanup failed. If publishing
     // the marker itself failed, retain the previous opt-in/scheduling state.
@@ -1088,6 +1094,23 @@ function batchGeneration(file: DriveFileRecord): number | null {
   return Number.isSafeInteger(raw) && raw >= 0 ? raw : null;
 }
 
+/** Conservative cleanup decision shared by owner deletion and stale clients.
+ * Never remove current-generation files if their filename is trustworthy but
+ * their Drive appProperties have been stripped or corrupted.
+ */
+export function shouldDeleteHistoryBatch(
+  file: DriveFileRecord, markerGeneration: number, ownerDelete: boolean,
+): boolean {
+  if (!file.name.startsWith(FILE_PREFIX)) return false;
+  if (!file.name.endsWith('.json.gz')) return ownerDelete;
+  const match = /^g(\\d+)_/.exec(file.name.slice(FILE_PREFIX.length));
+  const namedGeneration = match ? Number(match[1]) : null;
+  if (namedGeneration != null && Number.isSafeInteger(namedGeneration) &&
+      namedGeneration >= markerGeneration) return false;
+  const declaredGeneration = batchGeneration(file);
+  return declaredGeneration == null ? ownerDelete : declaredGeneration < markerGeneration;
+}
+
 async function deleteDriveFileStrict(accessToken: string, fileId: string): Promise<void> {
   const response = await driveFetch(accessToken, `${DRIVE_API}/files/${encodeURIComponent(fileId)}`, {
     method: 'DELETE',
@@ -1096,16 +1119,13 @@ async function deleteDriveFileStrict(accessToken: string, fileId: string): Promi
   if (response.status !== 404) await assertDriveResponse(response);
 }
 
-async function deleteBatchesBeforeGeneration(accessToken: string, generation: number): Promise<number> {
+async function deleteBatchesBeforeGeneration(
+  accessToken: string, generation: number, ownerDelete = false,
+): Promise<number> {
   const files = await listBatches(accessToken, null);
   let deleted = 0;
   for (const file of files) {
-    const fileGeneration = batchGeneration(file);
-    if (fileGeneration == null) {
-      console.warn(`[Tempo] Leaving Drive history batch with invalid generation untouched: ${file.name}`);
-      continue;
-    }
-    if (fileGeneration >= generation) continue;
+    if (!shouldDeleteHistoryBatch(file, generation, ownerDelete)) continue;
     await deleteDriveFileStrict(accessToken, file.id);
     deleted++;
   }

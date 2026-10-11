@@ -270,3 +270,24 @@ assert.equal(fixture.stored[stateKey].rejectedBatches['google-a'][0].fileId, 'mi
 console.log('  ✓ malformed Drive metadata is visible and retained as a rejected batch');
 
 console.log('\n10 Drive lifecycle scenarios passed');
+
+
+// Stale clients cannot delete current-generation uploads solely because Drive
+// appProperties were stripped; a deliberate owner delete can remove malformed old files.
+const historyName = (generation) =>
+  `tempo_history_v1_g${generation}_device-a_${'a'.repeat(64)}.json.gz`;
+const historyFile = (generation, property) => ({
+  name: historyName(generation),
+  appProperties: property == null ? {} : { tempo_generation: property },
+});
+for (const ownerDelete of [false, true]) {
+  assert.equal(drive.shouldDeleteHistoryBatch(historyFile(200), 200, ownerDelete), false);
+  assert.equal(drive.shouldDeleteHistoryBatch(historyFile(201, 'invalid'), 200, ownerDelete), false);
+}
+assert.equal(drive.shouldDeleteHistoryBatch(historyFile(100, 'invalid'), 200, false), false);
+assert.equal(drive.shouldDeleteHistoryBatch(historyFile(100, 'invalid'), 200, true), true);
+assert.equal(drive.shouldDeleteHistoryBatch(historyFile(100), 200, false), true);
+assert.equal(drive.shouldDeleteHistoryBatch({
+  name: 'tempo_history_v1_malformed', appProperties: { tempo_generation: 'invalid' },
+}, 200, true), true);
+console.log('  ✓ cleanup preserves newer generations despite corrupt/missing properties');
