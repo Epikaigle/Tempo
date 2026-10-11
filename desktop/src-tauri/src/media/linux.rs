@@ -252,7 +252,7 @@ fn score_candidate(c: &PlayerCandidate) -> i32 {
 fn select_best_candidate(candidates: Vec<PlayerCandidate>) -> RawMediaInfo {
     let best = candidates
         .into_iter()
-        .max_by_key(|c| score_candidate(c))
+        .max_by_key(score_candidate)
         .expect("select_best_candidate called with empty vec");
 
     RawMediaInfo {

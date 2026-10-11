@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Duration;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use tauri_plugin_shell::ShellExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use url::Url;
@@ -205,6 +205,12 @@ fn oauth_client_id() -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
+        .or_else(|| {
+            std::env::var("TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP")
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        })
 }
 
 fn now_ms() -> i64 {
@@ -219,6 +225,7 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
     let conn = Connection::open(db_path(app_data_dir)).map_err(|e| e.to_string())?;
     conn.execute_batch(
         "
+        PRAGMA busy_timeout = 5000;
         PRAGMA journal_mode=WAL;
         CREATE TABLE IF NOT EXISTS drive_sync_state (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -332,13 +339,22 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
 
     // After a prior Google connection, unowned captures that were left behind
     // during a disconnected session must not be claimed by the next account.
-    conn.execute(
-        "INSERT OR IGNORE INTO drive_event_state (scrobble_id, drive_imported, owner_account_subject)
-         SELECT id, 0, ?1 FROM scrobbles
-         WHERE (SELECT enabled FROM drive_sync_state WHERE id = 1) = 0
-           AND (SELECT last_verified_account_subject FROM drive_sync_state WHERE id = 1) IS NOT NULL",
-        [LEGACY_UNVERIFIED_ACCOUNT],
-    ).map_err(|e| e.to_string())?;
+    let should_quarantine_disconnected: bool = conn
+        .query_row(
+            "SELECT enabled = 0 AND last_verified_account_subject IS NOT NULL
+             FROM drive_sync_state WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+    if should_quarantine_disconnected {
+        conn.execute(
+            "INSERT OR IGNORE INTO drive_event_state (scrobble_id, drive_imported, owner_account_subject)
+             SELECT id, 0, ?1 FROM scrobbles",
+            [LEGACY_UNVERIFIED_ACCOUNT],
+        )
+        .map_err(|e| e.to_string())?;
+    }
 
     // Email-only installations cannot prove who owns previously collected
     // scrobbles. Quarantine them rather than uploading them to another account.
@@ -899,6 +915,7 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
         .append_pair("code_challenge_method", "S256")
         .append_pair("state", &state_nonce);
 
+    #[allow(deprecated)]
     app.shell()
         .open(auth_url.to_string(), None)
         .map_err(|e| format!("Could not open Google sign-in in your browser: {e}"))?;
@@ -1319,6 +1336,7 @@ fn event_id(device_id: &str, play: &LocalPlay) -> String {
  /// a Desktop event under a new Android-owned identity.
 /// Fetch previously published IDs alongside the producer ID in one DB read,
 /// so LAN and Drive agree even after a local title/artist correction.
+#[cfg(test)]
 pub(crate) fn lan_origin_metadata(
     app_data_dir: &Path,
     local_ids: &[i64],
@@ -1523,6 +1541,7 @@ fn local_to_wire(device_id: &str, play: &LocalPlay) -> WireEvent {
     }
 }
 
+#[cfg(test)]
 fn pending_local_plays(conn: &Connection) -> Result<Vec<LocalPlay>, String> {
     pending_local_plays_page(conn, None, MAX_LOCAL_SCAN)
 }
@@ -1735,7 +1754,7 @@ async fn upload_local_history(
                         drive_uploaded_at = excluded.drive_uploaded_at",
                     params![play.id, origin, device_id, uploaded_at],
                 ).map_err(|e| e.to_string())?;
-                remember_origin(&tx, play.id, device_id, &origin)?;
+                remember_origin(&tx, play.id, device_id, origin)?;
             }
             tx.commit().map_err(|e| e.to_string())?;
             progress.uploaded += chunk.len();
@@ -3424,7 +3443,7 @@ mod tests {
             total_pause_duration_ms: 0, position_updates_count: 0,
         };
         WireBatch {
-            schema_version: 1, batch_id: batch_id(&[event.clone()]), source_device_id: "device-1".into(),
+            schema_version: 1, batch_id: batch_id(std::slice::from_ref(&event)), source_device_id: "device-1".into(),
             source_device_name: "Tempo Desktop".into(), source_platform: "desktop".into(),
             created_at_utc: 1_700_000_000_000, events: vec![event],
         }
@@ -3696,7 +3715,7 @@ mod tests {
             "69bd5521a322b3d1aaeca431b7380bd49f3a28e1c1d1b1dc0a754ca37e6a06b4"
         );
         let wire = local_to_wire("device-1", &play);
-        let batch = batch_id(&[wire.clone()]);
+        let batch = batch_id(std::slice::from_ref(&wire));
         assert_eq!(batch, batch_id(&[wire]));
         assert_eq!(
             batch,
@@ -3751,7 +3770,8 @@ mod tests {
             for status in ["503 Service Unavailable", "200 OK"] {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 let mut request = [0u8; 1024];
-                socket.read(&mut request).await.unwrap();
+                let n = socket.read(&mut request).await.unwrap();
+                assert!(n > 0);
                 let response = format!(
                     "HTTP/1.1 {status}\r\nRetry-After: 0\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
                 );

@@ -9,11 +9,11 @@ pub fn get_default_gateway() -> Option<String> {
     }
     #[cfg(target_os = "linux")]
     {
-        return get_gateway_linux();
+        get_gateway_linux()
     }
     #[cfg(target_os = "windows")]
     {
-        return get_gateway_windows();
+        get_gateway_windows()
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {

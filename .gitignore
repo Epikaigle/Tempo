@@ -101,6 +101,7 @@ desktopplan.md
 desktop/node_modules/
 desktop/dist/
 desktop/src-tauri/target/
+desktop/src-tauri/gen/
 desktop/Tempo Desktop/
 /.vscode
 BATTERY_OPTIMIZATION.md

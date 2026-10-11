@@ -155,10 +155,10 @@ pub async fn discover_confirmed_phone(
 ///
 /// Strategy order:
 /// 1. Primary stored IP
-/// 1.5 Network-remembered IP for this WiFi SSID
-/// 2. mDNS auto-discovery (handles DHCP IP changes)
-/// 3. Hotspot gateway fallback (handles tethering)
-/// 4. Subnet scan (handles multicast-blocked networks)
+/// 2. Network-remembered IP for this WiFi SSID
+/// 3. mDNS auto-discovery (handles DHCP IP changes)
+/// 4. Hotspot gateway fallback (handles tethering)
+/// 5. Subnet scan (handles multicast-blocked networks)
 ///
 /// Each strategy uses exponential backoff retries.
 pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncError> {
@@ -262,7 +262,7 @@ pub async fn sync_to_phone(app_handle: &tauri::AppHandle) -> Result<usize, SyncE
     info!("Syncing {} plays to {} (primary)", count, phone_url);
 
     let current_network = wifi::get_current_network_id();
-    let mut last_error_reason = format!("primary ({}): no response", pairing.phone_ip);
+    let mut last_error_reason;
 
     match send_with_retry(&phone_url, &payload).await {
         Ok(next_token) => {

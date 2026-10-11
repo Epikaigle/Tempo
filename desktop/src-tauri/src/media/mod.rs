@@ -28,6 +28,12 @@ pub struct MediaDetector {
     last_snapshot: Option<NowPlaying>,
 }
 
+impl Default for MediaDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MediaDetector {
     pub fn new() -> Self {
         Self {
@@ -194,11 +200,11 @@ impl MediaDetector {
         }
         #[cfg(target_os = "linux")]
         {
-            return linux::get_now_playing().await;
+            linux::get_now_playing().await
         }
         #[cfg(target_os = "windows")]
         {
-            return windows_media::get_now_playing().await;
+            windows_media::get_now_playing().await
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
         {
