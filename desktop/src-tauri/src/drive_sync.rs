@@ -2217,22 +2217,27 @@ fn accept_deletion_marker(conn: &Connection, marker_version: i64, message: Optio
         .filter(|value| !value.trim().is_empty())
         .ok_or("Cannot apply a Drive deletion without a verified Google account")?;
 
-    // Deleting the cloud archive must not silently cause its restoration.
-    // Keep uploaded_at unchanged and suppress all older local captures.
+    // Keep uploaded_at intact for old captures, but retain new recordings
+    // made offline after the server-side deletion marker. A stale reconnect
+    // must not fence those recordings merely because they existed locally.
     tx.execute(
         "INSERT OR IGNORE INTO drive_event_state
          (scrobble_id, drive_imported, owner_account_subject, cloud_suppressed)
          SELECT s.id, 0, ?1, 1 FROM scrobbles s
-         WHERE NOT EXISTS (SELECT 1 FROM drive_event_state d WHERE d.scrobble_id = s.id)",
-        [&subject],
+         WHERE s.timestamp_utc <= ?2
+           AND NOT EXISTS (SELECT 1 FROM drive_event_state d WHERE d.scrobble_id = s.id)",
+        params![subject, marker_version],
     ).map_err(|e| e.to_string())?;
     tx.execute(
         "UPDATE drive_event_state SET
              owner_account_subject = COALESCE(owner_account_subject, ?1),
              cloud_suppressed = 1
          WHERE drive_imported = 0
-           AND (owner_account_subject IS NULL OR owner_account_subject = ?1)",
-        [&subject],
+           AND (owner_account_subject IS NULL OR owner_account_subject = ?1)
+           AND scrobble_id IN (
+               SELECT id FROM scrobbles WHERE timestamp_utc <= ?2
+           )",
+        params![subject, marker_version],
     ).map_err(|e| e.to_string())?;
     tx.execute(
         "UPDATE drive_sync_state SET enabled = 0, accepted_disable_version = ?1,
