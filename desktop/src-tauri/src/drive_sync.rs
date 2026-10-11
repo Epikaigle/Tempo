@@ -237,6 +237,7 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             account_email TEXT,
             account_subject TEXT,
             last_verified_account_subject TEXT,
+            offline_capture_account_subject TEXT,
             download_cursor INTEGER NOT NULL DEFAULT 0,
             accepted_disable_version INTEGER NOT NULL DEFAULT 0,
             last_sync_time INTEGER,
@@ -251,6 +252,14 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             account_subject TEXT PRIMARY KEY NOT NULL,
             download_cursor INTEGER NOT NULL DEFAULT 0,
             accepted_disable_version INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS drive_rejected_files (
+            account_subject TEXT NOT NULL,
+            file_id TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            rejection_reason TEXT NOT NULL,
+            recorded_at INTEGER NOT NULL,
+            PRIMARY KEY (account_subject, file_id)
         );
         CREATE TABLE IF NOT EXISTS drive_event_state (
             scrobble_id INTEGER PRIMARY KEY,
@@ -318,6 +327,17 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
          WHERE last_verified_account_subject IS NULL AND account_subject IS NOT NULL", []
     ).map_err(|e| e.to_string())?;
 
+    let has_offline_owner = {
+        let mut stmt = conn.prepare("PRAGMA table_info(drive_sync_state)").map_err(|e| e.to_string())?;
+        let columns = stmt.query_map([], |row| row.get::<_, String>(1)).map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        columns.contains(&"offline_capture_account_subject".to_string())
+    };
+    if !has_offline_owner {
+        conn.execute("ALTER TABLE drive_sync_state ADD COLUMN offline_capture_account_subject TEXT", [])
+            .map_err(|e| e.to_string())?;
+    }
+
     let has_owner_column = {
         let mut stmt = conn.prepare("PRAGMA table_info(drive_event_state)")
             .map_err(|e| e.to_string())?;
@@ -356,12 +376,21 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         )
         .unwrap_or(false);
     if should_quarantine_disconnected {
-        conn.execute(
-            "INSERT OR IGNORE INTO drive_event_state (scrobble_id, drive_imported, owner_account_subject)
-             SELECT id, 0, ?1 FROM scrobbles",
-            [LEGACY_UNVERIFIED_ACCOUNT],
-        )
-        .map_err(|e| e.to_string())?;
+        // Legacy rows are quarantined only once. Modern insert_play tags every
+        // new capture atomically; routine status calls must not scan all history.
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let first = tx.execute(
+            "INSERT OR IGNORE INTO drive_sync_migrations (name) VALUES ('disconnected_legacy_quarantine_v1')",
+            [],
+        ).map_err(|e| e.to_string())?;
+        if first == 1 {
+            tx.execute(
+                "INSERT OR IGNORE INTO drive_event_state (scrobble_id, drive_imported, owner_account_subject)
+                 SELECT id, 0, ?1 FROM scrobbles",
+                [LEGACY_UNVERIFIED_ACCOUNT],
+            ).map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())?;
     }
 
     // Email-only installations cannot prove who owns previously collected
@@ -837,7 +866,8 @@ fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bool) -> Resu
     // use that credential until account identity is verified and saved again.
     transaction.execute(
         "UPDATE drive_sync_state SET enabled = 0, access_token = NULL, refresh_token = NULL,
-         token_expires_at = 0, account_email = NULL, account_subject = NULL, last_error = ?1 WHERE id = 1",
+         token_expires_at = 0, account_email = NULL, account_subject = NULL,
+         offline_capture_account_subject = NULL, last_error = ?1 WHERE id = 1",
         ["Google sign-in did not finish. Connect Google again."]
     ).map_err(|e| e.to_string())?;
     transaction.commit().map_err(|e| e.to_string())
@@ -2304,8 +2334,9 @@ fn accept_deletion_marker(conn: &Connection, marker_version: i64, message: Optio
     ).map_err(|e| e.to_string())?;
     tx.execute(
         "UPDATE drive_sync_state SET enabled = 0, accepted_disable_version = ?1,
-         download_cursor = 0, last_uploaded = 0, last_imported = 0, last_error = ?2 WHERE id = 1",
-        params![marker_version, message],
+         download_cursor = 0, last_uploaded = 0, last_imported = 0,
+         offline_capture_account_subject = ?3, last_error = ?2 WHERE id = 1",
+        params![marker_version, message, subject],
     ).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
 }
@@ -2493,7 +2524,7 @@ pub async fn drive_connect(
     conn.execute(
         "UPDATE drive_sync_state SET enabled = 1, accepted_disable_version = ?1,
          download_cursor = CASE WHEN ?1 > accepted_disable_version THEN 0 ELSE download_cursor END,
-         last_error = NULL WHERE id = 1",
+         offline_capture_account_subject = NULL, last_error = NULL WHERE id = 1",
         [marker_version],
     )
     .map_err(|e| e.to_string())?;
@@ -2515,7 +2546,8 @@ pub async fn drive_disconnect(state: State<'_, AppState>) -> Result<DriveSyncSta
     // Commit a local stop first, even if keyring cleanup subsequently fails.
     conn.execute(
         "UPDATE drive_sync_state SET enabled = 0, access_token = NULL, refresh_token = NULL,
-         token_expires_at = 0, last_error = NULL WHERE id = 1",
+         token_expires_at = 0, offline_capture_account_subject = NULL,
+         last_error = NULL WHERE id = 1",
         [],
     ).map_err(|e| e.to_string())?;
     drop(conn);
