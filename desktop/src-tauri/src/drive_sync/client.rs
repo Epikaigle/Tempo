@@ -853,6 +853,18 @@ pub(crate) async fn delete_file(access_token: &str, id: &str) -> Result<(), Stri
     }
 }
 
+// A damaged/missing appProperty is NOT proof of legacy generation zero.
+// A current-generation filename must survive cleanup from an out-of-date client,
+// including deliberate owner deletion racing a newly re-enabled device.
+fn batch_filename_generation(file_name: &str) -> Option<i64> {
+    let suffix = file_name.strip_prefix(FILE_PREFIX)?.strip_prefix('g')?;
+    let (digits, _) = suffix.split_once('_')?;
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<i64>().ok().filter(|value| (0..=MAX_WIRE_INTEGER).contains(value))
+}
+
 // Owner-initiated cleanup removes invalid-generation Tempo history files.
 // A stale client may only delete provably older generations, never unknowns.
 pub(crate) fn should_delete_history_batch(
@@ -865,6 +877,9 @@ pub(crate) fn should_delete_history_batch(
     }
     if !file.name.ends_with(".json.gz") {
         return owner_delete;
+    }
+    if batch_filename_generation(&file.name).is_some_and(|named| named >= generation) {
+        return false;
     }
     match batch_generation(file) {
         Some(file_generation) => file_generation < generation,

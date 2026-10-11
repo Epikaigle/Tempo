@@ -1930,6 +1930,18 @@ fn user_delete_cleans_invalid_generations_but_stale_client_cannot() {
         .insert(APP_PROPERTY_GENERATION.into(), "invalid".into());
     assert!(!should_delete_history_batch(&file, 20, false));
     assert!(should_delete_history_batch(&file, 20, true));
+    // Missing/corrupted properties must not erase a newly published generation
+    // whose immutable filename still identifies it as current or newer.
+    file.name = batch_file_name(20, "device-1", &"a".repeat(64));
+    file.app_properties.remove(APP_PROPERTY_GENERATION);
+    assert!(!should_delete_history_batch(&file, 20, false));
+    assert!(!should_delete_history_batch(&file, 20, true));
+    file.name = batch_file_name(21, "device-1", &"a".repeat(64));
+    file.app_properties
+        .insert(APP_PROPERTY_GENERATION.into(), "invalid".into());
+    assert!(!should_delete_history_batch(&file, 20, false));
+    assert!(!should_delete_history_batch(&file, 20, true));
+    // Older malformed files can still be removed by deliberate deletion.
     file.name = "tempo_history_v1_corrupt-without-extension".into();
     assert!(should_delete_history_batch(&file, 20, true));
     assert!(!should_delete_history_batch(&file, 20, false));
