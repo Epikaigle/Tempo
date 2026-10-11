@@ -34,12 +34,21 @@ class DriveAccountUploadCursorTest {
     fun deletionSuppressesOldRecordsButAllowsLaterOfflineCaptures() {
         val deletedThrough = 500L
         val cloudDeletionUtc = 1_700_000_000_000L
-        val isSuppressed = DriveHistorySyncManager::isCloudSuppressedRow
-        assertEquals(true, isSuppressed(1L, deletedThrough, cloudDeletionUtc - 1_000, cloudDeletionUtc))
-        assertEquals(true, isSuppressed(500L, deletedThrough, cloudDeletionUtc, cloudDeletionUtc))
-        assertEquals(false, isSuppressed(501L, deletedThrough, cloudDeletionUtc - 1_000, cloudDeletionUtc))
-        assertEquals(false, isSuppressed(250L, deletedThrough, cloudDeletionUtc + 1_000, cloudDeletionUtc))
-        assertEquals(false, isSuppressed(1L, 0L, cloudDeletionUtc - 1_000, cloudDeletionUtc))
+        assertEquals(true, DriveHistorySyncManager.isCloudSuppressedRow(
+            1L, deletedThrough, cloudDeletionUtc - 1_000, cloudDeletionUtc,
+        ))
+        assertEquals(true, DriveHistorySyncManager.isCloudSuppressedRow(
+            500L, deletedThrough, cloudDeletionUtc, cloudDeletionUtc,
+        ))
+        assertEquals(false, DriveHistorySyncManager.isCloudSuppressedRow(
+            501L, deletedThrough, cloudDeletionUtc - 1_000, cloudDeletionUtc,
+        ))
+        assertEquals(false, DriveHistorySyncManager.isCloudSuppressedRow(
+            250L, deletedThrough, cloudDeletionUtc + 1_000, cloudDeletionUtc,
+        ))
+        assertEquals(false, DriveHistorySyncManager.isCloudSuppressedRow(
+            1L, 0L, cloudDeletionUtc - 1_000, cloudDeletionUtc,
+        ))
     }
 
     @Test
