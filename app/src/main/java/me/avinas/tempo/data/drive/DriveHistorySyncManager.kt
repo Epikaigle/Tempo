@@ -457,26 +457,31 @@ class DriveHistorySyncManager @Inject constructor(
             statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
         val generation = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L).coerceAtLeast(0L)
         val suppressedThrough = statePrefs.getLong(suppressedThroughKey(accountSubject), 0L)
-        // A paired LAN device may have Drive off. Its authenticated producer
-        // identity is retained, and Android's explicit Drive opt-in authorizes
-        // the one-time relay. Persist the Google owner before changing cursors.
-        val claimedLan = dao.claimVerifiedLanRelays(accountSubject)
-        if (claimedLan > 0) {
+        // A paired LAN device may have Drive off. Android's explicit Drive
+        // opt-in authorizes relaying its original event ID exactly once.
+        // Checkpoint the earliest eligible row BEFORE changing SQL ownership:
+        // a process crash between the two writes must never skip that play.
+        val oldestLan = dao.earliestUnclaimedLanRelayId()
+        val replayCursor = oldestLan?.let { (it - 1L).coerceAtLeast(0L) }
+        if (replayCursor != null && replayCursor < storedCursor) {
             check(statePrefs.edit()
-                .putLong(KEY_UPLOAD_CURSOR, 0L)
-                .putLong(uploadCursorKey(accountSubject), 0L)
-                .commit()) { "Could not restart Drive export after LAN ownership claim" }
+                .putLong(KEY_UPLOAD_CURSOR, replayCursor)
+                .putLong(uploadCursorKey(accountSubject), replayCursor)
+                .commit()) { "Could not checkpoint pending LAN history ownership" }
         }
+        dao.claimVerifiedLanRelays(accountSubject)
         // A database restore can move Room row ids backwards while SharedPreferences
         // survive. If the persisted cursor is now beyond the database snapshot,
         // keeping it would make every newly-created row look already scanned until
         // ids eventually caught up. Restart from zero instead; deterministic Drive
         // event/batch ids make replay safe and preferable to silently losing plays.
-        var afterId = if (claimedLan > 0 || storedCursor > maxId) {
-            statePrefs.edit().remove(KEY_UPLOAD_CURSOR).remove(uploadCursorKey(accountSubject)).apply()
+        var afterId = if (storedCursor > maxId) {
+            check(statePrefs.edit()
+                .remove(KEY_UPLOAD_CURSOR).remove(uploadCursorKey(accountSubject))
+                .commit()) { "Could not restart Drive upload after database restore" }
             0L
         } else {
-            storedCursor
+            minOf(storedCursor, replayCursor ?: storedCursor)
         }
         var uploaded = 0
         val retryIds = statePrefs.getStringSet("${KEY_INVALID_EXPORT_IDS}:${accountSubject}", emptySet()).orEmpty()
