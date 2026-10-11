@@ -297,6 +297,8 @@ localRecords = [
     driveAccountSubject: 'google-b' },
   { id: 4, title: 'Imported', artist: 'Artist', timestampUtc: baseTime + 3,
     driveImported: true, driveAccountSubject: 'google-a' },
+  { id: 5, title: 'Offline after deletion', artist: 'Artist', timestampUtc: baseTime + 2,
+    driveAccountSubject: 'google-a' },
 ];
 database.transaction = () => {
   const tx = {};
@@ -320,12 +322,14 @@ database.transaction = () => {
   });
   return tx;
 };
-await storage.suppressDeletedDriveHistory('google-a');
+await storage.suppressDeletedDriveHistory('google-a', baseTime + 1);
 assert.equal(localRecords[0].cloudSuppressed, true);
 assert.equal(localRecords[1].cloudSuppressed, true);
 assert.equal(localRecords[1].driveAccountSubject, 'google-a');
 assert.equal(localRecords[2].cloudSuppressed, undefined);
 assert.equal(localRecords[3].cloudSuppressed, undefined);
+assert.equal(localRecords[4].cloudSuppressed, undefined,
+  'offline play captured after the deletion marker belongs to the new Drive history');
 assert.equal(localRecords[0].driveUploadedAt, 999,
   'deletion must not clear existing Drive acknowledgements');
 await storage.authorizeOlderDriveHistory('google-a');
