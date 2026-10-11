@@ -233,7 +233,8 @@ impl Database {
             "SELECT
                 (SELECT COUNT(*) FROM pragma_table_info('drive_sync_state')
                  WHERE name IN ('enabled', 'account_subject',
-                                'last_verified_account_subject')) = 3
+                                'last_verified_account_subject',
+                                'offline_capture_account_subject')) = 4
                 AND EXISTS(SELECT 1 FROM sqlite_master
                            WHERE type = 'table' AND name = 'drive_event_state')",
             [], |row| row.get(0),
@@ -246,6 +247,9 @@ impl Database {
                     CASE WHEN enabled != 0 AND account_subject IS NOT NULL
                                AND account_subject != ''
                          THEN account_subject
+                         WHEN enabled = 0 AND account_subject IS NOT NULL
+                              AND offline_capture_account_subject = account_subject
+                         THEN account_subject
                          WHEN last_verified_account_subject IS NULL
                          THEN NULL
                          ELSE 'legacy-unverified' END
@@ -257,15 +261,20 @@ impl Database {
         Ok(id)
     }
 
-    pub fn has_recent_play(&self, title: &str, artist: &str, timestamp: i64) -> Result<bool, rusqlite::Error> {
+    pub fn has_recent_play(
+        &self, title: &str, artist: &str, source_app: &str,
+        session_id: &str, timestamp: i64
+    ) -> Result<bool, rusqlite::Error> {
         // Only de-duplicate repeated LOCAL detector callbacks, not two real
         // short-track replays. Cross-device Drive imports reconcile separately
         // with their own 60s temporal window and origin-event IDs.
         let window = 5_000; // ±5 seconds
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM scrobbles WHERE title = ?1 AND artist = ?2
-             AND timestamp_utc BETWEEN ?3 AND ?4",
-            params![title, artist, timestamp - window, timestamp + window],
+             AND source_app = ?3
+             AND (?4 = '' OR session_id = ?4)
+             AND timestamp_utc BETWEEN ?5 AND ?6",
+            params![title, artist, source_app, session_id, timestamp - window, timestamp + window],
             |row| row.get(0),
         )?;
         Ok(count > 0)
@@ -860,8 +869,9 @@ mod local_dedup_tests {
         db.conn.execute_batch(
             "CREATE TABLE drive_sync_state (id INTEGER PRIMARY KEY,
                 enabled INTEGER, account_subject TEXT,
-                last_verified_account_subject TEXT);
-             INSERT INTO drive_sync_state VALUES (1, 1, 'google-a', 'google-a');
+                last_verified_account_subject TEXT,
+                offline_capture_account_subject TEXT);
+             INSERT INTO drive_sync_state VALUES (1, 1, 'google-a', 'google-a', NULL);
              CREATE TABLE drive_event_state (
                 scrobble_id INTEGER PRIMARY KEY, drive_imported INTEGER,
                 owner_account_subject TEXT);"
@@ -881,6 +891,12 @@ mod local_dedup_tests {
         db.conn.execute("UPDATE drive_sync_state SET enabled = 1,
                          account_subject = 'google-b'", []).unwrap();
         let owned_b = db.insert_play(&play).unwrap();
+        // Remote deletion keeps a verified account owner for NEW offline
+        // captures until reconnect; explicit disconnect must not do so.
+        db.conn.execute("UPDATE drive_sync_state SET enabled = 0,
+            account_subject = 'google-a', offline_capture_account_subject = 'google-a'", []).unwrap();
+        let after_remote_delete = db.insert_play(&play).unwrap();
+        db.conn.execute("UPDATE drive_sync_state SET offline_capture_account_subject = NULL", []).unwrap();
         let owner = |id: i64| -> String {
             db.conn.query_row("SELECT owner_account_subject FROM drive_event_state
                                WHERE scrobble_id = ?1", [id], |row| row.get(0)).unwrap()
@@ -888,6 +904,8 @@ mod local_dedup_tests {
         assert_eq!(owner(owned_a), "google-a");
         assert_eq!(owner(local_only), "legacy-unverified");
         assert_eq!(owner(owned_b), "google-b");
+        assert_eq!(owner(after_remote_delete), "google-a",
+            "post-deletion offline history must resume with its verified Google account");
         // A fresh installation never linked to Google may share its initial
         // archive when the user opts in with Connect Google for the first time.
         db.conn.execute("UPDATE drive_sync_state SET enabled = 0,
@@ -963,15 +981,22 @@ mod local_dedup_tests {
         };
         db.initialize_tables().expect("db schema");
         db.conn.execute(
-            "INSERT INTO scrobbles (title, artist, timestamp_utc) VALUES (?1, ?2, ?3)",
-            params!["Song", "Artist", 1_700_000_000_000_i64],
+            "INSERT INTO scrobbles (title, artist, source_app, session_id, timestamp_utc)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params!["Song", "Artist", "Spotify", "session-a", 1_700_000_000_000_i64],
         ).expect("first play");
 
-        assert!(db.has_recent_play("Song", "Artist", 1_700_000_004_000).unwrap(),
+        assert!(db.has_recent_play("Song", "Artist", "Spotify", "", 1_700_000_004_000).unwrap(),
             "the same detector callback within 5s is a duplicate");
-        assert!(!db.has_recent_play("Song", "Artist", 1_700_000_025_000).unwrap(),
+        assert!(!db.has_recent_play("Song", "Artist", "Spotify", "", 1_700_000_025_000).unwrap(),
             "a genuine replay after 25s must be recorded");
-        assert!(!db.has_recent_play("Different Song", "Artist", 1_700_000_001_000).unwrap(),
+        assert!(!db.has_recent_play("Different Song", "Artist", "Spotify", "", 1_700_000_001_000).unwrap(),
             "different songs are not duplicates");
+        assert!(!db.has_recent_play("Song", "Artist", "Firefox", "", 1_700_000_001_000).unwrap(),
+            "plays captured in independent applications are not detector retries");
+        assert!(!db.has_recent_play("Song", "Artist", "Spotify", "session-b", 1_700_000_001_000).unwrap(),
+            "different playback sessions remain distinct even within five seconds");
+        assert!(db.has_recent_play("Song", "Artist", "Spotify", "session-a", 1_700_000_001_000).unwrap(),
+            "repeat callback for the same playback session is suppressed");
     }
 }
