@@ -10,6 +10,67 @@ import java.sql.DriverManager
  * reconcile an unverified LAN capture with the same verified Drive origin.
  */
 class LanOriginPromotionTest {
+    @Test fun `unverified paired LAN records get a stable owner before Drive relay`() {
+        DriverManager.getConnection("jdbc:sqlite::memory:").use { db ->
+            db.createStatement().use { sql ->
+                sql.execute("CREATE TABLE listening_events (" +
+                    "id INTEGER PRIMARY KEY, source TEXT NOT NULL, " +
+                    "content_fingerprint TEXT, drive_account_subject TEXT)")
+                sql.execute("CREATE TABLE listening_event_origins (" +
+                    "accountSubject TEXT NOT NULL, originEventId TEXT NOT NULL, " +
+                    "listeningEventId INTEGER NOT NULL, sourceDeviceId TEXT NOT NULL, " +
+                    "PRIMARY KEY(accountSubject, originEventId))")
+                val first = "a".repeat(64)
+                val other = "b".repeat(64)
+                sql.execute("INSERT INTO listening_events VALUES " +
+                    "(1, 'lan:desktop-one:desktop:spotify', 'drive:v1:$first', 'lan-unverified')," +
+                    "(2, 'desktop:legacy', NULL, 'lan-unverified')," +
+                    "(3, 'lan:desktop-one:desktop:spotify', 'drive:v1:$other', 'google-b')")
+                sql.execute("INSERT INTO listening_event_origins VALUES " +
+                    "('lan-unverified', '$first', 1, 'desktop-one')," +
+                    "('google-b', '$other', 3, 'desktop-one')")
+                val earliest = sql.executeQuery(
+                    "SELECT MIN(id) FROM listening_events WHERE drive_account_subject = 'lan-unverified' " +
+                        "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%'"
+                ).use { rows -> if (rows.next()) rows.getLong(1) else 0L }
+                assertEquals(1L, earliest)
+                val claimed = db.prepareStatement(
+                    "UPDATE listening_events SET drive_account_subject = ? " +
+                        "WHERE drive_account_subject = 'lan-unverified' " +
+                        "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%'"
+                ).use { stmt ->
+                    stmt.setString(1, "google-a")
+                    stmt.executeUpdate()
+                }
+                assertEquals(1, claimed)
+                val aliases = db.prepareStatement(
+                    "UPDATE listening_event_origins SET accountSubject = ? " +
+                        "WHERE accountSubject = 'lan-unverified' AND listeningEventId IN (" +
+                        "SELECT id FROM listening_events WHERE drive_account_subject = ? " +
+                        "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%') " +
+                        "AND NOT EXISTS (SELECT 1 FROM listening_event_origins owned " +
+                        "WHERE owned.accountSubject = ? " +
+                        "AND owned.originEventId = listening_event_origins.originEventId)"
+                ).use { stmt ->
+                    repeat(3) { stmt.setString(it + 1, "google-a") }
+                    stmt.executeUpdate()
+                }
+                assertEquals(1, aliases)
+                sql.executeQuery("SELECT id, drive_account_subject FROM listening_events ORDER BY id")
+                    .use { rows ->
+                        val owners = mutableListOf<String>()
+                        while (rows.next()) owners += "${rows.getLong(1)}:${rows.getString(2)}"
+                        assertEquals(listOf("1:google-a", "2:lan-unverified", "3:google-b"), owners)
+                    }
+                sql.executeQuery("SELECT accountSubject FROM listening_event_origins WHERE originEventId = '$first'")
+                    .use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals("google-a", rows.getString(1))
+                    }
+            }
+        }
+    }
+
     @Test fun `verified Drive origin adopts exact LAN capture and its alias only`() {
         DriverManager.getConnection("jdbc:sqlite::memory:").use { db ->
             db.createStatement().use { sql ->
