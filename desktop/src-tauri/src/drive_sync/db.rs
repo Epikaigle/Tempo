@@ -88,72 +88,112 @@ pub(crate) fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
 
     // An existing email-only credential cannot prove the Google account.
     let has_subject = {
-        let mut stmt = conn.prepare("PRAGMA table_info(drive_sync_state)").map_err(|e| e.to_string())?;
-        let names = stmt.query_map([], |row| row.get::<_, String>(1)).map_err(|e| e.to_string())?;
-        names.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
-            .iter().any(|name| name == "account_subject")
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(drive_sync_state)")
+            .map_err(|e| e.to_string())?;
+        let names = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| e.to_string())?;
+        names
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .any(|name| name == "account_subject")
     };
     if !has_subject {
-        conn.execute("ALTER TABLE drive_sync_state ADD COLUMN account_subject TEXT", [])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "ALTER TABLE drive_sync_state ADD COLUMN account_subject TEXT",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
     // Preserve the last verified subject even if authorization subsequently
     // fails. The active subject is intentionally cleared while replacing
     // credentials; the durable value retains event ownership across crashes.
     let has_verified_column = {
-        let mut stmt = conn.prepare("PRAGMA table_info(drive_sync_state)")
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(drive_sync_state)")
             .map_err(|e| e.to_string())?;
-        let names = stmt.query_map([], |row| row.get::<_, String>(1))
+        let names = stmt
+            .query_map([], |row| row.get::<_, String>(1))
             .map_err(|e| e.to_string())?;
-        names.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
-            .iter().any(|name| name == "last_verified_account_subject")
+        names
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .any(|name| name == "last_verified_account_subject")
     };
     if !has_verified_column {
         conn.execute(
-            "ALTER TABLE drive_sync_state ADD COLUMN last_verified_account_subject TEXT", []
-        ).map_err(|e| e.to_string())?;
+            "ALTER TABLE drive_sync_state ADD COLUMN last_verified_account_subject TEXT",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
     conn.execute(
         "UPDATE drive_sync_state SET last_verified_account_subject = account_subject
-         WHERE last_verified_account_subject IS NULL AND account_subject IS NOT NULL", []
-    ).map_err(|e| e.to_string())?;
+         WHERE last_verified_account_subject IS NULL AND account_subject IS NOT NULL",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
 
     let has_offline_owner = {
-        let mut stmt = conn.prepare("PRAGMA table_info(drive_sync_state)").map_err(|e| e.to_string())?;
-        let columns = stmt.query_map([], |row| row.get::<_, String>(1)).map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(drive_sync_state)")
+            .map_err(|e| e.to_string())?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
         columns.contains(&"offline_capture_account_subject".to_string())
     };
     if !has_offline_owner {
-        conn.execute("ALTER TABLE drive_sync_state ADD COLUMN offline_capture_account_subject TEXT", [])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "ALTER TABLE drive_sync_state ADD COLUMN offline_capture_account_subject TEXT",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     let has_owner_column = {
-        let mut stmt = conn.prepare("PRAGMA table_info(drive_event_state)")
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(drive_event_state)")
             .map_err(|e| e.to_string())?;
-        let names = stmt.query_map([], |row| row.get::<_, String>(1))
+        let names = stmt
+            .query_map([], |row| row.get::<_, String>(1))
             .map_err(|e| e.to_string())?;
-        names.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
-            .iter().any(|name| name == "owner_account_subject")
+        names
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?
+            .iter()
+            .any(|name| name == "owner_account_subject")
     };
     if !has_owner_column {
-        conn.execute("ALTER TABLE drive_event_state ADD COLUMN owner_account_subject TEXT", [])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "ALTER TABLE drive_event_state ADD COLUMN owner_account_subject TEXT",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
     // Existing databases need the suppression flag before the table migration.
     let has_suppression = {
-        let mut stmt = conn.prepare("PRAGMA table_info(drive_event_state)")
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(drive_event_state)")
             .map_err(|e| e.to_string())?;
-        let columns = stmt.query_map([], |row| row.get::<_, String>(1))
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))
             .map_err(|e| e.to_string())?
-            .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
         columns.contains(&"cloud_suppressed".to_string())
     };
     if !has_suppression {
         conn.execute(
-            "ALTER TABLE drive_event_state ADD COLUMN cloud_suppressed INTEGER NOT NULL DEFAULT 0", []
-        ).map_err(|e| e.to_string())?;
+            "ALTER TABLE drive_event_state ADD COLUMN cloud_suppressed INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     // After a prior Google connection, unowned captures that were left behind
@@ -186,12 +226,16 @@ pub(crate) fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
 
     // Email-only installations cannot prove who owns previously collected
     // scrobbles. Quarantine them rather than uploading them to another account.
-    let unverified_account: bool = conn.query_row(
-        "SELECT (account_subject IS NULL OR account_subject = '')
+    let unverified_account: bool = conn
+        .query_row(
+            "SELECT (account_subject IS NULL OR account_subject = '')
             AND (last_verified_account_subject IS NULL OR last_verified_account_subject = '')
             AND (account_email IS NOT NULL OR enabled != 0)
-         FROM drive_sync_state WHERE id = 1", [], |row| row.get(0)
-    ).map_err(|e| e.to_string())?;
+         FROM drive_sync_state WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
     if unverified_account {
         conn.execute(
             "INSERT OR IGNORE INTO drive_event_state (scrobble_id, drive_imported, owner_account_subject)
@@ -200,12 +244,15 @@ pub(crate) fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         conn.execute(
             "UPDATE drive_event_state SET owner_account_subject = ?1
              WHERE drive_imported = 0 AND owner_account_subject IS NULL",
-            [LEGACY_UNVERIFIED_ACCOUNT]
-        ).map_err(|e| e.to_string())?;
+            [LEGACY_UNVERIFIED_ACCOUNT],
+        )
+        .map_err(|e| e.to_string())?;
         conn.execute(
             "UPDATE drive_sync_state SET enabled = 0, access_token = NULL,
-             refresh_token = NULL, token_expires_at = 0, account_email = NULL WHERE id = 1", []
-        ).map_err(|e| e.to_string())?;
+             refresh_token = NULL, token_expires_at = 0, account_email = NULL WHERE id = 1",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     migrate_legacy_import_account_and_aliases(&conn)?;
@@ -235,10 +282,13 @@ pub(crate) fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
 // INSERT/SELECT on every settings read or background sync.
 pub(crate) fn migrate_legacy_import_account_and_aliases(conn: &Connection) -> Result<(), String> {
     let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    let applied = transaction.execute(
-        "INSERT OR IGNORE INTO drive_sync_migrations (name)
-         VALUES ('legacy_aliases_and_account_v1')", []
-    ).map_err(|e| e.to_string())?;
+    let applied = transaction
+        .execute(
+            "INSERT OR IGNORE INTO drive_sync_migrations (name)
+         VALUES ('legacy_aliases_and_account_v1')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     if applied == 1 {
         // Before introducing deletion triggers, old installations could have
         // orphaned provenance. Prune it once, then the trigger maintains it.
@@ -246,77 +296,101 @@ pub(crate) fn migrate_legacy_import_account_and_aliases(conn: &Connection) -> Re
             "DELETE FROM drive_event_aliases WHERE scrobble_id NOT IN (SELECT id FROM scrobbles)",
             []
         ).map_err(|e| e.to_string())?;
-        transaction.execute(
-            "DELETE FROM drive_event_state WHERE scrobble_id NOT IN (SELECT id FROM scrobbles)",
-            []
-        ).map_err(|e| e.to_string())?;
+        transaction
+            .execute(
+                "DELETE FROM drive_event_state WHERE scrobble_id NOT IN (SELECT id FROM scrobbles)",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
         let scoped = {
-            let mut stmt = transaction.prepare("PRAGMA table_info(drive_event_aliases)")
+            let mut stmt = transaction
+                .prepare("PRAGMA table_info(drive_event_aliases)")
                 .map_err(|e| e.to_string())?;
-            let names = stmt.query_map([], |row| row.get::<_, String>(1))
+            let names = stmt
+                .query_map([], |row| row.get::<_, String>(1))
                 .map_err(|e| e.to_string())?;
-            names.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
+            names
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
                 .contains(&"account_subject".to_string())
         };
         if scoped {
-            transaction.execute(
-                "INSERT OR IGNORE INTO drive_event_aliases
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO drive_event_aliases
                   (account_subject, origin_event_id, source_device_id, scrobble_id)
                  SELECT COALESCE(NULLIF(owner_account_subject, ''), 'legacy-unverified'),
                         origin_event_id, origin_device_id, scrobble_id
                  FROM drive_event_state
                  WHERE origin_event_id IS NOT NULL AND origin_device_id IS NOT NULL
-                       AND origin_device_id <> ''", []
-            ).map_err(|e| e.to_string())?;
+                       AND origin_device_id <> ''",
+                    [],
+                )
+                .map_err(|e| e.to_string())?;
         } else {
-            transaction.execute(
-                "INSERT OR IGNORE INTO drive_event_aliases
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO drive_event_aliases
                   (origin_event_id, source_device_id, scrobble_id)
                  SELECT origin_event_id, origin_device_id, scrobble_id
                  FROM drive_event_state
                  WHERE origin_event_id IS NOT NULL AND origin_device_id IS NOT NULL
-                       AND origin_device_id <> ''", []
-            ).map_err(|e| e.to_string())?;
+                       AND origin_device_id <> ''",
+                    [],
+                )
+                .map_err(|e| e.to_string())?;
         }
         // Older releases did not record the Google owner of imported events.
         // No current-account guess can safely prove which account provided
         // them; quarantine their temporal matches until explicitly restored.
-        transaction.execute(
-            "UPDATE drive_event_state SET owner_account_subject = ?1
+        transaction
+            .execute(
+                "UPDATE drive_event_state SET owner_account_subject = ?1
              WHERE drive_imported != 0 AND owner_account_subject IS NULL",
-            [LEGACY_UNVERIFIED_ACCOUNT],
-        ).map_err(|e| e.to_string())?;
+                [LEGACY_UNVERIFIED_ACCOUNT],
+            )
+            .map_err(|e| e.to_string())?;
     }
     transaction.commit().map_err(|e| e.to_string())
 }
 
 pub(crate) fn requeue_unverified_prototype_uploads(conn: &Connection) -> Result<(), String> {
     let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    let applied = transaction.execute(
-        "INSERT OR IGNORE INTO drive_sync_migrations (name) VALUES ('verified_batches_v1')",
-        [],
-    ).map_err(|e| e.to_string())?;
+    let applied = transaction
+        .execute(
+            "INSERT OR IGNORE INTO drive_sync_migrations (name) VALUES ('verified_batches_v1')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     if applied == 1 {
         // Earlier Desktop batches omitted tempo_sha256 and were rejected by
         // Android/browser readers. Re-send local events once with verified metadata.
-        transaction.execute(
-            "UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0",
-            [],
-        ).map_err(|e| e.to_string())?;
+        transaction
+            .execute(
+                "UPDATE drive_event_state SET drive_uploaded_at = NULL WHERE drive_imported = 0",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
     }
     transaction.commit().map_err(|e| e.to_string())
 }
 
 pub(crate) fn rescan_reconciled_origins(conn: &Connection) -> Result<(), String> {
     let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    let applied = transaction.execute(
-        "INSERT OR IGNORE INTO drive_sync_migrations (name) VALUES ('reconciled_origins_v1')",
-        [],
-    ).map_err(|e| e.to_string())?;
+    let applied = transaction
+        .execute(
+            "INSERT OR IGNORE INTO drive_sync_migrations (name) VALUES ('reconciled_origins_v1')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     if applied == 1 {
         // Older temporal reconciliation overwrote origins. Re-read retained
         // cloud batches once to recover their identities and any skipped replays.
-        transaction.execute("UPDATE drive_sync_state SET download_cursor = 0 WHERE id = 1", [])
+        transaction
+            .execute(
+                "UPDATE drive_sync_state SET download_cursor = 0 WHERE id = 1",
+                [],
+            )
             .map_err(|e| e.to_string())?;
     }
     transaction.commit().map_err(|e| e.to_string())
@@ -327,10 +401,13 @@ pub(crate) fn rescan_reconciled_origins(conn: &Connection) -> Result<(), String>
 /// This runs once and commits the schema change and migration flag together.
 pub(crate) fn migrate_account_scoped_origin_keys(conn: &Connection) -> Result<(), String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    let applied = tx.execute(
-        "INSERT OR IGNORE INTO drive_sync_migrations (name)
-         VALUES ('account_scoped_origin_keys_v1')", []
-    ).map_err(|e| e.to_string())?;
+    let applied = tx
+        .execute(
+            "INSERT OR IGNORE INTO drive_sync_migrations (name)
+         VALUES ('account_scoped_origin_keys_v1')",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     if applied == 1 {
         tx.execute_batch(
             "DROP TRIGGER IF EXISTS tempo_drive_scrobble_delete;
@@ -375,8 +452,9 @@ pub(crate) fn migrate_account_scoped_origin_keys(conn: &Connection) -> Result<()
              BEGIN
                  DELETE FROM drive_event_aliases WHERE scrobble_id = OLD.id;
                  DELETE FROM drive_event_state WHERE scrobble_id = OLD.id;
-             END;"
-        ).map_err(|e| e.to_string())?;
+             END;",
+        )
+        .map_err(|e| e.to_string())?;
     }
     tx.commit().map_err(|e| e.to_string())
 }
@@ -420,14 +498,17 @@ pub(crate) fn set_last_error(conn: &Connection, error: Option<&str>) -> Result<(
     Ok(())
 }
 
-
-pub(crate) fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bool) -> Result<(), String> {
+pub(crate) fn prepare_oauth_credentials(
+    conn: &Connection,
+    reset_drive_state: bool,
+) -> Result<(), String> {
     let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     // Snapshot the currently verified account BEFORE the active identity is
     // cleared. Never overwrite a snapshot with zeroes after an interrupted
     // OAuth attempt: account_subject is NULL during that interval.
-    transaction.execute(
-        "INSERT INTO drive_account_progress
+    transaction
+        .execute(
+            "INSERT INTO drive_account_progress
              (account_subject, download_cursor, accepted_disable_version)
          SELECT account_subject, download_cursor, accepted_disable_version
          FROM drive_sync_state WHERE id = 1
@@ -435,46 +516,59 @@ pub(crate) fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bo
          ON CONFLICT(account_subject) DO UPDATE SET
              download_cursor = excluded.download_cursor,
              accepted_disable_version = excluded.accepted_disable_version",
-        [],
-    ).map_err(|e| e.to_string())?;
+            [],
+        )
+        .map_err(|e| e.to_string())?;
     if reset_drive_state {
-        let previous_subject: Option<String> = transaction.query_row(
-            "SELECT COALESCE(account_subject, last_verified_account_subject)
+        let previous_subject: Option<String> = transaction
+            .query_row(
+                "SELECT COALESCE(account_subject, last_verified_account_subject)
              FROM drive_sync_state WHERE id = 1",
-            [], |row| row.get(0)
-        ).map_err(|e| e.to_string())?;
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
         if let Some(previous_subject) = previous_subject {
             // Mark even never-uploaded local plays as belonging to the old
             // account BEFORE the new account can enable its first sync.
-            transaction.execute(
-                "INSERT OR IGNORE INTO drive_event_state
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO drive_event_state
                  (scrobble_id, drive_imported, owner_account_subject)
                  SELECT id, 0, ?1 FROM scrobbles",
-                [&previous_subject]
-            ).map_err(|e| e.to_string())?;
-            transaction.execute(
-                "UPDATE drive_event_state SET owner_account_subject = ?1
+                    [&previous_subject],
+                )
+                .map_err(|e| e.to_string())?;
+            transaction
+                .execute(
+                    "UPDATE drive_event_state SET owner_account_subject = ?1
                  WHERE drive_imported = 0 AND owner_account_subject IS NULL",
-                [&previous_subject]
-            ).map_err(|e| e.to_string())?;
+                    [&previous_subject],
+                )
+                .map_err(|e| e.to_string())?;
         }
         // Preserve account-owned uploads across switches. Resetting them here
         // could resurrect an archive deliberately deleted from Drive.
-        transaction.execute(
-            "UPDATE drive_sync_state SET download_cursor = 0, accepted_disable_version = 0,
-             last_sync_time = NULL, last_uploaded = 0, last_imported = 0 WHERE id = 1", []
-        ).map_err(|e| e.to_string())?;
+        transaction
+            .execute(
+                "UPDATE drive_sync_state SET download_cursor = 0, accepted_disable_version = 0,
+             last_sync_time = NULL, last_uploaded = 0, last_imported = 0 WHERE id = 1",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
     }
     // SQLite and the OS credential store cannot share a transaction. Commit an
     // inert, account-unknown state before replacing the keyring credential. If
     // either the keyring write or the final SQLite write fails, no command can
     // use that credential until account identity is verified and saved again.
-    transaction.execute(
-        "UPDATE drive_sync_state SET enabled = 0, access_token = NULL, refresh_token = NULL,
+    transaction
+        .execute(
+            "UPDATE drive_sync_state SET enabled = 0, access_token = NULL, refresh_token = NULL,
          token_expires_at = 0, account_email = NULL, account_subject = NULL,
          offline_capture_account_subject = NULL, last_error = ?1 WHERE id = 1",
-        ["Google sign-in did not finish. Connect Google again."]
-    ).map_err(|e| e.to_string())?;
+            ["Google sign-in did not finish. Connect Google again."],
+        )
+        .map_err(|e| e.to_string())?;
     transaction.commit().map_err(|e| e.to_string())
 }
 
@@ -482,21 +576,24 @@ pub(crate) fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bo
 // An unknown account starts from zero; a returning account resumes its own
 // receive cursor and previously accepted deletion generation.
 pub(crate) fn restore_account_progress(conn: &Connection, subject: &str) -> Result<(), String> {
-    let progress: Option<(i64, i64)> = conn.query_row(
-        "SELECT download_cursor, accepted_disable_version
+    let progress: Option<(i64, i64)> = conn
+        .query_row(
+            "SELECT download_cursor, accepted_disable_version
          FROM drive_account_progress WHERE account_subject = ?1",
-        [subject],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    ).optional().map_err(|e| e.to_string())?;
+            [subject],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
     let (cursor, generation) = progress.unwrap_or((0, 0));
     conn.execute(
         "UPDATE drive_sync_state SET download_cursor = ?1,
          accepted_disable_version = ?2 WHERE id = 1",
         params![cursor, generation],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
-
 
 #[cfg(test)]
 pub(crate) fn lan_origin_metadata(
@@ -506,13 +603,17 @@ pub(crate) fn lan_origin_metadata(
     let conn = open_sync_db(app_data_dir)?;
     let device_id = load_state(&conn)?.device_id;
     let mut known = HashMap::new();
-    let mut stmt = conn.prepare(
-        "SELECT origin_event_id FROM drive_event_state
+    let mut stmt = conn
+        .prepare(
+            "SELECT origin_event_id FROM drive_event_state
          WHERE scrobble_id = ?1 AND drive_imported = 0",
-    ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
     for id in local_ids {
-        let origin: Option<String> = stmt.query_row([id], |row| row.get(0))
-            .optional().map_err(|e| e.to_string())?;
+        let origin: Option<String> = stmt
+            .query_row([id], |row| row.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?;
         if let Some(origin) = origin.filter(|value| valid_sha256(value)) {
             known.insert(*id, origin);
         }
@@ -554,20 +655,23 @@ pub(crate) fn pin_local_origin(
          WHERE scrobble_id = ?1 AND drive_imported = 0
            AND owner_account_subject IS NULL AND ?2 IS NOT NULL",
         params![id, subject],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE drive_event_state SET origin_event_id = ?2, origin_device_id = ?3
          WHERE scrobble_id = ?1 AND drive_imported = 0 AND origin_event_id IS NULL
            AND (origin_device_id IS NULL OR origin_device_id = ?3)",
         params![id, generated, device_id],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     let (origin, owner, imported): (Option<String>, Option<String>, i64) = conn
         .query_row(
             "SELECT origin_event_id, origin_device_id, drive_imported
              FROM drive_event_state WHERE scrobble_id = ?1",
             [id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
     let origin = origin.ok_or("Tempo could not persist the original Desktop event ID")?;
     if imported != 0 || owner.as_deref() != Some(device_id) || !valid_sha256(&origin) {
         return Err("A remote or invalid event cannot be sent as a local Desktop origin".into());
@@ -590,18 +694,23 @@ pub fn lan_play_account_owners(
         return Ok(HashMap::new());
     }
     let current_subject = state.account_subject.unwrap();
-    let mut stmt = conn.prepare(
-        "SELECT owner_account_subject FROM drive_event_state
+    let mut stmt = conn
+        .prepare(
+            "SELECT owner_account_subject FROM drive_event_state
          WHERE scrobble_id = ?1 AND drive_imported = 0
            AND COALESCE(cloud_suppressed, 0) = 0",
-    ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
     let mut owners = HashMap::new();
     for id in play_ids {
-        let owner: Option<String> = stmt.query_row([id], |row| row.get(0))
-            .optional().map_err(|e| e.to_string())?.flatten();
-        if let Some(owner) = owner.filter(|v|
-            !v.is_empty() && v != LEGACY_UNVERIFIED_ACCOUNT && !v.contains('@')
-        ) {
+        let owner: Option<String> = stmt
+            .query_row([id], |row| row.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?
+            .flatten();
+        if let Some(owner) =
+            owner.filter(|v| !v.is_empty() && v != LEGACY_UNVERIFIED_ACCOUNT && !v.contains('@'))
+        {
             if owner == current_subject {
                 owners.insert(*id, owner);
             }
@@ -621,9 +730,7 @@ pub fn persist_lan_origin_metadata(
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let mut origins = HashMap::new();
     for (id, timestamp_utc, title, artist) in captures {
-        let origin = pin_local_origin(
-            &tx, &device_id, *id, *timestamp_utc, title, artist
-        )?;
+        let origin = pin_local_origin(&tx, &device_id, *id, *timestamp_utc, title, artist)?;
         origins.insert(*id, origin);
     }
     tx.commit().map_err(|e| e.to_string())?;
@@ -646,7 +753,6 @@ pub fn lan_play_origin(
         artist.trim().to_lowercase()
     ))
 }
-
 
 #[cfg(test)]
 pub(crate) fn pending_local_plays(conn: &Connection) -> Result<Vec<LocalPlay>, String> {
@@ -679,37 +785,44 @@ pub(crate) fn pending_local_plays_page(
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(params![limit as i64, subject, after.map(|v| v.0), after.map(|v| v.1)], |row| {
-            Ok(LocalPlay {
-                id: row.get(0)?,
-                origin_event_id: row.get(18)?,
-                title: row.get(1)?,
-                artist: row.get(2)?,
-                // Older local SQLite schemas permitted NULL in fields with
-                // defaults. Treat NULL as an absent optional value, rather than
-                // allowing one legacy row to abort all history scanning.
-                album: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-                duration_ms: row.get::<_, Option<i64>>(4)?.unwrap_or(0),
-                timestamp_utc: row.get(5)?,
-                source_app: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
-                listened_ms: row.get::<_, Option<i64>>(7)?.unwrap_or(0),
-                skipped: row.get::<_, Option<i64>>(8)?.unwrap_or(0) != 0,
-                replay_count: row.get::<_, Option<i64>>(9)?.unwrap_or(0),
-                is_muted: row.get::<_, Option<i64>>(10)?.unwrap_or(0) != 0,
-                completion_percentage: row.get::<_, Option<f64>>(11)?.unwrap_or(0.0),
-                pause_count: row.get::<_, Option<i64>>(12)?.unwrap_or(0),
-                seek_count: row.get::<_, Option<i64>>(13)?.unwrap_or(0),
-                session_id: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
-                site: row.get::<_, Option<String>>(15)?.unwrap_or_default(),
-                content_type: row.get::<_, Option<String>>(16)?.unwrap_or_default(),
-                volume_level: row.get::<_, Option<f64>>(17)?.unwrap_or(-1.0),
-            })
-        })
+        .query_map(
+            params![
+                limit as i64,
+                subject,
+                after.map(|v| v.0),
+                after.map(|v| v.1)
+            ],
+            |row| {
+                Ok(LocalPlay {
+                    id: row.get(0)?,
+                    origin_event_id: row.get(18)?,
+                    title: row.get(1)?,
+                    artist: row.get(2)?,
+                    // Older local SQLite schemas permitted NULL in fields with
+                    // defaults. Treat NULL as an absent optional value, rather than
+                    // allowing one legacy row to abort all history scanning.
+                    album: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                    duration_ms: row.get::<_, Option<i64>>(4)?.unwrap_or(0),
+                    timestamp_utc: row.get(5)?,
+                    source_app: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+                    listened_ms: row.get::<_, Option<i64>>(7)?.unwrap_or(0),
+                    skipped: row.get::<_, Option<i64>>(8)?.unwrap_or(0) != 0,
+                    replay_count: row.get::<_, Option<i64>>(9)?.unwrap_or(0),
+                    is_muted: row.get::<_, Option<i64>>(10)?.unwrap_or(0) != 0,
+                    completion_percentage: row.get::<_, Option<f64>>(11)?.unwrap_or(0.0),
+                    pause_count: row.get::<_, Option<i64>>(12)?.unwrap_or(0),
+                    seek_count: row.get::<_, Option<i64>>(13)?.unwrap_or(0),
+                    session_id: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
+                    site: row.get::<_, Option<String>>(15)?.unwrap_or_default(),
+                    content_type: row.get::<_, Option<String>>(16)?.unwrap_or_default(),
+                    volume_level: row.get::<_, Option<f64>>(17)?.unwrap_or(-1.0),
+                })
+            },
+        )
         .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())
 }
-
 
 pub(crate) fn remember_origin(
     conn: &Connection,
@@ -717,24 +830,30 @@ pub(crate) fn remember_origin(
     source_device_id: &str,
     origin_event_id: &str,
 ) -> Result<(), String> {
-    let state_owner: Option<Option<String>> = conn.query_row(
-        "SELECT owner_account_subject FROM drive_event_state WHERE scrobble_id = ?1",
-        [scrobble_id], |row| row.get(0)
-    ).optional().map_err(|e| e.to_string())?;
-    let owner = state_owner.ok_or("Tempo cannot alias an event with no stored playback state")?
+    let state_owner: Option<Option<String>> = conn
+        .query_row(
+            "SELECT owner_account_subject FROM drive_event_state WHERE scrobble_id = ?1",
+            [scrobble_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let owner = state_owner
+        .ok_or("Tempo cannot alias an event with no stored playback state")?
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| LEGACY_UNVERIFIED_ACCOUNT.to_string());
-    let affected = conn.execute(
-        "INSERT INTO drive_event_aliases
+    let affected = conn
+        .execute(
+            "INSERT INTO drive_event_aliases
             (account_subject, origin_event_id, source_device_id, scrobble_id)
          VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(account_subject, origin_event_id)
          DO UPDATE SET origin_event_id = excluded.origin_event_id
            WHERE scrobble_id = excluded.scrobble_id
              AND source_device_id = excluded.source_device_id",
-        params![owner, origin_event_id, source_device_id, scrobble_id],
-    )
-    .map_err(|e| e.to_string())?;
+            params![owner, origin_event_id, source_device_id, scrobble_id],
+        )
+        .map_err(|e| e.to_string())?;
     if affected != 1 {
         return Err("Tempo Drive event identity already belongs to another local play".to_string());
     }
@@ -772,8 +891,9 @@ pub(crate) fn insert_remote_event_for_account(
     let existing_temporal = {
         // SQLite lower() is ASCII-only. Normalize bounded candidates in Rust so
         // accented names and whitespace use the same comparison as other clients.
-        let mut stmt = conn.prepare_cached(
-            "SELECT s.id, s.title, s.artist, s.duration_ms FROM scrobbles s
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT s.id, s.title, s.artist, s.duration_ms FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE s.timestamp_utc BETWEEN ?1 AND ?2
                AND (d.origin_device_id IS NULL OR d.origin_device_id <> ?4)
@@ -784,20 +904,27 @@ pub(crate) fn insert_remote_event_for_account(
                AND NOT EXISTS (SELECT 1 FROM drive_event_aliases a
                    WHERE a.scrobble_id = s.id AND a.source_device_id = ?4)
              ORDER BY abs(s.timestamp_utc - ?3) ASC, s.id ASC",
-        ).map_err(|e| e.to_string())?;
-        let candidates = stmt.query_map(
-            params![
-                event.timestamp_utc - TEMPORAL_DEDUP_MS,
-                event.timestamp_utc + TEMPORAL_DEDUP_MS,
-                event.timestamp_utc,
-                source_device_id,
-                account_subject
-            ],
-            |row| Ok((
-                row.get::<_, i64>(0)?, row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?, row.get::<_, Option<i64>>(3)?,
-            )),
-        ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
+        let candidates = stmt
+            .query_map(
+                params![
+                    event.timestamp_utc - TEMPORAL_DEDUP_MS,
+                    event.timestamp_utc + TEMPORAL_DEDUP_MS,
+                    event.timestamp_utc,
+                    source_device_id,
+                    account_subject
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                    ))
+                },
+            )
+            .map_err(|e| e.to_string())?;
         let mut found = None;
         for candidate in candidates {
             let (id, candidate_title, candidate_artist, candidate_duration) =
@@ -806,8 +933,9 @@ pub(crate) fn insert_remote_event_for_account(
             // seconds. If both devices know the duration and it differs by
             // more than ten seconds, this cannot be the same playback.
             let duration_matches = match (candidate_duration, event.duration_ms) {
-                (Some(local), remote) if local > 0 && remote > 0 =>
-                    local.abs_diff(remote) <= 10_000,
+                (Some(local), remote) if local > 0 && remote > 0 => {
+                    local.abs_diff(remote) <= 10_000
+                }
                 _ => true,
             };
             if duration_matches
@@ -825,25 +953,40 @@ pub(crate) fn insert_remote_event_for_account(
         // A local capture without a cloud owner may be reconciled with the
         // verified active Google account. Pin it before inserting an alias;
         // imported A rows never match B because of the temporal owner filter.
-        conn.execute("UPDATE drive_event_state SET owner_account_subject = ?2
+        conn.execute(
+            "UPDATE drive_event_state SET owner_account_subject = ?2
                       WHERE scrobble_id = ?1 AND owner_account_subject IS NULL",
-            params![id, account_subject]).map_err(|e| e.to_string())?;
+            params![id, account_subject],
+        )
+        .map_err(|e| e.to_string())?;
         // Legacy local rows can predate Drive origin-state initialization.
         // Claim their original Desktop identity BEFORE recording the remote
         // alias, otherwise an early incoming copy would classify the original
         // local play as an import and suppress its future Drive upload.
-        let has_state: bool = conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM drive_event_state WHERE scrobble_id = ?1)",
-            [id], |row| row.get(0),
-        ).map_err(|e| e.to_string())?;
+        let has_state: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM drive_event_state WHERE scrobble_id = ?1)",
+                [id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
         if !has_state {
-            let (local_title, local_artist, local_timestamp): (String, String, i64) =
-                conn.query_row(
+            let (local_title, local_artist, local_timestamp): (String, String, i64) = conn
+                .query_row(
                     "SELECT title, artist, timestamp_utc FROM scrobbles WHERE id = ?1",
-                    [id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                ).map_err(|e| e.to_string())?;
+                    [id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .map_err(|e| e.to_string())?;
             let own_device = load_state(conn)?.device_id;
-            pin_local_origin(conn, &own_device, id, local_timestamp, &local_title, &local_artist)?;
+            pin_local_origin(
+                conn,
+                &own_device,
+                id,
+                local_timestamp,
+                &local_title,
+                &local_artist,
+            )?;
         }
         conn.execute(
             // A matching Desktop-origin play must remain Desktop-owned and
@@ -858,13 +1001,18 @@ pub(crate) fn insert_remote_event_for_account(
         // The local row may have been created without a Drive session. Now
         // that it matches a verified account, claim its existing aliases too;
         // otherwise the same producer replay can evade exact-id deduplication.
-        conn.execute("UPDATE drive_event_state SET owner_account_subject = ?2
+        conn.execute(
+            "UPDATE drive_event_state SET owner_account_subject = ?2
                       WHERE scrobble_id = ?1 AND owner_account_subject IS NULL",
-            params![id, account_subject]).map_err(|e| e.to_string())?;
-        conn.execute("UPDATE drive_event_aliases SET account_subject = ?2
+            params![id, account_subject],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE drive_event_aliases SET account_subject = ?2
                       WHERE scrobble_id = ?1 AND account_subject = ?3",
-            params![id, account_subject, LEGACY_UNVERIFIED_ACCOUNT])
-            .map_err(|e| e.to_string())?;
+            params![id, account_subject, LEGACY_UNVERIFIED_ACCOUNT],
+        )
+        .map_err(|e| e.to_string())?;
         remember_origin(conn, id, source_device_id, &event.event_id)?;
         return Ok(false);
     }
@@ -918,7 +1066,8 @@ pub(crate) fn insert_remote_event(
     source_device_id: &str,
     event: &WireEvent,
 ) -> Result<bool, String> {
-    let subject = load_state(conn)?.account_subject
+    let subject = load_state(conn)?
+        .account_subject
         .unwrap_or_else(|| "test-account".to_string());
     insert_remote_event_for_account(conn, source_device_id, event, &subject)
 }
@@ -927,7 +1076,10 @@ pub(crate) fn insert_remote_event(
 // the receive cursor. A successful later sync must not hide skipped history.
 
 pub(crate) fn mark_rejected_batch(
-    conn: &Connection, account_subject: &str, file: &DriveFileRecord, reason: &str,
+    conn: &Connection,
+    account_subject: &str,
+    file: &DriveFileRecord,
+    reason: &str,
 ) -> Result<(), String> {
     let short_reason: String = reason.chars().take(300).collect();
     conn.execute(
@@ -939,52 +1091,67 @@ pub(crate) fn mark_rejected_batch(
             rejection_reason = excluded.rejection_reason,
             recorded_at = excluded.recorded_at",
         params![account_subject, file.id, file.name, short_reason, now_ms()],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 pub(crate) fn clear_rejected_batch(
-    conn: &Connection, account_subject: &str, file_id: &str,
+    conn: &Connection,
+    account_subject: &str,
+    file_id: &str,
 ) -> Result<(), String> {
     conn.execute(
         "DELETE FROM drive_rejected_files WHERE account_subject = ?1 AND file_id = ?2",
         params![account_subject, file_id],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 pub(crate) fn count_rejected_batches(conn: &Connection) -> Result<i64, String> {
-    let subject = load_state(conn)?.account_subject
+    let subject = load_state(conn)?
+        .account_subject
         .ok_or("Google account identity is unavailable")?;
     conn.query_row(
         "SELECT COUNT(*) FROM drive_rejected_files WHERE account_subject = ?1",
-        [subject], |row| row.get(0),
-    ).map_err(|e| e.to_string())
+        [subject],
+        |row| row.get(0),
+    )
+    .map_err(|e| e.to_string())
 }
 
 pub(crate) fn sample_rejected_batch(conn: &Connection) -> Result<Option<(String, String)>, String> {
-    let subject = load_state(conn)?.account_subject
+    let subject = load_state(conn)?
+        .account_subject
         .ok_or("Google account identity is unavailable")?;
     conn.query_row(
         "SELECT file_name, rejection_reason FROM drive_rejected_files
          WHERE account_subject = ?1 ORDER BY recorded_at DESC, file_id ASC LIMIT 1",
-        [subject], |row| Ok((row.get(0)?, row.get(1)?)),
-    ).optional().map_err(|e| e.to_string())
+        [subject],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
 }
 
 // Full-history scans can retire a warning when the broken file was deleted.
 // Incremental scans cannot infer deletion for files outside their time window.
 pub(crate) fn clear_missing_rejected_batches(
-    conn: &Connection, account_subject: &str, listed_files: &[DriveFileRecord],
+    conn: &Connection,
+    account_subject: &str,
+    listed_files: &[DriveFileRecord],
 ) -> Result<(), String> {
     let known: std::collections::HashSet<&str> =
         listed_files.iter().map(|f| f.id.as_str()).collect();
-    let mut stmt = conn.prepare(
-        "SELECT file_id FROM drive_rejected_files WHERE account_subject = ?1",
-    ).map_err(|e| e.to_string())?;
-    let existing = stmt.query_map([account_subject], |row| row.get::<_, String>(0))
+    let mut stmt = conn
+        .prepare("SELECT file_id FROM drive_rejected_files WHERE account_subject = ?1")
+        .map_err(|e| e.to_string())?;
+    let existing = stmt
+        .query_map([account_subject], |row| row.get::<_, String>(0))
         .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
     drop(stmt);
     for id in existing {
         if !known.contains(id.as_str()) {
@@ -994,13 +1161,19 @@ pub(crate) fn clear_missing_rejected_batches(
     Ok(())
 }
 
-
-pub(crate) fn accept_deletion_marker(conn: &Connection, marker_version: i64, message: Option<&str>) -> Result<(), String> {
+pub(crate) fn accept_deletion_marker(
+    conn: &Connection,
+    marker_version: i64,
+    message: Option<&str>,
+) -> Result<(), String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    let subject: String = tx.query_row(
-        "SELECT account_subject FROM drive_sync_state WHERE id = 1",
-        [], |row| row.get::<_, Option<String>>(0)
-    ).map_err(|e| e.to_string())?
+    let subject: String = tx
+        .query_row(
+            "SELECT account_subject FROM drive_sync_state WHERE id = 1",
+            [],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .map_err(|e| e.to_string())?
         .filter(|value| !value.trim().is_empty())
         .ok_or("Cannot apply a Drive deletion without a verified Google account")?;
 
@@ -1014,7 +1187,8 @@ pub(crate) fn accept_deletion_marker(conn: &Connection, marker_version: i64, mes
          WHERE s.timestamp_utc <= ?2
            AND NOT EXISTS (SELECT 1 FROM drive_event_state d WHERE d.scrobble_id = s.id)",
         params![subject, marker_version],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     tx.execute(
         "UPDATE drive_event_state SET
              owner_account_subject = COALESCE(owner_account_subject, ?1),
@@ -1025,22 +1199,29 @@ pub(crate) fn accept_deletion_marker(conn: &Connection, marker_version: i64, mes
                SELECT id FROM scrobbles WHERE timestamp_utc <= ?2
            ))",
         params![subject, marker_version],
-    ).map_err(|e| e.to_string())?;
-    tx.execute("DELETE FROM drive_rejected_files WHERE account_subject = ?1",
-        [subject.as_str()]).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM drive_rejected_files WHERE account_subject = ?1",
+        [subject.as_str()],
+    )
+    .map_err(|e| e.to_string())?;
     tx.execute(
         "UPDATE drive_sync_state SET enabled = 0, accepted_disable_version = ?1,
          download_cursor = 0, last_uploaded = 0, last_imported = 0,
          offline_capture_account_subject = ?3, last_error = ?2 WHERE id = 1",
         params![marker_version, message, subject],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())
 }
 
-
 // An explicit opt-in can assign older local captures to the currently linked
 // account. Imported cloud events are never rebroadcast as new local origins.
-pub(crate) fn authorize_existing_local_history(conn: &Connection, subject: &str) -> Result<usize, String> {
+pub(crate) fn authorize_existing_local_history(
+    conn: &Connection,
+    subject: &str,
+) -> Result<usize, String> {
     if subject.trim().is_empty() {
         return Err("Google account identity is missing".into());
     }
@@ -1048,15 +1229,18 @@ pub(crate) fn authorize_existing_local_history(conn: &Connection, subject: &str)
     tx.execute(
         "INSERT OR IGNORE INTO drive_event_state
          (scrobble_id, drive_imported, owner_account_subject)
-         SELECT id, 0, ?1 FROM scrobbles", [subject]
-    ).map_err(|e| e.to_string())?;
-    let reassigned = tx.execute(
-        "UPDATE drive_event_state SET owner_account_subject = ?1, drive_uploaded_at = NULL,
+         SELECT id, 0, ?1 FROM scrobbles",
+        [subject],
+    )
+    .map_err(|e| e.to_string())?;
+    let reassigned = tx
+        .execute(
+            "UPDATE drive_event_state SET owner_account_subject = ?1, drive_uploaded_at = NULL,
              cloud_suppressed = 0
-         WHERE drive_imported = 0", [subject]
-    ).map_err(|e| e.to_string())?;
+         WHERE drive_imported = 0",
+            [subject],
+        )
+        .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(reassigned)
 }
-
-

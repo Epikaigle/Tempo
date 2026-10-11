@@ -25,11 +25,17 @@ pub(crate) struct SubjectBoundRefreshToken {
     pub(crate) refresh_token: String,
 }
 
-pub(crate) fn decode_subject_bound_token(value: &str, expected_subject: &str) -> Result<String, String> {
-    let stored: SubjectBoundRefreshToken = serde_json::from_str(value)
-        .map_err(|_| "Google credential format is outdated. Reconnect Google securely.".to_string())?;
+pub(crate) fn decode_subject_bound_token(
+    value: &str,
+    expected_subject: &str,
+) -> Result<String, String> {
+    let stored: SubjectBoundRefreshToken = serde_json::from_str(value).map_err(|_| {
+        "Google credential format is outdated. Reconnect Google securely.".to_string()
+    })?;
     if stored.sub != expected_subject || stored.refresh_token.is_empty() {
-        return Err("Google credential belongs to a different account. Reconnect securely.".to_string());
+        return Err(
+            "Google credential belongs to a different account. Reconnect securely.".to_string(),
+        );
     }
     Ok(stored.refresh_token)
 }
@@ -57,15 +63,23 @@ pub(crate) async fn secure_refresh_token_get(
     .map_err(|e| format!("OS credential store task failed: {e}"))?
 }
 
-pub(crate) async fn secure_refresh_token_set(device_id: &str, subject: &str, refresh_token: &str) -> Result<(), String> {
+pub(crate) async fn secure_refresh_token_set(
+    device_id: &str,
+    subject: &str,
+    refresh_token: &str,
+) -> Result<(), String> {
     if refresh_token.is_empty() || subject.trim().is_empty() {
-        return Err("Refusing to store a Google credential without a verified subject and token".to_string());
+        return Err(
+            "Refusing to store a Google credential without a verified subject and token"
+                .to_string(),
+        );
     }
     let username = device_id.to_string();
     let secret = serde_json::to_string(&SubjectBoundRefreshToken {
         sub: subject.to_string(),
         refresh_token: refresh_token.to_string(),
-    }).map_err(|e| e.to_string())?;
+    })
+    .map_err(|e| e.to_string())?;
     tokio::task::spawn_blocking(move || {
         let entry = keyring::Entry::new(KEYRING_SERVICE, &username)
             .map_err(|e| format!("Could not open the OS credential store: {e}"))?;
@@ -99,22 +113,35 @@ pub(crate) async fn refresh_token_for_state(
     _app_data_dir: &Path,
     state: &StoredDriveState,
 ) -> Result<String, String> {
-    let subject = state.account_subject.as_deref()
+    let subject = state
+        .account_subject
+        .as_deref()
         .filter(|subject| !subject.trim().is_empty())
         .ok_or("Google account identity is unavailable. Connect Google again.")?;
     // Old plaintext SQLite/keyring credentials carry no cryptographic account
     // binding. Never adopt one into a new identity without re-authenticating.
-    if state.refresh_token.as_deref().is_some_and(|value| !value.is_empty()) {
+    if state
+        .refresh_token
+        .as_deref()
+        .is_some_and(|value| !value.is_empty())
+    {
         return Err("Legacy Google credential is unverified. Reconnect Google securely.".into());
     }
-    secure_refresh_token_get(&state.device_id, subject).await?
+    secure_refresh_token_get(&state.device_id, subject)
+        .await?
         .ok_or_else(|| "Google Drive needs you to reconnect".to_string())
 }
 
 pub(crate) async fn access_token(app_data_dir: &Path) -> Result<String, String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
-    if state.account_subject.as_deref().map(str::trim).filter(|subject| !subject.is_empty()).is_none() {
+    if state
+        .account_subject
+        .as_deref()
+        .map(str::trim)
+        .filter(|subject| !subject.is_empty())
+        .is_none()
+    {
         return Err("Google account identity is unavailable. Connect Google again.".into());
     }
     if let Some(token) = state.access_token.clone() {
@@ -147,7 +174,8 @@ pub(crate) async fn access_token(app_data_dir: &Path) -> Result<String, String> 
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         let invalid_grant = ["invalid_grant", "invalid_client", "unauthorized_client"]
-            .iter().any(|reason| body.contains(reason));
+            .iter()
+            .any(|reason| body.contains(reason));
         return Err(if invalid_grant {
             format!("Google authorization failed (invalid_grant or revoked credentials; HTTP {status}). Reconnect Google.")
         } else {
@@ -161,18 +189,32 @@ pub(crate) async fn access_token(app_data_dir: &Path) -> Result<String, String> 
     let user_info = http_client()?
         .get(USERINFO_ENDPOINT)
         .bearer_auth(&token.access_token)
-        .send().await
+        .send()
+        .await
         .map_err(|e| format!("Could not verify refreshed Google account: {e}"))?;
     if !user_info.status().is_success() {
-        return Err(format!("Could not verify refreshed Google account (HTTP {})", user_info.status()));
+        return Err(format!(
+            "Could not verify refreshed Google account (HTTP {})",
+            user_info.status()
+        ));
     }
     let info: GoogleUserInfo = user_info.json().await.map_err(|e| e.to_string())?;
     if info.sub.as_deref() != state.account_subject.as_deref() {
-        return Err("Google refreshed a token for a different account. Reconnect Google securely.".into());
+        return Err(
+            "Google refreshed a token for a different account. Reconnect Google securely.".into(),
+        );
     }
-    if let Some(rotated) = token.refresh_token.as_deref().filter(|value| !value.is_empty()) {
-        secure_refresh_token_set(&state.device_id,
-            state.account_subject.as_deref().unwrap_or_default(), rotated).await?;
+    if let Some(rotated) = token
+        .refresh_token
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        secure_refresh_token_set(
+            &state.device_id,
+            state.account_subject.as_deref().unwrap_or_default(),
+            rotated,
+        )
+        .await?;
     }
     let expires_at = now_ms() + token.expires_in.max(60) * 1000;
     let conn = open_sync_db(app_data_dir)?;
@@ -195,48 +237,75 @@ pub(crate) fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
-
-pub(crate) fn parse_oauth_callback(line: &str, expected_state: &str) -> Option<Result<String, String>> {
+pub(crate) fn parse_oauth_callback(
+    line: &str,
+    expected_state: &str,
+) -> Option<Result<String, String>> {
     let mut parts = line.split_whitespace();
-    if parts.next()? != "GET" { return None; }
+    if parts.next()? != "GET" {
+        return None;
+    }
     let target = parts.next()?;
-    if !matches!(parts.next()?, "HTTP/1.0" | "HTTP/1.1") || parts.next().is_some()
-        || !target.starts_with('/') || target.starts_with("//") {
+    if !matches!(parts.next()?, "HTTP/1.0" | "HTTP/1.1")
+        || parts.next().is_some()
+        || !target.starts_with('/')
+        || target.starts_with("//")
+    {
         return None;
     }
     let callback = Url::parse(&format!("http://127.0.0.1{target}")).ok()?;
-    if callback.path() != "/oauth2/callback" || callback.fragment().is_some() { return None; }
+    if callback.path() != "/oauth2/callback" || callback.fragment().is_some() {
+        return None;
+    }
     let mut values = HashMap::new();
     for (key, value) in callback.query_pairs() {
         if matches!(key.as_ref(), "state" | "code" | "error")
-            && values.insert(key.into_owned(), value.into_owned()).is_some() {
+            && values
+                .insert(key.into_owned(), value.into_owned())
+                .is_some()
+        {
             return None;
         }
     }
-    if values.get("state").map(String::as_str) != Some(expected_state) { return None; }
+    if values.get("state").map(String::as_str) != Some(expected_state) {
+        return None;
+    }
     if let Some(error) = values.get("error") {
         return Some(Err(format!("Google sign-in failed: {error}")));
     }
-    Some(values.remove("code").filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| "Google sign-in did not return an authorization code".to_string()))
+    Some(
+        values
+            .remove("code")
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| "Google sign-in did not return an authorization code".to_string()),
+    )
 }
 
-pub(crate) async fn read_oauth_request(stream: &mut tokio::net::TcpStream) -> Result<String, String> {
+pub(crate) async fn read_oauth_request(
+    stream: &mut tokio::net::TcpStream,
+) -> Result<String, String> {
     let mut request = Vec::new();
     let mut buffer = [0u8; 1024];
     loop {
         let count = stream.read(&mut buffer).await.map_err(|e| e.to_string())?;
-        if count == 0 { return Err("Incomplete OAuth callback".into()); }
+        if count == 0 {
+            return Err("Incomplete OAuth callback".into());
+        }
         request.extend_from_slice(&buffer[..count]);
-        if request.len() > 16 * 1024 { return Err("OAuth callback is too large".into()); }
+        if request.len() > 16 * 1024 {
+            return Err("OAuth callback is too large".into());
+        }
         if request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-            return String::from_utf8(request).map_err(|_| "Invalid OAuth callback encoding".into());
+            return String::from_utf8(request)
+                .map_err(|_| "Invalid OAuth callback encoding".into());
         }
     }
 }
 
 pub(crate) async fn wait_for_oauth_callback(
-    listener: &tokio::net::TcpListener, expected_state: &str, deadline: Duration,
+    listener: &tokio::net::TcpListener,
+    expected_state: &str,
+    deadline: Duration,
 ) -> Result<String, String> {
     tokio::time::timeout(deadline, async {
         loop {
@@ -334,18 +403,26 @@ pub(crate) async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> R
             user_info.status()
         ));
     }
-    let info = user_info.json::<GoogleUserInfo>().await
+    let info = user_info
+        .json::<GoogleUserInfo>()
+        .await
         .map_err(|e| format!("Could not parse Google account info: {e}"))?;
-    let email = info.email.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    let email = info
+        .email
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
         .ok_or("Google account email is unavailable; refusing Drive sync state reuse")?;
     // OIDC subject, not the editable email, identifies a Google account.
-    let subject = info.sub.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    let subject = info
+        .sub
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
         .ok_or("Google account subject is unavailable; reconnect securely")?;
 
     let conn = open_sync_db(app_data_dir)?;
     let existing = load_state(&conn)?;
-    let previous_account_matches = existing.last_verified_account_subject
-        .as_deref() == Some(subject.as_str());
+    let previous_account_matches =
+        existing.last_verified_account_subject.as_deref() == Some(subject.as_str());
     prepare_oauth_credentials(&conn, !previous_account_matches)?;
     let device_id = existing.device_id.clone();
     let legacy_refresh_token = existing
@@ -364,9 +441,12 @@ pub(crate) async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> R
         if let Some(value) = legacy_refresh_token {
             value
         } else {
-            secure_refresh_token_get(&device_id, &subject).await?.ok_or_else(|| {
-                "Google did not issue a refresh token. Disconnect and connect again.".to_string()
-            })?
+            secure_refresh_token_get(&device_id, &subject)
+                .await?
+                .ok_or_else(|| {
+                    "Google did not issue a refresh token. Disconnect and connect again."
+                        .to_string()
+                })?
         }
     } else {
         // The verified current account is either different from the stored one,
@@ -399,5 +479,3 @@ pub(crate) async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> R
     transaction.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
-
-

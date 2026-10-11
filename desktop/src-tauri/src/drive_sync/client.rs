@@ -49,20 +49,32 @@ pub(crate) fn transient_drive_response(status: StatusCode) -> bool {
 // Retrying a create/upload POST blindly can leave duplicate cloud objects.
 pub(crate) async fn send_drive_idempotent(request: RequestBuilder) -> Result<Response, String> {
     for attempt in 0..DRIVE_REQUEST_RETRIES {
-        let replay = request.try_clone().ok_or("Drive request cannot be retried safely")?;
+        let replay = request
+            .try_clone()
+            .ok_or("Drive request cannot be retried safely")?;
         match replay.send().await {
-            Ok(response) if transient_drive_response(response.status()) &&
-                    attempt + 1 < DRIVE_REQUEST_RETRIES => {
-                let seconds = response.headers().get(header::RETRY_AFTER)
+            Ok(response)
+                if transient_drive_response(response.status())
+                    && attempt + 1 < DRIVE_REQUEST_RETRIES =>
+            {
+                let seconds = response
+                    .headers()
+                    .get(header::RETRY_AFTER)
                     .and_then(|h| h.to_str().ok())
                     .and_then(|s| s.parse::<u64>().ok())
                     .map(|s| s.min(5));
-                tokio::time::sleep(seconds.map(Duration::from_secs)
-                    .unwrap_or_else(|| Duration::from_millis(500u64 * (1 << attempt)))).await;
+                tokio::time::sleep(
+                    seconds
+                        .map(Duration::from_secs)
+                        .unwrap_or_else(|| Duration::from_millis(500u64 * (1 << attempt))),
+                )
+                .await;
             }
             Ok(response) => return Ok(response),
-            Err(error) if attempt + 1 < DRIVE_REQUEST_RETRIES &&
-                 (error.is_timeout() || error.is_connect()) => {
+            Err(error)
+                if attempt + 1 < DRIVE_REQUEST_RETRIES
+                    && (error.is_timeout() || error.is_connect()) =>
+            {
                 tokio::time::sleep(Duration::from_millis(500u64 * (1 << attempt))).await;
             }
             Err(error) => return Err(format!("Google Drive request failed: {error}")),
@@ -75,9 +87,7 @@ pub(crate) async fn drive_json<T: for<'de> Deserialize<'de>>(
     access_token: &str,
     url: Url,
 ) -> Result<T, String> {
-    let response = send_drive_idempotent(
-        http_client()?.get(url).bearer_auth(access_token)
-    ).await?;
+    let response = send_drive_idempotent(http_client()?.get(url).bearer_auth(access_token)).await?;
     if !response.status().is_success() {
         let status = response.status();
         let detail = if status.as_u16() == 403 {
@@ -85,9 +95,12 @@ pub(crate) async fn drive_json<T: for<'de> Deserialize<'de>>(
         } else {
             String::new()
         };
-        if status.as_u16() == 403 &&
-            (detail.contains("insufficientPermissions") || detail.contains("authError")) {
-            return Err(format!("Google Drive authorization failed (HTTP {status}). Reconnect Google."));
+        if status.as_u16() == 403
+            && (detail.contains("insufficientPermissions") || detail.contains("authError"))
+        {
+            return Err(format!(
+                "Google Drive authorization failed (HTTP {status}). Reconnect Google."
+            ));
         }
         return Err(format!("Google Drive request failed (HTTP {status})"));
     }
@@ -155,7 +168,8 @@ pub(crate) async fn list_batches(
     // Google Drive can time out on ordered listings of large appDataFolder
     // archives. List without server-side ordering, then order in memory so
     // incremental download checkpoints never skip an older file after a crash.
-    let mut files: Vec<DriveFileRecord> = list_files(access_token, &query, None).await?
+    let mut files: Vec<DriveFileRecord> = list_files(access_token, &query, None)
+        .await?
         .into_iter()
         .filter(|file| file.name.starts_with(FILE_PREFIX) && file.name.ends_with(".json.gz"))
         .collect();
@@ -174,7 +188,10 @@ pub(crate) async fn find_exact_files(
 
 pub(crate) fn latest_marker_version(files: &[DriveFileRecord]) -> Result<i64, String> {
     files.iter().try_fold(0, |latest, file| {
-        Ok(latest.max(require_server_time(file.modified_time.as_deref(), "deletion marker")?))
+        Ok(latest.max(require_server_time(
+            file.modified_time.as_deref(),
+            "deletion marker",
+        )?))
     })
 }
 
@@ -186,7 +203,10 @@ pub(crate) fn batch_generation(file: &DriveFileRecord) -> Option<i64> {
     match file.app_properties.get(APP_PROPERTY_GENERATION) {
         None => Some(0),
         Some(value) if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) => {
-            value.parse::<i64>().ok().filter(|value| (0..=MAX_WIRE_INTEGER).contains(value))
+            value
+                .parse::<i64>()
+                .ok()
+                .filter(|value| (0..=MAX_WIRE_INTEGER).contains(value))
         }
         _ => None,
     }
@@ -196,7 +216,10 @@ pub(crate) fn batch_file_name(generation: i64, device_id: &str, batch_id: &str) 
     format!("{FILE_PREFIX}g{generation}_{device_id}_{batch_id}.json.gz")
 }
 
-pub(crate) async fn download_bytes(access_token: &str, file: &DriveFileRecord) -> Result<Vec<u8>, String> {
+pub(crate) async fn download_bytes(
+    access_token: &str,
+    file: &DriveFileRecord,
+) -> Result<Vec<u8>, String> {
     if let Some(size) = file
         .size
         .as_deref()
@@ -207,9 +230,7 @@ pub(crate) async fn download_bytes(access_token: &str, file: &DriveFileRecord) -
         }
     }
     let url = format!("{DRIVE_API}/files/{}?alt=media", file.id);
-    let response = send_drive_idempotent(
-        http_client()?.get(url).bearer_auth(access_token)
-    ).await?;
+    let response = send_drive_idempotent(http_client()?.get(url).bearer_auth(access_token)).await?;
     if !response.status().is_success() {
         return Err(format!(
             "Drive download failed (HTTP {})",
@@ -234,13 +255,22 @@ pub(crate) async fn download_bytes(access_token: &str, file: &DriveFileRecord) -
     Ok(bytes)
 }
 
-pub(crate) fn validate_compressed_metadata(file: &DriveFileRecord, bytes: &[u8]) -> Result<(), String> {
-    let declared_size = file.size.as_deref().and_then(|value| value.parse::<usize>().ok());
+pub(crate) fn validate_compressed_metadata(
+    file: &DriveFileRecord,
+    bytes: &[u8],
+) -> Result<(), String> {
+    let declared_size = file
+        .size
+        .as_deref()
+        .and_then(|value| value.parse::<usize>().ok());
     let expected_hash = file.app_properties.get(APP_PROPERTY_SHA256);
     if declared_size != Some(bytes.len())
-        || !expected_hash.is_some_and(|hash| valid_sha256(hash) && *hash == hex::encode(Sha256::digest(bytes)))
+        || !expected_hash
+            .is_some_and(|hash| valid_sha256(hash) && *hash == hex::encode(Sha256::digest(bytes)))
     {
-        return Err("Malformed Drive history batch: size or SHA-256 does not match metadata".to_string());
+        return Err(
+            "Malformed Drive history batch: size or SHA-256 does not match metadata".to_string(),
+        );
     }
     Ok(())
 }
@@ -278,10 +308,12 @@ pub(crate) fn decode_batch(bytes: &[u8]) -> Result<WireBatch, String> {
     Ok(batch)
 }
 
-
 pub(crate) fn valid_identifier(value: &str, max_length: usize) -> bool {
-    !value.is_empty() && value.len() <= max_length
-        && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+    !value.is_empty()
+        && value.len() <= max_length
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
 }
 
 pub(crate) fn valid_text(value: &str) -> bool {
@@ -289,7 +321,9 @@ pub(crate) fn valid_text(value: &str) -> bool {
 }
 
 pub(crate) fn valid_optional_text(value: &Option<String>) -> bool {
-    value.as_deref().map_or(true, |value| value.encode_utf16().count() <= 1000)
+    value
+        .as_deref()
+        .map_or(true, |value| value.encode_utf16().count() <= 1000)
 }
 
 pub(crate) fn validate_batch(batch: &WireBatch) -> Result<(), String> {
@@ -299,7 +333,8 @@ pub(crate) fn validate_batch(batch: &WireBatch) -> Result<(), String> {
         || !valid_text(&batch.source_device_name)
         || !valid_identifier(&batch.source_platform, 100)
         || !(1..=MAX_WIRE_INTEGER).contains(&batch.created_at_utc)
-        || batch.events.is_empty() || batch.events.len() > 1000
+        || batch.events.is_empty()
+        || batch.events.len() > 1000
         || !batch.events.iter().all(valid_event)
         || batch.batch_id != batch_id(&batch.events)
     {
@@ -318,7 +353,11 @@ pub(crate) fn matches_batch_metadata(file: &DriveFileRecord, batch: &WireBatch) 
 }
 
 pub(crate) fn event_id(device_id: &str, play: &LocalPlay) -> String {
-    if let Some(origin) = play.origin_event_id.as_deref().filter(|value| valid_sha256(value)) {
+    if let Some(origin) = play
+        .origin_event_id
+        .as_deref()
+        .filter(|value| valid_sha256(value))
+    {
         return origin.to_string();
     }
     sha256_hex(&format!(
@@ -348,7 +387,9 @@ pub(crate) fn protocol_volume(play: &LocalPlay) -> Option<i64> {
     if !play.volume_level.is_finite() || play.volume_level < 0.0 {
         return None;
     }
-    if play.volume_level == 0.0 { return Some(0); }
+    if play.volume_level == 0.0 {
+        return Some(0);
+    }
     // Desktop stores fractional volume. Positive gain must never become mute;
     // MPRIS amplification above 1.0 is capped at the protocol's 100 percent.
     Some(((play.volume_level.clamp(0.0, 1.0) * 100.0).round() as i64).max(1))
@@ -394,12 +435,27 @@ pub(crate) fn local_to_wire(device_id: &str, play: &LocalPlay) -> WireEvent {
     }
 }
 
-pub(crate) fn verified_upload(file: &DriveFileRecord, name: &str, device: &str, generation: i64, bytes: &[u8]) -> bool {
-    file.name == name && validate_compressed_metadata(file, bytes).is_ok()
+pub(crate) fn verified_upload(
+    file: &DriveFileRecord,
+    name: &str,
+    device: &str,
+    generation: i64,
+    bytes: &[u8],
+) -> bool {
+    file.name == name
+        && validate_compressed_metadata(file, bytes).is_ok()
         && file.app_properties.get("tempo_kind").map(String::as_str) == Some("history_batch")
         && file.app_properties.get("tempo_schema").map(String::as_str) == Some("1")
-        && file.app_properties.get("source_device_id").map(String::as_str) == Some(device)
-        && file.app_properties.get("source_platform").map(String::as_str) == Some("desktop")
+        && file
+            .app_properties
+            .get("source_device_id")
+            .map(String::as_str)
+            == Some(device)
+        && file
+            .app_properties
+            .get("source_platform")
+            .map(String::as_str)
+            == Some("desktop")
         && batch_generation(file) == Some(generation)
 }
 
@@ -411,12 +467,14 @@ pub(crate) async fn upload_batch(
     compressed: &[u8],
 ) -> Result<(), String> {
     let existing = find_exact_files(access_token, file_name).await?;
-    if existing.iter().any(|file| verified_upload(file, file_name, device_id, generation, compressed)) {
+    if existing
+        .iter()
+        .any(|file| verified_upload(file, file_name, device_id, generation, compressed))
+    {
         return Ok(());
     }
     // Invalid same-name objects are not proof that the upload succeeded.
     // Event IDs deduplicate a verified replacement if an old upload also exists.
-
 
     let boundary = format!("tempo_{}", Uuid::new_v4().simple());
     let metadata = serde_json::json!({
@@ -453,7 +511,9 @@ pub(crate) async fn upload_batch(
     }
     let uploaded: DriveFileRecord = response.json().await.map_err(|e| e.to_string())?;
     if !verified_upload(&uploaded, file_name, device_id, generation, compressed) {
-        return Err("Google Drive returned mismatched metadata for the uploaded history batch".into());
+        return Err(
+            "Google Drive returned mismatched metadata for the uploaded history batch".into(),
+        );
     }
     Ok(())
 }
@@ -502,18 +562,29 @@ pub(crate) async fn upload_local_history(
                 let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
                 let mut pinned = HashMap::new();
                 for play in chunk {
-                    pinned.insert(play.id, pin_local_origin(
-                        &tx, device_id, play.id, play.timestamp_utc, &play.title, &play.artist
-                    )?);
+                    pinned.insert(
+                        play.id,
+                        pin_local_origin(
+                            &tx,
+                            device_id,
+                            play.id,
+                            play.timestamp_utc,
+                            &play.title,
+                            &play.artist,
+                        )?,
+                    );
                 }
                 tx.commit().map_err(|e| e.to_string())?;
                 pinned
             };
-            let events: Vec<WireEvent> = chunk.iter().map(|play| {
-                let mut wire = local_to_wire(device_id, play);
-                wire.event_id = pinned[&play.id].clone();
-                wire
-            }).collect();
+            let events: Vec<WireEvent> = chunk
+                .iter()
+                .map(|play| {
+                    let mut wire = local_to_wire(device_id, play);
+                    wire.event_id = pinned[&play.id].clone();
+                    wire
+                })
+                .collect();
             let id = batch_id(&events);
             let batch = WireBatch {
                 schema_version: SCHEMA_VERSION,
@@ -521,7 +592,11 @@ pub(crate) async fn upload_local_history(
                 source_device_id: device_id.to_string(),
                 source_device_name: "Tempo Desktop".to_string(),
                 source_platform: "desktop".to_string(),
-                created_at_utc: events.iter().map(|event| event.timestamp_utc).max().unwrap_or(1),
+                created_at_utc: events
+                    .iter()
+                    .map(|event| event.timestamp_utc)
+                    .max()
+                    .unwrap_or(1),
                 events,
             };
             let compressed = encode_batch(&batch)?;
@@ -558,18 +633,35 @@ pub(crate) async fn upload_local_history(
 
 pub(crate) fn valid_event(event: &WireEvent) -> bool {
     valid_sha256(&event.event_id)
-        && valid_text(&event.title) && valid_text(&event.artist)
-        && valid_text(&event.source_app) && valid_text(&event.source) && valid_text(&event.content_type)
-        && valid_optional_text(&event.album) && valid_optional_text(&event.session_id) && valid_optional_text(&event.site)
+        && valid_text(&event.title)
+        && valid_text(&event.artist)
+        && valid_text(&event.source_app)
+        && valid_text(&event.source)
+        && valid_text(&event.content_type)
+        && valid_optional_text(&event.album)
+        && valid_optional_text(&event.session_id)
+        && valid_optional_text(&event.site)
         && (1..=MAX_WIRE_INTEGER).contains(&event.timestamp_utc)
-        && [event.duration_ms, event.listened_ms, event.total_pause_duration_ms]
-            .iter().all(|value| (0..=MAX_WIRE_INTEGER).contains(value))
-        && [event.replay_count, event.pause_count, event.seek_count, event.position_updates_count]
-            .iter().all(|value| (0..=i32::MAX as i64).contains(value))
+        && [
+            event.duration_ms,
+            event.listened_ms,
+            event.total_pause_duration_ms,
+        ]
+        .iter()
+        .all(|value| (0..=MAX_WIRE_INTEGER).contains(value))
+        && [
+            event.replay_count,
+            event.pause_count,
+            event.seek_count,
+            event.position_updates_count,
+        ]
+        .iter()
+        .all(|value| (0..=i32::MAX as i64).contains(value))
         && (0..=100).contains(&event.completion_percentage)
-        && event.volume_level.map_or(true, |value| (0..=100).contains(&value))
+        && event
+            .volume_level
+            .map_or(true, |value| (0..=100).contains(&value))
 }
-
 
 pub(crate) async fn download_remote_history(
     app_data_dir: &Path,
@@ -579,7 +671,9 @@ pub(crate) async fn download_remote_history(
 ) -> Result<(usize, usize), String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
-    let account_subject = state.account_subject.as_deref()
+    let account_subject = state
+        .account_subject
+        .as_deref()
         .filter(|subject| !subject.trim().is_empty())
         .ok_or("Google account identity is missing; reconnect securely")?;
     let accepted_generation = state.accepted_disable_version.max(0);
@@ -600,12 +694,21 @@ pub(crate) async fn download_remote_history(
             conn.execute(
                 "UPDATE drive_sync_state SET download_cursor = ?1 WHERE id = 1",
                 [max_created],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
         }
         let created = parse_time_ms(file.created_time.as_deref());
         let Some(generation) = batch_generation(&file) else {
-            log::warn!("Skipping Drive history batch with invalid generation: {}", file.name);
-            mark_rejected_batch(&conn, account_subject, &file, "Invalid or missing Drive generation")?;
+            log::warn!(
+                "Skipping Drive history batch with invalid generation: {}",
+                file.name
+            );
+            mark_rejected_batch(
+                &conn,
+                account_subject,
+                &file,
+                "Invalid or missing Drive generation",
+            )?;
             max_created = max_created.max(created);
             continue;
         };
@@ -643,14 +746,22 @@ pub(crate) async fn download_remote_history(
             .is_some_and(|size| size > MAX_BATCH_BYTES)
         {
             log::warn!("Skipping oversized Drive history batch {}", file.name);
-            mark_rejected_batch(&conn, account_subject, &file, "Drive history batch exceeds the maximum size")?;
+            mark_rejected_batch(
+                &conn,
+                account_subject,
+                &file,
+                "Drive history batch exceeds the maximum size",
+            )?;
             max_created = max_created.max(created);
             continue;
         }
 
         let bytes = match download_bytes(access_token, &file).await {
             Ok(bytes) => bytes,
-            Err(err) if err.contains("too large") || err.starts_with("Malformed Drive history batch:") => {
+            Err(err)
+                if err.contains("too large")
+                    || err.starts_with("Malformed Drive history batch:") =>
+            {
                 // Permanently malformed/hostile payload. Consume this one file so
                 // it cannot block every later batch forever.
                 log::warn!(
@@ -683,8 +794,16 @@ pub(crate) async fn download_remote_history(
             }
         };
         if !matches_batch_metadata(&file, &batch) {
-            log::warn!("Skipping history batch whose payload does not match Drive metadata: {}", file.name);
-            mark_rejected_batch(&conn, account_subject, &file, "Batch payload disagrees with verified Google Drive metadata")?;
+            log::warn!(
+                "Skipping history batch whose payload does not match Drive metadata: {}",
+                file.name
+            );
+            mark_rejected_batch(
+                &conn,
+                account_subject,
+                &file,
+                "Batch payload disagrees with verified Google Drive metadata",
+            )?;
             max_created = max_created.max(created);
             continue;
         }
@@ -694,7 +813,12 @@ pub(crate) async fn download_remote_history(
         }
         let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         for event in &batch.events {
-            if insert_remote_event_for_account(&transaction, &batch.source_device_id, event, account_subject)? {
+            if insert_remote_event_for_account(
+                &transaction,
+                &batch.source_device_id,
+                event,
+                account_subject,
+            )? {
                 imported += 1;
             } else {
                 duplicates += 1;
@@ -717,9 +841,11 @@ pub(crate) async fn download_remote_history(
 
 pub(crate) async fn delete_file(access_token: &str, id: &str) -> Result<(), String> {
     let response = send_drive_idempotent(
-        http_client()?.delete(format!("{DRIVE_API}/files/{id}"))
-            .bearer_auth(access_token)
-    ).await?;
+        http_client()?
+            .delete(format!("{DRIVE_API}/files/{id}"))
+            .bearer_auth(access_token),
+    )
+    .await?;
     if response.status().is_success() || response.status().as_u16() == 404 {
         Ok(())
     } else {
@@ -729,7 +855,11 @@ pub(crate) async fn delete_file(access_token: &str, id: &str) -> Result<(), Stri
 
 // Owner-initiated cleanup removes invalid-generation Tempo history files.
 // A stale client may only delete provably older generations, never unknowns.
-pub(crate) fn should_delete_history_batch(file: &DriveFileRecord, generation: i64, owner_delete: bool) -> bool {
+pub(crate) fn should_delete_history_batch(
+    file: &DriveFileRecord,
+    generation: i64,
+    owner_delete: bool,
+) -> bool {
     if !file.name.starts_with(FILE_PREFIX) {
         return false;
     }
@@ -749,8 +879,12 @@ pub(crate) async fn delete_batches_before_generation(
 ) -> Result<usize, String> {
     // Include even malformed filenames in Tempo's private history namespace:
     // explicit cloud deletion must not strand an invalid old upload.
-    let files = list_files(access_token,
-        &format!("name contains '{FILE_PREFIX}' and trashed = false"), None).await?;
+    let files = list_files(
+        access_token,
+        &format!("name contains '{FILE_PREFIX}' and trashed = false"),
+        None,
+    )
+    .await?;
     let mut deleted = 0usize;
     for file in files {
         if !should_delete_history_batch(&file, generation, owner_delete) {
@@ -766,8 +900,12 @@ pub(crate) async fn bump_disable_marker(access_token: &str) -> Result<i64, Strin
     let previous = get_disable_marker_version(access_token).await?;
     let marker_body = serde_json::json!({
         "schema_version": 1, "history_sync_disabled": true, "revision": Uuid::new_v4().to_string()
-    }).to_string();
-    if find_exact_files(access_token, DISABLE_MARKER_NAME).await?.is_empty() {
+    })
+    .to_string();
+    if find_exact_files(access_token, DISABLE_MARKER_NAME)
+        .await?
+        .is_empty()
+    {
         let boundary = format!("tempo_{}", Uuid::new_v4().simple());
         let metadata = serde_json::json!({
             "name": DISABLE_MARKER_NAME,
@@ -809,23 +947,38 @@ pub(crate) async fn bump_disable_marker(access_token: &str) -> Result<i64, Strin
         for marker in markers {
             let response = send_drive_idempotent(
                 http_client()?
-                    .patch(format!("{DRIVE_UPLOAD_API}/files/{}?uploadType=media&fields=id,name,modifiedTime", marker.id))
+                    .patch(format!(
+                        "{DRIVE_UPLOAD_API}/files/{}?uploadType=media&fields=id,name,modifiedTime",
+                        marker.id
+                    ))
                     .bearer_auth(access_token)
                     .header(header::CONTENT_TYPE, "application/json")
-                    .body(marker_body.clone())
-            ).await?;
+                    .body(marker_body.clone()),
+            )
+            .await?;
             if !response.status().is_success() {
-                return Err(format!("Could not update Drive disable marker (HTTP {})", response.status()));
+                return Err(format!(
+                    "Could not update Drive disable marker (HTTP {})",
+                    response.status()
+                ));
             }
-            updated.push(response.json::<DriveFileRecord>().await.map_err(|e| e.to_string())?);
+            updated.push(
+                response
+                    .json::<DriveFileRecord>()
+                    .await
+                    .map_err(|e| e.to_string())?,
+            );
         }
         let version = latest_marker_version(&updated)?;
-        if version > previous { return Ok(version); }
-        if attempt < 2 { tokio::time::sleep(Duration::from_millis(5)).await; }
+        if version > previous {
+            return Ok(version);
+        }
+        if attempt < 2 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
     }
     Err("Google Drive did not advance the deletion marker version".into())
 }
-
 
 pub(crate) async fn honor_remote_disable_if_needed(
     app_data_dir: &Path,
@@ -845,5 +998,3 @@ pub(crate) async fn honor_remote_disable_if_needed(
     delete_batches_before_generation(access_token, marker_version, false).await?;
     Ok(true)
 }
-
-

@@ -208,12 +208,14 @@ pub(crate) fn http_client() -> Result<Client, String> {
         .map_err(|e| e.to_string())
 }
 
-
 pub(crate) fn sha256_hex(value: &str) -> String {
     use sha2::{Digest, Sha256};
     hex::encode(Sha256::digest(value.as_bytes()))
 }
 
 pub(crate) fn valid_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }

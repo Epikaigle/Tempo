@@ -73,9 +73,8 @@ pub(crate) async fn run_sync_locked_with_restore(
     // A transient upload error must not prevent receiving other devices'
     // history. Both transports are attempted before surfacing an error.
     let upload = upload_local_history(app_data_dir, &token, &device_id).await;
-    let download = download_remote_history(
-        app_data_dir, &token, &device_id, include_own_device_batches
-    ).await;
+    let download =
+        download_remote_history(app_data_dir, &token, &device_id, include_own_device_batches).await;
     let (imported, duplicates) = download?;
     let progress = upload?;
     let mut warnings = Vec::new();
@@ -89,11 +88,14 @@ pub(crate) async fn run_sync_locked_with_restore(
     let rejected = count_rejected_batches(&warnings_conn)?;
     if rejected > 0 {
         let example = sample_rejected_batch(&warnings_conn)?
-            .map(|(name, reason)| format!(
-                " Example: {} ({})",
-                name.chars().take(100).collect::<String>(),
-                reason.chars().take(150).collect::<String>()
-            )).unwrap_or_default();
+            .map(|(name, reason)| {
+                format!(
+                    " Example: {} ({})",
+                    name.chars().take(100).collect::<String>(),
+                    reason.chars().take(150).collect::<String>()
+                )
+            })
+            .unwrap_or_default();
         warnings.push(format!(
             "{rejected} invalid Google Drive history batch(es) were skipped.{example} Repair or remove the affected files, then use Restore all history."
         ));
@@ -104,7 +106,8 @@ pub(crate) async fn run_sync_locked_with_restore(
         "UPDATE drive_sync_state SET last_sync_time = ?1, last_error = ?4,
          last_uploaded = ?2, last_imported = ?3 WHERE id = 1",
         params![now_ms(), progress.uploaded as i64, imported as i64, warning],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(DriveSyncResult {
         uploaded: progress.uploaded,
         imported,
@@ -114,8 +117,8 @@ pub(crate) async fn run_sync_locked_with_restore(
 }
 
 // A cached token or refresh credential only proves that credentials exist,
- // not that Google still accepts them. Persisted auth failures must take
- // precedence until a successful reauthorization or sync clears the error.
+// not that Google still accepts them. Persisted auth failures must take
+// precedence until a successful reauthorization or sync clears the error.
 pub(crate) fn google_reconnect_required(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     lower.contains("http 401")
@@ -145,11 +148,13 @@ pub(crate) async fn status_for(app_data_dir: &Path) -> Result<DriveSyncStatus, S
         .as_deref()
         .is_some_and(|value| !value.is_empty());
     let has_secure_refresh = if state.enabled && !has_legacy_refresh {
-        secure_refresh_token_get(&state.device_id,
-            state.account_subject.as_deref().unwrap_or_default())
-            .await
-            .unwrap_or(None)
-            .is_some()
+        secure_refresh_token_get(
+            &state.device_id,
+            state.account_subject.as_deref().unwrap_or_default(),
+        )
+        .await
+        .unwrap_or(None)
+        .is_some()
     } else {
         false
     };
@@ -158,9 +163,15 @@ pub(crate) async fn status_for(app_data_dir: &Path) -> Result<DriveSyncStatus, S
         .as_deref()
         .is_some_and(|value| !value.trim().is_empty());
     let connected = state.enabled
-        && !state.last_error.as_deref().is_some_and(google_reconnect_required)
+        && !state
+            .last_error
+            .as_deref()
+            .is_some_and(google_reconnect_required)
         && has_account_identity
-        && state.account_subject.as_deref().is_some_and(|v| !v.trim().is_empty())
+        && state
+            .account_subject
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty())
         && (has_valid_access || has_legacy_refresh || has_secure_refresh);
 
     Ok(DriveSyncStatus {
@@ -229,7 +240,8 @@ pub async fn drive_disconnect(state: State<'_, AppState>) -> Result<DriveSyncSta
          token_expires_at = 0, offline_capture_account_subject = NULL,
          last_error = NULL WHERE id = 1",
         [],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     drop(conn);
 
     // Google's OAuth revoke endpoint revokes the *project-wide* grant,
@@ -258,14 +270,19 @@ pub async fn drive_sync_now(state: State<'_, AppState>) -> Result<DriveSyncResul
 /// overlap; this command deliberately re-enumerates every historical Drive batch.
 /// It is safe to retry: origin IDs and alias records make imports idempotent.
 #[tauri::command]
-pub async fn drive_restore_all_history(state: State<'_, AppState>) -> Result<DriveSyncResult, String> {
+pub async fn drive_restore_all_history(
+    state: State<'_, AppState>,
+) -> Result<DriveSyncResult, String> {
     let _guard = SYNC_LOCK.lock().await;
     let conn = open_sync_db(&state.app_data_dir)?;
     if !load_state(&conn)?.enabled {
         return Err("Connect Google Drive before restoring history".to_string());
     }
-    conn.execute("UPDATE drive_sync_state SET download_cursor = 0 WHERE id = 1", [])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE drive_sync_state SET download_cursor = 0 WHERE id = 1",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
     drop(conn);
     let result = run_sync_locked_with_restore(&state.app_data_dir, true).await;
     if let Err(err) = &result {
@@ -276,22 +293,26 @@ pub async fn drive_restore_all_history(state: State<'_, AppState>) -> Result<Dri
     result
 }
 
-
 #[tauri::command]
-pub async fn drive_share_existing_local_history(state: State<'_, AppState>) -> Result<DriveSyncResult, String> {
+pub async fn drive_share_existing_local_history(
+    state: State<'_, AppState>,
+) -> Result<DriveSyncResult, String> {
     let _guard = SYNC_LOCK.lock().await;
     let conn = open_sync_db(&state.app_data_dir)?;
     let account = load_state(&conn)?;
     if !account.enabled {
         return Err("Connect Google Drive before choosing to upload existing local history".into());
     }
-    let subject = account.account_subject
+    let subject = account
+        .account_subject
         .ok_or("Google account identity is missing; reconnect securely")?;
     drop(conn);
 
     let token = access_token(&state.app_data_dir).await?;
     if honor_remote_disable_if_needed(&state.app_data_dir, &token).await? {
-        return Err("Cloud history was deleted by another device; reconnect Google before uploading".into());
+        return Err(
+            "Cloud history was deleted by another device; reconnect Google before uploading".into(),
+        );
     }
 
     let conn = open_sync_db(&state.app_data_dir)?;
@@ -316,8 +337,8 @@ pub async fn drive_delete_cloud_history(state: State<'_, AppState>) -> Result<us
     let conn = open_sync_db(&state.app_data_dir)?;
     accept_deletion_marker(&conn, marker_version, None)?;
     let result = delete_batches_before_generation(&token, marker_version, true).await;
-    if let Err(err) = &result { let _ = set_last_error(&conn, Some(err)); }
+    if let Err(err) = &result {
+        let _ = set_last_error(&conn, Some(err));
+    }
     result
 }
-
-
