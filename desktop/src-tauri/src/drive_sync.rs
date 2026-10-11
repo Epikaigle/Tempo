@@ -3613,12 +3613,19 @@ mod tests {
              );
              INSERT INTO drive_event_state VALUES (1, 0, 100, 'google-a', 0),
                  (2, 1, 100, 'google-a', 0);
+             CREATE TABLE drive_rejected_files (
+                account_subject TEXT NOT NULL, file_id TEXT NOT NULL,
+                file_name TEXT NOT NULL, rejection_reason TEXT NOT NULL,
+                recorded_at INTEGER NOT NULL,
+                PRIMARY KEY (account_subject, file_id)
+             );
              CREATE TABLE drive_sync_state (
                 id INTEGER PRIMARY KEY, enabled INTEGER, account_subject TEXT,
                 accepted_disable_version INTEGER, download_cursor INTEGER,
-                last_uploaded INTEGER, last_imported INTEGER, last_error TEXT
+                last_uploaded INTEGER, last_imported INTEGER, last_error TEXT,
+                offline_capture_account_subject TEXT
              );
-             INSERT INTO drive_sync_state VALUES (1, 1, 'google-a', 0, 123, 4, 5, NULL);"
+             INSERT INTO drive_sync_state VALUES (1, 1, 'google-a', 0, 123, 4, 5, NULL, NULL);"
         ).unwrap();
         accept_deletion_marker(&conn, 200, Some("remote deletion")).unwrap();
         let state: (i64, i64, i64, i64, i64) = conn.query_row(
