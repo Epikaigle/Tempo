@@ -1,6 +1,7 @@
 mod battery;
 mod commands;
 mod db;
+pub mod drive_sync;
 pub mod errors;
 mod media;
 mod network;

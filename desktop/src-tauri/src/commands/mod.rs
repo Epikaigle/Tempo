@@ -1,5 +1,4 @@
-#[path = "../drive_sync.rs"]
-pub mod drive_sync;
+pub use crate::drive_sync;
 pub mod export;
 pub mod pairing;
 pub mod plays;
