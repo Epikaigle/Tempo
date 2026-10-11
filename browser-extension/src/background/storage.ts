@@ -529,8 +529,11 @@ export async function markDriveUploaded(
 /** Apply a cloud-deletion marker durably, including locally captured plays
  * that never reached Drive. Account B's history is never touched by A's marker.
  */
-export async function suppressDeletedDriveHistory(accountSubject: string): Promise<void> {
+export async function suppressDeletedDriveHistory(accountSubject: string, markerVersion: number): Promise<void> {
   if (!accountSubject.trim()) throw new Error('Verified Google account required');
+  if (!Number.isSafeInteger(markerVersion) || markerVersion <= 0) {
+    throw new Error('Verified Drive deletion marker is required');
+  }
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
@@ -539,8 +542,10 @@ export async function suppressDeletedDriveHistory(accountSubject: string): Promi
       const cursor = request.result;
       if (!cursor) return;
       const play = cursor.value as Play;
-      if (!play.driveImported && (!play.driveAccountSubject ||
-          play.driveAccountSubject === accountSubject)) {
+      // A play recorded offline AFTER deletion belongs to the new archive,
+      // even if its IndexedDB row predates discovery of the remote marker.
+      if (!play.driveImported && play.timestampUtc <= markerVersion &&
+          (!play.driveAccountSubject || play.driveAccountSubject === accountSubject)) {
         cursor.update(withDrivePendingKey({
           ...play, driveAccountSubject: accountSubject, cloudSuppressed: true,
         }));
