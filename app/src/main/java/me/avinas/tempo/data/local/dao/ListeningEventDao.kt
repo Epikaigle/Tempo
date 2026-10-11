@@ -627,6 +627,13 @@ interface ListeningEventDao {
      * reassign a play that already belongs to another Google identity.
      */
     @Query(
+        "SELECT MIN(id) FROM listening_events " +
+            "WHERE drive_account_subject = 'lan-unverified' " +
+            "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%'"
+    )
+    suspend fun earliestUnclaimedLanRelayId(): Long?
+
+    @Query(
         "UPDATE listening_events SET drive_account_subject = :accountSubject " +
             "WHERE drive_account_subject = 'lan-unverified' " +
             "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%'"
