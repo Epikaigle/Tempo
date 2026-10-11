@@ -2570,7 +2570,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unordered_drive_pages_are_sorted_before_cursor_checkpointing() {
+    fn google_reconnect_policy_does_not_confuse_network_failures_with_revocation() {
+        assert!(google_reconnect_required("Google Drive request failed (HTTP 401 Unauthorized)"));
+        assert!(google_reconnect_required("Google authorization failed (invalid_grant)"));
+        assert!(google_reconnect_required("Google Drive needs you to reconnect"));
+        assert!(!google_reconnect_required("Google Drive request failed (HTTP 503 Service Unavailable)"));
+        assert!(!google_reconnect_required("Google Drive request failed (HTTP 403 Forbidden)"));
+    }
+
+    #[test]
+        fn unordered_drive_pages_are_sorted_before_cursor_checkpointing() {
         let make = |id: &str, created: &str| DriveFileRecord {
             id: id.to_string(), name: "history.json.gz".into(), size: None,
             created_time: Some(created.to_string()), modified_time: None,
@@ -3344,8 +3353,8 @@ mod tests {
     fn deletion_stop_and_cursors_are_committed_before_cloud_cleanup() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
-            "CREATE TABLE scrobbles (id INTEGER PRIMARY KEY);
-             INSERT INTO scrobbles VALUES (1), (2), (3);
+            "CREATE TABLE scrobbles (id INTEGER PRIMARY KEY, timestamp_utc INTEGER);
+             INSERT INTO scrobbles VALUES (1, 100), (2, 100), (3, 100), (4, 300);
              CREATE TABLE drive_event_state (
                  scrobble_id INTEGER PRIMARY KEY, drive_imported INTEGER,
                  drive_uploaded_at INTEGER, owner_account_subject TEXT,
@@ -3381,12 +3390,20 @@ mod tests {
              VALUES ('Earlier play', 'Artist', 1700000000000)", []).unwrap();
         let old_id = conn.last_insert_rowid();
         assert_eq!(pending_local_plays(&conn).unwrap().len(), 1);
-        accept_deletion_marker(&conn, 200, None).unwrap();
+        conn.execute("INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('Offline newer play', 'Artist', 1700000000500)", []).unwrap();
+        let new_id = conn.last_insert_rowid();
+        accept_deletion_marker(&conn, 1_700_000_000_100, None).unwrap();
         conn.execute("UPDATE drive_sync_state SET enabled = 1 WHERE id = 1", []).unwrap();
-        assert!(pending_local_plays(&conn).unwrap().is_empty());
+        assert_eq!(
+            pending_local_plays(&conn).unwrap().iter().map(|play| play.id).collect::<Vec<_>>(),
+            vec![new_id],
+            "an offline play captured after deletion must remain eligible"
+        );
         assert!(lan_play_account_owners(&directory, &[old_id]).unwrap().is_empty(),
             "LAN must not relay a cloud-suppressed event back to Android Drive");
-        assert_eq!(authorize_existing_local_history(&conn, "google-a").unwrap(), 1);
+        assert_eq!(authorize_existing_local_history(&conn, "google-a").unwrap(), 2);
+        assert_eq!(pending_local_plays(&conn).unwrap().len(), 2);
         assert_eq!(pending_local_plays(&conn).unwrap()[0].id, old_id);
         assert_eq!(lan_play_account_owners(&directory, &[old_id]).unwrap().get(&old_id),
             Some(&"google-a".to_string()));
