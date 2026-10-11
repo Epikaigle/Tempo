@@ -217,7 +217,13 @@ pub(crate) async fn download_bytes(access_token: &str, file: &DriveFileRecord) -
         ));
     }
     let mut response = response;
-    let mut bytes = Vec::new();
+    let expected_capacity = file
+        .size
+        .as_deref()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(MAX_BATCH_BYTES);
+    let mut bytes = Vec::with_capacity(expected_capacity);
     while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
         if bytes.len().saturating_add(chunk.len()) > MAX_BATCH_BYTES {
             return Err(format!("Drive batch {} is too large", file.name));
@@ -326,7 +332,8 @@ pub(crate) fn event_id(device_id: &str, play: &LocalPlay) -> String {
 }
 
 pub(crate) fn batch_id(events: &[WireEvent]) -> String {
-    let mut canonical = String::from("tempo-batch-v1");
+    let mut canonical = String::with_capacity(14 + events.len() * 65);
+    canonical.push_str("tempo-batch-v1");
     for event in events {
         canonical.push('|');
         canonical.push_str(&event.event_id);
@@ -424,19 +431,14 @@ pub(crate) async fn upload_batch(
             APP_PROPERTY_SHA256: hex::encode(Sha256::digest(compressed))
         }
     });
-    let mut body = Vec::new();
-    body.extend_from_slice(
-        format!(
-            "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{}\r\n",
-            metadata
-        )
-        .as_bytes(),
+    let header = format!(
+        "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Type: application/gzip\r\n\r\n"
     );
-    body.extend_from_slice(
-        format!("--{boundary}\r\nContent-Type: application/gzip\r\n\r\n").as_bytes(),
-    );
+    let footer = format!("\r\n--{boundary}--\r\n");
+    let mut body = Vec::with_capacity(header.len() + compressed.len() + footer.len());
+    body.extend_from_slice(header.as_bytes());
     body.extend_from_slice(compressed);
-    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    body.extend_from_slice(footer.as_bytes());
 
     let response = http_client()?
         .post(format!("{DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,size,createdTime,appProperties"))

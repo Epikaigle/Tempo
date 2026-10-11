@@ -535,8 +535,14 @@ pub(crate) fn pin_local_origin(
     // reconciliation will assign a *verified* account after matching. Real
     // newly captured offline plays are already tagged local-only atomically by
     // Database::insert_play; this function never overrides that owner.
-    let state = load_state(conn)?;
-    let subject = if state.enabled { state.account_subject } else { None };
+    let (enabled, subject): (i64, Option<String>) = conn
+        .query_row(
+            "SELECT enabled, account_subject FROM drive_sync_state WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+    let subject = if enabled != 0 { subject } else { None };
     conn.execute(
         "INSERT OR IGNORE INTO drive_event_state
          (scrobble_id, origin_event_id, origin_device_id, drive_imported, drive_uploaded_at, owner_account_subject)
@@ -766,7 +772,7 @@ pub(crate) fn insert_remote_event_for_account(
     let existing_temporal = {
         // SQLite lower() is ASCII-only. Normalize bounded candidates in Rust so
         // accented names and whitespace use the same comparison as other clients.
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT s.id, s.title, s.artist, s.duration_ms FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE s.timestamp_utc BETWEEN ?1 AND ?2
