@@ -35,20 +35,23 @@ class DriveAccountUploadCursorTest {
         val deletedThrough = 500L
         val cloudDeletionUtc = 1_700_000_000_000L
         assertEquals(true, DriveHistorySyncManager.isCloudSuppressedRow(
-            1L, deletedThrough, cloudDeletionUtc - 1_000, cloudDeletionUtc,
+            1L, deletedThrough, cloudDeletionUtc - 1_000, cloudDeletionUtc, 0L,
         ))
         assertEquals(true, DriveHistorySyncManager.isCloudSuppressedRow(
-            500L, deletedThrough, cloudDeletionUtc, cloudDeletionUtc,
+            500L, deletedThrough, cloudDeletionUtc, cloudDeletionUtc, 0L,
         ))
         assertEquals(false, DriveHistorySyncManager.isCloudSuppressedRow(
-            501L, deletedThrough, cloudDeletionUtc - 1_000, cloudDeletionUtc,
+            501L, deletedThrough, cloudDeletionUtc - 1_000, cloudDeletionUtc, 0L,
         ))
         assertEquals(false, DriveHistorySyncManager.isCloudSuppressedRow(
-            250L, deletedThrough, cloudDeletionUtc + 1_000, cloudDeletionUtc,
+            250L, deletedThrough, cloudDeletionUtc + 1_000, cloudDeletionUtc, 0L,
         ))
         assertEquals(false, DriveHistorySyncManager.isCloudSuppressedRow(
-            1L, 0L, cloudDeletionUtc - 1_000, cloudDeletionUtc,
+            1L, 0L, cloudDeletionUtc - 1_000, cloudDeletionUtc, 0L,
         ))
+        assertEquals(true, DriveHistorySyncManager.isCloudSuppressedRow(
+            10L, deletedThrough, cloudDeletionUtc + 5_000, cloudDeletionUtc, 100L,
+        )) // Already uploaded before delete: do not resurrect clock-skewed tracks.
     }
 
     @Test
