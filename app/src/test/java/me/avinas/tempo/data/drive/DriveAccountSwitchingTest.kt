@@ -34,6 +34,20 @@ class DriveAccountSwitchingTest {
     }
 
     @Test
+    fun `incremental listing never clears older rejected file warnings`() {
+        val older = "file-older\tcorrupt.json.gz\tBad metadata\t1700000000000"
+        val recent = "file-recent\tbroken.json.gz\tBad payload\t1700100000000"
+        val records = setOf(older, recent)
+
+        assertEquals(records, DriveHistorySyncManager.retainedRejectedRecords(
+            records, setOf("file-recent"), completeListing = false))
+        assertEquals(setOf(recent), DriveHistorySyncManager.retainedRejectedRecords(
+            records, setOf("file-recent"), completeListing = true))
+        assertTrue(DriveHistorySyncManager.retainedRejectedRecords(
+            records, emptySet(), completeListing = true).isEmpty())
+    }
+
+    @Test
     fun `per account restore keys include download cursor, accepted disable version, and rejected files`() {
         val keys = listOf(
             "download_created_cursor:google-a",

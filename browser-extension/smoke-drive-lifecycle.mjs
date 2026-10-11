@@ -224,4 +224,49 @@ assert.equal(fixture.stored[stateKey].downloadCreatedCursor, 12345);
 assert.deepEqual(fixture.suppressed, [], 'returning to account A must not falsely re-suppress plays');
 console.log('  ✓ account switching A -> B -> A restores cursor and does not falsely trigger deletion');
 
-console.log('\n8 Drive lifecycle scenarios passed');
+// Incremental results may omit a previously rejected file that is still on
+// Drive. Its warning must survive until a complete listing proves deletion.
+reset();
+files.length = 0;
+fixture.stored[stateKey].downloadCreatedCursor = 1_700_500_000_000;
+fixture.stored[stateKey].rejectedBatches = {
+  'google-a': [{ fileId: 'old-corrupt-file', fileName: 'tempo_history_v1_old.json.gz',
+    reason: 'Invalid metadata', recordedAt: 1_700_000_000_000 }],
+};
+await drive.syncDriveHistory();
+assert.equal(fixture.stored[stateKey].rejectedBatches['google-a'].length, 1,
+  'a 24h incremental window must not delete old rejection warnings');
+await drive.restoreDriveHistory();
+assert.deepEqual(fixture.stored[stateKey].rejectedBatches['google-a'], [],
+  'a complete empty Drive listing can retire warnings for removed files');
+console.log('  ✓ rejected-batch warnings survive incremental scans and clear after full scan');
+
+// A missing tempo_kind appProperty must not hide a Tempo-named batch from
+// enumeration; client-side validation must explicitly report the bad file.
+reset();
+files.length = 0;
+files.push({
+  id: 'missing-kind', name: `tempo_history_v1_g100_remote-device_${'b'.repeat(64)}.json.gz`,
+  size: '20', createdTime: new Date(1_700_000_000_000).toISOString(),
+  appProperties: { tempo_schema: '1', source_device_id: 'remote-device',
+    source_platform: 'chrome_extension', tempo_generation: '100',
+    tempo_sha256: 'c'.repeat(64) },
+});
+const originalFetch = globalThis.fetch;
+let checkedHistoryQuery = false;
+globalThis.fetch = async (...args) => {
+  const url = new URL(args[0]);
+  const query = url.searchParams.get('q') ?? '';
+  if (query.startsWith('name contains')) {
+    checkedHistoryQuery = true;
+    assert.doesNotMatch(query, /appProperties has/,
+      'history discovery must not exclude malformed metadata in Drive itself');
+  }
+  return originalFetch(...args);
+};
+await drive.syncDriveHistory();
+assert.equal(checkedHistoryQuery, true);
+assert.equal(fixture.stored[stateKey].rejectedBatches['google-a'][0].fileId, 'missing-kind');
+console.log('  ✓ malformed Drive metadata is visible and retained as a rejected batch');
+
+console.log('\n10 Drive lifecycle scenarios passed');

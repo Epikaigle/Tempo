@@ -210,13 +210,14 @@ class DriveAppDataClient @Inject constructor(
     /**
      * Lists history batches. Passing [createdAfterMillis] keeps steady-state sync
      * cheap while a new device can pass null to discover the full history.
+     * Filter by filename only: malformed/missing appProperties must be visible
+     * to client-side validation and reported as rejected history files.
      */
     suspend fun listHistoryBatches(createdAfterMillis: Long? = null): List<DriveAppDataFile> =
         withContext(Dispatchers.IO) {
             executeWithRetry { api ->
                 val clauses = mutableListOf(
                     "name contains '${DriveHistoryProtocol.FILE_PREFIX}'",
-                    "appProperties has { key='${DriveHistoryProtocol.APP_PROPERTY_KIND}' and value='${DriveHistoryProtocol.KIND_HISTORY_BATCH}' }",
                     "trashed = false"
                 )
                 if (createdAfterMillis != null && createdAfterMillis > 0L) {

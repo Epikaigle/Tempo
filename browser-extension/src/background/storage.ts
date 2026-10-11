@@ -160,7 +160,7 @@ function invalidateQueueCountCache(): void {
   _cachedQueueCount = null;
 }
 
-// In-memory stats cache — getStats() scans up to 5000 plays; the popup only
+// In-memory stats cache — getStats() streams the full local archive; the popup
 // needs fresh-ish numbers, so we memoize the result briefly and clear it on
 // every mutation of the underlying stores.
 
@@ -1305,8 +1305,8 @@ export interface ExtensionStats {
  * Optimized: uses index-based counting where possible instead of loading all records.
  */
 export async function getStats(): Promise<ExtensionStats> {
-  // Brief TTL cache — the popup polls stats; recomputing on every tick means
-  // a 5000-record cursor walk each time. Cleared by every store mutation.
+  // Brief TTL cache — the popup polls stats; an archive-wide cursor walk
+  // should not be repeated on every tick. Cleared by every store mutation.
   if (_statsCache && (Date.now() - (_statsCacheTime ?? 0)) < STATS_CACHE_TTL_MS) {
     return _statsCache;
   }
@@ -1342,10 +1342,9 @@ export async function getStats(): Promise<ExtensionStats> {
     }),
   ]);
 
-  // For top artist/track, stream the up-to-5000 most recent plays through
-  // readonly cursors and build the frequency maps incrementally instead of
-  // materializing a getAllPlays(5000) array.
-  const STATS_PLAY_SCAN_LIMIT = 5000;
+  // Include every locally retained play, not only the newest 5000, or the
+  // lifetime leaders can be wrong. Stream via a cursor to bound memory to
+  // frequency maps instead of materializing the complete listening archive.
   const { artistCounts, trackCounts } = await new Promise<{
     artistCounts: Map<string, number>;
     trackCounts: Map<string, number>;
@@ -1354,19 +1353,17 @@ export async function getStats(): Promise<ExtensionStats> {
     const index = tx.objectStore(PLAYS_STORE).index('timestampUtc');
     const artistCounts = new Map<string, number>();
     const trackCounts = new Map<string, number>();
-    let seen = 0;
     const request = index.openCursor(null, 'prev');
 
     request.onsuccess = () => {
       const cursor = request.result;
-      if (cursor && seen < STATS_PLAY_SCAN_LIMIT) {
+      if (cursor) {
         const play = cursor.value as Play;
         if (play.artist) {
           artistCounts.set(play.artist, (artistCounts.get(play.artist) ?? 0) + 1);
         }
         const key = `${play.title} - ${play.artist}`;
         trackCounts.set(key, (trackCounts.get(key) ?? 0) + 1);
-        seen++;
         cursor.continue();
       } else {
         resolve({ artistCounts, trackCounts });

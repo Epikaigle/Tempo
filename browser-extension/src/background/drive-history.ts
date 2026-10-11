@@ -571,11 +571,11 @@ async function downloadRemotePlays(
   // their first Drive upload, so sample-based dedup can miss an older imported
   // event. Scan the whole local store once per Drive download pass instead.
   if (!accountSubject) throw new Error('Verified Google subject is required to import Drive history');
-  let rejectedMap = clearMissingRejectedBatchRecords(
-    state.rejectedBatches,
-    accountSubject,
-    new Set(files.map(f => f.id)),
-  );
+  // A createdTime-filtered listing cannot prove an old rejected batch was
+  // deleted. Retain its warning until a full scan or successful reimport.
+  let rejectedMap = after == null || after <= 0
+    ? clearMissingRejectedBatchRecords(state.rejectedBatches, accountSubject, new Set(files.map(f => f.id)))
+    : (state.rejectedBatches ?? {});
   let progressMap: Record<string, AccountProgress> = { ...(state.accountProgress ?? {}) };
   // Own-device full restore may need to reconstruct IDs for older unpinned
   // local captures. Normal sync uses the durable IDB provenance index.
@@ -1042,9 +1042,10 @@ async function bumpDisableMarker(accessToken: string): Promise<number> {
 }
 
 async function listBatches(accessToken: string, createdAfter: number | null): Promise<DriveFileRecord[]> {
+  // Search by name, not appProperties: invalid metadata must still be visible
+  // so recovery can report the file instead of silently overlooking it.
   const clauses = [
     `name contains '${FILE_PREFIX}'`,
-    "appProperties has { key='tempo_kind' and value='history_batch' }",
     'trashed = false',
   ];
   if (createdAfter != null && createdAfter > 0) {

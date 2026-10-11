@@ -117,6 +117,17 @@ class DriveHistorySyncManager @Inject constructor(
                 key.startsWith("${KEY_REJECTED_FILES}:") ||
                 key.startsWith("${KEY_INVALID_EXPORT_IDS}:")
 
+        /** Only a complete Drive listing can prove an older rejected file was deleted.
+         * Incremental queries omit files outside the 24-hour overlap.
+         */
+        internal fun retainedRejectedRecords(
+            previous: Set<String>,
+            listedFileIds: Set<String>,
+            completeListing: Boolean
+        ): Set<String> = if (!completeListing) previous else previous.filterTo(mutableSetOf()) {
+            listedFileIds.contains(it.substringBefore('\t'))
+        }
+
         /** Local row IDs fence the deletion snapshot; a capture made AFTER
          * the server-timestamped deletion is new history, even when the phone
          * only learns about the deletion after recording it offline.
@@ -445,13 +456,14 @@ class DriveHistorySyncManager @Inject constructor(
         }
     }
 
-    private fun clearMissingRejectedBatches(accountSubject: String, liveFileIds: Set<String>) {
+    private fun clearMissingRejectedBatches(
+        accountSubject: String,
+        liveFileIds: Set<String>,
+        completeListing: Boolean
+    ) {
         val key = rejectedFilesKey(accountSubject)
         val current = statePrefs.getStringSet(key, emptySet())?.toMutableSet() ?: return
-        val filtered = current.filter { raw ->
-            val id = raw.substringBefore('\t')
-            liveFileIds.contains(id)
-        }.toSet()
+        val filtered = retainedRejectedRecords(current, liveFileIds, completeListing)
         if (filtered.size != current.size) {
             statePrefs.edit().putStringSet(key, filtered).apply()
         }
@@ -827,7 +839,11 @@ class DriveHistorySyncManager @Inject constructor(
         } else null
 
         val files = appDataClient.listHistoryBatches(createdAfter)
-        clearMissingRejectedBatches(accountSubject, files.map { it.fileId }.toSet())
+        // An incremental result omits older files: absence alone does not mean deletion.
+        clearMissingRejectedBatches(
+            accountSubject, files.map { it.fileId }.toSet(),
+            completeListing = createdAfter == null || createdAfter <= 0L
+        )
         var maxCreated = cursor
         var inserted = 0
         var skipped = 0

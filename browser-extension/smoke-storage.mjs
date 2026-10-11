@@ -348,3 +348,55 @@ assert.equal(localRecords[1].cloudSuppressed, false);
 assert.equal(localRecords[0].driveUploadedAt, undefined);
 assert.equal(localRecords[2].driveAccountSubject, 'google-b');
 console.log('  ✓ cloud deletion blocks earlier browser plays until explicit account-scoped authorization');
+
+
+// Lifetime top artist and top track must include history older than 5000 plays.
+const longArchive = [
+  ...Array.from({ length: 5_001 }, (_, i) => ({
+    title: 'Recent song', artist: 'Recent artist', timestampUtc: baseTime + 20_000 + i,
+  })),
+  ...Array.from({ length: 5_002 }, (_, i) => ({
+    title: 'Older song', artist: 'Archive artist', timestampUtc: baseTime - 20_000 - i,
+  })),
+].sort((a, b) => b.timestampUtc - a.timestampUtc);
+database.transaction = storeName => {
+  const tx = {};
+  tx.objectStore = () => ({
+    count() {
+      const req = { result: storeName === 'plays' ? longArchive.length : 0 };
+      queueMicrotask(() => req.onsuccess?.());
+      return req;
+    },
+    index(indexName) {
+      if (indexName === 'status') return {
+        count() {
+          const req = { result: 0 };
+          queueMicrotask(() => req.onsuccess?.());
+          return req;
+        },
+      };
+      assert.equal(indexName, 'timestampUtc');
+      return {
+        openCursor() {
+          const req = {};
+          let i = 0;
+          const next = () => {
+            const value = longArchive[i++];
+            req.result = value ? { value, continue: () => queueMicrotask(next) } : null;
+            req.onsuccess?.();
+          };
+          queueMicrotask(next);
+          return req;
+        },
+      };
+    },
+  });
+  return tx;
+};
+const lifetimeStats = await storage.getStats();
+assert.equal(lifetimeStats.totalPlays, 10_003);
+assert.equal(lifetimeStats.topArtist, 'Archive artist',
+  'the lifetime top artist must count records older than the 5000 newest');
+assert.equal(lifetimeStats.topTrack, 'Older song - Archive artist',
+  'the lifetime top track must count records older than the 5000 newest');
+console.log('  ✓ lifetime statistics include more than 5000 historic plays');
