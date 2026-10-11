@@ -544,7 +544,8 @@ export async function suppressDeletedDriveHistory(accountSubject: string, marker
       const play = cursor.value as Play;
       // A play recorded offline AFTER deletion belongs to the new archive,
       // even if its IndexedDB row predates discovery of the remote marker.
-      if (!play.driveImported && play.timestampUtc <= markerVersion &&
+      if (!play.driveImported &&
+          (play.driveUploadedAt != null || play.timestampUtc <= markerVersion) &&
           (!play.driveAccountSubject || play.driveAccountSubject === accountSubject)) {
         cursor.update(withDrivePendingKey({
           ...play, driveAccountSubject: accountSubject, cloudSuppressed: true,
