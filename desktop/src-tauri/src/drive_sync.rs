@@ -2107,6 +2107,16 @@ fn count_rejected_batches(conn: &Connection) -> Result<i64, String> {
     ).map_err(|e| e.to_string())
 }
 
+fn sample_rejected_batch(conn: &Connection) -> Result<Option<(String, String)>, String> {
+    let subject = load_state(conn)?.account_subject
+        .ok_or("Google account identity is unavailable")?;
+    conn.query_row(
+        "SELECT file_name, rejection_reason FROM drive_rejected_files
+         WHERE account_subject = ?1 ORDER BY recorded_at DESC, file_id ASC LIMIT 1",
+        [subject], |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional().map_err(|e| e.to_string())
+}
+
 // Full-history scans can retire a warning when the broken file was deleted.
 // Incremental scans cannot infer deletion for files outside their time window.
 fn clear_missing_rejected_batches(
@@ -2507,10 +2517,17 @@ async fn run_sync_locked_with_restore(
             progress.rejected, first_id
         ));
     }
-    let rejected = count_rejected_batches(&open_sync_db(app_data_dir)?)?;
+    let warnings_conn = open_sync_db(app_data_dir)?;
+    let rejected = count_rejected_batches(&warnings_conn)?;
     if rejected > 0 {
+        let example = sample_rejected_batch(&warnings_conn)?
+            .map(|(name, reason)| format!(
+                " Example: {} ({})",
+                name.chars().take(100).collect::<String>(),
+                reason.chars().take(150).collect::<String>()
+            )).unwrap_or_default();
         warnings.push(format!(
-            "{rejected} invalid Google Drive history batch(es) were skipped. The file IDs and reasons are retained locally; use Restore all history after repairing the affected files."
+            "{rejected} invalid Google Drive history batch(es) were skipped.{example} Repair or remove the affected files, then use Restore all history."
         ));
     }
     let warning = (!warnings.is_empty()).then(|| warnings.join(" "));
@@ -3748,6 +3765,8 @@ mod tests {
         mark_rejected_batch(&reopened, "google-b", &broken, "Other account").unwrap();
         assert_eq!(count_rejected_batches(&reopened).unwrap(), 1,
             "a different Google account cannot affect this account's warning");
+        let example = sample_rejected_batch(&reopened).unwrap().unwrap();
+        assert_eq!(example, (broken.name.clone(), "Wrong SHA-256".into()));
         clear_rejected_batch(&reopened, "google-a", &broken.id).unwrap();
         assert_eq!(count_rejected_batches(&reopened).unwrap(), 0);
         mark_rejected_batch(&reopened, "google-a", &broken, "Wrong SHA-256").unwrap();
