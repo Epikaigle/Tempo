@@ -90,9 +90,16 @@ class DriveHistorySyncManager @Inject constructor(
             key.startsWith("${KEY_UPLOAD_CURSOR}:") ||
                 key.startsWith("${KEY_INVALID_EXPORT_IDS}:")
 
-        /** The row-ID fence applies only to history that existed at deletion. */
-        internal fun isCloudSuppressedRow(eventId: Long, suppressedThrough: Long): Boolean =
-            eventId <= suppressedThrough
+        /** Local row IDs fence the deletion snapshot; a capture made AFTER
+         * the server-timestamped deletion is new history, even when the phone
+         * only learns about the deletion after recording it offline.
+         */
+        internal fun isCloudSuppressedRow(
+            eventId: Long,
+            suppressedThrough: Long,
+            recordedAtUtc: Long,
+            deletionMarkerUtc: Long,
+        ): Boolean = eventId <= suppressedThrough && recordedAtUtc <= deletionMarkerUtc
 
         internal fun chooseAccountUploadCursor(
             savedForSubject: Long?,
@@ -450,12 +457,22 @@ class DriveHistorySyncManager @Inject constructor(
             statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
         val generation = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L).coerceAtLeast(0L)
         val suppressedThrough = statePrefs.getLong(suppressedThroughKey(accountSubject), 0L)
+        // A paired LAN device may have Drive off. Its authenticated producer
+        // identity is retained, and Android's explicit Drive opt-in authorizes
+        // the one-time relay. Persist the Google owner before changing cursors.
+        val claimedLan = dao.claimVerifiedLanRelays(accountSubject)
+        if (claimedLan > 0) {
+            check(statePrefs.edit()
+                .putLong(KEY_UPLOAD_CURSOR, 0L)
+                .putLong(uploadCursorKey(accountSubject), 0L)
+                .commit()) { "Could not restart Drive export after LAN ownership claim" }
+        }
         // A database restore can move Room row ids backwards while SharedPreferences
         // survive. If the persisted cursor is now beyond the database snapshot,
         // keeping it would make every newly-created row look already scanned until
         // ids eventually caught up. Restart from zero instead; deterministic Drive
         // event/batch ids make replay safe and preferable to silently losing plays.
-        var afterId = if (storedCursor > maxId) {
+        var afterId = if (claimedLan > 0 || storedCursor > maxId) {
             statePrefs.edit().remove(KEY_UPLOAD_CURSOR).remove(uploadCursorKey(accountSubject)).apply()
             0L
         } else {
@@ -496,7 +513,9 @@ class DriveHistorySyncManager @Inject constructor(
             val newOwnOrigins = mutableListOf<ListeningEventOrigin>()
             val eventsByProducer = linkedMapOf<BatchProducer, MutableList<DriveHistoryEvent>>()
             for (event in page) {
-                if (isCloudSuppressedRow(event.id, suppressedThrough)) continue
+                if (isCloudSuppressedRow(
+                        event.id, suppressedThrough, event.timestamp, generation
+                    )) continue
                 if (event.driveAccountSubject != null &&
                     event.driveAccountSubject != accountSubject) continue
                 // Downloaded Drive history must not bounce back into the cloud.
