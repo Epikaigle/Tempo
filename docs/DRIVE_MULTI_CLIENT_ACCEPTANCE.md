@@ -25,8 +25,8 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | LAN token rotation | Send two successive batches from Desktop via each available discovery method | Desktop persists `next_token` before acknowledging each batch, and the second batch authenticates without re-pairing |
 | LAN + Drive same origin | Send a Desktop/browser play to Android over LAN, then publish the sender's Drive batch | Same exact event ID is retained; Android counts once and never republishes it under an Android-owned ID |
 | LAN with Drive disabled | Send a Desktop/browser play to Android with Google Drive disabled on sender | No Google OAuth or connection is required merely to attach LAN provenance; local sync still works |
-| LAN-only origin relayed to cloud | Disable Drive on Desktop/extension, send LAN plays to an Android device with Drive enabled, sync Android, and restore on a separate client | Android relays original event IDs; all plays are recoverable without the original sender accessing Drive |
-| Original sender later enables Drive | After Android has relayed LAN plays, enable Google Drive on their original producer and sync all devices again | The two cloud copies represent one event per original event ID, not two listens |
+| LAN-only origin with unknown Google owner | Disable Drive on Desktop/extension, send LAN plays to an Android device with Drive enabled, and sync Android | Phone retains plays locally but does **not** upload unknown-owner history into its Google account |
+| Original sender later enables Drive | After Android received LAN plays without account provenance, enable sender's Drive with the same account; import its verified Drive batch | Android promotes the exact matching LAN producer origin, without importing a second physical play or reassigning unrelated LAN events |
 | Mixed-version LAN | Use a previous Desktop/browser sender without origin fields | Legacy payloads still import through the existing bounded temporal fallback |
 | Desktop + Chrome same computer | Run both detectors for one physical play | One logical play after receiving both producers' batches |
 | Two quick replays | Play same 25-second song twice while both detectors are on | Exactly **two** plays, never zero, one or four |
@@ -38,8 +38,8 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | Own-device recovery | Keep the Tempo device identity, delete only its local play rows, then restore from the same device's Drive batches | Previously locally owned tracks are recovered; surviving local plays are not duplicated |
 | Local retention | Leave synced local plays older than 1 year/30 days/7 days; run routine maintenance | No listening-event rows automatically deleted |
 | Cloud delete with stale client | Disconnect one client, delete cloud history on another, re-enable a third, reconnect stale client | Stale client does not resurrect history or delete the new generation |
-| Delete and ordinary reconnect | Record A's history on all four clients, delete Drive batches, then simply reconnect without opting in to republish | None of the pre-delete local recordings reappear on Drive; new recordings after reconnect do sync |
-| Explicit deleted-history republish | After deletion, choose **Upload older local history** on one client and confirm | Only that user's authorized archive is republished; a different Google account's history remains separate |
+| Delete and ordinary reconnect | Record A's history on all four clients, delete Drive batches, then simply reconnect without opting in to republish | None of the pre-delete local recordings reappear on Drive, even if an old LAN batch is delivered after deletion; new account-verified recordings after reconnect do sync |
+| Explicit deleted-history republish | After deletion, choose **Upload older local history** on one client and confirm the account-warning | Old local history is republished only through explicit confirmation. Android may then assign its previously unverified LAN snapshot to the selected account; **new** unknown-owner LAN deliveries remain quarantined |
 | Restore after deletion | Delete cloud history, restore an old Android database with remapped Room IDs, reconnect | Deletion fence remains effective even when restored rows receive larger database IDs |
 | Shortcut LAN concurrency | Trigger Ctrl/Cmd+Shift+S while automatic LAN backlog delivery is in flight | Only one stream of authenticated batches, no duplicated acknowledgments or token-rotation race |
 | Missing Drive credentials | Invalidate Desktop's Google credential without disabling its persisted Drive state | Desktop prompts to reconnect; LAN and listening capture remain available |
@@ -100,8 +100,9 @@ guarantee of recoverability.
   proof of a duplicate in a newly authorized account
 - Pair Desktop on A with an Android phone on B over LAN; the phone retains the
   play locally but never uploads it to B. Repeat with matching A accounts; when
-  the sending client explicitly disables Drive, the phone must not silently
-  circumvent that choice. Test legacy LAN payloads with no account provenance
+  the sending client explicitly disables Drive, Android must quarantine its
+  unverifiable ownership until the user explicitly consents. Test legacy LAN
+  payloads without provenance, and ensure they never upload automatically
 - Upgrade Chrome/Firefox IndexedDB v3 to v4 with 100,000+ uploaded plays and a
   few pending owner/unowned plays. Verify the indexed pending query returns only
   relevant unsent records, sorted by timestamp/keyset, and that a cloud deletion
@@ -115,3 +116,12 @@ guarantee of recoverability.
 - Restore an offline ZIP containing the same event ID for two Google accounts A and B; both listening rows and their distinct producer aliases must survive, including altered metadata and repeated restore.
 - Pair an extension/Desktop while its cloud sync is disabled. Ingest a play by LAN as `lan-unverified`, then later enable the sender's cloud sync and download exactly that producer ID to Android. The phone must retain **one** listening record, adopt the verified account, and preserve its alias; a merely similar title/time must not cause ownership promotion. Repeat with distinct A/B owners.
 - Restore an Android database whose auto-incremented IDs change while older A and B upload cursors and failed-row retry sets exist. Switch A→B→A and ensure no eligible restored plays are lost. Do not reset the server deletion-generation marker when resetting local row-ID state.
+
+
+### LAN account-boundary and delayed-deletion regression (2026-10-11)
+
+- Desktop was previously on Google A and disconnected Drive; its LAN payload omits the old owner. An Android phone using Google B must keep this play locally as `lan-unverified`, **not** upload it to B. It remains quarantined on normal/background sync.
+- The user selects "Upload older local history" in Android while on B. The confirmation explicitly warns that unverified LAN recordings may have originated from another account. Only the local row-ID snapshot taken during that action may then be claimed for B; any later-arriving LAN row must remain unverified. A transactional claim must carry origin aliases with it.
+- A LAN client queues a verified-A playback made **before** the cloud deletion marker but sends it to Android **after** the deletion. Even though the Android row ID is new, the stale LAN event must not regenerate the Drive history. A verified-A playback genuinely made **after** the marker remains eligible.
+- Following explicit authorization, previously deleted local events can be republished by choice; a later separate Drive deletion resets that old-LAN consent. Database restore/migration must not reuse the previous row-ID-based consent.
+- Pairing credentials attest the LAN peer, not independently its Google login. Subject strings supplied by that peer are not cryptographic Google proof; real-device tests must include stale/revoked sender credentials and account switches.
