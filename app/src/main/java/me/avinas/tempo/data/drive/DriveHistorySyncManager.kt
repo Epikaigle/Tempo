@@ -487,6 +487,7 @@ class DriveHistorySyncManager @Inject constructor(
                 .commit()) { "Could not checkpoint pending LAN history ownership" }
         }
         dao.claimVerifiedLanRelays(accountSubject)
+        dao.claimVerifiedLanRelayAliases(accountSubject)
         // A database restore can move Room row ids backwards while SharedPreferences
         // survive. If the persisted cursor is now beyond the database snapshot,
         // keeping it would make every newly-created row look already scanned until
