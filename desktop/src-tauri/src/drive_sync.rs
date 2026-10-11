@@ -712,10 +712,15 @@ async fn access_token(app_data_dir: &Path) -> Result<String, String> {
         .await
         .map_err(|e| format!("Google token refresh failed: {e}"))?;
     if !response.status().is_success() {
-        return Err(format!(
-            "Google token refresh failed (HTTP {})",
-            response.status()
-        ));
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        let invalid_grant = ["invalid_grant", "invalid_client", "unauthorized_client"]
+            .iter().any(|reason| body.contains(reason));
+        return Err(if invalid_grant {
+            format!("Google authorization failed (invalid_grant or revoked credentials; HTTP {status}). Reconnect Google.")
+        } else {
+            format!("Google token refresh failed (HTTP {status})")
+        });
     }
     let token: OAuthTokenResponse = response.json().await.map_err(|e| e.to_string())?;
     // A successfully refreshed OAuth token must still belong to the expected
@@ -1056,10 +1061,17 @@ async fn drive_json<T: for<'de> Deserialize<'de>>(
         http_client()?.get(url).bearer_auth(access_token)
     ).await?;
     if !response.status().is_success() {
-        return Err(format!(
-            "Google Drive request failed (HTTP {})",
-            response.status()
-        ));
+        let status = response.status();
+        let detail = if status.as_u16() == 403 {
+            response.text().await.unwrap_or_default()
+        } else {
+            String::new()
+        };
+        if status.as_u16() == 403 &&
+            (detail.contains("insufficientPermissions") || detail.contains("authError")) {
+            return Err(format!("Google Drive authorization failed (HTTP {status}). Reconnect Google."));
+        }
+        return Err(format!("Google Drive request failed (HTTP {status})"));
     }
     response.json::<T>().await.map_err(|e| e.to_string())
 }
@@ -2251,7 +2263,15 @@ async fn honor_remote_disable_if_needed(
 
 async fn run_sync(app_data_dir: &Path) -> Result<DriveSyncResult, String> {
     let _guard = SYNC_LOCK.lock().await;
-    run_sync_locked(app_data_dir).await
+    let result = run_sync_locked(app_data_dir).await;
+    // Scheduled and manual operations must persist auth failures identically,
+    // otherwise the UI can keep showing stale "Connected" state for hours.
+    if let Err(err) = &result {
+        if let Ok(conn) = open_sync_db(app_data_dir) {
+            let _ = set_last_error(&conn, Some(err));
+        }
+    }
+    result
 }
 
 async fn run_sync_locked(app_data_dir: &Path) -> Result<DriveSyncResult, String> {
@@ -2314,6 +2334,23 @@ async fn run_sync_locked_with_restore(
     })
 }
 
+// A cached token or refresh credential only proves that credentials exist,
+ // not that Google still accepts them. Persisted auth failures must take
+ // precedence until a successful reauthorization or sync clears the error.
+fn google_reconnect_required(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("http 401")
+        || lower.contains("authorization failed")
+        || lower.contains("invalid_grant")
+        || lower.contains("invalid_client")
+        || lower.contains("insufficientpermissions")
+        || lower.contains("autherror")
+        || lower.contains("needs you to reconnect")
+        || lower.contains("reconnect google")
+        || lower.contains("reconnect securely")
+        || lower.contains("different account")
+}
+
 async fn status_for(app_data_dir: &Path) -> Result<DriveSyncStatus, String> {
     let conn = open_sync_db(app_data_dir)?;
     let state = load_state(&conn)?;
@@ -2342,6 +2379,7 @@ async fn status_for(app_data_dir: &Path) -> Result<DriveSyncStatus, String> {
         .as_deref()
         .is_some_and(|value| !value.trim().is_empty());
     let connected = state.enabled
+        && !state.last_error.as_deref().is_some_and(google_reconnect_required)
         && has_account_identity
         && state.account_subject.as_deref().is_some_and(|v| !v.trim().is_empty())
         && (has_valid_access || has_legacy_refresh || has_secure_refresh);
