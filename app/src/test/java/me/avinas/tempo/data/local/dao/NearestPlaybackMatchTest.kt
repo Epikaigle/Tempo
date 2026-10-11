@@ -75,4 +75,29 @@ class NearestPlaybackMatchTest {
             eligible = { true },
         ))
     }
+
+    @Test
+    fun `playback match rejects candidates when duration differs by more than 10 seconds`() {
+        data class PlaybackCandidate(val timestamp: Long, val durationMs: Long)
+        val candidates = listOf(PlaybackCandidate(1_700_000_000_000L, 180_000L))
+        val targetDifferentDuration = nearestEligiblePlaybackIndex(
+            candidates, 1_700_000_001_000L,
+            timestampOf = { it.timestamp },
+            eligible = {
+                kotlin.math.abs(it.timestamp - 1_700_000_001_000L) <= ListeningEventDao.DRIVE_RECONCILIATION_WINDOW_MS &&
+                    kotlin.math.abs(it.durationMs - 200_000L) <= 10_000L
+            },
+        )
+        assertEquals(-1, targetDifferentDuration)
+
+        val targetMatchingDuration = nearestEligiblePlaybackIndex(
+            candidates, 1_700_000_001_000L,
+            timestampOf = { it.timestamp },
+            eligible = {
+                kotlin.math.abs(it.timestamp - 1_700_000_001_000L) <= ListeningEventDao.DRIVE_RECONCILIATION_WINDOW_MS &&
+                    kotlin.math.abs(it.durationMs - 185_000L) <= 10_000L
+            },
+        )
+        assertEquals(0, targetMatchingDuration)
+    }
 }

@@ -189,7 +189,7 @@ interface ListeningEventDao {
      */
     @Query(
         """
-        SELECT id, track_id, timestamp, playDuration, source, content_fingerprint, end_timestamp, drive_account_subject
+        SELECT id, track_id, timestamp, playDuration, source, content_fingerprint, end_timestamp, drive_account_subject, estimated_duration_ms
         FROM listening_events
         WHERE track_id = :trackId
         AND timestamp BETWEEN :tsMin AND :tsMax
@@ -381,7 +381,7 @@ interface ListeningEventDao {
                 SourceAuthority.driveDeviceId(ref.source)?.let { origins.putIfAbsent(it, "") }
                 acceptedSlots.add(Slot(
                     ref.timestamp, ref.end_timestamp, ref.playDuration, ref.source,
-                    true, ref.id, origins,
+                    true, ref.id, origins, ref.estimatedDurationMs,
                 ))
             }
 
@@ -405,7 +405,7 @@ interface ListeningEventDao {
                     incomingOrigin?.let { (dev, id) -> originMap[dev] = id }
                     val slot = Slot(
                         incoming.timestamp, incoming.endTimestamp, incoming.playDuration,
-                        incoming.source, false, null, originMap,
+                        incoming.source, false, null, originMap, incoming.estimatedDurationMs,
                     )
                     acceptedSlots.add(slot)
                     incoming.contentFingerprint?.let { newSlots[it] = slot }
@@ -425,7 +425,7 @@ interface ListeningEventDao {
                     incomingOrigin?.let { (dev, id) -> replacementOrigins[dev] = id }
                     val replacementSlot = Slot(
                         incoming.timestamp, incoming.endTimestamp, incoming.playDuration,
-                        incoming.source, false, null, replacementOrigins,
+                        incoming.source, false, null, replacementOrigins, incoming.estimatedDurationMs,
                     )
                     acceptedSlots[conflictIdx] = replacementSlot
                     toInsert.add(incoming)
@@ -482,6 +482,7 @@ interface ListeningEventDao {
         val existingId: Long? = null,
         /** Durable producer -> origin identity claims attached to this playback. */
         val origins: MutableMap<String, String> = mutableMapOf(),
+        val estimatedDurationMs: Long? = null,
     )
 
     /**
@@ -497,6 +498,15 @@ interface ListeningEventDao {
         // same originating device are real rapid replays, not temporal dupes.
         if (slotDriveDevice != null && slotDriveDevice == incomingDriveDevice) return false
         if (incomingDriveDevice != null && incomingDriveDevice in slot.origins) return false
+
+        // Different versions of a same-titled track can start within the reconciliation
+        // window. If both devices know the duration and it differs by more than ten
+        // seconds, this cannot be the same playback.
+        val slotDuration = slot.estimatedDurationMs
+        val incomingDuration = incoming.estimatedDurationMs
+        if (slotDuration != null && slotDuration > 0L && incomingDuration != null && incomingDuration > 0L) {
+            if (kotlin.math.abs(slotDuration - incomingDuration) > 10_000L) return false
+        }
 
         val sameSource = slot.source == incoming.source &&
             slotDriveDevice == null && incomingDriveDevice == null
@@ -565,6 +575,7 @@ interface ListeningEventDao {
         val content_fingerprint: String?,
         val end_timestamp: Long?,
         @ColumnInfo(name = "drive_account_subject") val driveAccountSubject: String?,
+        @ColumnInfo(name = "estimated_duration_ms") val estimatedDurationMs: Long? = null,
     )
 
     /** Desktop source → count breakdown. */

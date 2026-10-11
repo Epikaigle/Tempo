@@ -155,7 +155,9 @@ globalThis.fetch = async rawUrl => {
     return new Response(payloads[Number(url.pathname.split('-').at(-1))]);
   }
   if (url.searchParams.get('q')?.startsWith('name =')) {
-    return Response.json({ files: [{ id: 'marker', modifiedTime: new Date(100).toISOString() }] });
+    return Response.json({
+      files: fixture.marker > 0 ? [{ id: 'marker', modifiedTime: new Date(fixture.marker).toISOString() }] : [],
+    });
   }
   return Response.json({ files });
 };
@@ -164,7 +166,10 @@ assert.equal(result.imported, 1);
 assert.equal(fixture.imported[0].title, 'Valid song');
 assert.equal(fixture.stored[stateKey].downloadCreatedCursor, 1_700_000_000_001);
 assert.equal(fixture.stored[stateKey].lastError, null);
-console.log('  ✓ a JSON null batch is consumed and does not block a later valid import');
+assert.equal(fixture.stored[stateKey].rejectedBatches['google-a'].length, 1);
+const statusWithRejected = await drive.getDriveSyncStatus();
+assert.match(statusWithRejected.lastError, /invalid Google Drive history batch\(es\) were skipped/);
+console.log('  ✓ a JSON null batch is consumed, tracked in rejected batches, and surfaces warning');
 reset();
 // The module caches a stable local device ID. Make the fixture batch belong to
 // that SAME device, rather than pretending the device identity changed mid-run.
@@ -190,4 +195,33 @@ assert.equal(normalOwn.imported, 0, 'normal sync does not replay our own Drive u
 const restoredOwn = await drive.restoreDriveHistory();
 assert.equal(restoredOwn.imported, 1, 'explicit restoration recovers own deleted local records');
 console.log('  ✓ explicit restore recovers own producer batches while incremental sync skips them');
-console.log('\n7 Drive lifecycle scenarios passed');
+
+// Account switching A -> B -> A preserves deletion marker and download cursor
+reset();
+files.length = 0;
+fixture.marker = 150;
+fixture.stored[stateKey].acceptedDisableVersion = 150;
+fixture.stored[stateKey].downloadCreatedCursor = 12345;
+fixture.session = { accessToken: 'token-a', accountEmail: 'a@example.com', accountSubject: 'google-a' };
+await drive.connectDrive();
+assert.equal(fixture.stored[stateKey].acceptedDisableVersion, 150);
+assert.equal(fixture.stored[stateKey].downloadCreatedCursor, 12345);
+
+// Switch to B
+fixture.marker = 0;
+fixture.session = { accessToken: 'token-b', accountEmail: 'b@example.com', accountSubject: 'google-b' };
+await drive.connectDrive();
+assert.equal(fixture.stored[stateKey].acceptedDisableVersion, 0);
+assert.equal(fixture.stored[stateKey].downloadCreatedCursor, 0);
+
+// Switch back to A
+fixture.marker = 150;
+fixture.session = { accessToken: 'token-a', accountEmail: 'a@example.com', accountSubject: 'google-a' };
+fixture.suppressed = [];
+await drive.connectDrive();
+assert.equal(fixture.stored[stateKey].acceptedDisableVersion, 150);
+assert.equal(fixture.stored[stateKey].downloadCreatedCursor, 12345);
+assert.deepEqual(fixture.suppressed, [], 'returning to account A must not falsely re-suppress plays');
+console.log('  ✓ account switching A -> B -> A restores cursor and does not falsely trigger deletion');
+
+console.log('\n8 Drive lifecycle scenarios passed');

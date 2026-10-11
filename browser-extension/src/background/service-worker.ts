@@ -1008,7 +1008,15 @@ async function queuePlay(np: NowPlaying): Promise<void> {
     positionUpdatesCount: np.positionUpdatesCount ?? 0,
   };
 
-  const isDupe = await storage.hasRecentPlay(play.title, play.artist, play.timestampUtc);
+  const isDupe = await storage.hasRecentPlay(
+    play.title,
+    play.artist,
+    play.timestampUtc,
+    undefined,
+    undefined,
+    undefined,
+    play.durationMs,
+  );
   if (isDupe) {
     console.log(`[Tempo] Skipped duplicate in DB: "${play.title}"`);
     return;

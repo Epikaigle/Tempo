@@ -32,6 +32,18 @@ const STATE_KEY = 'tempoDriveHistoryState';
 const DEVICE_KEY = 'tempoDriveDeviceId';
 export const DRIVE_SYNC_ALARM_NAME = 'tempo-drive-history-sync';
 
+export interface AccountProgress {
+  downloadCreatedCursor: number;
+  acceptedDisableVersion: number;
+}
+
+export interface RejectedBatchRecord {
+  fileId: string;
+  fileName: string;
+  reason: string;
+  recordedAt: number;
+}
+
 interface DriveRuntimeState {
   downloadCreatedCursor: number;
   acceptedDisableVersion: number;
@@ -44,6 +56,8 @@ interface DriveRuntimeState {
   /** Last Google account that owned these Drive cursors; survives disconnect. */
   lastAuthorizedAccountEmail: string | null;
   lastAuthorizedAccountSubject: string | null;
+  accountProgress?: Record<string, AccountProgress>;
+  rejectedBatches?: Record<string, RejectedBatchRecord[]>;
 }
 
 interface WireEvent {
@@ -100,7 +114,48 @@ const DEFAULT_STATE: DriveRuntimeState = {
   accountEmail: null,
   lastAuthorizedAccountEmail: null,
   lastAuthorizedAccountSubject: null,
+  accountProgress: {},
+  rejectedBatches: {},
 };
+
+function markRejectedBatchRecord(
+  batches: Record<string, RejectedBatchRecord[]> | undefined,
+  accountSubject: string,
+  fileId: string,
+  fileName: string,
+  reason: string,
+): Record<string, RejectedBatchRecord[]> {
+  const result: Record<string, RejectedBatchRecord[]> = { ...(batches ?? {}) };
+  const currentList = (result[accountSubject] ?? []).filter(item => item.fileId !== fileId);
+  currentList.push({
+    fileId,
+    fileName,
+    reason,
+    recordedAt: Date.now(),
+  });
+  result[accountSubject] = currentList;
+  return result;
+}
+
+function clearRejectedBatchRecord(
+  batches: Record<string, RejectedBatchRecord[]> | undefined,
+  accountSubject: string,
+  fileId: string,
+): Record<string, RejectedBatchRecord[]> {
+  if (!batches || !batches[accountSubject]) return batches ?? {};
+  const currentList = batches[accountSubject].filter(item => item.fileId !== fileId);
+  return { ...batches, [accountSubject]: currentList };
+}
+
+function clearMissingRejectedBatchRecords(
+  batches: Record<string, RejectedBatchRecord[]> | undefined,
+  accountSubject: string,
+  liveFileIds: Set<string>,
+): Record<string, RejectedBatchRecord[]> {
+  if (!batches || !batches[accountSubject]) return batches ?? {};
+  const currentList = batches[accountSubject].filter(item => liveFileIds.has(item.fileId));
+  return { ...batches, [accountSubject]: currentList };
+}
 
 let syncPromise: Promise<{ uploaded: number; imported: number; duplicates: number }> | null = null;
 let deviceIdPromise: Promise<string> | null = null;
@@ -169,8 +224,17 @@ async function connectDriveUnlocked(): Promise<DriveSyncStatus> {
     (!previousEmail || previousEmail === normalizeAccountEmail(session.accountEmail)
       ? currentAccount : 'legacy-unverified'));
 
-  let acceptedDisableVersion = accountChanged ? 0 : state.acceptedDisableVersion;
-  let downloadCreatedCursor = accountChanged ? 0 : state.downloadCreatedCursor;
+  const progressMap: Record<string, AccountProgress> = { ...(state.accountProgress ?? {}) };
+  if (previousAccount) {
+    progressMap[previousAccount] = {
+      downloadCreatedCursor: state.downloadCreatedCursor,
+      acceptedDisableVersion: state.acceptedDisableVersion,
+    };
+  }
+
+  const currentProgress = progressMap[currentAccount] ?? { downloadCreatedCursor: 0, acceptedDisableVersion: 0 };
+  let acceptedDisableVersion = currentProgress.acceptedDisableVersion;
+  let downloadCreatedCursor = currentProgress.downloadCreatedCursor;
   // Preserve previous account's upload status when switching identities.
 
   const markerVersion = await getDisableMarkerVersion(session.accessToken);
@@ -178,12 +242,14 @@ async function connectDriveUnlocked(): Promise<DriveSyncStatus> {
     await storage.suppressDeletedDriveHistory(currentAccount, markerVersion);
     downloadCreatedCursor = 0;
   }
-  acceptedDisableVersion = markerVersion;
+  acceptedDisableVersion = Math.max(acceptedDisableVersion, markerVersion);
+  progressMap[currentAccount] = { downloadCreatedCursor, acceptedDisableVersion };
 
   await saveRuntimeState({
     ...state,
     acceptedDisableVersion,
     downloadCreatedCursor,
+    accountProgress: progressMap,
     accountEmail: session.accountEmail,
     lastAuthorizedAccountEmail: session.accountEmail,
     lastAuthorizedAccountSubject: currentAccount,
@@ -237,13 +303,23 @@ export async function getDriveSyncStatus(): Promise<DriveSyncStatus> {
     }
   }
 
+  const currentSubject = state.lastAuthorizedAccountSubject;
+  const rejectedList: RejectedBatchRecord[] = (currentSubject && state.rejectedBatches?.[currentSubject])
+    ? state.rejectedBatches[currentSubject]
+    : [];
+  let visibleError = state.lastError;
+  if (!visibleError && rejectedList.length > 0) {
+    const sample = rejectedList[0];
+    visibleError = `${rejectedList.length} invalid Google Drive history batch(es) were skipped (e.g. ${sample.fileName}: ${sample.reason}). Repair or remove the affected files, then use Restore all history.`;
+  }
+
   return {
     enabled: !!settings.driveSyncEnabled,
     configured,
     connected,
     accountEmail: visibleAccountEmail,
     lastSyncTime: state.lastSyncTime,
-    lastError: state.lastError,
+    lastError: visibleError,
     lastUploaded: state.lastUploaded,
     lastImported: state.lastImported,
     needsInteractiveAuth,
@@ -258,7 +334,16 @@ export async function getDriveSyncStatus(): Promise<DriveSyncStatus> {
  */
 export function restoreDriveHistory(): Promise<{ uploaded: number; imported: number; duplicates: number }> {
   return serializeDriveOperation(async () => {
-    await patchRuntimeState({ downloadCreatedCursor: 0 });
+    const state = await getRuntimeState();
+    const subject = state.lastAuthorizedAccountSubject;
+    const progressMap: Record<string, AccountProgress> = { ...(state.accountProgress ?? {}) };
+    if (subject) {
+      progressMap[subject] = {
+        downloadCreatedCursor: 0,
+        acceptedDisableVersion: state.acceptedDisableVersion,
+      };
+    }
+    await patchRuntimeState({ downloadCreatedCursor: 0, accountProgress: progressMap });
     return runSync({ interactiveAuth: true, fullRestore: true });
   });
 }
@@ -297,11 +382,20 @@ async function runSync(
       await storage.claimUnownedDrivePlays(previousAccount!);
       await storage.saveSettings({ ...settings, driveSyncEnabled: false });
       await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
+      const progressMap: Record<string, AccountProgress> = { ...(state.accountProgress ?? {}) };
+      if (previousAccount) {
+        progressMap[previousAccount] = {
+          downloadCreatedCursor: state.downloadCreatedCursor,
+          acceptedDisableVersion: state.acceptedDisableVersion,
+        };
+      }
+      const currentProgress = progressMap[currentAccount] ?? { downloadCreatedCursor: 0, acceptedDisableVersion: 0 };
       const message = 'Google account changed. Cross-device sync was turned off; connect Google again to use the new Drive account.';
       await saveRuntimeState({
         ...state,
-        downloadCreatedCursor: 0,
-        acceptedDisableVersion: 0,
+        downloadCreatedCursor: currentProgress.downloadCreatedCursor,
+        acceptedDisableVersion: currentProgress.acceptedDisableVersion,
+        accountProgress: progressMap,
         accountEmail: session.accountEmail,
         lastAuthorizedAccountEmail: session.accountEmail,
         lastAuthorizedAccountSubject: currentAccount,
@@ -379,10 +473,16 @@ async function stopForDeletionMarker(
   await storage.saveSettings({ ...settings, driveSyncEnabled: false });
   await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
   await storage.suppressDeletedDriveHistory(accountSubject, markerVersion);
+  const progressMap: Record<string, AccountProgress> = { ...(state.accountProgress ?? {}) };
+  progressMap[accountSubject] = {
+    downloadCreatedCursor: 0,
+    acceptedDisableVersion: markerVersion,
+  };
   await saveRuntimeState({
     ...state,
     acceptedDisableVersion: markerVersion,
     downloadCreatedCursor: 0,
+    accountProgress: progressMap,
     lastUploaded: 0,
     lastImported: 0,
     lastError: message,
@@ -471,6 +571,12 @@ async function downloadRemotePlays(
   // their first Drive upload, so sample-based dedup can miss an older imported
   // event. Scan the whole local store once per Drive download pass instead.
   if (!accountSubject) throw new Error('Verified Google subject is required to import Drive history');
+  let rejectedMap = clearMissingRejectedBatchRecords(
+    state.rejectedBatches,
+    accountSubject,
+    new Set(files.map(f => f.id)),
+  );
+  let progressMap: Record<string, AccountProgress> = { ...(state.accountProgress ?? {}) };
   // Own-device full restore may need to reconstruct IDs for older unpinned
   // local captures. Normal sync uses the durable IDB provenance index.
   const seenOwnOrigins = new Set<string>();
@@ -495,13 +601,22 @@ async function downloadRemotePlays(
     // 50 consumed batches so worker suspension/restart resumes near the point
     // of interruption instead of re-reading ten years from zero.
     if (index > 0 && index % 50 === 0 && maxCreated > state.downloadCreatedCursor) {
-      await patchRuntimeState({ downloadCreatedCursor: maxCreated });
+      progressMap[accountSubject] = {
+        downloadCreatedCursor: maxCreated,
+        acceptedDisableVersion: acceptedGeneration,
+      };
+      await patchRuntimeState({
+        downloadCreatedCursor: maxCreated,
+        accountProgress: progressMap,
+        rejectedBatches: rejectedMap,
+      });
     }
     const createdRaw = file.createdTime ? Date.parse(file.createdTime) : 0;
     const created = Number.isFinite(createdRaw) ? createdRaw : 0;
     const generation = batchGeneration(file);
     if (generation == null) {
       console.warn(`[Tempo] Skipping Drive history batch with invalid generation ${file.name}`);
+      rejectedMap = markRejectedBatchRecord(rejectedMap, accountSubject, file.id, file.name, 'Invalid or missing generation');
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
@@ -512,6 +627,7 @@ async function downloadRemotePlays(
       await deleteDriveFileStrict(accessToken, file.id).catch(err => {
         console.warn(`[Tempo] Could not remove stale Drive history batch ${file.name}`, err);
       });
+      rejectedMap = clearRejectedBatchRecord(rejectedMap, accountSubject, file.id);
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
@@ -526,11 +642,13 @@ async function downloadRemotePlays(
       typeof checksum === 'string' && SHA256_PATTERN.test(checksum);
     if (!metadataValid) {
       console.warn(`[Tempo] Skipping Drive history batch with invalid metadata ${file.name}`);
+      rejectedMap = markRejectedBatchRecord(rejectedMap, accountSubject, file.id, file.name, 'Invalid Tempo metadata');
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
 
     if (!includeOwnDeviceBatches && sourceDeviceId === deviceId) {
+      rejectedMap = clearRejectedBatchRecord(rejectedMap, accountSubject, file.id);
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
@@ -538,6 +656,7 @@ async function downloadRemotePlays(
     const declaredSize = Number(file.size ?? '0');
     if (!Number.isSafeInteger(declaredSize) || declaredSize <= 0 || declaredSize > MAX_BATCH_BYTES) {
       console.warn(`[Tempo] Skipping Drive history batch with invalid size ${file.name}`);
+      rejectedMap = markRejectedBatchRecord(rejectedMap, accountSubject, file.id, file.name, 'Invalid file size');
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
@@ -551,6 +670,7 @@ async function downloadRemotePlays(
     } catch (err) {
       if (err instanceof PermanentBatchError) {
         console.warn(`[Tempo] Skipping corrupt Drive history batch ${file.name}`, err);
+        rejectedMap = markRejectedBatchRecord(rejectedMap, accountSubject, file.id, file.name, err.message || 'Corrupt batch payload');
         maxCreated = Math.max(maxCreated, created);
         continue;
       }
@@ -564,20 +684,27 @@ async function downloadRemotePlays(
       // Malformed content is permanent: record this file as consumed so one bad
       // payload cannot block every later valid batch forever.
       console.warn(`[Tempo] Skipping malformed Drive history batch ${file.name}`, err);
+      rejectedMap = markRejectedBatchRecord(rejectedMap, accountSubject, file.id, file.name, err instanceof Error ? err.message : 'Malformed gzip or JSON');
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
     if (!isValidBatch(batch) || await deterministicBatchId(batch.events) !== batch.batch_id) {
       console.warn(`[Tempo] Skipping invalid Drive history batch ${file.name}`);
+      rejectedMap = markRejectedBatchRecord(rejectedMap, accountSubject, file.id, file.name, 'Batch payload verification failed');
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
     const expectedName = `${FILE_PREFIX}g${generation}_${sourceDeviceId}_${batch.batch_id}.json.gz`;
     if (batch.source_device_id !== sourceDeviceId ||
       batch.source_platform !== sourcePlatform ||
-      file.name !== expectedName ||
-      (!includeOwnDeviceBatches && batch.source_device_id === deviceId)
+      file.name !== expectedName
     ) {
+      rejectedMap = markRejectedBatchRecord(rejectedMap, accountSubject, file.id, file.name, 'Batch payload does not match Drive metadata');
+      maxCreated = Math.max(maxCreated, created);
+      continue;
+    }
+    if (!includeOwnDeviceBatches && batch.source_device_id === deviceId) {
+      rejectedMap = clearRejectedBatchRecord(rejectedMap, accountSubject, file.id);
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
@@ -604,6 +731,7 @@ async function downloadRemotePlays(
           batch.source_device_id,
           event.event_id,
           accountSubject,
+          event.duration_ms,
         );
       if (temporalDupe) {
         duplicates++;
@@ -641,12 +769,19 @@ async function downloadRemotePlays(
       await storage.insertPlay(play);
       imported++;
     }
+    rejectedMap = clearRejectedBatchRecord(rejectedMap, accountSubject, file.id);
     maxCreated = Math.max(maxCreated, created);
   }
 
-  if (maxCreated > state.downloadCreatedCursor) {
-    await patchRuntimeState({ downloadCreatedCursor: maxCreated });
-  }
+  progressMap[accountSubject] = {
+    downloadCreatedCursor: maxCreated,
+    acceptedDisableVersion: acceptedGeneration,
+  };
+  await patchRuntimeState({
+    downloadCreatedCursor: maxCreated,
+    accountProgress: progressMap,
+    rejectedBatches: rejectedMap,
+  });
   return { imported, duplicates };
 }
 
@@ -696,10 +831,19 @@ async function deleteDriveHistoryUnlocked(): Promise<number> {
       const settings = await storage.getSettings();
       await storage.saveSettings({ ...settings, driveSyncEnabled: false });
       await storage.claimUnownedDrivePlays(previousAccount!);
+      const progressMap: Record<string, AccountProgress> = { ...(state.accountProgress ?? {}) };
+      if (previousAccount) {
+        progressMap[previousAccount] = {
+          downloadCreatedCursor: state.downloadCreatedCursor,
+          acceptedDisableVersion: state.acceptedDisableVersion,
+        };
+      }
+      const currentProgress = progressMap[currentAccount] ?? { downloadCreatedCursor: 0, acceptedDisableVersion: 0 };
       await saveRuntimeState({
         ...state,
-        downloadCreatedCursor: 0,
-        acceptedDisableVersion: 0,
+        downloadCreatedCursor: currentProgress.downloadCreatedCursor,
+        acceptedDisableVersion: currentProgress.acceptedDisableVersion,
+        accountProgress: progressMap,
         accountEmail: session.accountEmail,
         lastAuthorizedAccountEmail: session.accountEmail,
         lastAuthorizedAccountSubject: currentAccount,
@@ -711,7 +855,19 @@ async function deleteDriveHistoryUnlocked(): Promise<number> {
     }
 
     const markerVersion = await bumpDisableMarker(session.accessToken);
-    await stopForDeletionMarker(state, markerVersion, null, currentAccount);
+    const cleanRejected: Record<string, RejectedBatchRecord[]> = { ...(state.rejectedBatches ?? {}) };
+    delete cleanRejected[currentAccount];
+    const cleanProgress: Record<string, AccountProgress> = { ...(state.accountProgress ?? {}) };
+    cleanProgress[currentAccount] = {
+      downloadCreatedCursor: 0,
+      acceptedDisableVersion: markerVersion,
+    };
+    await stopForDeletionMarker(
+      { ...state, rejectedBatches: cleanRejected, accountProgress: cleanProgress },
+      markerVersion,
+      null,
+      currentAccount,
+    );
     return await deleteBatchesBeforeGeneration(session.accessToken, markerVersion);
   } catch (err) {
     // A confirmed marker leaves sync off even if cleanup failed. If publishing
@@ -1329,6 +1485,42 @@ function delayMs(milliseconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+function parseAccountProgress(raw: unknown): Record<string, AccountProgress> {
+  if (!raw || typeof raw !== 'object') return {};
+  const result: Record<string, AccountProgress> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (val && typeof val === 'object') {
+      const p = val as Partial<AccountProgress>;
+      result[key] = {
+        downloadCreatedCursor: safeNonNegativeStateNumber(p.downloadCreatedCursor),
+        acceptedDisableVersion: safeNonNegativeStateNumber(p.acceptedDisableVersion),
+      };
+    }
+  }
+  return result;
+}
+
+function parseRejectedBatches(raw: unknown): Record<string, RejectedBatchRecord[]> {
+  if (!raw || typeof raw !== 'object') return {};
+  const result: Record<string, RejectedBatchRecord[]> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (Array.isArray(val)) {
+      result[key] = val.filter(item =>
+        item && typeof item === 'object' &&
+        typeof item.fileId === 'string' &&
+        typeof item.fileName === 'string' &&
+        typeof item.reason === 'string',
+      ).map(item => ({
+        fileId: String(item.fileId).slice(0, 100),
+        fileName: String(item.fileName).slice(0, 200),
+        reason: String(item.reason).slice(0, 500),
+        recordedAt: safeNonNegativeStateNumber(item.recordedAt),
+      }));
+    }
+  }
+  return result;
+}
+
 async function getRuntimeState(): Promise<DriveRuntimeState> {
   const result = await chrome.storage.local.get(STATE_KEY);
   const raw = result[STATE_KEY] as Partial<DriveRuntimeState> | undefined;
@@ -1346,6 +1538,8 @@ async function getRuntimeState(): Promise<DriveRuntimeState> {
       : null,
     lastAuthorizedAccountSubject: typeof raw.lastAuthorizedAccountSubject === 'string'
       ? raw.lastAuthorizedAccountSubject : null,
+    accountProgress: parseAccountProgress(raw.accountProgress),
+    rejectedBatches: parseRejectedBatches(raw.rejectedBatches),
   };
 }
 

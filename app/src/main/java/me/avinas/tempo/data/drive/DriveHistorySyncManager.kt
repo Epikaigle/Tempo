@@ -44,6 +44,7 @@ class DriveHistorySyncManager @Inject constructor(
         private const val KEY_GOOGLE_ACCOUNT_EMAIL = "google_account_email"
         private const val KEY_GOOGLE_ACCOUNT_SUBJECT = "google_account_subject"
         private const val KEY_INVALID_EXPORT_IDS = "invalid_drive_export_ids"
+        private const val KEY_REJECTED_FILES = "drive_rejected_files"
         private const val KEY_SUPPRESSED_THROUGH = "drive_cloud_suppressed_through"
         private const val KEY_UPLOADED_BEFORE_DELETION = "drive_uploaded_before_deletion"
         private const val KEY_AUTHORIZED_OLD_LAN_THROUGH = "drive_authorized_old_lan_through"
@@ -51,6 +52,27 @@ class DriveHistorySyncManager @Inject constructor(
         private const val BATCH_SIZE = 50
         private const val DOWNLOAD_OVERLAP_MS = 24L * 60L * 60L * 1000L
         private const val IMPORT_FINGERPRINT_PREFIX = "drive:v1:"
+
+        internal data class RejectedBatchRecord(
+            val fileId: String,
+            val fileName: String,
+            val reason: String,
+            val recordedAt: Long,
+        ) {
+            fun serialize(): String = "$fileId\t$fileName\t${reason.replace('\t', ' ').replace('\n', ' ')}\t$recordedAt"
+            companion object {
+                fun parse(raw: String): RejectedBatchRecord? {
+                    val parts = raw.split('\t')
+                    if (parts.size < 4) return null
+                    return RejectedBatchRecord(
+                        fileId = parts[0],
+                        fileName = parts[1],
+                        reason = parts[2],
+                        recordedAt = parts[3].toLongOrNull() ?: 0L,
+                    )
+                }
+            }
+        }
 
         /**
          * Original identity of a LAN-delivered event. Only authenticated LAN
@@ -90,6 +112,9 @@ class DriveHistorySyncManager @Inject constructor(
         /** A restored database can remap row IDs in *every* Google account. */
         internal fun isPerAccountRestoreStateKey(key: String): Boolean =
             key.startsWith("${KEY_UPLOAD_CURSOR}:") ||
+                key.startsWith("${KEY_DOWNLOAD_CREATED_CURSOR}:") ||
+                key.startsWith("${KEY_ACCEPTED_DISABLE_VERSION}:") ||
+                key.startsWith("${KEY_REJECTED_FILES}:") ||
                 key.startsWith("${KEY_INVALID_EXPORT_IDS}:")
 
         /** Local row IDs fence the deletion snapshot; a capture made AFTER
@@ -206,13 +231,20 @@ class DriveHistorySyncManager @Inject constructor(
                     val uploadedKey = uploadedBeforeDeletionKey(subject)
                     val uploaded = statePrefs.getLong(uploadCursorKey(subject),
                         statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
+                    val scopedDisableKey = acceptedDisableVersionKey(subject)
+                    val scopedDownloadKey = downloadCursorKey(subject)
+                    val currentDisable = statePrefs.getLong(scopedDisableKey, acceptedMarker)
+                    val newDisable = maxOf(currentDisable, currentMarker)
                     check(statePrefs.edit()
                         .remove(authorizedOldLanKey(subject))
                         .putLong(key, maxOf(existing, ceiling))
                         .putLong(uploadedKey,
                             maxOf(statePrefs.getLong(uploadedKey, 0L), uploaded))
                         .remove(KEY_DOWNLOAD_CREATED_CURSOR)
-                        .putLong(KEY_ACCEPTED_DISABLE_VERSION, currentMarker)
+                        .remove(scopedDownloadKey)
+                        .putLong(KEY_ACCEPTED_DISABLE_VERSION, newDisable)
+                        .putLong(scopedDisableKey, newDisable)
+                        .remove(rejectedFilesKey(subject))
                         .commit()) { "Could not persist Google Drive deletion boundary" }
                 }
                 settingsManager.setEnabled(true)
@@ -306,21 +338,30 @@ class DriveHistorySyncManager @Inject constructor(
                     if (forceFullRestore) {
                         // Clear only the receive cursor. If the download fails, retry
                         // again from the beginning rather than losing an old batch.
-                        statePrefs.edit().remove(KEY_DOWNLOAD_CREATED_CURSOR).commit()
+                        statePrefs.edit()
+                            .remove(KEY_DOWNLOAD_CREATED_CURSOR)
+                            .remove(downloadCursorKey(accountEmail))
+                            .commit()
                             .also { check(it) { "Could not persist Drive full-restore request" } }
                     }
                     val download = downloadRemoteHistory(includeOwnDeviceBatches = forceFullRestore, accountSubject = accountEmail)
                     uploadFailure?.let { throw it }
                     val invalidCount = statePrefs.getStringSet("${KEY_INVALID_EXPORT_IDS}:${accountEmail}", emptySet())
                         .orEmpty().size
+                    val rejectedList = getRejectedBatches(accountEmail)
+                    val warningMessage = when {
+                        rejectedList.isNotEmpty() -> {
+                            val sample = rejectedList.first()
+                            "${rejectedList.size} invalid Google Drive history batch(es) were skipped (e.g. ${sample.fileName}: ${sample.reason}). Repair or remove affected files, then restore full history."
+                        }
+                        invalidCount > 0 -> "${invalidCount} local event(s) need metadata repair; preserved on device"
+                        download.skipped > 0 -> "${download.skipped} duplicate event(s) ignored"
+                        else -> null
+                    }
                     settingsManager.markSuccess(
                         uploaded = uploaded,
                         imported = download.inserted,
-                        message = when {
-                            invalidCount > 0 -> "${invalidCount} local event(s) need metadata repair; preserved on device"
-                            download.skipped > 0 -> "${download.skipped} duplicate event(s) ignored"
-                            else -> null
-                        }
+                        message = warningMessage
                     )
                     DriveHistorySyncResult.Success(
                         uploaded = uploaded,
@@ -361,12 +402,64 @@ class DriveHistorySyncManager @Inject constructor(
      * opt-in (enableSync) or must stop a background/manual sync (syncNow).
      */
     private fun uploadCursorKey(accountSubject: String): String = "${KEY_UPLOAD_CURSOR}:${accountSubject}"
+    private fun downloadCursorKey(accountSubject: String): String = "${KEY_DOWNLOAD_CREATED_CURSOR}:${accountSubject}"
+    private fun acceptedDisableVersionKey(accountSubject: String): String = "${KEY_ACCEPTED_DISABLE_VERSION}:${accountSubject}"
+    private fun rejectedFilesKey(accountSubject: String): String = "${KEY_REJECTED_FILES}:${accountSubject}"
     private fun suppressedThroughKey(accountSubject: String): String =
         "${KEY_SUPPRESSED_THROUGH}:${accountSubject}"
     private fun uploadedBeforeDeletionKey(accountSubject: String): String =
         "${KEY_UPLOADED_BEFORE_DELETION}:${accountSubject}"
     private fun authorizedOldLanKey(accountSubject: String): String =
         "${KEY_AUTHORIZED_OLD_LAN_THROUGH}:${accountSubject}"
+
+    private fun getRejectedBatches(accountSubject: String): List<RejectedBatchRecord> {
+        val raw = statePrefs.getStringSet(rejectedFilesKey(accountSubject), emptySet()) ?: emptySet()
+        return raw.mapNotNull { RejectedBatchRecord.parse(it) }
+            .sortedBy { it.recordedAt }
+    }
+
+    private fun markRejectedBatch(
+        accountSubject: String,
+        fileId: String,
+        fileName: String,
+        reason: String
+    ) {
+        val key = rejectedFilesKey(accountSubject)
+        val current = statePrefs.getStringSet(key, emptySet())?.toMutableSet() ?: mutableSetOf()
+        current.removeAll { it.startsWith("$fileId\t") }
+        val record = RejectedBatchRecord(
+            fileId = fileId,
+            fileName = fileName,
+            reason = reason,
+            recordedAt = System.currentTimeMillis()
+        )
+        current.add(record.serialize())
+        statePrefs.edit().putStringSet(key, current).apply()
+    }
+
+    private fun clearRejectedBatch(accountSubject: String, fileId: String) {
+        val key = rejectedFilesKey(accountSubject)
+        val current = statePrefs.getStringSet(key, emptySet())?.toMutableSet() ?: return
+        if (current.removeAll { it.startsWith("$fileId\t") }) {
+            statePrefs.edit().putStringSet(key, current).apply()
+        }
+    }
+
+    private fun clearMissingRejectedBatches(accountSubject: String, liveFileIds: Set<String>) {
+        val key = rejectedFilesKey(accountSubject)
+        val current = statePrefs.getStringSet(key, emptySet())?.toMutableSet() ?: return
+        val filtered = current.filter { raw ->
+            val id = raw.substringBefore('\t')
+            liveFileIds.contains(id)
+        }.toSet()
+        if (filtered.size != current.size) {
+            statePrefs.edit().putStringSet(key, filtered).apply()
+        }
+    }
+
+    private fun clearAllRejectedBatches(accountSubject: String) {
+        statePrefs.edit().remove(rejectedFilesKey(accountSubject)).apply()
+    }
 
     private suspend fun reconcileGoogleAccountBoundary(current: String): Boolean {
         require(current.isNotBlank()) { "Google account subject cannot be empty" }
@@ -410,20 +503,42 @@ class DriveHistorySyncManager @Inject constructor(
             previouslyActiveCursor = globalCursor,
             newestLocalRow = maxId,
         )
+
+        val scopedDownloadKey = downloadCursorKey(current)
+        val oldEmailDownloadKey = currentEmail?.let { downloadCursorKey(it) }
+        val resumedDownloadCursor = when {
+            statePrefs.contains(scopedDownloadKey) -> statePrefs.getLong(scopedDownloadKey, 0L)
+            oldEmailDownloadKey != null && statePrefs.contains(oldEmailDownloadKey) ->
+                statePrefs.getLong(oldEmailDownloadKey, 0L)
+            else -> 0L
+        }
+
+        val scopedDisableKey = acceptedDisableVersionKey(current)
+        val oldEmailDisableKey = currentEmail?.let { acceptedDisableVersionKey(it) }
+        val resumedDisableVersion = when {
+            statePrefs.contains(scopedDisableKey) -> statePrefs.getLong(scopedDisableKey, 0L)
+            oldEmailDisableKey != null && statePrefs.contains(oldEmailDisableKey) ->
+                statePrefs.getLong(oldEmailDisableKey, 0L)
+            else -> 0L
+        }
+
         val editor = statePrefs.edit()
         if (previous != null) {
-            // This is the last successfully checkpointed cursor of the old
-            // account, including pending plays not yet transmitted to Drive.
+            // Snapshot departing account progress so returning to this account
+            // resumes where it left off, rather than re-evaluating old deletion markers.
             editor.putLong(uploadCursorKey(previous), globalCursor)
+            editor.putLong(downloadCursorKey(previous), statePrefs.getLong(KEY_DOWNLOAD_CREATED_CURSOR, 0L))
+            editor.putLong(acceptedDisableVersionKey(previous), statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L))
         }
         editor.putString(KEY_GOOGLE_ACCOUNT_SUBJECT, current)
             .putString(KEY_GOOGLE_ACCOUNT_EMAIL, currentEmail)
             .putLong(KEY_UPLOAD_CURSOR, resumedCursor)
             .putLong(scopedCursor, resumedCursor)
-        if (changed) {
-            editor.remove(KEY_DOWNLOAD_CREATED_CURSOR)
-                .remove(KEY_ACCEPTED_DISABLE_VERSION)
-        }
+            .putLong(KEY_DOWNLOAD_CREATED_CURSOR, resumedDownloadCursor)
+            .putLong(scopedDownloadKey, resumedDownloadCursor)
+            .putLong(KEY_ACCEPTED_DISABLE_VERSION, resumedDisableVersion)
+            .putLong(scopedDisableKey, resumedDisableVersion)
+
         check(editor.commit()) { "Could not persist Google Drive account boundary" }
         return changed
     }
@@ -459,12 +574,19 @@ class DriveHistorySyncManager @Inject constructor(
             val uploadedKey = uploadedBeforeDeletionKey(subject)
             val alreadyUploaded = statePrefs.getLong(uploadCursorKey(subject),
                 statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
+            val scopedDisableKey = acceptedDisableVersionKey(subject)
+            val scopedDownloadKey = downloadCursorKey(subject)
+            val currentDisable = statePrefs.getLong(scopedDisableKey, statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L))
+            val newDisable = maxOf(currentDisable, marker)
             check(statePrefs.edit()
                 .remove(authorizedOldLanKey(subject))
-                .putLong(KEY_ACCEPTED_DISABLE_VERSION, marker)
+                .putLong(KEY_ACCEPTED_DISABLE_VERSION, newDisable)
+                .putLong(scopedDisableKey, newDisable)
                 .putLong(suppressionKey, maxOf(previous, ceiling))
                 .putLong(uploadedKey, maxOf(statePrefs.getLong(uploadedKey, 0L), alreadyUploaded))
                 .remove(KEY_DOWNLOAD_CREATED_CURSOR)
+                .remove(scopedDownloadKey)
+                .remove(rejectedFilesKey(subject))
                 .commit()) { "Could not persist Drive history deletion marker" }
         }
     }
@@ -705,6 +827,7 @@ class DriveHistorySyncManager @Inject constructor(
         } else null
 
         val files = appDataClient.listHistoryBatches(createdAfter)
+        clearMissingRejectedBatches(accountSubject, files.map { it.fileId }.toSet())
         var maxCreated = cursor
         var inserted = 0
         var skipped = 0
@@ -715,7 +838,10 @@ class DriveHistorySyncManager @Inject constructor(
             // last completed prefix periodically so process death or a work
             // timeout does not force replaying the entire historic archive.
             if (index > 0 && index % 50 == 0 && maxCreated > cursor) {
-                check(statePrefs.edit().putLong(KEY_DOWNLOAD_CREATED_CURSOR, maxCreated).commit()) {
+                check(statePrefs.edit()
+                    .putLong(KEY_DOWNLOAD_CREATED_CURSOR, maxCreated)
+                    .putLong(downloadCursorKey(accountSubject), maxCreated)
+                    .commit()) {
                     "Could not checkpoint Drive history restoration"
                 }
             }
@@ -724,6 +850,7 @@ class DriveHistorySyncManager @Inject constructor(
             )
             if (fileGeneration == null) {
                 Log.w(TAG, "Skipping history file with an invalid generation: ${file.fileName}")
+                markRejectedBatch(accountSubject, file.fileId, file.fileName, "Invalid generation property")
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
@@ -733,6 +860,7 @@ class DriveHistorySyncManager @Inject constructor(
                 // effort here because failing to delete stale data must not block
                 // current-generation sync.
                 appDataClient.delete(file.fileId)
+                clearRejectedBatch(accountSubject, file.fileId)
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
@@ -747,11 +875,13 @@ class DriveHistorySyncManager @Inject constructor(
                 sourceDeviceId != null
             if (!metadataValid) {
                 Log.w(TAG, "Skipping history file with invalid Tempo metadata: ${file.fileName}")
+                markRejectedBatch(accountSubject, file.fileId, file.fileName, "Invalid Tempo metadata")
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
             val remoteDeviceId = requireNotNull(sourceDeviceId)
             if (!includeOwnDeviceBatches && remoteDeviceId == deviceId) {
+                clearRejectedBatch(accountSubject, file.fileId)
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
@@ -771,6 +901,7 @@ class DriveHistorySyncManager @Inject constructor(
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Skipping malformed history batch ${file.fileName}", e)
+                markRejectedBatch(accountSubject, file.fileId, file.fileName, e.message ?: "Malformed payload")
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
@@ -781,10 +912,12 @@ class DriveHistorySyncManager @Inject constructor(
                 file.fileName != expectedName
             ) {
                 Log.w(TAG, "Skipping history batch whose payload does not match Drive metadata: ${file.fileName}")
+                markRejectedBatch(accountSubject, file.fileId, file.fileName, "Payload does not match Drive metadata")
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
             if (!includeOwnDeviceBatches && batch.sourceDeviceId == deviceId) {
+                clearRejectedBatch(accountSubject, file.fileId)
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
@@ -800,6 +933,7 @@ class DriveHistorySyncManager @Inject constructor(
             // sync so the cursor remains behind the uncommitted batch and the next
             // run can retry it idempotently.
             val result = database.listeningEventDao().insertAllBatchedWithDedup(incoming, accountSubject)
+            clearRejectedBatch(accountSubject, file.fileId)
             inserted += result.inserted
             skipped += result.skipped
             replaced += result.replaced
@@ -807,7 +941,10 @@ class DriveHistorySyncManager @Inject constructor(
         }
 
         if (maxCreated > cursor) {
-            statePrefs.edit().putLong(KEY_DOWNLOAD_CREATED_CURSOR, maxCreated).apply()
+            statePrefs.edit()
+                .putLong(KEY_DOWNLOAD_CREATED_CURSOR, maxCreated)
+                .putLong(downloadCursorKey(accountSubject), maxCreated)
+                .apply()
         }
         return ImportSummary(inserted, skipped, replaced)
     }
@@ -867,6 +1004,7 @@ class DriveHistorySyncManager @Inject constructor(
                 val markerVersion = appDataClient.bumpHistoryDisableMarker()
                 acceptDeletionMarker(markerVersion)
                 val deleted = appDataClient.deleteHistoryBatchesBeforeGeneration(markerVersion)
+                clearAllRejectedBatches(accountEmail)
                 deleted
             }
         }
@@ -894,8 +1032,12 @@ class DriveHistorySyncManager @Inject constructor(
             }.forEach(editor::remove)
             editor.remove(KEY_INVALID_EXPORT_IDS)
         } else {
-            statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
-                ?.let(::uploadCursorKey)?.let(editor::remove)
+            val subject = statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
+            if (subject != null) {
+                editor.remove(uploadCursorKey(subject))
+                    .remove(downloadCursorKey(subject))
+                    .remove(rejectedFilesKey(subject))
+            }
         }
         check(editor.commit()) { "Could not invalidate Google Drive cursors after history change" }
     }

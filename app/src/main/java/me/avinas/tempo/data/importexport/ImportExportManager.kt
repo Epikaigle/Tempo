@@ -943,6 +943,13 @@ class ImportExportManager @Inject constructor(
                         val nearby = dao.getEventsForReconciliation(
                             event.track_id, event.timestamp - window, event.timestamp + window
                         ).filter { it.driveAccountSubject == event.driveAccountSubject }
+                        .filter { ref ->
+                            val refDur = ref.estimatedDurationMs
+                            val evDur = event.estimatedDurationMs
+                            if (refDur != null && refDur > 0L && evDur != null && evDur > 0L) {
+                                kotlin.math.abs(refDur - evDur) <= 10_000L
+                            } else true
+                        }
                         check(nearby.size == 1) {
                             "Cannot safely restore producer aliases for event at ${event.timestamp}: ambiguous playback"
                         }

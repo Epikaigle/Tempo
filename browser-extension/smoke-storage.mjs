@@ -103,6 +103,12 @@ assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000, 'r
   'distinct quick replays from one origin must be preserved');
 assert.equal(await storage.hasRecentPlay('Different Song', 'Artist', baseTime + 2_000, 'remote-B'), false);
 
+localRecords[0].durationMs = 180_000;
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 1_000, 'remote-D', 'event-D1', undefined, 200_000), false,
+  'track duration difference > 10s must not match same-title playback');
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 1_000, 'remote-D', 'event-D1', undefined, 185_000), true,
+  'track duration difference <= 10s must match same-title playback');
+
 // Full-history restore must recover OWN local IDs before importing cloud data.
 // A previously uploaded local play has no originEventId field, so checking
 // only stored remote aliases used to duplicate the same device's whole archive.

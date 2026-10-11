@@ -747,6 +747,7 @@ export async function hasRecentPlay(
   incomingOriginDeviceId?: string,
   incomingOriginEventId?: string,
   accountSubject?: string,
+  durationMs?: number,
 ): Promise<boolean> {
   const db = await openDb();
   const rememberRemoteOrigin = !!incomingOriginDeviceId && !!incomingOriginEventId;
@@ -770,8 +771,17 @@ export async function hasRecentPlay(
       const representedByOrigin =
         (!!incomingOriginDeviceId && play.originDeviceId === incomingOriginDeviceId) ||
         aliases.some(alias => alias.deviceId === incomingOriginDeviceId);
+      // Different versions of a same-titled track can start within two
+      // seconds. If both devices know the duration and it differs by
+      // more than ten seconds, this cannot be the same playback.
+      const durationMatches =
+        typeof durationMs === 'number' && durationMs > 0 &&
+        typeof play.durationMs === 'number' && play.durationMs > 0
+          ? Math.abs(play.durationMs - durationMs) <= 10_000
+          : true;
       if ((!accountSubject || !play.driveAccountSubject || play.driveAccountSubject === accountSubject) &&
           !representedByOrigin &&
+          durationMatches &&
           play.title.trim().toLowerCase() === title.trim().toLowerCase() &&
           play.artist.trim().toLowerCase() === artist.trim().toLowerCase()) {
         matched = true;
