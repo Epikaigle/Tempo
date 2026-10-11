@@ -640,6 +640,20 @@ interface ListeningEventDao {
     )
     suspend fun claimVerifiedLanRelays(accountSubject: String): Int
 
+    /** Move exact producer aliases with their LAN playback, never overwriting
+     * another account's existing origin claim. Safe to retry after a crash.
+     */
+    @Query(
+        "UPDATE listening_event_origins SET accountSubject = :accountSubject " +
+            "WHERE accountSubject = 'lan-unverified' AND listeningEventId IN (" +
+            "SELECT id FROM listening_events WHERE drive_account_subject = :accountSubject " +
+            "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%') " +
+            "AND NOT EXISTS (SELECT 1 FROM listening_event_origins owned " +
+            "WHERE owned.accountSubject = :accountSubject " +
+            "AND owned.originEventId = listening_event_origins.originEventId)"
+    )
+    suspend fun claimVerifiedLanRelayAliases(accountSubject: String): Int
+
     /** Highest event id at the moment of the call — export snapshot boundary. */
     @Query("SELECT COALESCE(MAX(id), 0) FROM listening_events")
     suspend fun getMaxEventId(): Long
