@@ -92,6 +92,20 @@ The Desktop loopback listener reads complete bounded HTTP headers, checks the ca
 
 The OAuth client ID is a public application identifier. Do not add an OAuth client secret to the Desktop app or repository: Tempo Desktop is a public/native client and uses Authorization Code + PKCE through the user's system browser.
 
+## Account-scoped restore and deletion checkpoints
+
+Desktop now persists the Google Drive download cursor and the accepted deletion
+marker separately for each immutable Google account subject (`sub`). Before
+clearing credentials during sign-in, Tempo commits the old account's checkpoint;
+after verifying the new subject it restores only that account's checkpoint in
+the same SQLite transaction that commits the new identity. Interrupted sign-in
+does not overwrite the saved checkpoint with a zero cursor.
+
+This prevents an A → B → A switch from treating an already accepted deletion
+marker as a new deletion and suppressing recordings uploaded after that marker.
+An actual newer server marker still disables synchronization and suppresses
+pre-deletion local events. Account ownership of listening events remains isolated.
+
 ## Local token storage
 
 Long-lived Google refresh tokens should be stored in the operating system credential store rather than plaintext application SQLite:
@@ -132,6 +146,14 @@ Any incompatible wire-format change should introduce a new schema version rather
 ## LAN acknowledgment and token continuity
 
 The paired LAN transport requires explicit `{"ok":true}` JSON in the Android HTTP response; HTTP 200 alone is not a durable batch acknowledgment. Malformed, truncated or unconfirmed responses retain queued plays for retry. When the phone rotates its pairing token and returns `next_token`, Desktop persists the new token before marking plays as synced, on all five discovery routes. An error saving the token does not mark the batch as delivered. Cloud Google Drive sync remains independently optional.
+
+Desktop now checks that the Android JSON response reports non-negative integer
+`accepted` and `duplicates` counts summing to the number of submitted plays.
+An `ok: true` without complete counts cannot clear queued recordings. On a
+partial acknowledgment Desktop saves any rotated pairing token but keeps the
+whole batch queued for a safe event-ID-based retry. Android's companion
+change in PR #2 removes silent skipping of plays shorter than five seconds
+and refuses to rotate the token if ingestion is incomplete.
 
 ## Long offline periods and LAN delivery limits
 
