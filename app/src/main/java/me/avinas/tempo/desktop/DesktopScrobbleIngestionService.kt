@@ -73,8 +73,6 @@ class DesktopPlayIngestionService @Inject constructor(
         private val DRIVE_DEVICE_ID = Regex("^[A-Za-z0-9._-]{1,200}$")
         private val DRIVE_EVENT_ID = Regex("^[0-9a-f]{64}$")
 
-        /** Minimum sensible play duration to accept (5 seconds). */
-        private const val MIN_PLAY_DURATION_MS = 5_000L
 
         /** Assumed completion percentage for desktop plays (90 %, stricter than Last.fm's
          *  50 % threshold, since desktop clients only log finished tracks). */
@@ -168,11 +166,9 @@ class DesktopPlayIngestionService @Inject constructor(
                 DRIVE_EVENT_ID.matches(declaredEventId)
             ) declaredDeviceId to declaredEventId else null
 
-            // Guard: ignore implausibly short plays
-            if (durationMs in 1 until MIN_PLAY_DURATION_MS) {
-                Log.d(TAG, "Skipping short play ($durationMs ms): $title")
-                continue
-            }
+            // The LAN transport preserves the sender's history as-is.
+            // Duration filtering is a separate user preference: silently
+            // skipping short plays would make a successful batch incomplete.
 
             try {
                 // 3. Find or create the Track record
@@ -275,6 +271,13 @@ class DesktopPlayIngestionService @Inject constructor(
                 // Never rotate the pairing token on a failed batch.
                 return IngestionResult.Error("ingestion_failed_retry_batch")
             }
+        }
+
+        // Never rotate the pairing token or return ok:true when the whole
+        // request was not accounted for. Desktop now checks these counts.
+        // Already committed events are safe to resend by stable event ID.
+        if (accepted.toLong() + duplicates.toLong() != playsArray.length().toLong()) {
+            return IngestionResult.Error("ingestion_failed_retry_batch")
         }
 
         // 6. Update pairing session last-seen
