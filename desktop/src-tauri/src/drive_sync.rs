@@ -3634,6 +3634,93 @@ mod tests {
     }
 
     #[test]
+    fn real_local_capture_after_remote_deletion_keeps_same_account_ownership() {
+        use crate::db::models::{Play, PlayStatus};
+        let (directory, conn) = history_storage_fixture();
+        conn.execute(
+            "UPDATE drive_sync_state SET enabled = 1, account_subject = 'google-a',
+             last_verified_account_subject = 'google-a' WHERE id = 1", [],
+        ).unwrap();
+        let deleted_at = 1_700_000_000_100_i64;
+        accept_deletion_marker(&conn, deleted_at, None).unwrap();
+        assert!(!load_state(&conn).unwrap().enabled);
+        let db = crate::db::Database::new(&db_path(&directory)).unwrap();
+        let play = Play {
+            id: None, title: "New offline play".into(), artist: "Artist".into(),
+            album: String::new(), duration_ms: 150_000,
+            timestamp_utc: deleted_at + 200,
+            source_app: "Spotify".into(), status: PlayStatus::Queued,
+            listened_ms: 140_000, skipped: false, replay_count: 0,
+            is_muted: false, completion_percentage: 93.0,
+            pause_count: 0, seek_count: 0, session_id: "new-session".into(),
+            site: String::new(), content_type: "MUSIC".into(), volume_level: 0.5,
+        };
+        let captured_id = db.insert_play(&play).unwrap();
+        drop(db);
+        let owner: String = conn.query_row(
+            "SELECT owner_account_subject FROM drive_event_state WHERE scrobble_id = ?1",
+            [captured_id], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(owner, "google-a");
+        assert_eq!(pending_local_plays(&conn).unwrap().len(), 1);
+
+        // Switching to another Google subject cannot claim A's offline play.
+        prepare_oauth_credentials(&conn, true).unwrap();
+        conn.execute(
+            "UPDATE drive_sync_state SET enabled = 1, account_subject = 'google-b',
+             last_verified_account_subject = 'google-b' WHERE id = 1",
+            [],
+        ).unwrap();
+        restore_account_progress(&conn, "google-b").unwrap();
+        assert!(pending_local_plays(&conn).unwrap().is_empty());
+
+        prepare_oauth_credentials(&conn, true).unwrap();
+        conn.execute(
+            "UPDATE drive_sync_state SET enabled = 1, account_subject = 'google-a',
+             last_verified_account_subject = 'google-a' WHERE id = 1",
+            [],
+        ).unwrap();
+        restore_account_progress(&conn, "google-a").unwrap();
+        assert_eq!(
+            pending_local_plays(&conn).unwrap().iter().map(|p| p.id).collect::<Vec<_>>(),
+            vec![captured_id],
+            "returning to A must allow its fresh offline recording to upload"
+        );
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rejected_cloud_batches_remain_visible_until_repaired_or_removed() {
+        let (directory, conn) = history_storage_fixture();
+        conn.execute(
+            "UPDATE drive_sync_state SET account_subject = 'google-a' WHERE id = 1",
+            [],
+        ).unwrap();
+        let batch = fixture_batch();
+        let mut broken = fixture_file(&batch, b"bad");
+        broken.id = "bad-file".into();
+        broken.name = "tempo_history_bad.json.gz".into();
+        mark_rejected_batch(&conn, "google-a", &broken, "Wrong SHA-256").unwrap();
+        assert_eq!(count_rejected_batches(&conn).unwrap(), 1);
+        drop(conn);
+        let reopened = open_sync_db(&directory).unwrap();
+        assert_eq!(count_rejected_batches(&reopened).unwrap(), 1,
+            "a download cursor checkpoint cannot silently erase the warning");
+        mark_rejected_batch(&reopened, "google-b", &broken, "Other account").unwrap();
+        assert_eq!(count_rejected_batches(&reopened).unwrap(), 1,
+            "a different Google account cannot affect this account's warning");
+        clear_rejected_batch(&reopened, "google-a", &broken.id).unwrap();
+        assert_eq!(count_rejected_batches(&reopened).unwrap(), 0);
+        mark_rejected_batch(&reopened, "google-a", &broken, "Wrong SHA-256").unwrap();
+        clear_missing_rejected_batches(&reopened, "google-a", &[]).unwrap();
+        assert_eq!(count_rejected_batches(&reopened).unwrap(), 0,
+            "full scan clears warnings for batches removed from Drive");
+        drop(reopened);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn deleted_cloud_archive_requires_explicit_opt_in_to_republish() {
         let (directory, conn) = history_storage_fixture();
         conn.execute("UPDATE drive_sync_state SET enabled = 1, account_subject = 'google-a' WHERE id = 1", []).unwrap();
