@@ -299,6 +299,8 @@ localRecords = [
     driveImported: true, driveAccountSubject: 'google-a' },
   { id: 5, title: 'Offline after deletion', artist: 'Artist', timestampUtc: baseTime + 2,
     driveAccountSubject: 'google-a' },
+  { id: 6, title: 'Already uploaded with skewed clock', artist: 'Artist',
+    timestampUtc: baseTime + 5_000, driveAccountSubject: 'google-a', driveUploadedAt: 999 },
 ];
 database.transaction = () => {
   const tx = {};
@@ -330,6 +332,8 @@ assert.equal(localRecords[2].cloudSuppressed, undefined);
 assert.equal(localRecords[3].cloudSuppressed, undefined);
 assert.equal(localRecords[4].cloudSuppressed, undefined,
   'offline play captured after the deletion marker belongs to the new Drive history');
+assert.equal(localRecords[5].cloudSuppressed, true,
+  'a previously uploaded track must never reappear even if its clock is ahead');
 assert.equal(localRecords[0].driveUploadedAt, 999,
   'deletion must not clear existing Drive acknowledgements');
 await storage.authorizeOlderDriveHistory('google-a');
