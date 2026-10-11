@@ -175,7 +175,7 @@ async function connectDriveUnlocked(): Promise<DriveSyncStatus> {
 
   const markerVersion = await getDisableMarkerVersion(session.accessToken);
   if (markerVersion > acceptedDisableVersion) {
-    await storage.suppressDeletedDriveHistory(currentAccount);
+    await storage.suppressDeletedDriveHistory(currentAccount, markerVersion);
     downloadCreatedCursor = 0;
   }
   acceptedDisableVersion = markerVersion;
@@ -378,7 +378,7 @@ async function stopForDeletionMarker(
   const settings = await storage.getSettings();
   await storage.saveSettings({ ...settings, driveSyncEnabled: false });
   await chrome.alarms.clear(DRIVE_SYNC_ALARM_NAME);
-  await storage.suppressDeletedDriveHistory(accountSubject);
+  await storage.suppressDeletedDriveHistory(accountSubject, markerVersion);
   await saveRuntimeState({
     ...state,
     acceptedDisableVersion: markerVersion,
