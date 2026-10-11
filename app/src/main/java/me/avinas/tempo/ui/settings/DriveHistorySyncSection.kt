@@ -266,7 +266,7 @@ fun DriveHistorySyncSection(
                         Text("Upload older local history")
                     }
                     Text(
-                        "Only choose this to deliberately restore recordings removed from Drive.",
+                        "Republishes deleted local history and explicitly authorizes older LAN captures with unknown Google ownership.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.65f),
                         modifier = Modifier.padding(top = 4.dp)
@@ -306,7 +306,7 @@ fun DriveHistorySyncSection(
             onDismissRequest = { confirmShare = false },
             title = { Text("Upload older local listening history?") },
             text = {
-                Text("This intentionally republishes older recordings to this Google account, including history previously deleted from Drive. A normal reconnection does not do this.")
+                Text("This deliberately uploads older local recordings to the current Google account, including cloud-deleted history and LAN plays whose Google owner could not be verified. Those LAN plays may originally belong to a DIFFERENT Google account. Only proceed if you explicitly want to share this device's older local recordings with the selected account. Later LAN deliveries remain excluded.")
             },
             confirmButton = {
                 TextButton(onClick = {
