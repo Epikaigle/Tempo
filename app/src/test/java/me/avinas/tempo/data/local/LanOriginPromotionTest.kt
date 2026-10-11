@@ -6,11 +6,11 @@ import org.junit.Test
 import java.sql.DriverManager
 
 /**
- * SQLite regression fixture for the two Room UPDATE statements which
- * reconcile an unverified LAN capture with the same verified Drive origin.
+ * SQLite regression fixtures for explicit LAN history consent and the
+ * separate exact-origin promotion when a verified Drive batch arrives.
  */
 class LanOriginPromotionTest {
-    @Test fun `unverified paired LAN records get a stable owner before Drive relay`() {
+    @Test fun `unverified LAN records require explicit snapshot consent before Drive relay`() {
         DriverManager.getConnection("jdbc:sqlite::memory:").use { db ->
             db.createStatement().use { sql ->
                 sql.execute("CREATE TABLE listening_events (" +
@@ -22,10 +22,12 @@ class LanOriginPromotionTest {
                     "PRIMARY KEY(accountSubject, originEventId))")
                 val first = "a".repeat(64)
                 val other = "b".repeat(64)
+                val later = "c".repeat(64)
                 sql.execute("INSERT INTO listening_events VALUES " +
                     "(1, 'lan:desktop-one:desktop:spotify', 'drive:v1:$first', 'lan-unverified')," +
                     "(2, 'desktop:legacy', NULL, 'lan-unverified')," +
-                    "(3, 'lan:desktop-one:desktop:spotify', 'drive:v1:$other', 'google-b')")
+                    "(3, 'lan:desktop-one:desktop:spotify', 'drive:v1:$other', 'google-b')," +
+                    "(4, 'lan:desktop-two:desktop:spotify', 'drive:v1:$later', 'lan-unverified')")
                 sql.execute("INSERT INTO listening_event_origins VALUES " +
                     "('lan-unverified', '$first', 1, 'desktop-one')," +
                     "('google-b', '$other', 3, 'desktop-one')")
@@ -34,25 +36,32 @@ class LanOriginPromotionTest {
                         "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%'"
                 ).use { rows -> if (rows.next()) rows.getLong(1) else 0L }
                 assertEquals(1L, earliest)
+                // User deliberately approved rows 1..3; a late row 4 must
+                // remain quarantined even if it arrived before the SQL update.
                 val claimed = db.prepareStatement(
                     "UPDATE listening_events SET drive_account_subject = ? " +
-                        "WHERE drive_account_subject = 'lan-unverified' " +
+                        "WHERE id <= ? AND drive_account_subject = 'lan-unverified' " +
                         "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%'"
                 ).use { stmt ->
                     stmt.setString(1, "google-a")
+                    stmt.setLong(2, 3L)
                     stmt.executeUpdate()
                 }
                 assertEquals(1, claimed)
                 val aliases = db.prepareStatement(
                     "UPDATE listening_event_origins SET accountSubject = ? " +
                         "WHERE accountSubject = 'lan-unverified' AND listeningEventId IN (" +
-                        "SELECT id FROM listening_events WHERE drive_account_subject = ? " +
+                        "SELECT id FROM listening_events WHERE id <= ? " +
+                        "AND drive_account_subject = ? " +
                         "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%') " +
                         "AND NOT EXISTS (SELECT 1 FROM listening_event_origins owned " +
                         "WHERE owned.accountSubject = ? " +
                         "AND owned.originEventId = listening_event_origins.originEventId)"
                 ).use { stmt ->
-                    repeat(3) { stmt.setString(it + 1, "google-a") }
+                    stmt.setString(1, "google-a")
+                    stmt.setLong(2, 3L)
+                    stmt.setString(3, "google-a")
+                    stmt.setString(4, "google-a")
                     stmt.executeUpdate()
                 }
                 assertEquals(1, aliases)
@@ -60,7 +69,9 @@ class LanOriginPromotionTest {
                     .use { rows ->
                         val owners = mutableListOf<String>()
                         while (rows.next()) owners += "${rows.getLong(1)}:${rows.getString(2)}"
-                        assertEquals(listOf("1:google-a", "2:lan-unverified", "3:google-b"), owners)
+                        assertEquals(listOf(
+                            "1:google-a", "2:lan-unverified", "3:google-b", "4:lan-unverified",
+                        ), owners)
                     }
                 sql.executeQuery("SELECT accountSubject FROM listening_event_origins WHERE originEventId = '$first'")
                     .use { rows ->
