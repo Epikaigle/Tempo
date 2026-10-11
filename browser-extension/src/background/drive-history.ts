@@ -1103,7 +1103,7 @@ export function shouldDeleteHistoryBatch(
 ): boolean {
   if (!file.name.startsWith(FILE_PREFIX)) return false;
   if (!file.name.endsWith('.json.gz')) return ownerDelete;
-  const match = /^g(\\d+)_/.exec(file.name.slice(FILE_PREFIX.length));
+  const match = /^g(\d+)_/.exec(file.name.slice(FILE_PREFIX.length));
   const namedGeneration = match ? Number(match[1]) : null;
   if (namedGeneration != null && Number.isSafeInteger(namedGeneration) &&
       namedGeneration >= markerGeneration) return false;
