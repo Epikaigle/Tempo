@@ -90,6 +90,10 @@ class DriveHistorySyncManager @Inject constructor(
             key.startsWith("${KEY_UPLOAD_CURSOR}:") ||
                 key.startsWith("${KEY_INVALID_EXPORT_IDS}:")
 
+        /** The row-ID fence applies only to history that existed at deletion. */
+        internal fun isCloudSuppressedRow(eventId: Long, suppressedThrough: Long): Boolean =
+            eventId <= suppressedThrough
+
         internal fun chooseAccountUploadCursor(
             savedForSubject: Long?,
             legacyEmailCursor: Long?,
@@ -319,12 +323,6 @@ class DriveHistorySyncManager @Inject constructor(
     private fun uploadCursorKey(accountSubject: String): String = "${KEY_UPLOAD_CURSOR}:${accountSubject}"
     private fun suppressedThroughKey(accountSubject: String): String =
         "${KEY_SUPPRESSED_THROUGH}:${accountSubject}"
-
-    /** A cloud deletion blocks existing local rows by their durable primary key.
-     * Fresh captures with larger IDs remain eligible for Drive sync.
-     */
-    internal fun isCloudSuppressedRow(eventId: Long, suppressedThrough: Long): Boolean =
-        eventId <= suppressedThrough
 
     private suspend fun reconcileGoogleAccountBoundary(current: String): Boolean {
         require(current.isNotBlank()) { "Google account subject cannot be empty" }
