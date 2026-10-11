@@ -46,6 +46,7 @@ class DriveHistorySyncManager @Inject constructor(
         private const val KEY_INVALID_EXPORT_IDS = "invalid_drive_export_ids"
         private const val KEY_SUPPRESSED_THROUGH = "drive_cloud_suppressed_through"
         private const val KEY_UPLOADED_BEFORE_DELETION = "drive_uploaded_before_deletion"
+        private const val KEY_AUTHORIZED_OLD_LAN_THROUGH = "drive_authorized_old_lan_through"
         private const val PAGE_SIZE = 200
         private const val BATCH_SIZE = 50
         private const val DOWNLOAD_OVERLAP_MS = 24L * 60L * 60L * 1000L
@@ -103,6 +104,21 @@ class DriveHistorySyncManager @Inject constructor(
             uploadedBeforeDeletion: Long,
         ): Boolean = eventId <= suppressedThrough &&
             (recordedAtUtc <= deletionMarkerUtc || eventId <= uploadedBeforeDeletion)
+
+        /** A LAN pairing does not prove Google identity. Reject unknown owners
+         * and old deliveries arriving after cloud deletion unless the user
+         * explicitly authorized the bounded local snapshot.
+         */
+        internal fun canRelayLanToCloud(
+            owner: String?,
+            currentSubject: String,
+            timestampUtc: Long,
+            eventId: Long,
+            deletionMarkerUtc: Long,
+            authorizedOldLanThrough: Long,
+        ): Boolean = owner == currentSubject &&
+            (deletionMarkerUtc <= 0L || timestampUtc > deletionMarkerUtc ||
+                eventId <= authorizedOldLanThrough)
 
         internal fun chooseAccountUploadCursor(
             savedForSubject: Long?,
@@ -191,6 +207,7 @@ class DriveHistorySyncManager @Inject constructor(
                     val uploaded = statePrefs.getLong(uploadCursorKey(subject),
                         statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
                     check(statePrefs.edit()
+                        .remove(authorizedOldLanKey(subject))
                         .putLong(key, maxOf(existing, ceiling))
                         .putLong(uploadedKey,
                             maxOf(statePrefs.getLong(uploadedKey, 0L), uploaded))
@@ -341,6 +358,8 @@ class DriveHistorySyncManager @Inject constructor(
         "${KEY_SUPPRESSED_THROUGH}:${accountSubject}"
     private fun uploadedBeforeDeletionKey(accountSubject: String): String =
         "${KEY_UPLOADED_BEFORE_DELETION}:${accountSubject}"
+    private fun authorizedOldLanKey(accountSubject: String): String =
+        "${KEY_AUTHORIZED_OLD_LAN_THROUGH}:${accountSubject}"
 
     private suspend fun reconcileGoogleAccountBoundary(current: String): Boolean {
         require(current.isNotBlank()) { "Google account subject cannot be empty" }
@@ -434,6 +453,7 @@ class DriveHistorySyncManager @Inject constructor(
             val alreadyUploaded = statePrefs.getLong(uploadCursorKey(subject),
                 statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
             check(statePrefs.edit()
+                .remove(authorizedOldLanKey(subject))
                 .putLong(KEY_ACCEPTED_DISABLE_VERSION, marker)
                 .putLong(suppressionKey, maxOf(previous, ceiling))
                 .putLong(uploadedKey, maxOf(statePrefs.getLong(uploadedKey, 0L), alreadyUploaded))
