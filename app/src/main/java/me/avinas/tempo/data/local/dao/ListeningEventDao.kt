@@ -622,37 +622,39 @@ interface ListeningEventDao {
     ): List<ListeningEvent>
 
     /**
-     * LAN captures with verified producer/event IDs may be relayed through the
-     * Android user's explicitly connected Drive account. Claim once: never
-     * reassign a play that already belongs to another Google identity.
+     * A LAN pairing authenticates a device, NOT its Google account.
+     * Never promote 'lan-unverified' plays during a background Drive sync.
+     * Only the separate, user-confirmed "Upload older local history" action
+     * may claim this exact snapshot for the currently verified account.
      */
-    @Query(
-        "SELECT MIN(id) FROM listening_events " +
-            "WHERE drive_account_subject = 'lan-unverified' " +
-            "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%'"
-    )
-    suspend fun earliestUnclaimedLanRelayId(): Long?
-
     @Query(
         "UPDATE listening_events SET drive_account_subject = :accountSubject " +
-            "WHERE drive_account_subject = 'lan-unverified' " +
+            "WHERE id <= :throughEventId AND drive_account_subject = 'lan-unverified' " +
             "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%'"
     )
-    suspend fun claimVerifiedLanRelays(accountSubject: String): Int
+    suspend fun claimExplicitLanRelays(accountSubject: String, throughEventId: Long): Int
 
-    /** Move exact producer aliases with their LAN playback, never overwriting
-     * another account's existing origin claim. Safe to retry after a crash.
-     */
+    /** Move only aliases of explicitly approved local LAN captures. */
     @Query(
         "UPDATE listening_event_origins SET accountSubject = :accountSubject " +
             "WHERE accountSubject = 'lan-unverified' AND listeningEventId IN (" +
-            "SELECT id FROM listening_events WHERE drive_account_subject = :accountSubject " +
+            "SELECT id FROM listening_events WHERE id <= :throughEventId " +
+            "AND drive_account_subject = :accountSubject " +
             "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%') " +
             "AND NOT EXISTS (SELECT 1 FROM listening_event_origins owned " +
             "WHERE owned.accountSubject = :accountSubject " +
             "AND owned.originEventId = listening_event_origins.originEventId)"
     )
-    suspend fun claimVerifiedLanRelayAliases(accountSubject: String): Int
+    suspend fun claimExplicitLanRelayAliases(accountSubject: String, throughEventId: Long): Int
+
+    @Transaction
+    suspend fun authorizeLanRelaysForAccount(accountSubject: String, throughEventId: Long): Int {
+        require(accountSubject.isNotBlank()) { "Verified Google subject required" }
+        require(throughEventId >= 0L) { "LAN authorization boundary must not be negative" }
+        val claimed = claimExplicitLanRelays(accountSubject, throughEventId)
+        claimExplicitLanRelayAliases(accountSubject, throughEventId)
+        return claimed
+    }
 
     /** Highest event id at the moment of the call — export snapshot boundary. */
     @Query("SELECT COALESCE(MAX(id), 0) FROM listening_events")
