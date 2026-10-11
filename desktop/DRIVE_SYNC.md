@@ -92,6 +92,29 @@ The Desktop loopback listener reads complete bounded HTTP headers, checks the ca
 
 The OAuth client ID is a public application identifier. Do not add an OAuth client secret to the Desktop app or repository: Tempo Desktop is a public/native client and uses Authorization Code + PKCE through the user's system browser.
 
+## Additional integrity safeguards
+
+- **After a shared Drive deletion**, captures recorded offline retain the Google
+  account that was verified when the deletion was accepted. They are available
+  for normal upload when that *same* account is reconnected. An explicit
+  disconnect or account switch removes this temporary recording permission;
+  previously tagged events are never reassigned implicitly to another account.
+- The one-time migration for unowned historical rows is no longer repeated
+  during ordinary Drive-status checks, avoiding repeated scans of multi-year
+  local histories. New local recordings are tagged in their own SQLite
+  transaction.
+- Invalid cloud batches are skipped with a persistent account-scoped record
+  containing the Drive file ID, name, and rejection reason. Subsequent
+  successful syncs still show a warning; full restore rechecks the archive and
+  clears warnings for files that were repaired or deleted. Invalid data is
+  never executed or imported.
+- Local detector retries are matched by application and, when available,
+  playback-session ID. Cross-device temporal reconciliation also checks
+  significantly different known track durations. These heuristics reduce
+  accidental merges but cannot infer whether two identical recordings played
+  independently on different devices at the same instant. Exact producer
+  event identities take precedence.
+
 ## Account-scoped restore and deletion checkpoints
 
 Desktop now persists the Google Drive download cursor and the accepted deletion
