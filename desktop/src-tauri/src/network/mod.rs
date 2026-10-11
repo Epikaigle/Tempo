@@ -557,13 +557,28 @@ pub async fn ping_phone(ip: &str, port: u16) -> bool {
 
 /// HTTP 200 is not an acknowledgment unless the paired phone confirms the
 /// JSON body. Return the rotated LAN token, if any, so subsequent batches work.
-fn parse_lan_acknowledgment(body: &str) -> Result<Option<String>, SyncError> {
+fn parse_lan_acknowledgment(body: &str, expected_plays: usize) -> Result<Option<String>, SyncError> {
     let value: serde_json::Value = serde_json::from_str(body)
         .map_err(|e| SyncError::Network(format!("Unreadable LAN acknowledgment: {e}")))?;
     if value.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
         return Err(SyncError::Network(
             "Phone did not confirm the LAN play batch".to_string()
         ));
+    }
+    // Android returns accepted and duplicates for every processed play.
+    // A generic ok:true is not proof that *all* rows were durably handled:
+    // for example, older Android builds silently skipped short recordings.
+    // Keep the whole queued batch unless all requested event IDs are accounted for.
+    let accepted = value.get("accepted").and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| SyncError::Network("Phone omitted the accepted play count".into()))?;
+    let duplicates = value.get("duplicates").and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| SyncError::Network("Phone omitted the duplicate play count".into()))?;
+    let total = accepted.checked_add(duplicates)
+        .ok_or_else(|| SyncError::Network("Phone returned overflowing play counts".into()))?;
+    if expected_plays == 0 || total != expected_plays as u64 {
+        return Err(SyncError::Network(format!(
+            "Phone only acknowledged {total}/{expected_plays} plays; keeping the entire LAN batch queued"
+        )));
     }
     match value.get("next_token") {
         None | Some(serde_json::Value::Null) => Ok(None),
@@ -601,7 +616,7 @@ async fn send_with_retry(url: &str, payload: &SyncPayload) -> Result<Option<Stri
                 let status = response.status();
                 let body = response.text().await.unwrap_or_default();
                 if status.is_success() {
-                    match parse_lan_acknowledgment(&body) {
+                    match parse_lan_acknowledgment(&body, payload.plays.len()) {
                         Ok(rotated_token) => return Ok(rotated_token),
                         Err(error) => last_error = error,
                     }
@@ -651,15 +666,25 @@ mod tests {
         for invalid in [
             "", "not json", "{}", "{\"ok\":false}", "{\"ok\":\"true\"}",
             "{\"accepted\":10}", "{\"ok\":true,\"next_token\":\"short\"}",
+            "{\"ok\":true}",
+            "{\"ok\":true,\"accepted\":1,\"duplicates\":0}",
+            "{\"ok\":true,\"accepted\":0,\"duplicates\":0}",
+            "{\"ok\":true,\"accepted\":1,\"duplicates\":-1}",
+            "{\"ok\":true,\"accepted\":1,\"duplicates\":1.5}",
+            "{\"ok\":true,\"accepted\":2,\"duplicates\":1}",
         ] {
-            assert!(parse_lan_acknowledgment(invalid).is_err(), "{invalid}");
+            assert!(parse_lan_acknowledgment(invalid, 2).is_err(), "{invalid}");
         }
         assert_eq!(
-            parse_lan_acknowledgment("{\"ok\":true,\"accepted\":1,\"duplicates\":0}").unwrap(),
+            parse_lan_acknowledgment("{\"ok\":true,\"accepted\":1,\"duplicates\":1}", 2).unwrap(),
+            None,
+        );
+        assert_eq!(
+            parse_lan_acknowledgment("{\"ok\":true,\"accepted\":2,\"duplicates\":0}", 2).unwrap(),
             None,
         );
         let token = "a".repeat(48);
-        let ack = format!("{{\"ok\":true,\"next_token\":\"{token}\"}}");
-        assert_eq!(parse_lan_acknowledgment(&ack).unwrap(), Some(token));
+        let ack = format!("{{\"ok\":true,\"next_token\":\"{token}\",\"accepted\":2,\"duplicates\":0}}");
+        assert_eq!(parse_lan_acknowledgment(&ack, 2).unwrap(), Some(token));
     }
 }
