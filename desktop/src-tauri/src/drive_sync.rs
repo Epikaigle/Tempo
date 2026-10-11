@@ -1919,7 +1919,7 @@ fn insert_remote_event_for_account(
         // SQLite lower() is ASCII-only. Normalize bounded candidates in Rust so
         // accented names and whitespace use the same comparison as other clients.
         let mut stmt = conn.prepare(
-            "SELECT s.id, s.title, s.artist FROM scrobbles s
+            "SELECT s.id, s.title, s.artist, s.duration_ms FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE s.timestamp_utc BETWEEN ?1 AND ?2
                AND (d.origin_device_id IS NULL OR d.origin_device_id <> ?4)
@@ -1939,12 +1939,25 @@ fn insert_remote_event_for_account(
                 source_device_id,
                 account_subject
             ],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+            |row| Ok((
+                row.get::<_, i64>(0)?, row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?, row.get::<_, Option<i64>>(3)?,
+            )),
         ).map_err(|e| e.to_string())?;
         let mut found = None;
         for candidate in candidates {
-            let (id, candidate_title, candidate_artist) = candidate.map_err(|e| e.to_string())?;
-            if candidate_title.trim().to_lowercase() == title
+            let (id, candidate_title, candidate_artist, candidate_duration) =
+                candidate.map_err(|e| e.to_string())?;
+            // Different versions of a same-titled track can start within two
+            // seconds. If both devices know the duration and it differs by
+            // more than ten seconds, this cannot be the same playback.
+            let duration_matches = match (candidate_duration, event.duration_ms) {
+                (Some(local), remote) if local > 0 && remote > 0 =>
+                    local.abs_diff(remote) <= 10_000,
+                _ => true,
+            };
+            if duration_matches
+                && candidate_title.trim().to_lowercase() == title
                 && candidate_artist.trim().to_lowercase() == artist
             {
                 found = Some(id);
@@ -2996,6 +3009,24 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
 
+
+    #[test]
+    fn temporally_close_different_versions_are_not_collapsed() {
+        let (directory, conn) = history_storage_fixture();
+        let original = fixture_batch().events[0].clone();
+        let mut remix = original.clone();
+        remix.event_id = "c".repeat(64);
+        remix.timestamp_utc += 500;
+        remix.duration_ms += 30_000;
+        assert!(insert_remote_event(&conn, "device-one", &original).unwrap());
+        assert!(insert_remote_event(&conn, "device-two", &remix).unwrap(),
+            "recordings with substantially different known lengths are not the same play");
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM scrobbles", [],
+            |row| row.get(0)).unwrap();
+        assert_eq!(count, 2);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn independent_cross_device_replay_seven_seconds_later_stays_distinct() {
