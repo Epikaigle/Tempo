@@ -243,12 +243,19 @@ class DriveHistorySyncManager @Inject constructor(
                 val remoteDisabled = handleRemoteDisableIfNeeded()
                 if (remoteDisabled != null) return@withAccountBoundSession remoteDisabled
                 val key = suppressedThroughKey(accountSubject)
+                val dao = database.listeningEventDao()
+                val throughEventId = dao.getMaxEventId()
+                // Persist snapshot-scoped consent and rewind BEFORE claiming SQL
+                // ownership. A crash cannot silently authorize future arrivals
+                // or strand approved rows behind the upload cursor.
                 check(statePrefs.edit().remove(key)
                     .remove(uploadedBeforeDeletionKey(accountSubject))
+                    .putLong(authorizedOldLanKey(accountSubject), throughEventId)
                     .remove(KEY_UPLOAD_CURSOR)
                     .remove(uploadCursorKey(accountSubject)).commit()) {
                     "Could not authorize the local Drive history upload"
                 }
+                dao.authorizeLanRelaysForAccount(accountSubject, throughEventId)
                 // Reuse the normal sync path after releasing the mutex.
                 DriveHistorySyncResult.Success(0, 0, 0, 0)
             }
