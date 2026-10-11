@@ -244,6 +244,14 @@ fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             last_uploaded INTEGER NOT NULL DEFAULT 0,
             last_imported INTEGER NOT NULL DEFAULT 0
         );
+        -- Progress belongs to a verified Google identity, not the active device
+        -- session. Switching A -> B -> A must never replay an already accepted
+        -- deletion marker or silently suppress A's new-generation uploads.
+        CREATE TABLE IF NOT EXISTS drive_account_progress (
+            account_subject TEXT PRIMARY KEY NOT NULL,
+            download_cursor INTEGER NOT NULL DEFAULT 0,
+            accepted_disable_version INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS drive_event_state (
             scrobble_id INTEGER PRIMARY KEY,
             origin_event_id TEXT UNIQUE,
@@ -781,6 +789,20 @@ fn pkce_challenge(verifier: &str) -> String {
 
 fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bool) -> Result<(), String> {
     let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    // Snapshot the currently verified account BEFORE the active identity is
+    // cleared. Never overwrite a snapshot with zeroes after an interrupted
+    // OAuth attempt: account_subject is NULL during that interval.
+    transaction.execute(
+        "INSERT INTO drive_account_progress
+             (account_subject, download_cursor, accepted_disable_version)
+         SELECT account_subject, download_cursor, accepted_disable_version
+         FROM drive_sync_state WHERE id = 1
+           AND account_subject IS NOT NULL AND account_subject != ''
+         ON CONFLICT(account_subject) DO UPDATE SET
+             download_cursor = excluded.download_cursor,
+             accepted_disable_version = excluded.accepted_disable_version",
+        [],
+    ).map_err(|e| e.to_string())?;
     if reset_drive_state {
         let previous_subject: Option<String> = transaction.query_row(
             "SELECT COALESCE(account_subject, last_verified_account_subject)
@@ -819,6 +841,25 @@ fn prepare_oauth_credentials(conn: &Connection, reset_drive_state: bool) -> Resu
         ["Google sign-in did not finish. Connect Google again."]
     ).map_err(|e| e.to_string())?;
     transaction.commit().map_err(|e| e.to_string())
+}
+
+// Called in the same SQLite transaction as confirming the new OAuth subject.
+// An unknown account starts from zero; a returning account resumes its own
+// receive cursor and previously accepted deletion generation.
+fn restore_account_progress(conn: &Connection, subject: &str) -> Result<(), String> {
+    let progress: Option<(i64, i64)> = conn.query_row(
+        "SELECT download_cursor, accepted_disable_version
+         FROM drive_account_progress WHERE account_subject = ?1",
+        [subject],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional().map_err(|e| e.to_string())?;
+    let (cursor, generation) = progress.unwrap_or((0, 0));
+    conn.execute(
+        "UPDATE drive_sync_state SET download_cursor = ?1,
+         accepted_disable_version = ?2 WHERE id = 1",
+        params![cursor, generation],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn parse_oauth_callback(line: &str, expected_state: &str) -> Option<Result<String, String>> {
@@ -1013,12 +1054,15 @@ async fn interactive_oauth(app: &AppHandle, app_data_dir: &Path) -> Result<(), S
     secure_refresh_token_set(&device_id, &subject, &refresh_token).await?;
     let expires_at = now_ms() + token.expires_in.max(60) * 1000;
     let conn = open_sync_db(app_data_dir)?;
-    conn.execute(
+    let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    transaction.execute(
         "UPDATE drive_sync_state SET access_token = ?1, refresh_token = NULL, token_expires_at = ?2, account_email = ?3, account_subject = ?4,
           last_verified_account_subject = ?4, last_error = NULL WHERE id = 1",
         params![token.access_token, expires_at, email, subject],
     )
     .map_err(|e| e.to_string())?;
+    restore_account_progress(&transaction, &subject)?;
+    transaction.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -3180,6 +3224,80 @@ mod tests {
         ).unwrap();
         assert_eq!(tagged, "account-a");
         assert!(!owner.is_empty());
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn returning_google_account_preserves_accepted_deletion_and_cursor() {
+        let (directory, conn) = history_storage_fixture();
+        let deletion_version = 1_700_000_000_100_i64;
+        conn.execute(
+            "UPDATE drive_sync_state SET enabled = 1, account_subject = 'account-a',
+             last_verified_account_subject = 'account-a',
+             download_cursor = 4500, accepted_disable_version = ?1 WHERE id = 1",
+            [deletion_version],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('After deletion', 'Artist', 1700000000500)", [],
+        ).unwrap();
+        let new_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO drive_event_state
+             (scrobble_id, drive_imported, owner_account_subject, drive_uploaded_at, cloud_suppressed)
+             VALUES (?1, 0, 'account-a', 1700000000600, 0)",
+            [new_id],
+        ).unwrap();
+
+        prepare_oauth_credentials(&conn, true).unwrap();
+        conn.execute(
+            "UPDATE drive_sync_state SET enabled = 1, account_subject = 'account-b',
+             last_verified_account_subject = 'account-b' WHERE id = 1", [],
+        ).unwrap();
+        restore_account_progress(&conn, "account-b").unwrap();
+        assert_eq!((load_state(&conn).unwrap().download_cursor,
+                    load_state(&conn).unwrap().accepted_disable_version), (0, 0));
+
+        prepare_oauth_credentials(&conn, true).unwrap();
+        conn.execute(
+            "UPDATE drive_sync_state SET enabled = 1, account_subject = 'account-a',
+             last_verified_account_subject = 'account-a' WHERE id = 1", [],
+        ).unwrap();
+        restore_account_progress(&conn, "account-a").unwrap();
+        let state = load_state(&conn).unwrap();
+        assert_eq!((state.download_cursor, state.accepted_disable_version),
+            (4500, deletion_version));
+        assert!(deletion_version <= state.accepted_disable_version,
+            "an already accepted deletion must not suppress current-generation plays a second time");
+        let suppressed: i64 = conn.query_row(
+            "SELECT cloud_suppressed FROM drive_event_state WHERE scrobble_id = ?1",
+            [new_id], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(suppressed, 0, "returning to A must retain its newer uploaded events");
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn interrupted_oauth_must_not_erase_account_progress_snapshot() {
+        let (directory, conn) = oauth_storage_fixture();
+        prepare_oauth_credentials(&conn, true).unwrap();
+        let saved: (i64, i64) = conn.query_row(
+            "SELECT download_cursor, accepted_disable_version
+             FROM drive_account_progress WHERE account_subject = 'google-stable-123'",
+            [], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(saved, (123, 100));
+        // Second attempt starts while the active account is still NULL.
+        prepare_oauth_credentials(&conn, true).unwrap();
+        conn.execute(
+            "UPDATE drive_sync_state SET enabled = 1, account_subject = 'google-stable-123'
+             WHERE id = 1", [],
+        ).unwrap();
+        restore_account_progress(&conn, "google-stable-123").unwrap();
+        let state = load_state(&conn).unwrap();
+        assert_eq!((state.download_cursor, state.accepted_disable_version), saved);
         drop(conn);
         std::fs::remove_dir_all(directory).unwrap();
     }
