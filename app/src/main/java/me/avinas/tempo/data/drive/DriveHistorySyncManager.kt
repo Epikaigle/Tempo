@@ -501,20 +501,10 @@ class DriveHistorySyncManager @Inject constructor(
         val suppressedThrough = statePrefs.getLong(suppressedThroughKey(accountSubject), 0L)
         val uploadedBeforeDeletion =
             statePrefs.getLong(uploadedBeforeDeletionKey(accountSubject), 0L)
-        // A paired LAN device may have Drive off. Android's explicit Drive
-        // opt-in authorizes relaying its original event ID exactly once.
-        // Checkpoint the earliest eligible row BEFORE changing SQL ownership:
-        // a process crash between the two writes must never skip that play.
-        val oldestLan = dao.earliestUnclaimedLanRelayId()
-        val replayCursor = oldestLan?.let { (it - 1L).coerceAtLeast(0L) }
-        if (replayCursor != null && replayCursor < storedCursor) {
-            check(statePrefs.edit()
-                .putLong(KEY_UPLOAD_CURSOR, replayCursor)
-                .putLong(uploadCursorKey(accountSubject), replayCursor)
-                .commit()) { "Could not checkpoint pending LAN history ownership" }
-        }
-        dao.claimVerifiedLanRelays(accountSubject)
-        dao.claimVerifiedLanRelayAliases(accountSubject)
+        val authorizedOldLanThrough =
+            statePrefs.getLong(authorizedOldLanKey(accountSubject), 0L)
+        // Background sync never claims LAN records with unverified Google
+        // ownership, even if the original producer event ID looks valid.
         // A database restore can move Room row ids backwards while SharedPreferences
         // survive. If the persisted cursor is now beyond the database snapshot,
         // keeping it would make every newly-created row look already scanned until
@@ -526,7 +516,7 @@ class DriveHistorySyncManager @Inject constructor(
                 .commit()) { "Could not restart Drive upload after database restore" }
             0L
         } else {
-            minOf(storedCursor, replayCursor ?: storedCursor)
+            storedCursor
         }
         var uploaded = 0
         val retryIds = statePrefs.getStringSet("${KEY_INVALID_EXPORT_IDS}:${accountSubject}", emptySet()).orEmpty()
@@ -569,9 +559,13 @@ class DriveHistorySyncManager @Inject constructor(
                     )) continue
                 if (event.driveAccountSubject != null &&
                     event.driveAccountSubject != accountSubject) continue
-                // Downloaded Drive history must not bounce back into the cloud.
-                // LAN history is different: the sender can have Drive disabled,
-                // so Android relays it once using the sender's original event ID.
+                if (event.source.startsWith("lan:") && !canRelayLanToCloud(
+                        event.driveAccountSubject, accountSubject, event.timestamp,
+                        event.id, generation, authorizedOldLanThrough,
+                    )) continue
+                // Downloaded Drive history never bounces back into the cloud.
+                // Account-matched LAN events keep the original producer ID.
+                // Late arrivals recorded before deletion require consent.
                 if (event.contentFingerprint?.startsWith(IMPORT_FINGERPRINT_PREFIX) == true &&
                     !event.source.startsWith("lan:")
                 ) continue
@@ -893,6 +887,11 @@ class DriveHistorySyncManager @Inject constructor(
         if (clearEveryAccount) {
             statePrefs.all.keys.filter(::isPerAccountRestoreStateKey)
                 .forEach(editor::remove)
+            // A restore can remap Room IDs. Do not reuse old consent for rows
+            // that acquire those IDs from a new database snapshot.
+            statePrefs.all.keys.filter {
+                it.startsWith("${KEY_AUTHORIZED_OLD_LAN_THROUGH}:")
+            }.forEach(editor::remove)
             editor.remove(KEY_INVALID_EXPORT_IDS)
         } else {
             statePrefs.getString(KEY_GOOGLE_ACCOUNT_SUBJECT, null)
