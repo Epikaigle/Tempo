@@ -2056,6 +2056,66 @@ fn insert_remote_event(
     insert_remote_event_for_account(conn, source_device_id, event, &subject)
 }
 
+// Keep a durable per-account record of corrupt batches even after advancing
+// the receive cursor. A successful later sync must not hide skipped history.
+fn mark_rejected_batch(
+    conn: &Connection, account_subject: &str, file: &DriveFileRecord, reason: &str,
+) -> Result<(), String> {
+    let short_reason: String = reason.chars().take(300).collect();
+    conn.execute(
+        "INSERT INTO drive_rejected_files
+            (account_subject, file_id, file_name, rejection_reason, recorded_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(account_subject, file_id) DO UPDATE SET
+            file_name = excluded.file_name,
+            rejection_reason = excluded.rejection_reason,
+            recorded_at = excluded.recorded_at",
+        params![account_subject, file.id, file.name, short_reason, now_ms()],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn clear_rejected_batch(
+    conn: &Connection, account_subject: &str, file_id: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM drive_rejected_files WHERE account_subject = ?1 AND file_id = ?2",
+        params![account_subject, file_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn count_rejected_batches(conn: &Connection) -> Result<i64, String> {
+    let subject = load_state(conn)?.account_subject
+        .ok_or("Google account identity is unavailable")?;
+    conn.query_row(
+        "SELECT COUNT(*) FROM drive_rejected_files WHERE account_subject = ?1",
+        [subject], |row| row.get(0),
+    ).map_err(|e| e.to_string())
+}
+
+// Full-history scans can retire a warning when the broken file was deleted.
+// Incremental scans cannot infer deletion for files outside their time window.
+fn clear_missing_rejected_batches(
+    conn: &Connection, account_subject: &str, listed_files: &[DriveFileRecord],
+) -> Result<(), String> {
+    let known: std::collections::HashSet<&str> =
+        listed_files.iter().map(|f| f.id.as_str()).collect();
+    let mut stmt = conn.prepare(
+        "SELECT file_id FROM drive_rejected_files WHERE account_subject = ?1",
+    ).map_err(|e| e.to_string())?;
+    let existing = stmt.query_map([account_subject], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    drop(stmt);
+    for id in existing {
+        if !known.contains(id.as_str()) {
+            clear_rejected_batch(conn, account_subject, &id)?;
+        }
+    }
+    Ok(())
+}
+
 async fn download_remote_history(
     app_data_dir: &Path,
     access_token: &str,
@@ -2071,6 +2131,9 @@ async fn download_remote_history(
     let after =
         (state.download_cursor > 0).then_some((state.download_cursor - DOWNLOAD_OVERLAP_MS).max(0));
     let files = list_batches(access_token, after).await?;
+    if after.is_none() {
+        clear_missing_rejected_batches(&conn, account_subject, &files)?;
+    }
     let mut imported = 0usize;
     let mut duplicates = 0usize;
     let mut max_created = state.download_cursor;
@@ -2087,10 +2150,12 @@ async fn download_remote_history(
         let created = parse_time_ms(file.created_time.as_deref());
         let Some(generation) = batch_generation(&file) else {
             log::warn!("Skipping Drive history batch with invalid generation: {}", file.name);
+            mark_rejected_batch(&conn, account_subject, &file, "Invalid or missing Drive generation")?;
             max_created = max_created.max(created);
             continue;
         };
         if generation < accepted_generation {
+            clear_rejected_batch(&conn, account_subject, &file.id)?;
             // Never allow a pre-delete batch (including an upload that completed
             // after the deletion request) to resurrect in a newly accepted
             // generation. Cleanup is best-effort so current history can proceed.
@@ -2123,6 +2188,7 @@ async fn download_remote_history(
             .is_some_and(|size| size > MAX_BATCH_BYTES)
         {
             log::warn!("Skipping oversized Drive history batch {}", file.name);
+            mark_rejected_batch(&conn, account_subject, &file, "Drive history batch exceeds the maximum size")?;
             max_created = max_created.max(created);
             continue;
         }
@@ -2137,6 +2203,7 @@ async fn download_remote_history(
                     file.name,
                     err
                 );
+                mark_rejected_batch(&conn, account_subject, &file, &err)?;
                 max_created = max_created.max(created);
                 continue;
             }
@@ -2155,12 +2222,14 @@ async fn download_remote_history(
                     file.name,
                     err
                 );
+                mark_rejected_batch(&conn, account_subject, &file, &err)?;
                 max_created = max_created.max(created);
                 continue;
             }
         };
         if !matches_batch_metadata(&file, &batch) {
             log::warn!("Skipping history batch whose payload does not match Drive metadata: {}", file.name);
+            mark_rejected_batch(&conn, account_subject, &file, "Batch payload disagrees with verified Google Drive metadata")?;
             max_created = max_created.max(created);
             continue;
         }
@@ -2177,6 +2246,7 @@ async fn download_remote_history(
             }
         }
         transaction.commit().map_err(|e| e.to_string())?;
+        clear_rejected_batch(&conn, account_subject, &file.id)?;
         max_created = max_created.max(created);
     }
 
@@ -2332,6 +2402,8 @@ fn accept_deletion_marker(conn: &Connection, marker_version: i64, message: Optio
            ))",
         params![subject, marker_version],
     ).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM drive_rejected_files WHERE account_subject = ?1",
+        [subject.as_str()]).map_err(|e| e.to_string())?;
     tx.execute(
         "UPDATE drive_sync_state SET enabled = 0, accepted_disable_version = ?1,
          download_cursor = 0, last_uploaded = 0, last_imported = 0,
@@ -2415,10 +2487,20 @@ async fn run_sync_locked_with_restore(
     ).await;
     let (imported, duplicates) = download?;
     let progress = upload?;
-    let warning = progress.first_rejected_id.map(|first_id| format!(
-        "{} local Desktop play(s) could not be exported (first local ID {}). They remain saved locally. Correct their metadata to retry.",
-        progress.rejected, first_id
-    ));
+    let mut warnings = Vec::new();
+    if let Some(first_id) = progress.first_rejected_id {
+        warnings.push(format!(
+            "{} local Desktop play(s) could not be exported (first local ID {}). They remain saved locally. Correct their metadata to retry.",
+            progress.rejected, first_id
+        ));
+    }
+    let rejected = count_rejected_batches(&open_sync_db(app_data_dir)?)?;
+    if rejected > 0 {
+        warnings.push(format!(
+            "{rejected} invalid Google Drive history batch(es) were skipped. The file IDs and reasons are retained locally; use Restore all history after repairing the affected files."
+        ));
+    }
+    let warning = (!warnings.is_empty()).then(|| warnings.join(" "));
     let conn = open_sync_db(app_data_dir)?;
     conn.execute(
         "UPDATE drive_sync_state SET last_sync_time = ?1, last_error = ?4,
