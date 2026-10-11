@@ -312,7 +312,10 @@ pub async fn start_polling(app_handle: tauri::AppHandle) {
 
                 // Dedup check
                 if db
-                    .has_recent_play(&now_playing.title, &now_playing.artist, timestamp)
+                    .has_recent_play(
+                        &now_playing.title, &now_playing.artist,
+                        &now_playing.source_app, &now_playing.session_id, timestamp
+                    )
                     .unwrap_or(false)
                 {
                     continue;
