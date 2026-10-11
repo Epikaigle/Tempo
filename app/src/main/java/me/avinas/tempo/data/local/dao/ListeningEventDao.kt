@@ -564,7 +564,7 @@ interface ListeningEventDao {
         val source: String,
         val content_fingerprint: String?,
         val end_timestamp: Long?,
-        val driveAccountSubject: String?,
+        @ColumnInfo(name = "drive_account_subject") val driveAccountSubject: String?,
     )
 
     /** Desktop source → count breakdown. */
