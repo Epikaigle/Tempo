@@ -45,6 +45,7 @@ class DriveHistorySyncManager @Inject constructor(
         private const val KEY_GOOGLE_ACCOUNT_SUBJECT = "google_account_subject"
         private const val KEY_INVALID_EXPORT_IDS = "invalid_drive_export_ids"
         private const val KEY_SUPPRESSED_THROUGH = "drive_cloud_suppressed_through"
+        private const val KEY_UPLOADED_BEFORE_DELETION = "drive_uploaded_before_deletion"
         private const val PAGE_SIZE = 200
         private const val BATCH_SIZE = 50
         private const val DOWNLOAD_OVERLAP_MS = 24L * 60L * 60L * 1000L
@@ -99,7 +100,9 @@ class DriveHistorySyncManager @Inject constructor(
             suppressedThrough: Long,
             recordedAtUtc: Long,
             deletionMarkerUtc: Long,
-        ): Boolean = eventId <= suppressedThrough && recordedAtUtc <= deletionMarkerUtc
+            uploadedBeforeDeletion: Long,
+        ): Boolean = eventId <= suppressedThrough &&
+            (recordedAtUtc <= deletionMarkerUtc || eventId <= uploadedBeforeDeletion)
 
         internal fun chooseAccountUploadCursor(
             savedForSubject: Long?,
@@ -184,8 +187,13 @@ class DriveHistorySyncManager @Inject constructor(
                     val ceiling = database.listeningEventDao().getMaxEventId()
                     val key = suppressedThroughKey(subject)
                     val existing = statePrefs.getLong(key, 0L)
+                    val uploadedKey = uploadedBeforeDeletionKey(subject)
+                    val uploaded = statePrefs.getLong(uploadCursorKey(subject),
+                        statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
                     check(statePrefs.edit()
                         .putLong(key, maxOf(existing, ceiling))
+                        .putLong(uploadedKey,
+                            maxOf(statePrefs.getLong(uploadedKey, 0L), uploaded))
                         .remove(KEY_DOWNLOAD_CREATED_CURSOR)
                         .putLong(KEY_ACCEPTED_DISABLE_VERSION, currentMarker)
                         .commit()) { "Could not persist Google Drive deletion boundary" }
@@ -219,6 +227,7 @@ class DriveHistorySyncManager @Inject constructor(
                 if (remoteDisabled != null) return@withAccountBoundSession remoteDisabled
                 val key = suppressedThroughKey(accountSubject)
                 check(statePrefs.edit().remove(key)
+                    .remove(uploadedBeforeDeletionKey(accountSubject))
                     .remove(KEY_UPLOAD_CURSOR)
                     .remove(uploadCursorKey(accountSubject)).commit()) {
                     "Could not authorize the local Drive history upload"
@@ -330,6 +339,8 @@ class DriveHistorySyncManager @Inject constructor(
     private fun uploadCursorKey(accountSubject: String): String = "${KEY_UPLOAD_CURSOR}:${accountSubject}"
     private fun suppressedThroughKey(accountSubject: String): String =
         "${KEY_SUPPRESSED_THROUGH}:${accountSubject}"
+    private fun uploadedBeforeDeletionKey(accountSubject: String): String =
+        "${KEY_UPLOADED_BEFORE_DELETION}:${accountSubject}"
 
     private suspend fun reconcileGoogleAccountBoundary(current: String): Boolean {
         require(current.isNotBlank()) { "Google account subject cannot be empty" }
@@ -419,9 +430,13 @@ class DriveHistorySyncManager @Inject constructor(
             val ceiling = database.listeningEventDao().getMaxEventId()
             val suppressionKey = suppressedThroughKey(subject)
             val previous = statePrefs.getLong(suppressionKey, 0L)
+            val uploadedKey = uploadedBeforeDeletionKey(subject)
+            val alreadyUploaded = statePrefs.getLong(uploadCursorKey(subject),
+                statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
             check(statePrefs.edit()
                 .putLong(KEY_ACCEPTED_DISABLE_VERSION, marker)
                 .putLong(suppressionKey, maxOf(previous, ceiling))
+                .putLong(uploadedKey, maxOf(statePrefs.getLong(uploadedKey, 0L), alreadyUploaded))
                 .remove(KEY_DOWNLOAD_CREATED_CURSOR)
                 .commit()) { "Could not persist Drive history deletion marker" }
         }
@@ -457,6 +472,8 @@ class DriveHistorySyncManager @Inject constructor(
             statePrefs.getLong(KEY_UPLOAD_CURSOR, 0L))
         val generation = statePrefs.getLong(KEY_ACCEPTED_DISABLE_VERSION, 0L).coerceAtLeast(0L)
         val suppressedThrough = statePrefs.getLong(suppressedThroughKey(accountSubject), 0L)
+        val uploadedBeforeDeletion =
+            statePrefs.getLong(uploadedBeforeDeletionKey(accountSubject), 0L)
         // A paired LAN device may have Drive off. Android's explicit Drive
         // opt-in authorizes relaying its original event ID exactly once.
         // Checkpoint the earliest eligible row BEFORE changing SQL ownership:
@@ -519,7 +536,8 @@ class DriveHistorySyncManager @Inject constructor(
             val eventsByProducer = linkedMapOf<BatchProducer, MutableList<DriveHistoryEvent>>()
             for (event in page) {
                 if (isCloudSuppressedRow(
-                        event.id, suppressedThrough, event.timestamp, generation
+                        event.id, suppressedThrough, event.timestamp, generation,
+                        uploadedBeforeDeletion,
                     )) continue
                 if (event.driveAccountSubject != null &&
                     event.driveAccountSubject != accountSubject) continue
