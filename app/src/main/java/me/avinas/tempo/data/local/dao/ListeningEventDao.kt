@@ -621,6 +621,18 @@ interface ListeningEventDao {
         limit: Int,
     ): List<ListeningEvent>
 
+    /**
+     * LAN captures with verified producer/event IDs may be relayed through the
+     * Android user's explicitly connected Drive account. Claim once: never
+     * reassign a play that already belongs to another Google identity.
+     */
+    @Query(
+        "UPDATE listening_events SET drive_account_subject = :accountSubject " +
+            "WHERE drive_account_subject = 'lan-unverified' " +
+            "AND source LIKE 'lan:%' AND content_fingerprint LIKE 'drive:v1:%'"
+    )
+    suspend fun claimVerifiedLanRelays(accountSubject: String): Int
+
     /** Highest event id at the moment of the call — export snapshot boundary. */
     @Query("SELECT COALESCE(MAX(id), 0) FROM listening_events")
     suspend fun getMaxEventId(): Long
