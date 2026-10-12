@@ -309,7 +309,14 @@ class DriveAppDataClient @Inject constructor(
      * server-side modifiedTime. Using Drive's timestamp avoids device-clock skew.
      */
     suspend fun bumpHistoryDisableMarker(): Long = withContext(Dispatchers.IO) {
-        executeWithRetry { api ->
+        // Deliberately no generic executeWithRetry around this multi-step
+        // mutation. A POST or PATCH can already be committed when Google Drive
+        // times out or its response is lost. Retrying the whole block (even on
+        // a later 401) would publish another deletion generation.
+        // On failure, the caller must inspect the remote marker before a
+        // separate explicit delete attempt.
+        val api = service().service
+        accountSession.requireUnchangedAccount()
             val payload = JSONObject()
                 .put("schema_version", 1)
                 .put("history_sync_disabled", true)
@@ -358,7 +365,6 @@ class DriveAppDataClient @Inject constructor(
             }
             markerVersion.takeIf { it > previousVersion }
                 ?: throw DriveException.Server("Google Drive did not return a valid deletion marker version")
-        }
     }
 
     /** Best-effort single-file delete retained for non-destructive callers. */
