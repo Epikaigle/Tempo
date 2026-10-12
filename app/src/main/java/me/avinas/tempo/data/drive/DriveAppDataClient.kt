@@ -410,20 +410,6 @@ class DriveAppDataClient @Inject constructor(
             deleted
         }
 
-    /**
-     * Legacy/global cleanup retained for diagnostics and migration tooling. New
-     * deletion-marker flows must use generation-aware cleanup above.
-     */
-    suspend fun deleteAllHistoryBatches(): Int = withContext(Dispatchers.IO) {
-        val files = listHistoryBatches()
-        var deleted = 0
-        for (file in files) {
-            deleteStrict(file.fileId)
-            deleted++
-        }
-        deleted
-    }
-
     private suspend fun deleteStrict(fileId: String) {
         try {
             executeWithRetry { api -> api.files().delete(fileId).execute() }
