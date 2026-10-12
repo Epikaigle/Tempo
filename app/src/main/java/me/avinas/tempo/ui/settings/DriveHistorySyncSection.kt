@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudSync
@@ -23,6 +24,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,6 +49,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.avinas.tempo.R
+import androidx.compose.ui.res.stringResource
 import me.avinas.tempo.data.drive.DriveHistorySyncManager
 import me.avinas.tempo.data.drive.DriveHistorySyncResult
 import me.avinas.tempo.data.drive.DriveHistorySyncSettings
@@ -84,7 +90,7 @@ class DriveHistorySyncViewModel @Inject constructor(
             if (enabled) {
                 if (!syncManager.enableSync()) {
                     return@launchExclusive DriveHistoryUiOperation.Error(
-                        "Google Drive authorization is required before cross-device sync can be enabled."
+                        context.getString(R.string.drive_auth_required)
                     )
                 }
                 DriveHistorySyncWorker.schedule(context)
@@ -124,7 +130,7 @@ class DriveHistorySyncViewModel @Inject constructor(
                 val deleted = syncManager.deleteCloudHistoryAndReset()
                 DriveHistorySyncWorker.cancel(context)
                 DriveHistoryUiOperation.Success(
-                    "Deleted $deleted Tempo history batch${if (deleted == 1) "" else "es"} from Google Drive. Cross-device sync is now off on linked devices as they reconnect."
+                    context.getString(R.string.drive_deleted_success, deleted)
                 )
             } catch (error: Exception) {
                 // Account-boundary protection can deliberately turn sync off
@@ -148,7 +154,7 @@ class DriveHistorySyncViewModel @Inject constructor(
             _operation.value = try {
                 block()
             } catch (e: Exception) {
-                DriveHistoryUiOperation.Error(e.message ?: "Google Drive history operation failed")
+                DriveHistoryUiOperation.Error(e.message ?: context.getString(R.string.drive_operation_failed))
             } finally {
                 operationRunning.set(false)
             }
@@ -162,7 +168,7 @@ class DriveHistorySyncViewModel @Inject constructor(
             DriveHistoryUiOperation.Error(result.message)
         }
         is DriveHistorySyncResult.Success -> DriveHistoryUiOperation.Success(
-            "Synced ${result.uploaded} outgoing and ${result.imported} incoming plays"
+            context.getString(R.string.drive_sync_success, result.uploaded, result.imported)
         )
         is DriveHistorySyncResult.Error -> DriveHistoryUiOperation.Error(result.message)
     }
@@ -184,8 +190,10 @@ fun DriveHistorySyncSection(
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmShare by remember { mutableStateOf(false) }
 
+    val running = operation is DriveHistoryUiOperation.Running
+
     Text(
-        text = "CROSS-DEVICE HISTORY",
+        text = stringResource(R.string.drive_heading),
         style = MaterialTheme.typography.titleSmall,
         color = TempoRed,
         fontWeight = FontWeight.Bold,
@@ -199,12 +207,20 @@ fun DriveHistorySyncSection(
     ) {
         Column {
             SettingsSwitch(
-                title = "Sync listening history",
-                subtitle = "Link Android and browser devices through your private Google Drive app-data space. Compatible desktop clients can use the same protocol. No Tempo server is used.",
+                title = stringResource(R.string.drive_toggle_title),
+                subtitle = stringResource(R.string.drive_toggle_subtitle),
                 checked = settings.enabled,
                 onCheckedChange = viewModel::setEnabled,
-                enabled = operation !is DriveHistoryUiOperation.Running
+                enabled = !running
             )
+            if (running && !settings.enabled) {
+                Row(modifier = Modifier.padding(start = 16.dp, bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(stringResource(R.string.drive_connecting),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            }
 
             if (settings.enabled) {
                 HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
@@ -215,7 +231,7 @@ fun DriveHistorySyncSection(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Google Drive sync",
+                                text = stringResource(R.string.drive_status_title),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = Color.White
                             )
@@ -227,12 +243,12 @@ fun DriveHistorySyncSection(
                         }
                         Button(
                             onClick = viewModel::syncNow,
-                            enabled = operation !is DriveHistoryUiOperation.Running,
+                            enabled = !running,
                             colors = ButtonDefaults.buttonColors(containerColor = TempoPrimary)
                         ) {
-                            if (operation is DriveHistoryUiOperation.Running) {
+                            if (running) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.height(18.dp),
+                                    modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp,
                                     color = Color.White
                                 )
@@ -240,19 +256,19 @@ fun DriveHistorySyncSection(
                                 Icon(Icons.Default.Sync, contentDescription = null)
                             }
                             Spacer(modifier = Modifier.padding(horizontal = 3.dp))
-                            Text("Sync now")
+                            Text(stringResource(R.string.drive_sync_now))
                         }
                     }
 
                     OutlinedButton(
                         onClick = viewModel::restoreFullHistory,
-                        enabled = operation !is DriveHistoryUiOperation.Running,
+                        enabled = !running,
                         modifier = Modifier.padding(top = 8.dp)
                     ) {
-                        Text("Restore full history from Drive")
+                        Text(stringResource(R.string.drive_restore))
                     }
                     Text(
-                        "Rechecks all historical Drive batches without removing local listening data.",
+                        stringResource(R.string.drive_restore_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.65f),
                         modifier = Modifier.padding(top = 4.dp)
@@ -260,43 +276,47 @@ fun DriveHistorySyncSection(
 
                     OutlinedButton(
                         onClick = { confirmShare = true },
-                        enabled = operation !is DriveHistoryUiOperation.Running,
+                        enabled = !running,
                         modifier = Modifier.padding(top = 8.dp)
                     ) {
-                        Text("Upload older local history")
+                        Text(stringResource(R.string.drive_share))
                     }
                     Text(
-                        "Republishes deleted local history and explicitly authorizes older LAN captures with unknown Google ownership.",
+                        stringResource(R.string.drive_share_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.65f),
                         modifier = Modifier.padding(top = 4.dp)
                     )
 
-                    when (val op = operation) {
-                        is DriveHistoryUiOperation.Success -> Text(
-                            text = op.message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.75f),
-                            modifier = Modifier.padding(top = 10.dp)
-                        )
-                        is DriveHistoryUiOperation.Error -> Text(
-                            text = op.message,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TempoRed,
-                            modifier = Modifier.padding(top = 10.dp)
-                        )
-                        else -> Unit
-                    }
                 }
 
                 HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                 Row(modifier = Modifier.padding(16.dp)) {
-                    OutlinedButton(onClick = { confirmDelete = true }) {
+                    OutlinedButton(onClick = { confirmDelete = true }, enabled = !running) {
                         Icon(Icons.Default.DeleteForever, contentDescription = null)
                         Spacer(modifier = Modifier.padding(horizontal = 3.dp))
-                        Text("Delete synced Drive history")
+                        Text(stringResource(R.string.drive_delete))
                     }
                 }
+            }
+
+            // Keep feedback visible even when sync has just been disabled.
+            when (val op = operation) {
+                is DriveHistoryUiOperation.Success -> Text(
+                    text = op.message,
+                    modifier = Modifier.padding(16.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+                is DriveHistoryUiOperation.Error -> Text(
+                    text = op.message,
+                    modifier = Modifier.padding(16.dp)
+                        .semantics { liveRegion = LiveRegionMode.Assertive },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TempoRed
+                )
+                else -> Unit
             }
         }
     }
@@ -304,18 +324,18 @@ fun DriveHistorySyncSection(
     if (confirmShare) {
         AlertDialog(
             onDismissRequest = { confirmShare = false },
-            title = { Text("Upload older local listening history?") },
+            title = { Text(stringResource(R.string.drive_share_confirm_title)) },
             text = {
-                Text("This deliberately uploads older local recordings to the current Google account, including cloud-deleted history and LAN plays whose Google owner could not be verified. Those LAN plays may originally belong to a DIFFERENT Google account. Only proceed if you explicitly want to share this device's older local recordings with the selected account. Later LAN deliveries remain excluded.")
+                Text(stringResource(R.string.drive_share_confirm_body))
             },
             confirmButton = {
                 TextButton(onClick = {
                     confirmShare = false
                     viewModel.shareOlderLocalHistory()
-                }) { Text("Upload older history") }
+                }) { Text(stringResource(R.string.drive_share_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmShare = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmShare = false }) { Text(stringResource(R.string.drive_cancel)) }
             }
         )
     }
@@ -324,12 +344,10 @@ fun DriveHistorySyncSection(
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             icon = { Icon(Icons.Default.CloudSync, contentDescription = null, tint = TempoRed) },
-            title = { Text("Delete cloud sync data?") },
+            title = { Text(stringResource(R.string.drive_delete_confirm_title)) },
             text = {
                 Text(
-                    "This deletes Tempo's cross-device history batches from Google Drive and publishes a shared off marker. " +
-                        "Linked Tempo devices will stop Drive sync when they reconnect. Your local listening history stays on your devices. " +
-                        "Sync can be explicitly enabled again later."
+                    stringResource(R.string.drive_delete_confirm_body)
                 )
             },
             confirmButton = {
@@ -337,24 +355,25 @@ fun DriveHistorySyncSection(
                     confirmDelete = false
                     viewModel.deleteCloudHistory()
                 }) {
-                    Text("Delete and turn off", color = TempoRed)
+                    Text(stringResource(R.string.drive_delete_confirm), color = TempoRed)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.drive_cancel)) }
             }
         )
     }
 }
 
+@Composable
 private fun historySyncSubtitle(settings: DriveHistorySyncSettings): String {
     val last = settings.lastSyncTime?.let {
         SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(it))
-    } ?: "Never"
+    } ?: stringResource(R.string.drive_never)
     return when {
-        settings.lastMessage != null -> "Last sync: $last • ${settings.lastMessage}"
+        settings.lastMessage != null -> stringResource(R.string.drive_last_message, last, settings.lastMessage)
         settings.lastSyncTime != null ->
-            "Last sync: $last • ${settings.lastUploaded} sent • ${settings.lastImported} received"
-        else -> "Runs automatically about every 6 hours and whenever you tap Sync now"
+            stringResource(R.string.drive_last_counts, last, settings.lastUploaded, settings.lastImported)
+        else -> stringResource(R.string.drive_schedule_hint)
     }
 }
