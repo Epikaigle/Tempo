@@ -269,10 +269,6 @@ export async function getAllPlays(limit = 100): Promise<Play[]> {
   });
 }
 
-/** Collect only persistent origin identities, not complete playback rows.
- * A ten-year archive may contain hundreds of thousands of plays; building an
- * array of every full Play object for each periodic Drive sync is wasteful.
- */
 /** Durable indexed lookup rather than a full event-history scan per sync. */
 export async function hasDriveOriginEventId(eventId: string, accountSubject: string): Promise<boolean> {
   const db = await openDb();
@@ -290,31 +286,6 @@ export async function hasDriveOriginEventId(eventId: string, accountSubject: str
     req.onerror = () => reject(req.error);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error ?? new Error('Drive provenance lookup aborted'));
-  });
-}
-
-export async function getDriveOriginEventIds(accountSubject?: string): Promise<Set<string>> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readonly');
-    const ids = new Set<string>();
-    const request = tx.objectStore(PLAYS_STORE).openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) {
-        resolve(ids);
-        return;
-      }
-      const play = cursor.value as Play;
-      if (!accountSubject || play.driveAccountSubject === accountSubject) {
-        if (play.originEventId) ids.add(play.originEventId);
-        for (const alias of play.reconciledOrigins ?? []) ids.add(alias.eventId);
-      }
-      cursor.continue();
-    };
-    request.onerror = () => reject(request.error);
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error ?? new Error('Origin identity scan aborted'));
   });
 }
 
@@ -592,31 +563,6 @@ export async function authorizeOlderDriveHistory(accountSubject: string): Promis
 
 /** Clear Drive-upload bookkeeping while preserving all local listening history. */
 /** Reset only the owning Google account after its deletion marker advances. */
-export async function clearDriveUploadedFlags(accountSubject: string): Promise<void> {
-  if (!accountSubject.trim()) throw new Error('A verified Google subject is required');
-  const db = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readwrite');
-    const store = tx.objectStore(PLAYS_STORE);
-    const request = store.openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor) {
-        const play = cursor.value as Play;
-        if (!play.driveImported && play.driveUploadedAt &&
-            play.driveAccountSubject === accountSubject) {
-          delete play.driveUploadedAt;
-          cursor.update(withDrivePendingKey(play));
-        }
-        cursor.continue();
-      }
-    };
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error ?? new Error('Drive flag reset transaction aborted'));
-  });
-}
-
 export async function getQueueCount(): Promise<number> {
   // Return cached value if fresh
   if (_cachedQueueCount !== null && (Date.now() - _queueCountCacheTime) < QUEUE_COUNT_CACHE_TTL_MS) {
