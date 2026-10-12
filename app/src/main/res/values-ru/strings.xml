@@ -1322,4 +1322,32 @@
     <string name="deezer_import_notification_channel_desc">Уведомления о ходе импорта экспорта данных Deezer</string>
     <string name="deezer_import_notification_title">Импорт данных Deezer</string>
     <string name="deezer_import_notification_progress">Импорт %1$d/%2$d записей</string>
+
+    <!-- Google Drive history sync -->
+    <string name="drive_auth_required">Для синхронизации требуется авторизация в Google Drive.</string>
+    <string name="drive_deleted_success">Удалено пакетов истории Google Drive: %1$d. Синхронизация на связанных устройствах отключится при повторном подключении.</string>
+    <string name="drive_operation_failed">Не удалось выполнить операцию с историей Google Drive.</string>
+    <string name="drive_sync_success">Синхронизировано: отправлено %1$d, получено %2$d.</string>
+    <string name="drive_heading">ИСТОРИЯ НА РАЗНЫХ УСТРОЙСТВАХ</string>
+    <string name="drive_toggle_title">Синхронизировать историю прослушиваний</string>
+    <string name="drive_toggle_subtitle">Обменивайтесь историей между Android, компьютером и браузерами через закрытые данные приложения Google Drive. Сервер Tempo не используется.</string>
+    <string name="drive_connecting">Подключение к Google Drive…</string>
+    <string name="drive_status_title">Синхронизация Google Drive</string>
+    <string name="drive_sync_now">Синхронизировать</string>
+    <string name="drive_restore">Восстановить всю историю Drive</string>
+    <string name="drive_restore_hint">Проверяет старые записи Drive, не удаляя локальную историю.</string>
+    <string name="drive_share">Загрузить старую локальную историю</string>
+    <string name="drive_share_hint">Повторно публикует старые записи, включая данные LAN без подтверждённого аккаунта Google.</string>
+    <string name="drive_delete">Удалить облачную историю</string>
+    <string name="drive_share_confirm_title">Загрузить старую историю?</string>
+    <string name="drive_share_confirm_body">Старые записи будут переданы в выбранный аккаунт Google, включая удалённую облачную историю и данные LAN с неподтверждённым владельцем. Часть записей может относиться к другому аккаунту. Новые передачи LAN не включаются.</string>
+    <string name="drive_share_confirm">Загрузить старую историю</string>
+    <string name="drive_cancel">Отмена</string>
+    <string name="drive_delete_confirm_title">Удалить облачную историю?</string>
+    <string name="drive_delete_confirm_body">Удаляет общую историю Tempo из Google Drive и отключает синхронизацию на связанных устройствах при их повторном подключении. Локальная история сохраняется. Синхронизацию можно снова включить вручную.</string>
+    <string name="drive_delete_confirm">Удалить и отключить</string>
+    <string name="drive_never">Никогда</string>
+    <string name="drive_last_message">Последняя синхронизация: %1$s • %2$s</string>
+    <string name="drive_last_counts">Последняя синхронизация: %1$s • %2$d отправлено • %3$d получено</string>
+    <string name="drive_schedule_hint">Автоматически примерно каждые шесть часов или после нажатия Синхронизировать.</string>
 </resources>
