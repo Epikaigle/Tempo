@@ -125,8 +125,11 @@ jobs:
         if: steps.tag.outputs.release_tag != ''
         shell: bash
         run: |
-          if [[ -z "${TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP}" ]]; then
-            echo "::error::Missing repository variable TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP. Refusing to publish a Desktop release with non-functional Google Drive sign-in."
+          # A public OAuth application ID is not a credential. Enforce its
+          # basic provider format, but real registration and sign-in still
+          # require a separate signed-build acceptance test.
+          if [[ ! "${TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP}" =~ ^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$ ]]; then
+            echo "::error::TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP must be a registered-format Google OAuth Desktop client ID (not empty/test placeholder)."
             exit 1
           fi
 
@@ -185,7 +188,9 @@ jobs:
             ### Windows: WebView2
             The installer checks for the Edge WebView2 Runtime and downloads it automatically
             if it is not already present (Windows 10 20H2+ / 11 include it by default).
-          releaseDraft: false
+          # CI must never publish an unapproved installer: review actual
+          # OAuth sign-in and the four-client acceptance matrix first.
+          releaseDraft: true
           prerelease: false
 
       # ── 7. Build only for manual / non-tag runs ───────────────────────────
