@@ -61,3 +61,12 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Ensure installer releases cannot publish without manual acceptance
+        working-directory: .
+        shell: bash
+        run: |
+          grep -Eq '^[[:space:]]*releaseDraft: true[[:space:]]* .github/workflows/build.yml
+          if grep -Eq '^[[:space:]]*releaseDraft: false[[:space:]]* .github/workflows/build.yml; then
+            echo "::error::Desktop build workflow must not auto-publish releases."
+            exit 1
+          fi
