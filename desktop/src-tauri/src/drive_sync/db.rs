@@ -53,6 +53,18 @@ pub(crate) fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             download_cursor INTEGER NOT NULL DEFAULT 0,
             accepted_disable_version INTEGER NOT NULL DEFAULT 0
         );
+        -- A durable per-account keyset avoids rescanning thousands of malformed
+        -- legacy captures at the beginning of every Drive sync.
+        CREATE TABLE IF NOT EXISTS drive_upload_scan_progress (
+            account_subject TEXT PRIMARY KEY NOT NULL,
+            last_timestamp INTEGER NOT NULL,
+            last_play_id INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS drive_invalid_local_exports (
+            account_subject TEXT NOT NULL,
+            scrobble_id INTEGER NOT NULL,
+            PRIMARY KEY (account_subject, scrobble_id)
+        );
         CREATE TABLE IF NOT EXISTS drive_rejected_files (
             account_subject TEXT NOT NULL,
             file_id TEXT NOT NULL,
@@ -86,6 +98,7 @@ pub(crate) fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
         BEGIN
             DELETE FROM drive_event_aliases WHERE scrobble_id = OLD.id;
             DELETE FROM drive_event_state WHERE scrobble_id = OLD.id;
+            DELETE FROM drive_invalid_local_exports WHERE scrobble_id = OLD.id;
         END;
         CREATE TABLE IF NOT EXISTS drive_sync_migrations (
             name TEXT PRIMARY KEY
@@ -421,6 +434,91 @@ pub(crate) fn restore_account_progress(conn: &Connection, subject: &str) -> Resu
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// The scan position is scoped to Google's immutable account subject.
+/// Clear it on reaching the end, so repaired old rows are retried next cycle.
+pub(crate) fn load_upload_scan_cursor(
+    conn: &Connection,
+    account_subject: &str,
+) -> Result<Option<(i64, i64)>, String> {
+    conn.query_row(
+        "SELECT last_timestamp, last_play_id FROM drive_upload_scan_progress
+         WHERE account_subject = ?1",
+        [account_subject],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+pub(crate) fn save_upload_scan_cursor(
+    conn: &Connection,
+    account_subject: &str,
+    after: Option<(i64, i64)>,
+) -> Result<(), String> {
+    if let Some((timestamp, play_id)) = after {
+        conn.execute(
+            "INSERT INTO drive_upload_scan_progress
+             (account_subject, last_timestamp, last_play_id) VALUES (?1, ?2, ?3)
+             ON CONFLICT(account_subject) DO UPDATE SET
+             last_timestamp = excluded.last_timestamp, last_play_id = excluded.last_play_id",
+            params![account_subject, timestamp, play_id],
+        )
+        .map_err(|e| e.to_string())?;
+    } else {
+        conn.execute(
+            "DELETE FROM drive_upload_scan_progress WHERE account_subject = ?1",
+            [account_subject],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Invalid rows are never deleted, and their warnings survive cursor resumes.
+pub(crate) fn mark_invalid_local_export(
+    conn: &Connection,
+    account_subject: &str,
+    scrobble_id: i64,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO drive_invalid_local_exports (account_subject, scrobble_id)
+         VALUES (?1, ?2)",
+        params![account_subject, scrobble_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn clear_invalid_local_export(
+    conn: &Connection,
+    account_subject: &str,
+    scrobble_id: i64,
+) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM drive_invalid_local_exports
+         WHERE account_subject = ?1 AND scrobble_id = ?2",
+        params![account_subject, scrobble_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn invalid_local_export_summary(
+    conn: &Connection,
+    account_subject: &str,
+) -> Result<(i64, Option<i64>), String> {
+    conn.query_row(
+        "SELECT COUNT(*), MIN(i.scrobble_id)
+         FROM drive_invalid_local_exports i
+         JOIN scrobbles s ON s.id = i.scrobble_id
+         LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
+         WHERE i.account_subject = ?1 AND d.drive_uploaded_at IS NULL",
+        [account_subject],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
