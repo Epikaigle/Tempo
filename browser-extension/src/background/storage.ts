@@ -196,33 +196,6 @@ export async function insertPlay(play: Omit<Play, 'id'>): Promise<number> {
   });
 }
 
-export async function insertPlaysBatch(plays: Array<Omit<Play, 'id'>>): Promise<number[]> {
-  if (plays.length === 0) return [];
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readwrite');
-    const store = tx.objectStore(PLAYS_STORE);
-    const ids: number[] = [];
-    for (const play of plays) {
-      const record = play.originEventId ? {
-        ...play,
-        driveOriginLookupIds: [...new Set([play.originEventId,
-          ...(play.reconciledOrigins ?? []).map(alias => alias.eventId)])],
-      } : play;
-      const request = store.add(withDrivePendingKey(record));
-      request.onsuccess = () => {
-        ids.push(request.result as number);
-      };
-    }
-    tx.oncomplete = () => {
-      invalidateQueueCountCache();
-      invalidateStatsCache();
-      resolve(ids);
-    };
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
 export async function getQueuedPlays(): Promise<Play[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -230,18 +203,6 @@ export async function getQueuedPlays(): Promise<Play[]> {
     const store = tx.objectStore(PLAYS_STORE);
     const index = store.index('status');
     const request = index.getAll('queued');
-    request.onsuccess = () => resolve(request.result as Play[]);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-export async function getFailedPlays(): Promise<Play[]> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PLAYS_STORE, 'readonly');
-    const store = tx.objectStore(PLAYS_STORE);
-    const index = store.index('status');
-    const request = index.getAll('failed');
     request.onsuccess = () => resolve(request.result as Play[]);
     request.onerror = () => reject(request.error);
   });
@@ -818,28 +779,6 @@ export async function recordSync(count: number, status: string, errorMessage: st
   });
 }
 
-export async function getSyncHistory(limit = 10): Promise<SyncRecord[]> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(SYNC_HISTORY_STORE, 'readonly');
-    const store = tx.objectStore(SYNC_HISTORY_STORE);
-    const index = store.index('syncedAt');
-    const records: SyncRecord[] = [];
-    const request = index.openCursor(null, 'prev');
-
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor && records.length < limit) {
-        records.push(cursor.value as SyncRecord);
-        cursor.continue();
-      } else {
-        resolve(records);
-      }
-    };
-    request.onerror = () => reject(request.error);
-  });
-}
-
 // Sync-history pruning bounds: drop records older than 30 days and keep at
 // most 500 records regardless of age.
 
@@ -1240,12 +1179,6 @@ export async function getSyncBackoff(): Promise<SyncBackoffState | null> {
 export async function saveSyncBackoff(backoff: SyncBackoffState): Promise<void> {
   return new Promise<void>((resolve) => {
     chrome.storage.session.set({ syncBackoff: backoff }, resolve);
-  });
-}
-
-export async function clearSyncBackoff(): Promise<void> {
-  return new Promise<void>((resolve) => {
-    chrome.storage.session.remove('syncBackoff', resolve);
   });
 }
 
