@@ -2096,6 +2096,13 @@ fn reconnect_never_downgrades_a_previously_accepted_cloud_deletion_marker() {
     )
     .unwrap();
 
+    // A stale or duplicate remote marker cannot suppress any additional
+    // local captures or downgrade a previously confirmed deletion generation.
+    assert!(accept_deletion_marker(&conn, 250, None).is_err());
+    assert!(accept_deletion_marker(&conn, 300, None).is_err());
+    assert!(!load_state(&conn).unwrap().enabled);
+    assert_eq!(load_state(&conn).unwrap().accepted_disable_version, 300);
+
     // A temporarily missing Drive control file must not restore generation 0.
     finish_drive_reconnect(&conn, 0).unwrap();
     let state = load_state(&conn).unwrap();
