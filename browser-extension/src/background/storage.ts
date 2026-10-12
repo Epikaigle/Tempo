@@ -441,7 +441,14 @@ export async function claimUnownedDrivePlays(accountSubject: string): Promise<vo
       if (!cursor) return;
       const play = cursor.value as Play;
       if (!play.driveAccountSubject) {
-        cursor.update(withDrivePendingKey({ ...play, driveAccountSubject: accountSubject }));
+        // Previously imported Drive records without a verified account subject
+        // cannot be proven to belong to the account now connecting. Quarantine
+        // their original history rather than relabeling it and allowing a
+        // temporal match from a different Google account to claim its origin.
+        // Genuine locally captured plays may belong to the newly confirmed
+        // account and retain their usual pending-upload behavior.
+        const verifiedOwner = play.driveImported ? 'legacy-unverified' : accountSubject;
+        cursor.update(withDrivePendingKey({ ...play, driveAccountSubject: verifiedOwner }));
       }
       cursor.continue();
     };
