@@ -490,12 +490,16 @@ async function uploadLocalPlays(accessToken: string, deviceId: string, accountSu
   let cursor: UploadScanCursor | undefined = state.uploadScanCursors?.[accountSubject];
   while (scanned < MAX_LOCAL_SCAN) {
     const pageLimit = Math.min(250, MAX_LOCAL_SCAN - scanned);
+    const scanTimestamp = (play: Play) => Number.isFinite(play.timestampUtc) ? play.timestampUtc : 0;
     const pending = (await storage.getDrivePendingPlays(pageLimit, accountSubject, cursor))
-      .sort((a, b) => a.timestampUtc - b.timestampUtc || (a.id ?? 0) - (b.id ?? 0));
+      .sort((a, b) => scanTimestamp(a) - scanTimestamp(b) || (a.id ?? 0) - (b.id ?? 0));
     if (pending.length === 0) { exhausted = true; break; }
     scanned += pending.length;
     const last = pending[pending.length - 1];
-    cursor = { timestampUtc: last.timestampUtc, id: last.id! };
+    // IndexedDB stores malformed timestamps under the zero-time index key.
+    // Persist that same normalized key; NaN/null would otherwise erase the
+    // resumable cursor and strand all later valid plays on every sync cycle.
+    cursor = { timestampUtc: scanTimestamp(last), id: last.id! };
 
     for (let offset = 0; offset < pending.length; offset += BATCH_SIZE) {
       const chunk = pending.slice(offset, offset + BATCH_SIZE);
