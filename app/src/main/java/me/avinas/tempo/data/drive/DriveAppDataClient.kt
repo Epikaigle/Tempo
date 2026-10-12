@@ -39,6 +39,12 @@ class DriveAppDataClient @Inject constructor(
         private const val DISABLE_MARKER_NAME = "tempo_history_control_v1.json"
         private const val MAX_RETRIES = 3
         private const val RETRY_BASE_DELAY_MS = 1_500L
+        private const val UNCERTAIN_UPLOAD_MESSAGE =
+            "Google Drive upload outcome is uncertain. Sync again to verify the batch before retrying."
+
+        /** Only requests that cannot create a second object may be blindly retried. */
+        internal fun canRetryAfterAmbiguousFailure(method: String): Boolean =
+            method.uppercase() != "POST"
 
         internal fun markerVersion(versions: List<Long?>): Long {
             if (versions.isEmpty()) return 0L
@@ -84,6 +90,10 @@ class DriveAppDataClient @Inject constructor(
     private suspend fun <T> executeWithRetry(
         authAttempts: Int = 0,
         transientAttempts: Int = 0,
+        // A Drive create POST may have succeeded even when its reply was lost.
+        // Do not retry such ambiguous failures inside the same upload operation:
+        // the next sync must first look up its deterministic batch filename.
+        retryOnAmbiguousFailure: Boolean = true,
         block: suspend (Drive) -> T
     ): T {
         val client = service()
@@ -98,7 +108,7 @@ class DriveAppDataClient @Inject constructor(
                     if (authAttempts < 1 &&
                         authManager.refreshAccessTokenAfterFailure(client.accessToken)
                     ) {
-                        executeWithRetry(authAttempts + 1, transientAttempts, block)
+                        executeWithRetry(authAttempts + 1, transientAttempts, retryOnAmbiguousFailure, block)
                     } else {
                         throw DriveException.Auth("Google Drive session expired", e)
                     }
@@ -121,18 +131,30 @@ class DriveAppDataClient @Inject constructor(
                             }
                         }
                         reasons.any { it.contains("rateLimit", ignoreCase = true) } ->
-                            retryTransient(authAttempts, transientAttempts, e, block)
+                            if (retryOnAmbiguousFailure) {
+                                retryTransient(authAttempts, transientAttempts, e, block)
+                            } else {
+                                throw DriveException.Server(UNCERTAIN_UPLOAD_MESSAGE, e)
+                            }
                         else -> throw DriveException.Server("Google Drive rejected the request: ${e.message}", e)
                     }
                 }
                 429, 500, 502, 503, 504 ->
-                    retryTransient(authAttempts, transientAttempts, e, block)
+                    if (retryOnAmbiguousFailure) {
+                        retryTransient(authAttempts, transientAttempts, e, block)
+                    } else {
+                        throw DriveException.Server(UNCERTAIN_UPLOAD_MESSAGE, e)
+                    }
                 else -> throw DriveException.Server("Drive error ${e.statusCode}: ${e.message}", e)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            retryTransient(authAttempts, transientAttempts, e, block)
+            if (retryOnAmbiguousFailure) {
+                retryTransient(authAttempts, transientAttempts, e, block)
+            } else {
+                throw DriveException.Network(UNCERTAIN_UPLOAD_MESSAGE, e)
+            }
         }
     }
 
@@ -169,7 +191,7 @@ class DriveAppDataClient @Inject constructor(
         }
         val expectedMd5 = md5Hex(compressedBytes)
         val expectedSha256 = sha256Hex(compressedBytes)
-        executeWithRetry { api ->
+        executeWithRetry(retryOnAmbiguousFailure = canRetryAfterAmbiguousFailure("POST")) { api ->
             findFilesByExactName(api, fileName).firstOrNull { existing ->
                 existing.getSize()?.toLong() == compressedBytes.size.toLong() &&
                     existing.md5Checksum.equals(expectedMd5, ignoreCase = true) &&
