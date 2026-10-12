@@ -78,13 +78,17 @@ pub(crate) async fn run_sync_locked_with_restore(
     let (imported, duplicates) = download?;
     let progress = upload?;
     let mut warnings = Vec::new();
-    if let Some(first_id) = progress.first_rejected_id {
+    let warnings_conn = open_sync_db(app_data_dir)?;
+    let account_subject = load_state(&warnings_conn)?
+        .account_subject
+        .ok_or("Google account identity is missing; reconnect securely")?;
+    let (invalid_count, first_invalid) =
+        invalid_local_export_summary(&warnings_conn, &account_subject)?;
+    if let Some(first_id) = first_invalid {
         warnings.push(format!(
-            "{} local Desktop play(s) could not be exported (first local ID {}). They remain saved locally. Correct their metadata to retry.",
-            progress.rejected, first_id
+            "{invalid_count} local Desktop play(s) could not be exported (first local ID {first_id}). They remain saved locally. Correct their metadata to retry."
         ));
     }
-    let warnings_conn = open_sync_db(app_data_dir)?;
     let rejected = count_rejected_batches(&warnings_conn)?;
     if rejected > 0 {
         let example = sample_rejected_batch(&warnings_conn)?
