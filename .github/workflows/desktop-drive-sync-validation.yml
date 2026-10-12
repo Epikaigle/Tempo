@@ -65,8 +65,8 @@ jobs:
         working-directory: .
         shell: bash
         run: |
-          grep -Eq '^[[:space:]]*releaseDraft: true[[:space:]]* .github/workflows/build.yml
-          if grep -Eq '^[[:space:]]*releaseDraft: false[[:space:]]* .github/workflows/build.yml; then
+          grep -Fq 'releaseDraft: true' .github/workflows/build.yml
+          if grep -Fq 'releaseDraft: false' .github/workflows/build.yml; then
             echo "::error::Desktop build workflow must not auto-publish releases."
             exit 1
           fi
