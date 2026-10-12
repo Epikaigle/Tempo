@@ -1,6 +1,6 @@
 use super::*;
 use flate2::{write::GzEncoder, Compression};
-use reqwest::StatusCode;
+use reqwest::{Method, StatusCode};
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -8,6 +8,16 @@ use std::io::Write;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
+
+#[test]
+fn retry_helper_rejects_ambiguous_drive_mutations() {
+    assert!(is_drive_retry_safe(&Method::GET));
+    assert!(is_drive_retry_safe(&Method::HEAD));
+    assert!(is_drive_retry_safe(&Method::DELETE));
+    assert!(!is_drive_retry_safe(&Method::POST));
+    assert!(!is_drive_retry_safe(&Method::PATCH));
+    assert!(!is_drive_retry_safe(&Method::PUT));
+}
 
 #[test]
 fn google_reconnect_policy_does_not_confuse_network_failures_with_revocation() {
