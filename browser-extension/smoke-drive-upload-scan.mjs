@@ -135,4 +135,43 @@ try {
 } finally {
   console.warn = originalWarn;
 }
+
+// Fractional/negative legacy timestamps are valid IndexedDB index keys but
+// invalid wire timestamps. The resumption key must survive state parsing and
+// advance beyond all 5k malformed captures on the next sync.
+fixture.settings.driveSyncEnabled = true;
+fixture.stored[stateKey] = {
+  downloadCreatedCursor: 0, acceptedDisableVersion: 100,
+  lastAuthorizedAccountSubject: 'google-a',
+};
+fixture.scanCalls = [];
+fixture.marked = [];
+fixture.uploads = [];
+fixture.plays = Array.from({ length: 5000 }, (_, index) => ({
+  id: index + 1, timestampUtc: -0.5,
+  title: 'Legacy bad time', artist: 'Artist', status: 'queued',
+}));
+fixture.plays.push({
+  id: 5001, timestampUtc: 5001, title: 'Recovered song', artist: 'Artist',
+  sourceApp: 'browser', status: 'queued', durationMs: 180000, listenedMs: 120000,
+  replayCount: 0, skipped: false, completionPercentage: 67, pauseCount: 0,
+  seekCount: 0, sessionId: '', site: '', contentType: 'MUSIC',
+  volumeLevel: 0.6, totalPauseDurationMs: 0, positionUpdatesCount: 0,
+});
+console.warn = () => {};
+try {
+  const first = await drive.syncDriveHistory();
+  assert.equal(first.uploaded, 0);
+  assert.deepEqual(fixture.stored[stateKey].uploadScanCursors['google-a'],
+    { timestampUtc: -0.5, id: 5000 },
+    'the IndexedDB key must be persisted without rounding');
+  const second = await drive.syncDriveHistory();
+  assert.equal(second.uploaded, 1,
+    'the fractional negative key must be restored rather than restarting at row one');
+  assert.equal(fixture.scanCalls[20].after.timestampUtc, -0.5);
+  assert.equal(fixture.marked.length, 1);
+} finally {
+  console.warn = originalWarn;
+}
 console.log('  ✓ 5,000 malformed events cannot starve valid uploads or hide local-history warnings');
+console.log('  ✓ legacy fractional timestamp cursors survive reloading and reach valid history');
