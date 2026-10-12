@@ -78,6 +78,15 @@ jobs:
             echo "A Drive release was permitted without a Firefox OAuth client" >&2
             exit 1
           fi
+      - name: Validate release packaging with synthetic OAuth-format IDs
+        # This verifies packaging, NOT that a Google OAuth client is registered.
+        # Archives produced here are overwritten and never uploaded.
+        env:
+          TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME: 123456789012-cifixture.apps.googleusercontent.com
+          TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX: 123456789012-cifixture.apps.googleusercontent.com
+        run: |
+          npm run build:release:chrome
+          npm run build:release:firefox
       - name: Build Chrome
         env:
           TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME: test-client.apps.googleusercontent.com
