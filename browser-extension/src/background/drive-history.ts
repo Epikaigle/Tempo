@@ -85,6 +85,8 @@ interface DriveRuntimeState {
   rejectedBatches?: Record<string, RejectedBatchRecord[]>;
   /** Resumable, per-Google-account queue scan, including invalid preserved rows. */
   uploadScanCursors?: Record<string, UploadScanCursor>;
+  /** Per-account warning retained until a complete clean local queue scan. */
+  rejectedLocalPlays?: Record<string, { count: number; firstId: number }>;
 }
 
 const DEFAULT_STATE: DriveRuntimeState = {
@@ -100,6 +102,7 @@ const DEFAULT_STATE: DriveRuntimeState = {
   accountProgress: {},
   rejectedBatches: {},
   uploadScanCursors: {},
+  rejectedLocalPlays: {},
 };
 
 function markRejectedBatchRecord(
@@ -291,11 +294,16 @@ export async function getDriveSyncStatus(): Promise<DriveSyncStatus> {
   const rejectedList: RejectedBatchRecord[] = (currentSubject && state.rejectedBatches?.[currentSubject])
     ? state.rejectedBatches[currentSubject]
     : [];
-  let visibleError = state.lastError;
-  if (!visibleError && rejectedList.length > 0) {
+  const warnings: string[] = [];
+  if (rejectedList.length > 0) {
     const sample = rejectedList[0];
-    visibleError = `${rejectedList.length} invalid Google Drive history batch(es) were skipped (e.g. ${sample.fileName}: ${sample.reason}). Repair or remove the affected files, then use Restore all history.`;
+    warnings.push(`${rejectedList.length} invalid Google Drive history batch(es) were skipped (e.g. ${sample.fileName}: ${sample.reason}). Repair or remove the affected files, then use Restore all history.`);
   }
+  const rejectedLocal = currentSubject ? state.rejectedLocalPlays?.[currentSubject] : undefined;
+  if (rejectedLocal && rejectedLocal.count > 0) {
+    warnings.push(`${rejectedLocal.count} local play(s) could not be uploaded in a previous scan (first local ID ${rejectedLocal.firstId}). They remain saved locally; correct their metadata to retry.`);
+  }
+  const visibleError = state.lastError || (warnings.length > 0 ? warnings.join(' ') : null);
 
   return {
     enabled: !!settings.driveSyncEnabled,
@@ -488,6 +496,8 @@ async function uploadLocalPlays(accessToken: string, deviceId: string, accountSu
   // Resume beyond those rows on the next run, without dropping or relabeling
   // them. This cursor belongs to the verified Google subject, never globally.
   let cursor: UploadScanCursor | undefined = state.uploadScanCursors?.[accountSubject];
+  const beganAtStart = !cursor;
+  let firstRejectedId: number | null = null;
   while (scanned < MAX_LOCAL_SCAN) {
     const pageLimit = Math.min(250, MAX_LOCAL_SCAN - scanned);
     const scanTimestamp = (play: Play) => Number.isFinite(play.timestampUtc) ? play.timestampUtc : 0;
@@ -515,6 +525,7 @@ async function uploadLocalPlays(accessToken: string, deviceId: string, accountSu
           valid.push(play);
         } catch (err) {
           skipped++;
+          firstRejectedId ??= play.id ?? null;
           console.warn('[Tempo] Retaining invalid local Drive play', play.id, err);
         }
       }
@@ -547,7 +558,15 @@ async function uploadLocalPlays(accessToken: string, deviceId: string, accountSu
   const nextCursors = { ...(state.uploadScanCursors ?? {}) };
   if (exhausted) delete nextCursors[accountSubject];
   else if (cursor) nextCursors[accountSubject] = cursor;
-  await patchRuntimeState({ uploadScanCursors: nextCursors });
+  const nextRejections = { ...(state.rejectedLocalPlays ?? {}) };
+  if (skipped > 0 && firstRejectedId != null) {
+    nextRejections[accountSubject] = { count: skipped, firstId: firstRejectedId };
+  } else if (beganAtStart && exhausted) {
+    // Only a full clean traversal proves previously bad local rows were repaired.
+    // A resumed scan after the 5k cap must not erase an older warning.
+    delete nextRejections[accountSubject];
+  }
+  await patchRuntimeState({ uploadScanCursors: nextCursors, rejectedLocalPlays: nextRejections });
   if (skipped > 0) {
     console.warn(`[Tempo] ${skipped} invalid local plays were preserved for metadata repair`);
   }
