@@ -314,8 +314,11 @@ export async function getDrivePendingPlays(
     const result: Play[] = [];
     const floor = after && Number.isFinite(after.timestampUtc) ? after.timestampUtc : 0;
     const request = tx.objectStore(PLAYS_STORE).index('drivePendingIndexKey')
-      .openCursor(IDBKeyRange.bound([owner, after ? floor : -Number.MAX_SAFE_INTEGER],
-                                    [owner, Number.MAX_SAFE_INTEGER]));
+      // IndexedDB accepts any finite numeric key, not only safe integers.
+      // An out-of-range legacy timestamp must be surfaced for repair rather
+      // than silently excluded from the Drive upload queue.
+      .openCursor(IDBKeyRange.bound([owner, after ? floor : -Number.MAX_VALUE],
+                                    [owner, Number.MAX_VALUE]));
     request.onsuccess = () => {
       const cursor = request.result;
       if (!cursor || result.length >= limit) { resolve(result); return; }
