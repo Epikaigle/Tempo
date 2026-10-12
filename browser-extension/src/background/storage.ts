@@ -208,6 +208,18 @@ export async function getQueuedPlays(): Promise<Play[]> {
   });
 }
 
+export async function getFailedPlays(): Promise<Play[]> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readonly');
+    const store = tx.objectStore(PLAYS_STORE);
+    const index = store.index('status');
+    const request = index.getAll('failed');
+    request.onsuccess = () => resolve(request.result as Play[]);
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function getAllPlays(limit = 100): Promise<Play[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
