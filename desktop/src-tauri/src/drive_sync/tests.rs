@@ -2082,3 +2082,39 @@ fn desktop_upload_scan_resumes_after_invalid_prefix_and_preserves_account_scope(
     drop(conn);
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+
+#[test]
+fn reconnect_never_downgrades_a_previously_accepted_cloud_deletion_marker() {
+    let (directory, conn) = history_storage_fixture();
+    conn.execute(
+        "UPDATE drive_sync_state SET enabled = 0,
+         account_subject = 'google-a', accepted_disable_version = 300,
+         download_cursor = 123, last_error = 'disconnected'
+         WHERE id = 1",
+        [],
+    )
+    .unwrap();
+
+    // A temporarily missing Drive control file must not restore generation 0.
+    finish_drive_reconnect(&conn, 0).unwrap();
+    let state = load_state(&conn).unwrap();
+    assert!(state.enabled);
+    assert_eq!(state.accepted_disable_version, 300);
+    assert_eq!(state.download_cursor, 123);
+    assert_eq!(state.last_error, None);
+
+    // An out-of-date remote listing also cannot roll the generation backward.
+    finish_drive_reconnect(&conn, 250).unwrap();
+    let state = load_state(&conn).unwrap();
+    assert_eq!((state.accepted_disable_version, state.download_cursor), (300, 123));
+
+    // A genuinely newer remote marker is adopted and invalidates the cursor.
+    finish_drive_reconnect(&conn, 400).unwrap();
+    let state = load_state(&conn).unwrap();
+    assert_eq!((state.accepted_disable_version, state.download_cursor), (400, 0));
+    assert!(finish_drive_reconnect(&conn, -1).is_err());
+
+    drop(conn);
+    std::fs::remove_dir_all(directory).unwrap();
+}
