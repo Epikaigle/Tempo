@@ -109,6 +109,24 @@ assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 1_000, 're
 assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 1_000, 'remote-D', 'event-D1', undefined, 185_000), true,
   'track duration difference <= 10s must match same-title playback');
 
+// Unattributed legacy CLOUD rows must not be claimed by temporal matching to
+// a newly linked Google account. Unknown fresh local captures remain eligible.
+localRecords = [{
+  title: 'Song', artist: 'Artist', timestampUtc: baseTime,
+  driveImported: true, originDeviceId: 'old-cloud-origin',
+}];
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 1_000,
+  'incoming-from-B', 'B-event-1', 'google-b'), false,
+  'unknown-owner imported history must not be assigned to another account');
+assert.equal(localRecords[0].driveAccountSubject, undefined);
+localRecords = [{
+  title: 'Song', artist: 'Artist', timestampUtc: baseTime, driveImported: false,
+}];
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 1_000,
+  'incoming-from-B', 'B-event-2', 'google-b'), true,
+  'a fresh local-only capture can reconcile with the active verified account');
+assert.equal(localRecords[0].driveAccountSubject, 'google-b');
+
 // Full-history restore must recover OWN local IDs before importing cloud data.
 // A previously uploaded local play has no originEventId field, so checking
 // only stored remote aliases used to duplicate the same device's whole archive.
