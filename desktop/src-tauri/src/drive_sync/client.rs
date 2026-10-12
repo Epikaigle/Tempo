@@ -1,6 +1,6 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
-use reqwest::{header, RequestBuilder, Response, StatusCode};
+use reqwest::{header, Method, RequestBuilder, Response, StatusCode};
 use rusqlite::params;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -45,9 +45,26 @@ pub(crate) fn transient_drive_response(status: StatusCode) -> bool {
     matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504)
 }
 
-// Retry only idempotent requests: GET, DELETE, and overwrite-by-ID PATCH.
-// Retrying a create/upload POST blindly can leave duplicate cloud objects.
+// Only operations that cannot mint a new Drive object or a new deletion
+// generation may be retried. Even a PATCH of the *same* marker body updates
+// modifiedTime, so treating PATCH as idempotent would be unsafe.
+pub(crate) fn is_drive_retry_safe(method: &Method) -> bool {
+    matches!(*method, Method::GET | Method::HEAD | Method::DELETE)
+}
+
 pub(crate) async fn send_drive_idempotent(request: RequestBuilder) -> Result<Response, String> {
+    let method = request
+        .try_clone()
+        .ok_or("Drive request cannot be inspected safely")?
+        .build()
+        .map_err(|e| e.to_string())?
+        .method()
+        .clone();
+    if !is_drive_retry_safe(&method) {
+        // Fail closed against future callers accidentally submitting a POST,
+        // PATCH or PUT to the reusable retry path.
+        return Err(format!("Unsafe Google Drive request cannot be retried: {method}"));
+    }
     for attempt in 0..DRIVE_REQUEST_RETRIES {
         let replay = request
             .try_clone()
