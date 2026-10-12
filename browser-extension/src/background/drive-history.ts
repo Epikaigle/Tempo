@@ -22,6 +22,8 @@ import {
   SCHEMA_VERSION,
   MAX_BATCH_BYTES,
   DEVICE_ID_PATTERN,
+  SHA256_PATTERN,
+  PLATFORM_PATTERN,
   playToWire,
   localVolumeFromWire,
   eventId,
