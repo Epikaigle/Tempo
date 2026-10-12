@@ -3,9 +3,6 @@ import type { Play } from '../shared/types';
 import { readStreamBytesWithLimit } from './drive-transport';
 
 export const SCHEMA_VERSION = 1;
-const BATCH_SIZE = 50;
-const MAX_LOCAL_SCAN = 5000;
-const DOWNLOAD_OVERLAP_MS = 24 * 60 * 60 * 1000;
 export const MAX_BATCH_BYTES = 10 * 1024 * 1024;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 export const DEVICE_ID_PATTERN = /^[A-Za-z0-9._-]{1,200}$/;
