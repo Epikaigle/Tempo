@@ -96,8 +96,8 @@ jobs:
       - name: Validate reproducible ZIP checksum and build provenance
         shell: bash
         run: |
-          sha256sum "dist/tempo-stats-chrome.zip" > "dist/tempo-stats-chrome.zip.sha256"
-          (cd dist && sha256sum -c "tempo-stats-chrome.zip.sha256")
+          (cd dist && sha256sum "tempo-stats-chrome.zip" > "tempo-stats-chrome.zip.sha256"
+            sha256sum -c "tempo-stats-chrome.zip.sha256")
           printf 'commit=%s\nrun=%s\ntarget=chrome\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > "dist/tempo-stats-chrome.build-info.txt"
           grep -Fxq "commit=$GITHUB_SHA" "dist/tempo-stats-chrome.build-info.txt"
       - name: Validate CI Chrome OAuth manifest
