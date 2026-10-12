@@ -19,6 +19,8 @@ use super::db::{
     accept_deletion_marker, clear_missing_rejected_batches, clear_rejected_batch,
     insert_remote_event_for_account, load_state, mark_rejected_batch, open_sync_db,
     pending_local_plays_page, pin_local_origin, remember_origin,
+    load_upload_scan_cursor, save_upload_scan_cursor, mark_invalid_local_export,
+    clear_invalid_local_export,
 };
 use super::models::{
     http_client, now_ms, sha256_hex, valid_sha256, DriveFileRecord, DriveListResponse, LocalPlay,
@@ -348,16 +350,28 @@ pub(crate) async fn upload_local_history(
     device_id: &str,
 ) -> Result<DriveUploadProgress, String> {
     let conn = open_sync_db(app_data_dir)?;
-    let generation = load_state(&conn)?.accepted_disable_version.max(0);
+    let state = load_state(&conn)?;
+    let generation = state.accepted_disable_version.max(0);
+    let account_subject = state.account_subject
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .ok_or("Google account identity is missing; reconnect securely")?;
     let mut progress = DriveUploadProgress::default();
-    let mut after: Option<(i64, i64)> = None;
-    loop {
-        let pending = pending_local_plays_page(&conn, after, MAX_LOCAL_SCAN)?;
+    let mut after = load_upload_scan_cursor(&conn, account_subject)?;
+    let mut scanned = 0usize;
+    let mut exhausted = false;
+    // A scan must be bounded by inspected rows, not only successfully uploaded
+    // rows. Otherwise 100k malformed legacy plays starve incoming cloud data.
+    while scanned < MAX_LOCAL_SCAN {
+        let page_limit = (MAX_LOCAL_SCAN - scanned).min(250);
+        let pending = pending_local_plays_page(&conn, after, page_limit)?;
         if pending.is_empty() {
+            exhausted = true;
             break;
         }
         after = pending.last().map(|play| (play.timestamp_utc, play.id));
         let count = pending.len();
+        scanned += count;
         let mut valid_plays = Vec::new();
         for play in &pending {
             let wire = local_to_wire(device_id, play);
@@ -366,6 +380,7 @@ pub(crate) async fn upload_local_history(
             } else {
                 progress.rejected += 1;
                 progress.first_rejected_id.get_or_insert(play.id);
+                mark_invalid_local_export(&conn, account_subject, play.id)?;
                 log::warn!(
                     "Cannot upload Desktop play {}: metadata exceeds protocol-v1 limits or required data is missing",
                     play.id
@@ -434,17 +449,20 @@ pub(crate) async fn upload_local_history(
                     params![play.id, origin, device_id, uploaded_at],
                 ).map_err(|e| e.to_string())?;
                 remember_origin(&tx, play.id, device_id, origin)?;
+                clear_invalid_local_export(&tx, account_subject, play.id)?;
             }
             tx.commit().map_err(|e| e.to_string())?;
             progress.uploaded += chunk.len();
         }
-        // Preserve the original per-run upload budget. A very large backlog
-        // must not postpone incoming cloud history indefinitely; future syncs
-        // resume. Invalid rows do not consume this useful-upload budget.
-        if count < MAX_LOCAL_SCAN || progress.uploaded >= MAX_LOCAL_SCAN {
+        if count < page_limit {
+            exhausted = true;
             break;
         }
     }
+    // Checkpoint only after the full bounded pass: ambiguous uploads are
+    // retried with verified deterministic identities if the network fails.
+    // Wrapping at the end eventually revisits repaired or back-dated plays.
+    save_upload_scan_cursor(&conn, account_subject, if exhausted { None } else { after })?;
     Ok(progress)
 }
 
