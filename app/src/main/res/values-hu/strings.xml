@@ -730,4 +730,32 @@
     <string name="deezer_import_notification_channel_desc">Folyamatértesítések a Deezer-adatexport importálásához</string>
     <string name="deezer_import_notification_title">Deezer-adatok importálása</string>
     <string name="deezer_import_notification_progress">%1$d/%2$d bejegyzés importálása</string>
+
+    <!-- Google Drive history sync -->
+    <string name="drive_auth_required">A Google Drive-szinkronizálás engedélyezéséhez be kell jelentkezni.</string>
+    <string name="drive_deleted_success">%1$d előzménycsomag törölve a Google Drive-ból. A kapcsolt eszközök újbóli csatlakozáskor leállítják a szinkronizálást.</string>
+    <string name="drive_operation_failed">Nem sikerült a Google Drive-művelet.</string>
+    <string name="drive_sync_success">Szinkronizálva: %1$d elküldve, %2$d fogadva.</string>
+    <string name="drive_heading">ESZKÖZÖK KÖZÖTTI ELŐZMÉNYEK</string>
+    <string name="drive_toggle_title">Hallgatási előzmények szinkronizálása</string>
+    <string name="drive_toggle_subtitle">Előzmények megosztása Android, asztali gép és böngészők között a Google Drive privát alkalmazásadataival, Tempo-szerver nélkül.</string>
+    <string name="drive_connecting">Csatlakozás a Google Drive-hoz…</string>
+    <string name="drive_status_title">Google Drive-szinkronizálás</string>
+    <string name="drive_sync_now">Szinkronizálás most</string>
+    <string name="drive_restore">Teljes Drive-előzmény visszaállítása</string>
+    <string name="drive_restore_hint">A régi Drive-adatok ellenőrzése a helyi előzmények törlése nélkül.</string>
+    <string name="drive_share">Régi helyi előzmények feltöltése</string>
+    <string name="drive_share_hint">Korábbi lejátszások ismételt feltöltése, ismeretlen Google-tulajdonosú LAN-adatokkal együtt.</string>
+    <string name="drive_delete">Felhőelőzmények törlése</string>
+    <string name="drive_share_confirm_title">Régi előzmények feltöltése?</string>
+    <string name="drive_share_confirm_body">A korábbi lejátszásokat a kiválasztott Google-fiókba tölti fel, beleértve a felhőből törölt és ismeretlen tulajdonosú LAN-előzményeket. Egyes adatok másik fiókhoz tartozhatnak. A jövőbeli LAN-adatok kimaradnak.</string>
+    <string name="drive_share_confirm">Régi előzmények feltöltése</string>
+    <string name="drive_cancel">Mégse</string>
+    <string name="drive_delete_confirm_title">Felhőelőzmények törlése?</string>
+    <string name="drive_delete_confirm_body">Törli a megosztott Tempo-előzményeket a Google Drive-ból, és a kapcsolt eszközök újracsatlakozáskor leállítják a szinkronizálást. A helyi előzmények megmaradnak. Később újra engedélyezhető.</string>
+    <string name="drive_delete_confirm">Törlés és kikapcsolás</string>
+    <string name="drive_never">Soha</string>
+    <string name="drive_last_message">Utolsó szinkron: %1$s • %2$s</string>
+    <string name="drive_last_counts">Utolsó szinkron: %1$s • %2$d küldve • %3$d fogadva</string>
+    <string name="drive_schedule_hint">Körülbelül hatóránként automatikusan, vagy kézi indítással.</string>
 </resources>
