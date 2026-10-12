@@ -2032,3 +2032,52 @@ fn protocol_volume_uses_android_percent_scale() {
     play.is_muted = true;
     assert_eq!(protocol_volume(&play), Some(0));
 }
+
+
+#[test]
+fn desktop_upload_scan_resumes_after_invalid_prefix_and_preserves_account_scope() {
+    let (directory, conn) = history_storage_fixture();
+    conn.execute(
+        "UPDATE drive_sync_state SET account_subject = 'google-a' WHERE id = 1",
+        [],
+    ).unwrap();
+    let tx = conn.unchecked_transaction().unwrap();
+    for i in 0..5_005_i64 {
+        tx.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc)
+             VALUES ('', 'Artist', ?1)",
+            [1_700_000_000_000_i64 + i],
+        ).unwrap();
+    }
+    tx.commit().unwrap();
+
+    let start = pending_local_plays_page(&conn, None, MAX_LOCAL_SCAN).unwrap();
+    assert_eq!(start.len(), MAX_LOCAL_SCAN);
+    assert!(!valid_event(&local_to_wire(&load_state(&conn).unwrap().device_id, &start[0])));
+    mark_invalid_local_export(&conn, "google-a", start[0].id).unwrap();
+    assert_eq!(invalid_local_export_summary(&conn, "google-a").unwrap(), (1, Some(start[0].id)));
+
+    let last = start.last().unwrap();
+    save_upload_scan_cursor(&conn, "google-a", Some((last.timestamp_utc, last.id))).unwrap();
+    assert_eq!(load_upload_scan_cursor(&conn, "google-a").unwrap(),
+        Some((last.timestamp_utc, last.id)));
+    assert_eq!(load_upload_scan_cursor(&conn, "google-b").unwrap(), None);
+    assert_eq!(invalid_local_export_summary(&conn, "google-b").unwrap(), (0, None));
+
+    drop(conn);
+    let conn = open_sync_db(&directory).unwrap();
+    let cursor = load_upload_scan_cursor(&conn, "google-a").unwrap();
+    let remaining = pending_local_plays_page(&conn, cursor, MAX_LOCAL_SCAN).unwrap();
+    assert_eq!(remaining.len(), 5, "valid events after 5k malformed ones stay reachable");
+    assert_eq!(invalid_local_export_summary(&conn, "google-a").unwrap().0, 1);
+    clear_invalid_local_export(&conn, "google-a", start[0].id).unwrap();
+    assert_eq!(invalid_local_export_summary(&conn, "google-a").unwrap(), (0, None));
+
+    mark_invalid_local_export(&conn, "google-a", start[0].id).unwrap();
+    conn.execute("DELETE FROM scrobbles WHERE id = ?1", [start[0].id]).unwrap();
+    assert_eq!(invalid_local_export_summary(&conn, "google-a").unwrap(), (0, None));
+    save_upload_scan_cursor(&conn, "google-a", None).unwrap();
+    assert_eq!(load_upload_scan_cursor(&conn, "google-a").unwrap(), None);
+    drop(conn);
+    std::fs::remove_dir_all(directory).unwrap();
+}
