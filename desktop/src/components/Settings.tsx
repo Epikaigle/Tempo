@@ -68,6 +68,8 @@ export default function Settings() {
   const [batteryStatus, setBatteryStatus] = useState<BatteryStatus | null>(null);
   const [batterySaverActive, setBatterySaverActive] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
+  const [driveAction, setDriveAction] = useState<DriveSyncAction | null>(null);
+  const [driveNotice, setDriveNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     getSettings()
@@ -121,23 +123,35 @@ export default function Settings() {
     }
 
     setDriveBusy(true);
-    setError("");
+    setDriveAction(action);
+    setDriveNotice(null);
     try {
       const refreshed = await runDriveSyncAction(settings, action);
-      // Refresh only Drive status. Keep unsaved ordinary form edits in the UI;
-      // a Drive action must never behave like an implicit Save button.
+      // Drive actions must never implicitly save other unsaved form fields.
       setSettings((current) => withDriveStatus(current, refreshed));
+      const messages: Record<DriveSyncAction, string> = {
+        connect: "Google Drive connected.",
+        disconnect: "Disconnected on this computer. Local history is unchanged.",
+        sync: `Synchronization finished: ${refreshed.drive_sync_last_uploaded} sent · ${refreshed.drive_sync_last_imported} received.`,
+        restore: `Full history restore finished: ${refreshed.drive_sync_last_imported} received.`,
+        "share-history": "Older local history was authorized for upload. Large backlogs continue during later syncs.",
+        delete: "Cloud history deletion finished. Local listening history was kept.",
+      };
+      if (refreshed.drive_sync_last_error) {
+        setDriveNotice({ kind: "error", message: refreshed.drive_sync_last_error });
+      } else {
+        setDriveNotice({ kind: "success", message: messages[action] });
+      }
     } catch (e) {
-      setError(String(e));
-      // The backend may update Drive error/connection state even when the action
-      // fails. Refresh only that status and preserve every unsaved ordinary form
-      // edit, exactly like the success path.
-      getSettings()
-        .then((refreshed) => {
-          setSettings((current) => withDriveStatus(current, refreshed));
-        })
-        .catch(() => {});
+      setDriveNotice({ kind: "error", message: String(e) });
+      // Re-read Drive status even on failure: reconnect and deletion can
+      // change local sync state before the network action reports an error.
+      try {
+        const refreshed = await getSettings();
+        setSettings((current) => withDriveStatus(current, refreshed));
+      } catch { /* Keep the actionable error visible. */ }
     } finally {
+      setDriveAction(null);
       setDriveBusy(false);
     }
   };
@@ -260,7 +274,7 @@ export default function Settings() {
       </div>
 
       {/* Google Drive cross-device sync */}
-      <div className="card" style={{ marginBottom: 20 }}>
+      <div className="card" style={{ marginBottom: 20 }} aria-busy={driveBusy}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
           <Cloud size={18} style={{ color: "var(--accent)" }} />
           <div>
@@ -288,7 +302,7 @@ export default function Settings() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button className="btn btn-primary" disabled={driveBusy}
                 onClick={() => handleDriveAction("connect")}>
-                <Cloud size={16} />{driveBusy ? "Connecting…" : "Reconnect Google"}
+                <Cloud size={16} />{driveAction === "connect" ? "Connecting…" : "Reconnect Google"}
               </button>
               <button className="btn btn-secondary" disabled={driveBusy}
                 onClick={() => handleDriveAction("disconnect")}>
@@ -307,7 +321,7 @@ export default function Settings() {
               onClick={() => handleDriveAction("connect")}
             >
               <Cloud size={16} />
-              {driveBusy ? "Connecting…" : "Connect Google"}
+              {driveAction === "connect" ? "Connecting…" : "Connect Google"}
             </button>
           </div>
         ) : (
@@ -340,48 +354,71 @@ export default function Settings() {
                 onClick={() => handleDriveAction("sync")}
               >
                 <RefreshCw size={16} />
-                {driveBusy ? "Working…" : "Sync now"}
+                {driveAction === "sync" ? "Syncing…" : "Sync now"}
               </button>
-              <button
-                className="btn btn-secondary"
-                disabled={driveBusy}
-                onClick={() => handleDriveAction("restore")}
-                title="Re-read all historical Drive batches without erasing local plays"
-              >
-                <RefreshCw size={16} />
-                Restore full history
-              </button>
-              <button
-                className="btn btn-secondary"
-                disabled={driveBusy}
-                onClick={() => handleDriveAction("share-history")}
-                title="Authorize older Desktop records for this Google account"
-              >
-                <Cloud size={16} />
-                Upload older local history
-              </button>
-              <button
-                className="btn btn-secondary"
-                disabled={driveBusy}
-                title="Disconnect only this computer; Android and browser sync remain connected."
-                onClick={() => handleDriveAction("disconnect")}
-              >
-                <LogOut size={16} />
-                Disconnect
-              </button>
-              <button
-                className="btn btn-secondary"
-                disabled={driveBusy}
-                onClick={() => handleDriveAction("delete")}
-                style={{ color: "var(--danger)" }}
-              >
-                <Trash2 size={16} />
-                Delete cloud history
-              </button>
+            </div>
+            <details style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
+                History recovery and account controls
+              </summary>
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "8px 0 12px" }}>
+                Restore reads older cloud batches without deleting local plays.
+                Upload older history explicitly shares past local recordings with this Google account.
+              </p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="btn btn-secondary" disabled={driveBusy}
+                  onClick={() => handleDriveAction("restore")}>
+                  <RefreshCw size={16} />
+                  {driveAction === "restore" ? "Restoring…" : "Restore full history"}
+                </button>
+                <button className="btn btn-secondary" disabled={driveBusy}
+                  onClick={() => handleDriveAction("share-history")}>
+                  <Cloud size={16} />
+                  {driveAction === "share-history" ? "Uploading…" : "Upload older local history"}
+                </button>
+              </div>
+              <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 12 }}>
+                <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 10px" }}>
+                  Disconnect affects this computer only. Delete cloud history stops
+                  shared Drive sync on linked devices as they reconnect.
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="btn btn-secondary" disabled={driveBusy}
+                    onClick={() => handleDriveAction("disconnect")}>
+                    <LogOut size={16} />
+                    {driveAction === "disconnect" ? "Disconnecting…" : "Disconnect this computer"}
+                  </button>
+                  <button className="btn btn-secondary" disabled={driveBusy}
+                    onClick={() => handleDriveAction("delete")}
+                    style={{ color: "var(--danger)" }}>
+                    <Trash2 size={16} />
+                    {driveAction === "delete" ? "Deleting…" : "Delete cloud history"}
+                  </button>
+                </div>
+              </div>
+            </details>
+            <div style={{ display: "none" }}>
             </div>
           </div>
         )}
 
+        {driveNotice && (
+          <p role={driveNotice.kind === "error" ? "alert" : "status"} aria-live={driveNotice.kind === "error" ? "assertive" : "polite"}
+            style={{ fontSize: 13, marginTop: 12,
+              color: driveNotice.kind === "error" ? "var(--danger)" : "var(--text-primary)" }}>
+            {driveNotice.message}
+          </p>
+        )}
+        {driveBusy && (
+          <p role="status" aria-live="polite" style={{ fontSize: 12, marginTop: 10, color: "var(--text-secondary)" }}>
+            {driveAction === "connect" ? "Connecting to Google…" :
+             driveAction === "restore" ? "Restoring historical batches…" :
+             driveAction === "delete" ? "Deleting shared Drive batches…" :
+             driveAction === "share-history" ? "Authorizing older recordings…" :
+             driveAction === "disconnect" ? "Disconnecting this computer…" :
+             "Synchronizing with Google Drive…"}
+          </p>
+        )}
         <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 14 }}>
           Google Drive is independent from LAN. Disconnect affects this computer only.
           After Delete cloud history, reconnection does not re-upload your old recordings.
