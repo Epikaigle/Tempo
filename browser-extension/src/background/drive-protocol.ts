@@ -4,9 +4,9 @@ import { readStreamBytesWithLimit } from './drive-transport';
 
 export const SCHEMA_VERSION = 1;
 export const MAX_BATCH_BYTES = 10 * 1024 * 1024;
-const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 export const DEVICE_ID_PATTERN = /^[A-Za-z0-9._-]{1,200}$/;
-const PLATFORM_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+export const PLATFORM_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
 const MAX_SAFE_WIRE_INTEGER = Number.MAX_SAFE_INTEGER;
 const MAX_WIRE_COUNTER = 2_147_483_647;
 export interface WireEvent {
