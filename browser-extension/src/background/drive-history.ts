@@ -971,6 +971,22 @@ function parseUploadScanCursors(raw: unknown): Record<string, UploadScanCursor> 
   return result;
 }
 
+function parseRejectedLocalPlays(raw: unknown): Record<string, { count: number; firstId: number }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const result: Record<string, { count: number; firstId: number }> = {};
+  for (const [subject, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!subject.trim() || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const warning = value as { count?: unknown; firstId?: unknown };
+    if (typeof warning.count === 'number' && Number.isSafeInteger(warning.count) &&
+        warning.count > 0 && warning.count <= MAX_LOCAL_SCAN &&
+        typeof warning.firstId === 'number' && Number.isSafeInteger(warning.firstId) &&
+        warning.firstId > 0) {
+      result[subject] = { count: warning.count, firstId: warning.firstId };
+    }
+  }
+  return result;
+}
+
 function parseRejectedBatches(raw: unknown): Record<string, RejectedBatchRecord[]> {
   if (!raw || typeof raw !== 'object') return {};
   const result: Record<string, RejectedBatchRecord[]> = {};
@@ -1012,6 +1028,7 @@ async function getRuntimeState(): Promise<DriveRuntimeState> {
     accountProgress: parseAccountProgress(raw.accountProgress),
     rejectedBatches: parseRejectedBatches(raw.rejectedBatches),
     uploadScanCursors: parseUploadScanCursors(raw.uploadScanCursors),
+    rejectedLocalPlays: parseRejectedLocalPlays(raw.rejectedLocalPlays),
   };
 }
 
