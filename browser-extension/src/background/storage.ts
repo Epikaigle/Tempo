@@ -779,7 +779,14 @@ export async function hasRecentPlay(
         typeof play.durationMs === 'number' && play.durationMs > 0
           ? Math.abs(play.durationMs - durationMs) <= 10_000
           : true;
-      if ((!accountSubject || !play.driveAccountSubject || play.driveAccountSubject === accountSubject) &&
+      // Legacy cloud imports with unknown account provenance must stay
+      // quarantined: a near-identical song in B cannot silently claim an
+      // unverified imported row that may have come from Google account A.
+      // New locally detected plays can still reconcile while unowned.
+      const belongsToAccount = !accountSubject ||
+        play.driveAccountSubject === accountSubject ||
+        (!play.driveAccountSubject && !play.driveImported);
+      if (belongsToAccount &&
           !representedByOrigin &&
           durationMatches &&
           play.title.trim().toLowerCase() === title.trim().toLowerCase() &&
