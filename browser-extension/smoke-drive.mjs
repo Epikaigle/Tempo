@@ -192,7 +192,8 @@ check('malformed UTF-8 is rejected instead of silently changing the title', corr
 
 console.log('\n[Drive 4] Retry and lifecycle concurrency guards');
 check('GET requests may be retried', protocol.isDriveRequestRetrySafe(undefined));
-check('PATCH requests may be retried', protocol.isDriveRequestRetrySafe('PATCH'));
+check('marker PATCH is not blindly retried', !protocol.isDriveRequestRetrySafe('PATCH'));
+check('DELETE remains safely retryable', protocol.isDriveRequestRetrySafe('DELETE'));
 check('POST creates are never replayed blindly', !protocol.isDriveRequestRetrySafe('POST'));
 check('same normalized account stays in scope', !protocol.verifiedAccountChanged('a@example.com', 'a@example.com'));
 check('different verified account crosses scope', protocol.verifiedAccountChanged('a@example.com', 'b@example.com'));
