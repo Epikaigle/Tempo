@@ -22,6 +22,7 @@ await esbuild.build({
         export const getDrivePendingPlays = async (limit, owner, after) => {
           globalThis.fixture.scanCalls.push({ limit, owner, after });
           return globalThis.fixture.plays
+            .filter(play => !globalThis.fixture.marked.some(entry => entry.id === play.id))
             .filter(play => {
               const indexedTime = Number.isFinite(play.timestampUtc) ? play.timestampUtc : 0;
               return !after || indexedTime > after.timestampUtc ||
@@ -105,6 +106,8 @@ try {
   assert.equal(first.uploaded, 0, '5,000 invalid rows must not trigger an unbounded scan');
   assert.equal(warnings, 5001, 'all invalid rows should be retained and reported');
   assert.equal(fixture.uploads.length, 0);
+  assert.match((await drive.getDriveSyncStatus()).lastError, /5000 local play\(s\).*first local ID 1/,
+    'malformed local history must be visible in sync status, not just console warnings');
   assert.deepEqual(fixture.stored[stateKey].uploadScanCursors['google-a'],
     { timestampUtc: 0, id: 5000 }, 'malformed timestamps must use the IndexedDB zero-time cursor');
   assert.equal(fixture.scanCalls.reduce((n, call) => n + call.limit, 0), 5000,
@@ -119,7 +122,17 @@ try {
   assert.equal(fixture.stored[stateKey].uploadScanCursors['google-a'], undefined,
     'an exhausted queue must wrap on a later sync to detect repaired older plays');
   assert.equal(fixture.scanCalls[0].after.id, 5000);
+  assert.match((await drive.getDriveSyncStatus()).lastError, /local play\(s\) could not be uploaded/,
+    'a later valid-only resumed page must not hide older invalid records');
+
+  // Simulate the user deleting or repairing the malformed local test rows.
+  // Only a complete clean pass can clear the sticky account-scoped warning.
+  fixture.plays = fixture.plays.filter(play => play.id === 5001);
+  const third = await drive.syncDriveHistory();
+  assert.equal(third.uploaded, 0);
+  assert.equal((await drive.getDriveSyncStatus()).lastError, null);
+  assert.equal(fixture.stored[stateKey].rejectedLocalPlays['google-a'], undefined);
 } finally {
   console.warn = originalWarn;
 }
-console.log('  ✓ 5,000 malformed events cannot starve later valid Drive uploads');
+console.log('  ✓ 5,000 malformed events cannot starve valid uploads or hide local-history warnings');
