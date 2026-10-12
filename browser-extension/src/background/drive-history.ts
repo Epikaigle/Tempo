@@ -1282,7 +1282,11 @@ async function fetchWithDeadline(url: string, init: RequestInit, timeoutMs = DRI
 }
 
 function isDriveRequestRetrySafe(method: string | undefined): boolean {
-  return (method ?? 'GET').toUpperCase() !== 'POST';
+  // A marker PATCH changes Drive modifiedTime, which is our deletion generation.
+  // Blindly replaying a timed-out PATCH can invalidate newly restored history.
+  // GET and DELETE are safe to repeat; POST/PATCH must be reconciled by a later
+  // operation after querying the remote marker or deterministic batch name.
+  return ['GET', 'HEAD', 'DELETE'].includes((method ?? 'GET').toUpperCase());
 }
 
 async function playToWire(play: Play, deviceId: string): Promise<WireEvent> {
