@@ -49,7 +49,7 @@ pub(crate) fn transient_drive_response(status: StatusCode) -> bool {
 // generation may be retried. Even a PATCH of the *same* marker body updates
 // modifiedTime, so treating PATCH as idempotent would be unsafe.
 pub(crate) fn is_drive_retry_safe(method: &Method) -> bool {
-    matches!(*method, Method::GET | Method::HEAD | Method::DELETE)
+    matches!(method.as_str(), "GET" | "HEAD" | "DELETE")
 }
 
 pub(crate) async fn send_drive_idempotent(request: RequestBuilder) -> Result<Response, String> {
