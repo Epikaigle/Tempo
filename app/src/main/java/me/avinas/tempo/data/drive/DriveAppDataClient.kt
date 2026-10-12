@@ -124,7 +124,7 @@ class DriveAppDataClient @Inject constructor(
                                 client.accessToken
                             )
                             if (!invalidated && authAttempts < 1) {
-                                executeWithRetry(authAttempts + 1, transientAttempts, block)
+                                executeWithRetry(authAttempts + 1, transientAttempts, retryOnAmbiguousFailure, block)
                             } else {
                                 throw DriveException.Auth(
                                     "Google Drive app-data permission is missing. Reconnect Google Drive.",
@@ -174,7 +174,7 @@ class DriveAppDataClient @Inject constructor(
         Log.w(TAG, "Transient Drive failure; retrying in ${delayMs}ms", error)
         delay(delayMs)
         clearCache()
-        return executeWithRetry(authAttempts, transientAttempts + 1, block)
+        return executeWithRetry(authAttempts, transientAttempts + 1, block = block)
     }
 
     /**
