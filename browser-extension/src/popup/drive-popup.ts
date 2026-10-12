@@ -19,6 +19,8 @@ interface DriveCommandResponse {
 
 let busy = false;
 let oauthConfigured = false;
+let pendingConfirmation: 'delete' | 'share-history' | null = null;
+let confirmationTimer: ReturnType<typeof setTimeout> | null = null;
 
 void initDrivePanel();
 
@@ -37,16 +39,16 @@ async function initDrivePanel(): Promise<void> {
         <div class="setting-label">Cross-device history</div>
         <div class="setting-desc">Optional. Sync listening history through your private Google Drive app-data space when your phone and computer are on different networks.</div>
         <div id="drive-sync-account" class="setting-desc" style="margin-top:6px;"></div>
-        <div id="drive-sync-status" class="setting-desc" style="margin-top:4px;">Checking…</div>
+        <div id="drive-sync-status" class="setting-desc" role="status" aria-live="polite" style="margin-top:4px;">Checking…</div>
       </div>
     </div>
     <div style="display:flex; gap:8px; padding:0 12px 12px; flex-wrap:wrap;">
       <button class="btn btn-primary btn-sm" id="btn-drive-connect">Connect Google</button>
       <button class="btn btn-ghost btn-sm" id="btn-drive-sync" style="display:none;">Sync now</button>
       <button class="btn btn-ghost btn-sm" id="btn-drive-restore" style="display:none;">Restore full history</button>
-      <button class="btn btn-ghost btn-sm" id="btn-drive-share" style="display:none;">Upload older local history</button>
+      <button class="btn btn-ghost btn-sm" id="btn-drive-share" style="display:none;" aria-label="Upload older local history">Upload older local history</button>
       <button class="btn btn-ghost btn-sm" id="btn-drive-disconnect" style="display:none;">Disconnect</button>
-      <button class="btn btn-danger btn-sm" id="btn-drive-delete" style="display:none;">Delete cloud history</button>
+      <button class="btn btn-danger btn-sm" id="btn-drive-delete" style="display:none;" aria-label="Delete cloud history">Delete cloud history</button>
     </div>
     <div class="setting-desc" style="padding:0 12px 12px; opacity:.75;">Drive sync is off by default. Local tracking and direct LAN sync continue to work without Google.</div>
   `;
@@ -84,18 +86,64 @@ async function connectGoogle(): Promise<void> {
   await execute('connect');
 }
 
+// Chrome/Firefox MV3 popups do not reliably support native confirm().
+ // Use an explicit two-click confirmation with a visible description and a
+ // cancel-on-timeout path. Each confirmation is scoped to its own action.
+function resetConfirmation(): void {
+  if (confirmationTimer) clearTimeout(confirmationTimer);
+  confirmationTimer = null;
+  pendingConfirmation = null;
+  for (const [id, label] of [
+    ['btn-drive-delete', 'Delete cloud history'],
+    ['btn-drive-share', 'Upload older local history'],
+  ]) {
+    const button = document.getElementById(id);
+    if (button) {
+      button.textContent = label;
+      button.setAttribute('aria-pressed', 'false');
+    }
+  }
+}
+
+async function confirmSensitiveAction(
+  kind: 'delete' | 'share-history',
+): Promise<void> {
+  if (busy) return;
+  if (pendingConfirmation === kind) {
+    resetConfirmation();
+    await execute(kind === 'delete' ? 'delete' : 'share-history');
+    return;
+  }
+  resetConfirmation();
+  pendingConfirmation = kind;
+  const button = document.getElementById(
+    kind === 'delete' ? 'btn-drive-delete' : 'btn-drive-share',
+  );
+  if (button) {
+    button.textContent = kind === 'delete' ? 'Confirm cloud deletion' : 'Confirm older upload';
+    button.setAttribute('aria-pressed', 'true');
+  }
+  setInlineStatus(kind === 'delete'
+    ? 'Click Confirm cloud deletion to delete shared Drive batches and turn off sync on linked devices. Local listening history stays on each device.'
+    : 'Click Confirm older upload to republish old local plays to this Google account, including previously deleted history. Records may belong to another Google account.',
+    true);
+  confirmationTimer = setTimeout(() => {
+    resetConfirmation();
+    void refreshStatus();
+  }, 12_000);
+}
+
 async function deleteCloudHistory(): Promise<void> {
-  if (!confirm('Delete all Tempo cross-device history batches from Google Drive? Your local browser history is not deleted.')) return;
-  await execute('delete');
+  await confirmSensitiveAction('delete');
 }
 
 async function shareHistory(): Promise<void> {
-  if (!confirm('Upload older local listening history to this Google account, including history previously deleted from Drive? This action intentionally republishes those plays.')) return;
-  await execute('share-history');
+  await confirmSensitiveAction('share-history');
 }
 
 async function execute(command: 'connect' | 'disconnect' | 'sync' | 'restore' | 'share-history' | 'delete'): Promise<void> {
   if (busy) return;
+  resetConfirmation();
   busy = true;
   setButtonsDisabled(true);
   setInlineStatus(command === 'sync' ? 'Syncing with Google Drive…' : 'Working…');
@@ -103,14 +151,25 @@ async function execute(command: 'connect' | 'disconnect' | 'sync' | 'restore' | 
   try {
     const response = await sendDriveCommand(command);
     if (!response.ok) throw new Error(response.error || 'Drive operation failed');
-    if ((command === 'sync' || command === 'restore' || command === 'share-history') && response.result) {
-      setInlineStatus(
-        `Synced: ${response.result.uploaded} sent · ${response.result.imported} received · ${response.result.duplicates} duplicates ignored`,
-      );
+    const status = response.status ?? await fetchStatus();
+    // Update button visibility/account without replacing the actual outcome.
+    // A completed restore must not immediately turn back into "Last sync".
+    await renderStatus(status, false);
+    if (status.lastError) {
+      setInlineStatus(status.lastError, true);
     } else if (command === 'delete') {
-      setInlineStatus(`Deleted ${response.deleted ?? 0} Drive history batch(es).`);
+      setInlineStatus(`Deleted ${response.deleted ?? 0} Drive history batch(es). Local plays were kept; cloud sync is now off.`);
+    } else if (command === 'connect') {
+      setInlineStatus('Google Drive connected.');
+    } else if (command === 'disconnect') {
+      setInlineStatus('Disconnected on this browser; local history is unchanged.');
+    } else if (response.result) {
+      setInlineStatus(
+        `Finished: ${response.result.uploaded} sent · ${response.result.imported} received · ${response.result.duplicates} duplicates ignored`,
+      );
+    } else {
+      setInlineStatus('Google Drive operation completed.');
     }
-    await renderStatus(response.status ?? await fetchStatus());
   } catch (err) {
     setInlineStatus(formatError(err), true);
     await refreshStatus(false);
@@ -157,12 +216,13 @@ async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Pro
     if (disconnect) disconnect.style.display = 'none';
     if (del) del.style.display = 'none';
     if (connect) connect.disabled = true;
+    resetConfirmation();
     if (replaceMessage) setInlineStatus('Google OAuth client is not configured in this build.', true);
     return;
   }
 
   const active = status.enabled;
-  const needsReconnect = active && status.needsInteractiveAuth;
+  const needsReconnect = active && (status.needsInteractiveAuth || !status.connected);
   if (connect) {
     connect.style.display = !active || needsReconnect ? '' : 'none';
     connect.textContent = needsReconnect ? 'Reconnect Google' : 'Connect Google';
@@ -233,6 +293,8 @@ function setInlineStatus(message: string, isError = false): void {
   if (!el) return;
   el.textContent = message;
   el.style.color = isError ? '#ff7b7b' : '';
+  el.setAttribute('role', isError ? 'alert' : 'status');
+  el.setAttribute('aria-live', isError ? 'assertive' : 'polite');
 }
 
 function setButtonsDisabled(disabled: boolean): void {
