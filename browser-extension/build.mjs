@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isWatch = process.argv.includes('--watch');
+const requireDrive = process.argv.includes('--require-drive');
 const targetArg = process.argv.find(arg => arg.startsWith('--target='));
 const target = targetArg ? targetArg.split('=')[1] : 'chrome';
 
@@ -19,6 +20,18 @@ const googleOAuthClientId = (
     ? process.env.TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX
     : process.env.TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME
 )?.trim() ?? '';
+
+// Ordinary developer builds may remain LAN-only. Release builds must never
+// quietly package a disabled Google Drive UI or a fake CI OAuth client.
+if (requireDrive) {
+  const clientIdPattern = /^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/;
+  if (!clientIdPattern.test(googleOAuthClientId) ||
+      /(?:test|example|placeholder|dummy)/i.test(googleOAuthClientId)) {
+    console.error('A registered, non-test Tempo Google OAuth client ID is required for a Drive-enabled release. ' +
+      'Set TEMPO_GOOGLE_OAUTH_CLIENT_ID_' + (target === 'firefox' ? 'FIREFOX' : 'CHROME') + '.');
+    process.exit(1);
+  }
+}
 
 if (!googleOAuthClientId && !isWatch) {
   console.warn(`⚠️  Google Drive sync OAuth is not configured for ${target}. ` +
@@ -172,6 +185,25 @@ async function copyStaticAssets(distDir) {
   if (existsSync(fontsDir)) cpSync(fontsDir, resolve(popupDir, 'fonts'), { recursive: true });
 }
 
+function assertDriveReleaseBuild(distDir) {
+  if (!requireDrive) return;
+  const manifest = JSON.parse(readFileSync(resolve(distDir, 'manifest.json'), 'utf8'));
+  if (target === 'chrome' &&
+      (manifest.oauth2?.client_id !== googleOAuthClientId ||
+       !manifest.oauth2?.scopes?.includes('https://www.googleapis.com/auth/drive.appdata'))) {
+    throw new Error('Chrome release manifest is missing the registered Google OAuth ID or Drive scope');
+  }
+  if (target === 'firefox' && !manifest.browser_specific_settings?.gecko?.id) {
+    throw new Error('Firefox release manifest is missing its registered extension identity');
+  }
+  // Verify the OAuth ID survives bundling; otherwise a valid manifest can
+  // still ship a service worker that always reports Drive as disabled.
+  const worker = readFileSync(resolve(distDir, 'background/service-worker.js'), 'utf8');
+  if (!worker.includes(googleOAuthClientId)) {
+    throw new Error('Drive-enabled release bundle does not contain the configured Google OAuth ID');
+  }
+}
+
 function packageZip(distDir) {
   const zipName = `tempo-stats-${target}.zip`;
   const zipPath = resolve(__dirname, 'dist', zipName);
@@ -202,6 +234,7 @@ async function build() {
         esbuild.build({ ...popupOptions, outdir: resolve(distDir, 'popup') }),
       ]);
       await copyStaticAssets(distDir);
+      assertDriveReleaseBuild(distDir);
       console.log(`✅ Build complete → dist/${target}/ (${browserLabel})`);
       packageZip(distDir);
     }
