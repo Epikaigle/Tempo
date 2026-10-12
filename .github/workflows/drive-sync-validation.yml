@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - ".github/workflows/drive-sync-validation.yml"
+      - ".github/workflows/browser-drive-release.yml"
       - "PRIVACY.md"
       - "app/build.gradle.kts"
       - "app/src/main/java/me/avinas/tempo/TempoApplication.kt"
@@ -23,6 +24,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/drive-sync-validation.yml"
+      - ".github/workflows/browser-drive-release.yml"
       - "PRIVACY.md"
       - "app/build.gradle.kts"
       - "app/src/main/java/me/avinas/tempo/TempoApplication.kt"
@@ -91,6 +93,13 @@ jobs:
         env:
           TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME: test-client.apps.googleusercontent.com
         run: npm run build:chrome
+      - name: Validate reproducible ZIP checksum and build provenance
+        shell: bash
+        run: |
+          sha256sum "dist/tempo-stats-chrome.zip" > "dist/tempo-stats-chrome.zip.sha256"
+          (cd dist && sha256sum -c "tempo-stats-chrome.zip.sha256")
+          printf 'commit=%s\nrun=%s\ntarget=chrome\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > "dist/tempo-stats-chrome.build-info.txt"
+          grep -Fxq "commit=$GITHUB_SHA" "dist/tempo-stats-chrome.build-info.txt"
       - name: Validate CI Chrome OAuth manifest
         run: |
           node --input-type=module -e '
