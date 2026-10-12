@@ -266,6 +266,10 @@ const pendingRows = [
     driveAccountSubject: 'google-a', driveUploadedAt: 123 },
   { id: 5, title: 'A2', timestampUtc: baseTime + 3000,
     driveAccountSubject: 'google-a', drivePendingIndexKey: ['google-a', baseTime + 3000] },
+  { id: 6, title: 'Legacy negative', timestampUtc: -1e16,
+    driveAccountSubject: 'google-a', drivePendingIndexKey: ['google-a', -1e16] },
+  { id: 7, title: 'Legacy huge', timestampUtc: 1e16,
+    driveAccountSubject: 'google-a', drivePendingIndexKey: ['google-a', 1e16] },
 ];
 let indexedReads = 0;
 database.transaction = () => {
@@ -299,14 +303,14 @@ database.transaction = () => {
   return tx;
 };
 const pendingA = await storage.getDrivePendingPlays(10, 'google-a');
-assert.deepEqual(pendingA.map(row => row.id), [1, 3, 5],
-  'Google A receives own pending plays and new unclaimed plays, never B');
-assert.ok(indexedReads <= 3, 'already-synced archive must not be scanned');
+assert.deepEqual(pendingA.map(row => row.id), [6, 1, 3, 5, 7],
+  'Google A receives all finite pending timestamps, including malformed legacy extremes, never B');
+assert.ok(indexedReads <= 5, 'already-synced archive must not be scanned');
 assert.deepEqual((await storage.getDrivePendingPlays(10, 'google-a',
-  { timestampUtc: baseTime + 2000, id: 3 })).map(row => row.id), [5],
+  { timestampUtc: baseTime + 2000, id: 3 })).map(row => row.id), [5, 7],
   'composite indexed pagination must resume after the last submitted row');
 
-console.log('\n16 IndexedDB durability, replay, account isolation and indexed queue scenarios passed');
+console.log('\n17 IndexedDB durability, replay, account isolation and indexed queue scenarios passed');
 
 
 // Cloud deletion must fence all prior local captures, including never-uploaded
