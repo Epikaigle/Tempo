@@ -22,7 +22,8 @@ class DriveHistoryProtocolTest {
         assertFalse(DriveAppDataClient.canRetryAfterAmbiguousFailure("post"))
         assertTrue(DriveAppDataClient.canRetryAfterAmbiguousFailure("GET"))
         assertTrue(DriveAppDataClient.canRetryAfterAmbiguousFailure("DELETE"))
-        assertTrue(DriveAppDataClient.canRetryAfterAmbiguousFailure("PATCH"))
+        // A PATCH on the shared deletion marker changes its server generation.
+        assertFalse(DriveAppDataClient.canRetryAfterAmbiguousFailure("PATCH"))
     }
 
     @Test
