@@ -43,7 +43,7 @@ jobs:
         run: |
           sha256sum "dist/tempo-stats-${{ matrix.target }}.zip" \
             > "dist/tempo-stats-${{ matrix.target }}.zip.sha256"
-          printf 'commit=%s\\nrun=%s\\ntarget=%s\\n' \
+          printf 'commit=%s\nrun=%s\ntarget=%s\n' \
             "$GITHUB_SHA" "$GITHUB_RUN_ID" "${{ matrix.target }}" \
             > "dist/tempo-stats-${{ matrix.target }}.build-info.txt"
       - name: Upload non-published browser package, checksum and revision
