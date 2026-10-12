@@ -97,6 +97,17 @@ Drive is a transport, not the local source of truth. This feature does **not** c
 
 ### Google OAuth configuration
 
+**Important:** the checked-in `dist/chrome` and `dist/firefox` directories are LAN-only development snapshots, not validated Drive-enabled releases. Do **not** publish them directly or assume `npm run build:chrome` without an OAuth client enables Google Drive.
+
+For production packages, register real Chrome and Firefox OAuth clients in the **same Google Cloud project as Android and Desktop**, then configure repository **Actions variables**:
+
+- `TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME`
+- `TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX`
+
+Run **Actions → Browser Google Drive release packages → Run workflow** on a branch containing this workflow. It independently builds, validates, and uploads `tempo-stats-chrome.zip` and `tempo-stats-firefox.zip` as GitHub Actions artifacts. This packaging workflow refuses missing/placeholder IDs, but only a real Google sign-in can prove that the registered OAuth clients and their redirect/extension registration are correct. It does not publish a GitHub Release or distribute the archives automatically.
+
+For equivalent **local release packaging**, use `npm run build:release:chrome` and `npm run build:release:firefox` with the matching environment variables set. Ordinary `npm run build:chrome` / `build:firefox` remain available for intentional LAN-only developer builds. No OAuth client secret should be stored in the repository.
+
 All Tempo OAuth clients used for cross-device sync must belong to the **same Google Cloud project / application**. Drive's `appDataFolder` is application-specific, so unrelated OAuth projects cannot be mixed if Android, Chrome and Firefox are expected to see the same sync files.
 
 The Google Drive API must be enabled for that project. Use separate OAuth client registrations for each platform while keeping them in that same project.
@@ -147,8 +158,12 @@ Drive sync is optional. Firefox's `data_collection_permissions` declares the rel
 | `src/background/normalize.ts` | Metadata normalization (title/artist cleanup, ad filtering) |
 | `src/background/sync.ts` | Existing direct LAN sync engine (HMAC, retry, hotspot fallback) |
 | `src/background/drive-auth.ts` | Optional Chrome/Firefox Google authorization |
-| `src/background/drive-history.ts` | Cross-network Drive batch upload/download/dedup |
-| `src/background/storage.ts` | IndexedDB + chrome.storage wrapper |
+| `src/background/drive-history.ts` | Cross-network Drive synchronization coordinator |
+| `src/background/drive-files.ts` | Versioned Drive files, uploads and deletion markers |
+| `src/background/drive-transport.ts` | Bounded HTTP transport and retry safety |
+| `src/background/drive-protocol.ts` | Shared wire protocol and event validation |
+| `src/background/storage.ts` | IndexedDB queue and play-history persistence |
+| `src/background/connection-storage.ts` | LAN pairing, preferences and session state in chrome.storage |
 | `src/background/service-worker.ts` | Existing LAN/tracking orchestrator |
 | `src/background/service-worker-entry.ts` | Thin wrapper that layers Drive sync beside the existing worker |
 | `src/popup/` | Extension popup UI |
