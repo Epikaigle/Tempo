@@ -1,0 +1,47 @@
+name: Browser Google Drive release packages
+
+# A deliberate packaging workflow. Unlike source CI, this must use the real
+# registered OAuth clients from repository variables (not CI placeholders).
+# No publishing or overwriting releases happens automatically.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Drive-enabled ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [chrome, firefox]
+    defaults:
+      run:
+        working-directory: browser-extension
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME: ${{ vars.TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME }}
+      TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX: ${{ vars.TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: browser-extension/package-lock.json
+      - run: npm ci
+      - name: Typecheck and regression tests
+        run: |
+          npm run typecheck
+          npm run smoke
+      - name: Build Drive-enabled extension, reject missing or test OAuth IDs
+        run: npm run build:release:${{ matrix.target }}
+      - name: Upload verified browser package
+        uses: actions/upload-artifact@v4
+        with:
+          name: tempo-drive-${{ matrix.target }}
+          path: browser-extension/dist/tempo-stats-${{ matrix.target }}.zip
+          if-no-files-found: error
+          retention-days: 30
