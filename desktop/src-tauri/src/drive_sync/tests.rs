@@ -2038,7 +2038,8 @@ fn protocol_volume_uses_android_percent_scale() {
 fn desktop_upload_scan_resumes_after_invalid_prefix_and_preserves_account_scope() {
     let (directory, conn) = history_storage_fixture();
     conn.execute(
-        "UPDATE drive_sync_state SET account_subject = 'google-a' WHERE id = 1",
+        "UPDATE drive_sync_state SET enabled = 1, account_subject = 'google-a',
+         last_verified_account_subject = 'google-a' WHERE id = 1",
         [],
     ).unwrap();
     let tx = conn.unchecked_transaction().unwrap();
