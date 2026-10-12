@@ -51,7 +51,6 @@ class DriveHistorySyncManager @Inject constructor(
         private const val PAGE_SIZE = 200
         private const val BATCH_SIZE = 50
         private const val DOWNLOAD_OVERLAP_MS = 24L * 60L * 60L * 1000L
-        private const val IMPORT_FINGERPRINT_PREFIX = "drive:v1:"
 
         internal data class RejectedBatchRecord(
             val fileId: String,
@@ -184,8 +183,8 @@ class DriveHistorySyncManager @Inject constructor(
                 !DriveHistoryProtocol.isValidDeviceId(parts[1]) || parts[2].isBlank()
             ) return null
             val rawFingerprint = fingerprint ?: return null
-            if (!rawFingerprint.startsWith(IMPORT_FINGERPRINT_PREFIX)) return null
-            val eventId = rawFingerprint.removePrefix(IMPORT_FINGERPRINT_PREFIX)
+            if (!rawFingerprint.startsWith(DRIVE_IMPORT_FINGERPRINT_PREFIX)) return null
+            val eventId = rawFingerprint.removePrefix(DRIVE_IMPORT_FINGERPRINT_PREFIX)
             if (!eventId.matches(Regex("^[0-9a-f]{64}$"))) return null
             return parts[2] to eventId
         }
@@ -202,6 +201,7 @@ class DriveHistorySyncManager @Inject constructor(
     }
 
     private val mutex = Mutex()
+    private val eventMapper by lazy { DriveHistoryEventMapper(database, trackResolver, deviceId) }
     private val statePrefs by lazy {
         context.getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE)
     }
@@ -700,13 +700,13 @@ class DriveHistorySyncManager @Inject constructor(
                 // Downloaded Drive history never bounces back into the cloud.
                 // Account-matched LAN events keep the original producer ID.
                 // Late arrivals recorded before deletion require consent.
-                if (event.contentFingerprint?.startsWith(IMPORT_FINGERPRINT_PREFIX) == true &&
+                if (event.contentFingerprint?.startsWith(DRIVE_IMPORT_FINGERPRINT_PREFIX) == true &&
                     !event.source.startsWith("lan:")
                 ) continue
                 // Never move the persistent upload cursor past a local play that
                 // cannot be exported (for example, a temporarily missing Track).
                 // Surface the row ID and retry after its metadata is repaired.
-                val exported = localEventToProtocol(event, ownOrigins[event.id])
+                val exported = eventMapper.localEventToProtocol(event, ownOrigins[event.id])
                 if (exported == null) {
                     stillInvalid.add(event.id)
                     Log.w(TAG, "Retaining invalid Drive export row ${event.id} for later repair")
@@ -760,67 +760,6 @@ class DriveHistorySyncManager @Inject constructor(
         }
 
         return uploaded
-    }
-
-    private suspend fun localEventToProtocol(
-        event: ListeningEvent,
-        persistedOriginId: String?
-    ): DriveHistoryEvent? {
-        val track = database.trackDao().getTrackById(event.track_id) ?: return null
-        val title = DriveHistoryProtocol.truncateText(track.title.trim()).takeIf { it.isNotBlank() } ?: return null
-        val artist = DriveHistoryProtocol.truncateText(track.artist.trim()).takeIf { it.isNotBlank() } ?: return null
-        if (event.timestamp !in 1..DriveHistoryProtocol.MAX_WIRE_INTEGER) return null
-        val durationMs = (event.estimatedDurationMs ?: track.duration ?: event.playDuration)
-            .coerceAtLeast(event.playDuration)
-            .coerceAtLeast(0L)
-            .coerceAtMost(DriveHistoryProtocol.MAX_WIRE_INTEGER)
-        // A LAN import carries the precise original event ID and music source.
-        // Publish it through this Android account only if the sender has not
-        // used Drive itself; the remote clients will deduplicate using event_id.
-        // A *cloud* import never enters this export path.
-        val lanRelay = event.source.startsWith("lan:")
-        val origin = if (lanRelay) {
-            lanRelayIdentity(event.source, event.contentFingerprint) ?: return null
-        } else null
-        val originalSource = origin?.first ?: event.source
-        val sourceApp = originalSource
-            .removePrefix("desktop:")
-            .removePrefix("browser:")
-            .ifBlank { "android" }
-            .let { DriveHistoryProtocol.truncateText(it) }
-        val source = DriveHistoryProtocol.truncateText(originalSource.ifBlank { "android" })
-        val originalEventId = origin?.second
-
-        return DriveHistoryEvent(
-            eventId = originalEventId ?: stableLocalEventId(
-                existingOriginId = persistedOriginId,
-                deviceId = deviceId,
-                localEventId = event.id,
-                timestampUtc = event.timestamp,
-                title = title,
-                artist = artist
-            ),
-            title = title,
-            artist = artist,
-            album = track.album?.trim()?.let { DriveHistoryProtocol.truncateText(it) }?.takeIf { it.isNotBlank() },
-            timestampUtc = event.timestamp,
-            durationMs = durationMs,
-            listenedMs = event.playDuration.coerceIn(0L, DriveHistoryProtocol.MAX_WIRE_INTEGER),
-            sourceApp = sourceApp,
-            source = source,
-            skipped = event.wasSkipped,
-            replayCount = if (event.isReplay) 1 else 0,
-            completionPercentage = event.completionPercentage.coerceIn(0, 100),
-            pauseCount = event.pauseCount.coerceAtLeast(0),
-            seekCount = event.seekCount.coerceAtLeast(0),
-            sessionId = event.sessionId?.let { DriveHistoryProtocol.truncateText(it) },
-            site = null,
-            contentType = DriveHistoryProtocol.truncateText(track.contentType.ifBlank { "MUSIC" }),
-            volumeLevel = protocolVolumeLevel(event.volumeLevel),
-            totalPauseDurationMs = event.totalPauseDurationMs
-                .coerceIn(0L, DriveHistoryProtocol.MAX_WIRE_INTEGER),
-            positionUpdatesCount = event.positionUpdatesCount.coerceAtLeast(0)
-        )
     }
 
     /**
@@ -951,7 +890,7 @@ class DriveHistorySyncManager @Inject constructor(
 
             val incoming = mutableListOf<ListeningEvent>()
             for (event in batch.events) {
-                protocolEventToLocal(event, batch.sourceDeviceId)?.let {
+                eventMapper.protocolEventToLocal(event, batch.sourceDeviceId)?.let {
                     incoming.add(it.copy(driveAccountSubject = accountSubject))
                 }
             }
@@ -974,44 +913,6 @@ class DriveHistorySyncManager @Inject constructor(
                 .apply()
         }
         return ImportSummary(inserted, skipped, replaced)
-    }
-
-    private suspend fun protocolEventToLocal(
-        event: DriveHistoryEvent,
-        sourceDeviceId: String
-    ): ListeningEvent? {
-        if (event.timestampUtc <= 0L || event.title.isBlank() || event.artist.isBlank()) return null
-
-        val resolution = trackResolver.resolve(
-            TrackResolver.Query(
-                title = event.title.trim(),
-                artist = event.artist.trim(),
-                album = event.album?.trim()?.takeIf { it.isNotBlank() },
-                duration = event.durationMs.takeIf { it > 0L }
-            ),
-            contentType = event.contentType.ifBlank { "MUSIC" }
-        )
-
-        val listenedMs = event.listenedMs.coerceAtLeast(0L)
-        return ListeningEvent(
-            track_id = resolution.trackId,
-            timestamp = event.timestampUtc,
-            playDuration = listenedMs,
-            completionPercentage = event.completionPercentage.coerceIn(0, 100),
-            source = "drive:$sourceDeviceId:${event.source.ifBlank { event.sourceApp }}",
-            wasSkipped = event.skipped,
-            isReplay = event.replayCount > 0,
-            estimatedDurationMs = event.durationMs.takeIf { it > 0L },
-            pauseCount = event.pauseCount.coerceAtLeast(0),
-            sessionId = event.sessionId,
-            endTimestamp = if (listenedMs > 0L) event.timestampUtc + listenedMs else null,
-            totalPauseDurationMs = event.totalPauseDurationMs.coerceAtLeast(0L),
-            seekCount = event.seekCount.coerceAtLeast(0),
-            positionUpdatesCount = event.positionUpdatesCount.coerceAtLeast(0),
-            wasInterrupted = event.skipped,
-            volumeLevel = event.volumeLevel?.takeIf { it == 0 },
-            contentFingerprint = "$IMPORT_FINGERPRINT_PREFIX${event.eventId}"
-        )
     }
 
     suspend fun deleteCloudHistoryAndReset(): Int = mutex.withLock {
