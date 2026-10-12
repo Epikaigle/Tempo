@@ -255,6 +255,47 @@ assert.equal(scopedRows[3].driveUploadedAt, 444,
   'unowned legacy rows must not be silently claimed or invalidated');
 
 
+// Legacy cloud imports without an account subject must never be claimed by
+// the next Google account to sign in. Truly local pending plays may be claimed.
+const legacyRows = [
+  { id: 51, title: 'Cloud', timestampUtc: baseTime, driveImported: true },
+  { id: 52, title: 'Local', timestampUtc: baseTime + 1000, driveImported: false },
+  { id: 53, title: 'Already A', timestampUtc: baseTime + 2000,
+    driveAccountSubject: 'google-a' },
+];
+database.transaction = () => {
+  const tx = {};
+  tx.objectStore = () => ({
+    openCursor() {
+      const req = {};
+      let index = 0;
+      const next = () => {
+        const position = index++;
+        const row = legacyRows[position];
+        req.result = row ? {
+          value: row,
+          update(updated) { legacyRows[position] = updated; },
+          continue: () => queueMicrotask(next),
+        } : null;
+        req.onsuccess?.();
+        if (!row) queueMicrotask(() => tx.oncomplete?.());
+      };
+      queueMicrotask(next);
+      return req;
+    },
+  });
+  return tx;
+};
+await storage.claimUnownedDrivePlays('google-b');
+assert.equal(legacyRows[0].driveAccountSubject, 'legacy-unverified',
+  'unknown-owner imported cloud history must remain quarantined');
+assert.equal(legacyRows[1].driveAccountSubject, 'google-b',
+  'genuine local pending history can be claimed on first sign-in');
+assert.equal(legacyRows[2].driveAccountSubject, 'google-a',
+  'switching accounts cannot steal previously attributed events');
+assert.equal(legacyRows[0].drivePendingIndexKey, undefined,
+  'legacy cloud imports are not eligible for re-upload');
+
 // The regular Drive upload lookup must use the IndexedDB owner/time index,
 // not read every already-uploaded play in a multi-year local archive.
 const pendingRows = [
