@@ -962,8 +962,11 @@ function parseUploadScanCursors(raw: unknown): Record<string, UploadScanCursor> 
   for (const [subject, value] of Object.entries(raw as Record<string, unknown>)) {
     if (!subject.trim() || !value || typeof value !== 'object' || Array.isArray(value)) continue;
     const cursor = value as Partial<UploadScanCursor>;
-    if (typeof cursor.timestampUtc === 'number' && Number.isSafeInteger(cursor.timestampUtc) &&
-        cursor.timestampUtc >= 0 && typeof cursor.id === 'number' &&
+    // The indexed queue accepts finite historical timestamps, including
+    // fractional and negative values from malformed legacy captures. Rejecting
+    // those here would discard the resume cursor and rescan the same 5k rows.
+    if (typeof cursor.timestampUtc === 'number' && Number.isFinite(cursor.timestampUtc) &&
+        typeof cursor.id === 'number' &&
         Number.isSafeInteger(cursor.id) && cursor.id > 0) {
       result[subject] = { timestampUtc: cursor.timestampUtc, id: cursor.id };
     }
