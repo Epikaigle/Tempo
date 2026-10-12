@@ -397,8 +397,6 @@ export default function Settings() {
                 </div>
               </div>
             </details>
-            <div style={{ display: "none" }}>
-            </div>
           </div>
         )}
 
