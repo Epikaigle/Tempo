@@ -24,7 +24,6 @@ await esbuild.build({
         globalThis.fixture.authorized.push(subject);
       };
       export const getDrivePendingPlays = async () => [];
-      export const getDriveOriginEventIds = async () => new Set();
        export const hasDriveOriginEventId = async () => false;
        export const claimUnownedDrivePlays = async subject => { globalThis.fixture.claimed.push(subject); };
       export const getOwnPlayIdentityInputs = async () => globalThis.fixture.ownLocalPlays ?? [];
