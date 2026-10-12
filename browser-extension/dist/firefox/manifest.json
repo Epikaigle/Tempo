@@ -25,7 +25,8 @@
   "permissions": [
     "storage",
     "alarms",
-    "tabs"
+    "tabs",
+    "identity"
   ],
   "host_permissions": [
     "http://*:8765/*",
@@ -96,6 +97,11 @@
       "data_collection_permissions": {
         "required": [
           "none"
+        ],
+        "optional": [
+          "personallyIdentifyingInfo",
+          "browsingActivity",
+          "websiteContent"
         ]
       }
     },

@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Browser extension history import -->
+    <string name="settings_import_extension">Böngészős lejátszások importálása</string>
+    <string name="settings_import_extension_desc">Add hozzá az előzményeidhez a Tempo Stats bővítményből exportált lejátszásokat</string>
+    <string name="extension_import_title">Lejátszások importálása a bővítményből</string>
+    <string name="extension_import_headline">Vidd át a böngészős lejátszásaidat a Tempóba</string>
+    <string name="extension_import_how_to">1. Nyisd meg a Tempo Stats böngészőbővítményt\n2. A Beállítások lapon koppints a Lejátszások exportálása gombra\n3. Válaszd ki alább a letöltött tempo-plays fájlt</string>
+    <string name="extension_import_choose_file">Exportált fájl kiválasztása</string>
+    <string name="extension_import_selected_files">%1$d fájl kiválasztva</string>
+    <string name="extension_import_button">Lejátszások importálása</string>
+    <string name="extension_import_running">Importálás…</string>
+    <string name="extension_import_parsing">%1$s olvasása…</string>
+    <string name="extension_import_file_counter">%1$d. fájl, összesen %2$d</string>
+    <string name="extension_import_progress">%1$d lejátszás feldolgozva</string>
+    <string name="extension_import_progress_added">Eddig %1$d hozzáadva</string>
+    <string name="extension_import_result_title">Importálás kész</string>
+    <string name="extension_import_stat_imported">Hozzáadott lejátszások</string>
+    <string name="extension_import_stat_duplicates">Már szerepel az előzményeidben</string>
+    <string name="extension_import_stat_tracks">Új számok</string>
+    <string name="extension_import_stat_too_short">Túl rövidek a beszámításhoz</string>
+    <string name="extension_import_stat_unreadable">Olvashatatlan sorok</string>
+    <string name="extension_import_stat_files">Beolvasott fájlok</string>
+    <string name="extension_import_truncated">Ez a fájl több lejátszást tartalmaz, mint amennyit egyetlen importálás beolvas. Importáld újra a folytatáshoz onnan, ahol megállt.</string>
+    <string name="extension_import_done">Kész</string>
+    <string name="extension_import_failed_title">Az importálás sikertelen</string>
+    <string name="extension_import_retry">Újrapróbálás</string>
+
     <string name="app_name">Tempo</string>
     
     <!-- Service notification -->

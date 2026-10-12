@@ -23,7 +23,8 @@
   "permissions": [
     "storage",
     "alarms",
-    "tabs"
+    "tabs",
+    "identity"
   ],
   "host_permissions": [
     "http://*:8765/*",

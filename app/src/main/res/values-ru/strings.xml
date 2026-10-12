@@ -1,5 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Browser extension history import -->
+    <string name="settings_import_extension">Импорт прослушиваний из браузера</string>
+    <string name="settings_import_extension_desc">Добавьте в историю прослушивания, экспортированные из расширения Tempo Stats</string>
+    <string name="extension_import_title">Импорт из расширения</string>
+    <string name="extension_import_headline">Перенесите прослушивания из браузера в Tempo</string>
+    <string name="extension_import_how_to">1. Откройте расширение Tempo Stats в браузере\n2. На вкладке настроек нажмите «Экспорт прослушиваний»\n3. Выберите ниже скачанный файл tempo-plays</string>
+    <string name="extension_import_choose_file">Выбрать файл экспорта</string>
+    <string name="extension_import_selected_files">Выбрано файлов: %1$d</string>
+    <string name="extension_import_button">Импортировать прослушивания</string>
+    <string name="extension_import_running">Импорт…</string>
+    <string name="extension_import_parsing">Чтение %1$s…</string>
+    <string name="extension_import_file_counter">Файл %1$d из %2$d</string>
+    <string name="extension_import_progress">Обработано прослушиваний: %1$d</string>
+    <string name="extension_import_progress_added">Добавлено: %1$d</string>
+    <string name="extension_import_result_title">Импорт завершён</string>
+    <string name="extension_import_stat_imported">Добавлено прослушиваний</string>
+    <string name="extension_import_stat_duplicates">Уже в вашей истории</string>
+    <string name="extension_import_stat_tracks">Новые треки</string>
+    <string name="extension_import_stat_too_short">Слишком короткие</string>
+    <string name="extension_import_stat_unreadable">Нечитаемые строки</string>
+    <string name="extension_import_stat_files">Прочитано файлов</string>
+    <string name="extension_import_truncated">В этом файле больше прослушиваний, чем можно прочитать за один импорт. Импортируйте его снова, чтобы продолжить с места остановки.</string>
+    <string name="extension_import_done">Готово</string>
+    <string name="extension_import_failed_title">Ошибка импорта</string>
+    <string name="extension_import_retry">Повторить</string>
+
     <string name="app_name">Tempo</string>
     
     <!-- Service notification -->
@@ -410,7 +436,7 @@
     <string name="backup_export">Экспорт на устройство</string>
     <string name="backup_import">Импорт с устройства</string>
     <string name="backup_tips">💡 Советы по резервному копированию</string>
-    <string name="backup_drive_auto">• Копии на Google Диске автоматические и зашифрованные\n</string>
+    <string name="backup_drive_auto">• Копии на Google Диске создаются автоматически и хранятся в вашем аккаунте Drive\n</string>
     <string name="backup_use_different">Использовать другой аккаунт</string>
     <string name="backup_last_backup">Последняя копия: %1$s</string>
 
