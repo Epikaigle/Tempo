@@ -195,6 +195,33 @@ pub async fn drive_get_status(state: State<'_, AppState>) -> Result<DriveSyncSta
     status_for(&state.app_data_dir).await
 }
 
+/// A reconnect may observe a missing or temporarily stale Google Drive marker.
+/// Never roll back the previously accepted deletion generation for this subject:
+/// doing so would allow newly captured plays to be uploaded into a stale
+/// generation and subsequently erased by another client's cleanup.
+pub(crate) fn finish_drive_reconnect(
+    conn: &rusqlite::Connection,
+    remote_marker_version: i64,
+) -> Result<(), String> {
+    if remote_marker_version < 0 {
+        return Err("Invalid Google Drive deletion marker version".to_string());
+    }
+    conn.execute(
+        "UPDATE drive_sync_state
+         SET enabled = 1,
+             download_cursor = CASE
+                 WHEN ?1 > accepted_disable_version THEN 0
+                 ELSE download_cursor END,
+             accepted_disable_version = MAX(accepted_disable_version, ?1),
+             offline_capture_account_subject = NULL,
+             last_error = NULL
+         WHERE id = 1",
+        [remote_marker_version],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn drive_connect(
     app: AppHandle,
@@ -216,13 +243,7 @@ pub async fn drive_connect(
         accept_deletion_marker(&conn, marker_version, None)?;
     }
     // Reconnection never implicitly republishes history suppressed by deletion.
-    conn.execute(
-        "UPDATE drive_sync_state SET enabled = 1, accepted_disable_version = ?1,
-         download_cursor = CASE WHEN ?1 > accepted_disable_version THEN 0 ELSE download_cursor END,
-         offline_capture_account_subject = NULL, last_error = NULL WHERE id = 1",
-        [marker_version],
-    )
-    .map_err(|e| e.to_string())?;
+    finish_drive_reconnect(&conn, marker_version)?;
     drop(conn);
 
     if let Err(err) = run_sync_locked(&state.app_data_dir).await {
