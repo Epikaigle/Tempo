@@ -22,8 +22,11 @@ await esbuild.build({
         export const getDrivePendingPlays = async (limit, owner, after) => {
           globalThis.fixture.scanCalls.push({ limit, owner, after });
           return globalThis.fixture.plays
-            .filter(play => !after || play.timestampUtc > after.timestampUtc ||
-              (play.timestampUtc === after.timestampUtc && play.id > after.id))
+            .filter(play => {
+              const indexedTime = Number.isFinite(play.timestampUtc) ? play.timestampUtc : 0;
+              return !after || indexedTime > after.timestampUtc ||
+                (indexedTime === after.timestampUtc && play.id > after.id);
+            })
             .slice(0, limit);
         };
         export const ensureLocalOriginEventId = async (id, candidate) => {
@@ -73,7 +76,7 @@ globalThis.fixture = {
     lastAuthorizedAccountSubject: 'google-a', lastAuthorizedAccountEmail: 'a@example.com' } },
   scanCalls: [], marked: [], uploads: [],
   plays: Array.from({ length: 5000 }, (_, index) => ({
-    id: index + 1, timestampUtc: index + 1,
+    id: index + 1, timestampUtc: NaN,
     title: 'Unverified', artist: 'Unknown', originEventId: 'invalid',
     status: 'queued',
   })),
@@ -103,7 +106,7 @@ try {
   assert.equal(warnings, 5001, 'all invalid rows should be retained and reported');
   assert.equal(fixture.uploads.length, 0);
   assert.deepEqual(fixture.stored[stateKey].uploadScanCursors['google-a'],
-    { timestampUtc: 5000, id: 5000 }, 'per-account scan cursor must persist after the budget');
+    { timestampUtc: 0, id: 5000 }, 'malformed timestamps must use the IndexedDB zero-time cursor');
   assert.equal(fixture.scanCalls.reduce((n, call) => n + call.limit, 0), 5000,
     'the scan budget counts examined plays, not only successfully uploaded plays');
 
