@@ -99,9 +99,11 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install frontend dependencies
+      - name: Install locked frontend dependencies
         working-directory: desktop
-        run: npm install
+        # Reproduce exactly the package-lock validated by the Desktop CI.
+        # npm install may silently rewrite the dependency graph at release time.
+        run: npm ci
 
       # ── 5. Extract release version from tag (strips "desktop-" prefix) ────
       - name: Extract release version
