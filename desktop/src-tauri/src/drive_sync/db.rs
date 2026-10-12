@@ -100,6 +100,13 @@ pub(crate) fn open_sync_db(app_data_dir: &Path) -> Result<Connection, String> {
             DELETE FROM drive_event_state WHERE scrobble_id = OLD.id;
             DELETE FROM drive_invalid_local_exports WHERE scrobble_id = OLD.id;
         END;
+        -- Old databases already have the first trigger without the invalid
+        -- export cleanup. A separate named trigger upgrades them safely.
+        CREATE TRIGGER IF NOT EXISTS tempo_drive_invalid_scrobble_delete
+        AFTER DELETE ON scrobbles
+        BEGIN
+            DELETE FROM drive_invalid_local_exports WHERE scrobble_id = OLD.id;
+        END;
         CREATE TABLE IF NOT EXISTS drive_sync_migrations (
             name TEXT PRIMARY KEY
         );
