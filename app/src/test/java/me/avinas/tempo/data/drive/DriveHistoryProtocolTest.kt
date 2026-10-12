@@ -15,6 +15,17 @@ import java.util.zip.GZIPOutputStream
 class DriveHistoryProtocolTest {
 
     @Test
+    fun `Drive batch creation does not retry an uncertain POST outcome`() {
+        // A timeout or HTTP 5xx does not prove that Google Drive rejected
+        // the create. The next sync checks the exact filename/checksum first.
+        assertFalse(DriveAppDataClient.canRetryAfterAmbiguousFailure("POST"))
+        assertFalse(DriveAppDataClient.canRetryAfterAmbiguousFailure("post"))
+        assertTrue(DriveAppDataClient.canRetryAfterAmbiguousFailure("GET"))
+        assertTrue(DriveAppDataClient.canRetryAfterAmbiguousFailure("DELETE"))
+        assertTrue(DriveAppDataClient.canRetryAfterAmbiguousFailure("PATCH"))
+    }
+
+    @Test
     fun `LAN-only plays relay with original Drive event identity`() {
         val id = "a".repeat(64)
         assertEquals(
