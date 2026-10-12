@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   package:
-    name: Drive-enabled ${{ matrix.target }}
+    name: OAuth-configured ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -36,12 +36,23 @@ jobs:
         run: |
           npm run typecheck
           npm run smoke
-      - name: Build Drive-enabled extension, reject missing or test OAuth IDs
+      - name: Build OAuth-configured extension, reject missing or malformed IDs
         run: npm run build:release:${{ matrix.target }}
-      - name: Upload verified browser package
+      - name: Record artifact integrity and exact source revision
+        shell: bash
+        run: |
+          sha256sum "dist/tempo-stats-${{ matrix.target }}.zip" \
+            > "dist/tempo-stats-${{ matrix.target }}.zip.sha256"
+          printf 'commit=%s\\nrun=%s\\ntarget=%s\\n' \
+            "$GITHUB_SHA" "$GITHUB_RUN_ID" "${{ matrix.target }}" \
+            > "dist/tempo-stats-${{ matrix.target }}.build-info.txt"
+      - name: Upload non-published browser package, checksum and revision
         uses: actions/upload-artifact@v4
         with:
           name: tempo-drive-${{ matrix.target }}
-          path: browser-extension/dist/tempo-stats-${{ matrix.target }}.zip
+          path: |
+            browser-extension/dist/tempo-stats-${{ matrix.target }}.zip
+            browser-extension/dist/tempo-stats-${{ matrix.target }}.zip.sha256
+            browser-extension/dist/tempo-stats-${{ matrix.target }}.build-info.txt
           if-no-files-found: error
           retention-days: 30
