@@ -973,17 +973,23 @@ pub(crate) async fn bump_disable_marker(access_token: &str) -> Result<i64, Strin
         let markers = find_exact_files(access_token, DISABLE_MARKER_NAME).await?;
         let mut updated = Vec::new();
         for marker in markers {
-            let response = send_drive_idempotent(
-                http_client()?
-                    .patch(format!(
-                        "{DRIVE_UPLOAD_API}/files/{}?uploadType=media&fields=id,name,modifiedTime",
-                        marker.id
-                    ))
-                    .bearer_auth(access_token)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(marker_body.clone()),
-            )
-            .await?;
+            // Updating a marker changes its server-side modifiedTime, which is
+            // the deletion generation. Replaying an ambiguous PATCH after a
+            // timeout/5xx could publish an unintended newer deletion fence.
+            // The caller must inspect the remote marker on its next attempt.
+            let response = http_client()?
+                .patch(format!(
+                    "{DRIVE_UPLOAD_API}/files/{}?uploadType=media&fields=id,name,modifiedTime",
+                    marker.id
+                ))
+                .bearer_auth(access_token)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(marker_body.clone())
+                .send()
+                .await
+                .map_err(|e| format!(
+                    "Google Drive deletion marker update outcome uncertain; check the marker before retrying: {e}"
+                ))?;
             if !response.status().is_success() {
                 return Err(format!(
                     "Could not update Drive disable marker (HTTP {})",
