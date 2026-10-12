@@ -941,6 +941,18 @@ pub(crate) fn accept_deletion_marker(
     message: Option<&str>,
 ) -> Result<(), String> {
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let accepted: i64 = tx
+        .query_row(
+            "SELECT accepted_disable_version FROM drive_sync_state WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if marker_version <= accepted {
+        return Err(format!(
+            "Refusing stale Google Drive deletion marker (remote {marker_version}, accepted {accepted})"
+        ));
+    }
     let subject: String = tx
         .query_row(
             "SELECT account_subject FROM drive_sync_state WHERE id = 1",
