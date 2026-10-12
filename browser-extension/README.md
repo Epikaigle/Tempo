@@ -104,7 +104,7 @@ For production packages, register real Chrome and Firefox OAuth clients in the *
 - `TEMPO_GOOGLE_OAUTH_CLIENT_ID_CHROME`
 - `TEMPO_GOOGLE_OAUTH_CLIENT_ID_FIREFOX`
 
-Run **Actions → Browser Google Drive release packages → Run workflow** on a branch containing this workflow. It independently builds, validates, and uploads `tempo-stats-chrome.zip` and `tempo-stats-firefox.zip` as GitHub Actions artifacts. This packaging workflow refuses missing/placeholder IDs, but only a real Google sign-in can prove that the registered OAuth clients and their redirect/extension registration are correct. It does not publish a GitHub Release or distribute the archives automatically.
+After the release workflow file is available on the repository's default branch, open **Actions → Browser Google Drive release packages → Run workflow** and select the branch or tag to package. It independently builds, validates, and uploads `tempo-stats-chrome.zip` and `tempo-stats-firefox.zip` as GitHub Actions artifacts. This packaging workflow refuses missing/placeholder IDs, but only a real Google sign-in can prove that the registered OAuth clients and their redirect/extension registration are correct. It does not publish a GitHub Release or distribute the archives automatically.
 
 For equivalent **local release packaging**, use `npm run build:release:chrome` and `npm run build:release:firefox` with the matching environment variables set. Ordinary `npm run build:chrome` / `build:firefox` remain available for intentional LAN-only developer builds. No OAuth client secret should be stored in the repository.
 
