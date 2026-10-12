@@ -81,6 +81,11 @@ class DriveAppDataClient @Inject constructor(
                         request.headers.authorization = "Bearer $token"
                         request.connectTimeout = 30_000
                         request.readTimeout = 30_000
+                        // The Google HTTP client must not silently replay POST
+                        // or deletion-marker mutations below our own retry
+                        // policy. Safe GET/DELETE retries are performed by
+                        // executeWithRetry, where account scope is rechecked.
+                        request.numberOfRetries = 0
                     }
                 )
                 .setApplicationName("Tempo/${BuildConfig.VERSION_NAME}")
