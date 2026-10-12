@@ -57,6 +57,11 @@ export interface AccountProgress {
   acceptedDisableVersion: number;
 }
 
+interface UploadScanCursor {
+  timestampUtc: number;
+  id: number;
+}
+
 export interface RejectedBatchRecord {
   fileId: string;
   fileName: string;
@@ -78,6 +83,8 @@ interface DriveRuntimeState {
   lastAuthorizedAccountSubject: string | null;
   accountProgress?: Record<string, AccountProgress>;
   rejectedBatches?: Record<string, RejectedBatchRecord[]>;
+  /** Resumable, per-Google-account queue scan, including invalid preserved rows. */
+  uploadScanCursors?: Record<string, UploadScanCursor>;
 }
 
 const DEFAULT_STATE: DriveRuntimeState = {
@@ -92,6 +99,7 @@ const DEFAULT_STATE: DriveRuntimeState = {
   lastAuthorizedAccountSubject: null,
   accountProgress: {},
   rejectedBatches: {},
+  uploadScanCursors: {},
 };
 
 function markRejectedBatchRecord(
@@ -474,13 +482,18 @@ async function uploadLocalPlays(accessToken: string, deviceId: string, accountSu
   const generation = Math.max(0, state.acceptedDisableVersion || 0);
   let uploaded = 0;
   let skipped = 0;
-  let cursor: { timestampUtc: number; id: number } | undefined;
-  // Read bounded keyset pages. Invalid rows stay in IndexedDB; scanning can
-  // advance past them without losing legitimate plays recorded afterwards.
-  while (uploaded < MAX_LOCAL_SCAN) {
-    const pending = (await storage.getDrivePendingPlays(MAX_LOCAL_SCAN, accountSubject, cursor))
+  let scanned = 0;
+  let exhausted = false;
+  // A previous scan may have exhausted its 5k-row budget on malformed plays.
+  // Resume beyond those rows on the next run, without dropping or relabeling
+  // them. This cursor belongs to the verified Google subject, never globally.
+  let cursor: UploadScanCursor | undefined = state.uploadScanCursors?.[accountSubject];
+  while (scanned < MAX_LOCAL_SCAN) {
+    const pageLimit = Math.min(250, MAX_LOCAL_SCAN - scanned);
+    const pending = (await storage.getDrivePendingPlays(pageLimit, accountSubject, cursor))
       .sort((a, b) => a.timestampUtc - b.timestampUtc || (a.id ?? 0) - (b.id ?? 0));
-    if (pending.length === 0) break;
+    if (pending.length === 0) { exhausted = true; break; }
+    scanned += pending.length;
     const last = pending[pending.length - 1];
     cursor = { timestampUtc: last.timestampUtc, id: last.id! };
 
@@ -521,8 +534,16 @@ async function uploadLocalPlays(accessToken: string, deviceId: string, accountSu
       })));
       uploaded += valid.length;
     }
-    if (pending.length < MAX_LOCAL_SCAN) break;
+    if (pending.length < pageLimit) { exhausted = true; break; }
   }
+  // Commit only after the entire bounded pass succeeds. On a network error we
+  // retry from the prior cursor; deterministic batches protect against copies.
+  // When the end is reached, wrap around next time so edited older invalid
+  // records and back-dated new captures are eventually reconsidered.
+  const nextCursors = { ...(state.uploadScanCursors ?? {}) };
+  if (exhausted) delete nextCursors[accountSubject];
+  else if (cursor) nextCursors[accountSubject] = cursor;
+  await patchRuntimeState({ uploadScanCursors: nextCursors });
   if (skipped > 0) {
     console.warn(`[Tempo] ${skipped} invalid local plays were preserved for metadata repair`);
   }
@@ -912,6 +933,21 @@ function parseAccountProgress(raw: unknown): Record<string, AccountProgress> {
   return result;
 }
 
+function parseUploadScanCursors(raw: unknown): Record<string, UploadScanCursor> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const result: Record<string, UploadScanCursor> = {};
+  for (const [subject, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!subject.trim() || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const cursor = value as Partial<UploadScanCursor>;
+    if (typeof cursor.timestampUtc === 'number' && Number.isSafeInteger(cursor.timestampUtc) &&
+        cursor.timestampUtc >= 0 && typeof cursor.id === 'number' &&
+        Number.isSafeInteger(cursor.id) && cursor.id > 0) {
+      result[subject] = { timestampUtc: cursor.timestampUtc, id: cursor.id };
+    }
+  }
+  return result;
+}
+
 function parseRejectedBatches(raw: unknown): Record<string, RejectedBatchRecord[]> {
   if (!raw || typeof raw !== 'object') return {};
   const result: Record<string, RejectedBatchRecord[]> = {};
@@ -952,6 +988,7 @@ async function getRuntimeState(): Promise<DriveRuntimeState> {
       ? raw.lastAuthorizedAccountSubject : null,
     accountProgress: parseAccountProgress(raw.accountProgress),
     rejectedBatches: parseRejectedBatches(raw.rejectedBatches),
+    uploadScanCursors: parseUploadScanCursors(raw.uploadScanCursors),
   };
 }
 
