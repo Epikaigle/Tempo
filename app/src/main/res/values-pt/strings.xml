@@ -1205,4 +1205,32 @@
     <string name="deezer_import_notification_channel_desc">Notificações de progresso da importação da exportação de dados do Deezer</string>
     <string name="deezer_import_notification_title">Importando dados do Deezer</string>
     <string name="deezer_import_notification_progress">Importando %1$d/%2$d entradas</string>
+
+    <!-- Google Drive history sync -->
+    <string name="drive_auth_required">É necessária autorização do Google Drive antes de ativar a sincronização.</string>
+    <string name="drive_deleted_success">%1$d lotes de histórico excluídos do Google Drive. A sincronização será desativada nos dispositivos vinculados quando reconectarem.</string>
+    <string name="drive_operation_failed">Falha na operação do histórico do Google Drive.</string>
+    <string name="drive_sync_success">Sincronizado: %1$d enviados e %2$d recebidos.</string>
+    <string name="drive_heading">HISTÓRICO ENTRE DISPOSITIVOS</string>
+    <string name="drive_toggle_title">Sincronizar histórico de reprodução</string>
+    <string name="drive_toggle_subtitle">Compartilhe seu histórico entre Android, Desktop e navegadores usando dados privados do Google Drive. Nenhum servidor Tempo é usado.</string>
+    <string name="drive_connecting">Conectando ao Google Drive…</string>
+    <string name="drive_status_title">Sincronização do Google Drive</string>
+    <string name="drive_sync_now">Sincronizar agora</string>
+    <string name="drive_restore">Restaurar todo o histórico do Drive</string>
+    <string name="drive_restore_hint">Verifica os dados antigos no Drive sem apagar as reproduções locais.</string>
+    <string name="drive_share">Enviar histórico local antigo</string>
+    <string name="drive_share_hint">Republica reproduções antigas, inclusive dados LAN sem conta Google verificada.</string>
+    <string name="drive_delete">Excluir histórico da nuvem</string>
+    <string name="drive_share_confirm_title">Enviar histórico antigo?</string>
+    <string name="drive_share_confirm_body">Compartilha as reproduções antigas com a conta Google selecionada, inclusive histórico excluído do Drive e dados LAN sem proprietário verificado. Algumas reproduções podem pertencer a outra conta. Novos dados LAN permanecem excluídos.</string>
+    <string name="drive_share_confirm">Enviar histórico antigo</string>
+    <string name="drive_cancel">Cancelar</string>
+    <string name="drive_delete_confirm_title">Excluir histórico da nuvem?</string>
+    <string name="drive_delete_confirm_body">Exclui os dados compartilhados do Tempo no Google Drive e desativa a sincronização dos dispositivos vinculados quando reconectarem. O histórico local permanece intacto. Você pode reativar a sincronização depois.</string>
+    <string name="drive_delete_confirm">Excluir e desativar</string>
+    <string name="drive_never">Nunca</string>
+    <string name="drive_last_message">Última sincronização: %1$s • %2$s</string>
+    <string name="drive_last_counts">Última sincronização: %1$s • %2$d enviados • %3$d recebidos</string>
+    <string name="drive_schedule_hint">Executa a cada seis horas, aproximadamente, ou ao tocar em Sincronizar agora.</string>
 </resources>
