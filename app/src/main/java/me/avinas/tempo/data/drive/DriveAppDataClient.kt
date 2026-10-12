@@ -42,9 +42,11 @@ class DriveAppDataClient @Inject constructor(
         private const val UNCERTAIN_UPLOAD_MESSAGE =
             "Google Drive upload outcome is uncertain. Sync again to verify the batch before retrying."
 
-        /** Only requests that cannot create a second object may be blindly retried. */
+        /** Only read-only calls and deletes are safe to retry after an unknown outcome.
+         * A marker PATCH updates the server's deletion-generation timestamp.
+         */
         internal fun canRetryAfterAmbiguousFailure(method: String): Boolean =
-            method.uppercase() != "POST"
+            method.uppercase() in setOf("GET", "HEAD", "DELETE")
 
         internal fun markerVersion(versions: List<Long?>): Long {
             if (versions.isEmpty()) return 0L
