@@ -85,7 +85,7 @@ Desktop reads its OAuth client ID at compile time from:
 
 `TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP`
 
-The GitHub Desktop release workflow reads that value from the repository variable with the same name. Release builds fail early if the variable is missing, preventing an installer from being published with a non-functional Google Drive sign-in flow.
+The GitHub Desktop release workflow reads that value from the repository variable with the same name. Tagged builds fail early if the variable is missing or malformed. **All tagged Desktop installers are uploaded to an unpublished draft GitHub Release**, not a public release. A maintainer must test OAuth sign-in on real signed builds, complete the cross-client acceptance matrix, and explicitly publish the draft. An ID with the right format is not proof that Google has registered it correctly.
 
 Enable the Google Drive API and register a Desktop public client with a loopback callback. Android, Chrome, Firefox and Desktop must use clients from the same Google Cloud project to access the same hidden application-data namespace.
 The Desktop loopback listener reads complete bounded HTTP headers, checks the callback route and OAuth state, and ignores unrelated requests within one fixed sign-in deadline. The browser acknowledgment confirms receipt of authorization; the Desktop UI reports connection only after token exchange and account verification finish.
