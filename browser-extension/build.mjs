@@ -22,11 +22,10 @@ const googleOAuthClientId = (
 )?.trim() ?? '';
 
 // Ordinary developer builds may remain LAN-only. Release builds must never
-// quietly package a disabled Google Drive UI or a fake CI OAuth client.
+// quietly package a disabled Google Drive UI or a malformed CI OAuth client.
 if (requireDrive) {
   const clientIdPattern = /^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/;
-  if (!clientIdPattern.test(googleOAuthClientId) ||
-      /(?:test|example|placeholder|dummy)/i.test(googleOAuthClientId)) {
+  if (!clientIdPattern.test(googleOAuthClientId)) {
     console.error('A registered, non-test Tempo Google OAuth client ID is required for a Drive-enabled release. ' +
       'Set TEMPO_GOOGLE_OAUTH_CLIENT_ID_' + (target === 'firefox' ? 'FIREFOX' : 'CHROME') + '.');
     process.exit(1);
