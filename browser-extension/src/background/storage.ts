@@ -605,20 +605,39 @@ export async function retryFailedPlays(): Promise<number> {
   });
 }
 
-export async function clearQueue(): Promise<number> {
-  const queued = await getQueuedPlays();
-
+/**
+ * Only delete locally queued records that already have a confirmed Google
+ * Drive copy. Queued is a LAN-only flag; it does NOT mean the cloud upload
+ * finished. Keep the sole copy of any unsent recording on this device.
+ * Check and delete each row in the SAME transaction to avoid racing an upload.
+ */
+export async function clearQueue(): Promise<{ cleared: number; protected: number }> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readwrite');
-    const store = tx.objectStore(PLAYS_STORE);
-
-    for (const play of queued) {
-      if (play.id) store.delete(play.id);
-    }
-
-    tx.oncomplete = () => { invalidateQueueCountCache(); invalidateStatsCache(); resolve(queued.length); };
+    const index = tx.objectStore(PLAYS_STORE).index('status');
+    const request = index.openCursor(IDBKeyRange.only('queued'));
+    let cleared = 0;
+    let protectedCount = 0;
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const play = cursor.value as Play;
+      if (play.driveUploadedAt || play.driveImported) {
+        cursor.delete();
+        cleared++;
+      } else {
+        protectedCount++;
+      }
+      cursor.continue();
+    };
+    tx.oncomplete = () => {
+      invalidateQueueCountCache();
+      invalidateStatsCache();
+      resolve({ cleared, protected: protectedCount });
+    };
     tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Queue cleanup was cancelled'));
   });
 }
 
