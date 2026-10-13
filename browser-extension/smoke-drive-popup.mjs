@@ -40,6 +40,10 @@ async function openPopup(initial, responseStatus, instance) {
   globalThis.document = {
     getElementById: id => nodes.get(id) ?? null, createElement: makeNode,
     addEventListener(type, fn) { documentHandlers[type] = fn; },
+    dispatchEvent(event) { documentHandlers[event.type]?.(event); return true; },
+  };
+  globalThis.CustomEvent = class {
+    constructor(type, options) { this.type = type; this.detail = options?.detail; }
   };
   globalThis.window = { setTimeout, clearTimeout };
   globalThis.chrome = { runtime: { connect() {
@@ -88,6 +92,8 @@ assert.deepEqual(popup.commands, ['status']);
 assert.equal(popup.nodes.get('drive-sync-confirmation').style.display, '');
 assert.match(popup.nodes.get('drive-sync-confirm-description').textContent, /Local listening history/);
 assert.equal(popup.nodes.get('btn-drive-cancel').focused, true);
+assert.equal(popup.documentHandlers['tempo-drive-status'], undefined,
+  'consumer-less test harness must safely ignore Drive home updates');
 popup.nodes.get('btn-drive-cancel').handlers.click();
 await settle();
 assert.deepEqual(popup.commands, ['status', 'status']);
