@@ -264,6 +264,7 @@ fun BackupRestoreScreen(
                 // backups and visible even before Google sign-in.
                 DriveHistorySyncSection(
                     isGoogleSignedIn = isSignedIn,
+                    accountEmail = googleAccount?.email,
                     onRequestGoogleSignIn = viewModel::requestSignIn
                 )
                 Spacer(modifier = Modifier.height(24.dp))
