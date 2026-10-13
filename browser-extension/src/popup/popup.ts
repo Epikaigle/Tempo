@@ -134,6 +134,7 @@ let cloudHistoryStatus: {
   enabled: boolean;
   connected: boolean;
   needsInteractiveAuth: boolean;
+  pendingUploads: number;
 } | null = null;
 document.addEventListener('tempo-drive-status', ((event: CustomEvent) => {
   cloudHistoryStatus = event.detail;
@@ -289,6 +290,23 @@ function refreshHomeState() {
     && !!cloudHistoryStatus.connected && !cloudHistoryStatus.needsInteractiveAuth;
   const cloudReconnect = !!cloudHistoryStatus?.configured && !!cloudHistoryStatus.enabled
     && (!cloudHistoryStatus.connected || !!cloudHistoryStatus.needsInteractiveAuth);
+  const drivePending = cloudHistoryStatus?.pendingUploads ?? 0;
+  // The LAN 'queued' flag is independent from Google Drive's upload marker.
+  // Show both counts with explicit destinations; do not call Drive-synced
+  // plays unsent solely because the phone queue still contains them.
+  const queueCountEl = document.getElementById('queue-count');
+  if (queueCountEl) queueCountEl.textContent = String(currentPairing ? currentQueueCount : drivePending);
+  const queueLabel = document.getElementById('queue-count-label');
+  if (queueLabel) queueLabel.textContent = currentPairing ? ' awaiting phone (LAN)' : ' awaiting Google Drive';
+  const queueDriveCount = document.getElementById('queue-drive-count');
+  if (queueDriveCount) {
+    queueDriveCount.textContent = cloudHistoryStatus?.enabled
+      ? `${drivePending} awaiting Drive upload` : 'Google Drive is off';
+  }
+  const phoneSync = document.getElementById('btn-sync-now');
+  if (phoneSync) phoneSync.style.display = currentPairing ? '' : 'none';
+  const driveSync = document.getElementById('btn-sync-drive');
+  if (driveSync) driveSync.style.display = cloudReady ? '' : 'none';
   banner.style.display = currentPairing || cloudReady ? 'none' : '';
   const bannerTitle = banner.querySelector('.inline-banner-title');
   const bannerCopy = banner.querySelector('.text-muted');
@@ -307,12 +325,12 @@ function refreshHomeState() {
     heroCard.style.display = currentNowPlaying?.title ? 'none' : '';
     if (cloudReady) {
       pill.textContent = 'Google Drive connected';
-      title.textContent = currentQueueCount > 0
-        ? `${currentQueueCount} play${currentQueueCount === 1 ? '' : 's'} in the local queue`
+      title.textContent = drivePending > 0
+        ? `${drivePending} play${drivePending === 1 ? '' : 's'} awaiting Drive upload`
         : 'Connected through Google Drive';
       copy.textContent = 'Your listening history syncs through Google Drive. Phone pairing over LAN is optional.';
-      primary.textContent = currentQueueCount > 0 ? `View queue (${currentQueueCount})` : 'Cloud sync settings';
-      second.textContent = currentQueueCount > 0 ? 'Cloud sync settings' : 'View queue';
+      primary.textContent = drivePending > 0 ? `View Drive queue (${drivePending})` : 'Cloud sync settings';
+      second.textContent = drivePending > 0 ? 'Cloud sync settings' : 'View queue';
       emTitle.textContent = 'No music playing';
       emCopy.textContent = 'Play on a supported site to capture listening history.';
     } else {
@@ -652,12 +670,30 @@ document.getElementById('btn-sync-now')?.addEventListener('click', async () => {
   }, 2500);
 });
 
+document.getElementById('btn-sync-drive')?.addEventListener('click', () => {
+  const ready = !!cloudHistoryStatus?.enabled && !!cloudHistoryStatus.connected
+    && !cloudHistoryStatus.needsInteractiveAuth;
+  if (!ready) {
+    toast('Reconnect Google Drive in Settings before syncing.', 'error');
+    switchTab('settings');
+    return;
+  }
+  // Drive's connection and success/error UI lives in Settings. Display it
+  // rather than issuing a misleading LAN-only SyncNow command.
+  switchTab('settings');
+  document.dispatchEvent(new CustomEvent('tempo-drive-sync-request'));
+});
+
 document.getElementById('btn-clear-queue')?.addEventListener('click', (e) => {
   const btn = e.currentTarget as HTMLButtonElement;
-  armToConfirm(btn, 'Sure?', async () => {
-    await send(MessageType.ClearQueue);
-    toast('Queue cleared', 'success');
-    refreshQueue();
+  armToConfirm(btn, 'Remove Drive-backed queued plays?', async () => {
+    try {
+      const result = await send(MessageType.ClearQueue);
+      toast(`${result?.cleared ?? 0} safely removed; ${result?.protected ?? 0} unsaved local plays kept`, 'info');
+      await refreshQueue();
+    } catch (err) {
+      toast(`Queue cleanup failed: ${String(err)}`, 'error');
+    }
   });
 });
 
@@ -1469,7 +1505,7 @@ document.getElementById('home-primary-action')?.addEventListener('click', () => 
   if (!currentPairing) {
     const ready = !!cloudHistoryStatus?.enabled && !!cloudHistoryStatus.connected
       && !cloudHistoryStatus.needsInteractiveAuth;
-    switchTab(ready && currentQueueCount > 0 ? 'queue' :
+    switchTab(ready && (cloudHistoryStatus?.pendingUploads ?? 0) > 0 ? 'queue' :
       cloudHistoryStatus?.configured ? 'settings' : 'pairing');
     return;
   }
@@ -1480,7 +1516,7 @@ document.getElementById('home-secondary-action')?.addEventListener('click', () =
   if (!currentPairing) {
     const ready = !!cloudHistoryStatus?.enabled && !!cloudHistoryStatus.connected
       && !cloudHistoryStatus.needsInteractiveAuth;
-    switchTab(ready && currentQueueCount === 0 || !cloudHistoryStatus?.configured ?
+    switchTab(ready && (cloudHistoryStatus?.pendingUploads ?? 0) === 0 || !cloudHistoryStatus?.configured ?
       'queue' : ready ? 'settings' : 'pairing');
     return;
   }
