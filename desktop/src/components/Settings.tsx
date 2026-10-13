@@ -195,6 +195,32 @@ export default function Settings() {
     setSettings((prev) => ({ ...prev, ...partial }));
   };
 
+  // Never show editable default settings while the persisted configuration
+  // is still loading (or failed to load): saving defaults would overwrite
+  // the user's actual preferences without them ever being displayed.
+  if (settingsLoadState !== "ready") {
+    return (
+      <div className="fade-in">
+        <div className="page-header">
+          <h2>Settings</h2>
+          <p>Configure how Tempo Desktop Satellite works</p>
+        </div>
+        <div className="card" aria-busy={settingsLoadState === "loading"}>
+          <p role={settingsLoadState === "error" ? "alert" : "status"} aria-live="polite">
+            {settingsLoadState === "loading"
+              ? "Loading your saved settings…"
+              : "Could not load settings. No changes have been made."}
+          </p>
+          {settingsLoadState === "error" && (
+            <button className="btn btn-primary" onClick={loadSettingsFromDisk}>
+              <RefreshCw size={16} />Retry loading
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fade-in">
       <div className="page-header">
