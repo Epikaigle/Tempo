@@ -1350,4 +1350,8 @@
     <string name="drive_last_message">Последняя синхронизация: %1$s • %2$s</string>
     <string name="drive_last_counts">Последняя синхронизация: %1$s • %2$d отправлено • %3$d получено</string>
     <string name="drive_schedule_hint">Автоматически примерно каждые шесть часов или после нажатия Синхронизировать.</string>
+    <string name="drive_signin_hint">Подключите Google, чтобы синхронизировать историю прослушиваний между устройствами. Это отдельная функция от резервного копирования телефона. Локальная история сохраняется.</string>
+    <string name="drive_signin_action">Подключить Google для истории</string>
+    <string name="drive_device_backup_heading">РЕЗЕРВНЫЕ КОПИИ УСТРОЙСТВА В GOOGLE DRIVE</string>
+    <string name="drive_device_backup_explanation">Резервная копия сохраняет снимок для восстановления устройства. Это не то же самое, что автоматическая синхронизация истории прослушиваний.</string>
 </resources>
