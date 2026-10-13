@@ -73,6 +73,9 @@ async function initDrivePanel(): Promise<void> {
 
   document.getElementById('btn-drive-connect')?.addEventListener('click', () => void connectGoogle());
   document.getElementById('btn-drive-sync')?.addEventListener('click', () => void execute('sync'));
+  // Queue's Drive button delegates to the same authenticated command as
+  // Settings. LAN sync remains a separate phone-only action.
+  document.addEventListener('tempo-drive-sync-request', () => void execute('sync'));
   document.getElementById('btn-drive-restore')?.addEventListener('click', () => void execute('restore'));
   document.getElementById('btn-drive-share')?.addEventListener('click', () => void shareHistory());
   document.getElementById('btn-drive-disconnect')?.addEventListener('click', () => void execute('disconnect'));
@@ -235,6 +238,7 @@ async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Pro
       enabled: status.enabled,
       connected: status.connected,
       needsInteractiveAuth: status.needsInteractiveAuth,
+      pendingUploads: status.pendingUploads ?? 0,
     },
   }));
   const account = document.getElementById('drive-sync-account');
