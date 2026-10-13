@@ -1,6 +1,7 @@
 // Protocol, provenance and durability regression tests.
 use super::*;
 use reqwest::StatusCode;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[test]
 fn prototype_uploads_are_requeued_once_without_reuploading_imports() {
