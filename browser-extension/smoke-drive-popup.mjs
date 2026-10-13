@@ -25,12 +25,15 @@ async function openPopup(initial, responseStatus, instance) {
   const makeNode = () => ({ style: {}, disabled: false, textContent: '', handlers: {}, attributes: {},
     addEventListener(type, callback) { this.handlers[type] = callback; },
     setAttribute(name, value) { this.attributes[name] = value; },
+    focus() { this.focused = true; },
     querySelector() { return null; },
     appendChild(child) { nodes.set(child.id, child); },
   });
   for (const id of ['tab-settings', 'drive-sync-account', 'drive-sync-status',
     'btn-drive-connect', 'btn-drive-sync', 'btn-drive-restore', 'btn-drive-share',
-    'btn-drive-disconnect', 'btn-drive-delete']) {
+    'btn-drive-disconnect', 'btn-drive-delete', 'drive-sync-confirmation',
+    'drive-sync-confirm-title', 'drive-sync-confirm-description',
+    'btn-drive-confirm', 'btn-drive-cancel']) {
     nodes.set(id, makeNode());
   }
   globalThis.document = { getElementById: id => nodes.get(id) ?? null, createElement: makeNode };
@@ -70,23 +73,30 @@ await settle();
 assert.equal(popup.nodes.get('btn-drive-connect').disabled, true);
 assert.equal(popup.nodes.get('btn-drive-sync').style.display, 'none');
 console.log('  ✓ operation completion preserves the unavailable OAuth configuration state');
-// MV3 popups must never rely on native confirm(). A single tap cannot delete
-// the cloud archive or republish sensitive history; a second explicit tap does.
+// The first click opens a dedicated review panel. A separate Confirm action
+// executes the sensitive command; Cancel never sends it.
 popup = await openPopup({ ...status, connected: true, needsInteractiveAuth: false },
   { ...status, enabled: false, connected: false, needsInteractiveAuth: false }, 3);
 assert.equal(popup.nodes.get('btn-drive-delete').style.display, '');
 popup.nodes.get('btn-drive-delete').handlers.click();
 await settle();
 assert.deepEqual(popup.commands, ['status']);
-assert.equal(popup.nodes.get('btn-drive-delete').attributes['aria-pressed'], 'true');
-assert.match(popup.nodes.get('drive-sync-status').textContent, /Click Confirm cloud deletion/);
+assert.equal(popup.nodes.get('drive-sync-confirmation').style.display, '');
+assert.match(popup.nodes.get('drive-sync-confirm-description').textContent, /Local listening history/);
+assert.equal(popup.nodes.get('btn-drive-cancel').focused, true);
+popup.nodes.get('btn-drive-cancel').handlers.click();
+await settle();
+assert.deepEqual(popup.commands, ['status', 'status']);
+assert.equal(popup.nodes.get('drive-sync-confirmation').style.display, 'none',
+  'Cancel closes the review without executing a delete');
 popup.nodes.get('btn-drive-delete').handlers.click();
 await settle();
-assert.deepEqual(popup.commands, ['status', 'delete']);
-assert.equal(popup.nodes.get('btn-drive-delete').attributes['aria-pressed'], 'false');
+popup.nodes.get('btn-drive-confirm').handlers.click();
+await settle();
+assert.deepEqual(popup.commands, ['status', 'status', 'delete']);
 assert.match(popup.nodes.get('drive-sync-status').textContent, /Deleted 0 Drive history batch/);
-assert.equal(popup.nodes.get('btn-drive-delete').style.display, 'none');
-console.log('  ✓ cloud deletion requires two deliberate clicks and keeps completion visible');
+assert.equal(popup.nodes.get('drive-sync-confirmation').style.display, 'none');
+console.log('  ✓ review panel explains deletion; only Confirm executes; Cancel is safe');
 
 popup = await openPopup({ ...status, connected: true, needsInteractiveAuth: false },
   { ...status, connected: true, needsInteractiveAuth: false,
@@ -94,12 +104,25 @@ popup = await openPopup({ ...status, connected: true, needsInteractiveAuth: fals
 popup.nodes.get('btn-drive-share').handlers.click();
 await settle();
 assert.deepEqual(popup.commands, ['status']);
-assert.match(popup.nodes.get('drive-sync-status').textContent, /Click Confirm older upload/);
-popup.nodes.get('btn-drive-share').handlers.click();
+assert.match(popup.nodes.get('drive-sync-confirm-description').textContent, /another account/);
+popup.nodes.get('btn-drive-confirm').handlers.click();
 await settle();
 assert.deepEqual(popup.commands, ['status', 'share-history']);
 assert.match(popup.nodes.get('drive-sync-status').textContent, /operation completed/,
   'an action outcome must not be immediately replaced by Last sync');
-console.log('  ✓ older-history sharing requires confirmation and operation result persists');
+console.log('  ✓ older-history sharing reviews account risk and preserves outcome');
 
-console.log('\n4 Drive popup scenarios passed');
+popup = await openPopup({ ...status, connected: true, needsInteractiveAuth: false },
+  { ...status, enabled: false, connected: false }, 5);
+popup.nodes.get('btn-drive-delete').handlers.click();
+await settle();
+popup.nodes.get('btn-drive-share').handlers.click();
+await settle();
+assert.match(popup.nodes.get('drive-sync-confirm-title').textContent, /Share older/);
+popup.nodes.get('btn-drive-cancel').handlers.click();
+await settle();
+assert.equal(popup.commands.filter(x => x === 'delete' || x === 'share-history').length, 0,
+  'switching or cancelling a pending action cannot leak an earlier destructive command');
+console.log('  ✓ switching confirmation targets never executes the previous action');
+
+console.log('\\n5 Drive popup scenarios passed');
