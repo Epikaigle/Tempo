@@ -762,4 +762,8 @@
     <string name="drive_signin_action">Google csatlakoztatása az előzményekhez</string>
     <string name="drive_device_backup_heading">GOOGLE DRIVE ESZKÖZMENTÉSEK</string>
     <string name="drive_device_backup_explanation">Az eszközmentés visszaállítható pillanatképet készít. Ez nem azonos a hallgatási előzmények automatikus szinkronizálásával.</string>
+    <string name="drive_device_restore_title">Eszközmentés visszaállítása</string>
+    <string name="drive_device_restore_question">Visszaállítja a(z) %1$s dátumú eszközmentést? Ez eltér a szinkronizált hallgatási előzmények visszaállításától.</string>
+    <string name="drive_device_backup_action_hint">Teljes eszközmentés mentése a Google Drive-ba</string>
+    <string name="drive_device_backup_now">Mentés most</string>
 </resources>
