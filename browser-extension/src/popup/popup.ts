@@ -127,6 +127,18 @@ let lastNpIdentity = '';     // identity gate for now-playing DOM writes
 let currentYoutubeSuggestion: YoutubeChannelSuggestion | null = null;
 let currentPairing: PairingInfo | null = null;
 let currentQueueCount = 0;
+// A Google Drive connection is a complete history-sync destination by itself.
+// Do not describe a missing LAN pairing as a setup failure when Drive works.
+let cloudHistoryStatus: {
+  configured: boolean;
+  enabled: boolean;
+  connected: boolean;
+  needsInteractiveAuth: boolean;
+} | null = null;
+document.addEventListener('tempo-drive-status', ((event: CustomEvent) => {
+  cloudHistoryStatus = event.detail;
+  refreshHomeState();
+}) as EventListener);
 let currentPairingToken: string | null = null;
 let qrExpiryCache = 0;       // mirror of the stored QR expiry so the countdown tick needs no storage reads
 const dismissedPopupYoutubeChannels = new Set<string>();
@@ -273,17 +285,39 @@ function refreshHomeState() {
   const banner  = document.getElementById('queue-banner')!;
   const heroCard = document.getElementById('home-hero-card')!;
 
-  banner.style.display = currentPairing ? 'none' : '';
+  const cloudReady = !!cloudHistoryStatus?.configured && !!cloudHistoryStatus.enabled
+    && !!cloudHistoryStatus.connected && !cloudHistoryStatus.needsInteractiveAuth;
+  const cloudReconnect = !!cloudHistoryStatus?.configured && !!cloudHistoryStatus.enabled
+    && (!cloudHistoryStatus.connected || !!cloudHistoryStatus.needsInteractiveAuth);
+  banner.style.display = currentPairing || cloudReady ? 'none' : '';
 
   if (!currentPairing) {
-    heroCard.style.display = '';
-    pill.textContent  = 'Setup required';
-    title.textContent = 'Connect your Tempo app';
-    copy.textContent  = 'Pair your phone — just scan the QR code in the Pair tab.';
-    primary.textContent = 'Scan to connect';
-    second.textContent  = currentQueueCount > 0 ? `View queue (${currentQueueCount})` : 'View queue';
-    emTitle.textContent = 'Phone not connected';
-    emCopy.textContent  = 'Open the Pair tab and scan the QR with Tempo on your phone.';
+    heroCard.style.display = currentNowPlaying?.title ? 'none' : '';
+    if (cloudReady) {
+      pill.textContent = 'Google Drive connected';
+      title.textContent = currentQueueCount > 0
+        ? `${currentQueueCount} play${currentQueueCount === 1 ? '' : 's'} in the local queue`
+        : 'Connected through Google Drive';
+      copy.textContent = 'Your listening history syncs through Google Drive. Phone pairing over LAN is optional.';
+      primary.textContent = currentQueueCount > 0 ? `View queue (${currentQueueCount})` : 'Cloud sync settings';
+      second.textContent = currentQueueCount > 0 ? 'Cloud sync settings' : 'View queue';
+      emTitle.textContent = 'No music playing';
+      emCopy.textContent = 'Play on a supported site to capture listening history.';
+    } else {
+      pill.textContent = cloudReconnect ? 'Cloud reconnect needed' : 'Setup required';
+      title.textContent = cloudReconnect ? 'Reconnect Google Drive' : 'Choose how to sync history';
+      copy.textContent = cloudReconnect
+        ? 'Open Settings to reconnect Google. Your local listening history is safe.'
+        : cloudHistoryStatus?.configured
+          ? 'Connect Google Drive in Settings, or pair your phone on the local network.'
+          : 'Pair your phone in the Pair tab to sync through your local network.';
+      primary.textContent = cloudHistoryStatus?.configured ? 'Google Drive settings' : 'Pair your phone';
+      second.textContent = cloudHistoryStatus?.configured ? 'Pair your phone' : 'View queue';
+      emTitle.textContent = cloudReconnect ? 'Google connection expired' : 'Choose a sync destination';
+      emCopy.textContent = cloudReconnect
+        ? 'Reconnect Google Drive from Settings.'
+        : 'Google Drive and LAN pairing are separate sync options.';
+    }
     return;
   }
 
@@ -1420,12 +1454,24 @@ document.getElementById('btn-unpair')?.addEventListener('click', (e) => {
 
 document.getElementById('home-primary-action')?.addEventListener('click', () => {
   if (currentYoutubeSuggestion) { allowCurrentYoutubeChannel(); return; }
-  if (!currentPairing) { switchTab('pairing'); return; }
+  if (!currentPairing) {
+    const ready = !!cloudHistoryStatus?.enabled && !!cloudHistoryStatus.connected
+      && !cloudHistoryStatus.needsInteractiveAuth;
+    switchTab(ready && currentQueueCount > 0 ? 'queue' :
+      cloudHistoryStatus?.configured ? 'settings' : 'pairing');
+    return;
+  }
   switchTab(currentQueueCount > 0 || currentNowPlaying?.title ? 'queue' : 'pairing');
 });
 document.getElementById('home-secondary-action')?.addEventListener('click', () => {
   if (currentYoutubeSuggestion) { blockCurrentYoutubeChannel(); return; }
-  if (!currentPairing) { switchTab('queue'); return; }
+  if (!currentPairing) {
+    const ready = !!cloudHistoryStatus?.enabled && !!cloudHistoryStatus.connected
+      && !cloudHistoryStatus.needsInteractiveAuth;
+    switchTab(ready && currentQueueCount === 0 || !cloudHistoryStatus?.configured ?
+      'queue' : ready ? 'settings' : 'pairing');
+    return;
+  }
   switchTab(currentQueueCount > 0 || currentNowPlaying?.title ? 'pairing' : 'queue');
 });
 document.getElementById('queue-open-pairing')?.addEventListener('click', () => switchTab('pairing'));
