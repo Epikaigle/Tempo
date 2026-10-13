@@ -1233,4 +1233,8 @@
     <string name="drive_last_message">Última sincronização: %1$s • %2$s</string>
     <string name="drive_last_counts">Última sincronização: %1$s • %2$d enviados • %3$d recebidos</string>
     <string name="drive_schedule_hint">Executa a cada seis horas, aproximadamente, ou ao tocar em Sincronizar agora.</string>
+    <string name="drive_signin_hint">Conecte o Google para sincronizar o histórico entre dispositivos. Este recurso é separado dos backups do aparelho. Seu histórico local permanece no telefone.</string>
+    <string name="drive_signin_action">Conectar Google para sincronizar histórico</string>
+    <string name="drive_device_backup_heading">BACKUPS DO DISPOSITIVO NO GOOGLE DRIVE</string>
+    <string name="drive_device_backup_explanation">Os backups salvam uma cópia para restauração. Eles são separados da sincronização automática do histórico de reprodução.</string>
 </resources>
