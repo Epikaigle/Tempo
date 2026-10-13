@@ -679,9 +679,11 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender)
       return { stats: await storage.getStats() };
 
     case MessageType.ClearQueue: {
-      const cleared = await storage.clearQueue();
+      const result = await storage.clearQueue();
       scheduleBadgeUpdate();
-      return { cleared };
+      // Never discard locally queued recordings that do not yet have a
+      // confirmed Drive copy. The browser is still their only safe copy.
+      return result;
     }
 
     case MessageType.DeletePlay: {
