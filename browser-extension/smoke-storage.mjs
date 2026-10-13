@@ -382,6 +382,8 @@ let queueRows = [
   { id: 503, status: 'queued', title: 'Imported', timestampUtc: baseTime + 3,
     driveImported: true },
   { id: 504, status: 'synced', title: 'LAN delivered', timestampUtc: baseTime + 4 },
+  { id: 505, status: 'queued', title: 'Deleted cloud batch', timestampUtc: baseTime + 5,
+    cloudSuppressed: true, driveUploadedAt: 456 },
 ];
 database.transaction = () => {
   const tx = {};
@@ -410,8 +412,8 @@ database.transaction = () => {
   return tx;
 };
 const cleanup = await storage.clearQueue();
-assert.deepEqual(cleanup, { cleared: 2, protected: 1 });
-assert.deepEqual(queueRows.map(row => row.id), [501, 504],
+assert.deepEqual(cleanup, { cleared: 2, protected: 2 });
+assert.deepEqual(queueRows.map(row => row.id), [501, 504, 505],
   'both unuploaded queued history and already LAN-delivered history remain intact');
 console.log('  ✓ Clear Queue keeps unsent local recordings while removing Drive-backed queued rows');
 
