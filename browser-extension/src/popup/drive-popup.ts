@@ -74,14 +74,12 @@ async function initDrivePanel(): Promise<void> {
   document.getElementById('btn-drive-delete')?.addEventListener('click', () => void deleteCloudHistory());
   document.getElementById('btn-drive-confirm')?.addEventListener('click', () => void commitSensitiveAction());
   document.getElementById('btn-drive-cancel')?.addEventListener('click', () => {
-    resetConfirmation();
-    void refreshStatus();
+    cancelConfirmation();
   });
   document.addEventListener('keydown', (event: KeyboardEvent) => {
     if (event.key === 'Escape' && pendingConfirmation) {
       event.preventDefault();
-      resetConfirmation();
-      void refreshStatus();
+      cancelConfirmation();
     }
   });
 
@@ -118,6 +116,14 @@ function resetConfirmation(): void {
   const cancel = document.getElementById('btn-drive-cancel') as HTMLButtonElement | null;
   if (confirm) confirm.disabled = false;
   if (cancel) cancel.disabled = false;
+}
+
+function cancelConfirmation(): void {
+  const triggerId = pendingConfirmation === 'delete' ? 'btn-drive-delete'
+    : pendingConfirmation === 'share-history' ? 'btn-drive-share' : null;
+  resetConfirmation();
+  if (triggerId) document.getElementById(triggerId)?.focus();
+  void refreshStatus();
 }
 
 function requestConfirmation(kind: 'delete' | 'share-history'): void {
@@ -216,6 +222,16 @@ async function fetchStatus(): Promise<DriveSyncStatus> {
 
 async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Promise<void> {
   oauthConfigured = status.configured;
+  // The Home tab must not require LAN pairing when Google Drive is
+  // independently authorized. Publish a read-only snapshot on every refresh.
+  document.dispatchEvent(new CustomEvent('tempo-drive-status', {
+    detail: {
+      configured: status.configured,
+      enabled: status.enabled,
+      connected: status.connected,
+      needsInteractiveAuth: status.needsInteractiveAuth,
+    },
+  }));
   const account = document.getElementById('drive-sync-account');
   if (account) {
     account.textContent = status.accountEmail ? `Google account: ${status.accountEmail}` : '';
