@@ -347,6 +347,26 @@ export async function getDrivePendingPlays(
     .slice(0, limit);
 }
 
+/** Pending cloud uploads for the verified account, including unowned recent plays.
+ * Uses the existing compound IndexedDB index instead of scanning all history.
+ */
+export async function getDrivePendingCount(accountSubject: string): Promise<number> {
+  if (!accountSubject.trim()) return 0;
+  const db = await openDb();
+  const countOwner = (owner: string): Promise<number> => new Promise((resolve, reject) => {
+    const tx = db.transaction(PLAYS_STORE, 'readonly');
+    const request = tx.objectStore(PLAYS_STORE).index('drivePendingIndexKey')
+      .count(IDBKeyRange.bound([owner, -Number.MAX_VALUE], [owner, Number.MAX_VALUE]));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    tx.onabort = () => reject(tx.error ?? new Error('Drive count read aborted'));
+  });
+  const [owned, unowned] = await Promise.all([
+    countOwner(accountSubject), countOwner(UNOWNED_DRIVE_QUEUE),
+  ]);
+  return owned + unowned;
+}
+
 /**
  * Preserve ownership of every existing play before switching Google accounts.
  * This transaction commits BEFORE the new account can sync. Rows recorded after
