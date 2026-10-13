@@ -36,7 +36,11 @@ async function openPopup(initial, responseStatus, instance) {
     'btn-drive-confirm', 'btn-drive-cancel']) {
     nodes.set(id, makeNode());
   }
-  globalThis.document = { getElementById: id => nodes.get(id) ?? null, createElement: makeNode };
+  const documentHandlers = {};
+  globalThis.document = {
+    getElementById: id => nodes.get(id) ?? null, createElement: makeNode,
+    addEventListener(type, fn) { documentHandlers[type] = fn; },
+  };
   globalThis.window = { setTimeout, clearTimeout };
   globalThis.chrome = { runtime: { connect() {
     let receive;
@@ -51,7 +55,7 @@ async function openPopup(initial, responseStatus, instance) {
   } } };
   await import(`${pathToFileURL(out).href}?instance=${instance}`);
   await settle();
-  return { nodes, commands };
+  return { nodes, commands, documentHandlers };
 }
 
 let popup = await openPopup(status, { ...status, connected: true, needsInteractiveAuth: false }, 1);
@@ -125,4 +129,18 @@ assert.equal(popup.commands.filter(x => x === 'delete' || x === 'share-history')
   'switching or cancelling a pending action cannot leak an earlier destructive command');
 console.log('  ✓ switching confirmation targets never executes the previous action');
 
-console.log('\\n5 Drive popup scenarios passed');
+popup.nodes.get('btn-drive-delete').handlers.click();
+await settle();
+let escapePrevented = false;
+popup.documentHandlers.keydown({
+  key: 'Escape',
+  preventDefault() { escapePrevented = true; },
+});
+await settle();
+assert.equal(escapePrevented, true);
+assert.equal(popup.nodes.get('drive-sync-confirmation').style.display, 'none');
+assert.equal(popup.commands.filter(x => x === 'delete').length, 0,
+  'Escape must cancel the review without deleting any cloud data');
+console.log('  ✓ keyboard Escape cancels a review without issuing a command');
+
+console.log('6 Drive popup scenarios passed');
