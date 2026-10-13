@@ -97,7 +97,8 @@ fun BackupRestoreScreen(
         driveOperation is DriveOperationState.Restoring ||
         driveOperation is DriveOperationState.Uploading ||
         importExportProgress != null
-    BackHandler(enabled = isOperationActive) { }
+    var confirmLeaveDuringOperation by remember { mutableStateOf(false) }
+    BackHandler(enabled = isOperationActive) { confirmLeaveDuringOperation = true }
     // Handle sign-in request from ViewModel
     val signInRequested by viewModel.signInRequested.collectAsState()
     val sessionRestoreRequested by viewModel.sessionRestoreRequested.collectAsState()
@@ -199,6 +200,25 @@ fun BackupRestoreScreen(
         }
     }
     
+    if (confirmLeaveDuringOperation) {
+        AlertDialog(
+            onDismissRequest = { confirmLeaveDuringOperation = false },
+            title = { Text(stringResource(R.string.backup_leave_title)) },
+            text = { Text(stringResource(R.string.backup_leave_warning)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmLeaveDuringOperation = false
+                    onNavigateBack()
+                }) { Text(stringResource(R.string.backup_leave_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmLeaveDuringOperation = false }) {
+                    Text(stringResource(R.string.drive_cancel))
+                }
+            }
+        )
+    }
+
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
@@ -206,8 +226,10 @@ fun BackupRestoreScreen(
                 title = { Text(stringResource(R.string.settings_backup_restore), color = TextPrimary) },
                 navigationIcon = {
                     IconButton(
-                        onClick = onNavigateBack,
-                        enabled = !isOperationActive
+                        onClick = {
+                            if (isOperationActive) confirmLeaveDuringOperation = true
+                            else onNavigateBack()
+                        }
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
@@ -255,6 +277,7 @@ fun BackupRestoreScreen(
                     driveOperation = driveOperation,
                     onSignIn = viewModel::requestSignIn,
                     onSignOut = viewModel::signOut,
+                    onSetDriveBackupEnabled = viewModel::setDriveBackupEnabled,
                     onBackupNow = viewModel::backupToDrive,
                     onRestore = viewModel::startDriveRestore,
                     onDelete = viewModel::deleteDriveBackup,
@@ -566,6 +589,7 @@ private fun GoogleDriveSection(
     driveOperation: DriveOperationState,
     onSignIn: () -> Unit,
     onSignOut: () -> Unit,
+    onSetDriveBackupEnabled: (Boolean) -> Unit,
     onBackupNow: () -> Unit,
     onRestore: (DriveBackupInfo) -> Unit,
     onDelete: (DriveBackupInfo) -> Unit,
@@ -688,7 +712,14 @@ private fun GoogleDriveSection(
                 }
                 
                 HorizontalDivider(color = GlassBorderSoft)
-                
+                SettingsSwitch(
+                    title = stringResource(R.string.drive_device_backup_toggle),
+                    subtitle = stringResource(R.string.drive_device_backup_toggle_hint),
+                    checked = backupSettings.isGoogleDriveEnabled,
+                    onCheckedChange = onSetDriveBackupEnabled
+                )
+                HorizontalDivider(color = GlassBorderSoft)
+
                 // Backup Now button
                 Row(
                     modifier = Modifier
