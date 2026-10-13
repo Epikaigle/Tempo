@@ -1128,4 +1128,8 @@
     <string name="drive_signin_action">Google für den Hörverlauf verbinden</string>
     <string name="drive_device_backup_heading">GOOGLE DRIVE-GERÄTESICHERUNGEN</string>
     <string name="drive_device_backup_explanation">Gerätesicherungen speichern einen Stand zur Wiederherstellung. Sie sind von der automatischen Synchronisierung des Hörverlaufs getrennt.</string>
+    <string name="drive_device_restore_title">Gerätesicherung wiederherstellen</string>
+    <string name="drive_device_restore_question">Gerätesicherung vom %1$s wiederherstellen? Das unterscheidet sich vom Wiederherstellen des synchronisierten Hörverlaufs.</string>
+    <string name="drive_device_backup_action_hint">Vollständige Gerätesicherung in Google Drive speichern</string>
+    <string name="drive_device_backup_now">Jetzt sichern</string>
 </resources>
