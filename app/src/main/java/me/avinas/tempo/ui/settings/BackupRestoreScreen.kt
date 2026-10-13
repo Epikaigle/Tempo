@@ -238,7 +238,15 @@ fun BackupRestoreScreen(
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // Google Drive Section
+                // Cross-device listening history is independent from device
+                // backups and visible even before Google sign-in.
+                DriveHistorySyncSection(
+                    isGoogleSignedIn = isSignedIn,
+                    onRequestGoogleSignIn = viewModel::requestSignIn
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Full-device Google Drive backup/restore.
                 GoogleDriveSection(
                     isSignedIn = isSignedIn,
                     googleAccount = googleAccount,
@@ -263,11 +271,6 @@ fun BackupRestoreScreen(
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                if (isSignedIn) {
-                    DriveHistorySyncSection()
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-
                 // Local Backup Section
                 LocalBackupSection(
                     uiState = uiState,
@@ -568,7 +571,13 @@ private fun GoogleDriveSection(
     onDelete: (DriveBackupInfo) -> Unit,
     onRefreshBackups: () -> Unit
 ) {
-    SettingsSectionHeader("Google Drive")
+    SettingsSectionHeader(stringResource(R.string.drive_device_backup_heading))
+    Text(
+        text = stringResource(R.string.drive_device_backup_explanation),
+        style = MaterialTheme.typography.bodySmall,
+        color = TextSecondary,
+        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+    )
     
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
