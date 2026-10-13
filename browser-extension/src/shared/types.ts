@@ -154,6 +154,8 @@ export interface DriveSyncStatus {
   lastUploaded: number;
   lastImported: number;
   needsInteractiveAuth: boolean;
+  /** Locally captured plays still awaiting first cloud upload for this account. */
+  pendingUploads?: number;
 }
 
 export interface Settings {
