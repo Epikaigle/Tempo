@@ -11,7 +11,6 @@ import { PermanentBatchError, fetchWithDeadline, isDriveRequestRetrySafe } from 
 import {
   APP_PROPERTY_SHA256,
   FILE_PREFIX,
-  type DriveFileRecord,
   uploadBatch,
   verifiedUpload,
   getDisableMarkerVersion,
