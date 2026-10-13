@@ -286,6 +286,16 @@ function refreshHomeState() {
   const banner  = document.getElementById('queue-banner')!;
   const heroCard = document.getElementById('home-hero-card')!;
 
+  if (!currentPairing && cloudHistoryStatus === null) {
+    banner.style.display = 'none';
+    pill.textContent = 'Checking sync destinations…';
+    title.textContent = 'Checking Google Drive and LAN';
+    copy.textContent = 'Verifying your available ways to sync listening history.';
+    primary.textContent = 'Settings';
+    second.textContent = 'View local history';
+    return;
+  }
+
   const cloudReady = !!cloudHistoryStatus?.configured && !!cloudHistoryStatus.enabled
     && !!cloudHistoryStatus.connected && !cloudHistoryStatus.needsInteractiveAuth;
   const cloudReconnect = !!cloudHistoryStatus?.configured && !!cloudHistoryStatus.enabled
@@ -311,6 +321,9 @@ function refreshHomeState() {
   const bannerTitle = banner.querySelector('.inline-banner-title');
   const bannerCopy = banner.querySelector('.text-muted');
   if (!currentPairing && !cloudReady) {
+    const setupButton = document.getElementById('queue-open-pairing');
+    if (setupButton) setupButton.textContent = cloudHistoryStatus?.configured
+      ? 'Google Drive settings' : 'Pair phone';
     if (bannerTitle) bannerTitle.textContent = cloudReconnect
       ? 'Google Drive reconnect required'
       : 'No sync destination connected';
@@ -329,7 +342,7 @@ function refreshHomeState() {
         ? `${drivePending} play${drivePending === 1 ? '' : 's'} awaiting Drive upload`
         : 'Connected through Google Drive';
       copy.textContent = 'Your listening history syncs through Google Drive. Phone pairing over LAN is optional.';
-      primary.textContent = drivePending > 0 ? `View Drive queue (${drivePending})` : 'Cloud sync settings';
+      primary.textContent = drivePending > 0 ? `View local history (${drivePending} pending Drive)` : 'Cloud sync settings';
       second.textContent = drivePending > 0 ? 'Cloud sync settings' : 'View queue';
       emTitle.textContent = 'No music playing';
       emCopy.textContent = 'Play on a supported site to capture listening history.';
@@ -634,9 +647,17 @@ if (queueListEl && !queueListDelegationBound) {
     e.stopPropagation();
     const id = parseInt(btn.dataset.id ?? '', 10);
     if (!id) return;
-    btn.disabled = true;
-    await send(MessageType.DeletePlay, { id });
-    refreshQueue();
+    armToConfirm(btn, 'Delete local copy?', async () => {
+      btn.disabled = true;
+      try {
+        await send(MessageType.DeletePlay, { id });
+        toast('Local play deleted', 'info');
+      } catch (error) {
+        toast(`Could not delete local play: ${String(error)}`, 'error');
+      } finally {
+        void refreshQueue();
+      }
+    });
   });
 }
 
@@ -1522,7 +1543,8 @@ document.getElementById('home-secondary-action')?.addEventListener('click', () =
   }
   switchTab(currentQueueCount > 0 || currentNowPlaying?.title ? 'pairing' : 'queue');
 });
-document.getElementById('queue-open-pairing')?.addEventListener('click', () => switchTab('pairing'));
+document.getElementById('queue-open-pairing')?.addEventListener('click', () =>
+  switchTab(cloudHistoryStatus?.configured ? 'settings' : 'pairing'));
 
 async function allowCurrentYoutubeChannel() {
   if (!currentYoutubeSuggestion) return;
