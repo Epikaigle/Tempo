@@ -322,18 +322,7 @@ export default function Settings() {
           </div>
         </div>
 
-        {settingsLoadState === "loading" ? (
-          <p role="status" aria-live="polite" style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-            Loading Google Drive connection status…
-          </p>
-        ) : settingsLoadState === "error" ? (
-          <div role="alert" style={{ fontSize: 13, color: "var(--danger)" }}>
-            <p>Could not load settings. Google Drive configuration has not been checked.</p>
-            <button className="btn btn-secondary" onClick={loadSettingsFromDisk}>
-              <RefreshCw size={16} />Retry loading settings
-            </button>
-          </div>
-        ) : !settings.drive_sync_configured ? (
+        {!settings.drive_sync_configured ? (
           <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
             Google Drive sync is unavailable in this build because its Desktop OAuth client is not configured.
             Local tracking and direct LAN sync continue to work normally.
