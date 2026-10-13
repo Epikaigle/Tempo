@@ -1132,4 +1132,13 @@
     <string name="drive_device_restore_question">Gerätesicherung vom %1$s wiederherstellen? Das unterscheidet sich vom Wiederherstellen des synchronisierten Hörverlaufs.</string>
     <string name="drive_device_backup_action_hint">Vollständige Gerätesicherung in Google Drive speichern</string>
     <string name="drive_device_backup_now">Jetzt sichern</string>
+    <string name="drive_device_backup_toggle">Gerätesicherungen auf Google Drive aktivieren</string>
+    <string name="drive_device_backup_toggle_hint">Unabhängig vom synchronisierten Hörverlauf. Aktivieren Sie dies nur für vollständige Gerätesicherungen.</string>
+    <string name="backup_leave_title">Laufenden Vorgang verlassen?</string>
+    <string name="backup_leave_warning">Beim Verlassen kann ein lokaler Import oder Export abgebrochen werden. Einige Cloud-Vorgänge laufen im Hintergrund weiter.</string>
+    <string name="backup_leave_confirm">Bildschirm verlassen</string>
+    <string name="drive_status_disabled">Synchronisierung ausgeschaltet</string>
+    <string name="drive_status_running">Hörverlauf wird synchronisiert…</string>
+    <string name="drive_status_failed">Synchronisierung fehlgeschlagen</string>
+    <string name="drive_status_failed_detail">Synchronisierung fehlgeschlagen: %1$s</string>
 </resources>
