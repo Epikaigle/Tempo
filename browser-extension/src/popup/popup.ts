@@ -290,6 +290,18 @@ function refreshHomeState() {
   const cloudReconnect = !!cloudHistoryStatus?.configured && !!cloudHistoryStatus.enabled
     && (!cloudHistoryStatus.connected || !!cloudHistoryStatus.needsInteractiveAuth);
   banner.style.display = currentPairing || cloudReady ? 'none' : '';
+  const bannerTitle = banner.querySelector('.inline-banner-title');
+  const bannerCopy = banner.querySelector('.text-muted');
+  if (!currentPairing && !cloudReady) {
+    if (bannerTitle) bannerTitle.textContent = cloudReconnect
+      ? 'Google Drive reconnect required'
+      : 'No sync destination connected';
+    if (bannerCopy) bannerCopy.textContent = cloudReconnect
+      ? 'Reconnect Google in Settings; locally queued plays are safe.'
+      : cloudHistoryStatus?.configured
+        ? 'Connect Google Drive in Settings, or pair a phone over LAN.'
+        : 'Pair Tempo on your phone to sync plays over LAN.';
+  }
 
   if (!currentPairing) {
     heroCard.style.display = currentNowPlaying?.title ? 'none' : '';
