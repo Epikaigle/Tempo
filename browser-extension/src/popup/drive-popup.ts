@@ -20,7 +20,6 @@ interface DriveCommandResponse {
 let busy = false;
 let oauthConfigured = false;
 let pendingConfirmation: 'delete' | 'share-history' | null = null;
-let confirmationTimer: ReturnType<typeof setTimeout> | null = null;
 
 void initDrivePanel();
 
@@ -78,6 +77,13 @@ async function initDrivePanel(): Promise<void> {
     resetConfirmation();
     void refreshStatus();
   });
+  document.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && pendingConfirmation) {
+      event.preventDefault();
+      resetConfirmation();
+      void refreshStatus();
+    }
+  });
 
   await refreshStatus();
 }
@@ -105,8 +111,6 @@ async function connectGoogle(): Promise<void> {
 // double-click. The popup owns this ephemeral state: closing it cancels the
 // request without ever issuing a destructive background command.
 function resetConfirmation(): void {
-  if (confirmationTimer !== null) clearTimeout(confirmationTimer);
-  confirmationTimer = null;
   pendingConfirmation = null;
   const panel = document.getElementById('drive-sync-confirmation');
   if (panel) panel.style.display = 'none';
@@ -136,12 +140,9 @@ function requestConfirmation(kind: 'delete' | 'share-history'): void {
       'Previously deleted recordings and LAN plays with unknown Google ownership will be uploaded to the selected Google account. Some recordings may belong to another account.';
     if (confirm) confirm.textContent = 'Upload older history';
   }
-  // Give people time to read the consequences, but do not leave a stale
-  // confirmation armed indefinitely if the popup remains open.
-  confirmationTimer = setTimeout(() => {
-    resetConfirmation();
-    void refreshStatus();
-  }, 60_000);
+  // Do not expire the review while a screen reader or keyboard user is
+  // reading it. The popup discards pending consent when it closes, and any
+  // unrelated action or loss of account authorization also cancels it.
   document.getElementById('btn-drive-cancel')?.focus();
 }
 
