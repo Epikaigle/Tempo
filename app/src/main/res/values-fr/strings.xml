@@ -1130,4 +1130,13 @@
     <string name="drive_device_restore_question">Restaurer la sauvegarde de l’appareil du %1$s ? Cette opération est différente de la récupération des écoutes synchronisées.</string>
     <string name="drive_device_backup_action_hint">Enregistrer une sauvegarde complète de l’appareil sur Google Drive</string>
     <string name="drive_device_backup_now">Sauvegarder</string>
+    <string name="drive_device_backup_toggle">Activer les sauvegardes de l’appareil sur Drive</string>
+    <string name="drive_device_backup_toggle_hint">Indépendant des écoutes synchronisées. Activez uniquement pour sauvegarder les données de l’appareil sur Drive.</string>
+    <string name="backup_leave_title">Quitter pendant une opération ?</string>
+    <string name="backup_leave_warning">Quitter cet écran peut interrompre un import ou un export local. Certaines opérations cloud continuent en arrière-plan.</string>
+    <string name="backup_leave_confirm">Quitter l’écran</string>
+    <string name="drive_status_disabled">Synchronisation désactivée</string>
+    <string name="drive_status_running">Synchronisation de l’historique…</string>
+    <string name="drive_status_failed">Échec de la synchronisation</string>
+    <string name="drive_status_failed_detail">Échec de la synchronisation : %1$s</string>
 </resources>
