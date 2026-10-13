@@ -26,7 +26,6 @@ const MANUAL_FALLBACK_AFTER_SECONDS = 30;
 type DiscoveryState = 'qr' | 'scanning' | 'manual' | 'success';
 
 let currentNowPlaying: NowPlaying | null = null;
-let lastNpIdentity = '';     // identity gate for now-playing DOM writes
 let currentYoutubeSuggestion: YoutubeChannelSuggestion | null = null;
 let currentPairing: PairingInfo | null = null;
 let currentQueueCount = 0;
