@@ -356,21 +356,25 @@ export default function Settings() {
                 <RefreshCw size={16} />
                 {driveAction === "sync" ? "Syncing…" : "Sync now"}
               </button>
+              <button className="btn btn-secondary" disabled={driveBusy}
+                onClick={() => handleDriveAction("restore")}
+                title="Recover older Drive history without deleting local listening data">
+                <RefreshCw size={16} />
+                {driveAction === "restore" ? "Restoring…" : "Restore full history"}
+              </button>
             </div>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "8px 0 0" }}>
+              Restore checks all historical Google Drive batches and keeps your existing local plays.
+            </p>
             <details style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
               <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13 }}>
-                History recovery and account controls
+                Older-history sharing and account controls
               </summary>
               <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "8px 0 12px" }}>
-                Restore reads older cloud batches without deleting local plays.
-                Upload older history explicitly shares past local recordings with this Google account.
+                Upload older local history explicitly shares your past recordings with this Google account,
+                including previously deleted plays and potentially records from another Google account.
               </p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="btn btn-secondary" disabled={driveBusy}
-                  onClick={() => handleDriveAction("restore")}>
-                  <RefreshCw size={16} />
-                  {driveAction === "restore" ? "Restoring…" : "Restore full history"}
-                </button>
                 <button className="btn btn-secondary" disabled={driveBusy}
                   onClick={() => handleDriveAction("share-history")}>
                   <Cloud size={16} />
