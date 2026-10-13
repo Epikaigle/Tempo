@@ -9,7 +9,6 @@ import {
 } from './drive-auth';
 import { PermanentBatchError, fetchWithDeadline, isDriveRequestRetrySafe } from './drive-transport';
 import {
-  APP_PROPERTY_GENERATION,
   APP_PROPERTY_SHA256,
   FILE_PREFIX,
   type DriveFileRecord,
@@ -37,7 +36,6 @@ import {
   localVolumeFromWire,
   eventId,
   deterministicBatchId,
-  sha256Bytes,
   gzipJson,
   ungzipJson,
   isValidBatch,
