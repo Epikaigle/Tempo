@@ -1122,4 +1122,8 @@
     <string name="drive_last_message">Dernière synchro : %1$s • %2$s</string>
     <string name="drive_last_counts">Dernière synchro : %1$s • %2$d envoyées • %3$d reçues</string>
     <string name="drive_schedule_hint">Exécution environ toutes les six heures ou lorsque vous choisissez Synchroniser.</string>
+    <string name="drive_signin_hint">Connectez Google pour partager vos écoutes entre appareils. Cette fonction est distincte des sauvegardes complètes. Votre historique local reste sur le téléphone.</string>
+    <string name="drive_signin_action">Connecter Google pour synchroniser l’historique</string>
+    <string name="drive_device_backup_heading">SAUVEGARDES DE L’APPAREIL SUR GOOGLE DRIVE</string>
+    <string name="drive_device_backup_explanation">Les sauvegardes créent une copie pour restaurer l’appareil. Elles sont distinctes de la synchronisation automatique de vos écoutes.</string>
 </resources>
