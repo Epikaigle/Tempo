@@ -766,4 +766,13 @@
     <string name="drive_device_restore_question">Visszaállítja a(z) %1$s dátumú eszközmentést? Ez eltér a szinkronizált hallgatási előzmények visszaállításától.</string>
     <string name="drive_device_backup_action_hint">Teljes eszközmentés mentése a Google Drive-ba</string>
     <string name="drive_device_backup_now">Mentés most</string>
+    <string name="drive_device_backup_toggle">Eszközmentések engedélyezése a Google Drive-on</string>
+    <string name="drive_device_backup_toggle_hint">A hallgatási előzmények szinkronizálásától független. Csak teljes eszközmentéshez kapcsolja be.</string>
+    <string name="backup_leave_title">Kilépés folyamatban lévő művelet közben?</string>
+    <string name="backup_leave_warning">Kilépéskor a helyi import vagy export megszakadhat. Néhány felhőművelet a háttérben folytatódhat.</string>
+    <string name="backup_leave_confirm">Kilépés</string>
+    <string name="drive_status_disabled">Szinkronizálás kikapcsolva</string>
+    <string name="drive_status_running">Előzmények szinkronizálása…</string>
+    <string name="drive_status_failed">Szinkronizálás sikertelen</string>
+    <string name="drive_status_failed_detail">Szinkronizálás sikertelen: %1$s</string>
 </resources>
