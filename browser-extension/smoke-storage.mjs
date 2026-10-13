@@ -50,7 +50,10 @@ for (const abort of [false, true]) {
 
 // Exercise the actual IndexedDB query: local callbacks and remote overlap use
 // different windows, while two distinct IDs from one remote device survive.
-globalThis.IDBKeyRange = { bound: (lower, upper) => ({ lower, upper }) };
+globalThis.IDBKeyRange = {
+  bound: (lower, upper) => ({ lower, upper }),
+  only: value => ({ only: value }),
+};
 const baseTime = 1_700_000_000_000;
 let localRecords = [{
   title: 'Song', artist: 'Artist', timestampUtc: baseTime,
