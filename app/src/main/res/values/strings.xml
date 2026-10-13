@@ -1544,4 +1544,8 @@
     <string name="drive_last_message">Last sync: %1$s • %2$s</string>
     <string name="drive_last_counts">Last sync: %1$s • %2$d sent • %3$d received</string>
     <string name="drive_schedule_hint">Runs about every six hours and whenever you choose Sync now.</string>
+    <string name="drive_signin_hint">Connect Google to share listening history across devices. This is separate from full-device backups. Your local history stays on your phone.</string>
+    <string name="drive_signin_action">Connect Google for history sync</string>
+    <string name="drive_device_backup_heading">GOOGLE DRIVE DEVICE BACKUPS</string>
+    <string name="drive_device_backup_explanation">Device backups save a snapshot for recovery. They are separate from automatic cross-device listening-history sync.</string>
 </resources>
