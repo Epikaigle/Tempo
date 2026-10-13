@@ -1552,4 +1552,13 @@
     <string name="drive_device_restore_question">Restore the device backup from %1$s? This is different from restoring your listening history via cross-device sync.</string>
     <string name="drive_device_backup_action_hint">Save a full-device backup to Google Drive</string>
     <string name="drive_device_backup_now">Back up now</string>
+    <string name="drive_device_backup_toggle">Enable Google Drive device backups</string>
+    <string name="drive_device_backup_toggle_hint">Separate from listening-history sync. Turn on only if you want whole-device backups saved to Drive.</string>
+    <string name="backup_leave_title">Leave while work is in progress?</string>
+    <string name="backup_leave_warning">Leaving this screen may interrupt a local import or export. Some cloud operations can continue in the background.</string>
+    <string name="backup_leave_confirm">Leave screen</string>
+    <string name="drive_status_disabled">Sync disabled</string>
+    <string name="drive_status_running">Syncing listening history…</string>
+    <string name="drive_status_failed">Sync failed</string>
+    <string name="drive_status_failed_detail">Sync failed: %1$s</string>
 </resources>
