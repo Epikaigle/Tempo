@@ -1548,4 +1548,8 @@
     <string name="drive_signin_action">Connect Google for history sync</string>
     <string name="drive_device_backup_heading">GOOGLE DRIVE DEVICE BACKUPS</string>
     <string name="drive_device_backup_explanation">Device backups save a snapshot for recovery. They are separate from automatic cross-device listening-history sync.</string>
+    <string name="drive_device_restore_title">Restore device backup</string>
+    <string name="drive_device_restore_question">Restore the device backup from %1$s? This is different from restoring your listening history via cross-device sync.</string>
+    <string name="drive_device_backup_action_hint">Save a full-device backup to Google Drive</string>
+    <string name="drive_device_backup_now">Back up now</string>
 </resources>
