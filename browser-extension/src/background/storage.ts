@@ -280,34 +280,17 @@ export async function getOwnPlayIdentityInputs(accountSubject?: string): Promise
  * for a long time the database may temporarily exceed the normal 5k cap,
  * and those older pending rows must not become unreachable.
  */
+/**
+ * Return only owner-scoped Drive upload candidates; never fall back to a
+ * global timestamp scan that could mix previous Google identities.
+ */
 export async function getDrivePendingPlays(
-  limit = Number.MAX_SAFE_INTEGER,
-  accountSubject?: string,
+  limit: number,
+  accountSubject: string,
   after?: { timestampUtc: number; id: number },
 ): Promise<Play[]> {
+  if (!accountSubject.trim()) throw new Error('Verified Google account is required for Drive upload scan');
   const db = await openDb();
-  if (!accountSubject) {
-    // Compatibility for non-Drive consumers; production Drive sync always
-    // supplies a verified Google subject and uses the indexed code below.
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(PLAYS_STORE, 'readonly');
-      const matches: Play[] = [];
-      const request = tx.objectStore(PLAYS_STORE).index('timestampUtc')
-        .openCursor(after ? IDBKeyRange.lowerBound(after.timestampUtc) : undefined);
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor || matches.length >= limit) { resolve(matches); return; }
-        const play = cursor.value as Play;
-        if (play.id != null && !play.driveImported && !play.driveUploadedAt &&
-          (!after || play.timestampUtc > after.timestampUtc ||
-            (play.timestampUtc === after.timestampUtc && play.id > after.id))) matches.push(play);
-        cursor.continue();
-      };
-      request.onerror = () => reject(request.error);
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error ?? new Error('Drive queue scan failed'));
-    });
-  }
 
   const readOwner = (owner: string) => new Promise<Play[]>((resolve, reject) => {
     const tx = db.transaction(PLAYS_STORE, 'readonly');
@@ -533,8 +516,6 @@ export async function authorizeOlderDriveHistory(accountSubject: string): Promis
   });
 }
 
-/** Clear Drive-upload bookkeeping while preserving all local listening history. */
-/** Reset only the owning Google account after its deletion marker advances. */
 export async function getQueueCount(): Promise<number> {
   // Return cached value if fresh
   if (_cachedQueueCount !== null && (Date.now() - _queueCountCacheTime) < QUEUE_COUNT_CACHE_TTL_MS) {
