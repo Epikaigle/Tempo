@@ -183,6 +183,8 @@ sealed class DriveHistoryUiOperation {
 
 @Composable
 fun DriveHistorySyncSection(
+    isGoogleSignedIn: Boolean,
+    onRequestGoogleSignIn: () -> Unit,
     viewModel: DriveHistorySyncViewModel = hiltViewModel()
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -211,8 +213,25 @@ fun DriveHistorySyncSection(
                 subtitle = stringResource(R.string.drive_toggle_subtitle),
                 checked = settings.enabled,
                 onCheckedChange = viewModel::setEnabled,
-                enabled = !running
+                enabled = isGoogleSignedIn && !running
             )
+            if (!isGoogleSignedIn) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Text(
+                        stringResource(R.string.drive_signin_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                    Button(
+                        onClick = onRequestGoogleSignIn,
+                        enabled = !running,
+                        modifier = Modifier.padding(top = 8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = TempoPrimary)
+                    ) {
+                        Text(stringResource(R.string.drive_signin_action))
+                    }
+                }
+            }
             if (running && !settings.enabled) {
                 Row(modifier = Modifier.padding(start = 16.dp, bottom = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -222,7 +241,7 @@ fun DriveHistorySyncSection(
                 }
             }
 
-            if (settings.enabled) {
+            if (settings.enabled && isGoogleSignedIn) {
                 HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
