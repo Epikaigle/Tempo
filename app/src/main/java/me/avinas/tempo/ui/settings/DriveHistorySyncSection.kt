@@ -55,6 +55,7 @@ import me.avinas.tempo.data.drive.DriveHistorySyncManager
 import me.avinas.tempo.data.drive.DriveHistorySyncResult
 import me.avinas.tempo.data.drive.DriveHistorySyncSettings
 import me.avinas.tempo.data.drive.DriveHistorySyncSettingsManager
+import me.avinas.tempo.data.drive.DriveHistorySyncStatus
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
 import me.avinas.tempo.ui.components.SettingsSwitch
@@ -206,6 +207,7 @@ sealed class DriveHistoryUiOperation {
 @Composable
 fun DriveHistorySyncSection(
     isGoogleSignedIn: Boolean,
+    accountEmail: String?,
     onRequestGoogleSignIn: () -> Unit,
     viewModel: DriveHistorySyncViewModel = hiltViewModel()
 ) {
@@ -213,8 +215,15 @@ fun DriveHistorySyncSection(
     val operation by viewModel.operation.collectAsState()
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmShare by remember { mutableStateOf(false) }
+    LaunchedEffect(accountEmail, isGoogleSignedIn) {
+        // A prior account's success/error must not remain attached to a
+        // newly signed-in identity. The shared coordinator retains a genuine
+        // running operation across screen recreation.
+        viewModel.clearOperation()
+    }
 
-    val running = operation is DriveHistoryUiOperation.Running
+    val running = operation is DriveHistoryUiOperation.Running ||
+        settings.lastStatus == DriveHistorySyncStatus.RUNNING
 
     Text(
         text = stringResource(R.string.drive_heading),
@@ -408,13 +417,20 @@ fun DriveHistorySyncSection(
 
 @Composable
 private fun historySyncSubtitle(settings: DriveHistorySyncSettings): String {
+    if (!settings.enabled) return stringResource(R.string.drive_status_disabled)
     val last = settings.lastSyncTime?.let {
         SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(it))
     } ?: stringResource(R.string.drive_never)
-    return when {
-        settings.lastMessage != null -> stringResource(R.string.drive_last_message, last, settings.lastMessage)
-        settings.lastSyncTime != null ->
+    return when (settings.lastStatus) {
+        DriveHistorySyncStatus.RUNNING -> stringResource(R.string.drive_status_running)
+        DriveHistorySyncStatus.FAILED -> settings.lastMessage?.let {
+            stringResource(R.string.drive_status_failed_detail, it)
+        } ?: stringResource(R.string.drive_status_failed)
+        DriveHistorySyncStatus.SUCCESS -> if (settings.lastMessage != null) {
+            stringResource(R.string.drive_last_message, last, settings.lastMessage)
+        } else {
             stringResource(R.string.drive_last_counts, last, settings.lastUploaded, settings.lastImported)
-        else -> stringResource(R.string.drive_schedule_hint)
+        }
+        DriveHistorySyncStatus.NEVER -> stringResource(R.string.drive_schedule_hint)
     }
 }
