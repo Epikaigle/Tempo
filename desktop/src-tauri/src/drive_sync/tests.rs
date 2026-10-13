@@ -1,6 +1,6 @@
 use super::*;
 use flate2::{write::GzEncoder, Compression};
-use reqwest::{Method, StatusCode};
+use reqwest::Method;
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
