@@ -61,6 +61,7 @@ function formatDriveSyncTime(timestamp: number | null): string {
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType>(defaultSettings);
+  const [settingsLoadState, setSettingsLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [logLevel, setLogLevelLocal] = useState("INFO");
@@ -71,10 +72,20 @@ export default function Settings() {
   const [driveAction, setDriveAction] = useState<DriveSyncAction | null>(null);
   const [driveNotice, setDriveNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
+  const loadSettingsFromDisk = () => {
+    setSettingsLoadState("loading");
+    void getSettings()
+      .then((value) => {
+        setSettings(value);
+        setSettingsLoadState("ready");
+      })
+      .catch(() => {
+        setSettingsLoadState("error");
+      });
+  };
+
   useEffect(() => {
-    getSettings()
-      .then(setSettings)
-      .catch(() => {});
+    loadSettingsFromDisk();
     getAutostartEnabled()
       .then(setAutostartEnabledLocal)
       .catch(() => {});
@@ -285,7 +296,18 @@ export default function Settings() {
           </div>
         </div>
 
-        {!settings.drive_sync_configured ? (
+        {settingsLoadState === "loading" ? (
+          <p role="status" aria-live="polite" style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+            Loading Google Drive connection status…
+          </p>
+        ) : settingsLoadState === "error" ? (
+          <div role="alert" style={{ fontSize: 13, color: "var(--danger)" }}>
+            <p>Could not load settings. Google Drive configuration has not been checked.</p>
+            <button className="btn btn-secondary" onClick={loadSettingsFromDisk}>
+              <RefreshCw size={16} />Retry loading settings
+            </button>
+          </div>
+        ) : !settings.drive_sync_configured ? (
           <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
             Google Drive sync is unavailable in this build because its Desktop OAuth client is not configured.
             Local tracking and direct LAN sync continue to work normally.
