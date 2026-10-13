@@ -1241,4 +1241,13 @@
     <string name="drive_device_restore_question">Restaurar o backup do dispositivo de %1$s? Isso é diferente de restaurar o histórico de reprodução sincronizado.</string>
     <string name="drive_device_backup_action_hint">Salvar backup completo do dispositivo no Google Drive</string>
     <string name="drive_device_backup_now">Fazer backup</string>
+    <string name="drive_device_backup_toggle">Ativar backups do dispositivo no Google Drive</string>
+    <string name="drive_device_backup_toggle_hint">Separado da sincronização do histórico musical. Ative apenas para fazer backup completo do dispositivo.</string>
+    <string name="backup_leave_title">Sair durante uma operação?</string>
+    <string name="backup_leave_warning">Sair desta tela pode interromper a importação ou exportação local. Algumas operações na nuvem continuam em segundo plano.</string>
+    <string name="backup_leave_confirm">Sair da tela</string>
+    <string name="drive_status_disabled">Sincronização desativada</string>
+    <string name="drive_status_running">Sincronizando histórico de reprodução…</string>
+    <string name="drive_status_failed">Falha na sincronização</string>
+    <string name="drive_status_failed_detail">Falha na sincronização: %1$s</string>
 </resources>
