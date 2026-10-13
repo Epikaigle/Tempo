@@ -50,6 +50,16 @@ async function initDrivePanel(): Promise<void> {
       <button class="btn btn-ghost btn-sm" id="btn-drive-disconnect" style="display:none;">Disconnect</button>
       <button class="btn btn-danger btn-sm" id="btn-drive-delete" style="display:none;" aria-label="Delete cloud history">Delete cloud history</button>
     </div>
+    <div id="drive-sync-confirmation" role="group" aria-labelledby="drive-sync-confirm-title"
+         aria-describedby="drive-sync-confirm-description"
+         style="display:none; margin:0 12px 12px; padding:12px; border:1px solid var(--border); border-radius:8px;">
+      <div class="setting-label" id="drive-sync-confirm-title"></div>
+      <p class="setting-desc" id="drive-sync-confirm-description" style="margin:6px 0 12px;"></p>
+      <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        <button class="btn btn-danger btn-sm" id="btn-drive-confirm">Confirm</button>
+        <button class="btn btn-ghost btn-sm" id="btn-drive-cancel">Cancel</button>
+      </div>
+    </div>
     <div class="setting-desc" style="padding:0 12px 12px; opacity:.75;">Drive sync is off by default. Local tracking and direct LAN sync continue to work without Google.</div>
   `;
 
@@ -63,6 +73,11 @@ async function initDrivePanel(): Promise<void> {
   document.getElementById('btn-drive-share')?.addEventListener('click', () => void shareHistory());
   document.getElementById('btn-drive-disconnect')?.addEventListener('click', () => void execute('disconnect'));
   document.getElementById('btn-drive-delete')?.addEventListener('click', () => void deleteCloudHistory());
+  document.getElementById('btn-drive-confirm')?.addEventListener('click', () => void commitSensitiveAction());
+  document.getElementById('btn-drive-cancel')?.addEventListener('click', () => {
+    resetConfirmation();
+    void refreshStatus();
+  });
 
   await refreshStatus();
 }
@@ -86,59 +101,63 @@ async function connectGoogle(): Promise<void> {
   await execute('connect');
 }
 
-// Chrome/Firefox MV3 popups do not reliably support native confirm().
- // Use an explicit two-click confirmation with a visible description and a
- // cancel-on-timeout path. Each confirmation is scoped to its own action.
+// Confirmation is separate from the triggering action, unlike an ambiguous
+// double-click. The popup owns this ephemeral state: closing it cancels the
+// request without ever issuing a destructive background command.
 function resetConfirmation(): void {
-  if (confirmationTimer) clearTimeout(confirmationTimer);
+  if (confirmationTimer !== null) clearTimeout(confirmationTimer);
   confirmationTimer = null;
   pendingConfirmation = null;
-  for (const [id, label] of [
-    ['btn-drive-delete', 'Delete cloud history'],
-    ['btn-drive-share', 'Upload older local history'],
-  ]) {
-    const button = document.getElementById(id);
-    if (button) {
-      button.textContent = label;
-      button.setAttribute('aria-pressed', 'false');
-    }
-  }
+  const panel = document.getElementById('drive-sync-confirmation');
+  if (panel) panel.style.display = 'none';
+  const confirm = document.getElementById('btn-drive-confirm') as HTMLButtonElement | null;
+  const cancel = document.getElementById('btn-drive-cancel') as HTMLButtonElement | null;
+  if (confirm) confirm.disabled = false;
+  if (cancel) cancel.disabled = false;
 }
 
-async function confirmSensitiveAction(
-  kind: 'delete' | 'share-history',
-): Promise<void> {
+function requestConfirmation(kind: 'delete' | 'share-history'): void {
   if (busy) return;
-  if (pendingConfirmation === kind) {
-    resetConfirmation();
-    await execute(kind === 'delete' ? 'delete' : 'share-history');
-    return;
-  }
   resetConfirmation();
   pendingConfirmation = kind;
-  const button = document.getElementById(
-    kind === 'delete' ? 'btn-drive-delete' : 'btn-drive-share',
-  );
-  if (button) {
-    button.textContent = kind === 'delete' ? 'Confirm cloud deletion' : 'Confirm older upload';
-    button.setAttribute('aria-pressed', 'true');
+  const panel = document.getElementById('drive-sync-confirmation');
+  const title = document.getElementById('drive-sync-confirm-title');
+  const description = document.getElementById('drive-sync-confirm-description');
+  const confirm = document.getElementById('btn-drive-confirm');
+  if (panel) panel.style.display = '';
+  if (kind === 'delete') {
+    if (title) title.textContent = 'Delete shared Google Drive history?';
+    if (description) description.textContent =
+      'This removes Tempo history batches from Google Drive and turns off sync on linked devices as they reconnect. Local listening history on every device is kept.';
+    if (confirm) confirm.textContent = 'Delete cloud history';
+  } else {
+    if (title) title.textContent = 'Share older local listening history?';
+    if (description) description.textContent =
+      'Previously deleted recordings and LAN plays with unknown Google ownership will be uploaded to the selected Google account. Some recordings may belong to another account.';
+    if (confirm) confirm.textContent = 'Upload older history';
   }
-  setInlineStatus(kind === 'delete'
-    ? 'Click Confirm cloud deletion to delete shared Drive batches and turn off sync on linked devices. Local listening history stays on each device.'
-    : 'Click Confirm older upload to republish old local plays to this Google account, including previously deleted history. Records may belong to another Google account.',
-    true);
+  // Give people time to read the consequences, but do not leave a stale
+  // confirmation armed indefinitely if the popup remains open.
   confirmationTimer = setTimeout(() => {
     resetConfirmation();
     void refreshStatus();
-  }, 12_000);
+  }, 60_000);
+  document.getElementById('btn-drive-cancel')?.focus();
+}
+
+async function commitSensitiveAction(): Promise<void> {
+  if (busy || !pendingConfirmation) return;
+  const kind = pendingConfirmation;
+  resetConfirmation();
+  await execute(kind === 'delete' ? 'delete' : 'share-history');
 }
 
 async function deleteCloudHistory(): Promise<void> {
-  await confirmSensitiveAction('delete');
+  requestConfirmation('delete');
 }
 
 async function shareHistory(): Promise<void> {
-  await confirmSensitiveAction('share-history');
+  requestConfirmation('share-history');
 }
 
 async function execute(command: 'connect' | 'disconnect' | 'sync' | 'restore' | 'share-history' | 'delete'): Promise<void> {
@@ -223,6 +242,9 @@ async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Pro
 
   const active = status.enabled;
   const needsReconnect = active && (status.needsInteractiveAuth || !status.connected);
+  // Never leave an armed destructive action visible when auth or account
+  // status changes while the popup is open.
+  if (!active || needsReconnect) resetConfirmation();
   if (connect) {
     connect.style.display = !active || needsReconnect ? '' : 'none';
     connect.textContent = needsReconnect ? 'Reconnect Google' : 'Connect Google';
@@ -298,7 +320,7 @@ function setInlineStatus(message: string, isError = false): void {
 }
 
 function setButtonsDisabled(disabled: boolean): void {
-  for (const id of ['btn-drive-connect', 'btn-drive-sync', 'btn-drive-restore', 'btn-drive-share', 'btn-drive-disconnect', 'btn-drive-delete']) {
+  for (const id of ['btn-drive-connect', 'btn-drive-sync', 'btn-drive-restore', 'btn-drive-share', 'btn-drive-disconnect', 'btn-drive-delete', 'btn-drive-confirm', 'btn-drive-cancel']) {
     const button = document.getElementById(id) as HTMLButtonElement | null;
     if (button) button.disabled = disabled || (id === 'btn-drive-connect' && !oauthConfigured);
   }
