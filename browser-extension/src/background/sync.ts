@@ -4,10 +4,10 @@
  * rate-limit cooldowns, and alarm-based retries across worker hibernations.
  */
 
-import type { Play, SyncPayload, SyncPlay, SyncResponse, PairingInfo, ConnectionHistoryEntry } from '../shared/types';
+import type { SyncPayload, SyncResponse, PairingInfo } from '../shared/types';
 import * as storage from './storage';
 import { getDriveLanOrigin } from './drive-history';
-import { signRequest, buildJsonHeaders, encryptBody, decryptBody } from '../shared/security';
+import { signRequest, encryptBody, decryptBody } from '../shared/security';
 
 const IS_FIREFOX = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox');
 
