@@ -1126,4 +1126,8 @@
     <string name="drive_signin_action">Connecter Google pour synchroniser l’historique</string>
     <string name="drive_device_backup_heading">SAUVEGARDES DE L’APPAREIL SUR GOOGLE DRIVE</string>
     <string name="drive_device_backup_explanation">Les sauvegardes créent une copie pour restaurer l’appareil. Elles sont distinctes de la synchronisation automatique de vos écoutes.</string>
+    <string name="drive_device_restore_title">Restaurer une sauvegarde de l’appareil</string>
+    <string name="drive_device_restore_question">Restaurer la sauvegarde de l’appareil du %1$s ? Cette opération est différente de la récupération des écoutes synchronisées.</string>
+    <string name="drive_device_backup_action_hint">Enregistrer une sauvegarde complète de l’appareil sur Google Drive</string>
+    <string name="drive_device_backup_now">Sauvegarder</string>
 </resources>
