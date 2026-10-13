@@ -50,7 +50,6 @@ import me.avinas.tempo.ui.components.TempoSnackbar
 import me.avinas.tempo.ui.theme.*
 import me.avinas.tempo.ui.components.TempoDropdownMenu
 import me.avinas.tempo.ui.components.TempoDropdownMenuItem
-import me.avinas.tempo.ui.components.TempoIcons
 import me.avinas.tempo.utils.FormatUtils.formatBytes
 import java.text.SimpleDateFormat
 import java.util.*
