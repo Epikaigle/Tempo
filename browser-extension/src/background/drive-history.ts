@@ -315,6 +315,8 @@ export async function getDriveSyncStatus(): Promise<DriveSyncStatus> {
     lastUploaded: state.lastUploaded,
     lastImported: state.lastImported,
     needsInteractiveAuth,
+    pendingUploads: currentSubject && settings.driveSyncEnabled
+      ? await storage.getDrivePendingCount(currentSubject) : 0,
   };
 }
 
