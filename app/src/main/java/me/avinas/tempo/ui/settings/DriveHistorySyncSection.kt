@@ -67,12 +67,40 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import javax.inject.Inject
+import javax.inject.Singleton
+
+/** Keep an in-flight UI action visible if Android recreates the settings screen.
+ * The actual sync work already runs in applicationScope; the matching progress
+ * must not be tied to an individual ViewModel instance.
+ */
+@Singleton
+class DriveHistoryUiOperationCoordinator @Inject constructor() {
+    private val current = MutableStateFlow<DriveHistoryUiOperation>(DriveHistoryUiOperation.Idle)
+    val operation: StateFlow<DriveHistoryUiOperation> = current.asStateFlow()
+    private val busy = AtomicBoolean(false)
+
+    fun begin(): Boolean {
+        if (!busy.compareAndSet(false, true)) return false
+        current.value = DriveHistoryUiOperation.Running
+        return true
+    }
+
+    fun finish(result: DriveHistoryUiOperation) {
+        current.value = result
+        busy.set(false)
+    }
+
+    fun clear() {
+        if (!busy.get()) current.value = DriveHistoryUiOperation.Idle
+    }
+}
 
 @HiltViewModel
 class DriveHistorySyncViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val settingsManager: DriveHistorySyncSettingsManager,
     private val syncManager: DriveHistorySyncManager,
+    private val operationCoordinator: DriveHistoryUiOperationCoordinator,
     private val applicationScope: CoroutineScope
 ) : ViewModel() {
     val settings: StateFlow<DriveHistorySyncSettings> = settingsManager.settings.stateIn(
@@ -81,9 +109,7 @@ class DriveHistorySyncViewModel @Inject constructor(
         DriveHistorySyncSettings()
     )
 
-    private val _operation = MutableStateFlow<DriveHistoryUiOperation>(DriveHistoryUiOperation.Idle)
-    val operation: StateFlow<DriveHistoryUiOperation> = _operation.asStateFlow()
-    private val operationRunning = AtomicBoolean(false)
+    val operation: StateFlow<DriveHistoryUiOperation> = operationCoordinator.operation
 
     fun setEnabled(enabled: Boolean) {
         launchExclusive {
@@ -143,21 +169,17 @@ class DriveHistorySyncViewModel @Inject constructor(
         }
     }
 
-    fun clearOperation() {
-        if (!operationRunning.get()) _operation.value = DriveHistoryUiOperation.Idle
-    }
+    fun clearOperation() = operationCoordinator.clear()
 
     private fun launchExclusive(block: suspend () -> DriveHistoryUiOperation) {
-        if (!operationRunning.compareAndSet(false, true)) return
-        _operation.value = DriveHistoryUiOperation.Running
+        if (!operationCoordinator.begin()) return
         applicationScope.launch {
-            _operation.value = try {
+            val result = try {
                 block()
             } catch (e: Exception) {
                 DriveHistoryUiOperation.Error(e.message ?: context.getString(R.string.drive_operation_failed))
-            } finally {
-                operationRunning.set(false)
             }
+            operationCoordinator.finish(result)
         }
     }
 
