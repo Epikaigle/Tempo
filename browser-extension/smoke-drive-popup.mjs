@@ -30,6 +30,7 @@ async function openPopup(initial, responseStatus, instance) {
     appendChild(child) { nodes.set(child.id, child); },
   });
   for (const id of ['tab-settings', 'drive-sync-account', 'drive-sync-status',
+    'drive-sync-details', 'drive-sync-detail-text',
     'btn-drive-connect', 'btn-drive-sync', 'btn-drive-restore', 'btn-drive-share',
     'btn-drive-disconnect', 'btn-drive-delete', 'drive-sync-confirmation',
     'drive-sync-confirm-title', 'drive-sync-confirm-description',
@@ -161,4 +162,12 @@ assert.equal(popup.commands.filter(x => x === 'delete').length, 0,
   'Escape must cancel the review without deleting any cloud data');
 console.log('  ✓ keyboard Escape cancels a review without issuing a command');
 
-console.log('6 Drive popup scenarios passed');
+popup = await openPopup({ ...status, enabled: true, connected: true, needsInteractiveAuth: false,
+    lastError: '2 invalid Google Drive history batch(es) were skipped (e.g. history_invalid.json: checksum mismatch). Repair or remove affected files, then Restore all history.' },
+  { ...status, connected: true, needsInteractiveAuth: false }, 6);
+assert.match(popup.nodes.get('drive-sync-status').textContent, /history records need attention/);
+assert.equal(popup.nodes.get('drive-sync-details').style.display, '');
+assert.match(popup.nodes.get('drive-sync-detail-text').textContent, /checksum mismatch/);
+console.log('  ✓ long repair warnings remain readable and their full detail is accessible');
+
+console.log('7 Drive popup scenarios passed');
