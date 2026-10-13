@@ -170,4 +170,14 @@ assert.equal(popup.nodes.get('drive-sync-details').style.display, '');
 assert.match(popup.nodes.get('drive-sync-detail-text').textContent, /checksum mismatch/);
 console.log('  ✓ long repair warnings remain readable and their full detail is accessible');
 
-console.log('7 Drive popup scenarios passed');
+popup = await openPopup({ ...status, connected: true, needsInteractiveAuth: false },
+  { ...status, connected: true, needsInteractiveAuth: false }, 7);
+assert.equal(typeof popup.documentHandlers['tempo-drive-sync-request'], 'function',
+  'Queue must be able to use the same real cloud command as Drive Settings');
+popup.documentHandlers['tempo-drive-sync-request']();
+await settle();
+assert.deepEqual(popup.commands, ['status', 'sync'],
+  'the Queue Drive button must issue cloud sync, not the phone-only SYNC_NOW message');
+console.log('  ✓ Queue Drive action calls the authenticated cloud transport');
+
+console.log('8 Drive popup scenarios passed');
