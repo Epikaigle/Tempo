@@ -1124,4 +1124,8 @@
     <string name="drive_last_message">Letzte Synchronisierung: %1$s • %2$s</string>
     <string name="drive_last_counts">Letzte Synchronisierung: %1$s • %2$d gesendet • %3$d empfangen</string>
     <string name="drive_schedule_hint">Automatisch etwa alle sechs Stunden und beim Tippen auf Jetzt synchronisieren.</string>
+    <string name="drive_signin_hint">Verbinden Sie Google, um den Hörverlauf zwischen Geräten zu synchronisieren. Dies ist unabhängig von Gerätesicherungen. Lokale Daten bleiben auf dem Telefon.</string>
+    <string name="drive_signin_action">Google für den Hörverlauf verbinden</string>
+    <string name="drive_device_backup_heading">GOOGLE DRIVE-GERÄTESICHERUNGEN</string>
+    <string name="drive_device_backup_explanation">Gerätesicherungen speichern einen Stand zur Wiederherstellung. Sie sind von der automatischen Synchronisierung des Hörverlaufs getrennt.</string>
 </resources>
