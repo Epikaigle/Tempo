@@ -19,7 +19,8 @@ await esbuild.build({
       contents: args.path === './storage' ? `
         export const getSettings = async () => ({ ...globalThis.fixture.settings });
         export const saveSettings = async value => { globalThis.fixture.settings = value; };
-        export const getDrivePendingPlays = async (limit, owner, after) => {
+        export const getDrivePendingCount = async () => globalThis.fixture.pendingCount ?? 0;
+      export const getDrivePendingPlays = async (limit, owner, after) => {
           globalThis.fixture.scanCalls.push({ limit, owner, after });
           return globalThis.fixture.plays
             .filter(play => !globalThis.fixture.marked.some(entry => entry.id === play.id))
