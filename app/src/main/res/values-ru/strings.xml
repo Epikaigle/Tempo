@@ -1358,4 +1358,13 @@
     <string name="drive_device_restore_question">Восстановить резервную копию устройства от %1$s? Это не то же самое, что восстановить синхронизированную историю прослушиваний.</string>
     <string name="drive_device_backup_action_hint">Сохранить полную резервную копию устройства в Google Drive</string>
     <string name="drive_device_backup_now">Создать копию</string>
+    <string name="drive_device_backup_toggle">Включить резервные копии устройства в Google Drive</string>
+    <string name="drive_device_backup_toggle_hint">Отдельно от синхронизации истории прослушиваний. Включайте только для сохранения резервных копий устройства.</string>
+    <string name="backup_leave_title">Выйти во время операции?</string>
+    <string name="backup_leave_warning">При выходе локальный импорт или экспорт может прерваться. Некоторые облачные операции продолжаются в фоне.</string>
+    <string name="backup_leave_confirm">Выйти</string>
+    <string name="drive_status_disabled">Синхронизация выключена</string>
+    <string name="drive_status_running">Синхронизация истории прослушиваний…</string>
+    <string name="drive_status_failed">Ошибка синхронизации</string>
+    <string name="drive_status_failed_detail">Ошибка синхронизации: %1$s</string>
 </resources>
