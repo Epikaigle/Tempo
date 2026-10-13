@@ -1354,4 +1354,8 @@
     <string name="drive_signin_action">Подключить Google для истории</string>
     <string name="drive_device_backup_heading">РЕЗЕРВНЫЕ КОПИИ УСТРОЙСТВА В GOOGLE DRIVE</string>
     <string name="drive_device_backup_explanation">Резервная копия сохраняет снимок для восстановления устройства. Это не то же самое, что автоматическая синхронизация истории прослушиваний.</string>
+    <string name="drive_device_restore_title">Восстановление резервной копии устройства</string>
+    <string name="drive_device_restore_question">Восстановить резервную копию устройства от %1$s? Это не то же самое, что восстановить синхронизированную историю прослушиваний.</string>
+    <string name="drive_device_backup_action_hint">Сохранить полную резервную копию устройства в Google Drive</string>
+    <string name="drive_device_backup_now">Создать копию</string>
 </resources>
