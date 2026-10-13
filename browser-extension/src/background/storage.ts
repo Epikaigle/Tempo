@@ -643,7 +643,7 @@ export async function clearQueue(): Promise<{ cleared: number; protected: number
       const cursor = request.result;
       if (!cursor) return;
       const play = cursor.value as Play;
-      if (play.driveUploadedAt || play.driveImported) {
+      if (!play.cloudSuppressed && (play.driveUploadedAt || play.driveImported)) {
         cursor.delete();
         cleared++;
       } else {
