@@ -97,7 +97,7 @@ Drive is a transport, not the local source of truth. This feature does **not** c
 
 ### Google OAuth configuration
 
-**Important:** the checked-in `dist/chrome` and `dist/firefox` directories are LAN-only development snapshots, not validated Drive-enabled releases. Do **not** publish them directly or assume `npm run build:chrome` without an OAuth client enables Google Drive.
+**Important:** generated `dist/chrome` and `dist/firefox` files are intentionally **not checked into Git**. Always build from source before loading an unpacked extension, or use verified artifacts produced by the release workflow. Developer builds without a registered OAuth client support LAN only; do **not** publish them as Drive-enabled releases.
 
 For production packages, register real Chrome and Firefox OAuth clients in the **same Google Cloud project as Android and Desktop**, then configure repository **Actions variables**:
 
