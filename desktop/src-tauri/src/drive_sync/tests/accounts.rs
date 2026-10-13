@@ -1,5 +1,7 @@
 //! Account-boundary, OAuth and deletion regression tests.
 use super::*;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[test]
 fn explicit_reassignment_reuploads_local_only_without_relaying_imports() {
