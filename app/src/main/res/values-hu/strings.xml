@@ -758,4 +758,8 @@
     <string name="drive_last_message">Utolsó szinkron: %1$s • %2$s</string>
     <string name="drive_last_counts">Utolsó szinkron: %1$s • %2$d küldve • %3$d fogadva</string>
     <string name="drive_schedule_hint">Körülbelül hatóránként automatikusan, vagy kézi indítással.</string>
+    <string name="drive_signin_hint">Csatlakoztassa a Google-fiókját a hallgatási előzmények eszközök közötti megosztásához. Ez különbözik a teljes eszközmentéstől. A helyi előzmények megmaradnak.</string>
+    <string name="drive_signin_action">Google csatlakoztatása az előzményekhez</string>
+    <string name="drive_device_backup_heading">GOOGLE DRIVE ESZKÖZMENTÉSEK</string>
+    <string name="drive_device_backup_explanation">Az eszközmentés visszaállítható pillanatképet készít. Ez nem azonos a hallgatási előzmények automatikus szinkronizálásával.</string>
 </resources>
