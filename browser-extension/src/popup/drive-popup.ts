@@ -39,6 +39,11 @@ async function initDrivePanel(): Promise<void> {
         <div class="setting-desc">Optional. Sync listening history through your private Google Drive app-data space when your phone and computer are on different networks.</div>
         <div id="drive-sync-account" class="setting-desc" style="margin-top:6px;"></div>
         <div id="drive-sync-status" class="setting-desc" role="status" aria-live="polite" style="margin-top:4px;">Checking…</div>
+        <details id="drive-sync-details" style="display:none; margin-top:8px;">
+          <summary class="setting-desc" style="cursor:pointer;">Technical details and repair instructions</summary>
+          <div id="drive-sync-detail-text" class="setting-desc"
+               style="margin-top:6px; overflow-wrap:anywhere; max-height:120px; overflow-y:auto;"></div>
+        </details>
       </div>
     </div>
     <div style="display:flex; gap:8px; padding:0 12px 12px; flex-wrap:wrap;">
@@ -275,7 +280,7 @@ async function renderStatus(status: DriveSyncStatus, replaceMessage = true): Pro
   if (!replaceMessage) return;
   if (status.lastError) {
     setInlineStatus(status.lastError, true);
-  } else if (active && status.needsInteractiveAuth) {
+  } else if (active && needsReconnect) {
     setInlineStatus('Google Drive needs you to reconnect.', true);
   } else if (active && status.lastSyncTime) {
     setInlineStatus(
@@ -330,10 +335,24 @@ function sendDriveCommand(command: string): Promise<DriveCommandResponse> {
 function setInlineStatus(message: string, isError = false): void {
   const el = document.getElementById('drive-sync-status');
   if (!el) return;
-  el.textContent = message;
+  const technical = document.getElementById('drive-sync-details');
+  const detailText = document.getElementById('drive-sync-detail-text');
+  const needsRepair = isError && /invalid Google Drive history batch|local play\(s\) could not be uploaded/i.test(message);
+  const tooLong = isError && message.length > 180;
+  const showDetails = needsRepair || tooLong;
+  el.textContent = needsRepair
+    ? 'Some history records need attention. Open technical details for repair instructions.'
+    : tooLong
+      ? 'Google Drive sync needs attention. Open technical details for more information.'
+      : message;
   el.style.color = isError ? '#ff7b7b' : '';
   el.setAttribute('role', isError ? 'alert' : 'status');
   el.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+  if (technical) {
+    technical.style.display = showDetails ? '' : 'none';
+    if (!showDetails) (technical as HTMLDetailsElement).open = false;
+  }
+  if (detailText) detailText.textContent = showDetails ? message : '';
 }
 
 function setButtonsDisabled(disabled: boolean): void {
