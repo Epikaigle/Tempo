@@ -386,16 +386,6 @@ function renderQueueItems(plays: Play[]) {
         </div>`).join('');
 }
 
-/** Full list fetch — only needed when the Queue tab is actually open. */
-async function refreshQueueItems() {
-  try {
-    const itemsR = await send(MessageType.GetQueueItems);
-    renderQueueItems(itemsR?.plays ?? []);
-  } catch (err) {
-    console.warn('[Tempo] refreshQueueItems failed:', err);
-  }
-}
-
 async function refreshQueue() {
   try {
     const [countR, itemsR, statusR] = await Promise.all([
@@ -1173,7 +1163,6 @@ document.getElementById('btn-rebuild-connection')?.addEventListener('click', asy
   panel.style.display = '';
 
   const token = currentPairing.authToken;
-  const port  = currentPairing.phonePort;
 
   // ── Step 1: mDNS ──────────────────────────────────────────────────────────
   const mdnsStep = addRebuildStep('📡', 'Trying mDNS (tempo-phone.local)…', 'active');
