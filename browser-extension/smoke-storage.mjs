@@ -370,6 +370,71 @@ assert.equal(localRecords[2].driveAccountSubject, 'google-b');
 console.log('  ✓ cloud deletion blocks earlier browser plays until explicit account-scoped authorization');
 
 
+// Destructive Queue cleanup must never erase the only local copy. The LAN
+// 'queued' flag does not imply that Google Drive has uploaded this play.
+let queueRows = [
+  { id: 501, status: 'queued', title: 'Not uploaded', timestampUtc: baseTime + 1 },
+  { id: 502, status: 'queued', title: 'On Drive', timestampUtc: baseTime + 2,
+    driveUploadedAt: 456 },
+  { id: 503, status: 'queued', title: 'Imported', timestampUtc: baseTime + 3,
+    driveImported: true },
+  { id: 504, status: 'synced', title: 'LAN delivered', timestampUtc: baseTime + 4 },
+];
+database.transaction = () => {
+  const tx = {};
+  tx.objectStore = () => ({
+    index(name) {
+      assert.equal(name, 'status');
+      return { openCursor() {
+        const req = {};
+        let pos = 0;
+        const entries = queueRows.filter(row => row.status === 'queued');
+        const next = () => {
+          const row = entries[pos++];
+          req.result = row ? {
+            value: row,
+            delete() { queueRows = queueRows.filter(item => item.id !== row.id); },
+            continue() { queueMicrotask(next); },
+          } : null;
+          req.onsuccess?.();
+          if (!row) queueMicrotask(() => tx.oncomplete?.());
+        };
+        queueMicrotask(next);
+        return req;
+      } };
+    },
+  });
+  return tx;
+};
+const cleanup = await storage.clearQueue();
+assert.deepEqual(cleanup, { cleared: 2, protected: 1 });
+assert.deepEqual(queueRows.map(row => row.id), [501, 504],
+  'both unuploaded queued history and already LAN-delivered history remain intact');
+console.log('  ✓ Clear Queue keeps unsent local recordings while removing Drive-backed queued rows');
+
+// Pending cloud totals are owner-bound and include genuinely unowned recordings,
+// but must never disclose another Google account's backlog.
+const countFor = owner => ({
+  'google-a': 3,
+  'tempo-unowned': 2,
+  'google-b': 7,
+}[owner] ?? 0);
+database.transaction = () => {
+  const tx = {};
+  tx.objectStore = () => ({ index(name) {
+    assert.equal(name, 'drivePendingIndexKey');
+    return { count(range) {
+      const req = { result: countFor(range.lower[0]) };
+      queueMicrotask(() => req.onsuccess?.());
+      return req;
+    } };
+  } });
+  return tx;
+};
+assert.equal(await storage.getDrivePendingCount('google-a'), 5);
+assert.equal(await storage.getDrivePendingCount('google-b'), 9);
+console.log('  ✓ Drive upload counters are scoped to each verified account');
+
 // Verify streaming lifetime statistics on an archive with over 100,000 retained plays.
 const longArchive = [
   ...Array.from({ length: 50_001 }, (_, i) => ({
