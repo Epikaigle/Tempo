@@ -37,10 +37,15 @@ async function openPopup(initial, responseStatus, instance) {
     nodes.set(id, makeNode());
   }
   const documentHandlers = {};
+  const emittedEvents = [];
   globalThis.document = {
     getElementById: id => nodes.get(id) ?? null, createElement: makeNode,
     addEventListener(type, fn) { documentHandlers[type] = fn; },
-    dispatchEvent(event) { documentHandlers[event.type]?.(event); return true; },
+    dispatchEvent(event) {
+      emittedEvents.push({ type: event.type, detail: event.detail });
+      documentHandlers[event.type]?.(event);
+      return true;
+    },
   };
   globalThis.CustomEvent = class {
     constructor(type, options) { this.type = type; this.detail = options?.detail; }
@@ -59,7 +64,7 @@ async function openPopup(initial, responseStatus, instance) {
   } } };
   await import(`${pathToFileURL(out).href}?instance=${instance}`);
   await settle();
-  return { nodes, commands, documentHandlers };
+  return { nodes, commands, documentHandlers, emittedEvents };
 }
 
 let popup = await openPopup(status, { ...status, connected: true, needsInteractiveAuth: false }, 1);
@@ -72,6 +77,9 @@ await settle();
 assert.deepEqual(popup.commands, ['status', 'connect']);
 assert.equal(popup.nodes.get('btn-drive-connect').style.display, 'none');
 assert.equal(popup.nodes.get('btn-drive-sync').style.display, '');
+assert.ok(popup.emittedEvents.some(event =>
+  event.type === 'tempo-drive-status' && event.detail.connected === true),
+  'Google Drive connectivity is published to Home even without LAN pairing');
 console.log('  ✓ expired authorization offers an interactive reconnect and restores sync controls');
 
 popup = await openPopup({ ...status, connected: true, needsInteractiveAuth: false },
@@ -99,6 +107,8 @@ await settle();
 assert.deepEqual(popup.commands, ['status', 'status']);
 assert.equal(popup.nodes.get('drive-sync-confirmation').style.display, 'none',
   'Cancel closes the review without executing a delete');
+assert.equal(popup.nodes.get('btn-drive-delete').focused, true,
+  'Cancel restores keyboard focus to the destructive-action trigger');
 popup.nodes.get('btn-drive-delete').handlers.click();
 await settle();
 popup.nodes.get('btn-drive-confirm').handlers.click();
@@ -145,6 +155,8 @@ popup.documentHandlers.keydown({
 await settle();
 assert.equal(escapePrevented, true);
 assert.equal(popup.nodes.get('drive-sync-confirmation').style.display, 'none');
+assert.equal(popup.nodes.get('btn-drive-delete').focused, true,
+  'Escape restores keyboard focus to the original trigger');
 assert.equal(popup.commands.filter(x => x === 'delete').length, 0,
   'Escape must cancel the review without deleting any cloud data');
 console.log('  ✓ keyboard Escape cancels a review without issuing a command');
