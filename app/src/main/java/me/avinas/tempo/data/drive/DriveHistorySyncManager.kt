@@ -828,12 +828,18 @@ class DriveHistorySyncManager @Inject constructor(
                     maxCreated = maxOf(maxCreated, file.createdAt)
                     continue
                 }
-                // Pre-delete data (including an upload that finished after the
-                // delete request) is never allowed to resurrect. Cleanup is best
-                // effort here because failing to delete stale data must not block
-                // current-generation sync.
-                appDataClient.delete(file.fileId)
-                clearRejectedBatch(accountSubject, file.fileId)
+                // Pre-delete data (including a late upload) must not resurrect.
+                // Cleanup is best effort: transient Drive DELETE failures must
+                // not stop later, current-generation history from downloading.
+                // Cancellation is different: always propagate it immediately.
+                try {
+                    appDataClient.delete(file.fileId)
+                    clearRejectedBatch(accountSubject, file.fileId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not remove obsolete Drive batch ${file.fileName}; ignoring it for import", e)
+                }
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
