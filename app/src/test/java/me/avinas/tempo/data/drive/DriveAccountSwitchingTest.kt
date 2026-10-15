@@ -1,5 +1,7 @@
 package me.avinas.tempo.data.drive
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -69,4 +71,39 @@ class DriveAccountSwitchingTest {
                 DriveHistorySyncManager.isPerAccountRestoreStateKey(key))
         }
     }
+    @Test
+    fun `cleanup best effort does not block history recovery on failed Drive DELETE`() = runBlocking {
+        val failures = mutableListOf<Exception>()
+        val cleaned = DriveHistorySyncManager.cleanupStaleBatchBestEffort(
+            delete = { Unit },
+            onError = failures::add,
+        )
+        assertTrue(cleaned)
+        assertTrue(failures.isEmpty())
+
+        val retryable = IllegalStateException("temporary Drive DELETE failure")
+        val ignored = DriveHistorySyncManager.cleanupStaleBatchBestEffort(
+            delete = { throw retryable },
+            onError = failures::add,
+        )
+        assertFalse(ignored)
+        assertEquals(listOf(retryable), failures)
+    }
+
+    @Test
+    fun `cleanup best effort never swallows coroutine cancellation`() = runBlocking {
+        val cancellation = CancellationException("worker stopped")
+        var failureReported = false
+        try {
+            DriveHistorySyncManager.cleanupStaleBatchBestEffort(
+                delete = { throw cancellation },
+                onError = { failureReported = true },
+            )
+            throw AssertionError("Cancellation must propagate")
+        } catch (actual: CancellationException) {
+            assertTrue(actual === cancellation)
+            assertFalse(failureReported)
+        }
+    }
+
 }
