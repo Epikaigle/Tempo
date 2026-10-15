@@ -76,7 +76,7 @@ class DriveAccountSwitchingTest {
         val failures = mutableListOf<Exception>()
         val cleaned = DriveHistorySyncManager.cleanupStaleBatchBestEffort(
             delete = { Unit },
-            onError = failures::add,
+            onError = { failure -> failures.add(failure); Unit },
         )
         assertTrue(cleaned)
         assertTrue(failures.isEmpty())
@@ -84,7 +84,7 @@ class DriveAccountSwitchingTest {
         val retryable = IllegalStateException("temporary Drive DELETE failure")
         val ignored = DriveHistorySyncManager.cleanupStaleBatchBestEffort(
             delete = { throw retryable },
-            onError = failures::add,
+            onError = { failure -> failures.add(failure); Unit },
         )
         assertFalse(ignored)
         assertEquals(listOf(retryable), failures)
