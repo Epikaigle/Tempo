@@ -92,6 +92,20 @@ fun DriveHistorySyncSection(
                 onCheckedChange = viewModel::setEnabled,
                 enabled = isGoogleSignedIn && !running
             )
+            // Remote deletion can stop Drive sync in the background, outside
+            // this ViewModel's UI operation. Keep its persisted reason visible
+            // when the toggle becomes disabled, including after reopening.
+            if (!settings.enabled && !settings.lastMessage.isNullOrBlank() &&
+                operation is DriveHistoryUiOperation.Idle
+            ) {
+                Text(
+                    text = settings.lastMessage.orEmpty(),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
             if (!isGoogleSignedIn) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Text(
