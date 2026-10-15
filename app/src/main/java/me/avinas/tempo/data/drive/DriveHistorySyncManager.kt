@@ -105,9 +105,6 @@ class DriveHistorySyncManager @Inject constructor(
             )
         }
 
-        /** Pure resume rule: existing per-subject progress always wins over
-         * global progress from the account that happened to be active last.
-         */
         /**
          * A local database restore can remap listening-row IDs for every Google
          * account. Reset upload/download cursors and row-specific diagnostics,
@@ -160,6 +157,10 @@ class DriveHistorySyncManager @Inject constructor(
         ): Boolean = owner == currentSubject &&
             (deletionMarkerUtc <= 0L || timestampUtc > deletionMarkerUtc ||
                 eventId <= authorizedOldLanThrough)
+
+        /** Pure resume rule: existing per-subject progress always wins over
+         * global progress from the account that happened to be active last.
+         */
 
         internal fun chooseAccountUploadCursor(
             savedForSubject: Long?,
