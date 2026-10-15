@@ -130,6 +130,24 @@ class DriveHistorySyncManager @Inject constructor(
             listedFileIds.contains(it.substringBefore('\t'))
         }
 
+        /**
+         * A failed cleanup of already-deleted cloud generations must not block
+         * importing current-generation batches. Never swallow cancellation.
+         */
+        internal suspend fun cleanupStaleBatchBestEffort(
+            delete: suspend () -> Unit,
+            onError: (Exception) -> Unit,
+        ): Boolean = try {
+            delete()
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            onError(e)
+            false
+        }
+
+
         /** Local row IDs fence the deletion snapshot; a capture made AFTER
          * the server-timestamped deletion is new history, even when the phone
          * only learns about the deletion after recording it offline.
@@ -832,14 +850,13 @@ class DriveHistorySyncManager @Inject constructor(
                 // Cleanup is best effort: transient Drive DELETE failures must
                 // not stop later, current-generation history from downloading.
                 // Cancellation is different: always propagate it immediately.
-                try {
-                    appDataClient.delete(file.fileId)
-                    clearRejectedBatch(accountSubject, file.fileId)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not remove obsolete Drive batch ${file.fileName}; ignoring it for import", e)
-                }
+                val deleted = cleanupStaleBatchBestEffort(
+                    delete = { appDataClient.delete(file.fileId) },
+                    onError = { error ->
+                        Log.w(TAG, "Could not remove obsolete Drive batch ${file.fileName}; ignoring it for import", error)
+                    }
+                )
+                if (deleted) clearRejectedBatch(accountSubject, file.fileId)
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
