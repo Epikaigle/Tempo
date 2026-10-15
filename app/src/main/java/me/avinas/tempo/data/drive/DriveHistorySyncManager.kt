@@ -108,11 +108,17 @@ class DriveHistorySyncManager @Inject constructor(
         /** Pure resume rule: existing per-subject progress always wins over
          * global progress from the account that happened to be active last.
          */
-        /** A restored database can remap row IDs in *every* Google account. */
+        /**
+         * A local database restore can remap listening-row IDs for every Google
+         * account. Reset upload/download cursors and row-specific diagnostics,
+         * but NEVER forget a previously accepted cloud deletion generation:
+         * those server checkpoints are independent of Room row IDs. Otherwise
+         * switching A -> B -> A could re-accept an old deletion marker and
+         * suppress legitimate post-deletion history.
+         */
         internal fun isPerAccountRestoreStateKey(key: String): Boolean =
             key.startsWith("${KEY_UPLOAD_CURSOR}:") ||
                 key.startsWith("${KEY_DOWNLOAD_CREATED_CURSOR}:") ||
-                key.startsWith("${KEY_ACCEPTED_DISABLE_VERSION}:") ||
                 key.startsWith("${KEY_REJECTED_FILES}:") ||
                 key.startsWith("${KEY_INVALID_EXPORT_IDS}:")
 
