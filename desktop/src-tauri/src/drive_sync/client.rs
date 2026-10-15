@@ -561,16 +561,25 @@ pub(crate) async fn download_remote_history(
                 max_created = max_created.max(created);
                 continue;
             }
-            clear_rejected_batch(&conn, account_subject, &file.id)?;
-            // Never allow a pre-delete batch (including an upload that completed
-            // after the deletion request) to resurrect in a newly accepted
-            // generation. Cleanup is best-effort so current history can proceed.
-            if let Err(err) = delete_file(access_token, &file.id).await {
-                log::warn!(
-                    "Could not remove stale Drive history batch {}: {}",
-                    file.name,
-                    err
-                );
+            // Never allow a pre-delete batch (including a late upload)
+            // to resurrect. A transient DELETE failure is non-blocking, but
+            // it is still a privacy/cleanup issue: keep a durable per-account
+            // warning until a subsequent full scan can retry or confirm removal.
+            match delete_file(access_token, &file.id).await {
+                Ok(()) => clear_rejected_batch(&conn, account_subject, &file.id)?,
+                Err(err) => {
+                    log::warn!(
+                        "Could not remove stale Drive history batch {}: {}",
+                        file.name,
+                        err
+                    );
+                    mark_rejected_batch(
+                        &conn,
+                        account_subject,
+                        &file,
+                        "Obsolete pre-deletion Drive file could not be removed",
+                    )?;
+                }
             }
             max_created = max_created.max(created);
             continue;
