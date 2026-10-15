@@ -101,7 +101,7 @@ pub(crate) async fn run_sync_locked_with_restore(
             })
             .unwrap_or_default();
         warnings.push(format!(
-            "{rejected} invalid Google Drive history batch(es) were skipped.{example} Repair or remove the affected files, then use Restore all history."
+            "{rejected} Google Drive history file(s) need attention.{example} Check the affected history, then use Restore full history to retry."
         ));
     }
     let warning = (!warnings.is_empty()).then(|| warnings.join(" "));
