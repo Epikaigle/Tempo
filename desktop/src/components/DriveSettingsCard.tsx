@@ -42,9 +42,6 @@ export default function DriveSettingsCard({
             Google Drive sync is enabled but the Google session is unavailable.
             Reconnect Google to resume cloud transfers; local history and LAN sync are unaffected.
           </p>
-          {settings.drive_sync_last_error && (
-            <p style={{ fontSize: 13, color: "var(--danger)" }}>{settings.drive_sync_last_error}</p>
-          )}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn btn-primary" disabled={driveBusy}
               onClick={() => handleDriveAction("connect")}>
@@ -88,9 +85,6 @@ export default function DriveSettingsCard({
             <div style={{ color: "var(--text-secondary)" }}>
               Last run: {settings.drive_sync_last_uploaded} sent · {settings.drive_sync_last_imported} received
             </div>
-            {settings.drive_sync_last_error && (
-              <div style={{ color: "var(--danger)" }}>{settings.drive_sync_last_error}</div>
-            )}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -150,6 +144,15 @@ export default function DriveSettingsCard({
         </div>
       )}
 
+      {/* Background Drive failures remain visible even after a remote
+          deletion has turned sync off; the disabled-state panel alone cannot
+          explain why syncing stopped. A newer action notice takes priority. */}
+      {settings.drive_sync_last_error && !driveNotice && (
+        <p role="alert" aria-live="assertive"
+          style={{ fontSize: 13, marginTop: 12, color: "var(--danger)" }}>
+          {settings.drive_sync_last_error}
+        </p>
+      )}
       {driveNotice && (
         <p role={driveNotice.kind === "error" ? "alert" : "status"} aria-live={driveNotice.kind === "error" ? "assertive" : "polite"}
           style={{ fontSize: 13, marginTop: 12,
