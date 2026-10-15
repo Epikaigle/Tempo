@@ -269,7 +269,75 @@ assert.equal(checkedHistoryQuery, true);
 assert.equal(fixture.stored[stateKey].rejectedBatches['google-a'][0].fileId, 'missing-kind');
 console.log('  ✓ malformed Drive metadata is visible and retained as a rejected batch');
 
-console.log('\n10 Drive lifecycle scenarios passed');
+// A transient failure to delete an obsolete Drive generation must not block
+// current-generation imports or silently hide incomplete cloud cleanup.
+reset();
+fixture.marker = 200;
+fixture.stored[stateKey].acceptedDisableVersion = 200;
+fixture.stored.tempoDriveDeviceId = 'local-device';
+const currentBatch = {
+  schema_version: 1, batch_id: batchId, source_device_id: 'remote-device',
+  source_device_name: 'Remote browser', source_platform: 'chrome_extension',
+  created_at_utc: 1_700_000_000_000, events: [event],
+};
+const currentBytes = gzipSync(JSON.stringify(currentBatch));
+files.length = 0;
+files.push(
+  {
+    id: 'obsolete-cleanup-file',
+    name: `tempo_history_v1_g100_remote-device_${batchId}.json.gz`,
+    createdTime: new Date(1_700_000_000_000).toISOString(),
+    appProperties: { tempo_generation: '100' },
+  },
+  {
+    id: 'current-history-file',
+    name: `tempo_history_v1_g200_remote-device_${batchId}.json.gz`,
+    createdTime: new Date(1_700_000_000_001).toISOString(),
+    size: String(currentBytes.length),
+    appProperties: {
+      tempo_kind: 'history_batch', tempo_schema: '1',
+      source_device_id: 'remote-device', source_platform: 'chrome_extension',
+      tempo_generation: '200', tempo_sha256: sha256(currentBytes),
+    },
+  },
+);
+let staleDeletionFails = true;
+globalThis.fetch = async (rawUrl, options = {}) => {
+  const url = new URL(rawUrl);
+  if (options.method === 'DELETE') {
+    if (staleDeletionFails) return Response.json({ error: 'Drive DELETE unavailable' }, { status: 403 });
+    files.splice(files.findIndex(file => file.id === 'obsolete-cleanup-file'), 1);
+    return new Response(null, { status: 204 });
+  }
+  if (url.searchParams.get('q')?.startsWith('name =')) {
+    return Response.json({ files: [{ id: 'marker', modifiedTime: new Date(200).toISOString() }] });
+  }
+  if (url.searchParams.get('q')?.startsWith('name contains')) return Response.json({ files });
+  if (url.searchParams.get('alt') === 'media' &&
+      url.pathname.endsWith('/current-history-file')) return new Response(currentBytes);
+  throw new Error(`Unexpected fixture request: ${url}`);
+};
+const suppressedWarnings = console.warn;
+console.warn = () => {};
+try {
+  const completedDespiteFailedCleanup = await drive.syncDriveHistory();
+  assert.equal(completedDespiteFailedCleanup.imported, 1,
+    'a failed stale DELETE must not block importing valid current-generation history');
+  assert.equal(fixture.stored[stateKey].rejectedBatches['google-a'][0].fileId,
+    'obsolete-cleanup-file', 'unfinished cloud cleanup must remain visible');
+  assert.match((await drive.getDriveSyncStatus()).lastError, /could not be removed/,
+    'the sync status must expose incomplete old-history deletion');
+
+  staleDeletionFails = false;
+  await drive.restoreDriveHistory();
+  assert.deepEqual(fixture.stored[stateKey].rejectedBatches['google-a'], [],
+    'a successful full-history retry must clear the stale cleanup warning');
+} finally {
+  console.warn = suppressedWarnings;
+}
+console.log('  ✓ stale cloud cleanup failures remain visible without blocking valid imports');
+
+console.log('\n11 Drive lifecycle scenarios passed');
 
 
 // Stale clients cannot delete current-generation uploads solely because Drive
