@@ -388,7 +388,7 @@ class DriveHistorySyncManager @Inject constructor(
                     val warningMessage = when {
                         rejectedList.isNotEmpty() -> {
                             val sample = rejectedList.first()
-                            "${rejectedList.size} invalid Google Drive history batch(es) were skipped (e.g. ${sample.fileName}: ${sample.reason}). Repair or remove affected files, then restore full history."
+                            "${rejectedList.size} Google Drive history file(s) need attention (e.g. ${sample.fileName}: ${sample.reason}). Check the affected history and run Restore full history to retry."
                         }
                         invalidCount > 0 -> "${invalidCount} local event(s) need metadata repair; preserved on device"
                         download.skipped > 0 -> "${download.skipped} duplicate event(s) ignored"
@@ -856,7 +856,15 @@ class DriveHistorySyncManager @Inject constructor(
                         Log.w(TAG, "Could not remove obsolete Drive batch ${file.fileName}; ignoring it for import", error)
                     }
                 )
-                if (deleted) clearRejectedBatch(accountSubject, file.fileId)
+                if (deleted) {
+                    clearRejectedBatch(accountSubject, file.fileId)
+                } else {
+                    // Cloud privacy cleanup may still be incomplete. Keep a
+                    // durable, account-scoped warning until a full Drive scan
+                    // confirms the file is gone or deletion succeeds.
+                    markRejectedBatch(accountSubject, file.fileId, file.fileName,
+                        "Obsolete pre-deletion Drive file could not be removed")
+                }
                 maxCreated = maxOf(maxCreated, file.createdAt)
                 continue
             }
