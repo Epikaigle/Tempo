@@ -627,6 +627,55 @@ fn rejected_cloud_batches_remain_visible_until_repaired_or_removed() {
 }
 
 #[test]
+fn failed_stale_cloud_cleanup_is_account_scoped_and_remains_visible() {
+    let (directory, conn) = history_storage_fixture();
+    conn.execute(
+        "UPDATE drive_sync_state SET account_subject = 'google-a' WHERE id = 1",
+        [],
+    )
+    .unwrap();
+    let mut file = fixture_file(&fixture_batch(), b"obsolete");
+    file.id = "undeleted-stale-file".into();
+    file.name = "tempo_history_v1_g1_old_device.json.gz".into();
+
+    mark_rejected_batch(
+        &conn,
+        "google-a",
+        &file,
+        "Obsolete pre-deletion Drive file could not be removed",
+    )
+    .unwrap();
+    assert_eq!(count_rejected_batches(&conn).unwrap(), 1);
+    drop(conn);
+
+    let reopened = open_sync_db(&directory).unwrap();
+    assert_eq!(
+        sample_rejected_batch(&reopened).unwrap(),
+        Some((
+            file.name.clone(),
+            "Obsolete pre-deletion Drive file could not be removed".into(),
+        )),
+        "a background cleanup failure must remain visible across restarts"
+    );
+    mark_rejected_batch(&reopened, "google-b", &file, "Other Google account").unwrap();
+    assert_eq!(count_rejected_batches(&reopened).unwrap(), 1);
+    clear_missing_rejected_batches(&reopened, "google-a", &[file.clone()]).unwrap();
+    assert_eq!(
+        count_rejected_batches(&reopened).unwrap(),
+        1,
+        "an existing stale file still needs a cleanup warning"
+    );
+    clear_missing_rejected_batches(&reopened, "google-a", &[]).unwrap();
+    assert_eq!(
+        count_rejected_batches(&reopened).unwrap(),
+        0,
+        "a complete Drive listing can retire warnings for removed files"
+    );
+    drop(reopened);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn deleted_cloud_archive_requires_explicit_opt_in_to_republish() {
     let (directory, conn) = history_storage_fixture();
     conn.execute(
