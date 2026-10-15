@@ -19,11 +19,13 @@ class DriveRestoreCursorInvalidationTest {
         }
     }
 
-    @Test fun `restore does not erase account or server disable identity metadata`() {
+    @Test fun `restore preserves global and per-account cloud deletion checkpoints`() {
         for (key in listOf(
             "google_account_subject",
             "google_account_email",
             "accepted_disable_marker_version",
+            "accepted_disable_marker_version:google-a",
+            "accepted_disable_marker_version:google-b",
             "device_id",
             "download_created_cursor",
         )) {
