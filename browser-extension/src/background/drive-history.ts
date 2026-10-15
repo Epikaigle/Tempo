@@ -294,7 +294,7 @@ export async function getDriveSyncStatus(): Promise<DriveSyncStatus> {
   const warnings: string[] = [];
   if (rejectedList.length > 0) {
     const sample = rejectedList[0];
-    warnings.push(`${rejectedList.length} invalid Google Drive history batch(es) were skipped (e.g. ${sample.fileName}: ${sample.reason}). Repair or remove the affected files, then use Restore all history.`);
+    warnings.push(`${rejectedList.length} Google Drive history file(s) need attention (e.g. ${sample.fileName}: ${sample.reason}). Check the affected history and use Restore all history to retry.`);
   }
   const rejectedLocal = currentSubject ? state.rejectedLocalPlays?.[currentSubject] : undefined;
   if (rejectedLocal && rejectedLocal.count > 0) {
@@ -649,10 +649,17 @@ async function downloadRemotePlays(
       // A pre-delete/in-flight stale batch must never resurrect after generation
       // N was accepted. Cleanup is best effort so current-generation sync can
       // continue even if this stale file races another client's deletion.
-      await deleteDriveFileStrict(accessToken, file.id).catch(err => {
+      try {
+        await deleteDriveFileStrict(accessToken, file.id);
+        rejectedMap = clearRejectedBatchRecord(rejectedMap, accountSubject, file.id);
+      } catch (err) {
+        // Do not stop importing current history, but do not falsely report
+        // that the old cloud file was removed. Persist this privacy warning
+        // until a subsequent full listing verifies cleanup.
         console.warn(`[Tempo] Could not remove stale Drive history batch ${file.name}`, err);
-      });
-      rejectedMap = clearRejectedBatchRecord(rejectedMap, accountSubject, file.id);
+        rejectedMap = markRejectedBatchRecord(rejectedMap, accountSubject, file.id, file.name,
+          'Obsolete pre-deletion Drive file could not be removed');
+      }
       maxCreated = Math.max(maxCreated, created);
       continue;
     }
