@@ -1,6 +1,7 @@
 package me.avinas.tempo.data.drive
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -48,16 +49,23 @@ class DriveAccountSwitchingTest {
     }
 
     @Test
-    fun `per account restore keys include download cursor, accepted disable version, and rejected files`() {
-        val keys = listOf(
+    fun `restore clears row-id progress but preserves accepted cloud deletion generations`() {
+        val resetKeys = listOf(
             "download_created_cursor:google-a",
-            "accepted_disable_marker_version:google-a",
             "drive_rejected_files:google-a",
             "upload_cursor:google-a",
             "invalid_drive_export_ids:google-a",
         )
-        for (key in keys) {
-            assertTrue("Key $key must be recognized as per-account restore state key",
+        for (key in resetKeys) {
+            assertTrue("Key $key must be reset after a local database restore",
+                DriveHistorySyncManager.isPerAccountRestoreStateKey(key))
+        }
+
+        for (key in listOf(
+            "accepted_disable_marker_version:google-a",
+            "accepted_disable_marker_version:google-b",
+        )) {
+            assertFalse("Key $key must survive restores to prevent stale re-deletion",
                 DriveHistorySyncManager.isPerAccountRestoreStateKey(key))
         }
     }
