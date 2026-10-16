@@ -577,22 +577,27 @@ interface ListeningEventDao {
      * Both return numbers only — never which track, artist or app — so the aggregate cannot
      * carry listening content even by accident. Imported history is excluded so the figure
      * reflects tracked listening rather than a one-off bulk import.
+     *
+     * The window is bounded rather than open-ended so one day's figure describes exactly one
+     * calendar day. A rolling `>= since` window drifts with whenever the worker happened to
+     * run — a 09:00 run covers 09:00-to-09:00, mixing two afternoons and double-counting
+     * yesterday's tail — and it files the result under a day it does not describe.
      */
     @Query(
         """
         SELECT COUNT(*) FROM listening_events
-        WHERE timestamp >= :sinceMillis AND source NOT LIKE '%import%'
+        WHERE timestamp >= :fromMillis AND timestamp < :toMillis AND source NOT LIKE '%import%'
     """,
     )
-    suspend fun getTrackedPlayCountSince(sinceMillis: Long): Int
+    suspend fun getTrackedPlayCountBetween(fromMillis: Long, toMillis: Long): Int
 
     @Query(
         """
         SELECT COUNT(DISTINCT source) FROM listening_events
-        WHERE timestamp >= :sinceMillis AND source NOT LIKE '%import%'
+        WHERE timestamp >= :fromMillis AND timestamp < :toMillis AND source NOT LIKE '%import%'
     """,
     )
-    suspend fun getDistinctTrackedSourcesSince(sinceMillis: Long): Int
+    suspend fun getDistinctTrackedSourcesBetween(fromMillis: Long, toMillis: Long): Int
 
     // ─── Desktop-specific stats queries ──────────────────────────────────────
 

@@ -66,9 +66,14 @@ object AnalyticsCatalog {
                 properties = listOf("by", "recovery"),
             ),
             AnalyticsCatalogEntry(
+                event = "daily_activity",
+                what = "That Tempo was used at all today — once a day, and it is what \"daily active users\" is counted from. Says nothing about what you did.",
+                properties = listOf("listener_down"),
+            ),
+            AnalyticsCatalogEntry(
                 event = "listening_activity",
                 what = "A daily count of listens — a range, once a day. Never what you listened to.",
-                properties = listOf("listens", "apps"),
+                properties = listOf("listens", "apps", "ui_opened"),
             ),
             AnalyticsCatalogEntry(
                 event = "db_migration",

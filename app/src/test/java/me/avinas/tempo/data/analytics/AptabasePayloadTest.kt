@@ -63,7 +63,7 @@ class AptabasePayloadTest {
     /** Counts leave the device as ranges, never as exact figures. */
     @Test
     fun `counts are bucketed rather than exact`() {
-        val json = payloadOf(ListeningActivity(listens = 37, distinctApps = 3))
+        val json = payloadOf(ListeningActivity(listens = 37, distinctApps = 3, uiOpened = true))
 
         assertTrue(json.contains("\"listens\":\"26-100\""))
         assertTrue(json.contains("\"apps\":\"1-5\""))

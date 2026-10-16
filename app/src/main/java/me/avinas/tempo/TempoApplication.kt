@@ -86,6 +86,12 @@ class TempoApplication :
     @Inject
     lateinit var analyticsConsent: AnalyticsConsent
 
+    @Inject
+    lateinit var analyticsDailyLedger: me.avinas.tempo.data.analytics.AnalyticsDailyLedger
+
+    @Inject
+    lateinit var analyticsInstallId: me.avinas.tempo.data.analytics.AnalyticsInstallId
+
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -346,6 +352,14 @@ class TempoApplication :
                 } else {
                     analyticsTracker.purge()
                     AnalyticsFlushWorker.cancel(this@TempoApplication)
+
+                    // Opting out deletes the install id as well as the unsent buffer, so
+                    // everything already recorded becomes unlinkable to anything sent after
+                    // turning reporting back on. Without this the same id would resume
+                    // reporting into the old history, and "stop reporting" would have meant
+                    // "pause for a while" rather than what it says.
+                    analyticsInstallId.reset()
+                    analyticsDailyLedger.clear()
                 }
             }
         }

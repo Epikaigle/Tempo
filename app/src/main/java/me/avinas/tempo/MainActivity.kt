@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.lifecycleScope
 import me.avinas.tempo.data.analytics.AccessResult
 import me.avinas.tempo.data.analytics.ExemptionResult
 import me.avinas.tempo.data.analytics.OnboardingAction
@@ -50,13 +51,25 @@ class MainActivity : AppCompatActivity() {
 
     @javax.inject.Inject
     lateinit var walkthroughController: me.avinas.tempo.ui.components.WalkthroughController
+
+    @javax.inject.Inject
+    lateinit var analyticsDailyReporter: me.avinas.tempo.data.analytics.AnalyticsDailyReporter
     
     private val navigationTrigger = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
+        // Opening the app's UI is one of the two things that count as using Tempo today, so
+        // this is where the day's active-user marker comes from for anyone who uses the app
+        // rather than just letting it track in the background. Fire-and-forget: a reporting
+        // write must never sit in front of drawing the first frame.
+        lifecycleScope.launch {
+            analyticsDailyReporter.markUiOpened()
+            analyticsDailyReporter.reportPresenceIfDue()
+        }
+
         checkNavigationIntent(intent)
 
         // Request notification permission on Android 13+

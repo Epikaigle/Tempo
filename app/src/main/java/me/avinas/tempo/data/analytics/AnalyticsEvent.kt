@@ -240,17 +240,47 @@ data class ServiceRevived(
 /**
  * Daily aggregate of listening activity. There is deliberately no per-listen event —
  * that would be both wasteful and a fingerprinting risk.
+ *
+ * Sent once for the **previous calendar day**, so [uiOpened] describes a whole day rather
+ * than whatever was true at the moment the app happened to be opened. This event answers
+ * "how much was Tempo used"; [DailyActivity] answers "was it used at all".
  */
 data class ListeningActivity(
     val listens: Int,
     val distinctApps: Int,
+    val uiOpened: Boolean,
 ) : AnalyticsEvent {
     override val name = "listening_activity"
     override val props: Map<String, Any> =
         mapOf(
             "listens" to AnalyticsBucket.count(listens),
             "apps" to AnalyticsBucket.count(distinctApps),
+            "ui_opened" to if (uiOpened) 1 else 0,
         )
+}
+
+/**
+ * The daily active-use marker — the event every DAU/WAU/MAU figure is counted from.
+ *
+ * Deliberately tiny, and deliberately separate from [ListeningActivity]. Two reasons:
+ *
+ *  - **It must never fail for someone else's reason.** [ListeningActivity] needs a database
+ *    read before it can be built, so it is emitted inside a `runCatching`. If that read ever
+ *    throws, the day's usage figure is lost — and if presence rode on the same event, so was
+ *    the day's active-user count. Presence is attempted unconditionally instead.
+ *  - **It has to carry the right date.** Presence is emitted at the day's *first* activity,
+ *    so the event's timestamp falls on the day the user was actually active. An end-of-day
+ *    aggregate sent the next morning would attribute every user to the wrong day and skew
+ *    every retention cohort by one.
+ *
+ * At most one is sent per calendar day; see `AnalyticsDailyLedger`.
+ */
+data class DailyActivity(
+    val listenerDown: Boolean,
+) : AnalyticsEvent {
+    override val name = "daily_activity"
+    override val props: Map<String, Any> =
+        mapOf("listener_down" to if (listenerDown) 1 else 0)
 }
 
 data class DbMigration(

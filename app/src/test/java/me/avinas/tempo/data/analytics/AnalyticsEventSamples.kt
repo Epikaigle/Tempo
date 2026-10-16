@@ -20,7 +20,10 @@ object AnalyticsEventSamples {
         BatteryExemptionResult(ExemptionResult.SKIPPED),
         TrackingGap(TrackingGapReason.OEM_KILL, 90_000L),
         ServiceRevived(RevivedBy.HEALTH_WORKER, RecoveryAction.FORCE_RESTART),
-        ListeningActivity(listens = 37, distinctApps = 3),
+        DailyActivity(listenerDown = true),
+        DailyActivity(listenerDown = false),
+        ListeningActivity(listens = 37, distinctApps = 3, uiOpened = true),
+        ListeningActivity(listens = 0, distinctApps = 0, uiOpened = true),
         DbMigration(fromVersion = 51, toVersion = 52),
         ImportRun(
             provider = ImportProvider.YOUTUBE_MUSIC,

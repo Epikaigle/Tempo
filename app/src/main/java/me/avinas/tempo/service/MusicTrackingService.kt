@@ -31,6 +31,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import me.avinas.tempo.MainActivity
 import me.avinas.tempo.R
+import me.avinas.tempo.data.analytics.AnalyticsDailyReporter
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.dao.UserPreferencesDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
@@ -91,6 +92,8 @@ class MusicTrackingService : NotificationListenerService() {
         fun appPreferenceDao(): me.avinas.tempo.data.local.dao.AppPreferenceDao
 
         fun refreshCoordinator(): RefreshCoordinator
+
+        fun analyticsDailyReporter(): AnalyticsDailyReporter
     }
 
     companion object {
@@ -829,6 +832,7 @@ class MusicTrackingService : NotificationListenerService() {
     private lateinit var manualContentMarkDao: ManualContentMarkDao
     private lateinit var appPreferenceDao: me.avinas.tempo.data.local.dao.AppPreferenceDao
     private lateinit var refreshCoordinator: RefreshCoordinator
+    private lateinit var analyticsDailyReporter: AnalyticsDailyReporter
     private lateinit var trackingRules: TrackingRulesPreferences
 
     /** Set during component init, read by [recoverPersistedSessions] later in onCreate. */
@@ -1481,6 +1485,7 @@ class MusicTrackingService : NotificationListenerService() {
             manualContentMarkDao = entryPoint.manualContentMarkDao()
             appPreferenceDao = entryPoint.appPreferenceDao()
             refreshCoordinator = entryPoint.refreshCoordinator()
+            analyticsDailyReporter = entryPoint.analyticsDailyReporter()
 
             // Manual overrides participate in synchronous MediaSession decisions, so load the
             // small Room table once before any session scan. A Flow keeps it fresh afterwards.
@@ -3314,6 +3319,12 @@ class MusicTrackingService : NotificationListenerService() {
         ) {
             return
         }
+
+        // The play cleared the minimum-duration and rule checks, so the user genuinely
+        // listened — one of the two things that count as using Tempo today, and therefore
+        // what opens the day in the active-user metrics. Launched rather than awaited so a
+        // reporting write can never delay saving the listen itself.
+        serviceScope.launch { analyticsDailyReporter.reportPresenceIfDue() }
 
         var trackId = session.trackId
         if (trackId == null) {
