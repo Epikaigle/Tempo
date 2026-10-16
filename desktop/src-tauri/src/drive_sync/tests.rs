@@ -393,6 +393,94 @@ fn temporally_close_different_versions_are_not_collapsed() {
 }
 
 #[test]
+fn near_simultaneous_replays_with_different_listening_lengths_survive() {
+    let (directory, conn) = history_storage_fixture();
+    let first = fixture_batch().events[0].clone();
+    let mut next = first.clone();
+    next.event_id = "a".repeat(64);
+    next.timestamp_utc += 500;
+    next.listened_ms = first.listened_ms.saturating_add(30_000);
+    assert!(insert_remote_event(&conn, "capture-one", &first).unwrap());
+    assert!(
+        insert_remote_event(&conn, "capture-two", &next).unwrap(),
+        "independent listening intervals cannot be reconciled by title/time alone"
+    );
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM scrobbles", [], |row| row.get::<_, i64>(0)).unwrap(),
+        2
+    );
+    drop(conn);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn ambiguous_three_producer_overlap_preserves_play_instead_of_guessing() {
+    let (directory, conn) = history_storage_fixture();
+    let event = fixture_batch().events[0].clone();
+    for delta in [0_i64, 1000] {
+        conn.execute(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc, duration_ms, listened_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![event.title, event.artist, event.timestamp_utc + delta,
+                event.duration_ms, event.listened_ms],
+        ).unwrap();
+    }
+    let mut third = event.clone();
+    third.timestamp_utc += 500;
+    third.event_id = "b".repeat(64);
+    assert!(
+        insert_remote_event(&conn, "new-capture", &third).unwrap(),
+        "two equally plausible local plays are not evidence for merging either one"
+    );
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM scrobbles", [], |row| row.get::<_, i64>(0)).unwrap(),
+        3
+    );
+    drop(conn);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn ten_year_archive_of_100_000_plays_pages_without_loss_or_expiry() {
+    let (directory, conn) = history_storage_fixture();
+    const TOTAL: i64 = 100_000;
+    let tx = conn.unchecked_transaction().unwrap();
+    {
+        let mut insert = tx.prepare(
+            "INSERT INTO scrobbles (title, artist, timestamp_utc, duration_ms, listened_ms)
+             VALUES ('Historical song', 'Artist', ?1, 180000, 160000)"
+        ).unwrap();
+        for i in 0..TOTAL {
+            // ~one listen per 52 minutes over ten years.
+            insert.execute([1_451_606_400_000_i64 + i * 3_153_600]).unwrap();
+        }
+    }
+    tx.commit().unwrap();
+
+    let mut after = None;
+    let mut seen = std::collections::HashSet::new();
+    loop {
+        let page = pending_local_plays_page(&conn, after, 1000).unwrap();
+        if page.is_empty() { break; }
+        assert!(page.len() <= 1000, "history must be read in bounded pages");
+        for play in &page {
+            assert!(seen.insert(play.id), "repeated/omitted keyset cursor row");
+        }
+        let last = page.last().unwrap();
+        after = Some((last.timestamp_utc, last.id));
+    }
+    assert_eq!(seen.len(), TOTAL as usize, "every listen is reachable once");
+    drop(conn);
+    let reopened = open_sync_db(&directory).unwrap();
+    let persisted: i64 = reopened.query_row(
+        "SELECT COUNT(*) FROM scrobbles", [], |row| row.get(0),
+    ).unwrap();
+    assert_eq!(persisted, TOTAL, "reopening cannot prune old listening history");
+    drop(reopened);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn independent_cross_device_replay_seven_seconds_later_stays_distinct() {
     let (directory, conn) = history_storage_fixture();
     let original = fixture_batch().events[0].clone();
