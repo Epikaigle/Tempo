@@ -61,7 +61,6 @@ enum class AnalyticsScreen {
     BACKGROUND_PROTECTION,
     LASTFM_IMPORT,
     SPOTIFY_JSON_IMPORT,
-    DEEZER_IMPORT,
     YOUTUBE_MUSIC_IMPORT,
     DESKTOP_LINK,
     ENRICHMENT_REPORT,
@@ -88,7 +87,6 @@ enum class TempoFeature {
     MANUAL_CONTENT_MARK,
     LASTFM_IMPORT,
     SPOTIFY_JSON_IMPORT,
-    DEEZER_IMPORT,
     YTMUSIC_IMPORT,
 
     /** Importing plays from a file exported by the Tempo Stats browser extension. */
@@ -121,7 +119,7 @@ enum class RevivedBy { HEALTH_WORKER, BOOT }
  */
 enum class RecoveryAction { REBIND, FORCE_RESTART, COMPONENT_REENABLE }
 
-enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, TEMPO_BACKUP, BROWSER_EXTENSION }
+enum class ImportProvider { LASTFM, SPOTIFY_JSON, YOUTUBE_MUSIC, TEMPO_BACKUP, BROWSER_EXTENSION }
 
 enum class ImportPhase { STARTED, COMPLETED, FAILED }
 
