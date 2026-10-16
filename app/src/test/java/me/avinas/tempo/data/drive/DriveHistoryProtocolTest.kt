@@ -14,6 +14,38 @@ import java.util.zip.GZIPOutputStream
 
 class DriveHistoryProtocolTest {
 
+    /**
+     * Cross-branch CI passes the browser's actual compressed wire payload to
+     * the Android decoder. Without the fixture env var, normal local unit
+     * test execution keeps using the self-contained protocol tests below.
+     */
+    @Test
+    fun `browser Chrome and Firefox history batches decode on Android`() {
+        val directory = System.getenv("TEMPO_BROWSER_FIXTURE_DIR") ?: return
+        val firstTimestamp = 1_700_000_000_000L
+        for (platform in listOf("chrome_extension", "firefox_extension")) {
+            val bytes = java.io.File(directory, "$"+"{platform}.json.gz").readBytes()
+            val batch = DriveHistoryProtocol.decodeCompressed(bytes)
+            assertEquals(1, batch.schemaVersion)
+            assertEquals("interop-browser", batch.sourceDeviceId)
+            assertEquals(platform, batch.sourcePlatform)
+            assertEquals(2, batch.events.size)
+            assertEquals(batch.batchId, DriveHistoryProtocol.createBatchId(batch.events))
+            assertEquals("Été 🔊", batch.events[0].title)
+            assertEquals("Björk", batch.events[0].artist)
+            assertEquals(firstTimestamp, batch.events[0].timestampUtc)
+            assertEquals(firstTimestamp + 800L, batch.events[1].timestampUtc)
+            assertNotEquals(batch.events[0].eventId, batch.events[1].eventId)
+            assertEquals(
+                DriveHistoryProtocol.createEventId(
+                    "interop-browser", 42L, firstTimestamp, "Été 🔊", "Björk"
+                ),
+                batch.events[0].eventId
+            )
+        }
+    }
+
+
     @Test
     fun `Drive batch creation does not retry an uncertain POST outcome`() {
         // A timeout or HTTP 5xx does not prove that Google Drive rejected
