@@ -722,4 +722,7 @@
     <string name="details_cover_load_error">A borítók betöltése nem sikerült</string>
     <string name="details_cover_save_error">A borító mentése nem sikerült</string>
     <string name="details_cover_restore_auto_error">Az automatikus borítóválasztás visszaállítása nem sikerült</string>
+    <string name="details_cover_preview_error">Az előnézet betöltése nem sikerült</string>
+    <string name="details_cover_current_hint">Jelenleg megjelenített borító</string>
+    <string name="details_cover_retry_source">Forrás újrapróbálása</string>
 </resources>

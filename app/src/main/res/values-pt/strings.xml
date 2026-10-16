@@ -1197,4 +1197,7 @@
     <string name="details_cover_load_error">Não foi possível carregar as capas</string>
     <string name="details_cover_save_error">Não foi possível guardar a capa</string>
     <string name="details_cover_restore_auto_error">Não foi possível restaurar a seleção automática</string>
+    <string name="details_cover_preview_error">Não foi possível carregar a pré-visualização da imagem</string>
+    <string name="details_cover_current_hint">Capa exibida atualmente</string>
+    <string name="details_cover_retry_source">Tentar novamente esta fonte</string>
 </resources>

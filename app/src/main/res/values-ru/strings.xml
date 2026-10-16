@@ -1314,4 +1314,7 @@
     <string name="details_cover_load_error">Не удалось загрузить обложки</string>
     <string name="details_cover_save_error">Не удалось сохранить обложку</string>
     <string name="details_cover_restore_auto_error">Не удалось восстановить автоматический выбор обложки</string>
+    <string name="details_cover_preview_error">Не удалось загрузить предпросмотр изображения</string>
+    <string name="details_cover_current_hint">Текущая отображаемая обложка</string>
+    <string name="details_cover_retry_source">Повторить этот источник</string>
 </resources>
