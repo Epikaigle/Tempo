@@ -641,14 +641,11 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return "recording:\"$escapedTitle\" AND artist:\"$escapedArtist\""
     }
 
-    private fun escapeLucene(s: String): String {
-        val specialChars = listOf("+", "-", "&&", "||", "!", "(", ")", "{", "}", "[", "]", "^", "\"", "~", "*", "?", ":", "\\", "/")
-        var result = s
-        for (char in specialChars) {
-            result = result.replace(char, "\\$char")
-        }
-        return result
-    }
+    /**
+     * Escape a value that is about to be interpolated into a MusicBrainz query.
+     * Delegates to [escapeLuceneQuery] so the rules stay unit-testable.
+     */
+    private fun escapeLucene(s: String): String = escapeLuceneQuery(s)
 
     /**
      * Fetch detailed metadata and store in database.
@@ -1476,3 +1473,29 @@ internal fun preserveUserSelectedArtwork(
 
     return replacement
 }
+
+/**
+ * Escape a value for use inside a quoted phrase of a MusicBrainz (Lucene) query.
+ *
+ * MusicBrainz is queried with strings such as `recording:"<title>" AND
+ * artist:"<artist>"`, and the interpolated values come from MediaSession metadata,
+ * imported tags, or the edit-title dialog — none of which are trusted. Anything
+ * that closes the phrase early lets crafted text append its own clauses.
+ *
+ * All metacharacters are replaced in a single scan. An earlier character-by-character
+ * version escaped `\` last, so every backslash it had just inserted was escaped
+ * again: `"` became `\\"` rather than `\"`, which in Lucene means a literal
+ * backslash followed by a *live* quote that terminates the phrase.
+ */
+internal fun escapeLuceneQuery(value: String): String =
+    LUCENE_SPECIAL_CHARS.replace(value) { "\\" + it.value }
+
+/**
+ * Lucene's special characters, plus the `&&`/`||` boolean operators. Matching them
+ * in one pass is what prevents a character from being escaped twice.
+ *
+ * `[` and `]` must appear escaped (`\[`, `\]`): inside a Java character class an
+ * unescaped `[` opens a nested class, so the pattern would fail to compile and take
+ * the whole file's initialiser down with it.
+ */
+private val LUCENE_SPECIAL_CHARS = Regex("""([+\-!(){}^"~*?:\\/\[\]]|&&|\|\|)""")
