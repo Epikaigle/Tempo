@@ -358,6 +358,54 @@ class DriveHistoryProtocolTest {
         assertTrue(failure?.message.orEmpty().contains("compressed size limit"))
     }
 
+    @Test
+    fun `100 thousand listens over ten years roundtrip in bounded Drive batches`() {
+        val total = 100_000
+        val pageSize = DriveHistoryProtocol.MAX_EVENTS_PER_BATCH
+        val seen = HashSet<String>(total)
+        val firstTimestamp = 1_451_606_400_000L // January 2016
+        val stepMs = 3_153_600L // Approximately 10 years in 100k listens
+        var restored = 0
+        var maxBatch = 0
+        for (start in 0 until total step pageSize) {
+            val events = (start until minOf(start + pageSize, total)).map { index ->
+                val timestamp = firstTimestamp + index.toLong() * stepMs
+                event("history", timestamp).copy(
+                    eventId = DriveHistoryProtocol.createEventId(
+                        "android-history-source", index.toLong() + 1, timestamp, "Song", "Artist"
+                    ),
+                    title = "Song"
+                )
+            }
+            val batch = DriveHistoryBatch(
+                batchId = DriveHistoryProtocol.createBatchId(events),
+                sourceDeviceId = "android-history-source",
+                sourceDeviceName = "Archive fixture",
+                sourcePlatform = "android",
+                createdAtUtc = events.last().timestampUtc,
+                events = events,
+            )
+            val decoded = DriveHistoryProtocol.decodeCompressed(DriveHistoryProtocol.encodeCompressed(batch))
+            assertEquals(batch.batchId, decoded.batchId)
+            assertEquals(events.size, decoded.events.size)
+            assertTrue(decoded.events.size <= pageSize)
+            assertTrue(decoded.events.zipWithNext().all { (a, b) -> a.timestampUtc < b.timestampUtc })
+            maxBatch = maxOf(maxBatch, decoded.events.size)
+            restored += decoded.events.size
+            decoded.events.forEach { assertTrue("distinct historic producer identity", seen.add(it.eventId)) }
+        }
+        assertEquals(total, restored)
+        assertEquals(total, seen.size)
+        assertEquals(pageSize, maxBatch)
+        // Re-decoding a historical batch does not create new producer IDs.
+        val oldest = event("history", firstTimestamp).copy(
+            eventId = DriveHistoryProtocol.createEventId(
+                "android-history-source", 1L, firstTimestamp, "Song", "Artist"
+            ), title = "Song"
+        )
+        assertTrue(oldest.eventId in seen)
+    }
+
     private fun event(id: String, timestamp: Long) = DriveHistoryEvent(
         eventId = if (id.matches(Regex("^[0-9a-f]{64}$"))) id else {
             DriveHistoryProtocol.createEventId(
