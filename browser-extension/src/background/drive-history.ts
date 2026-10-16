@@ -764,6 +764,7 @@ async function downloadRemotePlays(
           event.event_id,
           accountSubject,
           event.duration_ms,
+          event.listened_ms,
         );
       if (temporalDupe) {
         duplicates++;
