@@ -24,7 +24,7 @@ class DriveHistoryProtocolTest {
         val directory = System.getenv("TEMPO_BROWSER_FIXTURE_DIR") ?: return
         val firstTimestamp = 1_700_000_000_000L
         for (platform in listOf("chrome_extension", "firefox_extension")) {
-            val bytes = java.io.File(directory, "$"+"{platform}.json.gz").readBytes()
+            val bytes = java.io.File(directory, platform + ".json.gz").readBytes()
             val batch = DriveHistoryProtocol.decodeCompressed(bytes)
             assertEquals(1, batch.schemaVersion)
             assertEquals("interop-browser", batch.sourceDeviceId)
