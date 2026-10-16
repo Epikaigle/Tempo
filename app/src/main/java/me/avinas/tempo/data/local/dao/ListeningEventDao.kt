@@ -393,12 +393,16 @@ interface ListeningEventDao {
                 // A track can have two distinct quick replays inside this
                 // window. A first match depends on SQLite's unspecified row
                 // order and can bind the origin to the wrong playback.
-                val conflictIdx = nearestEligiblePlaybackIndex(
-                    acceptedSlots,
-                    incoming.timestamp,
-                    timestampOf = { it.timestamp },
-                    eligible = { isSamePlay(it, incoming) },
-                )
+                val conflictIdx = if (incomingOrigin != null) {
+                    uniqueEligiblePlaybackIndex(acceptedSlots) { isSamePlay(it, incoming) }
+                } else {
+                    nearestEligiblePlaybackIndex(
+                        acceptedSlots,
+                        incoming.timestamp,
+                        timestampOf = { it.timestamp },
+                        eligible = { isSamePlay(it, incoming) },
+                    )
+                }
                 if (conflictIdx < 0) {
                     toInsert.add(incoming)
                     val originMap = mutableMapOf<String, String>()
@@ -507,6 +511,14 @@ interface ListeningEventDao {
         if (slotDuration != null && slotDuration > 0L && incomingDuration != null && incomingDuration > 0L) {
             if (kotlin.math.abs(slotDuration - incomingDuration) > 10_000L) return false
         }
+
+        // Distinct listening lengths are evidence against a shared playback;
+        // exact producer aliases remain the authoritative way to deduplicate.
+        // Apply this guard only to cross-client Drive/LAN data so established
+        // local import reconciliation rules keep their existing behavior.
+        if ((slotDriveDevice != null || incomingDriveDevice != null) &&
+            slot.playDuration > 0L && incoming.playDuration > 0L &&
+            kotlin.math.abs(slot.playDuration - incoming.playDuration) > 10_000L) return false
 
         val sameSource = slot.source == incoming.source &&
             slotDriveDevice == null && incomingDriveDevice == null
