@@ -29,3 +29,21 @@ internal inline fun <T> nearestEligiblePlaybackIndex(
     }
     return best
 }
+
+/**
+ * A fuzzy Drive match is safe only when it identifies one eligible playback.
+ * Multiple nearby plays can represent independent replays: preserve incoming
+ * provenance instead of binding it to an arbitrary historical row.
+ */
+internal inline fun <T> uniqueEligiblePlaybackIndex(
+    slots: List<T>,
+    eligible: (T) -> Boolean,
+): Int {
+    var result = -1
+    for ((index, slot) in slots.withIndex()) {
+        if (!eligible(slot)) continue
+        if (result != -1) return -1
+        result = index
+    }
+    return result
+}
