@@ -62,10 +62,17 @@ class DeezerEnrichmentService @Inject constructor(
         if (me.avinas.tempo.utils.ArtistParser.isUnknownArtist(artist)) return null
 
         try {
-            val cleanArtist = me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
+            // Track metadata is interpolated into Deezer's `artist:"..." track:"..."`
+            // syntax, so quotes and backslashes are neutralised first: a crafted title
+            // must not be able to close a field early and append its own filters.
+            val cleanArtist = sanitizeDeezerSearchValue(
+                me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
+            )
             val titleVariants =
-                if (preserveExplicitTrackVersion) coverSearchTitleVariants(track)
-                else listOf(me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track))
+                (
+                    if (preserveExplicitTrackVersion) coverSearchTitleVariants(track)
+                    else listOf(me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track))
+                ).map(::sanitizeDeezerSearchValue)
             var hadSuccessfulStructuredResponse = false
             var lastStructuredError: Int? = null
 
@@ -185,8 +192,12 @@ class DeezerEnrichmentService @Inject constructor(
         return try {
             // Deezer advanced search syntax: artist:"..." track:"..."
             // Strip featured artists and clean title for Deezer search syntax
-            val cleanArtist = me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
-            val cleanTrack = me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track)
+            val cleanArtist = sanitizeDeezerSearchValue(
+                me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
+            )
+            val cleanTrack = sanitizeDeezerSearchValue(
+                me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(track)
+            )
             
             // Construct query: artist:'X' track:'Y'
             // We use standard quotes for Deezer syntax
@@ -274,3 +285,25 @@ class DeezerEnrichmentService @Inject constructor(
         }
     }
 }
+
+/**
+ * Make [value] safe to interpolate into a Deezer search query.
+ *
+ * Deezer's advanced search uses quoted fields (`artist:"..." track:"..."`), and the
+ * values come from untrusted track metadata. A title containing a double quote
+ * closes the field early, so `X" artist:"Y` would let crafted text append its own
+ * filters instead of being treated as a literal title.
+ *
+ * Quotes and backslashes are stripped rather than backslash-escaped: Deezer
+ * documents no escape sequence for them, so emitting `\"` would leak a literal
+ * backslash into the search term and break matching for legitimate titles such as
+ * `Say "Hello"`.
+ */
+internal fun sanitizeDeezerSearchValue(value: String): String =
+    value
+        .replace('"', ' ')
+        .replace('\\', ' ')
+        .replace(WHITESPACE_RUN, " ")
+        .trim()
+
+private val WHITESPACE_RUN = Regex("""\s+""")
