@@ -70,3 +70,41 @@ jobs:
             echo "::error::Desktop build workflow must not auto-publish releases."
             exit 1
           fi
+
+  browser-wire-compatibility:
+    name: Desktop decodes Chrome and Firefox fixtures
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    env:
+      TEMPO_BROWSER_FIXTURE_DIR: ${{ github.workspace }}/interop-fixtures
+    steps:
+      - name: Checkout Desktop PR head
+        uses: actions/checkout@v4
+      - name: Checkout Android/browser Drive PR head
+        uses: actions/checkout@v4
+        with:
+          ref: feat/cross-device-drive-sync
+          path: android-browser-interop
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: android-browser-interop/browser-extension/package-lock.json
+      - name: Generate real Chrome and Firefox gzip payloads
+        working-directory: android-browser-interop/browser-extension
+        run: |
+          npm ci
+          node emit-cross-client-drive-fixtures.mjs ../../interop-fixtures
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Desktop/Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev libdbus-1-dev build-essential pkg-config playerctl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+      - name: Decode browser fixtures using Desktop production codec
+        working-directory: desktop/src-tauri
+        run: cargo test --locked --all-targets chrome_and_firefox_browser_gzip_fixtures_decode_on_desktop
