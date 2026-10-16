@@ -90,6 +90,28 @@ class NearestPlaybackMatchTest {
     }
 
     @Test
+    fun `Drive windows never join sparse decades of the same song`() {
+        val firstTimestamp = 1_451_606_400_000L
+        val historical = (0 until 100_000).map {
+            firstTimestamp + it.toLong() * 3_153_600L
+        }
+        val windows = clusterDrivePlaybackWindows(
+            historical, ListeningEventDao.DRIVE_RECONCILIATION_WINDOW_MS,
+            timestampOf = { it },
+        )
+        assertEquals(100_000, windows.size)
+        assertEquals(100_000, windows.sumOf { it.size })
+        assertEquals(firstTimestamp, windows.first().single())
+        assertEquals(historical.last(), windows.last().single())
+
+        val overlap = clusterDrivePlaybackWindows(
+            listOf(0L, 1_500L, 4_500L, 20_000L), 2_000L,
+            timestampOf = { it },
+        )
+        assertEquals(listOf(listOf(0L, 1_500L, 4_500L), listOf(20_000L)), overlap)
+    }
+
+    @Test
     fun `playback match rejects candidates when duration differs by more than 10 seconds`() {
         data class PlaybackCandidate(val timestamp: Long, val durationMs: Long)
         val candidates = listOf(PlaybackCandidate(1_700_000_000_000L, 180_000L))
