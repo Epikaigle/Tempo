@@ -96,6 +96,8 @@ sealed class Screen(
 
     data object SpotifyJsonImport : Screen("spotify_json_import")
 
+    data object DeezerImport : Screen("deezer_import")
+
     data object YouTubeMusicImport : Screen("youtube_music_import")
 
     data object ExtensionImport : Screen("extension_import")
@@ -249,6 +251,7 @@ fun AppNavigation(
                             onNavigateToBackgroundProtection = { navController.navigate(Screen.BackgroundProtection.route) },
                             onNavigateToLastFmImport = { navController.navigate(Screen.LastFmImport.route) },
                             onNavigateToSpotifyJsonImport = { navController.navigate(Screen.SpotifyJsonImport.route) },
+                            onNavigateToDeezerImport = { navController.navigate(Screen.DeezerImport.route) },
                             onNavigateToYouTubeMusicImport = { navController.navigate(Screen.YouTubeMusicImport.route) },
                             onNavigateToExtensionImport = { navController.navigate(Screen.ExtensionImport.route) },
                             onNavigateToDesktop = { navController.navigate(Screen.DesktopLink.route) },
@@ -283,6 +286,12 @@ fun AppNavigation(
 
                     composable(Screen.SpotifyJsonImport.route) {
                         me.avinas.tempo.ui.spotify.SpotifyJsonImportScreen(
+                            onNavigateBack = { navController.popBackStack() },
+                        )
+                    }
+
+                    composable(Screen.DeezerImport.route) {
+                        me.avinas.tempo.ui.deezer.DeezerImportScreen(
                             onNavigateBack = { navController.popBackStack() },
                         )
                     }
