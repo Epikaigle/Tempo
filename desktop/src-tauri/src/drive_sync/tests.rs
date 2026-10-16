@@ -442,7 +442,7 @@ fn ambiguous_three_producer_overlap_preserves_play_instead_of_guessing() {
 
 #[test]
 fn ten_year_archive_of_100_000_plays_pages_without_loss_or_expiry() {
-    let (directory, conn) = history_storage_fixture();
+    let (directory, mut conn) = history_storage_fixture();
     const TOTAL: i64 = 100_000;
     let tx = conn.unchecked_transaction().unwrap();
     {
@@ -468,6 +468,13 @@ fn ten_year_archive_of_100_000_plays_pages_without_loss_or_expiry() {
         }
         let last = page.last().unwrap();
         after = Some((last.timestamp_utc, last.id));
+        if seen.len() == 42_000 {
+            // Simulate termination after a checkpoint. The next process must
+            // page from the last persisted (timestamp, id), not from OFFSET 0
+            // or a cursor silently reset by reopening the same SQLite file.
+            drop(conn);
+            conn = open_sync_db(&directory).unwrap();
+        }
     }
     assert_eq!(seen.len(), TOTAL as usize, "every listen is reachable once");
     drop(conn);
