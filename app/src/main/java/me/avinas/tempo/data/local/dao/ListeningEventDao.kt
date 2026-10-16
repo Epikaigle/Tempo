@@ -359,9 +359,24 @@ interface ListeningEventDao {
         val toDelete = mutableSetOf<Long>()
         val aliasesForExisting = mutableListOf<ListeningEventOrigin>()
         val newSlots = mutableMapOf<String, Slot>()
-        for ((trackId, trackEvents) in survivors.groupBy { it.track_id }) {
-            val minTs = trackEvents.minOf { it.timestamp } - RECONCILIATION_WINDOW_MS
-            val maxTs = trackEvents.maxOf { it.timestamp } + RECONCILIATION_WINDOW_MS
+        for ((trackId, allTrackEvents) in survivors.groupBy { it.track_id }) {
+            // Drive/LAN clocks use a strict two-second fuzzy window.
+            // A sparse ten-year import must not query every local play between
+            // its oldest and newest event (nor build a gigantic candidates list).
+            // Split only transport-origin events: legacy local imports retain
+            // their broader cross-source reconciliation semantics.
+            val transportOnly = allTrackEvents.all {
+                SourceAuthority.driveDeviceId(it.source) != null
+            }
+            val windows = if (transportOnly) clusterDrivePlaybackWindows(
+                allTrackEvents,
+                DRIVE_RECONCILIATION_WINDOW_MS,
+                timestampOf = { it.timestamp },
+            ) else listOf(allTrackEvents)
+            for (trackEvents in windows) {
+            val radius = if (transportOnly) DRIVE_RECONCILIATION_WINDOW_MS else RECONCILIATION_WINDOW_MS
+            val minTs = trackEvents.minOf { it.timestamp } - radius
+            val maxTs = trackEvents.maxOf { it.timestamp } + radius
             val existingAlive = getEventsForReconciliation(trackId, minTs, maxTs)
                 // A verified cloud import can reconcile only against events
                 // already proven to belong to that Google account. Previously
@@ -444,6 +459,7 @@ interface ListeningEventDao {
                     }
                     skipped++
                 }
+            }
             }
         }
 
