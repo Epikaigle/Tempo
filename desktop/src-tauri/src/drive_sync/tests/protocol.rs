@@ -4,6 +4,38 @@ use reqwest::StatusCode;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[test]
+fn chrome_and_firefox_browser_gzip_fixtures_decode_on_desktop() {
+    // The cross-client workflow supplies this directory. Ordinary Rust CI
+    // still executes the standalone protocol tests without a browser checkout.
+    let Ok(directory) = std::env::var("TEMPO_BROWSER_FIXTURE_DIR") else {
+        return;
+    };
+    let timestamp = 1_700_000_000_000_i64;
+    for platform in ["chrome_extension", "firefox_extension"] {
+        let bytes = std::fs::read(std::path::Path::new(&directory).join(format!("{platform}.json.gz")))
+            .expect("browser fixture must exist");
+        let batch = decode_batch(&bytes).expect("Desktop must accept browser wire batch");
+        assert_eq!(batch.schema_version, SCHEMA_VERSION);
+        assert_eq!(batch.source_device_id, "interop-browser");
+        assert_eq!(batch.source_platform, platform);
+        assert_eq!(batch.events.len(), 2);
+        assert_eq!(batch.batch_id, batch_id(&batch.events));
+        assert_eq!(batch.events[0].title, "Été 🔊");
+        assert_eq!(batch.events[0].artist, "Björk");
+        assert_eq!(batch.events[0].timestamp_utc, timestamp);
+        assert_eq!(batch.events[1].timestamp_utc, timestamp + 800);
+        assert_ne!(batch.events[0].event_id, batch.events[1].event_id);
+        let expected = sha256_hex(&format!(
+            "tempo-history-v1|interop-browser|42|{timestamp}|été 🔊|björk"
+        ));
+        assert_eq!(batch.events[0].event_id, expected);
+        let reencoded = encode_batch(&batch).expect("Desktop must round-trip browser batch");
+        assert_eq!(decode_batch(&reencoded).unwrap().batch_id, batch.batch_id);
+    }
+}
+
+
+#[test]
 fn prototype_uploads_are_requeued_once_without_reuploading_imports() {
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch(
