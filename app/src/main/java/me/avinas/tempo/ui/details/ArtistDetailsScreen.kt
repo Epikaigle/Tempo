@@ -87,6 +87,7 @@ import me.avinas.tempo.ui.components.CachedAsyncImage
 import me.avinas.tempo.ui.components.DeepOceanBackground
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
+import me.avinas.tempo.ui.components.LocalHideStreaks
 import me.avinas.tempo.ui.components.SharePreviewDialog
 import me.avinas.tempo.ui.components.ArtistShareCard
 import me.avinas.tempo.ui.theme.*
@@ -1059,6 +1060,8 @@ private data class FanStandingTierStyle(
 fun ListeningJourneySection(artistDetails: ArtistDetails, tint: Color = TempoPrimary) {
     val firstListen = artistDetails.firstListenedDate ?: artistDetails.firstDiscovery?.firstListenTimestamp
     val lastListen = artistDetails.lastListenedDate
+    // "N days in a row with this artist" is still a streak, so it goes with the rest of them.
+    val hideStreaks = LocalHideStreaks.current
 
     val milestones = listOfNotNull(
         firstListen?.let {
@@ -1068,7 +1071,7 @@ fun ListeningJourneySection(artistDetails: ArtistDetails, tint: Color = TempoPri
                 value = formatRibbonDate(firstListen),
             )
         },
-        artistDetails.listeningStreakDays.takeIf { it > 1 }?.let {
+        artistDetails.listeningStreakDays.takeIf { it > 1 && !hideStreaks }?.let {
             OdysseyMilestone(
                 icon = Icons.Rounded.LocalFireDepartment,
                 title = stringResource(R.string.artist_streak_short),

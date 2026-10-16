@@ -1,5 +1,6 @@
 package me.avinas.tempo.data.repository
 
+import me.avinas.tempo.data.local.dao.TrackAliasDao
 import me.avinas.tempo.data.local.entities.Track
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,7 +18,9 @@ import javax.inject.Singleton
  *  2. musicbrainzId
  *  3. youtubeId
  *  4. exact title + artist (case-insensitive)
- *  5. fuzzy title + artist
+ *  5. the alias recorded for that title + artist — a name the user renamed away
+ *     or merged into another row
+ *  6. fuzzy title + artist
  * If nothing matches, a new track is created.
  *
  * Layer 4 (metadata merge): when an incoming query matches an existing track,
@@ -28,7 +31,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class TrackResolver @Inject constructor(
-    private val trackRepository: TrackRepository
+    private val trackRepository: TrackRepository,
+    private val trackAliasDao: TrackAliasDao
 ) {
 
     /** What an import knows about a track it wants to attach a play to. */
@@ -68,6 +72,17 @@ class TrackResolver @Inject constructor(
             trackRepository.findByYoutubeId(id)?.let { return merge(it, query) }
         }
         trackRepository.findByTitleAndArtist(query.title, query.artist)?.let { return merge(it, query) }
+
+        // Step 5: a name the user renamed away or merged into another row still means
+        // that song. Without this, every later import of the old title re-created the
+        // duplicate the user had just cleaned up — and because the play then lands on a
+        // fresh track_id, neither the content fingerprint nor Layer 2's per-track
+        // reconciliation can recognise it as a repeat, so the play counts split for real.
+        // Exact title first, alias second: a row that literally carries this title is the
+        // better answer, which also means duplicates created before this step existed are
+        // left alone rather than silently absorbed.
+        trackAliasDao.findAliasTargetTrack(query.title, query.artist)?.let { return merge(it, query) }
+
         trackRepository.findByTitleAndArtistFuzzy(query.title, query.artist)?.let { return merge(it, query) }
 
         val track = Track(

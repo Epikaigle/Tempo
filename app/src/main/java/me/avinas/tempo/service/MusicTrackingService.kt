@@ -31,6 +31,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import me.avinas.tempo.MainActivity
 import me.avinas.tempo.R
+import me.avinas.tempo.data.AppTrackingPolicy
+import me.avinas.tempo.data.DefaultMusicApps
+import me.avinas.tempo.data.TrackingDecision
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.dao.UserPreferencesDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
@@ -90,6 +93,8 @@ class MusicTrackingService : NotificationListenerService() {
 
         fun appPreferenceDao(): me.avinas.tempo.data.local.dao.AppPreferenceDao
 
+        fun detectedAppDao(): me.avinas.tempo.data.local.dao.DetectedAppDao
+
         fun refreshCoordinator(): RefreshCoordinator
     }
 
@@ -137,258 +142,9 @@ class MusicTrackingService : NotificationListenerService() {
             }
         }
 
-        // Music app package names to monitor (ONLY music apps, no video)
-        private val MUSIC_APPS =
-            setOf(
-                "com.google.android.apps.youtube.music", // YouTube Music
-                "com.spotify.music", // Spotify
-                "com.apple.android.music", // Apple Music
-                "com.amazon.mp3", // Amazon Music
-                "com.soundcloud.android", // SoundCloud
-                "deezer.android.app", // Deezer
-                "com.pandora.android", // Pandora
-                "com.jio.media.jiobeats", // JioSaavn
-                "com.gaana", // Gaana
-                "com.bsbportal.music", // Wynk
-                "com.hungama.myplay.activity", // Hungama
-                "com.samsung.android.app.music", // Samsung Music
-                "com.miui.player", // Mi Music
-                "com.sec.android.app.music", // Samsung Music (old)
-                "in.startv.hotstar.music", // Hotstar Music
-                "com.tidal.android", // Tidal (Old/Alt)
-                "com.aspiro.tidal", // Tidal (Official)
-                "com.qobuz.music", // Qobuz
-                "app.revanced.android.youtube.music", // YouTube Music ReVanced
-                "app.revanced.android.apps.youtube.music", // YouTube Music ReVanced (Correct App ID)
-                "com.vanced.android.youtube.music", // YouTube Music Vanced
-                "com.moonvideo.android.resso", // Resso
-                "com.audiomack", // Audiomack
-                "com.mmm.trebelmusic", // Trebel
-                "com.maxmpz.audioplayer", // Poweramp
-                "in.krosbits.musicolet", // Musicolet
-                "com.kodarkooperativet.blackplayerfree", // BlackPlayer Free
-                "com.kodarkooperativet.blackplayerex", // BlackPlayer EX
-                "nugs.net", // Nugs.net
-                "net.nugs.multiband", // Nugs.net (Multiband)
-                // Open Source / GitHub Music Clients (Ad-free)
-                "com.dd3boh.outertune", // OuterTune
-                "com.zionhuang.music", // InnerTune
-                "it.vfsfitvnm.vimusic", // ViMusic
-                "oss.krtirtho.spotube", // Spotube
-                "com.shadow.blackhole", // BlackHole
-                "com.anandnet.harmonymusic", // Harmony Music
-                "it.fast4x.rimusic", // RiMusic
-                "com.msob7y.namida", // Namida
-                "com.metrolist.music", // Metrolist
-                "com.gokadzev.musify", // Musify
-                "com.gokadzev.musify.fdroid", // Musify (F-Droid)
-                "ls.bloomee.musicplayer", // BloomeeTunes
-                "com.maxrave.simpmusic", // SimpMusic
-                "it.ncaferra.pixelplayerfree", // Pixel Player
-                "com.theveloper.pixelplay", // PixelPlay
-                "com.singularity.gramophone", // Gramophone
-                "player.phonograph.plus", // Phonograph Plus
-                "org.oxycblt.auxio", // Auxio
-                "com.maloy.muzza", // Muzza
-                "uk.co.projectneon.echo", // Echo
-                "com.shabinder.spotiflyer", // SpotiFlyer
-                "com.kapp.youtube.final", // YMusic
-                "org.schabi.newpipe", // NewPipe
-                "org.polymorphicshade.newpipe", // NewPipe (Fork)
-                // Popular Offline Players
-                "com.rhmsoft.pulsar", // Pulsar
-                "com.neutroncode.mp", // Neutron Player
-                "gonemad.gmmp", // GoneMad
-                "code.name.monkey.retromusic", // Retro Music Player
-                "com.piyush.music", // Oto Music
-                "com.simplecity.amp_pro", // Shuttle+
-                "ru.stellio.player", // Stellio
-                "io.stellio.music", // Stellio (Alt)
-                "com.frolo.musp", // Frolomuse
-                "com.rhmsoft.omnia", // Omnia
-                "ru.yandex.music", // Yandex Music
-                // Open Source - Vivi Music & similar
-                "com.vivi.vivimusic", // Vivi Music (open source)
-            )
-
-        // Podcast apps - filtered by content filtering settings
-        // Note: Spotify is NOT in this list because it has music, podcasts, AND audiobooks
-        // We rely on metadata detection for Spotify
-        private val PODCAST_APPS =
-            setOf(
-                "com.google.android.apps.podcasts", // Google Podcasts
-                "com.google.android.apps.magazines", // Google News (plays news briefings via "Hey Google, Play the News")
-                "fm.player", // Player FM
-                "au.com.shiftyjelly.pocketcasts", // Pocket Casts
-                "com.bambuna.podcastaddict", // Podcast Addict
-                "com.clearchannel.iheartradio.controller", // iHeartRadio
-                "app.tunein.player", // TuneIn Radio
-                "com.stitcher.app", // Stitcher
-                "com.castbox.player", // Castbox
-                "com.overcast.app", // Overcast
-                "com.apple.android.podcasts", // Apple Podcasts
-                "com.podcastone.mobile", // PodcastOne
-                "com.wondery.wondery", // Wondery
-                "com.podcasts.android", // Podcasts (generic)
-                "fm.castbox.audiobook.radio.podcast", // Castbox variant
-            )
-
-        // Audiobook apps - filtered by content filtering settings
-        private val AUDIOBOOK_APPS =
-            setOf(
-                "com.audible.application", // Audible
-                "com.google.android.apps.books", // Google Play Books
-                "com.audiobooks.android.audiobooks", // Audiobooks.com
-                "com.scribd.app.reader0", // Scribd
-                "com.storytel", // Storytel
-                "fm.libro", // Libro.fm
-                "com.libro.app", // Libro.fm (alt)
-                "com.kobo.books.ereader", // Kobo Books
-                "com.nook.app", // Nook Audiobooks
-                "com.audiobooks.androidapp", // Audiobooks (generic)
-            )
-
-        // Video/non-music apps to explicitly BLOCK from tracking
-        // These apps have MediaSessions but we don't want to track their content
-        private val BLOCKED_APPS =
-            setOf(
-                // Video streaming
-                "com.google.android.youtube", // YouTube (video)
-                "com.google.android.apps.youtube", // YouTube (alternative)
-                "app.revanced.android.youtube", // YouTube ReVanced (Video)
-                "com.netflix.mediaclient", // Netflix
-                "com.amazon.avod.thirdpartyclient", // Prime Video
-                "com.disney.disneyplus", // Disney+
-                "in.startv.hotstar", // Hotstar (video)
-                "com.hotstar.android", // Hotstar (alternative)
-                "tv.twitch.android.app", // Twitch
-                // Social media (reels, shorts, videos)
-                "com.zhiliaoapp.musically", // TikTok
-                "com.ss.android.ugc.trill", // TikTok (alternative)
-                "com.instagram.android", // Instagram (reels)
-                "com.facebook.katana", // Facebook (videos)
-                "com.snapchat.android", // Snapchat
-                // Video players & media
-                "com.vimeo.android.videoapp", // Vimeo
-                "com.mxtech.videoplayer.ad", // MX Player
-                "com.mxtech.videoplayer.pro", // MX Player Pro
-                "org.videolan.vlc", // VLC
-                "com.google.android.apps.photos", // Google Photos (videos)
-                "com.whatsapp", // WhatsApp (status videos)
-                "org.telegram.messenger", // Telegram (videos)
-                "com.google.android.gm", // Gmail (video attachments)
-                // Expanded Video Player Blocklist (User Request)
-                "com.playit.videoplayer",
-                "video.player.videoplayer",
-                "com.inshot.videoplayer",
-                "hd.videoplayer.allformat",
-                "video.player.allformat.hd.player",
-                "videoplayer.video.player.hd",
-                "video.player.hd.videoplayer",
-                "uplayer.video.player",
-                "com.kmplayer",
-                "com.bsplayer.bspandroid.free",
-                "com.bsplayer.bspandroid",
-                "com.archos.mediacenter.video",
-                "com.archos.arcmedia",
-                "com.samsung.android.video",
-                "com.sec.android.gallery3d",
-                "com.samsung.android.service.peoplestripe",
-                "com.miui.videoplayer",
-                "com.miui.gallery",
-                "com.coloros.video",
-                "com.oppo.video",
-                "com.realme.video",
-                "com.android.VideoPlayer",
-                "com.videoplayer.vivoplayer",
-                "com.oneplus.gallery",
-                "com.motorola.MotGallery2",
-                "com.motorola.cn.gallery",
-                "com.huawei.himovie",
-                "com.huawei.himovie.overseas",
-                "com.sonyericsson.album",
-                "com.lge.video",
-                "com.lge.gallery",
-                "com.htc.album",
-                "com.asus.gallery",
-                "com.lenovo.videoplayer",
-                "com.google.android.videos",
-                "com.google.android.apps.youtube.media",
-                "com.google.android.apps.youtube.kids",
-                "com.tcl.video",
-                "com.tcl.gallery",
-                "com.zte.video",
-                "com.tecno.video",
-                "com.infinix.video",
-                "com.transsion.video",
-                "com.nokia.gallery",
-                "com.hmdglobal.gallery",
-                "com.alcatel.video",
-                "com.panasonic.video",
-                "com.sharp.video",
-                "com.hisense.video",
-                "com.vlc.remote",
-                "com.vidma.videoplayer",
-                "com.litterpeng.videoplayer",
-                "com.rhmsoft.playerpro",
-                "com.videoplayer.hdplayer2020",
-                "videoplayer.videoplayer",
-                "com.amplayer.video",
-                "com.kmvideoplayer.hd",
-                "allformat.player.videoplayer",
-                "com.xplayer.hd",
-                "videoplayer.musicplayer.mp4",
-                "com.ufyl.videoplayer",
-                "com.lemon.videoplayer",
-                "com.hd.videoplayer.master",
-                "com.mytech.video.player",
-                "com.mp4.hd.videoplayer",
-                "com.hdvideoplayer.allformat",
-                "com.easytech.videoplayer",
-                "com.powerful.videoplayer",
-                "com.mediaplayer.fullhd",
-                "com.fullhd.video.player",
-                "com.max.video.hd",
-                "com.super.video.hd",
-                "com.player.mediaplayer.hd",
-                "com.media.masterplayer",
-                "com.playtube.videoplayer",
-                "com.flashplayer.videoplayer",
-                "com.svplayer.hd",
-                "com.evoplayer.hd",
-                "com.nova.videoplayer",
-                "com.jplayer.hd",
-                "com.videoplayer.masterpro",
-                "com.vidx.player",
-                "com.stream.videoplayer",
-                "com.prime.hdplayer",
-                "com.alpha.videoplayer",
-                "com.boom.hdplayer",
-                "com.edge.videoplayer",
-                "com.spark.videoplayer",
-                "com.ultra.hdplayer",
-                "com.pixel.videoplayer",
-                // Browsers (can have video/audio that shouldn't be tracked)
-                "com.android.chrome", // Chrome
-                "com.chrome.beta", // Chrome Beta
-                "com.chrome.dev", // Chrome Dev
-                "com.chrome.canary", // Chrome Canary
-                "org.mozilla.firefox", // Firefox
-                "org.mozilla.firefox_beta", // Firefox Beta
-                "com.opera.browser", // Opera
-                "com.opera.browser.beta", // Opera Beta
-                "com.UCMobile.intl", // UC Browser
-                "com.brave.browser", // Brave
-                "com.microsoft.edge", // Microsoft Edge
-                "org.torproject.torbrowser", // Tor Browser
-                "org.dolphin.browser", // Dolphin
-                "com.sec.android.app.sbrowser", // Samsung Browser
-                "com.ksmobile.cb", // CM Browser
-                "com.qwant.browser", // Qwant
-                "org.chromium.webview_shell", // Chrome WebView shell
-                // Remote control / mirroring (mirrors MediaSessions, must never be tracked)
-                "org.kde.kdeconnect_tp", // KDE Connect
-            )
+        // App allow/block taxonomy lives in me.avinas.tempo.data.DefaultMusicApps and is applied
+        // by AppTrackingPolicy. These sets used to be duplicated here; the copies drifted from the
+        // seeded lists, which is how apps could be blocked by one and allowed by the other.
 
         // Typical music duration range (used for music detection)
         private const val MIN_MUSIC_DURATION_MS = 30_000L // 30 seconds
@@ -428,6 +184,10 @@ class MusicTrackingService : NotificationListenerService() {
 
         // Session auto-save interval
         private const val SESSION_AUTOSAVE_INTERVAL_MS = 30_000L
+
+        // Minimum gap between inbox writes for the same unrecognized package. Bounds the write
+        // rate when an unknown app keeps producing media, without hiding the app from the user.
+        private const val DETECTION_RECORD_THROTTLE_MS = 10_000L
 
         // Maximum time to block in onDestroy while flushing pending listening events.
         // A normal Room batch write is well under 100ms, so 5s is generous headroom.
@@ -828,6 +588,7 @@ class MusicTrackingService : NotificationListenerService() {
     private lateinit var trackAliasRepository: TrackAliasRepository
     private lateinit var manualContentMarkDao: ManualContentMarkDao
     private lateinit var appPreferenceDao: me.avinas.tempo.data.local.dao.AppPreferenceDao
+    private lateinit var detectedAppDao: me.avinas.tempo.data.local.dao.DetectedAppDao
     private lateinit var refreshCoordinator: RefreshCoordinator
     private lateinit var trackingRules: TrackingRulesPreferences
 
@@ -841,10 +602,23 @@ class MusicTrackingService : NotificationListenerService() {
     @Volatile
     private var cachedManualContentMarks: List<ManualContentMark> = emptyList()
 
-    /** Re-evaluates active sessions whenever a duration rule changes in Settings. */
+    /**
+     * Re-evaluates active sessions whenever a tracking rule changes in Settings.
+     *
+     * Covers duration rules and the "track unrecognized apps" escape hatch, which share this
+     * preference file. Toggling the escape hatch must take effect immediately: turning it on has
+     * to start tracking an app already playing, and turning it off has to stop one.
+     */
     private val durationRulesListener =
         android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-            serviceScope.launch { reevaluateActiveContent() }
+            serviceScope.launch {
+                // One combined pass, not two: the same change can both disallow a package (the
+                // unrecognized-apps switch) and change what counts as music (duration rules).
+                // reevaluateActiveContent already rescans sessions and notifications, which are
+                // binder IPCs, so running a second sweep alongside it doubled that cost.
+                dropDisallowedSessions()
+                reevaluateActiveContent()
+            }
         }
 
     // App filter caches populated from Room
@@ -856,6 +630,20 @@ class MusicTrackingService : NotificationListenerService() {
 
     @Volatile
     private var cachedAllKnownPackages: Set<String> = emptySet()
+
+    /**
+     * Known apps the user switched off (row present, isEnabled=0, not blocked).
+     * Kept separate from [cachedBlockedApps] so the policy can tell "user said no" apart from
+     * "user has no opinion" — the latter must fall through to the curated allowlist.
+     */
+    @Volatile
+    private var cachedDisabledApps: Set<String> = emptySet()
+
+    /**
+     * Last time each package was written to the detected-apps inbox, for throttling.
+     * Bounded by the number of distinct unknown packages seen in one service lifetime.
+     */
+    private val lastDetectionRecordedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     // All packages in DB (enabled or not)
     @Volatile
@@ -903,11 +691,11 @@ class MusicTrackingService : NotificationListenerService() {
             return true
         }
 
-        if (filterPodcasts && packageName in PODCAST_APPS) {
+        if (filterPodcasts && packageName in DefaultMusicApps.PODCAST_PACKAGES) {
             Log.d(TAG, "Filtering podcast app: $packageName")
             return true
         }
-        if (filterAudiobooks && packageName in AUDIOBOOK_APPS) {
+        if (filterAudiobooks && packageName in DefaultMusicApps.AUDIOBOOK_PACKAGES) {
             Log.d(TAG, "Filtering audiobook app: $packageName")
             return true
         }
@@ -1480,6 +1268,7 @@ class MusicTrackingService : NotificationListenerService() {
             trackAliasRepository = entryPoint.trackAliasRepository()
             manualContentMarkDao = entryPoint.manualContentMarkDao()
             appPreferenceDao = entryPoint.appPreferenceDao()
+            detectedAppDao = entryPoint.detectedAppDao()
             refreshCoordinator = entryPoint.refreshCoordinator()
 
             // Manual overrides participate in synchronous MediaSession decisions, so load the
@@ -1562,6 +1351,10 @@ class MusicTrackingService : NotificationListenerService() {
             serviceScope.launch {
                 while (isActive) {
                     TrackingServiceHeartbeat.markServiceAlive(applicationContext)
+                    // Backstop for sessions whose app vanished without a removal callback. Runs on
+                    // the timer that already exists so the sweep costs no extra wakeups; it is a
+                    // no-op loop over an empty map the rest of the time.
+                    if (playbackStates.isNotEmpty()) reapStrandedSessions()
                     delay(TrackingServiceHeartbeat.HEARTBEAT_INTERVAL_MS)
                 }
             }
@@ -1575,8 +1368,13 @@ class MusicTrackingService : NotificationListenerService() {
         try {
             cachedEnabledApps = appPreferenceDao.getEnabledPackageNames().toSet()
             cachedBlockedApps = appPreferenceDao.getBlockedPackageNames().toSet()
+            cachedDisabledApps = appPreferenceDao.getDisabledPackageNames().toSet()
             lastAppPreferenceFetch = System.currentTimeMillis()
-            Log.d(TAG, "Refreshed app preferences: ${cachedEnabledApps.size} enabled, ${cachedBlockedApps.size} blocked")
+            Log.d(
+                TAG,
+                "Refreshed app preferences: ${cachedEnabledApps.size} enabled, " +
+                    "${cachedBlockedApps.size} blocked, ${cachedDisabledApps.size} disabled",
+            )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to refresh app preferences, using cached values", e)
         }
@@ -1593,58 +1391,60 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     /**
-     * Check if a package is in the user-enabled music apps list.
+     * The single gate for "may Tempo journal playback from this package?".
      *
-     * Falls back to the static MUSIC_APPS set only when the DB cache hasn't loaded yet
-     * (race condition on service start). Once the cache is initialised the DB wins, so
-     * any app the user has explicitly disabled is still respected.
+     * Replaces the old enabled/blocked pair, which answered "is this app on a list?" and left
+     * every caller to invent its own default. Those defaults were permissive, which is how
+     * Viber voice notes ended up in the journal. See [AppTrackingPolicy] for the precedence
+     * ladder; this method only supplies the cached state.
+     *
+     * Before the cache loads (race on service start) the user-specific sets are empty, so the
+     * ladder still resolves curated apps through the static allowlist while an unknown app is
+     * held back until the real preferences arrive — rescanActiveMediaSessions() re-runs then.
      */
-    private fun isInEnabledApps(packageName: String): Boolean {
-        // Cache not ready yet → fall back to the compile-time whitelist so that apps
-        // already playing when the service starts are not silently dropped.
-        // This fixes the race condition where initializeMediaSessionManager() fires before
-        // refreshAppPreferenceCache() completes and all apps are skipped.
-        if (!isAppPreferenceCacheInitialized) {
-            val inStaticList = packageName in MUSIC_APPS
-            if (inStaticList) {
-                Log.d(TAG, "App preference cache not ready, using static whitelist for $packageName")
-            }
-            return inStaticList
-        }
-        // A package with no row at all (app_preferences not yet seeded, or a curated app
-        // added in a newer release that hasn't been backfilled) gets the same whitelist
-        // fallback. Apps the user explicitly disabled have a row, so user intent is never
-        // overridden — without this, an empty/unseeded table reads as "nothing enabled"
-        // and curated apps (Mi Music, Poweramp, ...) fall through to heuristics that
-        // reject "player"-named packages as video apps.
-        if (packageName !in cachedAllKnownPackages && packageName in MUSIC_APPS) {
-            Log.d(TAG, "No app_preferences row for $packageName, using static whitelist")
-            return true
-        }
-        return packageName in cachedEnabledApps
-    }
+    private fun decideTracking(packageName: String): TrackingDecision =
+        AppTrackingPolicy.decide(
+            packageName = packageName,
+            userEnabledPackages = cachedEnabledApps,
+            userBlockedPackages = cachedBlockedApps,
+            userDisabledPackages = cachedDisabledApps,
+            // Defensive: the notification callback can fire before dependency init completes.
+            // Defaulting to false keeps the deny-by-default guarantee in that window.
+            trackUnrecognizedApps =
+                ::trackingRules.isInitialized && trackingRules.trackUnrecognizedApps,
+        )
 
     /**
-     * Check if a package is in the blocked apps list.
+     * Records a rejected package in the detected-apps inbox so the user can allow it later.
      *
-     * Two-tier block check: compile-time [BLOCKED_APPS] set, then user blacklist in Room.
-     *
-     * The static list is checked first so video apps like YouTube
-     * are blocked immediately regardless of database cache state.
+     * Throttled per package: an unrecognized app that keeps playing would otherwise write a row
+     * per track change. The write is fire-and-forget on the service scope; losing one costs
+     * nothing because the app stays detectable for as long as it keeps producing media.
      */
-    private fun isInBlockedApps(packageName: String): Boolean {
-        // FIRST: Always block apps in the static blocklist (guaranteed protection)
-        // This catches video apps, browsers, social media that should NEVER be tracked
-        if (packageName in BLOCKED_APPS) {
-            return true
-        }
+    private fun recordDetectedApp(
+        packageName: String,
+        title: String? = null,
+        artist: String? = null,
+    ) {
+        // Before the preference cache loads, a user-added app looks unrecognized because its
+        // enable row has not been read yet. Recording it would fill the inbox with apps the user
+        // already allowed; the post-init rescan re-evaluates them anyway.
+        if (!isAppPreferenceCacheInitialized) return
 
-        // SECOND: Check database cache for user-defined blocked apps
-        // If cache not initialized yet, return false (will be filtered by isInEnabledApps anyway)
-        if (!isAppPreferenceCacheInitialized) {
-            return false
+        val now = System.currentTimeMillis()
+        val last = lastDetectionRecordedAt[packageName] ?: 0L
+        if (now - last < DETECTION_RECORD_THROTTLE_MS) return
+        lastDetectionRecordedAt[packageName] = now
+
+        serviceScope.launch {
+            try {
+                detectedAppDao.record(packageName, title, artist)
+                Log.i(TAG, "Recorded unrecognized app in inbox: $packageName ('$title')")
+            } catch (e: Exception) {
+                // A failed inbox write must never disturb tracking.
+                Log.w(TAG, "Failed to record detected app $packageName", e)
+            }
         }
-        return packageName in cachedBlockedApps
     }
 
     /**
@@ -1775,40 +1575,43 @@ class MusicTrackingService : NotificationListenerService() {
     private fun applyAppPreferenceCache(apps: List<me.avinas.tempo.data.local.entities.AppPreference>) {
         cachedEnabledApps = apps.filter { it.isEnabled && !it.isBlocked }.map { it.packageName }.toSet()
         cachedBlockedApps = apps.filter { it.isBlocked }.map { it.packageName }.toSet()
+        cachedDisabledApps = apps.filter { !it.isEnabled && !it.isBlocked }.map { it.packageName }.toSet()
         cachedAllKnownPackages = apps.map { it.packageName }.toSet()
         isAppPreferenceCacheInitialized = true
         lastAppPreferenceFetch = System.currentTimeMillis()
     }
 
     /**
-     * Keeps app enable/block state live. Disabling an app stops its running session
-     * immediately; enabling one (including an explicitly enabled YouTube) makes the
-     * static blocklist fallback step aside and rescans active media.
+     * Keeps app enable/block state live. Switching an app off (or blocking it) stops its running
+     * session immediately; switching one on rescans active media.
+     *
+     * The stop condition runs through [decideTracking] rather than comparing sets by hand, so a
+     * package that is blocked purely by the built-in lists (never seeded as a row) is cleaned up
+     * too. It also means unblocking YouTube now really does start tracking it — before, the
+     * static set was checked first and the Unblock button silently did nothing.
      */
     private fun watchAppPreferences() {
         serviceScope.launch {
             appPreferenceDao.getAllApps().collect { apps ->
                 applyAppPreferenceCache(apps)
-
-                val packagesToStop =
-                    playbackStates.keys.filter { packageName ->
-                        packageName in cachedBlockedApps ||
-                            (packageName in cachedAllKnownPackages && packageName !in cachedEnabledApps)
-                    }
-                packagesToStop.forEach(::cleanupSessionForPackage)
-                withContext(Dispatchers.Main) {
-                    rescanActiveMediaSessions()
-                    try {
-                        activeNotifications?.forEach { sbn ->
-                            if (isMusicNotification(sbn)) processNotificationPosted(sbn)
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to re-evaluate notifications after app preference change", e)
-                    }
-                    updateServiceLifecycle()
-                }
+                dropDisallowedSessions()
+                reevaluateActiveContent()
             }
         }
+    }
+
+    /**
+     * Drops sessions whose package the current policy no longer allows.
+     *
+     * Shared by the preference observer and the tracking-rules listener so both take effect
+     * without a restart, and so the expensive half — rescanning MediaSessions and notifications,
+     * which are binder IPCs — happens exactly once per change in [reevaluateActiveContent]
+     * rather than in a second near-identical sweep.
+     */
+    private fun dropDisallowedSessions() {
+        playbackStates.keys
+            .filter { !decideTracking(it).shouldTrack }
+            .forEach(::cleanupSessionForPackage)
     }
 
     /** Keeps manual content exceptions live and re-evaluates anything already playing. */
@@ -1946,6 +1749,18 @@ class MusicTrackingService : NotificationListenerService() {
 
                             if (cappedPlayTime < minimumPlayDurationMs()) continue
 
+                            // Sessions are persisted across process death. One written by an
+                            // older build (before default-deny) can reference an app that is no
+                            // longer tracked — a Viber voice note, say. Replaying it would put the
+                            // very content this model excludes back into the journal.
+                            if (!decideTracking(state.packageName).shouldTrack) {
+                                Log.i(
+                                    TAG,
+                                    "Dropping recovered session from untracked app: ${state.packageName}",
+                                )
+                                continue
+                            }
+
                             // Resolve the track. Sessions persisted before their
                             // trackId was assigned (track insert still in flight when
                             // we were killed) used to be dropped here — losing the play
@@ -2073,6 +1888,13 @@ class MusicTrackingService : NotificationListenerService() {
     private var positionPollingJob: Job? = null
 
     /**
+     * One-shot sweep armed when service activity settles, so a session whose source app
+     * disappeared clears shortly after rather than waiting for the next heartbeat tick.
+     * See [scheduleStrandedSessionReap].
+     */
+    private var strandedReapJob: Job? = null
+
+    /**
      * Start polling MediaSession controllers for position updates.
      * Only runs when there is active playback.
      */
@@ -2170,7 +1992,10 @@ class MusicTrackingService : NotificationListenerService() {
             }
 
             // FIX: Check if we still have a valid (paused) session
-            val currentSession = playbackStates.values.firstOrNull()
+            // Only retain it when the policy still allows the source app. The "keep showing the
+            // paused session" behaviour exists so pausing music does not blank the notification;
+            // it must not be a route for an app Tempo refuses to track to stay on screen.
+            val currentSession = playbackStates.values.firstOrNull { decideTracking(it.packageName).shouldTrack }
             if (currentSession != null) {
                 // We have a session (likely paused), keep showing it
                 // This resolves the user complaint "it stopped tracking on pause"
@@ -2180,6 +2005,121 @@ class MusicTrackingService : NotificationListenerService() {
                 updateTrackingNotification(null, null)
             }
         }
+
+        // A session can outlive its source: the app is killed, its notification disappears, and
+        // the removal callback never arrives (or arrives stripped of the metadata that made it
+        // recognizable). Nothing above would notice, so the notification stays pinned to a
+        // finished item indefinitely. The reaper is the backstop.
+        scheduleStrandedSessionReap()
+    }
+
+    /**
+     * Arms a single delayed sweep that evicts sessions whose source app is gone, so a finished
+     * item cannot stay pinned to the foreground notification.
+     *
+     * Two independent conditions trigger eviction:
+     *
+     * 1. **Below the minimum play duration and paused.** Such a session can never be saved —
+     *    `saveListeningEvent` discards it — so dropping it loses nothing. This is the voice-note
+     *    case: too short to journal, but previously left in memory driving the notification.
+     * 2. **No live MediaController and no posted notification for the package.** The app is gone
+     *    (killed, or it retracted its notification) but Tempo still holds the session.
+     *
+     * A legitimately paused track survives both: its media notification is still posted, and once
+     * it has played past the minimum it is no longer eligible under rule 1.
+     *
+     * Deliberately one-shot and event-driven. The recurring backstop is the service heartbeat,
+     * which already ticks every five minutes, so this adds no second long-lived timer: a session
+     * is swept shortly after activity stops, and again on each heartbeat if anything survives.
+     * Re-arming happens only from [updateServiceLifecycle], never from the sweep itself.
+     */
+    private fun scheduleStrandedSessionReap() {
+        if (playbackStates.isEmpty()) return
+        if (strandedReapJob?.isActive == true) return
+
+        strandedReapJob =
+            serviceScope.launch {
+                delay(StrandedSessionRules.STRANDED_SESSION_GRACE_MS + 5_000L)
+                reapStrandedSessions()
+            }
+    }
+
+    /**
+     * Drops every session that meets the eviction rules in [scheduleStrandedSessionReap].
+     * Returns true when at least one session was removed.
+     *
+     * A session evicted because its app vanished is *saved* first — losing the removal callback
+     * is exactly the case this sweeps up, and the play it was holding is usually legitimate. A
+     * session evicted for being too short to count is discarded, because the save path would
+     * reject it anyway.
+     */
+    private fun reapStrandedSessions(): Boolean {
+        if (playbackStates.isEmpty()) return false
+
+        val now = System.currentTimeMillis()
+        val minimumPlayDuration = minimumPlayDurationMs()
+
+        // Fetched at most once per sweep, and only when a session actually needs it: reading
+        // `activeNotifications` is a binder IPC that marshals the whole notification list, so
+        // calling it per session would be the expensive part of this loop.
+        var postedPackages: Set<String>? = null
+        var reaped = false
+
+        playbackStates.toMap().forEach { (packageName, session) ->
+            val reason =
+                StrandedSessionRules.reapReason(
+                    snapshot =
+                        StrandedSessionRules.Snapshot(
+                            packageName = packageName,
+                            isPlaying = session.isPlaying,
+                            playDurationMs = session.calculateCurrentPlayDuration(),
+                            lastUpdateAt = session.lastPositionUpdateTime,
+                            hasLiveController = hasLiveController(packageName),
+                        ),
+                    minimumPlayDurationMs = minimumPlayDuration,
+                    now = now,
+                    // Rule 1 is decided by local state alone, so the IPC is deferred until a
+                    // session gets past it.
+                    postedNotificationPackages = {
+                        if (postedPackages == null) postedPackages = postedNotificationPackages()
+                        postedPackages
+                    },
+                ) ?: return@forEach
+
+            if (playbackStates.remove(packageName, session)) {
+                reaped = true
+                session.pause()
+                Log.i(
+                    TAG,
+                    "Reaping stranded session for $packageName ('${session.title}'): ${reason.description}",
+                )
+                if (reason == StrandedSessionRules.Reason.SOURCE_GONE) {
+                    saveListeningEvent(session)
+                }
+            }
+        }
+
+        if (reaped) {
+            val next = playbackStates.values.firstOrNull { decideTracking(it.packageName).shouldTrack }
+            updateTrackingNotification(next?.title, next?.artist)
+        }
+        return reaped
+    }
+
+    /** True when a live MediaController is registered for the package. */
+    private fun hasLiveController(packageName: String): Boolean =
+        synchronized(activeControllers) { activeControllers.containsKey(packageName) }
+
+    /**
+     * Package names that currently have a posted notification.
+     *
+     * Returns null when the listener is disconnected: the answer is unknown, and assuming "gone"
+     * would evict sessions during a listener outage.
+     */
+    private fun postedNotificationPackages(): Set<String>? {
+        if (!isListenerConnected) return null
+        val posted = activeNotifications ?: return null
+        return posted.mapTo(mutableSetOf()) { it.packageName }
     }
 
     /**
@@ -2368,7 +2308,19 @@ class MusicTrackingService : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         sbn ?: return
-        if (!isMusicNotification(sbn)) return
+
+        // Do NOT gate this on isMusicNotification(sbn).
+        //
+        // A removed notification frequently arrives without the transport category and
+        // EXTRA_MEDIA_SESSION that made it look like media when it was posted. Re-running that
+        // check here therefore returned false, the removal was skipped, and the session stayed in
+        // playbackStates forever. Because updateServiceLifecycle() deliberately keeps showing the
+        // last paused session, that stranded entry pinned the foreground notification to a
+        // finished Viber voice note — surviving even a force-stop of the source app, which is
+        // exactly what users reported.
+        //
+        // If we are holding a session for the package, the removal is ours to process.
+        if (!playbackStates.containsKey(sbn.packageName) && !isMusicNotification(sbn)) return
         TrackingServiceHeartbeat.markNotificationCallback(this)
 
         Log.d(TAG, "Music notification removed: ${sbn.packageName}")
@@ -2376,40 +2328,47 @@ class MusicTrackingService : NotificationListenerService() {
         updateServiceLifecycle()
     }
 
+    /**
+     * Decides whether a posted notification is a music-source notification.
+     *
+     * The allowlist is consulted first; only then does the notification shape matter:
+     * - An allowed app (curated, user-added, or opted-in unknown) is a candidate source.
+     * - A blocked or never-tracked app is rejected outright — and never offered in the inbox.
+     * - An unrecognized app is rejected and recorded so the user can allow it in one tap.
+     */
     private fun isMusicNotification(sbn: StatusBarNotification): Boolean {
         val packageName = sbn.packageName
-
-        // FIRST: Explicitly block video/non-music apps
-        if (isInBlockedApps(packageName)) {
-            Log.d(TAG, "Blocking notification from video app: $packageName")
-            return false
-        }
-
-        // Check if it's from a known music app (user-enabled)
-        if (isInEnabledApps(packageName)) return true
-
-        // For unknown apps, check notification category
         val notification = sbn.notification
         val category = notification.category
-        if (category == Notification.CATEGORY_TRANSPORT ||
-            category == Notification.CATEGORY_SERVICE
-        ) {
-            // Check for media style - but still need to verify it's music
-            val extras = notification.extras
-            if (extras.containsKey(Notification.EXTRA_MEDIA_SESSION)) {
-                // Additional check: don't track if package name suggests video
-                val lowerPkg = packageName.lowercase()
-                if (lowerPkg.contains("video") || lowerPkg.contains("movie") ||
-                    lowerPkg.contains("tv") || lowerPkg.contains("stream")
-                ) {
-                    Log.d(TAG, "Blocking media notification from likely video app: $packageName")
-                    return false
+
+        // Shape check shared by every branch: Android marks media notifications with a transport
+        // or service category plus an embedded MediaSession token.
+        val looksLikeMedia =
+            notification.extras.containsKey(Notification.EXTRA_MEDIA_SESSION) &&
+                (category == Notification.CATEGORY_TRANSPORT ||
+                    category == Notification.CATEGORY_SERVICE)
+
+        return when (val decision = decideTracking(packageName)) {
+            TrackingDecision.ALLOW -> true
+
+            TrackingDecision.BLOCKED, TrackingDecision.NEVER_TRACKED -> {
+                if (looksLikeMedia) {
+                    Log.d(TAG, "Ignoring media notification from ${decision.label} app: $packageName")
                 }
-                return true
+                false
+            }
+
+            TrackingDecision.UNKNOWN -> {
+                if (looksLikeMedia) {
+                    Log.i(TAG, "Refusing media notification from unrecognized app: $packageName")
+                    recordDetectedApp(
+                        packageName = packageName,
+                        title = notification.extras.getCharSequence(EXTRA_TITLE)?.toString()?.trim(),
+                    )
+                }
+                false
             }
         }
-
-        return false
     }
 
     private fun processNotificationPosted(sbn: StatusBarNotification) {
@@ -3643,36 +3602,43 @@ class MusicTrackingService : NotificationListenerService() {
 
             // Skip if already tracked
             if (!activeControllers.containsKey(packageName)) {
-                // CRITICAL: Only track if the app is explicitly enabled in user preferences,
-                // or if it's a music session from an UNKNOWN app (not in our database).
-                // Apps that user explicitly disabled (exists in DB but isEnabled=false) should NEVER be tracked.
-                val isEnabled = isInEnabledApps(packageName)
-                val isBlocked = isInBlockedApps(packageName)
-                val isKnownApp = packageName in cachedAllKnownPackages
+                // Default-deny: an app is tracked only when the allowlist says so. The previous
+                // rule here ("track unknown apps if the session looks like music") is what let
+                // Viber and Signal voice messages into the journal — a voice note has a title, a
+                // creator and a duration, so every heuristic for "music" matched it.
+                when (val decision = decideTracking(packageName)) {
+                    TrackingDecision.ALLOW -> {
+                        val callback = PackageSpecificCallback(packageName)
+                        controller.registerCallback(callback)
 
-                // App is explicitly disabled if: exists in DB AND not enabled AND not blocked
-                // (not blocked because blocked is handled separately with higher priority)
-                val isExplicitlyDisabled = isKnownApp && !isEnabled && !isBlocked
+                        activeControllers[packageName] = controller
+                        packageSpecificCallbacks[packageName] = callback
 
-                // Track if:
-                // 1. Explicitly enabled by user, OR
-                // 2. Is music session AND is NOT a known disabled app (allows unknown apps)
-                val shouldTrack = isEnabled || (isMusicSession(controller) && !isExplicitlyDisabled)
+                        // Process initial state
+                        processMediaControllerState(controller)
+                    }
 
-                if (shouldTrack && !isBlocked) {
-                    // Register specific callback
-                    val callback = PackageSpecificCallback(packageName)
-                    controller.registerCallback(callback)
+                    TrackingDecision.UNKNOWN -> {
+                        // Rejected, but worth offering: capture what it was playing so the inbox
+                        // entry the user sees is concrete rather than a bare package name.
+                        val metadata = controller.metadata
+                        if (isMusicSession(controller)) {
+                            Log.i(TAG, "Refusing media session from unrecognized app: $packageName")
+                            recordDetectedApp(
+                                packageName = packageName,
+                                title = metadata
+                                    ?.getString(MediaMetadata.METADATA_KEY_TITLE)
+                                    ?.trim(),
+                                artist = metadata
+                                    ?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                                    ?.trim(),
+                            )
+                        }
+                    }
 
-                    activeControllers[packageName] = controller
-                    packageSpecificCallbacks[packageName] = callback
-
-                    // Process initial state
-                    processMediaControllerState(controller)
-                } else if (isExplicitlyDisabled) {
-                    Log.d(TAG, "Skipping disabled app: $packageName (user disabled in preferences)")
-                } else if (isBlocked) {
-                    Log.d(TAG, "Skipping blocked app: $packageName")
+                    TrackingDecision.BLOCKED, TrackingDecision.NEVER_TRACKED -> {
+                        Log.d(TAG, "Skipping ${decision.label} app: $packageName")
+                    }
                 }
             }
         }
@@ -3699,14 +3665,20 @@ class MusicTrackingService : NotificationListenerService() {
      * 2. Duration check (music is typically 30s - 20min)
      * 3. Metadata characteristics
      */
+    /**
+     * Classifies a MediaController session as playable music rather than video or UI noise.
+     *
+     * This is NOT the tracking decision any more — [decideTracking] owns that. It is now only
+     * consulted for an unrecognized app, to decide whether the app is worth offering in the
+     * detected-apps inbox (a video player that exposes a stray MediaSession is not) and to apply
+     * the user's manual content exceptions and duration rules.
+     *
+     * The distinction matters: this function used to be the *last* line of defence against
+     * non-music, and a voice note satisfies every signal it looks for — a title, a creator, a
+     * duration, an active play state. That is why it could never be trusted as the gate.
+     */
     private fun isMusicSession(controller: MediaController): Boolean {
         val packageName = controller.packageName
-
-        // FIRST: Block known video apps (user-blocked or default blocked)
-        if (isInBlockedApps(packageName)) {
-            Log.d(TAG, "Blocking MediaSession from video app: $packageName")
-            return false
-        }
 
         // Manual content exceptions and duration rules apply even to apps the user enabled:
         // ALWAYS_MUSIC bypasses content heuristics, NON_MUSIC/VIDEO excludes the content,
@@ -3740,12 +3712,6 @@ class MusicTrackingService : NotificationListenerService() {
             }
         }
 
-        // Known music apps (user-enabled) are always music
-        if (isInEnabledApps(packageName)) {
-            return true
-        }
-
-        // For unknown apps, use heuristics to detect music vs video
         val metadata = controller.metadata
         val playbackState = controller.playbackState
 
@@ -3758,7 +3724,7 @@ class MusicTrackingService : NotificationListenerService() {
         // Check duration - music typically 30s to 20 minutes
         val duration = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0
         if (duration > 0) {
-            // Very short (< 30s) = probably notification sound, ad, etc.
+            // Very short (< 30s) = probably notification sound, ad, voice note, etc.
             if (duration < MIN_MUSIC_DURATION_MS) {
                 Log.d(TAG, "Rejecting short content ($duration ms): '$title' from $packageName")
                 return false
@@ -3777,7 +3743,7 @@ class MusicTrackingService : NotificationListenerService() {
         // Having artist OR album is a strong indicator of music
         val hasMusicMetadata = !artist.isNullOrBlank() || !album.isNullOrBlank()
 
-        // Package name heuristics for unknown apps
+        // Package name heuristics: keep video players out of the inbox entirely.
         val lowerPkg = packageName.lowercase()
         val looksLikeVideoApp =
             lowerPkg.contains("video") || lowerPkg.contains("movie") ||
@@ -4484,6 +4450,7 @@ class MusicTrackingService : NotificationListenerService() {
         // Cancel auto-save job and position polling so no further state changes arrive
         autoSaveJob?.cancel()
         positionPollingJob?.cancel()
+        strandedReapJob?.cancel()
 
         // Unregister battery state receiver
         batteryStateReceiver?.let {
@@ -4630,3 +4597,88 @@ data class ServiceHealth(
     val durationEstimatorStats: EstimatorStats,
     val uptimeMs: Long,
 )
+
+/**
+ * Eviction rules for sessions whose source app has gone. Extracted from the service so the
+ * policy is unit-testable without an Android `Service` instance.
+ *
+ * A session can outlive its app: the app is killed or retracts its notification and the removal
+ * callback either never arrives or arrives stripped of the metadata that made it recognizable as
+ * media. Because a paused session is deliberately kept on screen (so pausing music does not blank
+ * the notification), that stranded entry then pinned the permanent notification to a finished
+ * item — for hours, and surviving a force-stop of the source app. These rules are the backstop.
+ */
+internal object StrandedSessionRules {
+
+    /** Why a session was evicted. */
+    internal enum class Reason(val description: String) {
+        PAUSED_BELOW_MINIMUM("paused below the minimum play duration"),
+        SOURCE_GONE("source app has no controller or notification"),
+    }
+
+    /**
+     * Minimum idle time before a paused session that has not reached the minimum play duration
+     * is dropped. Such a session can never be saved — `saveListeningEvent` discards it — so
+     * evicting it loses nothing. This is the voice-note case: too short to journal, but
+     * previously left in memory driving the notification.
+     */
+    const val BELOW_MINIMUM_PAUSE_TTL_MS = 2 * 60 * 1000L
+
+    /**
+     * Grace period before a session with no live MediaController and no posted notification is
+     * treated as stranded. Long enough to survive a momentary gap while an app rebuilds its
+     * notification (track change, process restart).
+     */
+    const val STRANDED_SESSION_GRACE_MS = 60_000L
+
+    /**
+     * The session facts the rules need. Keeps this object free of [MusicTrackingService] types
+     * so it stays trivially constructible in tests.
+     */
+    internal data class Snapshot(
+        val packageName: String,
+        val isPlaying: Boolean,
+        val playDurationMs: Long,
+        val lastUpdateAt: Long,
+        val hasLiveController: Boolean,
+    )
+
+    /**
+     * Returns why [snapshot] should be evicted, or null when the session is still legitimate.
+     *
+     * A genuinely paused track survives both rules: its media notification is still posted, and
+     * once it has played past the minimum it is no longer eligible under the first rule.
+     *
+     * @param postedNotificationPackages resolves the packages with a posted notification. It is
+     *   a lambda on purpose: reading it costs a binder IPC that marshals the entire notification
+     *   list, so the first rule — which is decided by local state alone — must return before it
+     *   is ever invoked. Returning null means "unknown" (listener disconnected), which keeps the
+     *   session rather than evicting on a guess.
+     */
+    fun reapReason(
+        snapshot: Snapshot,
+        minimumPlayDurationMs: Long,
+        now: Long,
+        postedNotificationPackages: () -> Set<String>?,
+    ): Reason? {
+        val idleForMs = now - snapshot.lastUpdateAt
+
+        if (!snapshot.isPlaying &&
+            snapshot.playDurationMs < minimumPlayDurationMs &&
+            idleForMs >= BELOW_MINIMUM_PAUSE_TTL_MS
+        ) {
+            return Reason.PAUSED_BELOW_MINIMUM
+        }
+
+        val postedPackages = postedNotificationPackages() ?: return null
+
+        if (!snapshot.hasLiveController &&
+            snapshot.packageName !in postedPackages &&
+            idleForMs >= STRANDED_SESSION_GRACE_MS
+        ) {
+            return Reason.SOURCE_GONE
+        }
+
+        return null
+    }
+}

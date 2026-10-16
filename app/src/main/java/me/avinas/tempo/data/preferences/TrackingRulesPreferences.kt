@@ -60,6 +60,23 @@ class TrackingRulesPreferences internal constructor(private val prefs: SharedPre
             }
         }
 
+    /**
+     * Escape hatch for the default-deny tracking model.
+     *
+     * When false (the default), an app that is on no allowlist is not tracked; it is recorded in
+     * the detected-apps inbox instead so the user can allow it deliberately. Turning this on
+     * restores the old permissive behaviour for people running a niche player they would rather
+     * not add one by one — content heuristics still apply.
+     *
+     * Read synchronously from the notification and MediaSession callbacks, so it lives here
+     * rather than in Room.
+     */
+    var trackUnrecognizedApps: Boolean
+        get() = prefs.getBoolean(KEY_TRACK_UNRECOGNIZED_APPS, false)
+        set(value) {
+            prefs.edit { putBoolean(KEY_TRACK_UNRECOGNIZED_APPS, value) }
+        }
+
     /** Effective maximum duration for one app, after applying its override. */
     fun getMaxMusicDurationMs(packageName: String): Long? {
         val key = appDurationKey(packageName)
@@ -116,6 +133,7 @@ class TrackingRulesPreferences internal constructor(private val prefs: SharedPre
         private const val KEY_MIN_PLAY_DURATION_MS = "minimum_play_duration_ms"
         private const val KEY_DEFAULT_MAX_MUSIC_DURATION_MS = "default_max_music_duration_ms"
         private const val KEY_APP_MAX_DURATION_PREFIX = "app_max_music_duration_ms:"
+        private const val KEY_TRACK_UNRECOGNIZED_APPS = "track_unrecognized_apps"
         private const val NO_LIMIT_VALUE = 0L
 
         private const val MIN_ALLOWED_PLAY_DURATION_MS = 1_000L

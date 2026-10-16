@@ -72,6 +72,13 @@ fun HomeScreen(
     var showTodaysOverview by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val lazyListState = rememberLazyListState()
+
+    // Streak insight cards are dropped for someone who asked not to see streaks, and the
+    // section header goes with them when they were the only thing left in it.
+    val hideStreaks = me.avinas.tempo.ui.components.LocalHideStreaks.current
+    val insights = remember(uiState.insights, hideStreaks) {
+        if (hideStreaks) uiState.insights.filterNot { it.type == InsightType.STREAK } else uiState.insights
+    }
     
     // Gamification state
     val gamificationRepo = viewModel.gamificationRepository
@@ -295,7 +302,7 @@ fun HomeScreen(
                         }
                     }
 
-                    if (uiState.insights.isNotEmpty()) {
+                    if (insights.isNotEmpty()) {
                         item(key = "insights_header") {
                             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 Text(
@@ -313,7 +320,7 @@ fun HomeScreen(
                         item(key = "insights_feed") {
                             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                                 InsightFeed(
-                                    insights = uiState.insights,
+                                    insights = insights,
                                     onNavigateToTrack = onNavigateToTrack,
                                     onNavigateToArtist = onNavigateToArtist
                                 )

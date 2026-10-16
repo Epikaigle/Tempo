@@ -2,6 +2,7 @@ package me.avinas.tempo.data.local.dao
 
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
+import me.avinas.tempo.data.local.LocalTimeSql
 import me.avinas.tempo.data.local.entities.Badge
 import me.avinas.tempo.data.local.entities.DailyChallenge
 import me.avinas.tempo.data.local.entities.UserLevel
@@ -72,7 +73,7 @@ interface GamificationDao {
             FROM listening_events
             WHERE completionPercentage >= 80
               AND (volume_level IS NULL OR volume_level > 0)
-            GROUP BY track_id, date(timestamp / 1000, 'unixepoch', 'localtime')
+            GROUP BY track_id, ${LocalTimeSql.LOCAL_DAY}
         )
     """,
     )
@@ -92,7 +93,7 @@ interface GamificationDao {
             FROM listening_events
             WHERE completionPercentage >= 30 AND completionPercentage < 80
               AND (volume_level IS NULL OR volume_level > 0)
-            GROUP BY track_id, date(timestamp / 1000, 'unixepoch', 'localtime')
+            GROUP BY track_id, ${LocalTimeSql.LOCAL_DAY}
         )
     """,
     )
@@ -143,8 +144,8 @@ interface GamificationDao {
     @Query(
         """
         SELECT COUNT(*) FROM listening_events 
-        WHERE CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) >= :startHour 
-        AND CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) < :endHour
+        WHERE ${LocalTimeSql.LOCAL_HOUR} >= :startHour 
+        AND ${LocalTimeSql.LOCAL_HOUR} < :endHour
     """,
     )
     suspend fun getPlayCountBetweenHours(
@@ -155,12 +156,22 @@ interface GamificationDao {
     /** Get all distinct listening dates for streak calculation */
     @Query(
         """
-        SELECT DISTINCT date(timestamp / 1000, 'unixepoch', 'localtime') as listen_date 
+        SELECT DISTINCT ${LocalTimeSql.LOCAL_DAY} as listen_date 
         FROM listening_events 
         ORDER BY listen_date DESC
     """,
     )
     suspend fun getDistinctListeningDates(): List<String>
+
+    /**
+     * Timezone offset of the most recent play, used to anchor "today" for streaks.
+     *
+     * Counting against the device's date alone drops the newest day when a traveller's recorded
+     * day is ahead of the phone's (flying west) and can skip one when it is behind (flying east).
+     * Indexed by `index_listening_events_timestamp_track_id`, so this is a single-row lookup.
+     */
+    @Query("SELECT tz_offset_minutes FROM listening_events ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestListeningOffsetMinutes(): Int?
 
     /** Get longest listening session duration in milliseconds */
     @Query(
@@ -458,8 +469,8 @@ interface GamificationDao {
         SELECT COUNT(*) FROM listening_events 
         WHERE timestamp >= :startOfDayMs
         AND (volume_level IS NULL OR volume_level > 0)
-        AND CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) >= :startHour 
-        AND CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) < :endHour
+        AND ${LocalTimeSql.LOCAL_HOUR} >= :startHour 
+        AND ${LocalTimeSql.LOCAL_HOUR} < :endHour
     """,
     )
     suspend fun getTodayPlayCountBetweenHours(

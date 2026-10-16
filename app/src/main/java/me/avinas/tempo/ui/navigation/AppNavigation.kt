@@ -98,6 +98,8 @@ sealed class Screen(
 
     data object YouTubeMusicImport : Screen("youtube_music_import")
 
+    data object MusicoletImport : Screen("musicolet_import")
+
     data object ExtensionImport : Screen("extension_import")
 
     data object DesktopLink : Screen("desktop_link")
@@ -250,6 +252,7 @@ fun AppNavigation(
                             onNavigateToLastFmImport = { navController.navigate(Screen.LastFmImport.route) },
                             onNavigateToSpotifyJsonImport = { navController.navigate(Screen.SpotifyJsonImport.route) },
                             onNavigateToYouTubeMusicImport = { navController.navigate(Screen.YouTubeMusicImport.route) },
+                            onNavigateToMusicoletImport = { navController.navigate(Screen.MusicoletImport.route) },
                             onNavigateToExtensionImport = { navController.navigate(Screen.ExtensionImport.route) },
                             onNavigateToDesktop = { navController.navigate(Screen.DesktopLink.route) },
                             onNavigateToEnrichmentReport = { navController.navigate(Screen.EnrichmentReport.route) },
@@ -289,6 +292,12 @@ fun AppNavigation(
 
                     composable(Screen.YouTubeMusicImport.route) {
                         me.avinas.tempo.ui.youtube.YouTubeMusicImportScreen(
+                            onNavigateBack = { navController.popBackStack() },
+                        )
+                    }
+
+                    composable(Screen.MusicoletImport.route) {
+                        me.avinas.tempo.ui.musicolet.MusicoletImportScreen(
                             onNavigateBack = { navController.popBackStack() },
                         )
                     }
