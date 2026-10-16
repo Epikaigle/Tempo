@@ -578,8 +578,10 @@ fun SongDetailsContent(
         CoverArtPickerSheet(
             state = uiState,
             onSelect = viewModel::selectCover,
+            onSelectProvider = viewModel::setSelectedCoverProvider,
             onResetAutomatic = viewModel::resetCoverToAutomatic,
-            onRetry = viewModel::retryCoverCandidates,
+            onRetry = { viewModel.retryCoverCandidates() },
+            onRetryProvider = viewModel::retryCoverCandidates,
             onDismiss = viewModel::dismissCoverPicker,
         )
     }

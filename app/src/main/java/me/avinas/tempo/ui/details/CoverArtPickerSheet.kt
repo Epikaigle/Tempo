@@ -37,7 +37,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +60,12 @@ import me.avinas.tempo.ui.theme.GlassFrostSoft
 import me.avinas.tempo.ui.theme.TempoDarkSurface
 import me.avinas.tempo.ui.theme.TempoDarkSurfaceSunken
 import me.avinas.tempo.ui.theme.TempoPrimary
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import me.avinas.tempo.ui.theme.TextPrimary
 import me.avinas.tempo.ui.theme.TextSecondary
 import me.avinas.tempo.ui.theme.TextTertiary
@@ -85,31 +90,17 @@ internal fun resolveCoverPickerColumnCount(maxWidthDp: Float): Int =
 internal fun CoverArtPickerSheet(
     state: SongDetailsUiState,
     onSelect: (CoverArtCandidate) -> Unit,
+    onSelectProvider: (CoverArtProvider) -> Unit = {},
     onResetAutomatic: () -> Unit,
     onRetry: () -> Unit,
+    onRetryProvider: ((CoverArtProvider) -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var selectedProvider by remember { mutableStateOf<CoverArtProvider?>(null) }
-
-    LaunchedEffect(state.isLoadingCoverCandidates) {
-        // A retry starts a new lookup generation. Drop any previous explicit
-        // selection so a changed result from the same provider can never become
-        // selected without another user tap.
-        if (state.isLoadingCoverCandidates) {
-            selectedProvider = null
-        }
-    }
-
-    LaunchedEffect(state.coverCandidates) {
-        // Never auto-select "Current" (or any remote result). Persist only an explicit
-        // user tap while that provider still has a candidate.
-        selectedProvider = reconcileCoverPickerSelection(
-            selectedProvider = selectedProvider,
-            candidates = state.coverCandidates,
-        )
-    }
-
+    val selectedProvider = reconcileCoverPickerSelection(
+        selectedProvider = state.selectedCoverProvider,
+        candidates = state.coverCandidates,
+    )
     val selected = state.coverCandidates.firstOrNull { it.provider == selectedProvider }
     val providers = buildList {
         if (state.coverCandidates.any { it.provider == CoverArtProvider.CURRENT }) {
@@ -117,6 +108,12 @@ internal fun CoverArtPickerSheet(
         }
         addAll(CoverArtPickerService.REMOTE_PROVIDERS)
     }
+
+    val configuration = LocalConfiguration.current
+    val isCompactOrLargeFont = configuration.screenHeightDp < 640 || configuration.fontScale > 1.2f
+    val previewSize = if (isCompactOrLargeFont) 120.dp else 168.dp
+
+    var isPreviewImageError by remember(selected?.albumArtUrl) { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -127,131 +124,163 @@ internal fun CoverArtPickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
                 .padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
         ) {
-            Text(
-                text = stringResource(R.string.details_change_cover_title),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = stringResource(R.string.details_change_cover_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
-            )
-
-            if (state.isManualCover) {
-                Spacer(modifier = Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 Text(
-                    text = stringResource(R.string.details_cover_manual),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TempoPrimary,
+                    text = stringResource(R.string.details_change_cover_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
                 )
-            }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.details_change_cover_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
 
-            selected?.let { candidate ->
-                Spacer(modifier = Modifier.height(18.dp))
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    AlbumArtImage(
-                        albumArtUrl = candidate.albumArtUrlLarge ?: candidate.albumArtUrl,
-                        contentDescription = providerLabel(candidate.provider),
-                        modifier = Modifier
-                            .size(168.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .border(1.dp, GlassBorderMedium, RoundedCornerShape(18.dp)),
-                    )
+                if (state.isManualCover) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = providerLabel(candidate.provider),
-                        style = MaterialTheme.typography.titleMedium,
+                        text = stringResource(R.string.details_cover_manual),
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
+                        color = TempoPrimary,
                     )
-                    candidate.albumTitle?.takeIf { it.isNotBlank() }?.let { album ->
-                        Text(
-                            text = album,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val spacing = 12.dp
-                val columns = resolveCoverPickerColumnCount(maxWidth.value)
-                val cardWidth = (maxWidth - (spacing * (columns - 1))) / columns
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(spacing),
-                    verticalArrangement = Arrangement.spacedBy(spacing),
-                    maxItemsInEachRow = columns,
-                ) {
-                    providers.forEach { provider ->
-                        val candidate = state.coverCandidates.firstOrNull { it.provider == provider }
-                        val status = if (provider == CoverArtProvider.CURRENT) {
-                            if (candidate != null) CoverArtLookupStatus.FOUND else CoverArtLookupStatus.NOT_FOUND
-                        } else {
-                            state.coverProviderStatuses[provider] ?: CoverArtLookupStatus.LOADING
-                        }
-                        CoverProviderCard(
-                            provider = provider,
-                            candidate = candidate,
-                            status = status,
-                            selected = selectedProvider == provider && candidate != null,
-                            onClick = {
-                                if (candidate != null && !state.isSavingCover) {
-                                    selectedProvider = provider
-                                }
+                selected?.let { candidate ->
+                    Spacer(modifier = Modifier.height(18.dp))
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        AlbumArtImage(
+                            albumArtUrl = candidate.albumArtUrlLarge ?: candidate.albumArtUrl,
+                            contentDescription = providerLabel(candidate.provider),
+                            targetSizePx = 1024,
+                            onImageLoaded = {
+                                isPreviewImageError = false
+                            },
+                            onImageError = {
+                                isPreviewImageError = true
                             },
                             modifier = Modifier
-                                .width(cardWidth)
-                                .heightIn(min = 180.dp),
+                                .size(previewSize)
+                                .clip(RoundedCornerShape(18.dp))
+                                .border(1.dp, GlassBorderMedium, RoundedCornerShape(18.dp)),
                         )
+                        if (isPreviewImageError) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = stringResource(R.string.details_cover_preview_error),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = providerLabel(candidate.provider),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary,
+                        )
+                        val subtitle = candidate.albumTitle?.takeIf { it.isNotBlank() }
+                            ?: if (candidate.provider == CoverArtProvider.CURRENT) {
+                                stringResource(R.string.details_cover_current_hint)
+                            } else null
+                        subtitle?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val spacing = 12.dp
+                    val columns = resolveCoverPickerColumnCount(maxWidth.value)
+                    val cardWidth = (maxWidth - (spacing * (columns - 1))) / columns
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(spacing),
+                        verticalArrangement = Arrangement.spacedBy(spacing),
+                        maxItemsInEachRow = columns,
+                    ) {
+                        providers.forEach { provider ->
+                            val candidate = state.coverCandidates.firstOrNull { it.provider == provider }
+                            val status = if (provider == CoverArtProvider.CURRENT) {
+                                if (candidate != null) CoverArtLookupStatus.FOUND else CoverArtLookupStatus.NOT_FOUND
+                            } else {
+                                state.coverProviderStatuses[provider] ?: CoverArtLookupStatus.LOADING
+                            }
+                            CoverProviderCard(
+                                provider = provider,
+                                candidate = candidate,
+                                status = status,
+                                selected = selectedProvider == provider && candidate != null,
+                                onClick = {
+                                    if (candidate != null && !state.isSavingCover && !state.isResettingCover) {
+                                        onSelectProvider(provider)
+                                    } else if (status == CoverArtLookupStatus.ERROR && !state.isLoadingCoverCandidates) {
+                                        if (onRetryProvider != null) {
+                                            onRetryProvider(provider)
+                                        } else {
+                                            onRetry()
+                                        }
+                                    }
+                                },
+                                onRetry = onRetryProvider?.let { callback -> { callback(provider) } },
+                                modifier = Modifier
+                                    .width(cardWidth)
+                                    .heightIn(min = 180.dp),
+                            )
+                        }
+                    }
+                }
+
+                val hasProviderError = state.coverProviderStatuses.values
+                    .any { it == CoverArtLookupStatus.ERROR }
+                if (state.coverPickerError != null || hasProviderError) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    state.coverPickerError?.let { error ->
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    TextButton(
+                        onClick = onRetry,
+                        enabled = !state.isLoadingCoverCandidates && !state.isSavingCover && !state.isResettingCover,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.size(6.dp))
+                        Text(stringResource(R.string.details_cover_try_again))
                     }
                 }
             }
 
-            val hasProviderError = state.coverProviderStatuses.values
-                .any { it == CoverArtLookupStatus.ERROR }
-            if (state.coverPickerError != null || hasProviderError) {
-                Spacer(modifier = Modifier.height(14.dp))
-                state.coverPickerError?.let { error ->
-                    Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                TextButton(
-                    onClick = onRetry,
-                    enabled = !state.isLoadingCoverCandidates && !state.isSavingCover,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.size(6.dp))
-                    Text(stringResource(R.string.details_cover_try_again))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { selected?.let(onSelect) },
-                enabled = selected != null && !state.isSavingCover,
+                enabled = selected != null && !state.isSavingCover && !state.isResettingCover && !isPreviewImageError,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (state.isSavingCover) {
@@ -270,11 +299,18 @@ internal fun CoverArtPickerSheet(
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = onResetAutomatic,
-                    enabled = !state.isSavingCover,
+                    enabled = !state.isSavingCover && !state.isResettingCover,
                     modifier = Modifier.fillMaxWidth(),
                     border = BorderStroke(1.dp, GlassBorderMedium),
                 ) {
-                    Text(stringResource(R.string.details_cover_restore_auto))
+                    if (state.isResettingCover) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Text(stringResource(R.string.details_cover_restore_auto))
+                    }
                 }
                 Text(
                     text = stringResource(R.string.details_cover_restore_auto_hint),
@@ -294,17 +330,47 @@ private fun CoverProviderCard(
     status: CoverArtLookupStatus,
     selected: Boolean,
     onClick: () -> Unit,
+    onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(16.dp)
     val borderColor = if (selected) TempoPrimary else GlassBorderSoft
+    val providerName = providerLabel(provider)
+    val statusDescription = when {
+        status == CoverArtLookupStatus.LOADING -> stringResource(R.string.details_cover_searching)
+        status == CoverArtLookupStatus.ERROR -> stringResource(R.string.details_cover_error)
+        status == CoverArtLookupStatus.UNAVAILABLE -> stringResource(R.string.details_cover_unavailable)
+        candidate != null -> candidate.albumTitle?.takeIf { it.isNotBlank() } ?: stringResource(R.string.details_cover_current_hint)
+        else -> stringResource(R.string.details_cover_not_found)
+    }
+    val cardContentDescription = buildString {
+        append(providerName)
+        append(", ")
+        append(statusDescription)
+        if (selected) {
+            append(", selected")
+        }
+    }
 
     Column(
         modifier = modifier
             .clip(shape)
             .background(if (selected) GlassFrostSoft else TempoDarkSurfaceSunken)
             .border(if (selected) 1.5.dp else 0.8.dp, borderColor, shape)
-            .clickable(enabled = candidate != null, onClick = onClick)
+            .semantics {
+                role = Role.RadioButton
+                this.selected = selected
+                this.contentDescription = cardContentDescription
+            }
+            .clickable(
+                enabled = candidate != null || status == CoverArtLookupStatus.ERROR,
+                onClickLabel = if (status == CoverArtLookupStatus.ERROR) {
+                    stringResource(R.string.details_cover_retry_source)
+                } else {
+                    providerName
+                },
+                onClick = onClick,
+            )
             .padding(10.dp),
     ) {
         Box(
@@ -318,8 +384,9 @@ private fun CoverProviderCard(
             when {
                 candidate != null -> {
                     AlbumArtImage(
-                        albumArtUrl = candidate.albumArtUrlLarge ?: candidate.albumArtUrl,
-                        contentDescription = providerLabel(provider),
+                        albumArtUrl = candidate.albumArtUrlSmall ?: candidate.albumArtUrl,
+                        contentDescription = null,
+                        targetSizePx = 256,
                         modifier = Modifier.fillMaxSize(),
                     )
                     if (selected) {
@@ -349,11 +416,26 @@ private fun CoverProviderCard(
                     )
                 }
                 status == CoverArtLookupStatus.ERROR -> {
-                    Text(
-                        text = stringResource(R.string.details_cover_error),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(4.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.details_cover_error),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        if (onRetry != null) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Icon(
+                                imageVector = Icons.Rounded.Refresh,
+                                contentDescription = stringResource(R.string.details_cover_retry_source),
+                                tint = TempoPrimary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
                 }
                 else -> {
                     Text(
@@ -375,13 +457,18 @@ private fun CoverProviderCard(
         Text(
             text = when {
                 candidate?.albumTitle?.isNotBlank() == true -> candidate.albumTitle.orEmpty()
+                provider == CoverArtProvider.CURRENT -> stringResource(R.string.details_cover_current_hint)
                 status == CoverArtLookupStatus.LOADING -> stringResource(R.string.details_cover_searching)
                 status == CoverArtLookupStatus.UNAVAILABLE -> stringResource(R.string.details_cover_unavailable)
-                status == CoverArtLookupStatus.ERROR -> stringResource(R.string.details_cover_error)
+                status == CoverArtLookupStatus.ERROR -> if (onRetry != null) {
+                    stringResource(R.string.details_cover_retry_source)
+                } else {
+                    stringResource(R.string.details_cover_error)
+                }
                 else -> ""
             },
             style = MaterialTheme.typography.labelSmall,
-            color = TextSecondary,
+            color = if (status == CoverArtLookupStatus.ERROR && onRetry != null) TempoPrimary else TextSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

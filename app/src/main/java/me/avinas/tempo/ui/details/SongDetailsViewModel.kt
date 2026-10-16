@@ -95,6 +95,7 @@ class SongDetailsViewModel @Inject constructor(
 
     // Guards on-demand enrichment so it fires once per screen entry, not on every reload
     private var hasTriggeredOnDemandEnrichment = false
+    private var trackDetailsLoadGeneration = 0L
 
     init {
         loadTrackDetails()
@@ -114,6 +115,7 @@ class SongDetailsViewModel @Inject constructor(
      * Load track details from database cache.
      */
     private fun loadTrackDetails(quiet: Boolean = false) {
+        val currentGeneration = ++trackDetailsLoadGeneration
         viewModelScope.launch {
             if (!quiet) _uiState.update { it.copy(isLoading = true) }
             try {
@@ -196,6 +198,8 @@ class SongDetailsViewModel @Inject constructor(
                     ?: enrichedMetadata?.spotifyId?.let { "https://open.spotify.com/track/$it" }
                 val appleMusicUrl = details.appleMusicUrl ?: enrichedMetadata?.appleMusicUrl
 
+                if (currentGeneration != trackDetailsLoadGeneration) return@launch
+
                 _uiState.update { 
                     it.copy(
                         isLoading = false,
@@ -228,6 +232,7 @@ class SongDetailsViewModel @Inject constructor(
                     EnrichmentWorker.enqueueImmediate(context, trackId)
                 }
             } catch (e: Exception) {
+                if (currentGeneration != trackDetailsLoadGeneration) return@launch
                 _uiState.update { 
                     it.copy(
                         isLoading = false,
@@ -242,6 +247,10 @@ class SongDetailsViewModel @Inject constructor(
         loadTrackDetails()
     }
 
+    fun setSelectedCoverProvider(provider: CoverArtProvider?) {
+        _uiState.update { it.copy(selectedCoverProvider = provider) }
+    }
+
     fun showCoverPicker() {
         if (_uiState.value.showCoverPicker) return
         _uiState.update {
@@ -249,6 +258,8 @@ class SongDetailsViewModel @Inject constructor(
                 showCoverPicker = true,
                 isLoadingCoverCandidates = true,
                 isSavingCover = false,
+                isResettingCover = false,
+                selectedCoverProvider = null,
                 coverPickerError = null,
                 coverCandidates = emptyList(),
                 coverProviderStatuses = CoverArtPickerService.REMOTE_PROVIDERS
@@ -259,47 +270,63 @@ class SongDetailsViewModel @Inject constructor(
     }
 
     fun dismissCoverPicker() {
-        if (_uiState.value.isSavingCover) return
+        if (_uiState.value.isSavingCover || _uiState.value.isResettingCover) return
         coverLookupJob?.cancel()
         coverLookupJob = null
         _uiState.update {
             it.copy(
                 showCoverPicker = false,
                 isLoadingCoverCandidates = false,
+                isSavingCover = false,
+                isResettingCover = false,
+                selectedCoverProvider = null,
                 coverPickerError = null,
             )
         }
     }
 
-    fun retryCoverCandidates() {
-        if (_uiState.value.showCoverPicker) loadCoverCandidates()
+    fun retryCoverCandidates(providerToRetry: CoverArtProvider? = null) {
+        if (_uiState.value.showCoverPicker) loadCoverCandidates(providerToRetry)
     }
 
-    private fun loadCoverCandidates() {
+    private fun loadCoverCandidates(providerToRetry: CoverArtProvider? = null) {
         val track = _uiState.value.trackDetails?.track ?: return
         coverLookupJob?.cancel()
         coverLookupJob = viewModelScope.launch {
-            _uiState.update {
-                it.copy(
+            val providersToSearch = if (providerToRetry != null) {
+                listOf(providerToRetry)
+            } else {
+                val currentStatuses = _uiState.value.coverProviderStatuses
+                val failedProviders = CoverArtPickerService.REMOTE_PROVIDERS.filter {
+                    currentStatuses[it] == CoverArtLookupStatus.ERROR
+                }
+                if (failedProviders.isNotEmpty()) failedProviders else CoverArtPickerService.REMOTE_PROVIDERS
+            }
+
+            _uiState.update { state ->
+                val newStatuses = state.coverProviderStatuses.toMutableMap()
+                providersToSearch.forEach { newStatuses[it] = CoverArtLookupStatus.LOADING }
+                state.copy(
                     isLoadingCoverCandidates = true,
                     coverPickerError = null,
-                    coverCandidates = emptyList(),
-                    coverProviderStatuses = CoverArtPickerService.REMOTE_PROVIDERS
-                        .associateWith { CoverArtLookupStatus.LOADING },
+                    selectedCoverProvider = if (state.selectedCoverProvider in providersToSearch) null else state.selectedCoverProvider,
+                    coverCandidates = state.coverCandidates.filterNot { it.provider in providersToSearch },
+                    coverProviderStatuses = newStatuses,
                 )
             }
 
             try {
                 val metadata = enrichedMetadataRepository.forTrackSync(trackId)
-                _uiState.update {
-                    it.copy(
-                        coverCandidates = listOfNotNull(
-                            coverArtPickerService.currentCandidate(track, metadata),
-                        ),
-                    )
+                _uiState.update { state ->
+                    if (state.coverCandidates.none { it.provider == CoverArtProvider.CURRENT }) {
+                        val current = coverArtPickerService.currentCandidate(track, metadata)
+                        if (current != null) {
+                            state.copy(coverCandidates = listOf(current) + state.coverCandidates)
+                        } else state
+                    } else state
                 }
                 coroutineScope {
-                    CoverArtPickerService.REMOTE_PROVIDERS.forEach { provider ->
+                    providersToSearch.forEach { provider ->
                         launch {
                             val result = coverArtPickerService.searchProvider(provider, track, metadata)
                             _uiState.update { state ->
@@ -327,10 +354,17 @@ class SongDetailsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
+                _uiState.update { state ->
+                    state.copy(
                         isLoadingCoverCandidates = false,
                         coverPickerError = e.message ?: context.getString(R.string.details_cover_load_error),
+                        coverProviderStatuses = state.coverProviderStatuses.mapValues { (_, status) ->
+                            if (status == CoverArtLookupStatus.LOADING) {
+                                CoverArtLookupStatus.ERROR
+                            } else {
+                                status
+                            }
+                        },
                     )
                 }
             }
@@ -395,10 +429,11 @@ class SongDetailsViewModel @Inject constructor(
 
     fun selectCover(candidate: CoverArtCandidate) {
         if (_uiState.value.trackDetails == null) return
-        if (_uiState.value.isSavingCover) return
+        if (_uiState.value.isSavingCover || _uiState.value.isResettingCover) return
 
         coverLookupJob?.cancel()
         coverLookupJob = null
+        trackDetailsLoadGeneration++
         viewModelScope.launch {
             _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
             try {
@@ -436,6 +471,8 @@ class SongDetailsViewModel @Inject constructor(
                         showCoverPicker = false,
                         isLoadingCoverCandidates = false,
                         isSavingCover = false,
+                        isResettingCover = false,
+                        selectedCoverProvider = null,
                         coverPickerError = null,
                     )
                 }
@@ -446,6 +483,7 @@ class SongDetailsViewModel @Inject constructor(
                     it.copy(
                         isLoadingCoverCandidates = false,
                         isSavingCover = false,
+                        isResettingCover = false,
                         coverPickerError = e.message ?: context.getString(R.string.details_cover_save_error),
                         coverProviderStatuses = it.coverProviderStatuses.mapValues { (_, status) ->
                             if (status == CoverArtLookupStatus.LOADING) {
@@ -462,12 +500,13 @@ class SongDetailsViewModel @Inject constructor(
 
     fun resetCoverToAutomatic() {
         if (_uiState.value.trackDetails == null) return
-        if (_uiState.value.isSavingCover) return
+        if (_uiState.value.isSavingCover || _uiState.value.isResettingCover) return
 
         coverLookupJob?.cancel()
         coverLookupJob = null
+        trackDetailsLoadGeneration++
         viewModelScope.launch {
-            _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
+            _uiState.update { it.copy(isResettingCover = true, coverPickerError = null) }
             try {
                 val obsoleteLocalBackup = _uiState.value.trackDetails?.localBackupArtUrl
                 enrichedMetadataRepository.resetArtworkToAutomatic(trackId)
@@ -480,19 +519,17 @@ class SongDetailsViewModel @Inject constructor(
                     appendAfterExisting = true,
                 )
 
-                // Clear the manual image immediately. The guaranteed post-reset enrichment worker will
-                // repopulate Track.albumArtUrl and its metadata-update signal reloads this screen.
+                // Preserve the currently displayed image during transition to prevent blank screen flashing.
+                // The post-reset enrichment worker will repopulate Track.albumArtUrl once ready.
                 _uiState.update {
                     it.copy(
                         isManualCover = false,
                         showCoverPicker = false,
                         isLoadingCoverCandidates = false,
                         isSavingCover = false,
+                        isResettingCover = false,
+                        selectedCoverProvider = null,
                         coverPickerError = null,
-                        trackDetails = it.trackDetails?.copy(
-                            track = it.trackDetails.track.copy(albumArtUrl = null),
-                            localBackupArtUrl = null,
-                        ),
                     )
                 }
             } catch (e: CancellationException) {
@@ -502,6 +539,7 @@ class SongDetailsViewModel @Inject constructor(
                     it.copy(
                         isLoadingCoverCandidates = false,
                         isSavingCover = false,
+                        isResettingCover = false,
                         coverPickerError = e.message ?: context.getString(R.string.details_cover_restore_auto_error),
                         coverProviderStatuses = it.coverProviderStatuses.mapValues { (_, status) ->
                             if (status == CoverArtLookupStatus.LOADING) {
@@ -770,6 +808,8 @@ data class SongDetailsUiState(
     val showCoverPicker: Boolean = false,
     val isLoadingCoverCandidates: Boolean = false,
     val isSavingCover: Boolean = false,
+    val isResettingCover: Boolean = false,
+    val selectedCoverProvider: CoverArtProvider? = null,
     val coverPickerError: String? = null,
     val coverCandidates: List<CoverArtCandidate> = emptyList(),
     val coverProviderStatuses: Map<CoverArtProvider, CoverArtLookupStatus> = emptyMap(),
