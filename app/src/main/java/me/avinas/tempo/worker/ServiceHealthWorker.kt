@@ -12,12 +12,9 @@ import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import me.avinas.tempo.R
-import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.AnalyticsHealthReporter
 import me.avinas.tempo.data.analytics.RecoveryAction
 import me.avinas.tempo.data.analytics.RevivedBy
-import me.avinas.tempo.data.analytics.ServiceRevived
-import me.avinas.tempo.data.analytics.TrackingGap
-import me.avinas.tempo.data.analytics.TrackingGapReason
 import me.avinas.tempo.service.MusicTrackingService
 import me.avinas.tempo.service.TrackingServiceHeartbeat
 import dagger.assisted.Assisted
@@ -32,15 +29,14 @@ import java.util.concurrent.TimeUnit
  * and fail to restart it automatically.
  *
  * This is also the single best vantage point for tracking-health reporting: it already
- * distinguishes "permission is granted" from "the listener is actually alive", so
- * `tracking_gap` and `service_revived` are reported here rather than instrumenting the
- * 3,000-line listener service.
+ * distinguishes "permission is granted" from "the listener is actually alive", so recoveries
+ * are reported from here rather than by instrumenting the 3,000-line listener service.
  */
 @HiltWorker
 class ServiceHealthWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
-    private val tracker: AnalyticsTracker
+    private val healthReporter: AnalyticsHealthReporter
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -109,7 +105,13 @@ class ServiceHealthWorker @AssistedInject constructor(
                     android.content.pm.PackageManager.DONT_KILL_APP
                 )
                 requestListenerRebind(componentName)
-                tracker.track(ServiceRevived(RevivedBy.HEALTH_WORKER, RecoveryAction.COMPONENT_REENABLE))
+                // The component was found outright disabled, so the gap is not measurable
+                // here — reported as unknown rather than guessed at.
+                healthReporter.reportIfDue(
+                    gapMillis = null,
+                    by = RevivedBy.HEALTH_WORKER,
+                    recovery = RecoveryAction.COMPONENT_REENABLE,
+                )
                 return Result.success()
             }
         } catch (e: Exception) {
@@ -150,7 +152,7 @@ class ServiceHealthWorker @AssistedInject constructor(
      * `shouldRequestRebind()` is true simply because nothing has started yet. Reporting that
      * as a gap would make every new user look like a tracking failure.
      */
-    private fun reportStaleTracking(
+    private suspend fun reportStaleTracking(
         heartbeat: TrackingServiceHeartbeat.Snapshot,
         recovery: RecoveryAction
     ) {
@@ -159,11 +161,14 @@ class ServiceHealthWorker @AssistedInject constructor(
         val gapMillis = if (heartbeat.lastServiceAliveAt > 0L) {
             System.currentTimeMillis() - heartbeat.lastServiceAliveAt
         } else {
-            0L
+            null
         }
 
-        tracker.track(TrackingGap(TrackingGapReason.SERVICE_KILLED, gapMillis))
-        tracker.track(ServiceRevived(RevivedBy.HEALTH_WORKER, recovery))
+        healthReporter.reportIfDue(
+            gapMillis = gapMillis,
+            by = RevivedBy.HEALTH_WORKER,
+            recovery = recovery,
+        )
     }
 
     private fun isNotificationListenerEnabled(componentName: ComponentName): Boolean {

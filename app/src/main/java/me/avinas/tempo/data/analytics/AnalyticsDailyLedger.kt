@@ -34,6 +34,9 @@ class AnalyticsDailyLedger
         /** The last day a usage aggregate was sent for, or null if none ever was. */
         suspend fun usageDay(): Long? = context.dataStore.data.first()[usageDayKey]
 
+        /** The last day a tracking-health report was sent for, or null if none ever was. */
+        suspend fun healthDay(): Long? = context.dataStore.data.first()[healthDayKey]
+
         /**
          * The last day the app's own UI was opened, or null if it never was.
          *
@@ -62,6 +65,10 @@ class AnalyticsDailyLedger
 
         suspend fun markUsageReported(day: Long) {
             context.dataStore.edit { it[usageDayKey] = day }
+        }
+
+        suspend fun markHealthReported(day: Long) {
+            context.dataStore.edit { it[healthDayKey] = day }
         }
 
         /**
@@ -95,6 +102,7 @@ class AnalyticsDailyLedger
                 it.remove(usageDayKey)
                 it.remove(uiOpenedDayKey)
                 it.remove(uiOpenedPrevDayKey)
+                it.remove(healthDayKey)
             }
         }
 
@@ -103,5 +111,6 @@ class AnalyticsDailyLedger
             val usageDayKey = longPreferencesKey("analytics_usage_day")
             val uiOpenedDayKey = longPreferencesKey("analytics_ui_opened_day")
             val uiOpenedPrevDayKey = longPreferencesKey("analytics_ui_opened_prev_day")
+            val healthDayKey = longPreferencesKey("analytics_health_day")
         }
     }

@@ -23,6 +23,16 @@ object AnalyticsDaily {
         LocalDate.ofEpochDay(day).atStartOfDay(zone).toInstant().toEpochMilli()
 
     /**
+     * Whether [day] has already been reported, for any once-a-day event.
+     *
+     * Shared by the presence marker and the tracking-health report so both mean the same
+     * thing by "once a day", and so a new once-daily event cannot accidentally invent its own
+     * subtly different rule.
+     */
+    fun isUnreported(lastReportedDay: Long?, day: Long): Boolean =
+        lastReportedDay == null || lastReportedDay != day
+
+    /**
      * The presence marker is due whenever today's has not been sent yet.
      *
      * A device whose clock jumps backwards would look like a new day; that is accepted
@@ -30,7 +40,7 @@ object AnalyticsDaily {
      * suppressing a real day's presence.
      */
     fun shouldReportPresence(lastReportedDay: Long?, today: Long): Boolean =
-        lastReportedDay == null || lastReportedDay != today
+        isUnreported(lastReportedDay, today)
 
     /**
      * Usage is worth a row when the user did one of the two things that count as using Tempo:

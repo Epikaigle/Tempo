@@ -31,9 +31,9 @@ Everything else is a fixed name from a closed list. There is no free-text field 
 | `onboarding_completed` | Setup completion: skipped-step range, total time range |
 | `notif_access` | Notification access result and whether it was granted during onboarding or in Settings |
 | `battery_exemption` | Battery-optimisation exemption result |
-| `tracking_gap` | When music detection stopped, why, and for how long (range) |
-| `service_revived` | Whether Tempo restarted itself after the system stopped it, and how |
-| `listening_activity` | Daily totals only, never per track: listen-count range, app-count range |
+| `daily_activity` | That Tempo was used at all today, and whether music detection was already down when it was. Once a day, and the only thing "daily active users" is counted from |
+| `tracking_health` | That music detection stopped and Tempo brought it back: how long it had been down, what triggered the check, and how forceful the recovery was. Once a day at most, however many times it happened |
+| `listening_activity` | Daily totals only, never per track: listen-count range, app-count range, and whether the app's own screens were opened that day |
 | `db_migration` | On-device database schema moved from one version to another |
 | `import_run` | Import result for Last.fm, Spotify, YouTube Music, the browser-extension export, or Tempo backup: phase, record range, failure category, time range |
 | `backup_run` | Backup result for local or Drive: success flag, size and time ranges |

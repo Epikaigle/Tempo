@@ -45,6 +45,25 @@ object AnalyticsBucket {
             value < 100L shl 20 -> "10-100MB"
             else -> "100MB+"
         }
+
+    /**
+     * How long music detection was dead, bucketed for the range gaps actually occur in.
+     *
+     * A dead listener cannot be noticed in under the health worker's 15-minute retry, so
+     * gaps run from tens of minutes to days. The generic [duration] buckets top out at
+     * `30s+`, which meant every gap ever reported landed in the same bucket — a thirty-second
+     * blip and a three-day silence were indistinguishable, which is precisely the distinction
+     * the metric exists to draw.
+     */
+    fun gap(gapMillis: Long?): TrackingGapSeverity =
+        when {
+            gapMillis == null -> TrackingGapSeverity.UNKNOWN
+            gapMillis < 30L * 60L * 1000L -> TrackingGapSeverity.UNDER_30M
+            gapMillis < 2L * 60L * 60L * 1000L -> TrackingGapSeverity.UNDER_2H
+            gapMillis < 6L * 60L * 60L * 1000L -> TrackingGapSeverity.UNDER_6H
+            gapMillis < 24L * 60L * 60L * 1000L -> TrackingGapSeverity.UNDER_24H
+            else -> TrackingGapSeverity.OVER_24H
+        }
 }
 
 enum class AnalyticsScreen {
@@ -111,7 +130,19 @@ enum class AccessResult { GRANTED, DENIED, REVOKED, DEFERRED }
 
 enum class ExemptionResult { GRANTED, DENIED, SKIPPED }
 
-enum class TrackingGapReason { SERVICE_KILLED, OEM_KILL, NO_MEDIA_NOTIF, PARSE_FAILED, AD_FILTERED }
+/**
+ * How long music detection was dead.
+ *
+ * [UNKNOWN] exists because one recovery path — finding the listener component outright
+ * disabled — has no way to measure the gap, and reporting that as the mildest bucket would
+ * understate a case that is usually severe. An honest "we do not know" beats a wrong number.
+ *
+ * The previous encoding reused the generic `<1s / 1-5s / 5-30s / 30s+` duration buckets, and
+ * since a gap can never be detected in under the health worker's 15-minute retry, every value
+ * it ever produced was `30s+` — the one distinction the metric existed to draw, erased by the
+ * bucket it was squeezed into.
+ */
+enum class TrackingGapSeverity { UNKNOWN, UNDER_30M, UNDER_2H, UNDER_6H, UNDER_24H, OVER_24H }
 
 enum class RevivedBy { HEALTH_WORKER, BOOT }
 
@@ -213,25 +244,34 @@ data class BatteryExemptionResult(
     override val props: Map<String, Any> = mapOf("result" to result.name)
 }
 
-data class TrackingGap(
-    val reason: TrackingGapReason,
-    val gapMillis: Long,
-) : AnalyticsEvent {
-    override val name = "tracking_gap"
-    override val props: Map<String, Any> =
-        mapOf(
-            "reason" to reason.name,
-            "gap" to AnalyticsBucket.duration(gapMillis),
-        )
-}
-
-data class ServiceRevived(
+/**
+ * Music detection died and had to be revived — **at most once per device per day**.
+ *
+ * The old pair (`tracking_gap` and `service_revived`) fired together for every single
+ * incident, so one broken device produced 192 events a day and half of them duplicated the
+ * other half. Because the health worker retries every 15 minutes and a device whose listener
+ * is dead stays dead, a few dozen devices could consume an entire monthly quota while the
+ * dashboard claimed the whole fleet was failing.
+ *
+ * Repetition was not merely expensive, it was misleading: ninety-six identical rows read as
+ * ninety-six unlucky users. One row per device per day makes "how many devices had a problem"
+ * the number you actually read.
+ *
+ * There is deliberately no per-day incident count. Now that events carry a stable identity,
+ * "is this one device flapping every day" is a question for the query layer — count the days
+ * on which a device reported this event — rather than a field that would need a second
+ * accumulator and a two-day slot to survive the day boundary. The payload stays smaller and
+ * the analysis moves to where it belongs.
+ */
+data class TrackingHealth(
+    val severity: TrackingGapSeverity,
     val by: RevivedBy,
     val recovery: RecoveryAction,
 ) : AnalyticsEvent {
-    override val name = "service_revived"
+    override val name = "tracking_health"
     override val props: Map<String, Any> =
         mapOf(
+            "severity" to severity.name,
             "by" to by.name,
             "recovery" to recovery.name,
         )

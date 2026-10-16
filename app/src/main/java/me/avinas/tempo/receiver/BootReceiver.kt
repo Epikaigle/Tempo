@@ -8,9 +8,9 @@ import android.content.pm.PackageManager
 import android.provider.Settings
 import android.util.Log
 import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.runBlocking
 import me.avinas.tempo.data.analytics.RecoveryAction
 import me.avinas.tempo.data.analytics.RevivedBy
-import me.avinas.tempo.data.analytics.ServiceRevived
 import me.avinas.tempo.di.AnalyticsEntryPoint
 import me.avinas.tempo.service.MusicTrackingService
 
@@ -99,15 +99,42 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     /**
-     * A broadcast receiver has no injection point, so the tracker is resolved through an
-     * entry point, and a failure to do so must never break the boot self-heal.
+     * A broadcast receiver has no injection point, so the reporter is resolved through an entry
+     * point, and a failure to do so must never break the boot self-heal.
+     *
+     * Reporting is asynchronous — the once-a-day guard is a DataStore read — so the receiver
+     * keeps itself alive with `goAsync()` rather than racing the framework, which is free to
+     * kill the process the moment `onReceive` returns.
      */
     private fun reportRevived(context: Context) {
-        runCatching {
-            EntryPointAccessors
-                .fromApplication(context.applicationContext, AnalyticsEntryPoint::class.java)
-                .analyticsTracker()
-                .track(ServiceRevived(RevivedBy.BOOT, RecoveryAction.COMPONENT_REENABLE))
-        }
+        val pending =
+            runCatching { goAsync() }.getOrElse {
+                Log.w(TAG, "Could not extend receiver lifetime to report boot revival", it)
+                return
+            }
+        val appContext = context.applicationContext
+
+        Thread {
+            try {
+                val reporter =
+                    EntryPointAccessors
+                        .fromApplication(appContext, AnalyticsEntryPoint::class.java)
+                        .analyticsHealthReporter()
+
+                runBlocking {
+                    reporter.reportIfDue(
+                        // The component was found disabled at boot; how long it had been that
+                        // way is not knowable from here.
+                        gapMillis = null,
+                        by = RevivedBy.BOOT,
+                        recovery = RecoveryAction.COMPONENT_REENABLE,
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Unable to report boot revival", e)
+            } finally {
+                pending.finish()
+            }
+        }.start()
     }
 }

@@ -56,14 +56,9 @@ object AnalyticsCatalog {
                 properties = listOf("result"),
             ),
             AnalyticsCatalogEntry(
-                event = "tracking_gap",
-                what = "When and why music detection stopped, so listening gaps can be fixed.",
-                properties = listOf("reason", "gap"),
-            ),
-            AnalyticsCatalogEntry(
-                event = "service_revived",
-                what = "That Tempo recovered after the system stopped it, and how forcefully.",
-                properties = listOf("by", "recovery"),
+                event = "tracking_health",
+                what = "That music detection stopped and Tempo brought it back — once a day at most, with how long it had been down.",
+                properties = listOf("severity", "by", "recovery"),
             ),
             AnalyticsCatalogEntry(
                 event = "daily_activity",
