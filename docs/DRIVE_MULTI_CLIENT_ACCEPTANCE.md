@@ -62,9 +62,16 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 - Browser protocol: 100,000 unique events likewise round-trip through
   compressed batches of at most 1,000 events. Browser IndexedDB smoke tests
   independently exercise lifetime statistics across more than 100,000 rows.
+- Browser full-restore integration fixture: the actual restore orchestration
+  reads 100,000 events from 100 checksum-verified Drive batches served over
+  out-of-order paginated mock HTTP responses. A simulated storage interruption
+  after 70,123 committed rows is followed by a full retry and a second replay:
+  exactly 100,000 distinct origin IDs remain, with zero repeated rows.
+  Transport and persisted-origin lookup are mocks, not live Google/IndexedDB.
 - Desktop database: 100,000 persisted historical listening rows are fetched
-  by chronological keyset pages with no duplicate/omitted IDs, then counted
-  again after reopening SQLite.
+  by chronological keyset pages with no duplicate/omitted IDs, including a
+  simulated process restart after 42,000 rows; all rows still exist after
+  reopening SQLite.
 - On all three clients, a substantially different *listened duration*
   vetoes a fuzzy timestamp-based match. When more than one candidate remains
   plausible, clients preserve the incoming play instead of choosing one
