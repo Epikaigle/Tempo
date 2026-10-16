@@ -673,6 +673,7 @@ export async function hasRecentPlay(
   incomingOriginEventId?: string,
   accountSubject?: string,
   durationMs?: number,
+  listenedMs?: number,
 ): Promise<boolean> {
   const db = await openDb();
   const rememberRemoteOrigin = !!incomingOriginDeviceId && !!incomingOriginEventId;
@@ -683,12 +684,32 @@ export async function hasRecentPlay(
     const windowMs = recentPlayWindowMs(incomingOriginDeviceId);
     const range = IDBKeyRange.bound(timestampUtc - windowMs, timestampUtc + windowMs);
     const request = index.openCursor(range);
-    let matched = false;
+    let candidate: Play | null = null;
+    let eligibleCount = 0;
 
     request.onsuccess = () => {
       const cursor = request.result;
       if (!cursor) {
-        if (!matched) resolve(false);
+        // Multiple eligible rows may be two real rapid replays. A first-hit
+        // merge would silently erase one event: refuse ambiguous fuzzy matches.
+        if (eligibleCount === 1 && candidate && rememberRemoteOrigin) {
+          const play = candidate;
+          const aliases = play.reconciledOrigins ?? [];
+          store.put(withDrivePendingKey({
+            ...play,
+            driveAccountSubject: accountSubject ?? play.driveAccountSubject,
+            reconciledOrigins: [...aliases, {
+              deviceId: incomingOriginDeviceId!,
+              eventId: incomingOriginEventId!,
+            }],
+            driveOriginLookupIds: [...new Set([
+              ...(play.driveOriginLookupIds ?? []),
+              ...(play.originEventId ? [play.originEventId] : []),
+              ...aliases.map(alias => alias.eventId),
+              incomingOriginEventId!,
+            ])],
+          }));
+        }
         return;
       }
       const play = cursor.value as Play;
@@ -704,6 +725,11 @@ export async function hasRecentPlay(
         typeof play.durationMs === 'number' && play.durationMs > 0
           ? Math.abs(play.durationMs - durationMs) <= 10_000
           : true;
+      // A markedly different listened interval is independent evidence that
+      // this is a different playback (even if track and timestamp match).
+      const listeningMatches = !(typeof listenedMs === 'number' && listenedMs > 0 &&
+        typeof play.listenedMs === 'number' && play.listenedMs > 0 &&
+        Math.abs(play.listenedMs - listenedMs) > 10_000);
       // Legacy cloud imports with unknown account provenance must stay
       // quarantined: a near-identical song in B cannot silently claim an
       // unverified imported row that may have come from Google account A.
@@ -713,40 +739,16 @@ export async function hasRecentPlay(
         (!play.driveAccountSubject && !play.driveImported);
       if (belongsToAccount &&
           !representedByOrigin &&
-          durationMatches &&
+          durationMatches && listeningMatches &&
           play.title.trim().toLowerCase() === title.trim().toLowerCase() &&
           play.artist.trim().toLowerCase() === artist.trim().toLowerCase()) {
-        matched = true;
-        if (rememberRemoteOrigin) {
-          // Persist the exact provenance in the same transaction as the match.
-          // Otherwise a second replay from this device would match this play
-          // again, and the first event's identity would be lost on restart.
-          cursor.update({
-            ...play,
-            driveAccountSubject: accountSubject ?? play.driveAccountSubject,
-            reconciledOrigins: [...aliases, {
-              deviceId: incomingOriginDeviceId!,
-              eventId: incomingOriginEventId!,
-            }],
-            driveOriginLookupIds: [...new Set([
-              ...(play.driveOriginLookupIds ?? []),
-              ...(play.originEventId ? [play.originEventId] : []),
-              ...aliases.map(alias => alias.eventId),
-              incomingOriginEventId!,
-            ])],
-            drivePendingIndexKey: pendingDriveKey({
-              ...play, driveAccountSubject: accountSubject ?? play.driveAccountSubject,
-            }),
-          });
-          // Do not acknowledge an alias until IndexedDB commits it.
-        } else {
-          resolve(true);
-        }
-        return;
+        eligibleCount++;
+        if (eligibleCount === 1) candidate = play;
+        else candidate = null;
       }
       cursor.continue();
     };
-    tx.oncomplete = () => { if (matched) resolve(true); };
+    tx.oncomplete = () => resolve(eligibleCount === 1);
     request.onerror = () => reject(request.error);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error ?? new Error('Recent-play lookup transaction aborted'));
