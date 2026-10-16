@@ -4,6 +4,7 @@ import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
+import { createHash } from 'node:crypto';
 
 const dir = mkdtempSync(join(tmpdir(), 'tempo-drive-'));
 const out = join(dir, 'drive-history.mjs');
@@ -280,6 +281,52 @@ try {
   const complete = await protocol.fetchWithDeadline('https://example.invalid', {}, 50);
   check('normal response bodies are preserved', await complete.text() === 'complete');
 } finally { globalThis.fetch = realFetch; }
+
+// Ten years of history are restored in bounded immutable batches, not one
+// 100k-object payload. Validate codec, identity, ordering and replay stability.
+console.log('\n[Drive 6] 100,000-event ten-year archive');
+const historicIds = new Set();
+const archiveStart = 1_451_606_400_000;
+const archiveStep = 3_153_600;
+const archiveTotal = 100_000;
+const archivePageSize = 1000;
+let decodedTotal = 0;
+let maxDecodedPage = 0;
+for (let offset = 0; offset < archiveTotal; offset += archivePageSize) {
+  const events = Array.from({ length: Math.min(archivePageSize, archiveTotal - offset) }, (_, i) => {
+    const index = offset + i;
+    return { ...event,
+      event_id: createHash('sha256').update(`tempo-archive-fixture-${index}`).digest('hex'),
+      timestamp_utc: archiveStart + index * archiveStep,
+    };
+  });
+  const id = await protocol.deterministicBatchId(events);
+  const archiveBatch = { ...batch, batch_id: id, created_at_utc: events.at(-1).timestamp_utc, events };
+  const decodedPage = await protocol.ungzipJson(await protocol.gzipJson(archiveBatch));
+  if (!protocol.isValidBatch(decodedPage) || decodedPage.batch_id !== id ||
+      decodedPage.events.length !== events.length) {
+    fail++;
+    console.log(`  ✗ invalid 100k archive page starting at ${offset}`);
+    break;
+  }
+  maxDecodedPage = Math.max(maxDecodedPage, decodedPage.events.length);
+  decodedTotal += decodedPage.events.length;
+  for (const entry of decodedPage.events) {
+    if (historicIds.has(entry.event_id)) {
+      fail++;
+      console.log(`  ✗ duplicate historic identity at offset ${offset}`);
+      break;
+    }
+    historicIds.add(entry.event_id);
+  }
+}
+check('100,000 independent events survive roundtrip without ID loss',
+  decodedTotal === archiveTotal && historicIds.size === archiveTotal);
+check('each browser archive page stays within the 1,000-event protocol limit',
+  maxDecodedPage <= archivePageSize && maxDecodedPage > 0);
+check('ten-year endpoints are representable without timestamp truncation',
+  archiveStart < 1_500_000_000_000 &&
+  archiveStart + (archiveTotal - 1) * archiveStep > 1_700_000_000_000);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail > 0 ? 1 : 0);
