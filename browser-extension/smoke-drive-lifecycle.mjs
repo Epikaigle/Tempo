@@ -168,7 +168,7 @@ assert.equal(fixture.stored[stateKey].downloadCreatedCursor, 1_700_000_000_001);
 assert.equal(fixture.stored[stateKey].lastError, null);
 assert.equal(fixture.stored[stateKey].rejectedBatches['google-a'].length, 1);
 const statusWithRejected = await drive.getDriveSyncStatus();
-assert.match(statusWithRejected.lastError, /invalid Google Drive history batch\(es\) were skipped/);
+assert.match(statusWithRejected.lastError, /Google Drive history file\(s\) need attention/);
 console.log('  ✓ a JSON null batch is consumed, tracked in rejected batches, and surfaces warning');
 reset();
 // The module caches a stable local device ID. Make the fixture batch belong to
