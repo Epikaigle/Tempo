@@ -57,7 +57,7 @@ internal inline fun <T> uniqueEligiblePlaybackIndex(
 internal inline fun <T> clusterDrivePlaybackWindows(
     events: List<T>,
     radiusMs: Long,
-    timestampOf: (T) -> Long,
+    crossinline timestampOf: (T) -> Long,
 ): List<List<T>> {
     if (events.isEmpty()) return emptyList()
     require(radiusMs >= 0)
