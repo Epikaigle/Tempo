@@ -32,10 +32,11 @@ import org.junit.runner.RunWith
 class ArtworkPersistenceIntegrationTest {
 
     private lateinit var database: AppDatabase
+    private lateinit var context: Context
 
     @Before
     fun setUp() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
+        context = ApplicationProvider.getApplicationContext()
         database =
             Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
                 .allowMainThreadQueries()
@@ -455,6 +456,7 @@ class ArtworkPersistenceIntegrationTest {
         val metadataDao = database.enrichedMetadataDao()
         val repository =
             RoomTrackRepository(
+                context = context,
                 dao = trackDao,
                 trackArtistDao = database.trackArtistDao(),
                 manualContentMarkDao = database.manualContentMarkDao(),
@@ -505,6 +507,7 @@ class ArtworkPersistenceIntegrationTest {
         val metadataDao = database.enrichedMetadataDao()
         val repository =
             RoomTrackRepository(
+                context = context,
                 dao = trackDao,
                 trackArtistDao = database.trackArtistDao(),
                 manualContentMarkDao = database.manualContentMarkDao(),
@@ -550,6 +553,7 @@ class ArtworkPersistenceIntegrationTest {
         val metadataDao = database.enrichedMetadataDao()
         val repository =
             RoomTrackRepository(
+                context = context,
                 dao = trackDao,
                 trackArtistDao = database.trackArtistDao(),
                 manualContentMarkDao = database.manualContentMarkDao(),
@@ -611,6 +615,7 @@ class ArtworkPersistenceIntegrationTest {
         val albumDao = database.albumDao()
         val repository =
             RoomTrackRepository(
+                context = context,
                 dao = trackDao,
                 trackArtistDao = database.trackArtistDao(),
                 manualContentMarkDao = database.manualContentMarkDao(),
@@ -676,6 +681,7 @@ class ArtworkPersistenceIntegrationTest {
         val metadataDao = database.enrichedMetadataDao()
         val repository =
             RoomTrackRepository(
+                context = context,
                 dao = trackDao,
                 trackArtistDao = database.trackArtistDao(),
                 manualContentMarkDao = database.manualContentMarkDao(),
