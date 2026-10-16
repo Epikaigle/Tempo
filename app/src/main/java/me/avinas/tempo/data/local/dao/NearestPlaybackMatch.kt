@@ -47,3 +47,30 @@ internal inline fun <T> uniqueEligiblePlaybackIndex(
     }
     return result
 }
+
+/**
+ * Partition chronological Drive imports into disjoint conflict windows.
+ * A local play can match incoming events up to [radiusMs] away, so a gap
+ * strictly greater than twice that radius cannot share a match. Avoid a
+ * single multi-year SQL range when one Drive batch contains sparse history.
+ */
+internal inline fun <T> clusterDrivePlaybackWindows(
+    events: List<T>,
+    radiusMs: Long,
+    timestampOf: (T) -> Long,
+): List<List<T>> {
+    if (events.isEmpty()) return emptyList()
+    require(radiusMs >= 0)
+    val sorted = events.sortedBy(timestampOf)
+    val groups = ArrayList<MutableList<T>>()
+    var previousTimestamp: Long? = null
+    for (event in sorted) {
+        val timestamp = timestampOf(event)
+        if (previousTimestamp == null || timestamp - previousTimestamp > radiusMs * 2) {
+            groups.add(ArrayList())
+        }
+        groups.last().add(event)
+        previousTimestamp = timestamp
+    }
+    return groups
+}
