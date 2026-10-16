@@ -15,8 +15,8 @@ import me.avinas.tempo.di.AnalyticsEntryPoint
 import me.avinas.tempo.service.MusicTrackingService
 
 /**
- * Re-enables MusicTrackingService after boot completes.
- * Ignores LOCKED_BOOT_COMPLETED to wait for credential decryption.
+ * Ensures MusicTrackingService component is enabled after device reboot.
+ * Ignores LOCKED_BOOT_COMPLETED to avoid duplicate bindings before user unlock.
  */
 class BootReceiver : BroadcastReceiver() {
     companion object {

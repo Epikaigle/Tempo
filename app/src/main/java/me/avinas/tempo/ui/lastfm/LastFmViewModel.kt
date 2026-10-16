@@ -41,6 +41,7 @@ class LastFmViewModel
             private const val TAG = "LastFmViewModel"
         }
 
+        // UI State
         private val _uiState = MutableStateFlow(LastFmUiState())
         val uiState: StateFlow<LastFmUiState> = _uiState.asStateFlow()
 

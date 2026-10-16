@@ -8,7 +8,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Rate-limits OkHttp requests to comply with API quotas (e.g. MusicBrainz 1 req/sec).
+ * OkHttp Interceptor that enforces rate limiting.
+ * 
+ * MusicBrainz API requires max 1 request per second for unauthenticated requests.
+ * This interceptor ensures we don't exceed that limit by delaying requests if needed.
  */
 @Singleton
 class RateLimitInterceptor @Inject constructor() : Interceptor {

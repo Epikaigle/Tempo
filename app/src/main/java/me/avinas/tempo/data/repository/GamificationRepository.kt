@@ -162,8 +162,10 @@ class GamificationRepository
         }
 
         /**
-         * Evaluates badge completion criteria across all star tiers (★1 to ★5).
-         * Returns newly earned badge IDs.
+         * Evaluate all badge conditions and update the database.
+         * Supports star tiers: each badge has 5 star levels, from its ★1 unlock threshold up to
+         * its own explicit ★5 target (see [GamificationEngine.starThresholds]).
+         * Returns list of newly earned badge IDs (first-time unlocks only).
          */
         suspend fun evaluateAllBadges(): List<String> {
             val userLevel = gamificationDao.getUserLevel() ?: UserLevel()
@@ -199,7 +201,7 @@ class GamificationRepository
                     }
 
                 // Compute star tier
-                // Beginner badges cap at 1 star (labeled "Unlocked" in UI);
+                // Beginner badges cap at 1 star (shown as "Unlocked" in UI);
                 // computeStars() enforces that cap internally.
                 val currentStars = GamificationEngine.computeStars(rawProgress, def)
                 val previousStars = existing?.stars ?: 0

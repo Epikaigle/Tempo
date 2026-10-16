@@ -55,7 +55,7 @@ fun CaptureWrapper(
                         val canvas = android.graphics.Canvas(bitmap)
                         
                         // Draw the view hierarchy to the canvas
-                        // Safe: LocalInCaptureContext forces software bitmap allocation
+                        // Safe because LocalInCaptureContext ensures software bitmaps
                         view.draw(canvas)
                         
                         android.util.Log.d("CaptureWrapper", "Bitmap captured successfully. Size: ${bitmap.byteCount} bytes")

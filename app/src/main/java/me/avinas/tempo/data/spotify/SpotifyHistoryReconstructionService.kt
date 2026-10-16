@@ -1022,7 +1022,9 @@ class SpotifyHistoryReconstructionService @Inject constructor(
     
     // Track Processing
     
-    /** Resolves or creates a local track record. Returns (wasCreated, trackId). */
+    /**
+     * Ensure a local track exists. Returns (wasCreated, trackId).
+     */
     private suspend fun ensureLocalTrack(discovered: DiscoveredTrack): Pair<Boolean, Long> {
         val spotifyTrack = discovered.spotifyTrack
 

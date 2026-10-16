@@ -62,7 +62,7 @@ class ChallengeRepository
             val avgMins = ((overview.totalTimeMs) / 1000 / 60 / 7f).coerceAtLeast(1f).toInt()
             val avgArtists = ((overview.uniqueArtists) / 7f).coerceAtLeast(1f).toInt()
 
-            // Candidate artists and genres for exploration challenges
+            // Get top artists/genres for dynamic exploration challenges.
             val topArtists = statsDao.getTopArtistsByPlayCount(startMs, endMs, 5, 0).map { it.artist }
             val topGenres =
                 statsDao

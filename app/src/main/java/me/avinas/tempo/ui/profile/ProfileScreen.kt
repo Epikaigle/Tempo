@@ -2,7 +2,7 @@ package me.avinas.tempo.ui.profile
 
 /**
  * Profile screen displaying listener level, listening statistics,
- * daily challenges, and earned badges.
+ * daily challenges, and unlocked badges.
  */
 
 import androidx.compose.animation.AnimatedVisibility

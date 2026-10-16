@@ -123,7 +123,8 @@ class WalkthroughController @Inject constructor(
         val finishingStep = _currentStep.value
         if (finishingStep == WalkthroughStep.NONE) return
 
-        // Persist dismissal state so the walkthrough step never re-prompts
+        // Mark as seen regardless of how it ended (Interaction or Dismiss)
+        // This ensures "Not Annoying" - users won't see it again.
         val current = userPreferencesDao.getSync() ?: UserPreferences()
         val updated = when (finishingStep) {
             WalkthroughStep.HOME_SPOTLIGHT -> current.copy(hasSeenSpotlightTutorial = true)
@@ -280,7 +281,7 @@ fun SpotlightLayer(
         }
         
         // 3. Instruction Text
-        // Position text below target when in top half of screen, above when in bottom half
+        // Dynamic positioning: If target is in top half, show text below. If bottom half, show above.
         val isTopHalf = rect.center.y < (this.constraints.maxHeight / 2)
         val textOffestY = if (isTopHalf) {
             rect.bottom + 32.dp.value * density.density

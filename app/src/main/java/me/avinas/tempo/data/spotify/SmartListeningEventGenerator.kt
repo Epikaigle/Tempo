@@ -79,7 +79,8 @@ object SmartListeningEventGenerator {
     ): List<ListeningEvent> {
         if (tracks.isEmpty()) return emptyList()
         
-        // Deduplicate: if trackId appears multiple times, keep highest-quality record.
+        // DEDUPLICATION: Ensure each track only appears once
+        // If same trackId appears multiple times, keep the one with best data quality
         // Priority: addedTimestamp > yearContext > topTracksOnly
         val uniqueTracks = tracks
             .groupBy { it.trackId }
@@ -211,7 +212,7 @@ object SmartListeningEventGenerator {
             set(Calendar.MILLISECOND, 999)
         }.timeInMillis
         
-        // Clamp to configured time bounds
+        // Ensure within config bounds
         val effectiveStart = max(yearStart, config.startTime)
         val effectiveEnd = minOf(yearEnd, config.endTime)
         

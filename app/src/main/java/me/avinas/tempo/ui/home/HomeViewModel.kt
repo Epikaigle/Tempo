@@ -140,7 +140,7 @@ class HomeViewModel @Inject constructor(
         try {
             fetchData()
         } finally {
-            // Keep spinner visible for at least 600ms to prevent flicker
+            // Ensure spinner shows for at least 600ms so it doesn't flash away
             val elapsed = System.currentTimeMillis() - startTime
             if (elapsed < 600) delay(600 - elapsed)
             _flagsState.update { it.copy(isRefreshing = false) }
@@ -158,11 +158,12 @@ class HomeViewModel @Inject constructor(
         try {
             val timeRange = _uiState.value.selectedTimeRange
             
-            // Parallel fetch for dashboard metrics
+            // Fetch all required data in PARALLEL using async/await
+            // This reduces total loading time from sum of all calls to max of all calls
             coroutineScope {
                 val overviewDeferred = async { statsRepository.getListeningOverview(timeRange, withLeeway = false) }
                 val periodComparisonDeferred = async { statsRepository.getPeriodComparison(timeRange, withLeeway = false) }
-                // Point limit by time range for chart display
+                // Dynamic data limit based on time range for chart visualization
                 val dataLimit = when (timeRange) {
                     TimeRange.TODAY, TimeRange.THIS_WEEK -> 7
                     TimeRange.THIS_MONTH -> 31
@@ -178,7 +179,7 @@ class HomeViewModel @Inject constructor(
                 val mostActiveHourDeferred = async { statsRepository.getMostActiveHour(timeRange, withLeeway = false) }
                 val audioFeaturesDeferred = async { statsRepository.getAudioFeaturesStats(timeRange, withLeeway = false) }
                 val insightsDeferred = async { statsRepository.getInsights(timeRange, withLeeway = false) }
-                // Use all-time stats for rating prompt so active filter does not skew eligibility
+                // Use ALL_TIME stats for rate app check - ensures consistent behavior regardless of current filter
                 val allTimeOverviewDeferred = async { statsRepository.getListeningOverview(TimeRange.ALL_TIME) }
                 val profileIdentityDeferred = async { profileIdentityManager.getProfileIdentity() }
                 val earliestTimestampDeferred = async { statsRepository.getEarliestDataTimestamp() }
@@ -789,7 +790,7 @@ class HomeViewModel @Inject constructor(
             val isLastDayOfMonth = today.dayOfMonth == today.lengthOfMonth()
             if (isLastDayOfMonth && preferences.lastMonthlyReminderShown != todayString) {
                 android.util.Log.d("HomeViewModel", "Is last day of month, checking data availability...")
-                // Verify month has listening data
+                // Ensure we have data for this month
                 val overview = statsRepository.getListeningOverview(TimeRange.THIS_MONTH)
                 android.util.Log.d("HomeViewModel", "Monthly data: totalPlayCount=${overview.totalPlayCount}")
                 if (overview.totalPlayCount > 0) {
@@ -813,7 +814,7 @@ class HomeViewModel @Inject constructor(
             val isDecemberFirst = today.monthValue == 12 && today.dayOfMonth == 1
             if (isDecemberFirst && preferences.lastYearlyReminderShown != todayString) {
                 android.util.Log.d("HomeViewModel", "Is December 1st, checking data availability...")
-                // Verify year has listening data
+                // Ensure we have data for this year
                 val overview = statsRepository.getListeningOverview(TimeRange.THIS_YEAR)
                 android.util.Log.d("HomeViewModel", "Yearly data: totalPlayCount=${overview.totalPlayCount}")
                 if (overview.totalPlayCount > 0) {
@@ -837,7 +838,7 @@ class HomeViewModel @Inject constructor(
             val isSunday = today.dayOfWeek == java.time.DayOfWeek.SUNDAY
             if (isSunday && preferences.lastWeeklyReminderShown != todayString) {
                 android.util.Log.d("HomeViewModel", "Is Sunday, checking data availability...")
-                // Verify week has listening data
+                // Ensure we have data for this week
                 val overview = statsRepository.getListeningOverview(TimeRange.THIS_WEEK)
                 android.util.Log.d("HomeViewModel", "Weekly data: totalPlayCount=${overview.totalPlayCount}")
                 if (overview.totalPlayCount > 0) {
@@ -893,7 +894,7 @@ class HomeViewModel @Inject constructor(
     /**
      * Mark the current Spotlight story period as viewed.
      * Called when the user taps the story ring/card on the home screen.
-     * Persists the period key so the ring shows viewed until a new story period arrives.
+     * Persists the period key so the ring shows gray until a new story period unlocks.
      */
     fun onSpotlightViewed() {
         viewModelScope.launch {

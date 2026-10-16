@@ -136,6 +136,7 @@ class DesktopLinkViewModel @Inject constructor(
         }
     }
 
+    // Actions
 
     /** Activate the camera scanner. */
     fun startScanning() {

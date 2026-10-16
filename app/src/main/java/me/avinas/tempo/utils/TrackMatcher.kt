@@ -5,7 +5,16 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Track matching and normalization utilities for deduplication.
+ * Advanced track matching utilities for robust deduplication.
+ * 
+ * Handles common variations in track metadata:
+ * - Different punctuation ("Don't" vs "Dont" vs "Don't")
+ * - Case variations
+ * - Feature artist formats ("feat.", "ft.", "featuring", "with", "&", "x")
+ * - Remix/Version suffixes
+ * - Special characters and Unicode normalization
+ * - Remaster indicators
+ * - Parenthetical content (explicit tags, year, version info)
  */
 object TrackMatcher {
     
@@ -334,7 +343,7 @@ object TrackMatcher {
         if (s1 == s2) return 1.0
         if (s1.isEmpty() || s2.isEmpty()) return 0.0
         
-        // Weighted blend of string similarity metrics
+        // Use combination of algorithms for robustness
         val levenshtein = levenshteinSimilarity(s1, s2)
         val jaccard = jaccardSimilarity(s1, s2)
         val longestCommonSubsequence = lcsSimilarity(s1, s2)
@@ -410,7 +419,7 @@ object TrackMatcher {
         if (m == 0) return n
         if (n == 0) return m
         
-        // Keep s2 shorter to minimize DP matrix row allocations
+        // Ensure s2 is the shorter string to minimize memory
         val (short, long) = if (m < n) Pair(s1, s2) else Pair(s2, s1)
         val shortLen = short.length
         val longLen = long.length

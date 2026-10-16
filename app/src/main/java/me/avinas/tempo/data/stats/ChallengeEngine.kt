@@ -5,7 +5,10 @@ import java.util.Calendar
 import kotlin.math.abs
 
 /**
- * Generates daily challenges calibrated to recent listening metrics.
+ * Engine for generating smart, personalized daily challenges.
+ *
+ * Challenges auto-calibrate based on the user's recent listening history
+ * and have strict maximum limits to ensure they remain practical.
  */
 object ChallengeEngine {
     object Category {
@@ -141,7 +144,8 @@ object ChallengeEngine {
             }
         }
 
-        // Exploration challenge: pick candidate artist or genre
+        // MEDIUM Challenge 2 (Exploration - Dynamic)
+        // Dynamically pick a top artist or genre
         if (metrics != null && metrics.topArtists.isNotEmpty() && dayOfYear % 2 == 0) {
             val idx = dayOfYear % metrics.topArtists.size
             val artist = metrics.topArtists[idx]

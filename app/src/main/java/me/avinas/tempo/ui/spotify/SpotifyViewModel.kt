@@ -117,7 +117,8 @@ class SpotifyViewModel @Inject constructor(
                 _showConnectedMessage.value = true
                 loadStats()
                 
-                // History reconstruction runs from MainActivity after auth callback to prevent duplicate triggers
+                // Note: reconstructHistory() is triggered from MainActivity after auth callback
+                // to avoid duplicate calls and ensure proper lifecycle management
             }
         }
     }

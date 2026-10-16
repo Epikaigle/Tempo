@@ -452,7 +452,12 @@ class SpotifyTopItemsService @Inject constructor(
         return playCount.coerceIn(MIN_PLAYS_BOTTOM_TRACK, MAX_PLAYS_TOP_TRACK)
     }
     
-    /** Resolves or creates a local Track record. Returns (wasCreated, trackId). */
+    /**
+     * Ensure a local Track exists. Returns pair of (wasCreated, trackId).
+     * 
+     * IMPORTANT: Tracks from Spotify API already have all metadata.
+     * We mark them as ENRICHED to skip re-enrichment.
+     */
     private suspend fun ensureLocalTrackAndGetId(
         spotifyTrack: SpotifyTrack,
         genres: List<String>
@@ -480,7 +485,9 @@ class SpotifyTopItemsService @Inject constructor(
         return resolution.isNewTrack to resolution.trackId
     }
     
-    /** Resolves or creates a local Artist record. Returns true if newly created. */
+    /**
+     * Ensure a local Artist exists. Returns true if newly created.
+     */
     private suspend fun ensureLocalArtist(spotifyArtist: SpotifyFullArtist): Boolean {
         // Check if artist exists by Spotify ID
         val existingBySpotify = artistDao.getArtistBySpotifyId(spotifyArtist.id)

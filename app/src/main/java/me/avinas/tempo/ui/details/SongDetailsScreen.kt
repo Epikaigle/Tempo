@@ -1768,7 +1768,7 @@ fun AcousticDNASpecSheet(
                     }
                 }
 
-                // Audio feature badges
+                // Dynamic Badges & Mood Tags
                 val dynamicBadges = mutableListOf<String>()
                 if (audioFeatures != null) {
                     if (audioFeatures.energy >= 0.75f) dynamicBadges.add(stringResource(R.string.details_badge_intensity))
@@ -2062,7 +2062,7 @@ private data class AffinityTierInfo(
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Palette for flat timeline markers and labels, adjusted for contrast against cover art.
+ * Palette for flat timeline markers and labels, adjusted for contrast against the dynamic backdrop.
  */
 internal data class FlatTimelineInk(
     val title: Color,

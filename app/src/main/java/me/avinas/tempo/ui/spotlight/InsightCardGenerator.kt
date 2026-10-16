@@ -1329,8 +1329,10 @@ class InsightCardGenerator @Inject constructor(
             )
         )
 
-        // Deterministic slide selection seeded by period key: consistent within same period,
-        // updates when the period rolls over.
+        // DYNAMIC OPTIONAL SLIDE SELECTION
+        // Seed is deterministic per story period: same month/week/year always shows the same
+        // optional subset. Re-opening the story within the same period is fully consistent;
+        // the subset only changes when the next period begins (new month, new week, etc.).
         val now = java.time.LocalDate.now()
         val periodKey: Long = when (timeRange) {
             TimeRange.THIS_WEEK  -> now.year * 100L + now.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR)
@@ -1346,9 +1348,9 @@ class InsightCardGenerator @Inject constructor(
         mergeOptionalIntoStory(storyPages, selectedOptional)
 
         // SMART SONG ASSIGNMENT PASS
-        // Assign audio previews:
-        // - Contextual tracks for special slides
-        // - Pairs of adjacent slides cycle through remaining tracks
+        // Assign preview URLs dynamically:
+        // - Special slides get contextually relevant songs
+        // - Remaining slides pair 2-per-song from the pool, cycling through
         assignPreviewUrlsDynamically(storyPages, soundtrackList, trueTopTrack, topTracksList)
         
         storyPages  // Implicit return for coroutineScope
@@ -1638,7 +1640,10 @@ class InsightCardGenerator @Inject constructor(
         }
     }
 
-    /** Recreates [SpotlightStoryPage] variants with the updated [previewUrl]. */
+    /**
+     * Helper to copy a SpotlightStoryPage with a new previewUrl.
+     * Since the sealed interface is immutable, we rebuild each variant.
+     */
     private fun SpotlightStoryPage.copyWithPreview(newPreviewUrl: String?): SpotlightStoryPage {
         return when (this) {
             is SpotlightStoryPage.ListeningMinutes -> copy(previewUrl = newPreviewUrl)

@@ -84,7 +84,7 @@ fun ShareCardBackground(
         ) {
             if (!imageUrl.isNullOrBlank()) {
                 ShareBlurBase(imageUrl = imageUrl)
-                // Contrast gradient overlay
+                // Overlay gradient to ensure high readability and contrast
                 Box(
                     modifier =
                         Modifier
@@ -94,7 +94,7 @@ fun ShareCardBackground(
             } else if (customBackdrop != null) {
                 // Single custom canva acting like image!
                 customBackdrop()
-                // Contrast gradient overlay
+                // Overlay gradient to ensure high readability and contrast
                 Box(
                     modifier =
                         Modifier

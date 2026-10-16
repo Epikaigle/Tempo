@@ -106,7 +106,7 @@ fun PrivacyExplainerScreen(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Adaptive vertical spacing based on screen height
+                // Dynamic, device-size aware spacing between Skip bar and main section
                 val topSpacing = adaptiveSizeByCategory(
                     expanded = rememberScreenHeightPercentage(0.035f),
                     medium = 20.dp,

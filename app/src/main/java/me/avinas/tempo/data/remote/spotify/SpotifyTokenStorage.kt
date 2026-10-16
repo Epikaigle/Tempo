@@ -14,7 +14,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Stores Spotify OAuth tokens in EncryptedSharedPreferences backed by Android Keystore.
+ * Secure storage for Spotify OAuth tokens using EncryptedSharedPreferences.
+ * 
+ * EncryptedSharedPreferences uses AES-256-GCM encryption for values and
+ * AES-256-SIV for keys, backed by Android Keystore for key management.
+ * This ensures tokens are stored securely and cannot be read by other apps.
  */
 @Singleton
 class SpotifyTokenStorage @Inject constructor(

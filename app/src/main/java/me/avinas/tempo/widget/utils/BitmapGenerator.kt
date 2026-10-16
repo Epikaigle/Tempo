@@ -518,7 +518,7 @@ object BitmapGenerator {
             var textY = bottom - padInner - percentPaint.textSize - padInner * 0.5f
             
             words.reversed().forEach { word ->
-                // Shrink font size for long words
+                // Dynamic scaling for long words
                 var currentTextSize = baseTextSize
                 namePaint.textSize = currentTextSize
                 while (namePaint.measureText(word) > maxTextW && currentTextSize > 10f) {
@@ -1022,7 +1022,7 @@ object BitmapGenerator {
         val pad = width * 0.06f
 
         // 1. Background: Deep rich gradient (Updated for better aesthetics)
-        // 4-color gradient background
+        // Using a 4-color sweep for a more dynamic, less linear look
         val bgPaint = Paint().apply {
             shader = LinearGradient(
                 0f, 0f, width.toFloat(), height.toFloat(),
@@ -1272,7 +1272,7 @@ object BitmapGenerator {
         val x = (scaledW - reqW) / 2
         val y = (scaledH - reqH) / 2
         
-        // Clamp crop bounds within source dimensions
+        // Safety check to ensure we don't crop outside bounds
         val safeX = x.coerceIn(0, scaledW - reqW)
         val safeY = y.coerceIn(0, scaledH - reqH)
         

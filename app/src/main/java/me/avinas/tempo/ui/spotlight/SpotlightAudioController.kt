@@ -225,7 +225,7 @@ class SpotlightAudioController(
                     player?.volume = clampedVol
                     delay(delayStep)
                 }
-                // Snap to target volume at end of ramp
+                // Ensure final target is exact
                 if (!_isMuted.value) {
                     player?.volume = targetVolume
                     android.util.Log.d("SpotlightAudio", "Volume ramp complete: $targetVolume")

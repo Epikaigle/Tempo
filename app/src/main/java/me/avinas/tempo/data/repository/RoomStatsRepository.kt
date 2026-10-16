@@ -33,8 +33,29 @@ import javax.inject.Singleton
 import kotlin.math.ln
 
 /**
- * Room-backed implementation of [StatsRepository] with in-memory LRU caching.
- * Serves listening statistics computed from local database tables.
+ * Implementation of StatsRepository with in-memory caching and background processing.
+ * 
+ * =====================================================
+ * DATA FLOW PATTERN: Enrichment → Database → UI
+ * =====================================================
+ * 
+ * This repository serves data ONLY from the local database.
+ * It NEVER makes external API calls. All API data is fetched by
+ * EnrichmentWorker in background and stored in database first.
+ * 
+ * Flow:
+ * 1. ViewModels call this repository to get stats
+ * 2. Repository queries the local Room database
+ * 3. Results are cached in memory for fast repeated access
+ * 4. Background EnrichmentWorker keeps the database fresh
+ * 
+ * =====================================================
+ * 
+ * Features:
+ * - LRU cache with TTL (Time To Live) for efficient memory management
+ * - Smart invalidation when new listening events are added
+ * - Background computation for heavy calculations
+ * - Thread-safe cache access
  */
 @Singleton
 class RoomStatsRepository @Inject constructor(
@@ -275,7 +296,8 @@ class RoomStatsRepository @Inject constructor(
         invalidateCache(TimeRange.THIS_WEEK)
         // Also invalidate THIS_MONTH for near real-time updates
         invalidateCache(TimeRange.THIS_MONTH)
-        // Invalidate THIS_YEAR and ALL_TIME so Spotlight reflects updated top tracks
+        // Invalidate THIS_YEAR and ALL_TIME to ensure Spotlight (which defaults to THIS_YEAR) 
+        // and overall stats are always fresh when top songs change
         invalidateCache(TimeRange.THIS_YEAR)
         invalidateCache(TimeRange.ALL_TIME)
         // Clear artist details cache entries for real-time updates
@@ -311,7 +333,7 @@ class RoomStatsRepository @Inject constructor(
                 val hourlyDistribution = statsDao.getHourlyDistribution(startTime, endTime)
                 val dayOfWeekDistribution = statsDao.getDayOfWeekDistribution(startTime, endTime)
 
-                // Feed metrics
+                // New Data Points for Dynamic Feed
                 val listeningStreak = getListeningStreak()
                 val topGenres = getTopGenres(timeRange, limit = 1) // Just need top one
                 val engagementStats = getEngagementStats(timeRange)
@@ -355,7 +377,7 @@ class RoomStatsRepository @Inject constructor(
             if (!item.json.isNullOrBlank()) {
                 try {
                     val obj = org.json.JSONObject(item.json)
-                    // Require energy and valence metrics for mood scoring
+                    // Check for minimal required fields to ensure data integrity
                     if (obj.has("energy") && obj.has("valence")) {
                         totalValence += obj.optDouble("valence", 0.0)
                         totalEnergy += obj.optDouble("energy", 0.0)
@@ -784,7 +806,9 @@ class RoomStatsRepository @Inject constructor(
         }.awaitAll()
     }
 
-    /** Aggregator for per-artist listening metrics. */
+    /**
+     * Helper class for aggregating stats for individual artists
+     */
     private class ArtistAggregator(
         var name: String,
         val artistId: Long? = null,
@@ -928,7 +952,9 @@ class RoomStatsRepository @Inject constructor(
         return null
     }
     
-    /** Caches resolved artist image URL to the artists table. */
+    /**
+     * Helper to persist artist image URL to the artists table for future fast lookups.
+     */
     private suspend fun persistImageToArtistTable(artistName: String, imageUrl: String) {
         try {
             val normalizedName = Artist.normalizeName(artistName)
@@ -2291,7 +2317,10 @@ class RoomStatsRepository @Inject constructor(
                 offset = offset
             )
 
-            // Infer hasMore from page saturation to avoid running filtered count query on large tables
+            // Total count for pagination is harder with dynamic filters.
+            // For now, we assume if we got a full page, there might be more.
+            // Ideally we'd have a count query in DAO with same filters.
+            // Falling back to simple "hasMore" check based on result size.
             val hasMore = items.size == pageSize
 
             PaginatedResult(
