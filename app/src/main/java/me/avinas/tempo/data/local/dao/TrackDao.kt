@@ -5,6 +5,8 @@ import me.avinas.tempo.data.local.entities.AlbumArtSource
 import me.avinas.tempo.data.local.entities.Artist
 import me.avinas.tempo.data.local.entities.Track
 import kotlinx.coroutines.flow.Flow
+import java.io.File
+import java.io.IOException
 
 @Dao
 interface TrackDao {
@@ -524,6 +526,51 @@ internal fun isLocalBackupArtwork(url: String?): Boolean =
 
 internal fun isManagedLocalArtworkFile(url: String?): Boolean =
     url?.startsWith("file://") == true
+
+/**
+ * Resolve a `file://` artwork URL to the file it names, but only when that file
+ * really lives inside Tempo's own artwork directory.
+ *
+ * [isManagedLocalArtworkFile] checks the scheme alone, which is not enough to
+ * authorise a write or a delete: MediaSession metadata comes from whichever app
+ * is playing audio, so `file:///data/data/<pkg>/databases/tempo.db` is a legal
+ * input there. Both the candidate and the root are canonicalised first, so `..`
+ * segments and symlinks cannot escape either.
+ *
+ * @param managedRoot directory that holds Tempo-managed artwork
+ *   (`filesDir/album_art`). Missing directories are fine — this only decides
+ *   whether a path is *allowed*, never whether it exists.
+ * @return the canonical file, or null when the URL is not a `file://` URI, names
+ *   nothing, or resolves outside [managedRoot].
+ */
+internal fun managedArtworkFileOrNull(
+    url: String?,
+    managedRoot: File,
+): File? {
+    if (!isManagedLocalArtworkFile(url)) return null
+
+    // Formats produced by Tempo are "file://" + an absolute path, giving a third
+    // slash ("file:///data/..."). Anything without a rooted path is rejected
+    // rather than resolved against the working directory.
+    val rawPath = url!!.removePrefix("file://")
+    if (rawPath.isEmpty() || !rawPath.startsWith("/")) return null
+
+    val canonicalFile = try {
+        File(rawPath).canonicalFile
+    } catch (e: IOException) {
+        return null
+    }
+    val canonicalRoot = try {
+        managedRoot.canonicalFile
+    } catch (e: IOException) {
+        return null
+    }
+
+    // Require the separator so a sibling such as "album_art_backup" cannot pass a
+    // plain prefix comparison, and so the directory itself is never treated as a
+    // managed artwork file.
+    return canonicalFile.takeIf { it.path.startsWith(canonicalRoot.path + File.separator) }
+}
 
 internal fun isRemoteArtwork(url: String?): Boolean =
     url?.startsWith("https://", ignoreCase = true) == true ||

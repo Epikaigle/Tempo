@@ -1,12 +1,15 @@
 package me.avinas.tempo.data.repository
 
+import android.content.Context
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext
 import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.dao.TrackArtistDao
 import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.dao.isLocalBackupArtwork
 import me.avinas.tempo.data.local.dao.isManagedLocalArtworkFile
+import me.avinas.tempo.data.local.dao.managedArtworkFileOrNull
 import me.avinas.tempo.data.local.entities.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +21,7 @@ import javax.inject.Singleton
 
 @Singleton
 class RoomTrackRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val dao: TrackDao,
     private val trackArtistDao: TrackArtistDao,
     private val manualContentMarkDao: ManualContentMarkDao,
@@ -26,6 +30,10 @@ class RoomTrackRepository @Inject constructor(
 
     companion object {
         private const val TAG = "TrackRepository"
+
+        /** Mirrors ALBUM_ART_DIR in MusicTrackingService and ImportExportManager. */
+        private const val ALBUM_ART_DIR = "album_art"
+
         private val albumArtBackupMutex = Mutex()
     }
 
@@ -37,6 +45,12 @@ class RoomTrackRepository @Inject constructor(
             albumArtBackupMutex.unlock()
         }
     }
+
+    /**
+     * Directory holding every artwork file Tempo downloads, extracts or saves.
+     * Also written by MusicTrackingService and ImportExportManager.
+     */
+    private fun managedArtworkRoot(): File = File(context.filesDir, ALBUM_ART_DIR)
 
     override fun getById(id: Long): Flow<Track?> = dao.getById(id)
     override suspend fun findBySpotifyId(spotifyId: String): Track? = dao.findBySpotifyId(spotifyId)
@@ -65,20 +79,30 @@ class RoomTrackRepository @Inject constructor(
         if (!isManagedLocalArtworkFile(albumArtUrl)) {
             return dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
         }
+        // Non-null: isManagedLocalArtworkFile() only accepts file:// strings.
+        val localUrl = albumArtUrl!!
 
         return withContext(Dispatchers.IO) {
             withAlbumArtBackupLock {
-                val localFile = File(albumArtUrl!!.removePrefix("file://"))
-                if (localFile.exists()) {
-                    dao.updateAutomaticAlbumArtUrl(trackId, albumArtUrl)
+                // The scheme alone is not enough to adopt a backup. MediaSession art
+                // URIs are supplied by whichever app is playing audio, so a path
+                // outside Tempo's own artwork directory must never be stored as a
+                // managed local cover (it would later be deleted as "obsolete").
+                val localFile = managedArtworkFileOrNull(localUrl, managedArtworkRoot())
+                if (localFile != null && localFile.exists()) {
+                    dao.updateAutomaticAlbumArtUrl(trackId, localUrl)
                 } else {
-                    // A remote-success cleanup may have retired this exact path while
-                    // a delayed tracking write was still in flight. Prefer the
-                    // current canonical remote mirror when one exists; otherwise
+                    // Either a remote-success cleanup retired this exact path while a
+                    // delayed tracking write was in flight, or the URL is not a
+                    // Tempo-managed artwork file at all. Never persist it: prefer the
+                    // current canonical remote mirror when one exists, otherwise
                     // leave the current protected Track value unchanged.
+                    if (localFile == null) {
+                        Log.w(TAG, "Rejected local artwork outside the managed directory")
+                    }
                     dao.promoteLocalAlbumArtToCanonicalIfMatches(
                         trackId = trackId,
-                        expectedLocalUrl = albumArtUrl,
+                        expectedLocalUrl = localUrl,
                     ) ?: dao.getCurrentTrackAlbumArtUrl(trackId)
                 }
             }
@@ -86,7 +110,17 @@ class RoomTrackRepository @Inject constructor(
     }
 
     private suspend fun deleteLocalAlbumArtIfUnreferenced(localUrl: String) {
-        if (!isManagedLocalArtworkFile(localUrl)) return
+        // Only ever delete files inside Tempo's own artwork directory. Untrusted
+        // input reaches this path (MediaSession metadata, restored backups, imported
+        // exports), so a crafted file:// value must not be able to name an arbitrary
+        // file such as the app's own database.
+        val localFile = managedArtworkFileOrNull(localUrl, managedArtworkRoot())
+        if (localFile == null) {
+            if (isManagedLocalArtworkFile(localUrl)) {
+                Log.w(TAG, "Refusing to delete local artwork outside the managed directory")
+            }
+            return
+        }
 
         val stillReferenced =
             dao.countAlbumArtUrlReferences(localUrl) > 0 ||
@@ -96,7 +130,6 @@ class RoomTrackRepository @Inject constructor(
             return
         }
 
-        val localFile = File(localUrl.removePrefix("file://"))
         if (localFile.exists() && !localFile.delete()) {
             Log.w(TAG, "Failed to delete obsolete local album art: " + localFile.absolutePath)
         }

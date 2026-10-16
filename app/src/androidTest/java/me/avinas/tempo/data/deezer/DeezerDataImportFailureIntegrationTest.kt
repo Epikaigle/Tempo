@@ -44,6 +44,7 @@ class DeezerDataImportFailureIntegrationTest {
     fun outOfMemoryAfterTrackCreationRemovesPartiallyCreatedTrack() = runBlocking {
         val realTrackRepository =
             RoomTrackRepository(
+                ApplicationProvider.getApplicationContext(),
                 database.trackDao(),
                 database.trackArtistDao(),
                 database.manualContentMarkDao(),
