@@ -22,11 +22,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.avinas.tempo.data.analytics.AccessResult
 import me.avinas.tempo.data.analytics.ExemptionResult
 import me.avinas.tempo.data.analytics.OnboardingAction
 import me.avinas.tempo.data.analytics.OnboardingStepName
 import me.avinas.tempo.ui.navigation.AppNavigation
+import me.avinas.tempo.ui.navigation.StreakVisibilityViewModel
+import me.avinas.tempo.ui.components.LocalHideStreaks
 import me.avinas.tempo.ui.onboarding.BatteryOptimizationScreen
 import me.avinas.tempo.ui.onboarding.HowItWorksScreen
 import me.avinas.tempo.ui.onboarding.isBatteryOptimizationDisabled
@@ -76,14 +79,21 @@ class MainActivity : AppCompatActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    TempoApp(
-                        walkthroughController = walkthroughController,
-                        onSetupComplete = {
-                            // Schedule the health worker after setup is complete
-                            ServiceHealthWorker.schedule(this)
-                        },
-                        navigationTrigger = navigationTrigger.value
-                    )
+                    // Streak display is one app-wide switch. Providing it here means a screen, a
+                    // dialog or a share canvas never has to load preferences just to know whether
+                    // streaks belong on it — see LocalHideStreaks.
+                    val streakVisibility: StreakVisibilityViewModel = hiltViewModel()
+                    val hideStreaks by streakVisibility.hideStreaks.collectAsStateWithLifecycle()
+                    CompositionLocalProvider(LocalHideStreaks provides hideStreaks) {
+                        TempoApp(
+                            walkthroughController = walkthroughController,
+                            onSetupComplete = {
+                                // Schedule the health worker after setup is complete
+                                ServiceHealthWorker.schedule(this)
+                            },
+                            navigationTrigger = navigationTrigger.value
+                        )
+                    }
                 }
             }
         }

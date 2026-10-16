@@ -91,6 +91,9 @@ enum class TempoFeature {
     DEEZER_IMPORT,
     YTMUSIC_IMPORT,
 
+    /** Importing listening history from a Musicolet backup. */
+    MUSICOLET_IMPORT,
+
     /** Importing plays from a file exported by the Tempo Stats browser extension. */
     EXTENSION_PLAYS_IMPORT,
     BACKUP_RESTORE,
@@ -121,7 +124,7 @@ enum class RevivedBy { HEALTH_WORKER, BOOT }
  */
 enum class RecoveryAction { REBIND, FORCE_RESTART, COMPONENT_REENABLE }
 
-enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, TEMPO_BACKUP, BROWSER_EXTENSION }
+enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, MUSICOLET, TEMPO_BACKUP, BROWSER_EXTENSION }
 
 enum class ImportPhase { STARTED, COMPLETED, FAILED }
 

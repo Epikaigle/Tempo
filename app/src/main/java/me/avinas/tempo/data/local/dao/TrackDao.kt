@@ -37,9 +37,12 @@ interface TrackDao {
     /**
      * Update only the title of a track.
      * Targeted update avoids overwriting other columns (e.g. enriched art URLs).
+     *
+     * @return rows rewritten. A silent 0 means the track row no longer exists, which
+     * callers must surface instead of reporting a rename that never landed.
      */
     @Query("UPDATE tracks SET title = :title WHERE id = :trackId")
-    suspend fun updateTitle(trackId: Long, title: String)
+    suspend fun updateTitle(trackId: Long, title: String): Int
 
     @Query("UPDATE tracks SET youtube_id = :youtubeId WHERE id = :trackId AND (youtube_id IS NULL OR youtube_id = '')")
     suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int

@@ -1,7 +1,9 @@
 package me.avinas.tempo.data.repository
 
 import me.avinas.tempo.data.local.dao.AppPreferenceDao
+import me.avinas.tempo.data.local.dao.DetectedAppDao
 import me.avinas.tempo.data.local.entities.AppPreference
+import me.avinas.tempo.data.local.entities.DetectedApp
 import me.avinas.tempo.data.DefaultMusicApps
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -9,16 +11,18 @@ import javax.inject.Singleton
 
 /**
  * Repository for managing user app preferences.
- * 
+ *
  * Provides methods for:
  * - Getting enabled/blocked app lists
  * - Toggling app tracking status
  * - Adding custom apps
  * - Blocking/unblocking apps
+ * - Reviewing apps rejected by the default-deny model (the detected-apps inbox)
  */
 @Singleton
 class AppPreferenceRepository @Inject constructor(
-    private val appPreferenceDao: AppPreferenceDao
+    private val appPreferenceDao: AppPreferenceDao,
+    private val detectedAppDao: DetectedAppDao,
 ) {
     
     /**
@@ -121,6 +125,56 @@ class AppPreferenceRepository @Inject constructor(
      */
     suspend fun getAppPreference(packageName: String): AppPreference? =
         appPreferenceDao.getAppPreference(packageName)
+
+    // ---- Default-deny inbox -------------------------------------------------
+
+    /**
+     * Apps that produced media Tempo refused to track because they are on no allowlist.
+     * This is the review queue that makes default-deny actionable.
+     */
+    fun getDetectedApps(): Flow<List<DetectedApp>> = detectedAppDao.getAll()
+
+    /**
+     * Grants tracking permission to an app that was previously rejected: adds it as a
+     * user-added app so it survives future curated-list changes, then clears the inbox entry.
+     *
+     * A hard never-track app (voice notes, dialers, recorders) is not preventable here by UI —
+     * the screen does not offer Allow for those — but the policy would refuse it regardless.
+     */
+    suspend fun allowDetectedApp(packageName: String, displayName: String) {
+        addCustomApp(packageName, displayName)
+        detectedAppDao.delete(packageName)
+    }
+
+    /**
+     * Blocks an app and clears any inbox entry for it.
+     *
+     * Works whether or not the app already has a preference row. That matters now that the app
+     * list is the permission surface: the apps a user most wants to block are precisely the ones
+     * Tempo has no row for (an unrecognized app it offered in the inbox, or one found by search).
+     * Blocking must stick, so a row is created when missing, while an existing row keeps its
+     * category and user-added flag.
+     */
+    suspend fun blockApp(packageName: String, displayName: String) {
+        val existing = appPreferenceDao.getAppPreference(packageName)
+        val blocked =
+            existing?.copy(isEnabled = false, isBlocked = true)
+                ?: AppPreference(
+                    packageName = packageName,
+                    displayName = displayName,
+                    isEnabled = false,
+                    isUserAdded = false,
+                    isBlocked = true,
+                    category = "OTHER"
+                )
+        appPreferenceDao.upsert(blocked)
+        detectedAppDao.delete(packageName)
+    }
+
+    /** Clears every inbox entry. */
+    suspend fun clearDetectedApps() {
+        detectedAppDao.clear()
+    }
     
     /**
      * Seed database with default apps if empty.

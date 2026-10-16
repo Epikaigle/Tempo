@@ -595,6 +595,7 @@ fun SongDetailsContent(
         MergeConfirmDialog(
             target = mergeTarget,
             isMerging = uiState.isSavingTitle,
+            error = uiState.editTitleError,
             onConfirm = viewModel::confirmEditTitleMerge,
             onDismiss = viewModel::cancelEditTitleMerge,
         )
@@ -2618,6 +2619,7 @@ private fun EditTitleDialog(
 private fun MergeConfirmDialog(
     target: me.avinas.tempo.data.local.entities.Track,
     isMerging: Boolean,
+    error: String?,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -2638,6 +2640,20 @@ private fun MergeConfirmDialog(
                     target.artist
                 )
             )
+
+            // Failure feedback lives in the dialog that triggered it: dismissing the
+            // dialog was previously the only outcome of a merge that did not happen.
+            if (error != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TempoError,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             if (isMerging) {

@@ -71,6 +71,7 @@ fun SettingsScreen(
     onNavigateToSpotifyJsonImport: (() -> Unit)? = null,
     onNavigateToDeezerImport: (() -> Unit)? = null,
     onNavigateToYouTubeMusicImport: (() -> Unit)? = null,
+    onNavigateToMusicoletImport: (() -> Unit)? = null,
     onNavigateToExtensionImport: (() -> Unit)? = null,
     onNavigateToDesktop: () -> Unit = {},
     onNavigateToEnrichmentReport: (() -> Unit)? = null,
@@ -525,6 +526,13 @@ fun SettingsScreen(
                             checked = uiState.isGamificationEnabled,
                             onCheckedChange = viewModel::toggleGamificationEnabled,
                         )
+                        HorizontalDivider(color = GlassBorderSoft)
+                        SettingsSwitch(
+                            title = stringResource(R.string.settings_hide_streaks),
+                            subtitle = stringResource(R.string.settings_hide_streaks_desc),
+                            checked = uiState.hideStreaks,
+                            onCheckedChange = viewModel::toggleHideStreaks,
+                        )
                     }
                 }
 
@@ -578,6 +586,14 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_import_youtube_music),
                             subtitle = stringResource(R.string.settings_import_youtube_music_desc),
                             onClick = { onNavigateToYouTubeMusicImport?.invoke() },
+                        )
+
+                        HorizontalDivider(color = GlassBorderSoft)
+
+                        SettingsOption(
+                            title = stringResource(R.string.settings_import_musicolet),
+                            subtitle = stringResource(R.string.settings_import_musicolet_desc),
+                            onClick = { onNavigateToMusicoletImport?.invoke() },
                         )
 
                         HorizontalDivider(color = GlassBorderSoft)

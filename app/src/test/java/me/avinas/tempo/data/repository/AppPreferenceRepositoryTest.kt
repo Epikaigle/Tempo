@@ -1,9 +1,13 @@
 package me.avinas.tempo.data.repository
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import me.avinas.tempo.data.DefaultMusicApps
 import me.avinas.tempo.data.local.dao.AppPreferenceDao
+import me.avinas.tempo.data.local.dao.DetectedAppDao
 import me.avinas.tempo.data.local.entities.AppPreference
+import me.avinas.tempo.data.local.entities.DetectedApp
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -51,7 +55,24 @@ class AppPreferenceRepositoryTest {
                     }
                 }
             }
-        return AppPreferenceRepository(dao) to inserted
+        // Seeding never touches the inbox, so an inert implementation is enough here.
+        // DetectedAppDao is an abstract class (it carries a @Transaction method), so a
+        // java.lang.reflect.Proxy will not do.
+        return AppPreferenceRepository(dao, FakeDetectedAppDao()) to inserted
+    }
+
+    private class FakeDetectedAppDao : DetectedAppDao() {
+        override fun getAll(): Flow<List<DetectedApp>> = flowOf(emptyList())
+
+        override suspend fun getAllSync(): List<DetectedApp> = emptyList()
+
+        override suspend fun get(packageName: String): DetectedApp? = null
+
+        override suspend fun upsert(app: DetectedApp) = Unit
+
+        override suspend fun delete(packageName: String) = Unit
+
+        override suspend fun clear() = Unit
     }
 
     @Test

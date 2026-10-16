@@ -2,6 +2,7 @@ package me.avinas.tempo.data.repository
 
 import android.util.Log
 import android.util.LruCache
+import me.avinas.tempo.data.local.DeviceTimeZone
 import me.avinas.tempo.data.local.dao.*
 import me.avinas.tempo.data.local.entities.Artist
 import me.avinas.tempo.data.local.entities.Track
@@ -1241,8 +1242,10 @@ class RoomStatsRepository @Inject constructor(
             return ListeningStreak(0, 0, null, null, null, 0)
         }
 
-        // Calculate current streak
-        val today = LocalDate.now()
+        // Calculate current streak. Days come back bucketed in the zone each play was recorded in,
+        // so the streak is counted from "today" in the most recent play's zone rather than the
+        // phone's date -- see GamificationEngine.calculateStreak for why that matters in transit.
+        val today = DeviceTimeZone.todayIn(statsDao.getLatestListeningOffsetMinutes())
         var currentStreak = 0
         var currentStreakStart: LocalDate? = null
         var checkDate = today

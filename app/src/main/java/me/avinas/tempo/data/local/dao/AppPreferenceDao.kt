@@ -37,6 +37,16 @@ interface AppPreferenceDao {
      */
     @Query("SELECT packageName FROM app_preferences WHERE isBlocked = 1")
     suspend fun getBlockedPackageNames(): List<String>
+
+    /**
+     * Get package names of apps the user explicitly switched off.
+     *
+     * Distinct from blocked: these are known apps (often curated ones) whose toggle was turned
+     * off. Under default-deny they must not fall through to the curated allowlist, or switching
+     * Spotify off would have no effect.
+     */
+    @Query("SELECT packageName FROM app_preferences WHERE isEnabled = 0 AND isBlocked = 0")
+    suspend fun getDisabledPackageNames(): List<String>
     
     /**
      * Get all user-added apps (custom apps added by user, not blocked).

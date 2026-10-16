@@ -8,10 +8,11 @@ import androidx.room.PrimaryKey
 
 /**
  * Represents a "Smart Alias" for track deduplication.
- * 
- * When a user manually merges "Track A (Live)" into "Track A",
- * we create an alias here. Future plays of "Track A (Live)" will
- * automatically be re-mapped to "Track A".
+ *
+ * When a user merges "Track A (Live)" into "Track A", or renames a track, an alias is
+ * created here. Later plays of "Track A (Live)" — including ones arriving from an
+ * import — are re-mapped to "Track A" instead of becoming a second track with its own
+ * play count.
  */
 @Entity(
     tableName = "track_aliases",

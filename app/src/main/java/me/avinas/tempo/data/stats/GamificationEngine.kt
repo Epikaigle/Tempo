@@ -77,10 +77,21 @@ object GamificationEngine {
     }
     
     /**
-     * Calculate the longest streak from a sorted list of dates (most recent first).
-     * Dates should be in YYYY-MM-DD format.
+     * Calculate the current and longest listening streak from a descending list of local dates
+     * (YYYY-MM-DD), as produced by the timezone-aware date queries.
+     *
+     * [today] is the current date *in the timezone the most recent play was recorded in* -- see
+     * [me.avinas.tempo.data.local.DeviceTimeZone.todayIn]. Passing the device date instead is what
+     * made a streak lurch on a flight: after travelling west the newest recorded day sits ahead of
+     * the phone's, so it was passed over as "in the future" and the streak lost a day.
+     *
+     * The anchor is also clamped to the newest recorded day, so a clock that lags (or a play
+     * recorded in a zone ahead of the phone) can never drop the most recent day from the count.
      */
-    fun calculateStreak(dates: List<String>): StreakInfo {
+    fun calculateStreak(
+        dates: List<String>,
+        today: java.time.LocalDate = java.time.LocalDate.now(),
+    ): StreakInfo {
         if (dates.isEmpty()) return StreakInfo(0, 0)
         
         val parsedDates = dates.mapNotNull { 
@@ -89,10 +100,10 @@ object GamificationEngine {
         
         if (parsedDates.isEmpty()) return StreakInfo(0, 0)
         
-        // Current streak (from today backwards)
-        val today = java.time.LocalDate.now()
+        // Current streak (from today backwards). The anchor is never earlier than the newest
+        // recorded day, so a phone clock behind the zone a play was recorded in cannot drop it.
         var currentStreak = 0
-        var expectedDate = today
+        var expectedDate = maxOf(today, parsedDates.first())
         
         for (date in parsedDates) {
             if (date == expectedDate || date == expectedDate.minusDays(1)) {

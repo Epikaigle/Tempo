@@ -223,4 +223,7 @@ object DatabaseModule {
 
     @Provides
     fun provideDesktopPairingDao(db: AppDatabase) = db.desktopPairingDao()
+
+    @Provides
+    fun provideDetectedAppDao(db: AppDatabase) = db.detectedAppDao()
 }

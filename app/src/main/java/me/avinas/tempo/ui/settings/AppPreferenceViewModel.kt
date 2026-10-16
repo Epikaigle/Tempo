@@ -2,14 +2,15 @@ package me.avinas.tempo.ui.settings
 
 import me.avinas.tempo.data.local.entities.ManualContentRuleResolver
 import me.avinas.tempo.data.local.DatabaseTransactionRunner
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import me.avinas.tempo.data.DefaultMusicApps
+import me.avinas.tempo.data.InstalledApp
+import me.avinas.tempo.data.InstalledAppsProvider
 import me.avinas.tempo.data.local.dao.ManualContentMarkDao
 import me.avinas.tempo.data.local.entities.AppPreference
 import me.avinas.tempo.data.local.entities.ManualContentMark
@@ -25,10 +26,40 @@ data class AppPreferenceUiState(
     val preinstalledApps: List<AppPreference> = emptyList(),
     val userAddedApps: List<AppPreference> = emptyList(),
     val blockedApps: List<AppPreference> = emptyList(),
+    /** Rejected-but-installed apps awaiting an Allow decision. */
+    val detectedApps: List<DetectedAppUi> = emptyList(),
+    /** Apps that can never be tracked (voice notes, dialers, recorders), shown read-only. */
+    val neverTrackedApps: List<InstalledApp> = emptyList(),
+    /**
+     * Installed apps on no list at all, matched against the current search.
+     *
+     * This is what makes search work: the screen used to filter only Tempo's curated lists, so
+     * searching for an app Tempo did not already know about — exactly the app the user needed to
+     * act on — always returned "No apps found".
+     */
+    val searchResults: List<InstalledApp> = emptyList(),
     val installedPackageNames: Set<String> = emptySet(),
     val contentOverrides: List<ManualContentMark> = emptyList(),
     val searchQuery: String = "",
     val isLoading: Boolean = true
+)
+
+/**
+ * An inbox entry: an app Tempo refused to track, plus enough context for the user to recognize
+ * what it was doing ("Voice message", 4 times).
+ */data class DetectedAppUi(
+    val packageName: String,
+    val displayName: String,
+    val lastTitle: String?,
+    val detectionCount: Int
+)
+
+/** Snapshot of the Room-backed lists, combined before the query-dependent projection. */
+private data class AppLists(
+    val preinstalled: List<AppPreference>,
+    val userAdded: List<AppPreference>,
+    val blocked: List<AppPreference>,
+    val detected: List<me.avinas.tempo.data.local.entities.DetectedApp>
 )
 
 @HiltViewModel
@@ -39,7 +70,7 @@ class AppPreferenceViewModel @Inject constructor(
     private val listeningRepository: ListeningRepository,
     private val statsRepository: StatsRepository,
     private val transactionRunner: DatabaseTransactionRunner,
-    @param:ApplicationContext private val context: Context
+    private val installedAppsProvider: InstalledAppsProvider,
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -47,74 +78,42 @@ class AppPreferenceViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(AppPreferenceUiState())
     val uiState: StateFlow<AppPreferenceUiState> = _uiState.asStateFlow()
 
+    /**
+     * Every launchable app on the device, with labels.
+     *
+     * Populated from [InstalledAppsProvider], which memoises the scan. Doing this work here on
+     * every screen open — as an earlier version did — meant one resource load per installed app
+     * per visit, because resolving a label opens the target app's resources.
+     */
+    private val installedApps = MutableStateFlow<List<InstalledApp>>(emptyList())
+
     init {
         // Seed default apps for fresh installs (no-op if already seeded)
         viewModelScope.launch(Dispatchers.IO) {
             repository.seedDefaultAppsIfNeeded()
+            installedApps.value = installedAppsProvider.get()
         }
 
         // App state and manual content overrides both come from Room so the settings
         // screen and MusicTrackingService observe the same source of truth.
         viewModelScope.launch {
+            val appLists =
+                combine(
+                    repository.getPreinstalledApps(),
+                    repository.getUserAddedApps(),
+                    repository.getBlockedApps(),
+                    repository.getDetectedApps()
+                ) { preinstalled, userAdded, blocked, detected ->
+                    AppLists(preinstalled, userAdded, blocked, detected)
+                }
+
             combine(
-                repository.getPreinstalledApps(),
-                repository.getUserAddedApps(),
-                repository.getBlockedApps(),
+                appLists,
                 manualContentMarkDao.getAllMarks(),
-                _searchQuery
-            ) { preinstalled, userAdded, blocked, manualMarks, query ->
-                val installedPackages = try {
-                    val pm = context.packageManager
-                    pm.getInstalledPackages(0)
-                        .map { it.packageName }
-                        .toSet()
-                } catch (_: Exception) {
-                    emptySet()
-                }
-
-                val filteredPreinstalled = if (query.isBlank()) preinstalled
-                else preinstalled.filter {
-                    it.displayName.contains(query, ignoreCase = true) ||
-                        it.packageName.contains(query, ignoreCase = true)
-                }
-
-                val sortedPreinstalled = filteredPreinstalled.sortedWith(
-                    compareByDescending<AppPreference> { it.packageName in installedPackages }
-                        .thenBy { it.displayName }
-                )
-
-                val filteredUserAdded = if (query.isBlank()) userAdded
-                else userAdded.filter {
-                    it.displayName.contains(query, ignoreCase = true) ||
-                        it.packageName.contains(query, ignoreCase = true)
-                }
-
-                val sortedUserAdded = filteredUserAdded.sortedWith(
-                    compareByDescending<AppPreference> { it.packageName in installedPackages }
-                        .thenBy { it.displayName }
-                )
-
-                val filteredBlocked = if (query.isBlank()) blocked
-                else blocked.filter {
-                    it.displayName.contains(query, ignoreCase = true) ||
-                        it.packageName.contains(query, ignoreCase = true)
-                }
-
-                val contentOverrides = manualMarks.filter {
-                    it.contentType == CONTENT_TYPE_ALWAYS_MUSIC ||
-                        it.contentType == CONTENT_TYPE_NON_MUSIC ||
-                        it.contentType == CONTENT_TYPE_LEGACY_VIDEO
-                }
-
-                AppPreferenceUiState(
-                    preinstalledApps = sortedPreinstalled,
-                    userAddedApps = sortedUserAdded,
-                    blockedApps = filteredBlocked,
-                    installedPackageNames = installedPackages,
-                    contentOverrides = contentOverrides,
-                    searchQuery = query,
-                    isLoading = false
-                )
+                _searchQuery,
+                installedApps
+            ) { lists, manualMarks, query, installed ->
+                buildUiState(lists, manualMarks, query, installed)
             }
                 .flowOn(Dispatchers.Default)
                 .collect { state ->
@@ -123,19 +122,140 @@ class AppPreferenceViewModel @Inject constructor(
         }
     }
 
+    private fun buildUiState(
+        lists: AppLists,
+        manualMarks: List<ManualContentMark>,
+        query: String,
+        installed: List<InstalledApp>
+    ): AppPreferenceUiState {
+        val installedPackages = installed.mapTo(mutableSetOf()) { it.packageName }
+        val matches: (String, String) -> Boolean = { displayName, packageName ->
+            query.isBlank() ||
+                displayName.contains(query, ignoreCase = true) ||
+                packageName.contains(query, ignoreCase = true)
+        }
+
+        val preinstalled = lists.preinstalled
+            .filter { matches(it.displayName, it.packageName) }
+            .sortedWith(
+                compareByDescending<AppPreference> { it.packageName in installedPackages }
+                    .thenBy { it.displayName }
+            )
+
+        val userAdded = lists.userAdded
+            .filter { matches(it.displayName, it.packageName) }
+            .sortedWith(
+                compareByDescending<AppPreference> { it.packageName in installedPackages }
+                    .thenBy { it.displayName }
+            )
+
+        // Never-tracked apps are enforced in code, not as database rows, so they never appeared
+        // in any section — which is why users could not find Viber or Signal on this screen at
+        // all. Surface the installed ones, read-only, with the reason.
+        val neverTracked = installed
+            .filter { it.packageName in DefaultMusicApps.NEVER_TRACK_PACKAGES }
+            .filter { matches(it.displayName, it.packageName) }
+
+        // Everything the user could be looking for but that Tempo has no opinion on yet.
+        val known = buildSet {
+            lists.preinstalled.mapTo(this) { it.packageName }
+            lists.userAdded.mapTo(this) { it.packageName }
+            lists.blocked.mapTo(this) { it.packageName }
+            lists.detected.mapTo(this) { it.packageName }
+            addAll(DefaultMusicApps.NEVER_TRACK_PACKAGES)
+        }
+
+        val searchResults = if (query.isBlank()) {
+            emptyList()
+        } else {
+            installed
+                .filter { it.packageName !in known }
+                .filter { matches(it.displayName, it.packageName) }
+        }
+
+        val blocked = lists.blocked
+            .filter { it.packageName !in DefaultMusicApps.NEVER_TRACK_PACKAGES }
+            .filter { matches(it.displayName, it.packageName) }
+
+        val detectedApps = lists.detected
+            .map { detected ->
+                val installedApp = installed.firstOrNull { it.packageName == detected.packageName }
+                DetectedAppUi(
+                    packageName = detected.packageName,
+                    displayName = installedApp?.displayName
+                        ?: DefaultMusicApps.getDisplayName(detected.packageName),
+                    lastTitle = detected.lastTitle,
+                    detectionCount = detected.detectionCount
+                )
+            }
+            .filter { matches(it.displayName, it.packageName) }
+            .distinctBy { it.packageName }
+
+        val contentOverrides = manualMarks.filter {
+            it.contentType == CONTENT_TYPE_ALWAYS_MUSIC ||
+                it.contentType == CONTENT_TYPE_NON_MUSIC ||
+                it.contentType == CONTENT_TYPE_LEGACY_VIDEO
+        }
+
+        return AppPreferenceUiState(
+            preinstalledApps = preinstalled,
+            userAddedApps = userAdded,
+            blockedApps = blocked,
+            detectedApps = detectedApps,
+            neverTrackedApps = neverTracked,
+            searchResults = searchResults,
+            installedPackageNames = installedPackages,
+            contentOverrides = contentOverrides,
+            searchQuery = query,
+            isLoading = false
+        )
+    }
+
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
     }
 
-    fun toggleAppEnabled(packageName: String, enabled: Boolean) {
+    /**
+     * Grants tracking permission to an app the default-deny model rejected.
+     *
+     * Resolves the label from the installed list when the caller does not have one, so the
+     * "Your Apps" entry is named correctly instead of showing a bare package name.
+     */
+    fun allowDetectedApp(packageName: String) {
         viewModelScope.launch {
-            repository.setAppEnabled(packageName, enabled)
+            repository.allowDetectedApp(packageName, resolveDisplayName(packageName))
         }
     }
 
+    /**
+     * Allows an installed app that is on no list at all — the app the user found by searching
+     * for it, which the screen previously had no way to act on.
+     */
+    fun allowApp(packageName: String) {
+        viewModelScope.launch {
+            repository.addCustomApp(packageName, resolveDisplayName(packageName))
+        }
+    }
+
+    /**
+     * Blocks an app, whether or not it already has a preference row.
+     *
+     * One entry point covers all three places a Block button appears: a curated app in Music
+     * Apps, an inbox suggestion, and an app found by search. Only the first has a row already.
+     */
     fun blockApp(packageName: String) {
         viewModelScope.launch {
-            repository.setAppBlocked(packageName, true)
+            repository.blockApp(packageName, resolveDisplayName(packageName))
+        }
+    }
+
+    private fun resolveDisplayName(packageName: String): String =
+        installedApps.value.firstOrNull { it.packageName == packageName }?.displayName
+            ?: DefaultMusicApps.getDisplayName(packageName)
+
+    fun toggleAppEnabled(packageName: String, enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setAppEnabled(packageName, enabled)
         }
     }
 

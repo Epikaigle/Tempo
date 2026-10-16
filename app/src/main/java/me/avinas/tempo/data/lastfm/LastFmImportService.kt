@@ -256,6 +256,52 @@ class LastFmImportService
             val activeSetCount: Long get() = eventsImported
             val archivedCount: Long get() = scrobblesArchived
             val isComplete: Boolean get() = skippedPages == 0
+
+            /**
+             * The walk read scrobbles from Last.fm but every one of them was already in the
+             * library, so nothing new was written. This is the normal outcome of re-running an
+             * import (or of importing history the device already tracked live) and must not be
+             * presented as a hollow "0 scrobbles imported".
+             */
+            val alreadyImported: Boolean
+                get() =
+                    totalProcessed > 0 &&
+                        eventsImported == 0L &&
+                        scrobblesArchived == 0L &&
+                        duplicatesSkipped > 0
+
+            /** Scrobbles this import actually put somewhere new. */
+            val totalImported: Long get() = eventsImported + scrobblesArchived
+        }
+
+        /**
+         * Import counters carried over from an earlier attempt of the same import.
+         *
+         * A resumed attempt starts walking from the page the previous one died on, so its own
+         * running totals begin at zero. Reporting them as-is made the progress screen fall back
+         * to "Active 0" on every retry and made the finished import under-report what it had
+         * actually written; seeding the counters with what the metadata row already recorded
+         * keeps both honest.
+         */
+        data class ImportTotals(
+            val eventsImported: Long = 0,
+            val tracksCreated: Long = 0,
+            val artistsCreated: Long = 0,
+            val scrobblesArchived: Long = 0,
+            val duplicatesSkipped: Long = 0,
+            val scrobblesProcessed: Long = 0,
+        ) {
+            companion object {
+                fun from(metadata: LastFmImportMetadata): ImportTotals =
+                    ImportTotals(
+                        eventsImported = metadata.eventsImported,
+                        tracksCreated = metadata.tracksCreated,
+                        artistsCreated = metadata.artistsCreated,
+                        scrobblesArchived = metadata.scrobblesArchived,
+                        duplicatesSkipped = metadata.duplicatesSkipped,
+                        scrobblesProcessed = metadata.scrobblesProcessed,
+                    )
+            }
         }
 
         // Progress state flow for UI observation
@@ -598,7 +644,16 @@ class LastFmImportService
                     // (dedup handles the overlap).
                     importMetadataDao.updateStatus(importId, LastFmImportMetadata.STATUS_IN_PROGRESS)
                     val startPage = resumeFrom?.currentPage?.let { (it - 1).coerceAtLeast(1) } ?: 1
-                    val result = importScrobbles(username, importId, totalScrobbles, tier, startTimeMs, startPage)
+                    val result =
+                        importScrobbles(
+                            username = username,
+                            importId = importId,
+                            totalScrobbles = totalScrobbles,
+                            tier = tier,
+                            startTimeMs = startTimeMs,
+                            startPage = startPage,
+                            resumeTotals = resumeFrom?.let { ImportTotals.from(it) } ?: ImportTotals(),
+                        )
 
                     // Phase 3: Mark complete
                     if (result.success) {
@@ -1081,13 +1136,16 @@ class LastFmImportService
             tier: TierConfig,
             startTimeMs: Long,
             startPage: Int = 1,
+            resumeTotals: ImportTotals = ImportTotals(),
         ): ImportResult {
-            var eventsImported = 0L
-            var tracksCreated = 0L
-            var artistsCreated = 0L
-            var scrobblesArchived = 0L
-            var duplicatesSkipped = 0L
-            var scrobblesProcessed = 0L
+            // Seeded from the metadata row when this attempt is a resume, so the progress screen
+            // and the reported result describe the whole import rather than just this attempt.
+            var eventsImported = resumeTotals.eventsImported
+            var tracksCreated = resumeTotals.tracksCreated
+            var artistsCreated = resumeTotals.artistsCreated
+            var scrobblesArchived = resumeTotals.scrobblesArchived
+            var duplicatesSkipped = resumeTotals.duplicatesSkipped
+            var scrobblesProcessed = resumeTotals.scrobblesProcessed
             var skippedPages = 0
             var rateLimitRetries = 0
 
@@ -1111,6 +1169,11 @@ class LastFmImportService
                 }
 
             var page = startPage.coerceAtLeast(1)
+            // A resume page can point past the end of the history (metadata left behind by an
+            // interrupted import, or an account whose history shrank). Last.fm answers such a page
+            // with an empty track list, and the old code read that as "no more history" and
+            // reported a successful import of zero scrobbles. Allow one restart from page 1.
+            var restartedAfterEmptyResumePage = false
             var hasMore = true
             var consecutiveErrors = 0
             val maxConsecutiveErrors = 5
@@ -1191,6 +1254,21 @@ class LastFmImportService
                 val scrobbles = recentTracks?.track ?: emptyList()
                 val totalPages = recentTracks?.attr?.getTotalPages() ?: 0
 
+                if (scrobbles.isEmpty() &&
+                    !restartedAfterEmptyResumePage &&
+                    ImportResumePage.isPastEnd(requestedPage = page, reportedLastPage = totalPages)
+                ) {
+                    Log.w(
+                        TAG,
+                        "Resume page $page is past the end of the history (Last.fm reports $totalPages page(s)); " +
+                            "restarting from page 1 instead of reporting an empty import",
+                    )
+                    restartedAfterEmptyResumePage = true
+                    page = 1
+                    delay(RATE_LIMIT_MS)
+                    continue
+                }
+
                 for (scrobble in scrobbles) {
                     // Skip currently playing track
                     if (scrobble.isNowPlaying()) continue
@@ -1270,7 +1348,16 @@ class LastFmImportService
                                 tierName = tier.name,
                             )
 
-                        importMetadataDao.updateProgress(importId, page, scrobblesProcessed)
+                        importMetadataDao.updateProgress(
+                            id = importId,
+                            currentPage = page,
+                            scrobblesProcessed = scrobblesProcessed,
+                            eventsImported = eventsImported,
+                            tracksCreated = tracksCreated,
+                            artistsCreated = artistsCreated,
+                            scrobblesArchived = scrobblesArchived,
+                            duplicatesSkipped = duplicatesSkipped,
+                        )
                     }
                 }
 
@@ -1343,6 +1430,32 @@ class LastFmImportService
                 scrobblesArchived = scrobblesArchived,
                 duplicatesSkipped = duplicatesSkipped,
             )
+
+            // Nothing was read from Last.fm at all. Reporting success here is what produced an
+            // "Import Complete! 0 scrobbles imported" screen, whose zeroed counters users read as
+            // a broken import. Every route to a zero-scrobble walk is an outcome the user needs
+            // told about, not a silent success.
+            if (scrobblesProcessed == 0L) {
+                val message =
+                    if (skippedPages > 0) {
+                        "$skippedPages page(s) of history could not be fetched from Last.fm; nothing was imported"
+                    } else {
+                        "Last.fm returned no scrobbles for '$username'"
+                    }
+                Log.w(TAG, "Import produced no scrobbles: $message")
+                return ImportResult(
+                    success = false,
+                    eventsImported = eventsImported,
+                    tracksCreated = tracksCreated,
+                    artistsCreated = artistsCreated,
+                    scrobblesArchived = scrobblesArchived,
+                    duplicatesSkipped = duplicatesSkipped,
+                    totalProcessed = scrobblesProcessed,
+                    durationSeconds = durationSeconds,
+                    skippedPages = skippedPages,
+                    errorMessage = message,
+                )
+            }
 
             if (skippedPages > 0) {
                 Log.w(TAG, "Import finished with $skippedPages skipped page(s) - history has holes")
@@ -1582,6 +1695,15 @@ class LastFmImportService
         fun cancelImport() {
             _progress.value = ImportProgress.Idle
             clearWorkingCaches()
+        }
+
+        /**
+         * Surface a terminal failure that happened before [startImport] could report one itself -
+         * e.g. the worker giving up after repeated process kills. Without this the UI keeps
+         * waiting on a run that is already over, which reads as an import frozen at zero.
+         */
+        fun reportFailed(message: String) {
+            _progress.value = ImportProgress.Failed(message, isRecoverable = true)
         }
 
         /**
@@ -2167,4 +2289,22 @@ internal object SyncWatermark {
         val watermarkMs = if (fullyScanned) maxProcessedMs else minProcessedMs
         return maxOf(watermarkMs / 1000, currentCursor)
     }
+}
+
+/**
+ * Whether a page number restored from `lastfm_import_metadata` still exists in the history.
+ *
+ * Resume metadata records the page the previous attempt reached. When that page is past the last
+ * page Last.fm reports - a stale row, or an account whose history shrank - the API answers with an
+ * empty `track` list, which the import loop used to read as "history exhausted" and report as a
+ * *successful* import of zero scrobbles ("0 active listens"). Callers restart from page 1 instead.
+ *
+ * `reportedLastPage` of 0 means the response carried no pagination attributes at all; that is not
+ * evidence of an out-of-range page, so it does not trigger a restart.
+ */
+internal object ImportResumePage {
+    fun isPastEnd(
+        requestedPage: Int,
+        reportedLastPage: Int,
+    ): Boolean = requestedPage > 1 && reportedLastPage >= 1 && requestedPage > reportedLastPage
 }

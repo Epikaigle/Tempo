@@ -5,10 +5,11 @@ import android.os.Environment
 import android.os.StatFs
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
-import me.avinas.tempo.data.repository.ArtistLinkingService
-import me.avinas.tempo.data.repository.EnrichedMetadataRepository
+import me.avinas.tempo.data.local.dao.TrackAliasDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.local.entities.Track
+import me.avinas.tempo.data.repository.ArtistLinkingService
+import me.avinas.tempo.data.repository.EnrichedMetadataRepository
 import me.avinas.tempo.data.repository.ListeningRepository
 import me.avinas.tempo.data.repository.RefreshCoordinator
 import me.avinas.tempo.data.repository.TrackRepository
@@ -26,7 +27,8 @@ import javax.inject.Singleton
  *  1. Validate the auth token via [DesktopPairingManager]
  *  2. Check battery level (reject if critical)
  *  3. Parse the JSON `plays` array
- *  4. Upsert [Track] records (find-or-create by title + artist)
+ *  4. Upsert [Track] records (find-or-create by exact name, then the alias a rename
+ *     or merge left behind, then fuzzy matching — the payload carries no provider ids)
  *  5. Deduplicate against existing [ListeningEvent] rows (±60 s window)
  *  6. Insert accepted events with `source = "desktop:<source_app>"`
  *  7. Update the pairing session's `last_seen_ms`
@@ -61,7 +63,8 @@ class DesktopPlayIngestionService @Inject constructor(
     private val listeningRepository: ListeningRepository,
     private val enrichedMetadataRepository: EnrichedMetadataRepository,
     private val artistLinkingService: ArtistLinkingService,
-    private val refreshCoordinator: RefreshCoordinator
+    private val refreshCoordinator: RefreshCoordinator,
+    private val trackAliasDao: TrackAliasDao
 ) {
     companion object {
         private const val TAG = "DesktopIngestion"
@@ -264,11 +267,18 @@ class DesktopPlayIngestionService @Inject constructor(
         trackRepository.findByTitleAndArtist(title, artist)?.let {
             return TrackResolution(id = it.id, isNew = false)
         }
-        // 2. Fuzzy substring match (handles minor whitespace / case differences)
+        // 2. A name the user renamed away or merged into another row. The payload carries
+        //    no provider ids, so without this step a desktop or extension play of a title
+        //    the user had already replaced re-created it as a second track with its own
+        //    play count — the rename looked like it had been undone.
+        trackAliasDao.findAliasTargetTrack(title, artist)?.let {
+            return TrackResolution(id = it.id, isNew = false, track = it)
+        }
+        // 3. Fuzzy substring match (handles minor whitespace / case differences)
         trackRepository.findByTitleAndArtistFuzzy(title, artist)?.let {
             return TrackResolution(id = it.id, isNew = false)
         }
-        // 3. Any-artist intersection match:
+        // 4. Any-artist intersection match:
         //    Fetch every track with the same title, then check whether at least one
         //    individual artist name from the incoming play exists in the stored artist
         //    string (or vice-versa).  This handles:
@@ -279,7 +289,7 @@ class DesktopPlayIngestionService @Inject constructor(
         candidates.firstOrNull { ArtistParser.hasAnyMatchingArtist(it.artist, artist) }?.let {
             return TrackResolution(id = it.id, isNew = false)
         }
-        // 4. No match found — create a new track record
+        // 5. No match found — create a new track record
         val newTrack = Track(
             title = title,
             artist = artist,

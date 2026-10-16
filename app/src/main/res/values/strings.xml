@@ -679,6 +679,8 @@
     <string name="settings_pause_tracking_off_desc">Tracking continues at all battery levels — no automatic pausing</string>
     <string name="settings_enable_gamification">Enable Gamification</string>
     <string name="settings_enable_gamification_desc">Turn off to hide XP, levels, and badges</string>
+    <string name="settings_hide_streaks">Hide Streaks</string>
+    <string name="settings_hide_streaks_desc">Hide streak counters, streak insights and streak lines on shared cards. Listening is still tracked.</string>
     <string name="settings_import_spotify_json">Import Spotify Data Export</string>
     <string name="settings_import_spotify_json_desc">Import listening history from Spotify JSON data export files</string>
     <string name="settings_import_deezer">Import Deezer Data Export</string>
@@ -735,6 +737,8 @@
     <string name="deezer_import_notification_progress">Importing %1$d/%2$d entries</string>
     <string name="settings_import_youtube_music">Import YouTube Music Data</string>
     <string name="settings_import_youtube_music_desc">Import listening history from a YouTube Takeout ZIP (JSON or HTML)</string>
+    <string name="settings_import_musicolet">Import Musicolet Data</string>
+    <string name="settings_import_musicolet_desc">Import play counts and last-played times from a Musicolet backup ZIP</string>
 
     <!-- Browser extension plays: the extension's "Export Plays" file, imported in the app -->
     <string name="settings_import_extension">Import Browser Extension Plays</string>
@@ -1468,7 +1472,7 @@
     <string name="details_move_to_artist">Move to artist</string>
     <!-- Configurable Android tracking rules -->
     <string name="tracking_rules_section">Tracking rules</string>
-    <string name="tracking_rules_help">Enable apps to track music listening. Use the timer button to give an app its own maximum music duration. Block apps to exclude them completely.</string>
+    <string name="tracking_rules_help">Tempo tracks only apps it recognizes as music players. Search for any app on your device to allow it, or use the timer button to give an app its own maximum music duration. Blocked apps are excluded completely.</string>
     <string name="tracking_count_listen_after">Count a listen after</string>
     <string name="tracking_default_max_duration">Default maximum music duration</string>
     <string name="tracking_no_limit">No limit</string>
