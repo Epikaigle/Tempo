@@ -25,11 +25,19 @@ await esbuild.build({
       };
       export const getDrivePendingPlays = async () => [];
       export const getDrivePendingCount = async () => globalThis.fixture.pendingCount ?? 0;
-       export const hasDriveOriginEventId = async () => false;
+       export const hasDriveOriginEventId = async id => globalThis.fixture.importedIds?.has(id) ?? false;
        export const claimUnownedDrivePlays = async subject => { globalThis.fixture.claimed.push(subject); };
       export const getOwnPlayIdentityInputs = async () => globalThis.fixture.ownLocalPlays ?? [];
       export const markDriveUploaded = async () => {};
-      export const insertPlay = async value => { globalThis.fixture.imported.push(value); };
+      export const insertPlay = async value => {
+        if (globalThis.fixture.failAfterImported != null &&
+            globalThis.fixture.imported.length >= globalThis.fixture.failAfterImported) {
+          globalThis.fixture.failAfterImported = null;
+          throw new Error('Simulated IndexedDB interruption during archive recovery');
+        }
+        globalThis.fixture.imported.push(value);
+        globalThis.fixture.importedIds?.add(value.originEventId);
+      };
       export const hasRecentPlay = async () => false;
     ` : `
       export const getDriveAuthSession = async () => globalThis.fixture.session;
