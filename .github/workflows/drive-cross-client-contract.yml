@@ -1,0 +1,78 @@
+name: Drive cross-client wire interoperability
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/src/main/java/me/avinas/tempo/data/drive/**"
+      - "app/src/test/java/me/avinas/tempo/data/drive/**"
+      - "browser-extension/src/background/drive-protocol.ts"
+      - "browser-extension/emit-cross-client-drive-fixtures.mjs"
+      - ".github/workflows/drive-cross-client-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP: test-client.apps.googleusercontent.com
+  TEMPO_BROWSER_FIXTURE_DIR: ${{ github.workspace }}/interop-fixtures
+
+jobs:
+  browser-to-android-and-desktop:
+    name: Chrome/Firefox gzip to Android + Desktop
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout Android and browser PR head
+        uses: actions/checkout@v4
+
+      - name: Checkout independent Desktop PR head
+        uses: actions/checkout@v4
+        with:
+          ref: feat/desktop-google-drive-sync
+          path: desktop-interop
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: browser-extension/package-lock.json
+
+      - name: Build genuine Chrome and Firefox wire payloads
+        working-directory: browser-extension
+        run: |
+          npm ci
+          node emit-cross-client-drive-fixtures.mjs ../interop-fixtures
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Decode browser gzip batches with Android Kotlin
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest --tests me.avinas.tempo.data.drive.DriveHistoryProtocolTest --stacktrace
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri/Linux system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev libdbus-1-dev build-essential pkg-config playerctl
+
+      - name: Cache Desktop Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop-interop/desktop/src-tauri -> target"
+
+      - name: Decode browser gzip batches with Desktop Rust
+        working-directory: desktop-interop/desktop/src-tauri
+        run: cargo test --locked --all-targets chrome_and_firefox_browser_gzip_fixtures_decode_on_desktop
