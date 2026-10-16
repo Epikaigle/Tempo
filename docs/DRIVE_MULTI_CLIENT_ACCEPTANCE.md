@@ -54,6 +54,33 @@ build using dummy OAuth client IDs is not proof that cross-platform Google sign-
 | Same-name legacy batch | Upload old same-name payload and retry with corrected deterministic payload | Last valid backup never removed before replacement is verified |
 | Big history | At least 100,000 events across multiple producers | No OOM/quota surprises, bounded download buffers, resumable restores |
 
+## Automated regression coverage added October 16, 2026
+
+- Android protocol: 100,000 unique events spanning about ten years are
+  encoded/decoded in separate bounded Drive batches, checking chronological
+  integrity and preservation of each immutable producer event ID.
+- Browser protocol: 100,000 unique events likewise round-trip through
+  compressed batches of at most 1,000 events. Browser IndexedDB smoke tests
+  independently exercise lifetime statistics across more than 100,000 rows.
+- Desktop database: 100,000 persisted historical listening rows are fetched
+  by chronological keyset pages with no duplicate/omitted IDs, then counted
+  again after reopening SQLite.
+- On all three clients, a substantially different *listened duration*
+  vetoes a fuzzy timestamp-based match. When more than one candidate remains
+  plausible, clients preserve the incoming play instead of choosing one
+  arbitrarily; original producer IDs still decide exact retries.
+- A mathematically indistinguishable pair of independent same-song listens
+  and two captures of one playback (same timing and lengths, different
+  producers) cannot be perfectly classified without shared authoritative
+  playback identity. Conservatively protecting uncertain events may retain
+  occasional duplicates, rather than silently losing an independent listen.
+
+**Not a real-device sign-off:** fixture-level round trips and SQLite
+pagination do not demonstrate 100,000-event Google Drive network restoration
+on signed Android, Desktop, Chrome and Firefox builds. The cross-client OAuth,
+network interruption, account-switch, mobile database migration and
+full 100k-event end-to-end acceptance cases in the matrix remain required.
+
 ## Publication blockers
 
 1. Fix every event-loss, bad deduplication or cross-account leak found above.
