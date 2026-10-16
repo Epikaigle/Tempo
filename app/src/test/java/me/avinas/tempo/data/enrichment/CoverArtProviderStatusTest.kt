@@ -1,7 +1,5 @@
 package me.avinas.tempo.data.enrichment
 
-import me.avinas.tempo.data.local.entities.EnrichedMetadata
-import me.avinas.tempo.data.local.entities.Track
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
@@ -73,72 +71,6 @@ class CoverArtProviderStatusTest {
         assertEquals("https://example.test/large.jpg", result.candidate?.albumArtUrl)
         assertEquals("Album", result.candidate?.albumTitle)
     }
-    @Test
-    fun spotifyCachedIdentityRejectsEditedTitleAndArtist() {
-        val track = Track(
-            id = 1L,
-            title = "Correct Song",
-            artist = "Correct Artist",
-            album = null,
-            duration = null,
-            albumArtUrl = null,
-            spotifyId = "stale-id",
-            musicbrainzId = null,
-        )
-        val metadata = EnrichedMetadata(
-            trackId = track.id,
-            spotifyVerifiedArtist = "Old Artist",
-        )
-
-        assertTrue(
-            !isSpotifyPickerIdentityCompatible(
-                track = track,
-                existingMetadata = metadata,
-                providerTitle = "Old Song",
-            )
-        )
-        assertTrue(
-            isSpotifyPickerIdentityCompatible(
-                track = track,
-                existingMetadata = metadata.copy(spotifyVerifiedArtist = "Correct Artist"),
-                providerTitle = "Correct Song",
-            )
-        )
-
-        val collaboration = track.copy(artist = "Correct Artist & Guest Artist")
-        assertTrue(
-            isSpotifyPickerIdentityCompatible(
-                track = collaboration,
-                existingMetadata = metadata.copy(spotifyVerifiedArtist = "Correct Artist"),
-                providerTitle = "Correct Song",
-            )
-        )
-        assertTrue(
-            !isSpotifyPickerIdentityCompatible(
-                track = track,
-                existingMetadata = metadata.copy(spotifyVerifiedArtist = "Correct Artist"),
-                providerTitle = null,
-            )
-        )
-    }
-
-    @Test
-    fun spotifyTrackIdExtractionHandlesPlainIdUriAndWebUrl() {
-        assertEquals("4cOdK2wGLETKBW3PvgPWqT", extractSpotifyTrackId("4cOdK2wGLETKBW3PvgPWqT"))
-        assertEquals("4cOdK2wGLETKBW3PvgPWqT", extractSpotifyTrackId("spotify:track:4cOdK2wGLETKBW3PvgPWqT"))
-        assertEquals(
-            "4cOdK2wGLETKBW3PvgPWqT",
-            extractSpotifyTrackId("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=abc123xyz"),
-        )
-        assertEquals(
-            "4cOdK2wGLETKBW3PvgPWqT",
-            extractSpotifyTrackId("https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT/"),
-        )
-        assertEquals(null, extractSpotifyTrackId(null))
-        assertEquals(null, extractSpotifyTrackId(""))
-        assertEquals(null, extractSpotifyTrackId("   "))
-    }
-
     @Test
     fun lastFmMismatchedAutocorrectedIdentityIsRejected() {
         val result = mapLastFmCoverSearchResult(

@@ -479,7 +479,6 @@ private fun CoverProviderCard(
 private fun providerLabel(provider: CoverArtProvider): String =
     when (provider) {
         CoverArtProvider.CURRENT -> stringResource(R.string.details_cover_current)
-        CoverArtProvider.SPOTIFY -> stringResource(R.string.details_cover_provider_spotify)
         CoverArtProvider.APPLE_MUSIC -> stringResource(R.string.details_cover_provider_apple_music)
         CoverArtProvider.MUSICBRAINZ -> stringResource(R.string.details_cover_provider_musicbrainz)
         CoverArtProvider.DEEZER -> stringResource(R.string.details_cover_provider_deezer)

@@ -11,7 +11,6 @@ import javax.inject.Singleton
 
 enum class CoverArtProvider {
     CURRENT,
-    SPOTIFY,
     APPLE_MUSIC,
     MUSICBRAINZ,
     LASTFM,
@@ -78,7 +77,6 @@ internal fun buildCurrentCoverArtCandidate(
  */
 @Singleton
 class CoverArtPickerService @Inject constructor(
-    private val spotifyEnrichmentService: SpotifyEnrichmentService,
     private val iTunesEnrichmentService: ITunesEnrichmentService,
     private val musicBrainzEnrichmentService: MusicBrainzEnrichmentService,
     private val lastFmEnrichmentService: LastFmEnrichmentService,
@@ -88,7 +86,6 @@ class CoverArtPickerService @Inject constructor(
         const val PROVIDER_LOOKUP_TIMEOUT_MS = 15_000L
 
         val REMOTE_PROVIDERS = listOf(
-            CoverArtProvider.SPOTIFY,
             CoverArtProvider.APPLE_MUSIC,
             CoverArtProvider.MUSICBRAINZ,
             CoverArtProvider.DEEZER,
@@ -123,31 +120,6 @@ class CoverArtPickerService @Inject constructor(
                             candidate = candidate,
                         )
                     }
-
-                    CoverArtProvider.SPOTIFY ->
-                        when (val result = spotifyEnrichmentService.fetchCoverArtForPicker(track, currentMetadata)) {
-                            is SpotifyEnrichmentService.SpotifyCoverArtResult.Success ->
-                                CoverArtLookupResult(
-                                    provider = provider,
-                                    status = CoverArtLookupStatus.FOUND,
-                                    candidate = CoverArtCandidate(
-                                        provider = provider,
-                                        albumArtUrl = result.albumArtUrl,
-                                        albumArtUrlLarge = result.albumArtUrl,
-                                        albumTitle = null,
-                                    ),
-                                )
-                            SpotifyEnrichmentService.SpotifyCoverArtResult.Unavailable ->
-                                CoverArtLookupResult(provider, CoverArtLookupStatus.UNAVAILABLE)
-                            SpotifyEnrichmentService.SpotifyCoverArtResult.NotFound ->
-                                CoverArtLookupResult(provider, CoverArtLookupStatus.NOT_FOUND)
-                            is SpotifyEnrichmentService.SpotifyCoverArtResult.Error ->
-                                CoverArtLookupResult(
-                                    provider = provider,
-                                    status = CoverArtLookupStatus.ERROR,
-                                    message = result.message,
-                                )
-                        }
 
                     CoverArtProvider.APPLE_MUSIC ->
                         when (
