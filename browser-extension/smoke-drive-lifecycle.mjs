@@ -345,7 +345,109 @@ try {
 }
 console.log('  ✓ stale cloud cleanup failures remain visible without blocking valid imports');
 
-console.log('\n11 Drive lifecycle scenarios passed');
+
+// The codec-only 100k test cannot prove that the real restore loop survives
+// interruption. Exercise the public Restore operation with 100 Drive batches,
+// 100,000 persisted origins, out-of-order listing pages, a mid-batch crash,
+// and repeated recovery without duplicated listening rows.
+reset();
+fixture.stored.tempoDriveDeviceId = 'local-device';
+fixture.importedIds = new Set();
+fixture.failAfterImported = 70_123;
+const archiveFirstTimestamp = 1_451_606_400_000;
+const archiveStepMs = 3_153_600; // ~52.56 min/track over ten years
+const archiveFiles = [];
+const archivePayloads = new Map();
+const archiveTotal = 100_000;
+const archiveBatchSize = 1_000;
+for (let offset = 0; offset < archiveTotal; offset += archiveBatchSize) {
+  const page = offset / archiveBatchSize;
+  const producer = page % 2 === 0 ? 'history-producer-a' : 'history-producer-b';
+  const historyEvents = Array.from({ length: Math.min(archiveBatchSize, archiveTotal - offset) }, (_, i) => {
+    const index = offset + i;
+    return {
+      ...event,
+      event_id: sha256(`history-ten-years-${index}`),
+      title: `Historical song ${index % 57}`,
+      timestamp_utc: archiveFirstTimestamp + index * archiveStepMs,
+    };
+  });
+  const historyBatchId = sha256(`tempo-batch-v1|${historyEvents.map(e => e.event_id).join('|')}`);
+  const bytes = gzipSync(JSON.stringify({
+    schema_version: 1, batch_id: historyBatchId, source_device_id: producer,
+    source_device_name: 'Ten-year fixture', source_platform: 'chrome_extension',
+    created_at_utc: historyEvents.at(-1).timestamp_utc, events: historyEvents,
+  }));
+  const id = `history-${page}`;
+  archivePayloads.set(id, bytes);
+  archiveFiles.push({
+    id,
+    name: `tempo_history_v1_g100_${producer}_${historyBatchId}.json.gz`,
+    size: String(bytes.byteLength),
+    createdTime: new Date(1_700_000_000_000 + page * 1000).toISOString(),
+    appProperties: {
+      tempo_kind: 'history_batch', tempo_schema: '1',
+      source_device_id: producer, source_platform: 'chrome_extension',
+      tempo_generation: '100', tempo_sha256: sha256(bytes),
+    },
+  });
+}
+// Reverse the listing so the client must sort across Drive listing pages.
+archiveFiles.reverse();
+let archiveListPages = 0;
+let archiveDownloads = 0;
+globalThis.fetch = async rawUrl => {
+  const url = new URL(rawUrl);
+  const query = url.searchParams.get('q') ?? '';
+  if (query.startsWith('name =')) {
+    return Response.json({ files: [{ id: 'marker', modifiedTime: new Date(100).toISOString() }] });
+  }
+  if (query.startsWith('name contains')) {
+    archiveListPages++;
+    const start = Number(url.searchParams.get('pageToken') ?? '0');
+    const next = Math.min(start + 17, archiveFiles.length);
+    return Response.json({
+      files: archiveFiles.slice(start, next),
+      ...(next < archiveFiles.length ? { nextPageToken: String(next) } : {}),
+    });
+  }
+  if (url.searchParams.get('alt') === 'media') {
+    archiveDownloads++;
+    const fileId = decodeURIComponent(url.pathname.split('/').at(-1));
+    const bytes = archivePayloads.get(fileId);
+    assert.ok(bytes, 'only known history files can be downloaded');
+    return new Response(bytes);
+  }
+  throw new Error(`Unexpected ten-year archive request: ${url}`);
+};
+await assert.rejects(drive.restoreDriveHistory(),
+  /Simulated IndexedDB interruption during archive recovery/,
+  'a crash after a partial batch must not be silently acknowledged');
+assert.equal(fixture.imported.length, 70_123, 'crash stops in the middle of a 1000-event batch');
+assert.equal(fixture.importedIds.size, 70_123);
+assert.ok(fixture.stored[stateKey].downloadCreatedCursor > 0,
+  'large-history restoration checkpoints only previously completed batches');
+const resumedArchive = await drive.restoreDriveHistory();
+assert.equal(resumedArchive.imported, archiveTotal - 70_123,
+  'restart recovers exactly the uncommitted remainder');
+assert.equal(resumedArchive.duplicates, 70_123,
+  'previously persisted Drive identities are not imported again');
+assert.equal(fixture.importedIds.size, archiveTotal, '100,000 distinct playback IDs survive');
+assert.equal(fixture.imported.length, archiveTotal, 'no duplicate rows created by interrupted restore');
+assert.equal(fixture.imported[0].timestampUtc, archiveFirstTimestamp);
+assert.equal(fixture.imported.at(-1).timestampUtc,
+  archiveFirstTimestamp + (archiveTotal - 1) * archiveStepMs);
+assert.ok(archiveListPages >= 12, 'both restorations paginate a shuffled Drive listing');
+assert.ok(archiveDownloads >= 100, 'restore downloads the whole ten-year archive');
+assert.equal(fixture.stored[stateKey].lastError, null);
+const repeatArchive = await drive.restoreDriveHistory();
+assert.equal(repeatArchive.imported, 0);
+assert.equal(repeatArchive.duplicates, archiveTotal);
+assert.equal(fixture.imported.length, archiveTotal,
+  'another full restore remains idempotent');
+console.log('  ✓ 100,000-play restore loop resumes after partial commit with no loss or duplicates');
+
+console.log('\n12 Drive lifecycle scenarios passed');
 
 
 // Stale clients cannot delete current-generation uploads solely because Drive
