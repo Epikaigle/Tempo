@@ -62,6 +62,12 @@ let localRecords = [{
 database.transaction = () => {
   const tx = {
     objectStore: () => ({
+      put(updated) {
+        const position = localRecords.findIndex(row => row.id === updated.id &&
+          (row.id != null || row === updated));
+        if (position >= 0) localRecords[position] = updated;
+        else if (localRecords.length === 1 && localRecords[0].id == null) localRecords[0] = updated;
+      },
       index: () => ({
         openCursor(range) {
           const entries = localRecords.filter(item =>
@@ -73,13 +79,9 @@ database.transaction = () => {
             lookup.result = item ? {
               value: item,
               continue: () => queueMicrotask(next),
-              update(newValue) {
-                const position = localRecords.indexOf(item);
-                localRecords[position] = newValue;
-                queueMicrotask(() => tx.oncomplete?.());
-              },
             } : null;
             lookup.onsuccess?.();
+            if (!item) queueMicrotask(() => tx.oncomplete?.());
           };
           queueMicrotask(next);
           return lookup;
@@ -106,6 +108,33 @@ assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 25_000, 'r
   'distinct quick replays from one origin must be preserved');
 assert.equal(await storage.hasRecentPlay('Different Song', 'Artist', baseTime + 2_000, 'remote-B'), false);
 
+// If the same title appears twice around an incoming cloud event, choosing
+// the first row would swallow an independent rapid replay. Preserve both.
+localRecords = [
+  { id: 101, title: 'Song', artist: 'Artist', timestampUtc: baseTime, listenedMs: 120_000 },
+  { id: 102, title: 'Song', artist: 'Artist', timestampUtc: baseTime + 1_000, listenedMs: 120_000 },
+];
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 500,
+  'remote-E', 'event-E1', undefined, 180_000, 120_000), false,
+  'two plausible local replays must never be merged by choosing the first');
+assert.ok(localRecords.every(play => !play.reconciledOrigins?.length),
+  'ambiguous candidates must not persist a fabricated provenance alias');
+
+localRecords = [{
+  id: 103, title: 'Song', artist: 'Artist', timestampUtc: baseTime,
+  durationMs: 180_000, listenedMs: 20_000,
+}];
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 500,
+  'remote-E', 'event-E2', undefined, 180_000, 120_000), false,
+  'a substantially different listened duration is evidence of an independent play');
+assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 500,
+  'remote-E', 'event-E2', undefined, 180_000, 25_000), true,
+  'compatible listen duration remains eligible for temporal reconciliation');
+
+localRecords = [{
+  id: 104, title: 'Song', artist: 'Artist', timestampUtc: baseTime,
+  originDeviceId: 'remote-A',
+}];
 localRecords[0].durationMs = 180_000;
 assert.equal(await storage.hasRecentPlay('Song', 'Artist', baseTime + 1_000, 'remote-D', 'event-D1', undefined, 200_000), false,
   'track duration difference > 10s must not match same-title playback');
