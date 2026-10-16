@@ -72,10 +72,10 @@ class CoverArtPickerSelectionTest {
     fun selectionSurvivesRotationWhenCandidatePreservedInUiState() {
         val stateBeforeRotation = SongDetailsUiState(
             showCoverPicker = true,
-            selectedCoverProvider = CoverArtProvider.SPOTIFY,
+            selectedCoverProvider = CoverArtProvider.LASTFM,
             coverCandidates = listOf(
                 candidate(CoverArtProvider.CURRENT),
-                candidate(CoverArtProvider.SPOTIFY),
+                candidate(CoverArtProvider.LASTFM),
             ),
         )
 
@@ -84,7 +84,7 @@ class CoverArtPickerSelectionTest {
             selectedProvider = stateBeforeRotation.selectedCoverProvider,
             candidates = stateBeforeRotation.coverCandidates,
         )
-        assertEquals(CoverArtProvider.SPOTIFY, reconciled)
+        assertEquals(CoverArtProvider.LASTFM, reconciled)
     }
 
     private fun candidate(provider: CoverArtProvider) =
