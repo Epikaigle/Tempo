@@ -670,7 +670,7 @@ pub(crate) fn insert_remote_event_for_account(
         // accented names and whitespace use the same comparison as other clients.
         let mut stmt = conn
             .prepare_cached(
-                "SELECT s.id, s.title, s.artist, s.duration_ms FROM scrobbles s
+                "SELECT s.id, s.title, s.artist, s.duration_ms, s.listened_ms FROM scrobbles s
              LEFT JOIN drive_event_state d ON d.scrobble_id = s.id
              WHERE s.timestamp_utc BETWEEN ?1 AND ?2
                AND (d.origin_device_id IS NULL OR d.origin_device_id <> ?4)
@@ -698,13 +698,15 @@ pub(crate) fn insert_remote_event_for_account(
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
                         row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
                     ))
                 },
             )
             .map_err(|e| e.to_string())?;
         let mut found = None;
+        let mut matches = 0usize;
         for candidate in candidates {
-            let (id, candidate_title, candidate_artist, candidate_duration) =
+            let (id, candidate_title, candidate_artist, candidate_duration, candidate_listened) =
                 candidate.map_err(|e| e.to_string())?;
             // Different versions of a same-titled track can start within two
             // seconds. If both devices know the duration and it differs by
@@ -715,15 +717,29 @@ pub(crate) fn insert_remote_event_for_account(
                 }
                 _ => true,
             };
-            if duration_matches
+            // Two genuinely different listens of the same track can start
+            // less than two seconds apart. A substantially different listening
+            // interval disproves a shared playback even when title matches.
+            let listened_matches = match (candidate_listened, event.listened_ms) {
+                (Some(local), remote) if local > 0 && remote > 0 => {
+                    local.abs_diff(remote) <= 10_000
+                }
+                _ => true,
+            };
+            if duration_matches && listened_matches
                 && candidate_title.trim().to_lowercase() == title
                 && candidate_artist.trim().to_lowercase() == artist
             {
+                matches += 1;
                 found = Some(id);
-                break;
+                if matches > 1 {
+                    // Multiple eligible rows: choosing the closest could
+                    // erase an independent rapid replay. Keep the new event.
+                    break;
+                }
             }
         }
-        found
+        if matches == 1 { found } else { None }
     };
 
     if let Some(id) = existing_temporal {
