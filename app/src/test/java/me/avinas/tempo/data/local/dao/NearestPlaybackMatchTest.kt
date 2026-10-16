@@ -68,6 +68,19 @@ class NearestPlaybackMatchTest {
     }
 
     @Test
+    fun `Drive origin is not assigned when two rapid replays are plausible`() {
+        val first = Candidate(1_700_000_000_000L)
+        val replay = Candidate(1_700_000_001_000L)
+        val slots = listOf(first, replay)
+        val incoming = 1_700_000_000_500L
+        assertEquals(-1, uniqueEligiblePlaybackIndex(slots) {
+            kotlin.math.abs(it.timestamp - incoming) <= ListeningEventDao.DRIVE_RECONCILIATION_WINDOW_MS
+        })
+        assertEquals(1, uniqueEligiblePlaybackIndex(slots) { it.timestamp == replay.timestamp })
+        assertEquals(-1, uniqueEligiblePlaybackIndex(slots) { false })
+    }
+
+    @Test
     fun `equidistant candidates deterministically keep first ordering`() {
         assertEquals(0, nearestEligiblePlaybackIndex(
             listOf(Candidate(1_000L), Candidate(3_000L)), 2_000L,
