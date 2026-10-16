@@ -1192,6 +1192,9 @@
     <string name="details_cover_restore_auto_hint">O Tempo poderá voltar a escolher a capa automaticamente.</string>
     <string name="details_cover_try_again">Pesquisar novamente</string>
 
+    <string name="details_cover_preview_error">Não foi possível carregar a pré-visualização da imagem</string>
+    <string name="details_cover_current_hint">Capa apresentada atualmente</string>
+    <string name="details_cover_retry_source">Tentar esta fonte novamente</string>
     <string name="details_cover_unavailable">Indisponível</string>
     <string name="details_cover_error">Falha na pesquisa</string>
     <string name="details_cover_load_error">Não foi possível carregar as capas</string>

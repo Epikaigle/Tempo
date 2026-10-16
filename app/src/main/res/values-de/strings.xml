@@ -1083,6 +1083,9 @@
     <string name="details_cover_restore_auto_hint">Tempo darf das Cover wieder automatisch auswählen.</string>
     <string name="details_cover_try_again">Erneut suchen</string>
 
+    <string name="details_cover_preview_error">Bildvorschau konnte nicht geladen werden</string>
+    <string name="details_cover_current_hint">Aktuell angezeigtes Cover</string>
+    <string name="details_cover_retry_source">Diese Quelle erneut versuchen</string>
     <string name="details_cover_unavailable">Nicht verfügbar</string>
     <string name="details_cover_error">Suche fehlgeschlagen</string>
     <string name="details_cover_load_error">Cover konnten nicht geladen werden</string>

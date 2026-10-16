@@ -56,6 +56,37 @@ class CoverArtPickerSelectionTest {
         assertEquals(4, resolveCoverPickerColumnCount(1080f))
     }
 
+    @Test
+    fun uiStateHasCorrectCoverPickerDefaults() {
+        val state = SongDetailsUiState()
+        assertEquals(false, state.showCoverPicker)
+        assertEquals(false, state.isLoadingCoverCandidates)
+        assertEquals(false, state.isSavingCover)
+        assertEquals(false, state.isResettingCover)
+        assertNull(state.selectedCoverProvider)
+        assertNull(state.coverPickerError)
+        assertEquals(emptyList<CoverArtCandidate>(), state.coverCandidates)
+    }
+
+    @Test
+    fun selectionSurvivesRotationWhenCandidatePreservedInUiState() {
+        val stateBeforeRotation = SongDetailsUiState(
+            showCoverPicker = true,
+            selectedCoverProvider = CoverArtProvider.SPOTIFY,
+            coverCandidates = listOf(
+                candidate(CoverArtProvider.CURRENT),
+                candidate(CoverArtProvider.SPOTIFY),
+            ),
+        )
+
+        // After rotation, ViewModel retains stateBeforeRotation
+        val reconciled = reconcileCoverPickerSelection(
+            selectedProvider = stateBeforeRotation.selectedCoverProvider,
+            candidates = stateBeforeRotation.coverCandidates,
+        )
+        assertEquals(CoverArtProvider.SPOTIFY, reconciled)
+    }
+
     private fun candidate(provider: CoverArtProvider) =
         CoverArtCandidate(
             provider = provider,
