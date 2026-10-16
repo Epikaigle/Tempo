@@ -399,7 +399,7 @@ fn near_simultaneous_replays_with_different_listening_lengths_survive() {
     let mut next = first.clone();
     next.event_id = "a".repeat(64);
     next.timestamp_utc += 500;
-    next.listened_ms = first.listened_ms.saturating_add(30_000);
+    next.listened_ms = first.listened_ms.saturating_sub(30_000);
     assert!(insert_remote_event(&conn, "capture-one", &first).unwrap());
     assert!(
         insert_remote_event(&conn, "capture-two", &next).unwrap(),
