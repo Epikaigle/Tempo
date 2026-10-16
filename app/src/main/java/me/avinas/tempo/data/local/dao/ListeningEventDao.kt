@@ -374,92 +374,92 @@ interface ListeningEventDao {
                 timestampOf = { it.timestamp },
             ) else listOf(allTrackEvents)
             for (trackEvents in windows) {
-            val radius = if (transportOnly) DRIVE_RECONCILIATION_WINDOW_MS else RECONCILIATION_WINDOW_MS
-            val minTs = trackEvents.minOf { it.timestamp } - radius
-            val maxTs = trackEvents.maxOf { it.timestamp } + radius
-            val existingAlive = getEventsForReconciliation(trackId, minTs, maxTs)
-                // A verified cloud import can reconcile only against events
-                // already proven to belong to that Google account. Previously
-                // unowned LAN captures are adopted above ONLY on exact producer
-                // identity, not merely because title/timestamp happen to match.
-                .filter { it.id !in toDelete &&
-                    (accountSubject == null || it.driveAccountSubject == accountSubject)
-                }.toMutableList()
-            val claims = if (existingAlive.isEmpty()) emptyList()
-                else existingAlive.map { it.id }.chunked(900)
-                    .flatMap { getOriginClaimsForEvents(it) }
-            val claimsByRow = claims.groupBy { it.listeningEventId }
-            val acceptedSlots = ArrayList<Slot>(existingAlive.size + trackEvents.size)
-            for (ref in existingAlive) {
-                val origins = claimsByRow[ref.id].orEmpty()
-                    .associate { it.sourceDeviceId to it.originEventId }.toMutableMap()
-                SourceAuthority.driveDeviceId(ref.source)?.let { origins.putIfAbsent(it, "") }
-                acceptedSlots.add(Slot(
-                    ref.timestamp, ref.end_timestamp, ref.playDuration, ref.source,
-                    true, ref.id, origins, ref.estimatedDurationMs,
-                ))
-            }
-
-            for (incoming in trackEvents.sortedWith(
-                compareByDescending<ListeningEvent> { SourceAuthority.rank(it.source) }
-                    .thenBy { it.timestamp },
-            )) {
-                val incomingOrigin = originOf(incoming)
-                // A track can have two distinct quick replays inside this
-                // window. A first match depends on SQLite's unspecified row
-                // order and can bind the origin to the wrong playback.
-                val conflictIdx = if (incomingOrigin != null) {
-                    uniqueEligiblePlaybackIndex(acceptedSlots) { isSamePlay(it, incoming) }
-                } else {
-                    nearestEligiblePlaybackIndex(
-                        acceptedSlots,
-                        incoming.timestamp,
-                        timestampOf = { it.timestamp },
-                        eligible = { isSamePlay(it, incoming) },
-                    )
-                }
-                if (conflictIdx < 0) {
-                    toInsert.add(incoming)
-                    val originMap = mutableMapOf<String, String>()
-                    incomingOrigin?.let { (dev, id) -> originMap[dev] = id }
-                    val slot = Slot(
-                        incoming.timestamp, incoming.endTimestamp, incoming.playDuration,
-                        incoming.source, false, null, originMap, incoming.estimatedDurationMs,
-                    )
-                    acceptedSlots.add(slot)
-                    incoming.contentFingerprint?.let { newSlots[it] = slot }
-                    continue
+                val radius = if (transportOnly) DRIVE_RECONCILIATION_WINDOW_MS else RECONCILIATION_WINDOW_MS
+                val minTs = trackEvents.minOf { it.timestamp } - radius
+                val maxTs = trackEvents.maxOf { it.timestamp } + radius
+                val existingAlive = getEventsForReconciliation(trackId, minTs, maxTs)
+                    // A verified cloud import can reconcile only against events
+                    // already proven to belong to that Google account. Previously
+                    // unowned LAN captures are adopted above ONLY on exact producer
+                    // identity, not merely because title/timestamp happen to match.
+                    .filter { it.id !in toDelete &&
+                        (accountSubject == null || it.driveAccountSubject == accountSubject)
+                    }.toMutableList()
+                val claims = if (existingAlive.isEmpty()) emptyList()
+                    else existingAlive.map { it.id }.chunked(900)
+                        .flatMap { getOriginClaimsForEvents(it) }
+                val claimsByRow = claims.groupBy { it.listeningEventId }
+                val acceptedSlots = ArrayList<Slot>(existingAlive.size + trackEvents.size)
+                for (ref in existingAlive) {
+                    val origins = claimsByRow[ref.id].orEmpty()
+                        .associate { it.sourceDeviceId to it.originEventId }.toMutableMap()
+                    SourceAuthority.driveDeviceId(ref.source)?.let { origins.putIfAbsent(it, "") }
+                    acceptedSlots.add(Slot(
+                        ref.timestamp, ref.end_timestamp, ref.playDuration, ref.source,
+                        true, ref.id, origins, ref.estimatedDurationMs,
+                    ))
                 }
 
-                val conflict = acceptedSlots[conflictIdx]
-                if (conflict.isExisting &&
-                    SourceAuthority.rank(incoming.source) > SourceAuthority.rank(conflict.source)
-                ) {
-                    val ref = existingAlive.first { it.id == conflict.existingId }
-                    toDelete.add(ref.id)
-                    existingAlive.remove(ref)
-                    // Move aliases to the replacement within this Room transaction.
-                    // Otherwise the foreign-key cascade would drop their identities.
-                    val replacementOrigins = conflict.origins.toMutableMap()
-                    incomingOrigin?.let { (dev, id) -> replacementOrigins[dev] = id }
-                    val replacementSlot = Slot(
-                        incoming.timestamp, incoming.endTimestamp, incoming.playDuration,
-                        incoming.source, false, null, replacementOrigins, incoming.estimatedDurationMs,
-                    )
-                    acceptedSlots[conflictIdx] = replacementSlot
-                    toInsert.add(incoming)
-                    incoming.contentFingerprint?.let { newSlots[it] = replacementSlot }
-                } else {
-                    incomingOrigin?.let { (dev, id) ->
-                        conflict.origins[dev] = id
-                        if (conflict.isExisting) {
-                            aliasesForExisting.add(ListeningEventOrigin(id, requireNotNull(conflict.existingId), dev,
-                                accountSubject ?: "legacy-unverified"))
-                        }
+                for (incoming in trackEvents.sortedWith(
+                    compareByDescending<ListeningEvent> { SourceAuthority.rank(it.source) }
+                        .thenBy { it.timestamp },
+                )) {
+                    val incomingOrigin = originOf(incoming)
+                    // A track can have two distinct quick replays inside this
+                    // window. A first match depends on SQLite's unspecified row
+                    // order and can bind the origin to the wrong playback.
+                    val conflictIdx = if (incomingOrigin != null) {
+                        uniqueEligiblePlaybackIndex(acceptedSlots) { isSamePlay(it, incoming) }
+                    } else {
+                        nearestEligiblePlaybackIndex(
+                            acceptedSlots,
+                            incoming.timestamp,
+                            timestampOf = { it.timestamp },
+                            eligible = { isSamePlay(it, incoming) },
+                        )
                     }
-                    skipped++
+                    if (conflictIdx < 0) {
+                        toInsert.add(incoming)
+                        val originMap = mutableMapOf<String, String>()
+                        incomingOrigin?.let { (dev, id) -> originMap[dev] = id }
+                        val slot = Slot(
+                            incoming.timestamp, incoming.endTimestamp, incoming.playDuration,
+                            incoming.source, false, null, originMap, incoming.estimatedDurationMs,
+                        )
+                        acceptedSlots.add(slot)
+                        incoming.contentFingerprint?.let { newSlots[it] = slot }
+                        continue
+                    }
+
+                    val conflict = acceptedSlots[conflictIdx]
+                    if (conflict.isExisting &&
+                        SourceAuthority.rank(incoming.source) > SourceAuthority.rank(conflict.source)
+                    ) {
+                        val ref = existingAlive.first { it.id == conflict.existingId }
+                        toDelete.add(ref.id)
+                        existingAlive.remove(ref)
+                        // Move aliases to the replacement within this Room transaction.
+                        // Otherwise the foreign-key cascade would drop their identities.
+                        val replacementOrigins = conflict.origins.toMutableMap()
+                        incomingOrigin?.let { (dev, id) -> replacementOrigins[dev] = id }
+                        val replacementSlot = Slot(
+                            incoming.timestamp, incoming.endTimestamp, incoming.playDuration,
+                            incoming.source, false, null, replacementOrigins, incoming.estimatedDurationMs,
+                        )
+                        acceptedSlots[conflictIdx] = replacementSlot
+                        toInsert.add(incoming)
+                        incoming.contentFingerprint?.let { newSlots[it] = replacementSlot }
+                    } else {
+                        incomingOrigin?.let { (dev, id) ->
+                            conflict.origins[dev] = id
+                            if (conflict.isExisting) {
+                                aliasesForExisting.add(ListeningEventOrigin(id, requireNotNull(conflict.existingId), dev,
+                                    accountSubject ?: "legacy-unverified"))
+                            }
+                        }
+                        skipped++
+                    }
                 }
-            }
             }
         }
 
