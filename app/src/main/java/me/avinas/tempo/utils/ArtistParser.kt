@@ -474,8 +474,12 @@ object ArtistParser {
     /**
      * Check if the artist name found in the known complex bands list.
      * Uses case-insensitive comparison (but not full normalization to preserve &).
+     *
+     * Internal rather than private because it is also the cheap necessary condition for
+     * "this comma-bearing string is one entity, not several credits" — callers doing bulk
+     * import work use it to avoid running the full parser over every candidate span.
      */
-    private fun isKnownBand(artist: String): Boolean {
+    internal fun isKnownBand(artist: String): Boolean {
         val lower = artist.trim().lowercase()
         return lower in KNOWN_COMPLEX_BANDS || lower in userKnownBands
     }
