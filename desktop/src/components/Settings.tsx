@@ -1,7 +1,24 @@
 import { useEffect, useState } from "react";
-import { Save, RotateCcw, Keyboard, Battery, BatteryWarning } from "lucide-react";
-import { getSettings, updateSettings, setLogLevel, getAutostartEnabled, setAutostartEnabled, getBatteryStatus, getBatterySaverActive } from "../lib/api";
-import type { Settings as SettingsType, BatteryStatus } from "../lib/types";
+import {
+  Save,
+  RotateCcw,
+  Keyboard,
+  Battery,
+  BatteryWarning,
+  RefreshCw,
+} from "lucide-react";
+import {
+  getSettings,
+  updateSettings,
+  runDriveSyncAction,
+  setLogLevel,
+  getAutostartEnabled,
+  setAutostartEnabled,
+  getBatteryStatus,
+  getBatterySaverActive,
+} from "../lib/api";
+import type { Settings as SettingsType, BatteryStatus, DriveSyncAction } from "../lib/types";
+import DriveSettingsCard from "./DriveSettingsCard";
 
 const defaultSettings: SettingsType = {
   sync_interval_minutes: 30,
@@ -11,21 +28,57 @@ const defaultSettings: SettingsType = {
   start_on_boot: false,
   theme: "dark",
   low_battery_threshold: 15,
+  drive_sync_enabled: false,
+  drive_sync_configured: false,
+  drive_sync_connected: false,
+  drive_sync_account_email: null,
+  drive_sync_last_sync_time: null,
+  drive_sync_last_error: null,
+  drive_sync_last_uploaded: 0,
+  drive_sync_last_imported: 0,
 };
+
+function withDriveStatus(core: SettingsType, current: SettingsType): SettingsType {
+  return {
+    ...core,
+    drive_sync_enabled: current.drive_sync_enabled,
+    drive_sync_configured: current.drive_sync_configured,
+    drive_sync_connected: current.drive_sync_connected,
+    drive_sync_account_email: current.drive_sync_account_email,
+    drive_sync_last_sync_time: current.drive_sync_last_sync_time,
+    drive_sync_last_error: current.drive_sync_last_error,
+    drive_sync_last_uploaded: current.drive_sync_last_uploaded,
+    drive_sync_last_imported: current.drive_sync_last_imported,
+  };
+}
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType>(defaultSettings);
+  const [settingsLoadState, setSettingsLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [logLevel, setLogLevelLocal] = useState("INFO");
   const [autostartEnabled, setAutostartEnabledLocal] = useState(false);
   const [batteryStatus, setBatteryStatus] = useState<BatteryStatus | null>(null);
   const [batterySaverActive, setBatterySaverActive] = useState(false);
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveAction, setDriveAction] = useState<DriveSyncAction | null>(null);
+  const [driveNotice, setDriveNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+
+  const loadSettingsFromDisk = () => {
+    setSettingsLoadState("loading");
+    void getSettings()
+      .then((value) => {
+        setSettings(value);
+        setSettingsLoadState("ready");
+      })
+      .catch(() => {
+        setSettingsLoadState("error");
+      });
+  };
 
   useEffect(() => {
-    getSettings()
-      .then(setSettings)
-      .catch(() => {});
+    loadSettingsFromDisk();
     getAutostartEnabled()
       .then(setAutostartEnabledLocal)
       .catch(() => {});
@@ -41,15 +94,69 @@ export default function Settings() {
     setError("");
     try {
       await updateSettings(settings);
-      // Sync autostart with OS
       if (settings.start_on_boot !== autostartEnabled) {
         await setAutostartEnabled(settings.start_on_boot);
         setAutostartEnabledLocal(settings.start_on_boot);
       }
+      setSettings(await getSettings());
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
       setError(String(e));
+    }
+  };
+
+  const handleDriveAction = async (action: DriveSyncAction) => {
+    if (driveBusy) return;
+    if (
+      action === "delete" &&
+      !window.confirm(
+        "Delete all Tempo cross-device history batches from Google Drive? Local listening history will stay on your devices, and Drive sync will be turned off on linked Tempo clients as they reconnect."
+      )
+    ) {
+      return;
+    }
+
+    if (
+      action === "share-history" &&
+      !window.confirm(
+        "Upload all locally recorded Desktop history to the connected Google account, including plays previously associated with a different account? Do this only if you want that account to receive those records. Large backlogs will finish on later syncs."
+      )
+    ) {
+      return;
+    }
+
+    setDriveBusy(true);
+    setDriveAction(action);
+    setDriveNotice(null);
+    try {
+      const refreshed = await runDriveSyncAction(settings, action);
+      // Drive actions must never implicitly save other unsaved form fields.
+      setSettings((current) => withDriveStatus(current, refreshed));
+      const messages: Record<DriveSyncAction, string> = {
+        connect: "Google Drive connected.",
+        disconnect: "Disconnected on this computer. Local history is unchanged.",
+        sync: `Synchronization finished: ${refreshed.drive_sync_last_uploaded} sent · ${refreshed.drive_sync_last_imported} received.`,
+        restore: `Full history restore finished: ${refreshed.drive_sync_last_imported} received.`,
+        "share-history": "Older local history was authorized for upload. Large backlogs continue during later syncs.",
+        delete: "Cloud history deletion finished. Local listening history was kept.",
+      };
+      if (refreshed.drive_sync_last_error) {
+        setDriveNotice({ kind: "error", message: refreshed.drive_sync_last_error });
+      } else {
+        setDriveNotice({ kind: "success", message: messages[action] });
+      }
+    } catch (e) {
+      setDriveNotice({ kind: "error", message: String(e) });
+      // Re-read Drive status even on failure: reconnect and deletion can
+      // change local sync state before the network action reports an error.
+      try {
+        const refreshed = await getSettings();
+        setSettings((current) => withDriveStatus(current, refreshed));
+      } catch { /* Keep the actionable error visible. */ }
+    } finally {
+      setDriveAction(null);
+      setDriveBusy(false);
     }
   };
 
@@ -63,10 +170,13 @@ export default function Settings() {
   };
 
   const handleReset = async () => {
-    setSettings(defaultSettings);
     setError("");
     try {
-      await updateSettings(defaultSettings);
+      // Reset ordinary Desktop behavior only. Google Drive is an independent
+      // opt-in and must never be disconnected by a generic settings reset.
+      const reset = withDriveStatus(defaultSettings, settings);
+      await updateSettings(reset);
+      setSettings(await getSettings());
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
@@ -77,6 +187,32 @@ export default function Settings() {
   const update = (partial: Partial<SettingsType>) => {
     setSettings((prev) => ({ ...prev, ...partial }));
   };
+
+  // Never show editable default settings while the persisted configuration
+  // is still loading (or failed to load): saving defaults would overwrite
+  // the user's actual preferences without them ever being displayed.
+  if (settingsLoadState !== "ready") {
+    return (
+      <div className="fade-in">
+        <div className="page-header">
+          <h2>Settings</h2>
+          <p>Configure how Tempo Desktop Satellite works</p>
+        </div>
+        <div className="card" aria-busy={settingsLoadState === "loading"}>
+          <p role={settingsLoadState === "error" ? "alert" : "status"} aria-live="polite">
+            {settingsLoadState === "loading"
+              ? "Loading your saved settings…"
+              : "Could not load settings. No changes have been made."}
+          </p>
+          {settingsLoadState === "error" && (
+            <button className="btn btn-primary" onClick={loadSettingsFromDisk}>
+              <RefreshCw size={16} />Retry loading
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fade-in">
@@ -146,7 +282,7 @@ export default function Settings() {
         <div className="toggle-row">
           <div className="toggle-info">
             <h4>Auto-sync interval</h4>
-            <p>How often to batch-send queued plays to your phone</p>
+            <p>How often to batch-sync through enabled transports (LAN and optional Google Drive)</p>
           </div>
           <select
             className="form-select"
@@ -166,6 +302,14 @@ export default function Settings() {
           </select>
         </div>
       </div>
+
+      <DriveSettingsCard
+        settings={settings}
+        busy={driveBusy}
+        action={driveAction}
+        notice={driveNotice}
+        onAction={handleDriveAction}
+      />
 
       {/* App Settings */}
       <div className="card" style={{ marginBottom: 20 }}>

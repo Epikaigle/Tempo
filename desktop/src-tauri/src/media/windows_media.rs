@@ -596,7 +596,7 @@ fn select_best_session(
 
     let best = sessions
         .into_iter()
-        .max_by_key(|c| score_session(c))
+        .max_by_key(score_session)
         .expect("select_best_session called with empty vec");
 
     let source_lower = best.source_id.to_lowercase();
@@ -1452,10 +1452,8 @@ fn fuzzy_title_match(a: &str, b: &str) -> bool {
         return true;
     }
     // One contains the other (handles truncated titles)
-    if a.len() >= 4 && b.len() >= 4 {
-        if a.contains(b) || b.contains(a) {
-            return true;
-        }
+    if a.len() >= 4 && b.len() >= 4 && (a.contains(b) || b.contains(a)) {
+        return true;
     }
     false
 }

@@ -2,6 +2,9 @@ name: Build and Release Tempo Desktop
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Public OAuth application identifier used at Rust compile time by option_env!.
+  # Configure this as a GitHub Actions repository variable, not a secret.
+  TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP: ${{ vars.TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP }}
 
 # Triggers:
 #   - Push a tag like desktop-v1.0.0  → builds all platforms and creates a GitHub Release (draft)
@@ -96,9 +99,11 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install frontend dependencies
+      - name: Install locked frontend dependencies
         working-directory: desktop
-        run: npm install
+        # Reproduce exactly the package-lock validated by the Desktop CI.
+        # npm install may silently rewrite the dependency graph at release time.
+        run: npm ci
 
       # ── 5. Extract release version from tag (strips "desktop-" prefix) ────
       - name: Extract release version
@@ -116,6 +121,18 @@ jobs:
           else
             echo "release_tag=" >> "$GITHUB_OUTPUT"
             echo "version=dev" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate Google Drive OAuth configuration for releases
+        if: steps.tag.outputs.release_tag != ''
+        shell: bash
+        run: |
+          # A public OAuth application ID is not a credential. Enforce its
+          # basic provider format, but real registration and sign-in still
+          # require a separate signed-build acceptance test.
+          if [[ ! "${TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP}" =~ ^[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$ ]]; then
+            echo "::error::TEMPO_GOOGLE_OAUTH_CLIENT_ID_DESKTOP must be a registered-format Google OAuth Desktop client ID (not empty/test placeholder)."
+            exit 1
           fi
 
       # ── 6. Build and publish release on tag pushes (or manual dispatch with tag_name) ──
@@ -150,6 +167,12 @@ jobs:
             | **Linux** | `tempo-desktop_*.AppImage` | Works on any distro — just `chmod +x` and run |
             | **Linux** | `tempo-desktop_*.rpm` | Fedora / RHEL / openSUSE |
 
+            ### Google Drive cross-network sync
+            Google Drive history sync is optional. It lets Tempo Desktop exchange
+            listening history with linked Tempo clients even when the computer and
+            Android phone are not on the same local network. The existing direct LAN
+            transport remains available independently.
+
             ### Linux: `playerctl` for best music detection
             The DEB installer automatically installs `playerctl` for you.
             For AppImage / RPM users, install it manually:
@@ -167,7 +190,9 @@ jobs:
             ### Windows: WebView2
             The installer checks for the Edge WebView2 Runtime and downloads it automatically
             if it is not already present (Windows 10 20H2+ / 11 include it by default).
-          releaseDraft: false
+          # CI must never publish an unapproved installer: review actual
+          # OAuth sign-in and the four-client acceptance matrix first.
+          releaseDraft: true
           prerelease: false
 
       # ── 7. Build only for manual / non-tag runs ───────────────────────────

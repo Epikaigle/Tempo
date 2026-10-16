@@ -461,7 +461,7 @@ fn clean_artist(artist: &str) -> String {
     // Keeping a "feat." keyword in the sent string would cause the phone's findOrCreate
     // lookup to miss the existing track row and create a duplicate.
     cleaned = if parsed.all_artists.is_empty() {
-        parsed.original.clone()
+        parsed.original
     } else {
         parsed.all_artists.join(", ")
     };

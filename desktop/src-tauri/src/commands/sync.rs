@@ -79,7 +79,7 @@ pub async fn sync_now(
         }
     }
 
-    match crate::network::sync_to_phone(&app_handle).await {
+    match crate::network::sync_pending_to_phone(&app_handle).await {
         Ok(count) => {
             let _ = app_handle.emit("sync-completed", count);
             // Send notification on successful sync

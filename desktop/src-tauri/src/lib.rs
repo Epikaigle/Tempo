@@ -1,6 +1,7 @@
 mod battery;
 mod commands;
 mod db;
+pub mod drive_sync;
 pub mod errors;
 mod media;
 mod network;
@@ -101,10 +102,10 @@ pub fn run() {
                 .port();
 
             app.manage(AppState {
-                db: db.clone(),
-                queue: queue.clone(),
-                media: media.clone(),
-                app_data_dir: app_data_dir.clone(),
+                db,
+                queue,
+                media,
+                app_data_dir,
                 pairing_callback_port,
                 last_sync_time: Arc::new(AtomicI64::new(0)),
             });
@@ -240,6 +241,13 @@ pub fn run() {
             commands::sync::get_phone_battery,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::drive_sync::drive_get_status,
+            commands::drive_sync::drive_connect,
+            commands::drive_sync::drive_disconnect,
+            commands::drive_sync::drive_sync_now,
+            commands::drive_sync::drive_restore_all_history,
+            commands::drive_sync::drive_share_existing_local_history,
+            commands::drive_sync::drive_delete_cloud_history,
             commands::queue::get_queue_size,
             commands::queue::clear_queue,
             commands::queue::get_queue_items,
@@ -500,11 +508,14 @@ fn register_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         if event.state == ShortcutState::Pressed {
             let app_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = crate::network::sync_to_phone(&app_handle).await {
-                    log::warn!("Shortcut sync failed: {}", e);
-                    let _ = app_handle.emit("sync-failed", e.to_string());
-                } else {
-                    let _ = app_handle.emit("sync-completed", 0);
+                match crate::network::sync_pending_to_phone(&app_handle).await {
+                    Ok(count) => {
+                        let _ = app_handle.emit("sync-completed", count);
+                    }
+                    Err(e) => {
+                        log::warn!("Shortcut sync failed: {}", e);
+                        let _ = app_handle.emit("sync-failed", e.to_string());
+                    }
                 }
             });
         }
