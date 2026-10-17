@@ -63,6 +63,41 @@ class AnalyticsEnumUsageTest {
         )
     }
 
+    /**
+     * Every event type must actually be constructed somewhere in production.
+     *
+     * The check above catches an enum value nobody can send; this catches an entire event
+     * nobody can send, which is the same defect one level up and the one an event removal is
+     * most likely to leave behind: delete the call site, leave the class, and the published
+     * list advertises collection that no longer happens.
+     *
+     * The schema file is excluded here, unlike the enum check — its own `data class` line
+     * contains the name and would otherwise count as a construction site for itself.
+     */
+    @Test
+    fun `every event type has a production call site`() {
+        val sources = productionSources()
+        assertTrue("could not find production sources to scan", sources.isNotEmpty())
+
+        val declared =
+            Regex("data class (\\w+)\\s*\\(")
+                .findAll(schemaFile().readText())
+                .map { it.groupValues[1] }
+                .filter { it != "AnalyticsSystemContext" }
+                .toList()
+
+        assertTrue("no events found in the schema", declared.isNotEmpty())
+
+        val unconstructed = declared.filter { name -> sources.none { it.contains("$name(") } }
+
+        assertTrue(
+            "these events are declared but nothing ever constructs them, so the published " +
+                "list claims collection that cannot happen - delete them, or wire them up: " +
+                unconstructed.joinToString(", "),
+            unconstructed.isEmpty(),
+        )
+    }
+
     /** Reads the enum's declared values out of the schema file. */
     private fun valuesOf(enumName: String): List<String> {
         val text = schemaFile().readText()
@@ -82,6 +117,16 @@ class AnalyticsEnumUsageTest {
         )
         return candidates.firstOrNull { it.isFile }
             ?: error("schema file not found; looked in ${candidates.joinToString { it.path }}")
+    }
+
+    /** Production sources without the schema file, for construction-site checks. */
+    private fun productionSources(): List<String> {
+        val roots = listOf(File("src/main/java"), File("app/src/main/java"))
+            .filter { it.isDirectory }
+        return roots
+            .flatMap { root -> root.walkTopDown().filter { it.isFile && it.extension == "kt" } }
+            .filterNot { it.name == "AnalyticsEvent.kt" }
+            .map { it.readText() }
     }
 
     /**

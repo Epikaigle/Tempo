@@ -110,6 +110,24 @@ Builds compiled from source send nothing. The analytics endpoint is not committe
 To point a build at your own analytics, set `ANALYTICS_ENDPOINT` and `ANALYTICS_TOKEN` in
 `local.properties`. See [`deploy/analytics-relay`](../deploy/analytics-relay) for the relay.
 
+## Play Store Data Safety
+
+The declaration in Play Console has to match this page, and it is easy for the two to drift because one lives in a web form. Suggested answers, with the reasoning that matters more than the exact labels:
+
+| Category | Declare | Why |
+|---|---|---|
+| Device or other IDs | **Collected** | The pseudonymous install id. **Not** an advertising ID — that is never read. |
+| App activity → Other actions | **Collected** | Feature first use, onboarding steps, import and backup outcomes. |
+| App info and performance → Crash logs | **Collected** | Obfuscated class and frame only; never the message or a stack. |
+| Location | **Approximate location: collected** | A country code is derived at the relay and stored. Declaring it is the safe reading of a borderline case, and the previous backend disclosed a coarser version of the same thing. |
+| Advertising or marketing | **No** | |
+| Encrypted in transit | **Yes** | |
+| Users can delete their data | **Yes** | Reset analytics ID, or turn reporting off — both leave the old id unlinkable and nothing further is sent under it. |
+
+On "shared with third parties": events reach PostHog, which acts as a **processor under contract**, not as a purchaser using the data for its own purposes. Play's "sharing" definition normally covers transfer for the recipient's own use, so collection-only is the usual reading — but confirm it against PostHog's DPA rather than taking it from here.
+
+Two lists must stay in step when the schema changes: this table, and `ALLOWED_EVENTS` in `deploy/analytics-relay/src/index.js`. `AnalyticsCatalogTest` and `AnalyticsEnumUsageTest` guard the code side; nothing guards the console form, so it is checked by hand at release.
+
 ## Questions
 
 - Full policy: [PRIVACY.md](../PRIVACY.md)
