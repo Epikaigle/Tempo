@@ -26,11 +26,6 @@ object AnalyticsCatalog {
                 properties = listOf("startup"),
             ),
             AnalyticsCatalogEntry(
-                event = "screen_viewed",
-                what = "Which detail screens you open (song, artist, album). Only these three are reported.",
-                properties = listOf("screen"),
-            ),
-            AnalyticsCatalogEntry(
                 event = "feature_first_used",
                 what = "The first time each feature is used, once ever, so unused ones can be improved or removed. Never sent again after that.",
                 properties = listOf("feature"),

@@ -128,8 +128,6 @@ fun AppNavigation(
     val currentRoute = navBackStackEntry?.destination?.route
     val currentDestination = navBackStackEntry?.destination
 
-    val analyticsScreens: AnalyticsScreenViewModel = hiltViewModel()
-
     androidx.compose.runtime.LaunchedEffect(navigationTrigger) {
         if (navigationTrigger == "profile_challenges") {
             navController.navigate(Screen.Profile.route) {
@@ -142,11 +140,10 @@ fun AppNavigation(
         }
     }
 
-    // Dismiss active walkthrough on route changes and record detail-screen visits.
+    // Dismiss active walkthrough on route changes.
     androidx.compose.runtime.LaunchedEffect(currentRoute) {
         if (currentRoute != null) {
             walkthroughController.dismissCurrent()
-            analyticsScreens.onRouteChanged(currentRoute)
         }
     }
 

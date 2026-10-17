@@ -11,7 +11,6 @@ object AnalyticsEventSamples {
 
     val all: List<AnalyticsEvent> = listOf(
         StartupSlow(2_500L),
-        ScreenViewed(AnalyticsScreen.SONG_DETAILS),
         FeatureFirstUsed(TempoFeature.SPOTLIGHT),
         FeatureFirstUsed(TempoFeature.WIDGET),
         OnboardingStep(OnboardingStepName.PRIVACY, OnboardingAction.SKIP, 4_000L),

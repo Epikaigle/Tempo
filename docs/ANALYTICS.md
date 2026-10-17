@@ -41,7 +41,6 @@ Everything else is a fixed name from a closed list. There is no free-text field 
 | Event | What it tells us |
 |---|---|
 | `startup_slow` | That Tempo took an unusually long time to start. Sent only when a start is slow — a normal launch reports nothing |
-| `screen_viewed` | Detail-screen visits only (song, artist, album) — all other screens cost zero events |
 | `feature_first_used` | The first time each feature is used — once ever, never again. Answers which features are unused without counting every tap |
 | `onboarding_step` | Where setup stalls: step name, next/skip/back, time range on step |
 | `onboarding_completed` | Setup completion: skipped-step range, total time range |

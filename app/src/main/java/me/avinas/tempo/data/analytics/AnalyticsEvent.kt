@@ -67,30 +67,6 @@ object AnalyticsBucket {
         }
 }
 
-enum class AnalyticsScreen {
-    HOME,
-    STATS,
-    HISTORY,
-    SETTINGS,
-    SPOTLIGHT,
-    SONG_DETAILS,
-    ARTIST_DETAILS,
-    ALBUM_DETAILS,
-    BACKUP_RESTORE,
-    SUPPORTED_APPS,
-    BACKGROUND_PROTECTION,
-    LASTFM_IMPORT,
-    SPOTIFY_JSON_IMPORT,
-    DEEZER_IMPORT,
-    YOUTUBE_MUSIC_IMPORT,
-    DESKTOP_LINK,
-    ENRICHMENT_REPORT,
-    SHARE_CANVAS,
-    PROFILE,
-    YOUR_DATA,
-    UNKNOWN,
-}
-
 /** Discrete, user-invocable capabilities. Powers the "which features are unused" question. */
 enum class TempoFeature {
     SPOTLIGHT,
@@ -212,13 +188,6 @@ data class StartupSlow(
          */
         const val THRESHOLD_MILLIS = 1_000L
     }
-}
-
-data class ScreenViewed(
-    val screen: AnalyticsScreen,
-) : AnalyticsEvent {
-    override val name = "screen_viewed"
-    override val props: Map<String, Any> = mapOf("screen" to screen.name)
 }
 
 /**
