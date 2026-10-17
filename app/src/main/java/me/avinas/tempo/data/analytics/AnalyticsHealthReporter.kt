@@ -1,5 +1,7 @@
 package me.avinas.tempo.data.analytics
 
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.avinas.tempo.BuildConfig
@@ -54,26 +56,31 @@ class AnalyticsHealthReporter
             val today = AnalyticsDaily.dayOf(nowMillis)
             if (reportedDay.get() == today) return
 
-            runCatching {
-                lock.withLock {
-                    // Re-checked inside the lock: another run may have just finished.
-                    if (reportedDay.get() == today) return@withLock
+            // NonCancellable for the same reason as the presence marker: `track` dispatches
+            // onto a scope that outlives this caller, so a cancellation between sending and
+            // marking could report the same recovery twice on the next run.
+            withContext(NonCancellable) {
+                runCatching {
+                    lock.withLock {
+                        // Re-checked inside the lock: another run may have just finished.
+                        if (reportedDay.get() == today) return@withLock
 
-                    if (!AnalyticsDaily.isUnreported(ledger.healthDay(), today)) {
-                        // Already sent earlier today, by this process or a previous one.
+                        if (!AnalyticsDaily.isUnreported(ledger.healthDay(), today)) {
+                            // Already sent earlier today, by this process or a previous one.
+                            reportedDay.set(today)
+                            return@withLock
+                        }
+
+                        tracker.track(
+                            TrackingHealth(
+                                severity = AnalyticsBucket.gap(gapMillis),
+                                by = by,
+                                recovery = recovery,
+                            ),
+                        )
+                        ledger.markHealthReported(today)
                         reportedDay.set(today)
-                        return@withLock
                     }
-
-                    tracker.track(
-                        TrackingHealth(
-                            severity = AnalyticsBucket.gap(gapMillis),
-                            by = by,
-                            recovery = recovery,
-                        ),
-                    )
-                    ledger.markHealthReported(today)
-                    reportedDay.set(today)
                 }
             }
         }

@@ -2,6 +2,8 @@ package me.avinas.tempo.data.analytics
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.avinas.tempo.BuildConfig
@@ -70,23 +72,30 @@ class AnalyticsDailyReporter
             val today = AnalyticsDaily.dayOf(nowMillis)
             if (reportedDay.get() == today) return
 
-            runCatching {
-                presenceLock.withLock {
-                    // Re-checked inside the lock: another caller may have just finished.
-                    if (reportedDay.get() == today) return@withLock
+            // NonCancellable because this is a track-and-mark pair, and a caller being
+            // cancelled between the two halves is worse than either outcome alone. `track`
+            // dispatches onto a scope that outlives the caller, so a plain cancellation could
+            // send the marker and then lose the "already sent" write — and the next call of the
+            // day would send a second one, inventing active users out of a lifecycle event.
+            withContext(NonCancellable) {
+                runCatching {
+                    presenceLock.withLock {
+                        // Re-checked inside the lock: another caller may have just finished.
+                        if (reportedDay.get() == today) return@withLock
 
-                    if (!AnalyticsDaily.shouldReportPresence(ledger.presenceDay(), today)) {
-                        // Already sent by an earlier process. Adopt that as today's answer
-                        // rather than sending a second marker for the same day.
+                        if (!AnalyticsDaily.shouldReportPresence(ledger.presenceDay(), today)) {
+                            // Already sent by an earlier process. Adopt that as today's answer
+                            // rather than sending a second marker for the same day.
+                            reportedDay.set(today)
+                            return@withLock
+                        }
+
+                        tracker.track(DailyActivity(listenerDown = isListenerDown()))
+                        // Marked only after the event has been handed to the queue. Losing a
+                        // day is preferable to repeating one, which would invent active users.
+                        ledger.markPresenceReported(today)
                         reportedDay.set(today)
-                        return@withLock
                     }
-
-                    tracker.track(DailyActivity(listenerDown = isListenerDown()))
-                    // Marked only after the event has been handed to the queue. Losing a day
-                    // is preferable to repeating one, which would invent active users.
-                    ledger.markPresenceReported(today)
-                    reportedDay.set(today)
                 }
             }
         }
