@@ -20,6 +20,13 @@ in the Worker, unconditionally. A buggy build cannot create person profiles.
 device model on anything but a crash, oversized values, and oversized batches. It also
 rate-limits bursts per install.
 
+**It derives the country itself.** PostHog's own geolocation would report the datacenter this
+Worker runs in, not the user — wrong as well as less private. The relay takes the country from
+Cloudflare's view of the connection, attaches a two-letter code, and tells PostHog to skip its
+own geolocation. The address is never forwarded and never stored; only the country code is kept,
+and there is no city, region or coordinate anywhere in the pipeline. A client cannot claim its
+own country, because the value comes from the connection rather than the payload.
+
 ## Deploy
 
 ```sh

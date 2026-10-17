@@ -142,3 +142,40 @@ test("the whitelist covers the events the app can currently send", () => {
     assert.ok(ALLOWED_EVENTS.has(name), `${name} should be allowed`);
   }
 });
+
+test("country is attached from the connection, not from the client", () => {
+  const clean = sanitizeEvent(event(), "DE");
+
+  assert.equal(clean.properties.country, "DE");
+});
+
+test("country is omitted rather than guessed when the edge does not know it", () => {
+  assert.equal(sanitizeEvent(event(), null).properties.country, undefined);
+  assert.equal(sanitizeEvent(event()).properties.country, undefined);
+  // A non-ISO value is not passed through on trust.
+  assert.equal(sanitizeEvent(event(), "Germany").properties.country, undefined);
+});
+
+test("a client cannot claim its own country", () => {
+  // The relay derives this from the connection; a client asserting one is claiming something
+  // it has no way to know.
+  const clean = sanitizeEvent(event({ properties: { country: "US", listener_down: 0 } }), "DE");
+
+  assert.equal(clean.properties.country, "DE");
+});
+
+test("GeoIP is disabled so the backend geolocates nothing", () => {
+  // Without this, PostHog would enrich using the address that reached it — which on this path
+  // is a Cloudflare datacenter, not the user.
+  const clean = sanitizeEvent(event(), "DE");
+  const withoutCountry = sanitizeEvent(event());
+
+  assert.equal(clean.properties.$geoip_disable, true);
+  assert.equal(withoutCountry.properties.$geoip_disable, true);
+});
+
+test("a client cannot re-enable GeoIP", () => {
+  const clean = sanitizeEvent(event({ properties: { $geoip_disable: false } }), "DE");
+
+  assert.equal(clean.properties.$geoip_disable, true);
+});

@@ -1,7 +1,7 @@
 /**
  * Tempo analytics relay.
  *
- * Sits between the app and PostHog and does four jobs the client cannot do for itself:
+ * Sits between the app and PostHog and does five jobs the client cannot do for itself:
  *
  *  1. **Holds the real PostHog project token.** The app only ever knows this Worker's own
  *     app token, so the project token never ships inside the APK where anyone can extract it.
@@ -57,6 +57,20 @@ const DEVICE_MODEL_PROP = "$device_model";
 const DEVICE_MODEL_EVENT = "crash";
 const ANONYMOUS_PROP = "$process_person_profile";
 
+/**
+ * Tells PostHog to skip its own GeoIP enrichment.
+ *
+ * The relay is the one that sees the real client address, and PostHog would otherwise geolocate
+ * whatever address reaches it — which, for anything forwarded from here, is a Cloudflare
+ * datacenter rather than the user. That is not just less private, it is wrong: every event would
+ * be filed under whichever region the Worker happened to run in.
+ */
+const GEOIP_DISABLE_PROP = "$geoip_disable";
+
+/** ISO-3166 alpha-2, derived from Cloudflare's own view of the request. */
+const COUNTRY_PROP = "country";
+const MAX_COUNTRY_LENGTH = 2;
+
 const MAX_BATCH_EVENTS = 100;
 const MAX_CUSTOM_PROPS = 30;
 const MAX_KEY_LENGTH = 40;
@@ -84,9 +98,13 @@ function json(body, status = 200) {
 /**
  * Returns the event as it will be forwarded, or null when it must be dropped.
  *
+ * @param country ISO-3166 alpha-2 for the requesting client, as seen by Cloudflare's edge, or
+ *   null when it is not known. Only this coarse value is attached; the address it came from is
+ *   never forwarded to the analytics backend and never stored anywhere.
+ *
  * Exported so the rules can be tested without deploying anything.
  */
-export function sanitizeEvent(event) {
+export function sanitizeEvent(event, country = null) {
   if (typeof event !== "object" || event === null) return null;
 
   const name = event.event;
@@ -102,13 +120,23 @@ export function sanitizeEvent(event) {
   }
 
   // Forced, not trusted. This is the guarantee that no person profile is ever created.
-  const properties = { [ANONYMOUS_PROP]: false };
+  const properties = { [ANONYMOUS_PROP]: false, [GEOIP_DISABLE_PROP]: true };
+
+  // Attached here rather than left to the backend, which never sees the client address at all
+  // on this path and would otherwise geolocate the relay.
+  if (typeof country === "string" && country.length === MAX_COUNTRY_LENGTH) {
+    properties[COUNTRY_PROP] = country.toUpperCase();
+  }
 
   const source = event.properties;
   if (source && typeof source === "object") {
     let customCount = 0;
     for (const [key, value] of Object.entries(source)) {
       if (key === ANONYMOUS_PROP) continue;
+
+      // The relay is authoritative for country: it is derived from the connection itself, so a
+      // client claiming one would be asserting something it has no way to know.
+      if (key === COUNTRY_PROP) continue;
 
       if (key.startsWith("$")) {
         if (key === DEVICE_MODEL_PROP) {
@@ -187,10 +215,14 @@ export default {
       }
     }
 
+    // Cloudflare resolves this at the edge from the connection, so it costs no external lookup
+    // and no address is stored to produce it.
+    const clientCountry = request.cf?.country ?? null;
+
     const kept = [];
     let dropped = 0;
     for (const event of batch) {
-      const clean = sanitizeEvent(event);
+      const clean = sanitizeEvent(event, clientCountry);
       if (clean) kept.push(clean);
       else dropped++;
     }

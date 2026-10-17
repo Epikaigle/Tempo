@@ -24,8 +24,8 @@ after.
 
 Tempo collects no advertising ID, no `ANDROID_ID`, and does no fingerprinting. Events are sent
 as anonymous: the analytics service is told not to create a user profile, so no user record is
-stored for you, and Tempo's analytics project is configured to discard the client IP address, so
-no country or region is derived or kept.
+stored for you. The client IP address is never stored — but a coarse country is derived from it
+as the event arrives, and that country is kept. See [Where it goes](#where-it-goes).
 
 Reporting works over any connection. Each event is a few hundred bytes, about 16 KB on a busy
 day. Waiting for Wi-Fi would silence everyone on mobile data only, so Tempo does not wait for it.
@@ -74,7 +74,7 @@ The format is checked before the event can exist. Text that does not match the p
 - Track, artist, album, or playlist names, not even hashed.
 - Search queries, notification content, file paths, listening timestamps.
 - Account details, advertising ID, `ANDROID_ID`, or any hardware identifier.
-- Your IP address, and therefore your country or region. The analytics project is configured to discard it rather than derive location from it.
+- Your IP address, or anything more precise than a country derived from it. The address itself is never stored, and on the relay path no city or region is produced. A coarse country **is** kept — see below.
 - No advertising or attribution SDK, no Google Analytics, no Firebase.
 - No session replay, no screen recording, no tap maps.
 
@@ -88,14 +88,19 @@ Because you start it and review it, it can carry more detail than the automatic 
 
 ## Where it goes
 
-[PostHog](https://posthog.com), on EU infrastructure in Frankfurt. PostHog is open source and does not sell data. Two project settings matter here and both are deliberate:
+[PostHog](https://posthog.com), on EU infrastructure in Frankfurt. PostHog is open source and does not sell data. Two settings matter here and both are deliberate:
 
 - **Person profiles are off.** Every event is sent with `$process_person_profile = false`, so no user record is created and there is nothing to look a person up by.
-- **Client IP addresses are discarded**, so no country or region is derived or stored.
+- **Client IP addresses are not stored.** The address is used as the event arrives and then discarded.
 
-Events are sent either straight to PostHog or through a small relay Tempo operates, depending on how the build is configured. The relay holds the PostHog token so it never ships inside the app, forces the anonymous flag so a bug cannot create a profile, drops reserved properties, and refuses any event not in the published list above. Its source is in [`deploy/analytics-relay`](../deploy/analytics-relay), so the filtering is auditable.
+The address is not stored, but it is not unused either, and this is worth stating plainly: **a coarse country is derived from it and kept.** Depending on how the build is configured, that happens in one of two places:
 
-There is no longer a location caveat to disclose: the previous backend derived a coarse country and region from the request IP and stored it, and that is exactly what this setup removes.
+- **Through the relay** (the default): the relay takes the country from Cloudflare's own view of the connection and attaches a two-letter code. No city, no region, and PostHog never receives an address at all — it is told to skip its own geolocation, which would otherwise report the datacenter the relay runs in rather than you.
+- **Straight to PostHog**: PostHog derives country and region from the address at ingestion, then discards the address.
+
+Either way the result is coarser than an address and is the only location data kept. There is no city, no postcode, no coordinates, and no way to turn a country back into a person.
+
+The relay holds the PostHog token so it never ships inside the app, forces the anonymous flag so a bug cannot create a profile, drops reserved properties, and refuses any event not in the published list above. Its source is in [`deploy/analytics-relay`](../deploy/analytics-relay), so the filtering is auditable.
 
 ## Builds from source
 
