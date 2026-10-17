@@ -61,15 +61,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Opening the app's UI is one of the two things that count as using Tempo today, so
-        // this is where the day's active-user marker comes from for anyone who uses the app
-        // rather than just letting it track in the background. Fire-and-forget: a reporting
-        // write must never sit in front of drawing the first frame.
-        lifecycleScope.launch {
-            analyticsDailyReporter.markUiOpened()
-            analyticsDailyReporter.reportPresenceIfDue()
-        }
-
         checkNavigationIntent(intent)
 
         // Request notification permission on Android 13+
@@ -102,6 +93,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    /**
+     * Records that the user brought Tempo's UI to the foreground today.
+     *
+     * Deliberately `onResume` and not `onCreate`. The tracking service is a foreground service,
+     * so this process outlives the activity for hours or days — `onCreate` therefore fires once
+     * per *process*, not once per app open. A user who reopens Tempo from Recents the next
+     * morning, with the process still alive, would never reach `onCreate` and would be missing
+     * from that day's active users. That is an undercount in the one figure this exists to
+     * produce, and it would have looked like a plausible dip rather than a bug.
+     *
+     * Repeated calls are free: after the first of the day, the reporter is one atomic
+     * comparison. Fire-and-forget, so a reporting write never sits in front of drawing a frame.
+     */
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            analyticsDailyReporter.markUiOpened()
+            analyticsDailyReporter.reportPresenceIfDue()
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         checkNavigationIntent(intent)

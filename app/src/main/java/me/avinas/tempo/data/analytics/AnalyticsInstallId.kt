@@ -36,30 +36,54 @@ class AnalyticsInstallId
         @param:ApplicationContext private val context: Context,
     ) {
         /**
+         * Memo of the id resolved in this process.
+         *
+         * Not state: if it is lost to process death the value is simply re-read from disk, and
+         * it is only written where the stored id itself changes — on mint, and on [reset].
+         */
+        private var cache: String? = null
+
+        /**
          * Reads the current id, minting one on first use.
          *
-         * The read and the mint both happen inside `edit`, which is atomic and serialized by
-         * DataStore. Reading first and writing only on a miss would race two concurrent
-         * callers into minting two different ids for the same install.
+         * The mint happens inside `edit`, which DataStore serialises, and re-reads inside the
+         * lock so two concurrent callers cannot mint two different ids for one install.
          */
         suspend fun current(): String {
-            var resolved = ""
+            // Cached because the id never changes without `reset`, and `edit` below always
+            // rewrites the preferences file whether or not anything changed. Flushing reads
+            // this once per batch — up to eight times — and that file is shared with the
+            // consent flags, so writing it on a read was churn on a reporting path for no
+            // reason. The cache is a memo, not state: it starts empty in every process.
+            cache?.let { return it }
+
+            val existing = context.dataStore.data.first()[installIdKey]
+            if (existing != null) {
+                cache = existing
+                return existing
+            }
+
+            var minted = ""
             context.dataStore.edit { prefs ->
-                val existing = prefs[installIdKey]
-                if (existing != null) {
-                    resolved = existing
+                // Re-read inside the lock: a concurrent caller may have minted first, and two
+                // different ids for one install would split its history in half.
+                val raced = prefs[installIdKey]
+                if (raced != null) {
+                    minted = raced
                 } else {
-                    resolved = randomId()
-                    prefs[installIdKey] = resolved
+                    minted = randomId()
+                    prefs[installIdKey] = minted
                 }
             }
-            return resolved
+            cache = minted
+            return minted
         }
 
         /** Mints a new id, making everything already recorded unlinkable to what follows. */
         suspend fun reset(): String {
             val fresh = randomId()
             context.dataStore.edit { it[installIdKey] = fresh }
+            cache = fresh
             return fresh
         }
 
