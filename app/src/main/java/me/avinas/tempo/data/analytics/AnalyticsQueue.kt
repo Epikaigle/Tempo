@@ -40,7 +40,13 @@ fun AnalyticsEvent.toQueued(timestampMillis: Long): QueuedAnalyticsEvent {
  */
 object AnalyticsQueue {
 
-    /** Server-enforced ceiling on events per request. */
+    /**
+     * Conservative cap on events per request.
+     *
+     * The previous backend rejected more than 25 in one call, which is where the number came
+     * from. PostHog's batch endpoint accepts far more; it is kept low on purpose so a single
+     * request stays small enough to succeed on a poor connection.
+     */
     const val MAX_BATCH = 25
 
     /**
@@ -50,8 +56,12 @@ object AnalyticsQueue {
     const val MAX_STORED = 200
 
     /**
-     * The server rejects anything created more than 24h ago, so retrying older events is
-     * pointless — they are dropped rather than replayed.
+     * How long an unsent event is worth keeping.
+     *
+     * This used to mirror a server rule — the previous backend rejected anything older than
+     * 24h. It is now our own choice, and kept because a day-old crash report or feature count
+     * is worth little, while retaining it indefinitely is exactly the kind of quiet
+     * accumulation a local-first app should not do. Old events are dropped, not replayed.
      */
     const val MAX_AGE_MILLIS = 24L * 60L * 60L * 1000L
 

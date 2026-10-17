@@ -10,12 +10,13 @@ package me.avinas.tempo.data.analytics
  *  - Numbers are bucketed. This avoids fingerprinting and keeps dashboards stable when
  *    a user's library grows. Bucketing is why small enum-like counts must be enums
  *    instead — a value of 1, 2 or 3 all collapse into `1-5`, carrying no information.
- *  - Keys stay under Aptabase's 40-character property-key limit.
- *  - Aptabase accepts only String and Int property values, at most 25 events per request,
- *    and rejects events older than 24 hours.
+ *  - Keys stay short and snake_case, and values are only String or Int. Nothing structured
+ *    or nested, so an event cannot smuggle a payload inside a property.
+ *  - Keys stay under 40 characters, which the relay and the analytics backend both accept.
  *
- * Never add an identifier here. `sessionId` is owned by the client, is random per session,
- * and is deliberately never persisted — see `AnalyticsTracker`.
+ * Never add an identifier here. The pseudonymous install id is attached by the transport as
+ * its routing key, never as a property — see `PostHogClient` — so this vocabulary stays free
+ * of identifiers entirely.
  */
 
 /** Bucketing helpers. Raw counts and durations are never transmitted. */

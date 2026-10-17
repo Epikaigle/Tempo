@@ -53,17 +53,18 @@ object AnalyticsGate {
     ): Boolean = isConfigured && !noticeDismissed
 
     /**
-     * True when this build could report at all. The Aptabase key lives in the uncommitted
-     * `local.properties`, so a build from source has a blank key and stays tracker-free
-     * with no extra build flags. Debug builds never report either, unless the
-     * `APTABASE_DEBUG_PREVIEW` override is on — that is only for locally previewing the
-     * Home notice and Settings toggle, and must stay `false` in committed code.
+     * True when this build could report at all. The analytics endpoint lives in the
+     * uncommitted `local.properties`, so a build from source has a blank endpoint and stays
+     * tracker-free with no extra build flags — which is the documented promise to anyone
+     * compiling Tempo themselves. Debug builds never report either, unless the
+     * `ANALYTICS_DEBUG_PREVIEW` override is on: that exists only for previewing the Home
+     * notice and Settings toggle locally, and must stay `false` in committed code.
      */
     fun isBuildConfigured(
-        appKey: String,
+        endpoint: String,
         isDebug: Boolean,
         debugPreview: Boolean = false,
-    ): Boolean = appKey.isNotBlank() && (!isDebug || debugPreview)
+    ): Boolean = endpoint.isNotBlank() && (!isDebug || debugPreview)
 }
 
 /**

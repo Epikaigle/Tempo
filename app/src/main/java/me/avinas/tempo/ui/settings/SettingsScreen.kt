@@ -97,6 +97,7 @@ fun SettingsScreen(
     val importExportResult by viewModel.importExportResult.collectAsState()
     val conflictDialogUri by viewModel.showConflictDialog.collectAsState()
     val profileImageMessage by viewModel.profileImageMessage.collectAsState()
+    val analyticsIdResetMessage = stringResource(R.string.settings_analytics_reset_id_done)
 
     // OEM detection for Background Protection
     val isXiaomiDevice = remember { OemBackgroundHelper.isXiaomiDevice() }
@@ -198,6 +199,15 @@ fun SettingsScreen(
         profileImageMessage?.let { message ->
             snackbarHostState.showSnackbar(message)
             viewModel.clearProfileImageMessage()
+        }
+    }
+
+    // Resetting the analytics id is otherwise invisible — nothing on screen changes — so it
+    // needs an acknowledgement or it reads as a tap that did nothing.
+    LaunchedEffect(uiState.analyticsIdResetAt) {
+        if (uiState.analyticsIdResetAt != null) {
+            snackbarHostState.showSnackbar(analyticsIdResetMessage)
+            viewModel.clearAnalyticsIdReset()
         }
     }
 
@@ -669,15 +679,23 @@ fun SettingsScreen(
                     Column {
                         // The opt-out for anonymous app-health reporting lives here, at the
                         // top of "Your Data" next to backup/restore rather than buried in
-                        // About. Hidden entirely in builds that cannot report (no Aptabase
-                        // key, or debug), since a switch for collection that cannot happen
-                        // would be misleading.
+                        // About. Hidden entirely in builds that cannot report (no analytics
+                        // endpoint, or debug), since a switch for collection that cannot
+                        // happen would be misleading.
                         if (uiState.analyticsConfigured) {
                             SettingsSwitch(
                                 title = stringResource(R.string.settings_analytics_toggle),
                                 subtitle = stringResource(R.string.settings_analytics_toggle_desc),
                                 checked = uiState.analyticsEnabled,
                                 onCheckedChange = viewModel::setAnalyticsEnabled,
+                            )
+                            HorizontalDivider(color = GlassBorderSoft)
+                            // Offered even while reporting is off: someone who has just turned
+                            // it off may still want the id they used beforehand replaced.
+                            SettingsOption(
+                                title = stringResource(R.string.settings_analytics_reset_id),
+                                subtitle = stringResource(R.string.settings_analytics_reset_id_desc),
+                                onClick = viewModel::resetAnalyticsId,
                             )
                             HorizontalDivider(color = GlassBorderSoft)
                         }

@@ -42,6 +42,8 @@ class SettingsViewModel
         private val profileIdentityManager: ProfileIdentityManager,
         private val userPreferencesDao: me.avinas.tempo.data.local.dao.UserPreferencesDao,
         private val analyticsConsent: AnalyticsConsent,
+        private val analyticsInstallId: me.avinas.tempo.data.analytics.AnalyticsInstallId,
+        private val analyticsDailyLedger: me.avinas.tempo.data.analytics.AnalyticsDailyLedger,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -98,7 +100,7 @@ class SettingsViewModel
                         pauseTrackingOnLowBattery = roomPrefs.pauseTrackingOnLowBattery,
                         analyticsConfigured =
                             AnalyticsGate.isBuildConfigured(
-                                appKey = BuildConfig.APTABASE_APP_KEY,
+                                endpoint = BuildConfig.ANALYTICS_ENDPOINT,
                                 isDebug = BuildConfig.DEBUG,
                                 debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW,
                             ),
@@ -255,6 +257,32 @@ class SettingsViewModel
                 analyticsConsent.setEnabled(enabled)
                 _uiState.update { it.copy(analyticsEnabled = enabled) }
             }
+        }
+
+        /**
+         * Replaces the pseudonymous install id and forgets the daily reporting bookkeeping.
+         *
+         * This is the user-facing half of the promise in `docs/ANALYTICS.md`: everything
+         * recorded under the old id becomes unlinkable to anything sent afterwards.
+         *
+         * No queue purge is needed, and that is a property worth keeping. The install id is
+         * attached when a batch is *sent*, not when an event is enqueued, so rotating it
+         * unlinks events already sitting in the queue — they simply go out under the new id.
+         * Buffered-but-unsent events are only deleted when reporting is turned off.
+         */
+        fun resetAnalyticsId() {
+            viewModelScope.launch {
+                runCatching {
+                    analyticsInstallId.reset()
+                    analyticsDailyLedger.clear()
+                }
+                _uiState.update { it.copy(analyticsIdResetAt = System.currentTimeMillis()) }
+            }
+        }
+
+        /** Called once the reset has been acknowledged, so the confirmation does not repeat. */
+        fun clearAnalyticsIdReset() {
+            _uiState.update { it.copy(analyticsIdResetAt = null) }
         }
 
         fun toggleGamificationEnabled(enabled: Boolean) {
@@ -440,8 +468,13 @@ data class SettingsUiState(
     // Battery saver tracking pause
     val pauseTrackingOnLowBattery: Boolean = true,
     // Anonymous app-health reporting. `analyticsConfigured` is a build constant: builds
-    // without an Aptabase key (e.g. compiled from source) never show the control, because
-    // offering a switch for collection that cannot happen would be misleading.
+    // without an analytics endpoint (e.g. compiled from source) never show the controls,
+    // because offering a switch for collection that cannot happen would be misleading.
     val analyticsEnabled: Boolean = AnalyticsDefaults.ENABLED,
     val analyticsConfigured: Boolean = false,
+    /**
+     * Set when the user resets their analytics id, purely so the UI can confirm it happened.
+     * Never sent anywhere — a local acknowledgement, not an event.
+     */
+    val analyticsIdResetAt: Long? = null,
 )

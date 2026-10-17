@@ -34,7 +34,7 @@ class CrashSignatureRecorder @Inject constructor(
      * handler of ours at all.
      */
     fun install() {
-        if (!AnalyticsGate.isBuildConfigured(BuildConfig.APTABASE_APP_KEY, BuildConfig.DEBUG, BuildConfig.ANALYTICS_DEBUG_PREVIEW)) {
+        if (!AnalyticsGate.isBuildConfigured(BuildConfig.ANALYTICS_ENDPOINT, BuildConfig.DEBUG, BuildConfig.ANALYTICS_DEBUG_PREVIEW)) {
             return
         }
 

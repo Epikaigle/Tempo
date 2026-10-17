@@ -7,8 +7,8 @@ import dagger.hilt.components.SingletonComponent
 import me.avinas.tempo.BuildConfig
 import me.avinas.tempo.data.analytics.AnalyticsGate
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.AptabaseClient
 import me.avinas.tempo.data.analytics.NoOpAnalyticsTracker
+import me.avinas.tempo.data.analytics.PostHogClient
 import javax.inject.Singleton
 
 /**
@@ -20,17 +20,17 @@ import javax.inject.Singleton
 object AnalyticsModule {
 
     /**
-     * A build with no Aptabase key — which is every build compiled from source, since the key
+     * A build with no endpoint — which is every build compiled from source, since the endpoint
      * lives in the uncommitted `local.properties` — gets the no-op and never constructs a
      * networking client at all. Debug builds are treated the same way.
      *
-     * [AptabaseClient] re-checks the same gate on every send, so even a mis-wired graph cannot
+     * [PostHogClient] re-checks the same gate on every send, so even a mis-wired graph cannot
      * transmit from a build that should stay silent.
      */
     @Provides
     @Singleton
-    fun provideAnalyticsTracker(client: AptabaseClient): AnalyticsTracker =
-        if (AnalyticsGate.isBuildConfigured(appKey = BuildConfig.APTABASE_APP_KEY, isDebug = BuildConfig.DEBUG, debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW)) {
+    fun provideAnalyticsTracker(client: PostHogClient): AnalyticsTracker =
+        if (AnalyticsGate.isBuildConfigured(endpoint = BuildConfig.ANALYTICS_ENDPOINT, isDebug = BuildConfig.DEBUG, debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW)) {
             client
         } else {
             NoOpAnalyticsTracker()

@@ -17,9 +17,9 @@ import javax.inject.Singleton
  * File-backed queue of events waiting to be sent.
  *
  * Events are persisted rather than held in memory so a flush survives the process being
- * killed — but only within the 24h window the server accepts, see [AnalyticsQueue].
- * [purge] is what makes opting out immediate: it deletes the file outright rather than
- * leaving undelivered events on disk.
+ * killed — but only within the retention window in [AnalyticsQueue], which bounds how much
+ * sits on disk and how stale a report may be. [purge] is what makes opting out immediate: it
+ * deletes the file outright rather than leaving undelivered events on disk.
  */
 @Singleton
 class AnalyticsQueueStore @Inject constructor(

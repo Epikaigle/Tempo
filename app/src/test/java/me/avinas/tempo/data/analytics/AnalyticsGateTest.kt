@@ -50,18 +50,22 @@ class AnalyticsGateTest {
      * true for anyone compiling it themselves.
      */
     @Test
-    fun `a build without a key is not configured`() {
-        assertFalse(AnalyticsGate.isBuildConfigured(appKey = "", isDebug = false))
+    fun `a build without an endpoint is not configured`() {
+        assertFalse(AnalyticsGate.isBuildConfigured(endpoint = "", isDebug = false))
     }
 
     @Test
-    fun `a debug build is never configured even with a key`() {
-        assertFalse(AnalyticsGate.isBuildConfigured(appKey = "A-EU-0000000000", isDebug = true))
+    fun `a debug build is never configured even with an endpoint`() {
+        assertFalse(AnalyticsGate.isBuildConfigured(endpoint = ENDPOINT, isDebug = true))
     }
 
     @Test
-    fun `a release build with a key is configured`() {
-        assertTrue(AnalyticsGate.isBuildConfigured(appKey = "A-EU-0000000000", isDebug = false))
+    fun `a release build with an endpoint is configured`() {
+        assertTrue(AnalyticsGate.isBuildConfigured(endpoint = ENDPOINT, isDebug = false))
+    }
+
+    private companion object {
+        const val ENDPOINT = "https://eu.i.posthog.com/batch/"
     }
 
     // --- Bucketing ----------------------------------------------------------------------

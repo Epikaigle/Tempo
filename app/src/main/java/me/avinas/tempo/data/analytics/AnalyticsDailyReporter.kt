@@ -94,7 +94,7 @@ class AnalyticsDailyReporter
         /** Source builds and debug builds report nothing, so they should not even track state. */
         private fun isConfigured(): Boolean =
             AnalyticsGate.isBuildConfigured(
-                appKey = BuildConfig.APTABASE_APP_KEY,
+                endpoint = BuildConfig.ANALYTICS_ENDPOINT,
                 isDebug = BuildConfig.DEBUG,
                 debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW,
             )

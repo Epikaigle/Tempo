@@ -8,11 +8,27 @@ To turn reporting off, open Settings → Your Data → Anonymous app-health stat
 
 ## How anonymity works
 
-Tempo runs no server of its own and has no accounts or login.
+Tempo has no accounts and no login, and your listening history never leaves the device.
 
-Tempo never sets a user ID. The only session value is random, kept in memory, regenerated on every start and rotated after an hour of inactivity. It is never written to disk, so it cannot become a device ID. Tempo collects no advertising ID, no `ANDROID_ID`, and does no fingerprinting.
+The only identifier involved is a **random install id**: a value the app generates once, keeps
+on your device, and sends only as the routing key for its own statistics. It is not your
+advertising ID, not `ANDROID_ID`, and not derived from anything about your device or you, so it
+cannot be matched against another app — and there is nothing to match it to, because Tempo has
+no accounts. Its one job is making "how many people used Tempo today, and did they come back"
+answerable at all. Without a value that survives across days, one person opening the app thirty
+times and thirty people opening it once are the same number.
 
-Reporting works over any connection. Each event is a few hundred bytes, about 16 KB on a busy day. Waiting for Wi-Fi would silence everyone on mobile data only, so Tempo does not wait for it.
+You can replace it at any time in Settings → Your Data → **Reset analytics ID**. Turning
+reporting off replaces it too, so everything recorded before becomes unlinkable to anything
+after.
+
+Tempo collects no advertising ID, no `ANDROID_ID`, and does no fingerprinting. Events are sent
+as anonymous: the analytics service is told not to create a user profile, so no user record is
+stored for you, and Tempo's analytics project is configured to discard the client IP address, so
+no country or region is derived or kept.
+
+Reporting works over any connection. Each event is a few hundred bytes, about 16 KB on a busy
+day. Waiting for Wi-Fi would silence everyone on mobile data only, so Tempo does not wait for it.
 
 Full policy: [PRIVACY.md](../PRIVACY.md).
 
@@ -57,7 +73,8 @@ The format is checked before the event can exist. Text that does not match the p
 
 - Track, artist, album, or playlist names, not even hashed.
 - Search queries, notification content, file paths, listening timestamps.
-- Account details, device identifiers, advertising ID.
+- Account details, advertising ID, `ANDROID_ID`, or any hardware identifier.
+- Your IP address, and therefore your country or region. The analytics project is configured to discard it rather than derive location from it.
 - No advertising or attribution SDK, no Google Analytics, no Firebase.
 - No session replay, no screen recording, no tap maps.
 
@@ -71,13 +88,21 @@ Because you start it and review it, it can carry more detail than the automatic 
 
 ## Where it goes
 
-[Aptabase](https://aptabase.com), in the EU region. Aptabase is open source and its SDKs send no identifiers. On receipt the server derives a temporary hash from IP plus user agent against a salt that rotates every 24 hours. Old salts are purged on a schedule, so events cannot be linked across days. Events older than 24 hours are rejected.
+[PostHog](https://posthog.com), on EU infrastructure in Frankfurt. PostHog is open source and does not sell data. Two project settings matter here and both are deliberate:
 
-Caveat: that same IP produces a coarse country/region stored with the event. It is not precise and is not linked to anything else about you. Stating it here matters more than claiming no location data at all.
+- **Person profiles are off.** Every event is sent with `$process_person_profile = false`, so no user record is created and there is nothing to look a person up by.
+- **Client IP addresses are discarded**, so no country or region is derived or stored.
+
+Events are sent either straight to PostHog or through a small relay Tempo operates, depending on how the build is configured. The relay holds the PostHog token so it never ships inside the app, forces the anonymous flag so a bug cannot create a profile, drops reserved properties, and refuses any event not in the published list above. Its source is in [`deploy/analytics-relay`](../deploy/analytics-relay), so the filtering is auditable.
+
+There is no longer a location caveat to disclose: the previous backend derived a coarse country and region from the request IP and stored it, and that is exactly what this setup removes.
 
 ## Builds from source
 
-Builds compiled from source send nothing. The reporting key is not committed to the repository, so a self-built copy has reporting inert. Debug builds never report either.
+Builds compiled from source send nothing. The analytics endpoint is not committed to the repository, so a self-built copy has reporting inert. Debug builds never report either.
+
+To point a build at your own analytics, set `ANALYTICS_ENDPOINT` and `ANALYTICS_TOKEN` in
+`local.properties`. See [`deploy/analytics-relay`](../deploy/analytics-relay) for the relay.
 
 ## Questions
 

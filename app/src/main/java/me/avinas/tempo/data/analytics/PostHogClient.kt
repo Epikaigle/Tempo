@@ -18,36 +18,44 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Sends queued events to an Aptabase-compatible ingest endpoint.
+ * Sends queued events to a PostHog-compatible ingest endpoint.
  *
- * The protocol is a plain `POST {host}/api/v0/events` with an `App-Key` header, which is why
- * this is ~150 auditable lines in our own repo rather than a third-party SDK: anyone can read
- * exactly what Tempo transmits, and there is no JitPack dependency in the build.
+ * The protocol is a plain POST of a JSON batch, which is why this stays ~150 auditable lines in
+ * our own repo rather than a dependency on PostHog's Android SDK: anyone can read exactly what
+ * Tempo transmits, and the SDK's autocapture and session-replay surface — which we would only
+ * have to switch off again — never enters the build at all.
+ *
+ * [BuildConfig.ANALYTICS_ENDPOINT] is a **full URL**, so the same client talks either straight
+ * to PostHog (`https://eu.i.posthog.com/batch/`) or to the relay Worker
+ * (`https://<name>.workers.dev/ingest`). Pointing it at the Worker is preferred: the real
+ * project token then lives only on the server and never ships inside the APK.
  *
  * Privacy properties enforced here:
  *  - Reporting requires both a configured build and the user's consent, checked before every
  *    single enqueue *and* every flush.
- *  - The session id is in-memory and rotated; it is never persisted (see [AnalyticsSession]).
+ *  - Events are anonymous: the payload sets `$process_person_profile = false`, so PostHog
+ *    creates no person profile for this install.
+ *  - The only identity transmitted is the pseudonymous install id, as the transport-level
+ *    `distinct_id`. It never becomes an event property.
  *  - Failures are swallowed. A failed send leaves events queued, and they expire after 24h.
  */
 @Singleton
-class AptabaseClient
+class PostHogClient
     @Inject
     constructor(
         private val consent: AnalyticsConsent,
         private val queue: AnalyticsQueueStore,
+        private val installId: AnalyticsInstallId,
     ) : AnalyticsTracker {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-        private val session = AnalyticsSession()
 
         /** Suppresses overlapping flushes without holding a lock across a suspension point. */
         private val flushLock = Mutex()
 
         /**
          * Deliberately NOT the app's shared OkHttp client: the UserAgent, Retry and RateLimit
-         * interceptors — and the debug HttpLoggingInterceptor — must never see analytics traffic.
-         * Built lazily so a build that cannot report never allocates it at all.
+         * interceptors — and the debug HttpLoggingInterceptor — must never see analytics
+         * traffic. Built lazily so a build that cannot report never allocates it at all.
          */
         private val httpClient: OkHttpClient by lazy {
             OkHttpClient
@@ -84,26 +92,26 @@ class AptabaseClient
             }
             if (!flushLock.tryLock()) return
             try {
-                // Drain the whole queue, not just the first batch: a device whose tracker
-                // keeps dying can enqueue far more per day than one 25-event batch covers
-                // (the health worker checks every 15 minutes), and the surplus would expire
-                // unsent. The cap stops a silently failing drop from looping forever.
+                // Drain the whole queue, not just the first batch: a device that cannot reach
+                // the network for a while can enqueue far more than one batch covers, and the
+                // surplus would expire unsent. The cap stops a silently failing drop from
+                // looping forever.
                 val maxBatches = AnalyticsQueue.MAX_STORED / AnalyticsQueue.MAX_BATCH
                 for (round in 0 until maxBatches) {
                     val batch = queue.peekBatch()
                     if (batch.isEmpty()) break
 
                     val body =
-                        AptabasePayload.build(
+                        PostHogPayload.build(
                             events = batch,
-                            sessionId = session.id(),
+                            installId = installId.current(),
                             system = systemContext(),
+                            apiKey = BuildConfig.ANALYTICS_TOKEN,
                         )
                     val request =
                         Request
                             .Builder()
-                            .url(BuildConfig.APTABASE_HOST.trimEnd('/') + AptabasePayload.PATH)
-                            .header("App-Key", BuildConfig.APTABASE_APP_KEY)
+                            .url(BuildConfig.ANALYTICS_ENDPOINT)
                             .post(body.toRequestBody(JSON_MEDIA_TYPE))
                             .build()
 
@@ -123,16 +131,15 @@ class AptabaseClient
 
         private suspend fun isReportingAllowed(): Boolean =
             AnalyticsGate.isBuildConfigured(
-                appKey = BuildConfig.APTABASE_APP_KEY,
+                endpoint = BuildConfig.ANALYTICS_ENDPOINT,
                 isDebug = BuildConfig.DEBUG,
                 debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW,
             ) && consent.isCollectionAllowed()
 
         private fun systemContext() =
             AnalyticsSystemContext(
-                // The ingest API caps locale at 10 characters. Stock Android tags all fit
-                // ("zh-Hans-CN" is the longest), but a ROM locale with a variant would fail
-                // validation for the entire batch, so truncate defensively.
+                // Locale is capped defensively: a ROM locale with a variant would otherwise
+                // produce an unusually long value, and truncating keeps the field bounded.
                 locale = Locale.getDefault().toLanguageTag().take(MAX_LOCALE_CHARS),
                 osVersion = Build.VERSION.SDK_INT.toString(),
                 deviceModel = Build.MODEL ?: UNKNOWN_DEVICE,

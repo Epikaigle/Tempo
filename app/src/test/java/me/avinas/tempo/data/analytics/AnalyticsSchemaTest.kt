@@ -17,8 +17,9 @@ class AnalyticsSchemaTest {
     private val allEvents: List<AnalyticsEvent> = AnalyticsEventSamples.all
 
     /**
-     * Aptabase rejects property keys longer than 40 characters, and a rejected event is
-     * silently lost rather than surfaced as an error.
+     * Property keys are capped at 40 characters. The relay truncates nothing and the backend
+     * silently drops an oversized key, so an event carrying one would lose that field without
+     * anything surfacing as an error.
      */
     @Test
     fun `property keys stay within the server limit`() {

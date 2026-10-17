@@ -66,14 +66,20 @@ android {
         buildConfigField("String", "LASTFM_API_KEY", "\"${localProperties.getProperty("LASTFM_API_KEY", "")}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "")}\"")
 
-        // Anonymous app-health analytics. The key is deliberately NOT committed: a blank
-        // key makes AnalyticsGate report the build as unconfigured, so anyone building
-        // Tempo from source gets a tracker-free app with no extra flags. Debug builds
-        // never report either, unless APTABASE_DEBUG_PREVIEW=true is set locally to
-        // preview the Home notice + Settings toggle in a debug build.
-        buildConfigField("String", "APTABASE_APP_KEY", "\"${localProperties.getProperty("APTABASE_APP_KEY", "")}\"")
-        buildConfigField("String", "APTABASE_HOST", "\"${localProperties.getProperty("APTABASE_HOST", "https://eu.aptabase.com")}\"")
-        buildConfigField("boolean", "ANALYTICS_DEBUG_PREVIEW", "${localProperties.getProperty("APTABASE_DEBUG_PREVIEW", "false")}")
+        // Anonymous app-health analytics. The endpoint is deliberately NOT committed: a blank
+        // endpoint makes AnalyticsGate report the build as unconfigured, so anyone building
+        // Tempo from source gets a tracker-free app with no extra flags. Debug builds never
+        // report either, unless ANALYTICS_DEBUG_PREVIEW=true is set locally to preview the
+        // Home notice and Settings toggle in a debug build.
+        //
+        // ANALYTICS_ENDPOINT is the full URL batches are POSTed to — either the relay Worker
+        // or PostHog directly (`https://eu.i.posthog.com/batch/`). ANALYTICS_TOKEN is the
+        // project token when posting directly, or the relay's own app token when posting
+        // through the Worker, which swaps in the real project token server-side so that it
+        // never ships inside the APK.
+        buildConfigField("String", "ANALYTICS_ENDPOINT", "\"${localProperties.getProperty("ANALYTICS_ENDPOINT", "")}\"")
+        buildConfigField("String", "ANALYTICS_TOKEN", "\"${localProperties.getProperty("ANALYTICS_TOKEN", "")}\"")
+        buildConfigField("boolean", "ANALYTICS_DEBUG_PREVIEW", "${localProperties.getProperty("ANALYTICS_DEBUG_PREVIEW", "false")}")
     }
 
     buildTypes {

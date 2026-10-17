@@ -29,7 +29,7 @@ class AnalyticsDisclosureViewModel
                 consent.isNoticeDismissed.collect { dismissed ->
                     val configured =
                         AnalyticsGate.isBuildConfigured(
-                            appKey = BuildConfig.APTABASE_APP_KEY,
+                            endpoint = BuildConfig.ANALYTICS_ENDPOINT,
                             isDebug = BuildConfig.DEBUG,
                             debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW,
                         )
