@@ -33,7 +33,7 @@ import me.avinas.tempo.data.local.entities.DesktopPairingSession
         DesktopPairingSession::class, // Desktop Satellite pairing sessions
         DetectedApp::class, // Default-deny inbox: media apps rejected as unrecognized
     ],
-    version = 58, // Migration 58: hide-streaks display preference on user_preferences
+    version = 58, // Migration 55->58 (squashed): detected_apps inbox, per-play tz offset, hide-streaks
     exportSchema = true, // Schema exported to app/schemas/ — commit these files so migration gaps are caught at build time
 )
 @TypeConverters(Converters::class)
@@ -2608,23 +2608,44 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 55 to 56: creates the default-deny detected-apps inbox.
+         * Migration from version 55 to 58: every unreleased schema step, applied as one.
          *
-         * Tracking moved from "track everything unless blocklisted" to "track only allowlisted
-         * apps". Without a record of what got rejected, a user whose niche player silently
-         * stops tracking has no way to discover why. The table is seeded from the package names
-         * already present in listening history so apps people actually used reappear in the
-         * inbox with an Allow button instead of vanishing.
+         * Schema 55 is what v4.8.11 shipped and is still the newest schema any install can be
+         * sitting on -- 56, 57 and 58 were only ever built locally. The three original steps
+         * (55->56 detected_apps, 56->57 tz_offset_minutes, 57->58 hideStreaks) are therefore
+         * folded into this single migration. Nothing that shipped is removed: every schema a
+         * user can actually be at still has an unbroken path to the current one.
          *
-         * Import markers ("...import...", "desktop:", Last.fm) share the `source` column but are
-         * not app packages, so they are excluded -- only dotted, non-import sources are seeded.
+         * The three bodies are kept verbatim and in their original order; only the control flow
+         * differs. Each original could `return` early once its column existed, because each was
+         * the last thing its version had to do. Concatenated they cannot: a `return` after the
+         * tz_offset_minutes probe would skip the hideStreaks column entirely, and Room would
+         * then refuse to open the database because the live table no longer matches the
+         * TableInfo it expects. So each step is guarded on its own, and an upgrade interrupted
+         * part way through can be re-entered and still finish.
+         *
+         * No table or column is dropped: existing rows are only ever added to, and both
+         * backfills are re-runnable.
          */
-        val MIGRATION_55_56 =
-            object : Migration(55, 56) {
+        val MIGRATION_55_58 =
+            object : Migration(55, 58) {
                 override fun migrate(db: SupportSQLiteDatabase) {
-                    Log.i(TAG, "Starting migration from version 55 to 56 - detected_apps inbox")
+                    Log.i(TAG, "Starting migration from version 55 to 58")
 
-                    // Must match the Room-exported schema (56.json) character for character in
+                    // --- 55 -> 56: the default-deny detected-apps inbox ----------------------
+                    //
+                    // Tracking moved from "track everything unless blocklisted" to "track only
+                    // allowlisted apps". Without a record of what got rejected, a user whose
+                    // niche player silently stops tracking has no way to discover why. The table
+                    // is seeded from the package names already present in listening history so
+                    // apps people actually used reappear in the inbox with an Allow button
+                    // instead of vanishing.
+                    //
+                    // Import markers ("...import...", "desktop:", Last.fm) share the `source`
+                    // column but are not app packages, so they are excluded -- only dotted,
+                    // non-import sources are seeded.
+                    //
+                    // Must match the Room-exported schema (58.json) character for character in
                     // structure: Room validates the live table against the expected TableInfo at
                     // open time and throws IllegalStateException on any drift.
                     db.execSQL(
@@ -2643,6 +2664,8 @@ abstract class AppDatabase : RoomDatabase() {
                     )
 
                     // Seed the inbox from real usage so an upgrade never silently drops a player.
+                    // `INSERT OR IGNORE` against the packageName primary key keeps this
+                    // re-runnable after an interrupted upgrade.
                     db.execSQL(
                         """
                         INSERT OR IGNORE INTO detected_apps
@@ -2665,43 +2688,34 @@ abstract class AppDatabase : RoomDatabase() {
                         """.trimIndent(),
                     )
 
-                    Log.i(TAG, "Migration from version 55 to 56 completed successfully")
-                }
-            }
-
-        /**
-         * Migration from version 56 to 57: freeze the timezone each play happened in.
-         *
-         * Every streak, timing badge and day/hour bucket was derived with SQLite's `'localtime'`
-         * modifier, which renders *all* history through the device's current offset. A trip
-         * therefore rewrote the past: UK evening plays became 00:00-05:00 Thailand time,
-         * listening days collapsed into each other, a 110-day streak read as 40, and night-owl
-         * badges were awarded on landing and taken away on the flight home. The offset a play
-         * actually happened in is now stored per row, so history renders the same wherever the
-         * phone is and only future plays can move the day boundary.
-         *
-         * Existing rows are backfilled with exactly the offset `'localtime'` would have resolved
-         * for them -- derived per row from the same OS zone rules, DST included -- so nothing
-         * shifts at the moment of upgrade. `strftime('%s', <local wall clock>)` re-reads that
-         * wall clock as if it were UTC, so the difference from the raw epoch is the offset.
-         *
-         * Like 53->54 this is re-entrant: `ADD COLUMN` has no `IF NOT EXISTS`, and a second
-         * `ALTER` would abort the whole upgrade, so the column is probed first. A row that is
-         * still NULL renders through the device offset, which is exactly the pre-57 behaviour.
-         */
-        val MIGRATION_56_57 =
-            object : Migration(56, 57) {
-                override fun migrate(db: SupportSQLiteDatabase) {
-                    Log.i(TAG, "Starting migration from version 56 to 57 - per-play timezone offset")
-
-                    if (db.hasColumn("listening_events", "tz_offset_minutes")) {
-                        Log.i(TAG, "tz_offset_minutes already present, skipping migration 56 to 57")
-                        return
+                    // --- 56 -> 57: freeze the timezone each play happened in -----------------
+                    //
+                    // Every streak, timing badge and day/hour bucket was derived with SQLite's
+                    // `'localtime'` modifier, which renders *all* history through the device's
+                    // current offset. A trip therefore rewrote the past: UK evening plays became
+                    // 00:00-05:00 Thailand time, listening days collapsed into each other, a
+                    // 110-day streak read as 40, and night-owl badges were awarded on landing and
+                    // taken away on the flight home. The offset a play actually happened in is
+                    // now stored per row, so history renders the same wherever the phone is and
+                    // only future plays can move the day boundary.
+                    //
+                    // `ADD COLUMN` has no `IF NOT EXISTS`, and a second `ALTER` would abort the
+                    // whole upgrade, so the column is probed first.
+                    if (!db.hasColumn("listening_events", "tz_offset_minutes")) {
+                        db.execSQL(
+                            "ALTER TABLE listening_events ADD COLUMN tz_offset_minutes INTEGER DEFAULT NULL",
+                        )
                     }
 
-                    db.execSQL(
-                        "ALTER TABLE listening_events ADD COLUMN tz_offset_minutes INTEGER DEFAULT NULL",
-                    )
+                    // Backfilled whenever rows are still NULL, not only when the column was just
+                    // added: a run killed between the ALTER and the UPDATE would otherwise leave
+                    // every row NULL, and a NULL renders through the offset the phone is in
+                    // *now* -- the exact bug this column exists to fix. Existing rows get exactly
+                    // the offset `'localtime'` would have resolved for them, derived per row from
+                    // the same OS zone rules, DST included, so nothing shifts at the upgrade:
+                    // `strftime('%s', <local wall clock>)` re-reads that wall clock as if it were
+                    // UTC, so the difference from the raw epoch is the offset. Scoped to NULL
+                    // rows, so it is idempotent and a re-entry finishes what was missed.
                     db.execSQL(
                         """
                         UPDATE listening_events
@@ -2709,35 +2723,22 @@ abstract class AppDatabase : RoomDatabase() {
                             strftime('%s', datetime(timestamp / 1000, 'unixepoch', 'localtime'))
                                 - timestamp / 1000
                         ) / 60
+                        WHERE tz_offset_minutes IS NULL
                         """.trimIndent(),
                     )
 
-                    Log.i(TAG, "Migration from version 56 to 57 completed successfully")
-                }
-            }
-
-        /**
-         * Migration from version 57 to 58.
-         *
-         * Adds the hide-streaks display preference. It defaults to 0, so nobody upgrading sees a
-         * streak disappear because of the update -- only someone who turns the setting on does.
-         * The column is added only if absent so an interrupted upgrade can be re-entered.
-         */
-        val MIGRATION_57_58 =
-            object : Migration(57, 58) {
-                override fun migrate(db: SupportSQLiteDatabase) {
-                    Log.i(TAG, "Starting migration from version 57 to 58 - hide-streaks preference")
-
-                    if (db.hasColumn("user_preferences", "hideStreaks")) {
-                        Log.i(TAG, "hideStreaks already present, skipping migration 57 to 58")
-                        return
+                    // --- 57 -> 58: hide-streaks display preference ---------------------------
+                    //
+                    // Defaults to 0, so nobody upgrading sees a streak disappear because of the
+                    // update -- only someone who turns the setting on does. Probed so an
+                    // interrupted upgrade can be re-entered.
+                    if (!db.hasColumn("user_preferences", "hideStreaks")) {
+                        db.execSQL(
+                            "ALTER TABLE user_preferences ADD COLUMN hideStreaks INTEGER NOT NULL DEFAULT 0",
+                        )
                     }
 
-                    db.execSQL(
-                        "ALTER TABLE user_preferences ADD COLUMN hideStreaks INTEGER NOT NULL DEFAULT 0",
-                    )
-
-                    Log.i(TAG, "Migration from version 57 to 58 completed successfully")
+                    Log.i(TAG, "Migration from version 55 to 58 completed successfully")
                 }
             }
 
@@ -2795,9 +2796,10 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_52_53, // Index tracks.musicbrainz_id (Last.fm/mbid track resolution)
                 MIGRATION_53_54, // Unique daily_challenges(challenge_id,date) + user_level.banked_challenge_xp
                 MIGRATION_54_55, // Dedupe listening_events by (session_id, track_id, timestamp)
-                MIGRATION_55_56, // Default-deny: detected_apps inbox (seeded from listening history)
-                MIGRATION_56_57, // Freeze the timezone each play happened in (streaks survive travel)
-                MIGRATION_57_58, // Hide-streaks display preference on user_preferences
+                // 56, 57 and 58 were never released, so the three steps that would have built
+                // them ship as one migration out of 55 -- the last schema v4.8.11 actually
+                // shipped. See MIGRATION_55_58.
+                MIGRATION_55_58, // detected_apps inbox + per-play tz offset + hide-streaks pref
             )
     }
 }
