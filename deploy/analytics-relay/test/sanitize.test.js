@@ -17,9 +17,11 @@ function event(overrides = {}) {
 
 test("an event no longer in the schema is dropped", () => {
   // The whole point of the relay: an event deleted from the app must stop being stored
-  // immediately, not once every install has updated.
-  assert.equal(sanitizeEvent(event({ event: "enrichment_run" })), null);
+  // immediately, not once every install has updated. `tracking_source` is the real example -
+  // it shipped, was removed, and no build has sent it since.
   assert.equal(sanitizeEvent(event({ event: "tracking_source" })), null);
+  assert.equal(sanitizeEvent(event({ event: "app_started" })), null);
+  assert.equal(sanitizeEvent(event({ event: "not_an_event_at_all" })), null);
 });
 
 test("an event missing a usable distinct id is dropped", () => {
@@ -137,6 +139,7 @@ test("the whitelist covers the events the app can currently send", () => {
     "listening_activity",
     "crash",
     "import_run",
+    "enrichment_run",
     "backup_run",
   ]) {
     assert.ok(ALLOWED_EVENTS.has(name), `${name} should be allowed`);

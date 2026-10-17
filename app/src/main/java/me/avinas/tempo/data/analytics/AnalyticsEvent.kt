@@ -157,7 +157,16 @@ enum class RecoveryAction { REBIND, FORCE_RESTART, COMPONENT_REENABLE }
 
 enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, BROWSER_EXTENSION }
 
-enum class ImportPhase { COMPLETED, FAILED }
+/**
+ * How a background run ended.
+ *
+ * Named for the run rather than the import because enrichment reports through the same two
+ * states, and an import-named enum on an enrichment event would be a small lie no test catches.
+ */
+enum class RunPhase { COMPLETED, FAILED }
+
+/** What set an enrichment run going. */
+enum class EnrichmentTrigger { ENRICH_ALL, SINGLE_TRACK, BATCH }
 
 /** Closed failure taxonomy. Never a message or a stack trace. */
 enum class FailureClass { IO, PARSE, NETWORK, DATABASE, PERMISSION, OUT_OF_MEMORY, CANCELLED, UNKNOWN }
@@ -361,7 +370,7 @@ data class DbMigration(
 
 data class ImportRun(
     val provider: ImportProvider,
-    val phase: ImportPhase,
+    val phase: RunPhase,
     val records: Int,
     val failure: FailureClass?,
     val durationMillis: Long,
@@ -372,6 +381,44 @@ data class ImportRun(
             put("provider", provider.name)
             put("phase", phase.name)
             put("records", AnalyticsBucket.count(records))
+            put("dur", AnalyticsBucket.duration(durationMillis))
+            failure?.let { put("error_class", it.name) }
+        }
+}
+
+/**
+ * One enrichment sweep, reported once per run rather than once per provider.
+ *
+ * The event this replaces fired **per provider per run**, and enrichment is a fallback chain
+ * eight providers long — so a single hard-to-enrich track emitted up to eight events, and the
+ * figure read as "how much enrichment happened" while actually counting how many providers had
+ * been tried. It reached 30% of all traffic, and deleting it did nothing for months because
+ * devices on older builds kept sending it.
+ *
+ * Nothing reported enrichment outcomes in the meantime, which made this the one background job
+ * with no telemetry at all: imports and backups both report phase, volume and failure class.
+ * This restores it, bounded at one event per run.
+ *
+ * `cleared` is the backlog reduction across the run, which is what answers "is enrichment
+ * keeping up". It is derived from the pending count before and after rather than instrumented
+ * per track, so it cannot drift from what the database actually holds — and it is floored at
+ * zero, because new tracks can arrive mid-run and a negative "cleared" would be nonsense.
+ */
+data class EnrichmentRun(
+    val trigger: EnrichmentTrigger,
+    val phase: RunPhase,
+    val backlog: Int,
+    val cleared: Int,
+    val durationMillis: Long,
+    val failure: FailureClass?,
+) : AnalyticsEvent {
+    override val name = "enrichment_run"
+    override val props: Map<String, Any> =
+        buildMap {
+            put("trigger", trigger.name)
+            put("phase", phase.name)
+            put("backlog", AnalyticsBucket.count(backlog))
+            put("cleared", AnalyticsBucket.count(cleared))
             put("dur", AnalyticsBucket.duration(durationMillis))
             failure?.let { put("error_class", it.name) }
         }

@@ -27,17 +27,33 @@ object AnalyticsEventSamples {
         DbMigration(fromVersion = 51, toVersion = 52),
         ImportRun(
             provider = ImportProvider.YOUTUBE_MUSIC,
-            phase = ImportPhase.FAILED,
+            phase = RunPhase.FAILED,
             records = 120,
             failure = FailureClass.PARSE,
             durationMillis = 9_000L
         ),
         ImportRun(
             provider = ImportProvider.LASTFM,
-            phase = ImportPhase.COMPLETED,
+            phase = RunPhase.COMPLETED,
             records = 900,
             failure = null,
             durationMillis = 60_000L
+        ),
+        EnrichmentRun(
+            trigger = EnrichmentTrigger.ENRICH_ALL,
+            phase = RunPhase.COMPLETED,
+            backlog = 120,
+            cleared = 40,
+            durationMillis = 30_000L,
+            failure = null,
+        ),
+        EnrichmentRun(
+            trigger = EnrichmentTrigger.BATCH,
+            phase = RunPhase.FAILED,
+            backlog = 900,
+            cleared = 0,
+            durationMillis = 2_000L,
+            failure = FailureClass.NETWORK,
         ),
         BackupRun(
             target = BackupTarget.DRIVE,

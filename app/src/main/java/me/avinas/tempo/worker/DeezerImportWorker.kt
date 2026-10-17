@@ -31,7 +31,7 @@ import me.avinas.tempo.R
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.FailureClass
 import me.avinas.tempo.data.analytics.FailureClassifier
-import me.avinas.tempo.data.analytics.ImportPhase
+import me.avinas.tempo.data.analytics.RunPhase
 import me.avinas.tempo.data.analytics.ImportProvider
 import me.avinas.tempo.data.analytics.ImportRun
 import me.avinas.tempo.data.deezer.DeezerDataImportService
@@ -192,7 +192,7 @@ class DeezerImportWorker
                 val uriString = inputData.getString(KEY_FILE_URI)
                 if (uriString.isNullOrBlank()) {
                     Log.e(TAG, "No file URI provided")
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
                     return@withContext Result.failure(
                         workDataOf(
                             KEY_ERROR_MESSAGE to applicationContext.getString(R.string.deezer_import_error_no_file),
@@ -209,7 +209,7 @@ class DeezerImportWorker
                     }
 
                 if (uri == null) {
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
                     return@withContext Result.failure(
                         workDataOf(
                             KEY_ERROR_MESSAGE to applicationContext.getString(R.string.deezer_import_error_invalid_uri),
@@ -263,7 +263,7 @@ class DeezerImportWorker
                     val result = deezerDataImportService.importFromUri(applicationContext, uri)
 
                     if (result.isSuccess) {
-                        reportImport(ImportPhase.COMPLETED, records = result.totalEntries, failure = null, startedAt = startedAt)
+                        reportImport(RunPhase.COMPLETED, records = result.totalEntries, failure = null, startedAt = startedAt)
                         showCompletionNotification(result)
                         Result.success(
                             workDataOf(
@@ -283,7 +283,7 @@ class DeezerImportWorker
                                 result.errors.joinToString("; ").take(MAX_ERROR_MESSAGE_CHARS),
                             )
                         reportImport(
-                            ImportPhase.FAILED,
+                            RunPhase.FAILED,
                             records = result.totalEntries,
                             failure = FailureClass.UNKNOWN,
                             startedAt = startedAt,
@@ -298,11 +298,11 @@ class DeezerImportWorker
                     }
                 } catch (e: CancellationException) {
                     Log.i(TAG, "Deezer import worker was cancelled")
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.CANCELLED, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.CANCELLED, startedAt = startedAt)
                     throw e
                 } catch (e: OutOfMemoryError) {
                     Log.e(TAG, "Deezer import ran out of memory", e)
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.OUT_OF_MEMORY, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.OUT_OF_MEMORY, startedAt = startedAt)
                     val errorMsg = applicationContext.getString(R.string.deezer_import_error_out_of_memory)
                     showFailureNotification(errorMsg)
                     Result.failure(
@@ -313,7 +313,7 @@ class DeezerImportWorker
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "Deezer import failed with exception", e)
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClassifier.of(e), startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClassifier.of(e), startedAt = startedAt)
                     val errorMsg = applicationContext.getString(R.string.deezer_import_error_generic)
                     showFailureNotification(errorMsg)
                     Result.failure(
@@ -371,7 +371,7 @@ class DeezerImportWorker
         }
 
         private fun reportImport(
-            phase: ImportPhase,
+            phase: RunPhase,
             records: Int,
             failure: FailureClass?,
             startedAt: Long,

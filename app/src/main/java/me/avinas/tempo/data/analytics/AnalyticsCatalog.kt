@@ -81,6 +81,11 @@ object AnalyticsCatalog {
                 properties = listOf("provider", "phase", "records", "dur", "error_class"),
             ),
             AnalyticsCatalogEntry(
+                event = "enrichment_run",
+                what = "Whether a metadata enrichment sweep worked — once per run, not per source tried: what started it, how much of the backlog it cleared, and the failure category if it failed.",
+                properties = listOf("trigger", "phase", "backlog", "cleared", "dur", "error_class"),
+            ),
+            AnalyticsCatalogEntry(
                 event = "backup_run",
                 what = "Whether backups succeed.",
                 properties = listOf("target", "ok", "size", "dur"),

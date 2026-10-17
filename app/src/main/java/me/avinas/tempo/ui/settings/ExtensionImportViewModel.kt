@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.FailureClass
 import me.avinas.tempo.data.analytics.FailureClassifier
-import me.avinas.tempo.data.analytics.ImportPhase
+import me.avinas.tempo.data.analytics.RunPhase
 import me.avinas.tempo.data.analytics.ImportProvider
 import me.avinas.tempo.data.analytics.ImportRun
 import me.avinas.tempo.data.analytics.TempoFeature
@@ -61,7 +61,7 @@ class ExtensionImportViewModel @Inject constructor(
                 tracker.track(
                     ImportRun(
                         provider = ImportProvider.BROWSER_EXTENSION,
-                        phase = if (result.isSuccess) ImportPhase.COMPLETED else ImportPhase.FAILED,
+                        phase = if (result.isSuccess) RunPhase.COMPLETED else RunPhase.FAILED,
                         records = result.eventsImported,
                         // Map import failure to generic parse error for analytics classification.
                         failure = if (result.isSuccess) null else FailureClass.PARSE,
@@ -79,7 +79,7 @@ class ExtensionImportViewModel @Inject constructor(
                 tracker.track(
                     ImportRun(
                         provider = ImportProvider.BROWSER_EXTENSION,
-                        phase = ImportPhase.FAILED,
+                        phase = RunPhase.FAILED,
                         records = 0,
                         failure = FailureClassifier.of(e),
                         durationMillis = System.currentTimeMillis() - startedAt,

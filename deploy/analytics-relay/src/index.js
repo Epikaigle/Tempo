@@ -36,6 +36,7 @@ export const ALLOWED_EVENTS = new Set([
   "listening_activity",
   "db_migration",
   "import_run",
+  "enrichment_run",
   "backup_run",
   "crash",
 ]);

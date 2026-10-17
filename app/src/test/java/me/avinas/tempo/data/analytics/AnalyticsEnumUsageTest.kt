@@ -8,7 +8,7 @@ import java.io.File
  * Fails the build when a schema enum value has no production call site.
  *
  * This exists because the schema accumulated values nobody could ever send. `TrackingGapReason`
- * carried five reasons while the only call site passed one, `ImportPhase.STARTED` was never
+ * carried five reasons while the only call site passed one, `RunPhase.STARTED` was never
  * passed at all, `GrantVia.SETTINGS` was declared while `via` was hardcoded to `ONBOARDING`,
  * and `AccessResult.DENIED` — the single most useful thing that event could report — was
  * unreachable. Each of those looked like a working dimension in the published list and read as
@@ -25,7 +25,7 @@ class AnalyticsEnumUsageTest {
     private val enumsUnderTest = listOf(
         "TempoFeature",
         "ImportProvider",
-        "ImportPhase",
+        "RunPhase",
         "BackupTarget",
         "FailureClass",
         "AccessResult",

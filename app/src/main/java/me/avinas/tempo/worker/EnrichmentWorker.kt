@@ -14,6 +14,11 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 import me.avinas.tempo.R
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.EnrichmentRun
+import me.avinas.tempo.data.analytics.EnrichmentTrigger
+import me.avinas.tempo.data.analytics.FailureClassifier
+import me.avinas.tempo.data.analytics.RunPhase
 import me.avinas.tempo.data.enrichment.DeezerEnrichmentService
 import me.avinas.tempo.data.enrichment.EnrichmentSource
 import me.avinas.tempo.data.enrichment.ITunesEnrichmentService
@@ -26,6 +31,7 @@ import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.entities.AudioFeaturesSource
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
+import me.avinas.tempo.data.repository.EnrichedMetadataRepository
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.ui.onboarding.dataStore
 import me.avinas.tempo.utils.ArtistParser
@@ -63,6 +69,8 @@ class EnrichmentWorker
         private val trackDao: TrackDao,
         private val statsRepository: StatsRepository,
         private val artistLinkingService: me.avinas.tempo.data.repository.ArtistLinkingService,
+        private val enrichedMetadataRepository: EnrichedMetadataRepository,
+        private val analyticsTracker: AnalyticsTracker,
     ) : CoroutineWorker(appContext, workerParams) {
         private val strategies: List<EnrichmentSource> =
             listOf(
@@ -351,6 +359,17 @@ class EnrichmentWorker
                 return Result.success()
             }
 
+            val startedAt = System.currentTimeMillis()
+            val trigger =
+                when {
+                    isEnrichAll -> EnrichmentTrigger.ENRICH_ALL
+                    specificTrackId != null -> EnrichmentTrigger.SINGLE_TRACK
+                    else -> EnrichmentTrigger.BATCH
+                }
+            // Read once, before the work, so the reduction can be derived afterwards. Taken
+            // after the deferral guards above, so a run that did nothing reports nothing.
+            val backlogBefore = pendingEnrichmentCount()
+
             return try {
                 // First, link any unlinked artists (fixes imported tracks without artist relationships)
                 // Skip during active import to reduce DB contention
@@ -384,14 +403,58 @@ class EnrichmentWorker
                     Log.d(TAG, "Notified UI of metadata update for track $specificTrackId")
                 }
 
+                reportEnrichmentRun(trigger, RunPhase.COMPLETED, backlogBefore, startedAt)
                 Result.success()
             } catch (e: Exception) {
                 Log.e(TAG, "Enrichment work failed", e)
                 if (runAttemptCount < 3) {
+                    // A retry is not a reported outcome: the run has not finished failing yet,
+                    // and reporting each attempt would triple-count one failure.
                     Result.retry()
                 } else {
+                    reportEnrichmentRun(
+                        trigger = trigger,
+                        phase = RunPhase.FAILED,
+                        backlogBefore = backlogBefore,
+                        startedAt = startedAt,
+                        failure = FailureClassifier.of(e),
+                    )
                     Result.failure()
                 }
+            }
+        }
+
+        /** Pending tracks, or 0 when the lookup fails — reporting must not break enrichment. */
+        private suspend fun pendingEnrichmentCount(): Int =
+            runCatching {
+                enrichedMetadataRepository.getEnrichmentStats()[EnrichmentStatus.PENDING] ?: 0
+            }.getOrDefault(0)
+
+        /**
+         * Reports one enrichment run.
+         *
+         * `cleared` is derived from the backlog before and after rather than counted per track,
+         * so it cannot disagree with what the database holds.
+         */
+        private suspend fun reportEnrichmentRun(
+            trigger: EnrichmentTrigger,
+            phase: RunPhase,
+            backlogBefore: Int,
+            startedAt: Long,
+            failure: me.avinas.tempo.data.analytics.FailureClass? = null,
+        ) {
+            runCatching {
+                val backlogAfter = pendingEnrichmentCount()
+                analyticsTracker.track(
+                    EnrichmentRun(
+                        trigger = trigger,
+                        phase = phase,
+                        backlog = backlogAfter,
+                        cleared = (backlogBefore - backlogAfter).coerceAtLeast(0),
+                        durationMillis = System.currentTimeMillis() - startedAt,
+                        failure = failure,
+                    ),
+                )
             }
         }
 

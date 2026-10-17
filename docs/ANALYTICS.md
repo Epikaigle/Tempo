@@ -52,6 +52,7 @@ Everything else is a fixed name from a closed list. There is no free-text field 
 | `listening_activity` | Daily totals only, never per track: listen-count range, app-count range, and whether the app's own screens were opened that day |
 | `db_migration` | On-device database schema moved from one version to another |
 | `import_run` | Import result for Last.fm, Spotify, YouTube Music, Deezer, or the browser-extension export: phase, record range, failure category, time range |
+| `enrichment_run` | Whether a metadata enrichment sweep worked — once per run, not once per source tried: what started it, how much backlog it cleared, and the failure category if it failed |
 | `backup_run` | Backup result for local or Drive: success flag, size and time ranges |
 | `crash` | Fatal crash signature: obfuscated class name, one obfuscated line, app version |
 
