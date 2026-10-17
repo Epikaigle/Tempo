@@ -44,6 +44,7 @@ class SettingsViewModel
         private val analyticsConsent: AnalyticsConsent,
         private val analyticsInstallId: me.avinas.tempo.data.analytics.AnalyticsInstallId,
         private val analyticsDailyLedger: me.avinas.tempo.data.analytics.AnalyticsDailyLedger,
+        private val analyticsFeatureLedger: me.avinas.tempo.data.analytics.AnalyticsFeatureLedger,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -275,6 +276,10 @@ class SettingsViewModel
                 runCatching {
                     analyticsInstallId.reset()
                     analyticsDailyLedger.clear()
+                    // The new id inherits no history, so feature adoption starts over too.
+                    // Leaving the set behind would let an install inherit the previous one's
+                    // "already reported" state, which is exactly the link this breaks.
+                    analyticsFeatureLedger.clear()
                 }
                 _uiState.update { it.copy(analyticsIdResetAt = System.currentTimeMillis()) }
             }

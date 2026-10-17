@@ -11,7 +11,7 @@ import me.avinas.tempo.utils.ArtistNameReplacer
 import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
@@ -114,7 +114,7 @@ class ArtistRenameRepository @Inject constructor(
         mergeArtistIds: List<Long> = emptyList()
     ): Long? {
         val renamed = renameAndMergeInternal(artistId, newName, mergeArtistIds)
-        if (renamed != null) tracker.track(FeatureUsed(TempoFeature.ARTIST_RENAME))
+        if (renamed != null) tracker.track(FeatureFirstUsed(TempoFeature.ARTIST_RENAME))
         return renamed
     }
 

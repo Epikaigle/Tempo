@@ -42,7 +42,7 @@ To show art, genres, and artist details, Tempo queries third-party services dire
 
 Tempo sends anonymous statistics about the app itself: crashes, errors, and which features are used. This is the only data about you that leaves the device besides the metadata queries above.
 
-What is sent: crash signatures (obfuscated class name and line, never the message), failure counts by category, detail-screen visits (song, artist, album only) and features reached, whether onboarding finished, whether background detection is alive, how many listens were tracked that day as a range, and that Tempo was used at all that day.
+What is sent: crash signatures (obfuscated class name and line, never the message), failure counts by category, detail-screen visits (song, artist, album only), which features were used for the first time, whether onboarding finished, whether background detection is alive, how many listens were tracked that day as a range, and that Tempo was used at all that day.
 
 What is never sent: track, artist, album, or playlist names. Search queries. Notification content. File paths. Listening timestamps. Google, Spotify, or Last.fm account details. Your advertising ID or `ANDROID_ID`. Your IP address — it is used as the event arrives and then discarded, never stored. No city, postcode or coordinates are ever recorded. Crash messages are left out on purpose, because a parse error can echo notification text.
 

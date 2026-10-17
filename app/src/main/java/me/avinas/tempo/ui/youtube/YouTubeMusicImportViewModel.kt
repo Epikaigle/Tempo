@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.data.youtube.YouTubeMusicImportService
 import me.avinas.tempo.worker.YouTubeMusicImportWorker
@@ -78,7 +77,6 @@ class YouTubeMusicImportViewModel
                 return
             }
 
-            tracker.track(FeatureUsed(TempoFeature.YTMUSIC_IMPORT))
             _uiState.value = YouTubeMusicImportUiState.Importing
 
             // Persist the SAF grants so the worker can still read the parts if

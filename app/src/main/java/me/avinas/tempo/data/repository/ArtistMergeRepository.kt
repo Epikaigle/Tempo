@@ -16,7 +16,7 @@ import me.avinas.tempo.data.local.entities.ScrobbleArchive
 import me.avinas.tempo.utils.ArtistNameReplacer
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
@@ -94,7 +94,7 @@ open class ArtistMergeRepository @Inject constructor(
      */
     suspend fun mergeArtists(sourceArtistId: Long, targetArtistId: Long): Boolean {
         val merged = mergeArtistsInternal(sourceArtistId, targetArtistId)
-        if (merged) tracker.track(FeatureUsed(TempoFeature.ARTIST_MERGE))
+        if (merged) tracker.track(FeatureFirstUsed(TempoFeature.ARTIST_MERGE))
         return merged
     }
 

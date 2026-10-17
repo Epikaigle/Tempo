@@ -13,7 +13,6 @@ import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.FailureClass
 import me.avinas.tempo.data.analytics.FailureClassifier
-import me.avinas.tempo.data.analytics.FeatureUsed
 import me.avinas.tempo.data.analytics.ImportPhase
 import me.avinas.tempo.data.analytics.ImportProvider
 import me.avinas.tempo.data.analytics.ImportRun
@@ -39,7 +38,6 @@ class SpotifyJsonImportViewModel @Inject constructor(
             return
         }
 
-        tracker.track(FeatureUsed(TempoFeature.SPOTIFY_JSON_IMPORT))
         _uiState.value = SpotifyJsonImportUiState.Importing
 
         viewModelScope.launch {

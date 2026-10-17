@@ -21,7 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import androidx.compose.runtime.Immutable
 
@@ -204,7 +204,7 @@ class ProfileViewModel @Inject constructor(
     
     fun acknowledgeBadges(badgeIds: List<String>) {
         if (badgeIds.isEmpty()) return
-        tracker.track(FeatureUsed(TempoFeature.GAMIFICATION_PROFILE))
+        tracker.track(FeatureFirstUsed(TempoFeature.GAMIFICATION_PROFILE))
         viewModelScope.launch {
             gamificationRepository.markBadgesAsAcknowledged(badgeIds)
         }

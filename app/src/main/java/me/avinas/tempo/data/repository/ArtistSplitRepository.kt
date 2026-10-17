@@ -15,7 +15,7 @@ import me.avinas.tempo.data.local.entities.TrackArtist
 import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
@@ -124,7 +124,7 @@ class ArtistSplitRepository @Inject constructor(
      */
     suspend fun splitArtist(sourceArtistId: Long, moves: List<SplitMove>): SplitResult? {
         val result = splitArtistInternal(sourceArtistId, moves)
-        if (result != null) tracker.track(FeatureUsed(TempoFeature.ARTIST_SPLIT))
+        if (result != null) tracker.track(FeatureFirstUsed(TempoFeature.ARTIST_SPLIT))
         return result
     }
 

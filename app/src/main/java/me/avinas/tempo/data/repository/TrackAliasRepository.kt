@@ -17,7 +17,7 @@ import me.avinas.tempo.data.local.entities.TrackAlias
 import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
@@ -62,7 +62,11 @@ open class TrackAliasRepository @Inject constructor(
      */
     suspend fun createAlias(targetTrackId: Long, originalTitle: String, originalArtist: String) {
         createAliasInternal(targetTrackId, originalTitle, originalArtist)
-        tracker.track(FeatureUsed(TempoFeature.ALIAS_RENAME))
+        // No explicit guard is needed: createAliasInternal performs the insert and throws if it
+        // fails, so reaching this line means the alias exists. Reporting a first use slightly
+        // early, on a call the database treated as a no-op, is also harmless now that this is a
+        // once-ever event rather than a per-call count.
+        tracker.track(FeatureFirstUsed(TempoFeature.ALIAS_RENAME))
     }
 
     private suspend fun createAliasInternal(
@@ -101,7 +105,7 @@ open class TrackAliasRepository @Inject constructor(
      */
     open suspend fun mergeTracks(sourceTrackId: Long, targetTrackId: Long): Boolean {
         val merged = mergeTracksInternal(sourceTrackId, targetTrackId)
-        if (merged) tracker.track(FeatureUsed(TempoFeature.TRACK_MERGE))
+        if (merged) tracker.track(FeatureFirstUsed(TempoFeature.TRACK_MERGE))
         return merged
     }
 

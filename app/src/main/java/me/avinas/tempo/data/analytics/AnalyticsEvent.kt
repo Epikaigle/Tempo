@@ -106,19 +106,23 @@ enum class TempoFeature {
     ALIAS_RENAME,
     ARTIST_RENAME,
     MANUAL_CONTENT_MARK,
-    LASTFM_IMPORT,
-    SPOTIFY_JSON_IMPORT,
-    DEEZER_IMPORT,
-    YTMUSIC_IMPORT,
 
-    /** Importing plays from a file exported by the Tempo Stats browser extension. */
-    EXTENSION_PLAYS_IMPORT,
-    BACKUP_RESTORE,
-    LOCAL_BACKUP,
-    DRIVE_BACKUP,
-    ENRICHMENT_REPORT,
+    /**
+     * Marking an artist's content as always-music or non-music.
+     *
+     * Separate from [MANUAL_CONTENT_MARK] because they are different intents that used to
+     * share one event name, which made the number impossible to read.
+     */
+    MANUAL_ARTIST_MARK,
     HISTORY_FILTER,
-    SUPPORTED_APPS,
+
+    /**
+     * Switching the History list between RECENT and ALL_TIME.
+     *
+     * Previously reported as [HISTORY_FILTER] as well, so that figure counted two unrelated
+     * actions and could not be interpreted either way.
+     */
+    HISTORY_VIEW_MODE,
 }
 
 enum class OnboardingStepName { WELCOME, HOW_IT_WORKS, PRIVACY, PERMISSION, BATTERY, RESTORE }
@@ -162,8 +166,6 @@ enum class FailureClass { IO, PARSE, NETWORK, DATABASE, PERMISSION, OUT_OF_MEMOR
 
 enum class BackupTarget { LOCAL, DRIVE }
 
-enum class AppStartType { COLD, WARM }
-
 sealed interface AnalyticsEvent {
     /** Event name as it appears in the dashboard. */
     val name: String
@@ -172,18 +174,37 @@ sealed interface AnalyticsEvent {
     val props: Map<String, Any>
 }
 
-data class AppStarted(
-    val startType: AppStartType,
+/**
+ * A startup slow enough to be worth knowing about — emitted only when it is.
+ *
+ * This replaced a per-launch `app_started` event that fired on every process start, including
+ * the ones Android makes for background work, and accounted for roughly 28% of all traffic.
+ * Almost all of it carried the same value: startup measures only the app's own synchronous
+ * `onCreate` work, so it sat in the fastest bucket permanently — a constant wearing the
+ * costume of a distribution. Its `start_type` was a constant too, always `COLD`, because
+ * `Application.onCreate` cannot observe a warm start.
+ *
+ * What is actionable is the exception, so only that is reported. A regression is still caught
+ * the day it ships, for a fraction of a percent of the volume, and the steady state costs
+ * nothing at all.
+ *
+ * `listener_ready`, the one genuinely live signal the old event carried, moved to
+ * [DailyActivity] where it is reported once a day instead of once a launch.
+ */
+data class StartupSlow(
     val startupMillis: Long,
-    val listenerReady: Boolean,
 ) : AnalyticsEvent {
-    override val name = "app_started"
+    override val name = "startup_slow"
     override val props: Map<String, Any> =
-        mapOf(
-            "start_type" to startType.name,
-            "startup" to AnalyticsBucket.duration(startupMillis),
-            "listener_ready" to if (listenerReady) 1 else 0,
-        )
+        mapOf("startup" to AnalyticsBucket.duration(startupMillis))
+
+    companion object {
+        /**
+         * Roughly an order of magnitude above a healthy start, so it trips on a real
+         * regression rather than on ordinary device-to-device variance.
+         */
+        const val THRESHOLD_MILLIS = 1_000L
+    }
 }
 
 data class ScreenViewed(
@@ -193,10 +214,19 @@ data class ScreenViewed(
     override val props: Map<String, Any> = mapOf("screen" to screen.name)
 }
 
-data class FeatureUsed(
+/**
+ * The first time this install uses a feature — once ever, not once per use.
+ *
+ * "Which features get used" is an adoption question, and adoption is answered the first time
+ * somebody uses something. The old per-use event answered it too, at the cost of an event
+ * every single time, which for a frequently tapped feature is unbounded. The dedupe lives in
+ * the reporting layer rather than at the twenty-odd call sites, because only the reporting
+ * layer knows whether this is the first time.
+ */
+data class FeatureFirstUsed(
     val feature: TempoFeature,
 ) : AnalyticsEvent {
-    override val name = "feature_used"
+    override val name = "feature_first_used"
     override val props: Map<String, Any> = mapOf("feature" to feature.name)
 }
 

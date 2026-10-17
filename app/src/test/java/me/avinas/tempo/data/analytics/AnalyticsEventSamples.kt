@@ -10,10 +10,10 @@ package me.avinas.tempo.data.analytics
 object AnalyticsEventSamples {
 
     val all: List<AnalyticsEvent> = listOf(
-        AppStarted(AppStartType.COLD, 1_500L, listenerReady = true),
-        AppStarted(AppStartType.WARM, 200L, listenerReady = false),
+        StartupSlow(2_500L),
         ScreenViewed(AnalyticsScreen.SONG_DETAILS),
-        FeatureUsed(TempoFeature.SPOTLIGHT),
+        FeatureFirstUsed(TempoFeature.SPOTLIGHT),
+        FeatureFirstUsed(TempoFeature.WIDGET),
         OnboardingStep(OnboardingStepName.PRIVACY, OnboardingAction.SKIP, 4_000L),
         OnboardingCompleted(skippedCount = 3, totalMillis = 42_000L),
         NotifAccessResult(AccessResult.GRANTED, GrantVia.ONBOARDING),

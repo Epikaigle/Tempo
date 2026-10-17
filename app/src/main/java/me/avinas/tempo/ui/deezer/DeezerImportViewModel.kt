@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.avinas.tempo.R
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.data.deezer.DeezerDataImportService
 import me.avinas.tempo.worker.DeezerImportWorker
@@ -156,7 +155,6 @@ class DeezerImportViewModel @Inject constructor(
             return
         }
 
-        tracker.track(FeatureUsed(TempoFeature.DEEZER_IMPORT))
         _uiState.value = DeezerImportUiState.Importing
 
         viewModelScope.launch {

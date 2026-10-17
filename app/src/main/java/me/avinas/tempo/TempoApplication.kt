@@ -17,10 +17,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsConsent
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.AppStartType
-import me.avinas.tempo.data.analytics.AppStarted
 import me.avinas.tempo.data.analytics.CrashSignatureRecorder
 import me.avinas.tempo.data.analytics.DbMigration
+import me.avinas.tempo.data.analytics.StartupSlow
 import me.avinas.tempo.data.drive.BackupInterval
 import me.avinas.tempo.data.drive.BackupSettingsManager
 import me.avinas.tempo.data.drive.LocalBackupStorage
@@ -91,6 +90,9 @@ class TempoApplication :
 
     @Inject
     lateinit var analyticsInstallId: me.avinas.tempo.data.analytics.AnalyticsInstallId
+
+    @Inject
+    lateinit var analyticsFeatureLedger: me.avinas.tempo.data.analytics.AnalyticsFeatureLedger
 
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -163,20 +165,19 @@ class TempoApplication :
      */
     private fun reportAppStarted(initStartedAt: Long) {
         // Measured on the main thread before anything async: this is exactly Tempo's own
-        // synchronous start-up work, which is what the metric guards — the heartbeat read
-        // below must not be counted into it.
+        // synchronous start-up work, which is what the metric guards.
         val startupMillis = System.currentTimeMillis() - initStartedAt
+
+        // Only the exception is worth sending. A healthy start carries no information, and
+        // reporting it on every process start — including the ones Android makes for background
+        // work — was roughly 28% of all traffic, for a value that never varied.
+        //
+        // The heartbeat read that used to live here is gone with it: `listener_ready` is now
+        // part of the daily activity report, so app start no longer touches disk at all.
+        if (startupMillis < StartupSlow.THRESHOLD_MILLIS) return
+
         applicationScope.launch {
-            // The heartbeat read is disk I/O, so it stays off the main thread; the value
-            // still reflects the state at open time.
-            val heartbeat = TrackingServiceHeartbeat.snapshot(this@TempoApplication)
-            analyticsTracker.track(
-                AppStarted(
-                    startType = AppStartType.COLD,
-                    startupMillis = startupMillis,
-                    listenerReady = heartbeat.hasEverStarted() && !heartbeat.shouldRequestRebind(),
-                ),
-            )
+            analyticsTracker.track(StartupSlow(startupMillis))
         }
     }
 
@@ -360,6 +361,7 @@ class TempoApplication :
                     // "pause for a while" rather than what it says.
                     analyticsInstallId.reset()
                     analyticsDailyLedger.clear()
+                    analyticsFeatureLedger.clear()
                 }
             }
         }

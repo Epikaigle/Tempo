@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import dagger.hilt.android.EntryPointAccessors
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.di.AnalyticsEntryPoint
 import me.avinas.tempo.widget.utils.cancelPeriodicWidgetUpdate
@@ -45,7 +45,7 @@ class TempoWidgetReceiver : GlanceAppWidgetReceiver() {
             EntryPointAccessors
                 .fromApplication(context.applicationContext, AnalyticsEntryPoint::class.java)
                 .analyticsTracker()
-                .track(FeatureUsed(TempoFeature.WIDGET))
+                .track(FeatureFirstUsed(TempoFeature.WIDGET))
         }
     }
 }

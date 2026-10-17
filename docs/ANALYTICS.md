@@ -40,9 +40,9 @@ Everything else is a fixed name from a closed list. There is no free-text field 
 
 | Event | What it tells us |
 |---|---|
-| `app_started` | Startup health: cold or warm start, startup time range, whether music detection was ready |
+| `startup_slow` | That Tempo took an unusually long time to start. Sent only when a start is slow — a normal launch reports nothing |
 | `screen_viewed` | Detail-screen visits only (song, artist, album) — all other screens cost zero events |
-| `feature_used` | Which features get used, such as share cards, imports, backups |
+| `feature_first_used` | The first time each feature is used — once ever, never again. Answers which features are unused without counting every tap |
 | `onboarding_step` | Where setup stalls: step name, next/skip/back, time range on step |
 | `onboarding_completed` | Setup completion: skipped-step range, total time range |
 | `notif_access` | Notification access result and whether it was granted during onboarding or in Settings |

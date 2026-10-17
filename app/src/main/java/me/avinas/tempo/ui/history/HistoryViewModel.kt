@@ -30,7 +30,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import java.util.Locale
 
@@ -312,7 +312,7 @@ class HistoryViewModel @Inject constructor(
 
     fun onFilterChanged(startTime: Long?, endTime: Long?, showSkips: Boolean) {
         // Deliberate (the filter sheet was applied), unlike the per-keystroke search callback.
-        tracker.track(FeatureUsed(TempoFeature.HISTORY_FILTER))
+        tracker.track(FeatureFirstUsed(TempoFeature.HISTORY_FILTER))
         _uiState.update { it.copy(
             startDate = startTime,
             endDate = endTime,
@@ -335,7 +335,7 @@ class HistoryViewModel @Inject constructor(
      * Switch between RECENT and ALL_TIME view modes.
      */
     fun setViewMode(mode: HistoryViewMode) {
-        tracker.track(FeatureUsed(TempoFeature.HISTORY_FILTER))
+        tracker.track(FeatureFirstUsed(TempoFeature.HISTORY_VIEW_MODE))
         if (_uiState.value.viewMode == mode) return
         
         _uiState.update { it.copy(
@@ -677,7 +677,7 @@ class HistoryViewModel @Inject constructor(
 
     /** Save a title exception and correct matching history without deleting the track or rule. */
     fun markContent(trackId: Long, contentType: String, deleteFromHistory: Boolean) {
-        tracker.track(FeatureUsed(TempoFeature.MANUAL_CONTENT_MARK))
+        tracker.track(FeatureFirstUsed(TempoFeature.MANUAL_CONTENT_MARK))
         viewModelScope.launch {
             _uiState.update { it.copy(isMarking = true) }
             try {
@@ -755,7 +755,7 @@ class HistoryViewModel @Inject constructor(
 
     /** Apply an artist correction while preserving more-specific Always Music exceptions. */
     fun markArtistContent(trackId: Long, contentType: String, deleteFromHistory: Boolean) {
-        tracker.track(FeatureUsed(TempoFeature.MANUAL_CONTENT_MARK))
+        tracker.track(FeatureFirstUsed(TempoFeature.MANUAL_ARTIST_MARK))
         viewModelScope.launch {
             _uiState.update { it.copy(isMarking = true) }
             try {

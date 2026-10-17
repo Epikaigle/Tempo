@@ -46,6 +46,7 @@ class PostHogClient
         private val consent: AnalyticsConsent,
         private val queue: AnalyticsQueueStore,
         private val installId: AnalyticsInstallId,
+        private val featureLedger: AnalyticsFeatureLedger,
     ) : AnalyticsTracker {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -69,12 +70,25 @@ class PostHogClient
         override fun track(event: AnalyticsEvent) {
             scope.launch {
                 runCatching {
-                    if (isReportingAllowed()) {
-                        queue.enqueue(event.toQueued(System.currentTimeMillis()))
-                    }
+                    if (!isReportingAllowed()) return@runCatching
+                    if (!shouldReport(event)) return@runCatching
+                    queue.enqueue(event.toQueued(System.currentTimeMillis()))
                 }
             }
         }
+
+        /**
+         * Applies the once-ever rule for feature adoption.
+         *
+         * Enforced here rather than at each call site: a caller cannot know whether this is the
+         * first time, and a caller that forgot would quietly restore the per-use volume this
+         * replaced. Every other event passes straight through.
+         */
+        private suspend fun shouldReport(event: AnalyticsEvent): Boolean =
+            when (event) {
+                is FeatureFirstUsed -> featureLedger.claimFirstUse(event.feature.name)
+                else -> true
+            }
 
         override suspend fun flush() {
             runCatching { flushInternal() }

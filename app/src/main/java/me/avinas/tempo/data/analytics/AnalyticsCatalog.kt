@@ -21,9 +21,9 @@ object AnalyticsCatalog {
     val entries: List<AnalyticsCatalogEntry> =
         listOf(
             AnalyticsCatalogEntry(
-                event = "app_started",
-                what = "That the app opened, how long Tempo's own start-up work took, and whether music detection was running.",
-                properties = listOf("start_type", "startup", "listener_ready"),
+                event = "startup_slow",
+                what = "That Tempo took an unusually long time to start. Sent only when a start is slow, so a normal launch reports nothing at all.",
+                properties = listOf("startup"),
             ),
             AnalyticsCatalogEntry(
                 event = "screen_viewed",
@@ -31,8 +31,8 @@ object AnalyticsCatalog {
                 properties = listOf("screen"),
             ),
             AnalyticsCatalogEntry(
-                event = "feature_used",
-                what = "Which features you use, so the unused ones can be improved or removed.",
+                event = "feature_first_used",
+                what = "The first time each feature is used, once ever, so unused ones can be improved or removed. Never sent again after that.",
                 properties = listOf("feature"),
             ),
             AnalyticsCatalogEntry(

@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.entities.DesktopPairingSession
@@ -220,7 +220,7 @@ class DesktopLinkViewModel @Inject constructor(
         // Only a genuinely completed pairing counts as having used desktop sync; a failed QR
         // scan or a refused desktop callback must not.
         if (_uiState.value.phase == PairingPhase.PAIRED) {
-            tracker.track(FeatureUsed(TempoFeature.DESKTOP_LINK))
+            tracker.track(FeatureFirstUsed(TempoFeature.DESKTOP_LINK))
         }
     }
 

@@ -24,9 +24,9 @@
 
 /** Must track `AnalyticsEvent` — an event missing here is silently dropped. */
 export const ALLOWED_EVENTS = new Set([
-  "app_started",
+  "startup_slow",
   "screen_viewed",
-  "feature_used",
+  "feature_first_used",
   "onboarding_step",
   "onboarding_completed",
   "notif_access",
