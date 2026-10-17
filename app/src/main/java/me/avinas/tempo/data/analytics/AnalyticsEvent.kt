@@ -129,11 +129,9 @@ enum class OnboardingStepName { WELCOME, HOW_IT_WORKS, PRIVACY, PERMISSION, BATT
 
 enum class OnboardingAction { NEXT, SKIP, BACK }
 
-enum class GrantVia { ONBOARDING, SETTINGS }
+enum class AccessResult { GRANTED, DEFERRED }
 
-enum class AccessResult { GRANTED, DENIED, REVOKED, DEFERRED }
-
-enum class ExemptionResult { GRANTED, DENIED, SKIPPED }
+enum class ExemptionResult { GRANTED, SKIPPED }
 
 /**
  * How long music detection was dead.
@@ -157,9 +155,9 @@ enum class RevivedBy { HEALTH_WORKER, BOOT }
  */
 enum class RecoveryAction { REBIND, FORCE_RESTART, COMPONENT_REENABLE }
 
-enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, TEMPO_BACKUP, BROWSER_EXTENSION }
+enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, BROWSER_EXTENSION }
 
-enum class ImportPhase { STARTED, COMPLETED, FAILED }
+enum class ImportPhase { COMPLETED, FAILED }
 
 /** Closed failure taxonomy. Never a message or a stack trace. */
 enum class FailureClass { IO, PARSE, NETWORK, DATABASE, PERMISSION, OUT_OF_MEMORY, CANCELLED, UNKNOWN }
@@ -258,14 +256,9 @@ data class OnboardingCompleted(
 
 data class NotifAccessResult(
     val result: AccessResult,
-    val via: GrantVia,
 ) : AnalyticsEvent {
     override val name = "notif_access"
-    override val props: Map<String, Any> =
-        mapOf(
-            "result" to result.name,
-            "via" to via.name,
-        )
+    override val props: Map<String, Any> = mapOf("result" to result.name)
 }
 
 data class BatteryExemptionResult(

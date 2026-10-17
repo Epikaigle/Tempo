@@ -16,7 +16,7 @@ object AnalyticsEventSamples {
         FeatureFirstUsed(TempoFeature.WIDGET),
         OnboardingStep(OnboardingStepName.PRIVACY, OnboardingAction.SKIP, 4_000L),
         OnboardingCompleted(skippedCount = 3, totalMillis = 42_000L),
-        NotifAccessResult(AccessResult.GRANTED, GrantVia.ONBOARDING),
+        NotifAccessResult(AccessResult.GRANTED),
         BatteryExemptionResult(ExemptionResult.SKIPPED),
         TrackingHealth(TrackingGapSeverity.OVER_24H, RevivedBy.HEALTH_WORKER, RecoveryAction.FORCE_RESTART),
         TrackingHealth(TrackingGapSeverity.UNKNOWN, RevivedBy.BOOT, RecoveryAction.COMPONENT_REENABLE),

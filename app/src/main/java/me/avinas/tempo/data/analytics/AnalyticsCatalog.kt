@@ -48,7 +48,7 @@ object AnalyticsCatalog {
             AnalyticsCatalogEntry(
                 event = "notif_access",
                 what = "Whether notification access was granted, so failures can be diagnosed.",
-                properties = listOf("result", "via"),
+                properties = listOf("result"),
             ),
             AnalyticsCatalogEntry(
                 event = "battery_exemption",

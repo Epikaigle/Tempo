@@ -18,7 +18,6 @@ import me.avinas.tempo.data.analytics.AccessResult
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.BatteryExemptionResult
 import me.avinas.tempo.data.analytics.ExemptionResult
-import me.avinas.tempo.data.analytics.GrantVia
 import me.avinas.tempo.data.analytics.NotifAccessResult
 import me.avinas.tempo.data.analytics.OnboardingAction
 import me.avinas.tempo.data.analytics.OnboardingCompleted
@@ -90,7 +89,7 @@ class OnboardingViewModel @Inject constructor(
      * merely postponed.
      */
     fun onNotifAccess(result: AccessResult) {
-        tracker.track(NotifAccessResult(result = result, via = GrantVia.ONBOARDING))
+        tracker.track(NotifAccessResult(result = result))
     }
 
     /** Whether the battery-optimisation exemption was applied or skipped. */
