@@ -3,6 +3,7 @@ package me.avinas.tempo.data.deezer
 import java.io.FilterInputStream
 import java.io.File
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.io.StringReader
 import java.time.Instant
 import java.time.LocalDateTime
@@ -36,6 +37,34 @@ object DeezerXlsxParser {
     private const val EXCEL_1904_EPOCH_MILLIS = -2082844800000L // 1904-01-01 00:00:00 UTC
     private const val MILLIS_PER_DAY = 86_400_000.0
 
+    /**
+     * Upper bound on the number of members in the export.
+     *
+     * `java.util.zip.ZipFile` materialises the whole central directory while it is being
+     * constructed — a byte array for the directory, three ints per entry and a name String
+     * per entry — before any limit in this parser can apply. A crafted XLSX holding millions
+     * of empty members therefore costs heap proportional to the file size and can kill the
+     * process while it is still being opened, so the entry count is read from the End Of
+     * Central Directory record first: O(1), and no allocation. A real export has a few dozen
+     * members; Tempo's own ZIP reader caps at 5_000, and this matches that precedent.
+     */
+    private const val MAX_ZIP_ENTRIES = 5_000
+
+    /** The declared central directory must stay small for the same reason. */
+    private const val MAX_CENTRAL_DIRECTORY_BYTES = 8L * 1024 * 1024
+
+    private const val EOCD_MIN_SIZE = 22
+    private const val EOCD_SIGNATURE = 0x06054b50
+    private const val EOCD_MAX_SEARCH_BYTES = EOCD_MIN_SIZE + 0xFFFF
+
+    /**
+     * A play cannot have happened in the future. Excel stores dates as unbounded doubles, so
+     * a crafted serial saturates to `Long.MAX_VALUE`; without this guard that timestamp
+     * reaches cross-source reconciliation, where `maxOf { timestamp } + RECONCILIATION_WINDOW_MS`
+     * overflows to a negative bound and silently stops deduplicating that track.
+     */
+    private const val MAX_FUTURE_PLAY_SLACK_MS = 365L * 24 * 60 * 60 * 1000
+
     private val deezerDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
     private val isrcRegex = Regex("[A-Z]{2}[A-Z0-9]{3}[0-9]{7}")
 
@@ -67,6 +96,7 @@ object DeezerXlsxParser {
         file: File,
         cancellationCheck: (() -> Unit)? = null,
     ): ParseResult {
+        assertArchiveWithinLimits(file)
         ZipFile(file).use { zip ->
             cancellationCheck?.invoke()
             val memoryBudgetBytes = parseMemoryBudgetBytes()
@@ -417,7 +447,20 @@ object DeezerXlsxParser {
         return null
     }
 
+    /**
+     * Parses a Deezer date cell, returning 0 for anything that is not a plausible play time.
+     *
+     * The range check matters as much as the parsing: an Excel serial is an unbounded double,
+     * so a crafted cell saturates the result to `Long.MAX_VALUE`, and that value then overflows
+     * the reconciliation window of the track it is attached to. See [MAX_FUTURE_PLAY_SLACK_MS].
+     */
     internal fun parseDate(value: String, is1904DateSystem: Boolean = false): Long {
+        val parsed = parseDateUnclamped(value, is1904DateSystem)
+        if (parsed <= 0L) return 0L
+        return if (parsed > System.currentTimeMillis() + MAX_FUTURE_PLAY_SLACK_MS) 0L else parsed
+    }
+
+    private fun parseDateUnclamped(value: String, is1904DateSystem: Boolean): Long {
         if (value.isBlank()) return 0L
 
         runCatching {
@@ -488,6 +531,68 @@ object DeezerXlsxParser {
             throw IllegalArgumentException("XLSX entry is too large: $name")
         }
     }
+
+    /**
+     * Rejects an archive whose ZIP directory is too large to open safely, reading the End Of
+     * Central Directory record itself instead of letting `ZipFile` discover it (see
+     * [MAX_ZIP_ENTRIES] for why opening the file is the risky step).
+     *
+     * Nothing is thrown when the record cannot be found: such a file is not a ZIP that
+     * `ZipFile` can open either, and it reports that failure on its own.
+     */
+    private fun assertArchiveWithinLimits(file: File) {
+        val end = readEndOfCentralDirectory(file) ?: return
+        if (end.entryCount > MAX_ZIP_ENTRIES || end.centralDirectoryBytes > MAX_CENTRAL_DIRECTORY_BYTES) {
+            throw IllegalArgumentException(
+                "Deezer XLSX is too large to import safely: too many entries",
+            )
+        }
+    }
+
+    private data class EndOfCentralDirectory(
+        val entryCount: Int,
+        val centralDirectoryBytes: Long,
+    )
+
+    private fun readEndOfCentralDirectory(file: File): EndOfCentralDirectory? {
+        val length = file.length()
+        if (length < EOCD_MIN_SIZE) return null
+
+        val windowSize = minOf(length, EOCD_MAX_SEARCH_BYTES.toLong()).toInt()
+        val window = ByteArray(windowSize)
+        try {
+            RandomAccessFile(file, "r").use { access ->
+                access.seek(length - windowSize)
+                access.readFully(window)
+            }
+        } catch (_: Exception) {
+            return null
+        }
+
+        // Scan backwards exactly as ZipFile does: the record may be followed by a ZIP
+        // comment, and the rightmost signature is the one that counts.
+        for (offset in window.size - EOCD_MIN_SIZE downTo 0) {
+            if (readLittleEndianInt(window, offset) != EOCD_SIGNATURE) continue
+
+            val entries = readLittleEndianShort(window, offset + 10)
+            // 0xFFFF means the real count lives in a ZIP64 record: far past any export.
+            if (entries == 0xFFFF) return EndOfCentralDirectory(Int.MAX_VALUE, Long.MAX_VALUE)
+
+            val centralDirectoryBytes =
+                readLittleEndianInt(window, offset + 12).toLong() and 0xFFFFFFFFL
+            return EndOfCentralDirectory(entries, centralDirectoryBytes)
+        }
+        return null
+    }
+
+    private fun readLittleEndianInt(bytes: ByteArray, offset: Int): Int =
+        (bytes[offset].toInt() and 0xFF) or
+            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+            ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+            ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+
+    private fun readLittleEndianShort(bytes: ByteArray, offset: Int): Int =
+        (bytes[offset].toInt() and 0xFF) or ((bytes[offset + 1].toInt() and 0xFF) shl 8)
 
     private fun parseXml(input: InputStream, handler: DefaultHandler) {
         val factory = SAXParserFactory.newInstance().apply {

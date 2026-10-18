@@ -50,6 +50,13 @@ open class TrackAliasRepository @Inject constructor(
     }
 
     /**
+     * Transaction runner. Defaults to Room's [withTransaction], but can be overridden in tests.
+     */
+    internal var transactionRunner: suspend (suspend () -> Unit) -> Unit = { block ->
+        database.withTransaction { block() }
+    }
+
+    /**
      * Find an alias for the given title and artist.
      * Returns the alias if one exists, or null.
      */
@@ -88,6 +95,104 @@ open class TrackAliasRepository @Inject constructor(
     suspend fun getAliasesForTrack(trackId: Long): List<TrackAlias> {
         return trackAliasDao.getAliasesForTrack(trackId)
     }
+
+    /**
+     * Rename [trackId] to [newTitle] and remember [previousTitle] as an alias, so
+     * plays and imports that still arrive under the old title resolve to this row
+     * instead of re-creating it.
+     *
+     * The title write, the alias insert and the archive re-key share one transaction:
+     * a rename that matched no row must not leave an alias behind pointing at a title
+     * the track never had.
+     *
+     * Cache invalidation is part of the operation, not an afterthought. Per-track
+     * details and every top-tracks list are memoized for the stats cache TTL, so
+     * writing the row alone leaves every screen reloading the pre-rename title —
+     * the edit looks like it never saved until the cache happens to expire.
+     *
+     * @return true only when a row was actually rewritten.
+     */
+    open suspend fun renameTrack(
+        trackId: Long,
+        previousTitle: String,
+        newTitle: String,
+        artist: String
+    ): Boolean {
+        val renamed = try {
+            var rows = 0
+            transactionRunner {
+                rows = trackDao.updateTitle(trackId, newTitle)
+                if (rows > 0) {
+                    createAliasInternal(trackId, previousTitle, artist)
+                    // The compressed long tail is keyed by (artist, title), so it does not
+                    // follow a rename on its own. Left alone it keeps serving the old name
+                    // to the All-History view and can never be recognised as already
+                    // promoted — the same reason the merge path re-keys it.
+                    rekeyArchiveRow(
+                        previousArtist = artist,
+                        previousTitle = previousTitle,
+                        newArtist = artist,
+                        newTitle = newTitle
+                    )
+                }
+            }
+            rows > 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Error renaming track $trackId to '$newTitle'", e)
+            false
+        }
+
+        if (!renamed) {
+            Log.w(TAG, "Rename of track $trackId to '$newTitle' matched no row")
+            return false
+        }
+
+        statsRepository.invalidateCache()
+        tracker.track(FeatureFirstUsed(TempoFeature.ALIAS_RENAME))
+        Log.i(TAG, "Renamed track $trackId: '$previousTitle' -> '$newTitle'")
+        return true
+    }
+
+    /**
+     * Move the compressed archive row for one identity onto another.
+     *
+     * `scrobbles_archive` is the only play store keyed by title rather than by track id,
+     * so a rename or merge that skips it leaves the old name behind: the All-History
+     * view keeps listing the old title's archived plays beside the renamed track's
+     * active ones, and `prunePromotedArchives` can never match the row to the track it
+     * was promoted into. Timestamps are union-merged in case the new identity already
+     * has an archive row of its own.
+     */
+    private suspend fun rekeyArchiveRow(
+        previousArtist: String,
+        previousTitle: String,
+        newArtist: String,
+        newTitle: String
+    ): Boolean {
+        val archiveRow = scrobbleArchiveDao.findByArtistAndTitle(previousArtist, previousTitle)
+            ?: return false
+
+        val newHash = ScrobbleArchive.generateTrackHash(newArtist, newTitle)
+        if (newHash == archiveRow.trackHash) return false
+
+        val retargeted = archiveRow.copy(
+            id = 0,
+            trackHash = newHash,
+            trackTitle = newTitle,
+            artistName = newArtist,
+            artistNameNormalized = newArtist.lowercase().trim(),
+            updatedAt = System.currentTimeMillis()
+        )
+        scrobbleArchiveDao.upsertWithMerge(
+            retargeted,
+            ArchiveTimestampCodec::decompress,
+            ArchiveTimestampCodec::compress
+        )
+        scrobbleArchiveDao.delete(archiveRow)
+        Log.d(TAG, "Re-keyed scrobble archive row: '$previousTitle' -> '$newTitle'")
+        return true
+    }
+
     
     /**
      * Merges source track into target track:
@@ -248,31 +353,13 @@ open class TrackAliasRepository @Inject constructor(
                 }
 
                 // 5. Re-key the compressed scrobble archive row (Last.fm long-tail
-                // history) so it follows the merged identity. Timestamps are union-
-                // merged in case the target already has its own archive row.
-                val archiveRow = scrobbleArchiveDao.findByArtistAndTitle(
-                    sourceTrack.artist, sourceTrack.title
+                // history) so it follows the merged identity.
+                rekeyArchiveRow(
+                    previousArtist = sourceTrack.artist,
+                    previousTitle = sourceTrack.title,
+                    newArtist = targetTrack.artist,
+                    newTitle = targetTrack.title
                 )
-                if (archiveRow != null) {
-                    val newHash = ScrobbleArchive.generateTrackHash(targetTrack.artist, targetTrack.title)
-                    if (newHash != archiveRow.trackHash) {
-                        val retargeted = archiveRow.copy(
-                            id = 0,
-                            trackHash = newHash,
-                            trackTitle = targetTrack.title,
-                            artistName = targetTrack.artist,
-                            artistNameNormalized = targetTrack.artist.lowercase().trim(),
-                            updatedAt = System.currentTimeMillis()
-                        )
-                        scrobbleArchiveDao.upsertWithMerge(
-                            retargeted,
-                            ArchiveTimestampCodec::decompress,
-                            ArchiveTimestampCodec::compress
-                        )
-                        scrobbleArchiveDao.delete(archiveRow)
-                        Log.d(TAG, "Re-keyed scrobble archive row to target identity")
-                    }
-                }
 
                 // 6. Delete source track (CASCADE will clean up old aliases and track_artists)
                 trackDao.deleteById(sourceTrackId)

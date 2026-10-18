@@ -131,7 +131,7 @@ enum class RevivedBy { HEALTH_WORKER, BOOT }
  */
 enum class RecoveryAction { REBIND, FORCE_RESTART, COMPONENT_REENABLE }
 
-enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, BROWSER_EXTENSION }
+enum class ImportProvider { LASTFM, SPOTIFY_JSON, DEEZER, YOUTUBE_MUSIC, MUSICOLET, BROWSER_EXTENSION }
 
 /**
  * How a background run ended.

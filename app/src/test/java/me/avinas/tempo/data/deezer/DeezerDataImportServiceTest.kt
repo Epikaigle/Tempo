@@ -102,6 +102,28 @@ class DeezerDataImportServiceTest {
     }
 
     @Test
+    fun readsEveryCreditInALongCommaHeavyStringAsSeparate() {
+        // A capped artist cell can hold hundreds of comma pieces. The greedy scan is bounded
+        // so this stays linear, and pieces that are not a known multi-word entity are credits.
+        val artists = (1..150).map { "Artist $it" }
+
+        assertEquals(
+            artists,
+            DeezerDataImportService.deezerArtistCredits(artists.joinToString(", ")),
+        )
+    }
+
+    @Test
+    fun stillProtectsKnownEntitiesInsideALongCreditString() {
+        assertEquals(
+            listOf("Crosby, Stills, Nash & Young", "Artist One", "Artist Two", "Artist Three"),
+            DeezerDataImportService.deezerArtistCredits(
+                "Crosby, Stills, Nash & Young, Artist One, Artist Two, Artist Three",
+            ),
+        )
+    }
+
+    @Test
     fun rejectsConflictingKnownAlbumsForIsrcCandidate() {
         assertTrue(
             DeezerDataImportService.albumsCompatibleForIsrcCandidate(
@@ -266,6 +288,14 @@ class DeezerDataImportServiceTest {
         assertEquals(
             "This Deezer export is too large to import safely on this device",
             DeezerDataImportService.userFacingError(java.io.IOException("This file is too large")),
+        )
+        assertEquals(
+            "This Deezer export is too large to import safely on this device",
+            DeezerDataImportService.userFacingError(
+                IllegalArgumentException(
+                    "Deezer XLSX is too large to import safely: too many entries",
+                ),
+            ),
         )
         assertEquals(
             "The selected file is not a valid Deezer XLSX export",

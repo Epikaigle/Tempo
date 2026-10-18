@@ -111,14 +111,33 @@ interface LastFmImportMetadataDao {
     
     /**
      * Update import progress.
+     *
+     * The result counters are written here rather than only when the walk finishes: a run that is
+     * killed mid-history never reaches [updateResults], and without the running totals the next
+     * attempt has nothing to resume from and its progress screen restarts at zero - the
+     * "0 active listens" a user sees on every retry after an interrupted import.
      */
     @Query("""
         UPDATE lastfm_import_metadata 
         SET current_page = :currentPage, 
-            scrobbles_processed = :scrobblesProcessed 
+            scrobbles_processed = :scrobblesProcessed,
+            events_imported = :eventsImported,
+            tracks_created = :tracksCreated,
+            artists_created = :artistsCreated,
+            scrobbles_archived = :scrobblesArchived,
+            duplicates_skipped = :duplicatesSkipped
         WHERE id = :id
     """)
-    suspend fun updateProgress(id: Long, currentPage: Int, scrobblesProcessed: Long)
+    suspend fun updateProgress(
+        id: Long,
+        currentPage: Int,
+        scrobblesProcessed: Long,
+        eventsImported: Long,
+        tracksCreated: Long,
+        artistsCreated: Long,
+        scrobblesArchived: Long,
+        duplicatesSkipped: Long,
+    )
     
     /**
      * Update import results.

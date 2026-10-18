@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import me.avinas.tempo.data.local.AppDatabase
+import me.avinas.tempo.data.local.DeviceTimeZone
 import me.avinas.tempo.data.local.dao.GamificationDao
 import me.avinas.tempo.data.local.entities.Badge
 import me.avinas.tempo.data.local.entities.UserLevel
@@ -33,6 +34,13 @@ class GamificationRepository
         fun observeUserLevel(): Flow<UserLevel?> = gamificationDao.observeUserLevel()
 
         suspend fun getUserLevel(): UserLevel = gamificationDao.getUserLevel() ?: UserLevel()
+
+        /**
+         * Timezone the streak is counted in: the zone of the most recent play, or null when the
+         * device's own zone should be used (no history yet). One indexed single-row read.
+         */
+        suspend fun getStreakAnchorZone(): java.time.ZoneId? =
+            DeviceTimeZone.zoneOffsetOf(gamificationDao.getLatestListeningOffsetMinutes())
 
         /**
          * Permanently delete challenges older than [cutoffDate] (YYYY-MM-DD) while preserving XP.
@@ -100,9 +108,15 @@ class GamificationRepository
             // Compute level from XP
             val levelState = GamificationEngine.computeLevelState(totalXp)
 
-            // Compute streak
+            // Compute streak. Every day is bucketed in the zone that play was recorded in, so
+            // "today" must be the current date in the most recent play's zone too -- the phone's
+            // own date would drop the newest day after flying west, or skip one after flying east.
             val dates = gamificationDao.getDistinctListeningDates()
-            val streakInfo = GamificationEngine.calculateStreak(dates)
+            val streakInfo =
+                GamificationEngine.calculateStreak(
+                    dates,
+                    DeviceTimeZone.todayIn(gamificationDao.getLatestListeningOffsetMinutes()),
+                )
 
             val updatedLevel =
                 UserLevel(

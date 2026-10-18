@@ -55,10 +55,25 @@ class ProfileViewModel @Inject constructor(
                 
                 val calculatedTitle = GamificationEngine.computeTitle(level?.currentLevel ?: 0, uniqueArtists)
                 val currentLevel = level ?: UserLevel()
-                val streakAtRisk = ProfileUiState.computeStreakAtRisk(currentLevel)
-                
+
+                // Streak days are bucketed in the zone each play was recorded in, so the day the
+                // streak rolls over is that zone's midnight, not the phone's. After flying west the
+                // recorded day sits ahead of the phone's date, and comparing against the phone
+                // clock would flag a safe streak as at-risk (and print a countdown that disagrees
+                // with it). Both are therefore read in the streak's own zone.
+                val streakZone = try {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        gamificationRepository.getStreakAnchorZone()
+                    }
+                } catch (e: Exception) { null } ?: java.time.ZoneId.systemDefault()
+
+                val streakAtRisk = ProfileUiState.computeStreakAtRisk(
+                    currentLevel,
+                    java.time.LocalDate.now(streakZone).toString(),
+                )
+
                 val streakDurationMinutes = if (!streakAtRisk) Long.MAX_VALUE else try {
-                    java.time.Duration.between(java.time.LocalTime.now(), java.time.LocalTime.MAX).toMinutes()
+                    java.time.Duration.between(java.time.LocalTime.now(streakZone), java.time.LocalTime.MAX).toMinutes()
                 } catch (e: Exception) { Long.MAX_VALUE }
                 
                 val hours = streakDurationMinutes / 60
@@ -238,10 +253,14 @@ data class ProfileUiState(
     val maxPossibleStars: Int = computeMaxPossibleStars(allBadges)
 ) {
     companion object {
-        fun computeStreakAtRisk(userLevel: UserLevel): Boolean =
-            userLevel.currentStreak > 0 && try {
-                userLevel.lastStreakDate != java.time.LocalDate.now().toString()
-            } catch (_: Exception) { false }
+        /**
+         * [today] is the current date in the zone the streak is counted in -- see
+         * [me.avinas.tempo.data.repository.GamificationRepository.getStreakAnchorZone].
+         */
+        fun computeStreakAtRisk(
+            userLevel: UserLevel,
+            today: String = java.time.LocalDate.now().toString(),
+        ): Boolean = userLevel.currentStreak > 0 && userLevel.lastStreakDate != today
 
         fun computeAlmostUnlockedBadges(allBadges: List<Badge>): List<Badge> =
             allBadges.filter { !it.isMaxed && it.progressFraction >= 0.7f }

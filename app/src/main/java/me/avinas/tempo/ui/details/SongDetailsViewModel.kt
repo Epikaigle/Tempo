@@ -808,21 +808,53 @@ class SongDetailsViewModel @Inject constructor(
                     return@launch
                 }
 
-                if (currentTitle != null) {
-                    trackAliasRepository.createAlias(trackId, currentTitle, artist)
+                if (currentTitle == null) {
+                    // The track stopped being loaded mid-dialog; without the previous
+                    // title there is nothing to alias the old name to.
+                    _uiState.update {
+                        it.copy(
+                            isSavingTitle = false,
+                            editTitleError = "Couldn't save the title. Reopen the song and try again."
+                        )
+                    }
+                    return@launch
                 }
 
-                trackRepository.updateTitle(trackId, trimmed)
+                val renamed = trackAliasRepository.renameTrack(
+                    trackId = trackId,
+                    previousTitle = currentTitle,
+                    newTitle = trimmed,
+                    artist = artist,
+                )
+
+                if (!renamed) {
+                    // Zero rows rewritten means the row is gone (deleted or merged
+                    // away elsewhere). Closing the dialog here would read as a save
+                    // that silently did nothing.
+                    _uiState.update {
+                        it.copy(
+                            isSavingTitle = false,
+                            editTitleError = "Couldn't save the title. The song may have been removed from your library."
+                        )
+                    }
+                    return@launch
+                }
 
                 _uiState.update {
                     it.copy(
                         isSavingTitle = false,
                         showEditTitleDialog = false,
                         mergeTargetTrack = null,
-                        editTitleError = null
+                        editTitleError = null,
+                        // Paint the new title right away; the reload below only confirms it.
+                        trackDetails = it.trackDetails?.let { details ->
+                            details.copy(track = details.track.copy(title = trimmed))
+                        }
                     )
                 }
-                loadTrackDetails()
+                // quiet: the row is already showing the new title, so a skeleton
+                // flash would be a step backwards.
+                loadTrackDetails(quiet = true)
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -840,14 +872,27 @@ class SongDetailsViewModel @Inject constructor(
     fun confirmEditTitleMerge() {
         val target = _uiState.value.mergeTargetTrack ?: return
         viewModelScope.launch {
-            _uiState.update { it.copy(isSavingTitle = true) }
+            _uiState.update { it.copy(isSavingTitle = true, editTitleError = null) }
             try {
-                trackAliasRepository.mergeTracks(trackId, target.id)
+                // mergeTracks reports its own failures as false. Treating that as
+                // success closed the dialog, nulled the details and navigated back, so
+                // a merge that changed nothing looked exactly like one that worked.
+                val merged = trackAliasRepository.mergeTracks(trackId, target.id)
+                if (!merged) {
+                    _uiState.update {
+                        it.copy(
+                            isSavingTitle = false,
+                            editTitleError = "Couldn't merge these songs. Nothing was changed."
+                        )
+                    }
+                    return@launch
+                }
                 _uiState.update {
                     it.copy(
                         isSavingTitle = false,
                         showEditTitleDialog = false,
                         mergeTargetTrack = null,
+                        editTitleError = null,
                         trackDetails = null
                     )
                 }
@@ -863,7 +908,7 @@ class SongDetailsViewModel @Inject constructor(
     }
 
     fun cancelEditTitleMerge() {
-        _uiState.update { it.copy(mergeTargetTrack = null) }
+        _uiState.update { it.copy(mergeTargetTrack = null, editTitleError = null) }
     }
 }
 

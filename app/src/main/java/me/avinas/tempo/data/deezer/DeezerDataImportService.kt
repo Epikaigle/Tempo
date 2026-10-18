@@ -86,6 +86,41 @@ class DeezerDataImportService @Inject constructor(
             )
         }
 
+        /**
+         * Longest run of comma-separated pieces still worth testing as a single artist.
+         *
+         * The longest entity Tempo knows ("Crosby, Stills, Nash & Young") spans three, and the
+         * two-piece heuristic handles the rest, so this leaves ample room for user-defined names
+         * while keeping the greedy scan below linear in the number of pieces rather than
+         * quadratic. An entity spanning more pieces than this is not protected and its commas
+         * are read as credit separators.
+         */
+        private const val MAX_PROTECTED_CREDIT_PARTS = 8
+
+        /** The name ArtistParser drops before it counts how many artists a string held. */
+        private const val UNKNOWN_ARTIST_NAME = "Unknown Artist"
+
+        /**
+         * Cheap necessary condition for "the parser will see this candidate as a single artist".
+         *
+         * A candidate can only survive ArtistParser's comma split when it is itself a known
+         * multi-word entity, or when every piece normalizes to the ignored [UNKNOWN_ARTIST_NAME]
+         * and so disappears before the split is counted. When this returns false the full parse
+         * cannot return true, so the caller skips it — which is what keeps the scan linear.
+         */
+        private fun couldBeSingleCreditEntity(
+            candidate: String,
+            normalizedParts: List<String>,
+            start: Int,
+            endExclusive: Int,
+        ): Boolean {
+            if (ArtistParser.isKnownBand(candidate)) return true
+            for (i in start until endExclusive) {
+                if (normalizedParts[i] != UNKNOWN_ARTIST_NAME) return false
+            }
+            return true
+        }
+
         internal fun deezerArtistCredits(value: String): List<String> {
             val cleaned = value.trim()
             if (cleaned.isEmpty()) return emptyList()
@@ -114,18 +149,30 @@ class DeezerDataImportService @Inject constructor(
             // separators. This automatically benefits from Tempo's full known-
             // artist set (including user-defined names) instead of a tiny local
             // whitelist.
+            //
+            // The span is bounded and the parser is only consulted for candidates that
+            // could actually be one entity. Both matter: this scan used to run
+            // ArtistParser over every span of every position, which the parser's own
+            // 500-character artist cap could inflate into tens of thousands of
+            // regex passes per credit string and pin the import worker for hours.
+            val normalizedParts = parts.map { ArtistParser.normalizeArtistName(it) }
             val credits = ArrayList<String>(parts.size)
             var index = 0
             while (index < parts.size) {
                 var protectedArtist: String? = null
                 var nextIndex = index + 1
 
-                for (endExclusive in parts.size downTo index + 2) {
+                val lastEnd = minOf(parts.size, index + MAX_PROTECTED_CREDIT_PARTS)
+                for (endExclusive in lastEnd downTo index + 2) {
                     val candidate = parts.subList(index, endExclusive).joinToString(", ")
-                    if (
-                        isSingleDeezerArtistEntity(candidate) ||
-                        looksLikeCommaBearingArtistEntity(candidate)
-                    ) {
+                    // The heuristic only ever applies to a two-piece candidate: it splits on
+                    // comma and requires exactly two non-empty pieces.
+                    val heuristicMatch =
+                        endExclusive == index + 2 && looksLikeCommaBearingArtistEntity(candidate)
+                    val parserMatch =
+                        couldBeSingleCreditEntity(candidate, normalizedParts, index, endExclusive) &&
+                            isSingleDeezerArtistEntity(candidate)
+                    if (heuristicMatch || parserMatch) {
                         protectedArtist = candidate
                         nextIndex = endExclusive
                         break

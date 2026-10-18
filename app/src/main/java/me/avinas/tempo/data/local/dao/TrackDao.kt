@@ -128,9 +128,12 @@ interface TrackDao {
     /**
      * Update only the title of a track.
      * Targeted update avoids overwriting other columns (e.g. enriched art URLs).
+     *
+     * @return rows rewritten. A silent 0 means the track row no longer exists, which
+     * callers must surface instead of reporting a rename that never landed.
      */
     @Query("UPDATE tracks SET title = :title WHERE id = :trackId")
-    suspend fun updateTitle(trackId: Long, title: String)
+    suspend fun updateTitle(trackId: Long, title: String): Int
 
     /** Update only content classification without overwriting concurrently refreshed metadata. */
     @Query("UPDATE tracks SET content_type = :contentType WHERE id = :trackId")

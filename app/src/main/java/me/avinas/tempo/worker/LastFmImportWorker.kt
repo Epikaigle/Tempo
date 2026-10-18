@@ -65,6 +65,17 @@ class LastFmImportWorker
             private const val INITIAL_IMPORT_WORK = "lastfm_initial_import"
             private const val INCREMENTAL_SYNC_WORK = "lastfm_incremental_sync"
 
+            /**
+             * How many times WorkManager may re-run an import that threw before we give up.
+             *
+             * An import that fails for a *permanent* reason used to return `Result.retry()`
+             * forever. Because the work request is persisted, every app launch re-ran it, so a
+             * deterministic failure (bad notification channel, unmarshalled response, corrupt
+             * import row) presented as "the app crashes whenever I open it". Bounding the
+             * attempts turns that into a visible failed import the user can act on.
+             */
+            private const val MAX_IMPORT_ATTEMPTS = 3
+
             // Input keys
             const val KEY_USERNAME = "username"
             const val KEY_TIER = "tier"
@@ -78,20 +89,42 @@ class LastFmImportWorker
             const val KEY_ERROR_MESSAGE = "error_message"
 
             /**
-             * Create the notification channel for Last.fm imports.
+             * Create the notification channel for Last.fm imports and report whether it is usable.
+             *
+             * Posting a foreground notification on a channel that does not exist makes the system
+             * kill the process asynchronously with
+             * `RemoteServiceException$CannotPostForegroundServiceNotificationException` - the throw
+             * happens on the system's main thread, *not* around our `setForeground()` call, so it
+             * cannot be caught here. WorkManager only calls `getForegroundInfo()` for expedited
+             * work, so for a normal one-time worker this method is the only thing standing between
+             * `setForeground()` and an invalid notification. Callers must therefore not promote to
+             * the foreground when this returns false.
              */
-            fun createNotificationChannel(context: Context) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val channel =
-                        NotificationChannel(
-                            NOTIFICATION_CHANNEL_ID,
-                            "Last.fm Import",
-                            NotificationManager.IMPORTANCE_LOW,
-                        ).apply {
-                            description = "Progress notifications for Last.fm history import"
-                        }
-                    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.createNotificationChannel(channel)
+            fun ensureNotificationChannel(context: Context): Boolean {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
+
+                return try {
+                    val notificationManager =
+                        context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                            ?: return false
+
+                    if (notificationManager.getNotificationChannel(NOTIFICATION_CHANNEL_ID) == null) {
+                        val channel =
+                            NotificationChannel(
+                                NOTIFICATION_CHANNEL_ID,
+                                "Last.fm Import",
+                                NotificationManager.IMPORTANCE_LOW,
+                            ).apply {
+                                description = "Progress notifications for Last.fm history import"
+                                setShowBadge(false)
+                            }
+                        notificationManager.createNotificationChannel(channel)
+                    }
+
+                    notificationManager.getNotificationChannel(NOTIFICATION_CHANNEL_ID) != null
+                } catch (e: Exception) {
+                    Log.e(TAG, "Could not create the '$NOTIFICATION_CHANNEL_ID' notification channel", e)
+                    false
                 }
             }
 
@@ -226,14 +259,43 @@ class LastFmImportWorker
         }
 
         override suspend fun getForegroundInfo(): ForegroundInfo {
-            createNotificationChannel(applicationContext)
+            ensureNotificationChannel(applicationContext)
             return createForegroundInfo("Importing Last.fm history...", 0)
+        }
+
+        /**
+         * Promote this worker to the foreground without ever taking the app down with us.
+         *
+         * The channel is verified first: an invalid channel makes the *system* kill the process
+         * when it posts the notification on our behalf, which no `try/catch` around
+         * `setForeground()` can intercept. If the channel cannot be created (or the OS refuses the
+         * promotion, e.g. the foreground-start window has lapsed) the import continues in the
+         * background instead of crashing.
+         */
+        private suspend fun promoteToForegroundSafely(message: String) {
+            if (!ensureNotificationChannel(applicationContext)) {
+                Log.e(TAG, "No usable notification channel; running the import without a foreground promotion")
+                return
+            }
+
+            try {
+                setForeground(createForegroundInfo(message, 0))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Could not promote the import worker to the foreground; continuing in the background", e)
+            }
         }
 
         private fun createForegroundInfo(
             message: String,
             progress: Int,
         ): ForegroundInfo {
+            // The channel must exist *here*, not only in getForegroundInfo(): WorkManager never
+            // calls getForegroundInfo() for a non-expedited worker, and this builder is what
+            // doWork() hands straight to setForeground().
+            ensureNotificationChannel(applicationContext)
+
             // Create intent to open app when notification is clicked
             val intent =
                 Intent(applicationContext, MainActivity::class.java).apply {
@@ -256,6 +318,10 @@ class LastFmImportWorker
                     .setContentIntent(pendingIntent)
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .setOngoing(true)
+                    // Show the update immediately instead of letting the system defer the post
+                    // while the app is in the background; the deferred re-post path is the one
+                    // that surfaces as a Bad notification for startForeground.
+                    .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                     .setOnlyAlertOnce(true)
 
             if (progress > 0) {
@@ -281,7 +347,10 @@ class LastFmImportWorker
             eventsImported: Long,
             tracksCreated: Long,
         ) {
-            createNotificationChannel(applicationContext)
+            if (!ensureNotificationChannel(applicationContext)) {
+                Log.w(TAG, "Skipping completion notification: no usable notification channel")
+                return
+            }
 
             val intent =
                 Intent(applicationContext, MainActivity::class.java).apply {
@@ -311,9 +380,62 @@ class LastFmImportWorker
         }
 
         override suspend fun doWork(): Result {
-            // Set foreground immediately
-            setForeground(createForegroundInfo("Preparing import...", 0))
+            // Enforce the attempt bound *before* doing any work. A worker whose process is killed
+            // never reaches the catch block in startNewImport(), so without this check WorkManager
+            // - which persists the request - would re-run and re-kill it on every app launch,
+            // which is what "the app crashes every time I open it" looks like from the outside.
+            if (runAttemptCount >= MAX_IMPORT_ATTEMPTS) {
+                val reason = "Last.fm import stopped after $runAttemptCount failed attempts"
+                Log.e(TAG, reason)
+                closeAbandonedImport(reason)
+                // The service never got far enough to emit a terminal state, so tell the UI
+                // directly - otherwise the progress card waits on a run that is already over.
+                lastFmImportService.reportFailed(reason)
+                return Result.failure(
+                    workDataOf(
+                        KEY_SUCCESS to false,
+                        KEY_ERROR_MESSAGE to reason,
+                    ),
+                )
+            }
+
+            // Promote to the foreground before the first (slow) API call so Android does not
+            // consider the import an idle background service. A refused promotion is not fatal.
+            promoteToForegroundSafely("Preparing import...")
             return startNewImport()
+        }
+
+        /**
+         * Close out an import row that never got anywhere, so it cannot masquerade as resumable.
+         *
+         * A row with real progress is deliberately left IN_PROGRESS: the next attempt resumes it
+         * from the page it reached and carries its recorded counters into the report, which beats
+         * re-walking the whole history from the newest page. Only a row with no pages and no
+         * imported data has nothing worth resuming.
+         */
+        private suspend fun closeAbandonedImport(reason: String) {
+            try {
+                val username = inputData.getString(KEY_USERNAME)
+                val row =
+                    (username?.let { importMetadataDao.getLatestForUsername(it) })
+                        ?: importMetadataDao.getActiveImport()
+                val neverProgressed =
+                    row != null &&
+                        row.currentPage <= 1 &&
+                        row.eventsImported == 0L &&
+                        row.scrobblesArchived == 0L
+                if (row != null && row.isResumable && neverProgressed) {
+                    importMetadataDao.markFailed(
+                        id = row.id,
+                        failedAt = System.currentTimeMillis(),
+                        errorMessage = reason,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not close out the abandoned import row", e)
+            }
         }
 
         private suspend fun startNewImport(): Result {
@@ -367,7 +489,7 @@ class LastFmImportWorker
             }
 
             // Update notification
-            setForeground(createForegroundInfo("Importing from Last.fm...", 0))
+            promoteToForegroundSafely("Importing from Last.fm...")
 
             return try {
                 val result = lastFmImportService.startImport(username, tier, totalScrobbles, resumeFrom)
@@ -380,8 +502,14 @@ class LastFmImportWorker
                                 "${importResult.tracksCreated} tracks, ${importResult.skippedPages} skipped pages",
                         )
 
-                        // Show completion notification
-                        showCompletionNotification(importResult.eventsImported, importResult.tracksCreated)
+                        // Show completion notification. A run that found nothing new (everything
+                        // was already in the library) must not announce "Imported 0 events".
+                        val imported = importResult.eventsImported + importResult.scrobblesArchived
+                        if (imported > 0) {
+                            showCompletionNotification(importResult.eventsImported, importResult.tracksCreated)
+                        } else {
+                            Log.i(TAG, "Import finished with nothing new to write; skipping the completion notification")
+                        }
 
                         // Schedule incremental sync if user wants it
                         val prefs = userPreferencesDao.getSync()
@@ -413,8 +541,26 @@ class LastFmImportWorker
                 // the import the user just cancelled.
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Import threw exception", e)
-                Result.retry() // Retry on unexpected errors
+                // Bounded retry: the work request survives process death, so an unbounded
+                // Result.retry() on a deterministic failure re-runs - and re-crashes - on every
+                // app launch. After a few attempts, report a failure the user can see and act on.
+                val attempts = runAttemptCount + 1
+                Log.e(TAG, "Import threw exception (attempt $attempts/$MAX_IMPORT_ATTEMPTS)", e)
+                if (attempts >= MAX_IMPORT_ATTEMPTS) {
+                    val message = e.message ?: "Import failed"
+                    closeAbandonedImport(message)
+                    // An exception thrown outside startImport() leaves no terminal progress
+                    // state behind; publish one so the UI does not wait forever.
+                    lastFmImportService.reportFailed(message)
+                    Result.failure(
+                        workDataOf(
+                            KEY_SUCCESS to false,
+                            KEY_ERROR_MESSAGE to message,
+                        ),
+                    )
+                } else {
+                    Result.retry()
+                }
             }
         }
     }
@@ -486,8 +632,12 @@ class LastFmSyncWorker
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Incremental sync threw exception", e)
-                Result.retry() // Retry on unexpected errors
+                // Sync is periodic: there is no reason to retry an unexpected throw *now* - the
+                // next period will pick it up anyway. Retrying here only produced tight retry
+                // loops on permanent failures, and this worker has no foreground notification to
+                // justify them.
+                Log.e(TAG, "Incremental sync threw exception; deferring to the next period", e)
+                Result.success()
             }
         }
     }

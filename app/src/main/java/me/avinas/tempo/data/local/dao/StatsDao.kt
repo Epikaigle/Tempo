@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Embedded
 import androidx.room.Query
+import me.avinas.tempo.data.local.LocalTimeSql
 import me.avinas.tempo.data.stats.*
 
 /**
@@ -591,7 +592,7 @@ interface StatsDao {
     @Query(
         """
         SELECT 
-            CAST(strftime('%H', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour,
+            CAST(strftime('%H', ${LocalTimeSql.LOCAL_DATETIME}) AS INTEGER) as hour,
             COUNT(*) as play_count,
             SUM(playDuration) as total_time_ms
         FROM listening_events
@@ -611,7 +612,7 @@ interface StatsDao {
     @Query(
         """
         SELECT 
-            CAST(strftime('%H', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour,
+            CAST(strftime('%H', ${LocalTimeSql.LOCAL_DATETIME}) AS INTEGER) as hour,
             COUNT(*) as play_count,
             SUM(playDuration) as total_time_ms
         FROM listening_events
@@ -640,10 +641,10 @@ interface StatsDao {
             0 as total_time_ms
         FROM (
             SELECT
-                MIN(CAST(strftime('%H', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER)) as first_hour
+                MIN(CAST(strftime('%H', ${LocalTimeSql.LOCAL_DATETIME}) AS INTEGER)) as first_hour
             FROM listening_events
             WHERE timestamp >= :startTime AND timestamp <= :endTime
-            GROUP BY strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime'))
+            GROUP BY strftime('%Y-%m-%d', ${LocalTimeSql.LOCAL_DATETIME})
         )
     """,
     )
@@ -662,8 +663,8 @@ interface StatsDao {
         """
         SELECT 
             CASE 
-                WHEN CAST(strftime('%w', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) = 0 THEN 7
-                ELSE CAST(strftime('%w', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER)
+                WHEN CAST(strftime('%w', ${LocalTimeSql.LOCAL_DATETIME}) AS INTEGER) = 0 THEN 7
+                ELSE CAST(strftime('%w', ${LocalTimeSql.LOCAL_DATETIME}) AS INTEGER)
             END as day_of_week,
             COUNT(*) as play_count,
             SUM(playDuration) as total_time_ms
@@ -685,8 +686,8 @@ interface StatsDao {
         """
         SELECT 
             CASE 
-                WHEN CAST(strftime('%w', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) = 0 THEN 7
-                ELSE CAST(strftime('%w', datetime(timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER)
+                WHEN CAST(strftime('%w', ${LocalTimeSql.LOCAL_DATETIME}) AS INTEGER) = 0 THEN 7
+                ELSE CAST(strftime('%w', ${LocalTimeSql.LOCAL_DATETIME}) AS INTEGER)
             END as day_of_week,
             COUNT(*) as play_count,
             SUM(playDuration) as total_time_ms
@@ -710,7 +711,7 @@ interface StatsDao {
     @Query(
         """
         SELECT 
-            strftime('%Y-%m-%d', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) as date,
+            strftime('%Y-%m-%d', ${LocalTimeSql.LOCAL_DATETIME_LE}) as date,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT le.track_id) as unique_tracks,
@@ -737,8 +738,8 @@ interface StatsDao {
     @Query(
         """
         SELECT 
-            CAST(strftime('%Y', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as year,
-            CAST(strftime('%m', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as month,
+            CAST(strftime('%Y', ${LocalTimeSql.LOCAL_DATETIME_LE}) AS INTEGER) as year,
+            CAST(strftime('%m', ${LocalTimeSql.LOCAL_DATETIME_LE}) AS INTEGER) as month,
             COUNT(le.id) as play_count,
             SUM(le.playDuration) as total_time_ms,
             COUNT(DISTINCT le.track_id) as unique_tracks,
@@ -762,7 +763,7 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT DISTINCT strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime')) as date
+        SELECT DISTINCT strftime('%Y-%m-%d', ${LocalTimeSql.LOCAL_DATETIME}) as date
         FROM listening_events
         ORDER BY date ASC
     """,
@@ -770,11 +771,21 @@ interface StatsDao {
     suspend fun getAllListeningDates(): List<String>
 
     /**
+     * Timezone offset of the most recent play, used to anchor "today" for the streak.
+     *
+     * Counting against the device's date alone drops the newest day when a traveller's recorded
+     * day is ahead of the phone's (flying west) and can skip one when it is behind (flying east).
+     * Indexed by `index_listening_events_timestamp_track_id`, so this is a single-row lookup.
+     */
+    @Query("SELECT tz_offset_minutes FROM listening_events ORDER BY timestamp DESC LIMIT 1")
+    suspend fun getLatestListeningOffsetMinutes(): Int?
+
+    /**
      * Get total number of active listening days.
      */
     @Query(
         """
-        SELECT COUNT(DISTINCT strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime')))
+        SELECT COUNT(DISTINCT strftime('%Y-%m-%d', ${LocalTimeSql.LOCAL_DATETIME}))
         FROM listening_events
         WHERE timestamp >= :startTime AND timestamp <= :endTime
     """,
@@ -792,7 +803,7 @@ interface StatsDao {
         SELECT SUM(playDuration)
         FROM listening_events
         WHERE timestamp >= :startTime AND timestamp <= :endTime
-        GROUP BY strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime'))
+        GROUP BY strftime('%Y-%m-%d', ${LocalTimeSql.LOCAL_DATETIME})
         ORDER BY SUM(playDuration) DESC
         LIMIT 1
     """,
@@ -1101,10 +1112,10 @@ interface StatsDao {
     @Query(
         """
         SELECT 
-            strftime('%Y-%m', datetime(min_timestamps.first_listen/1000, 'unixepoch', 'localtime')) as month,
+            ${LocalTimeSql.LOCAL_DISCOVERY_MONTH} as month,
             COUNT(min_timestamps.artist) as new_artists_count
         FROM (
-            SELECT t.artist, MIN(le.timestamp) as first_listen
+            SELECT t.artist, MIN(le.timestamp) as first_listen, le.tz_offset_minutes
             FROM listening_events le
             INNER JOIN tracks t ON le.track_id = t.id
             GROUP BY t.artist
@@ -1274,7 +1285,7 @@ interface StatsDao {
     @Query(
         """
         SELECT 
-            CAST(strftime('%H', datetime(timestamp / 1000, 'unixepoch', 'localtime')) AS INTEGER) as hour,
+            CAST(strftime('%H', ${LocalTimeSql.LOCAL_DATETIME}) AS INTEGER) as hour,
             AVG(completionPercentage) as avg_completion,
             SUM(CASE WHEN was_skipped = 1 OR completionPercentage < 30 THEN 1 ELSE 0 END) as skip_count
         FROM listening_events
@@ -1301,7 +1312,7 @@ interface StatsDao {
             COUNT(DISTINCT t.artist) as unique_artists
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
-        WHERE strftime('%Y', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) = :year
+        WHERE strftime('%Y', ${LocalTimeSql.LOCAL_DATETIME_LE}) = :year
     """,
     )
     suspend fun getYearStats(year: String): YearStatsRaw
@@ -1340,7 +1351,7 @@ interface StatsDao {
     @Query(
         """
         SELECT 
-            strftime('%Y-%m-%d', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) as date,
+            strftime('%Y-%m-%d', ${LocalTimeSql.LOCAL_DATETIME_LE}) as date,
             AVG(CAST(json_extract(em.audio_features_json, '$.valence') AS REAL)) as avg_valence,
             AVG(CAST(json_extract(em.audio_features_json, '$.energy') AS REAL)) as avg_energy,
             AVG(CAST(json_extract(em.audio_features_json, '$.danceability') AS REAL)) as avg_danceability,
@@ -1660,7 +1671,7 @@ interface StatsDao {
     @Query(
         """
         SELECT 
-            strftime('%Y-%m-%d', datetime(timestamp/1000, 'unixepoch', 'localtime')) as date,
+            strftime('%Y-%m-%d', ${LocalTimeSql.LOCAL_DATETIME}) as date,
             COUNT(*) as play_count,
             SUM(playDuration) as total_time_ms,
             1 as unique_tracks,
@@ -1816,7 +1827,7 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT CAST(strftime('%H', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour
+        SELECT CAST(strftime('%H', ${LocalTimeSql.LOCAL_DATETIME_LE}) AS INTEGER) as hour
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE t.artist = :artistName
@@ -2192,7 +2203,7 @@ interface StatsDao {
 
     @Query(
         """
-        SELECT CAST(strftime('%H', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour
+        SELECT CAST(strftime('%H', ${LocalTimeSql.LOCAL_DATETIME_LE}) AS INTEGER) as hour
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         WHERE LOWER(t.artist) = LOWER(:artistName) OR LOWER(t.artist) LIKE '%' || LOWER(:artistName) || '%'
@@ -2379,7 +2390,7 @@ interface StatsDao {
      */
     @Query(
         """
-        SELECT CAST(strftime('%H', datetime(le.timestamp/1000, 'unixepoch', 'localtime')) AS INTEGER) as hour
+        SELECT CAST(strftime('%H', ${LocalTimeSql.LOCAL_DATETIME_LE}) AS INTEGER) as hour
         FROM listening_events le
         INNER JOIN tracks t ON le.track_id = t.id
         INNER JOIN track_artists ta ON ta.track_id = t.id

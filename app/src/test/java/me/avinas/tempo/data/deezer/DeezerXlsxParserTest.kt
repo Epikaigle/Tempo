@@ -256,6 +256,62 @@ class DeezerXlsxParserTest {
         }
     }
 
+    @Test
+    fun rejectsArchiveWithTooManyMembersBeforeItIsOpened() {
+        // ZipFile materialises the entire central directory while it is being constructed,
+        // before any parser limit can apply, so the member count must be bounded first or a
+        // crafted export can exhaust the heap during open. This archive is never parsed.
+        val file = kotlin.io.path.createTempFile("deezer-many-members-", ".xlsx").toFile()
+        try {
+            ZipOutputStream(FileOutputStream(file)).use { zip ->
+                repeat(5_001) { index ->
+                    zip.putNextEntry(ZipEntry("member-$index"))
+                    zip.closeEntry()
+                }
+            }
+
+            val error = runCatching { DeezerXlsxParser.parse(file) }.exceptionOrNull()
+            assertTrue("expected a rejection, got $error", error is IllegalArgumentException)
+            assertTrue(error?.message.orEmpty().contains("too large", ignoreCase = true))
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun treatsSaturatedExcelSerialAsAnInvalidDate() {
+        // Excel serials are unbounded doubles, so a crafted cell overflows the conversion to
+        // Long.MAX_VALUE. That value would then overflow the reconciliation window of the
+        // track it is attached to, so it has to be refused here.
+        assertEquals(0L, DeezerXlsxParser.parseDate("1e300"))
+        assertEquals(0L, DeezerXlsxParser.parseDate("1E+300", is1904DateSystem = true))
+    }
+
+    @Test
+    fun acceptsPastDatesButRejectsDatesImplausiblyFarAhead() {
+        val past = Instant.parse("2024-10-24T23:00:00Z").toEpochMilli()
+        assertEquals(past, DeezerXlsxParser.parseDate("2024-10-24 23:00:00"))
+
+        val farFuture = Instant.now().plusSeconds(400L * 24 * 60 * 60).toString()
+        assertEquals(0L, DeezerXlsxParser.parseDate(farFuture))
+    }
+
+    @Test
+    fun dropsRowsDatedImplausiblyFarInTheFuture() {
+        val file = createWorkbook(
+            includeHistory = true,
+            inlineStrings = true,
+            dateValue = "1e300",
+        )
+        try {
+            val result = DeezerXlsxParser.parse(file)
+            assertEquals(0, result.entries.size)
+            assertEquals(1, result.malformedRows)
+        } finally {
+            file.delete()
+        }
+    }
+
     private fun createWorkbook(
         includeHistory: Boolean,
         putHistorySecond: Boolean = false,

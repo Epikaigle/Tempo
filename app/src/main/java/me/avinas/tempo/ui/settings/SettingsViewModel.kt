@@ -98,6 +98,7 @@ class SettingsViewModel
                         lastFmUsername = roomPrefs.lastfmUsername,
                         lastFmSyncFrequency = roomPrefs.lastfmSyncFrequency,
                         isGamificationEnabled = roomPrefs.isGamificationEnabled,
+                        hideStreaks = roomPrefs.hideStreaks,
                         pauseTrackingOnLowBattery = roomPrefs.pauseTrackingOnLowBattery,
                         analyticsConfigured =
                             AnalyticsGate.isBuildConfigured(
@@ -159,6 +160,7 @@ class SettingsViewModel
                             lastFmUsername = prefs.lastfmUsername,
                             lastFmSyncFrequency = prefs.lastfmSyncFrequency,
                             isGamificationEnabled = prefs.isGamificationEnabled,
+                            hideStreaks = prefs.hideStreaks,
                             pauseTrackingOnLowBattery = prefs.pauseTrackingOnLowBattery,
                         )
                     }
@@ -307,6 +309,22 @@ class SettingsViewModel
                     ChallengeWorker.scheduleDaily(context)
                     GamificationWorker.enqueuePeriodicRefresh(context)
                 }
+            }
+        }
+
+        /**
+         * Turns the display of listening streaks on or off.
+         *
+         * Only the preference is written here. Every streak surface reads it, so the change
+         * applies on the next recomposition without clearing caches or recomputing statistics.
+         */
+        fun toggleHideStreaks(enabled: Boolean) {
+            viewModelScope.launch {
+                val currentPrefs =
+                    userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities
+                        .UserPreferences()
+                userPreferencesDao.upsert(currentPrefs.copy(hideStreaks = enabled))
+                _uiState.update { it.copy(hideStreaks = enabled) }
             }
         }
 
@@ -470,6 +488,8 @@ data class SettingsUiState(
     val lastFmSyncFrequency: String = "NONE",
     // Gamification state
     val isGamificationEnabled: Boolean = true,
+    // Listening streaks hidden from the interface at the user's request
+    val hideStreaks: Boolean = false,
     // Battery saver tracking pause
     val pauseTrackingOnLowBattery: Boolean = true,
     // Anonymous app-health reporting. `analyticsConfigured` is a build constant: builds

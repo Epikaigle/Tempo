@@ -292,8 +292,16 @@ fun SpotlightScreen(
                         }
                     }
                 } else {
+                    // The streak page is generated with the rest of the story; it is dropped here
+                    // rather than at generation so turning the setting off needs no regeneration.
+                    val storyPages =
+                        if (me.avinas.tempo.ui.components.LocalHideStreaks.current) {
+                            uiState.storyPages.filterNot { it is SpotlightStoryPage.ListeningStreak }
+                        } else {
+                            uiState.storyPages
+                        }
                     SpotlightStoryScreen(
-                        storyPages = uiState.storyPages,
+                        storyPages = storyPages,
                         onClose = { showStory = false }
                     )
                 }

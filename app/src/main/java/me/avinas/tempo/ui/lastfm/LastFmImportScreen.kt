@@ -741,7 +741,12 @@ private fun ImportCompletionContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Your Last.fm history is now connected",
+            text =
+                if (result.alreadyImported) {
+                    "Everything Last.fm returned was already in your library"
+                } else {
+                    "Your Last.fm history is now connected"
+                },
             style = MaterialTheme.typography.bodyLarge,
             color = TextSecondary,
         )
@@ -764,6 +769,19 @@ private fun ImportCompletionContent(
                                 "and were skipped. Re-run the import to fill the gaps.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                if (result.alreadyImported) {
+                    // A zeroed "Active Events" row on its own is what users reported as
+                    // "it says 0 active listens" - say why the number is zero.
+                    Text(
+                        text =
+                            "No new scrobbles were added: every play Last.fm returned is already in " +
+                                "your library, so nothing was double-counted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                 }
