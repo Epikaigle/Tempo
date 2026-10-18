@@ -3,19 +3,53 @@ package me.avinas.tempo.data.repository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import me.avinas.tempo.data.local.dao.TrackAliasDao
 import me.avinas.tempo.data.local.entities.Track
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.lang.reflect.Proxy
 
 class TrackResolverArtworkTest {
+
+    /**
+     * A [TrackAliasDao] that answers "no alias" to every lookup.
+     *
+     * [TrackResolver] consults `track_aliases` to follow a rename, and these tests are about
+     * artwork, so none of them stage one. The no-alias answer is the path a track that was
+     * never renamed takes.
+     */
+    private fun noAliasDao(): TrackAliasDao = createProxy<TrackAliasDao> { _, _ -> null }
+
+    private inline fun <reified T : Any> createProxy(
+        crossinline handler: (methodName: String, args: Array<Any?>?) -> Any?
+    ): T =
+        Proxy.newProxyInstance(
+            T::class.java.classLoader,
+            arrayOf(T::class.java)
+        ) { _, method, args ->
+            val result = handler(method.name, args)
+            if (result != null) {
+                result
+            } else if (method.returnType == List::class.java) {
+                emptyList<Any>()
+            } else if (method.returnType == java.lang.Boolean.TYPE) {
+                false
+            } else if (method.returnType == java.lang.Integer.TYPE) {
+                0
+            } else if (method.returnType == java.lang.Long.TYPE) {
+                0L
+            } else {
+                null
+            }
+        } as T
 
     @Test
     fun existingTrackPersistsAutomaticArtworkThroughGuardedWriter() = runTest {
         val existing = track(albumArtUrl = null)
         val repository = FakeTrackRepository(existing)
-        val resolver = TrackResolver(repository)
+        val resolver = TrackResolver(repository, noAliasDao())
 
         val result = resolver.resolve(
             TrackResolver.Query(
@@ -38,7 +72,7 @@ class TrackResolverArtworkTest {
             initialTrack = existing,
             resolveAutomaticArtwork = { "https://manual.example/cover.jpg" },
         )
-        val resolver = TrackResolver(repository)
+        val resolver = TrackResolver(repository, noAliasDao())
 
         val result = resolver.resolve(
             TrackResolver.Query(
@@ -59,7 +93,7 @@ class TrackResolverArtworkTest {
             initialTrack = existing,
             resolveAutomaticArtwork = { null },
         )
-        val resolver = TrackResolver(repository)
+        val resolver = TrackResolver(repository, noAliasDao())
 
         val result = resolver.resolve(
             TrackResolver.Query(
@@ -78,7 +112,7 @@ class TrackResolverArtworkTest {
     fun metadataBackfillAndArtworkBackfillRemainSeparated() = runTest {
         val existing = track(albumArtUrl = null)
         val repository = FakeTrackRepository(existing)
-        val resolver = TrackResolver(repository)
+        val resolver = TrackResolver(repository, noAliasDao())
 
         val result = resolver.resolve(
             TrackResolver.Query(
@@ -102,7 +136,7 @@ class TrackResolverArtworkTest {
     fun blankArtworkIsNotPersisted() = runTest {
         val existing = track(albumArtUrl = null)
         val repository = FakeTrackRepository(existing)
-        val resolver = TrackResolver(repository)
+        val resolver = TrackResolver(repository, noAliasDao())
 
         val result = resolver.resolve(
             TrackResolver.Query(
@@ -167,8 +201,10 @@ class TrackResolverArtworkTest {
             storedTrack = track.copy(albumArtUrl = storedTrack.albumArtUrl)
         }
 
-        override suspend fun updateTitle(trackId: Long, title: String) {
-            if (storedTrack.id == trackId) storedTrack = storedTrack.copy(title = title)
+        override suspend fun updateTitle(trackId: Long, title: String): Int {
+            if (storedTrack.id != trackId) return 0
+            storedTrack = storedTrack.copy(title = title)
+            return 1
         }
 
         override suspend fun updateAutomaticAlbumArtUrl(

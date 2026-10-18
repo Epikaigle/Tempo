@@ -22,9 +22,9 @@ import me.avinas.tempo.R
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.FailureClass
 import me.avinas.tempo.data.analytics.FailureClassifier
-import me.avinas.tempo.data.analytics.ImportPhase
 import me.avinas.tempo.data.analytics.ImportProvider
 import me.avinas.tempo.data.analytics.ImportRun
+import me.avinas.tempo.data.analytics.RunPhase
 import me.avinas.tempo.data.musicolet.MusicoletImportOptions
 import me.avinas.tempo.data.musicolet.MusicoletImportService
 import java.util.concurrent.TimeUnit
@@ -167,7 +167,7 @@ class MusicoletImportWorker
                 val uriString = inputData.getString(KEY_FILE_URI)
                 if (uriString.isNullOrBlank()) {
                     Log.e(TAG, "No file URI provided")
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
                     return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "No file selected"))
                 }
 
@@ -179,7 +179,7 @@ class MusicoletImportWorker
                         null
                     }
                 if (uri == null) {
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
                     return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "Invalid file"))
                 }
 
@@ -193,7 +193,7 @@ class MusicoletImportWorker
 
                     if (result.isSuccess) {
                         reportImport(
-                            ImportPhase.COMPLETED,
+                            RunPhase.COMPLETED,
                             records = result.eventsCreated,
                             failure = null,
                             startedAt = startedAt,
@@ -216,7 +216,7 @@ class MusicoletImportWorker
                             result.errors.joinToString("; ").take(MAX_ERROR_MESSAGE_CHARS)
                                 .ifBlank { "No Musicolet listening data found." }
                         reportImport(
-                            ImportPhase.FAILED,
+                            RunPhase.FAILED,
                             records = result.eventsCreated,
                             failure = FailureClass.PARSE,
                             startedAt = startedAt,
@@ -228,13 +228,13 @@ class MusicoletImportWorker
                     }
                 } catch (e: OutOfMemoryError) {
                     Log.e(TAG, "Import ran out of memory", e)
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.OUT_OF_MEMORY, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.OUT_OF_MEMORY, startedAt = startedAt)
                     val message = "Not enough memory to read this backup."
                     showFailure(message)
                     Result.failure(workDataOf(KEY_SUCCESS to false, KEY_ERROR_MESSAGE to message))
                 } catch (e: Exception) {
                     Log.e(TAG, "Import failed with exception", e)
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClassifier.of(e), startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClassifier.of(e), startedAt = startedAt)
                     val message = e.message ?: "Import failed"
                     showFailure(message)
                     Result.failure(
@@ -290,7 +290,7 @@ class MusicoletImportWorker
 
         /** Never carries a message — only the closed [FailureClass] category. */
         private fun reportImport(
-            phase: ImportPhase,
+            phase: RunPhase,
             records: Int,
             failure: FailureClass?,
             startedAt: Long,

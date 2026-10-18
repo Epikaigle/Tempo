@@ -74,7 +74,7 @@ class DeezerDataImportFailureIntegrationTest {
 
         val service =
             DeezerDataImportService(
-                trackResolver = TrackResolver(faultingTrackRepository),
+                trackResolver = TrackResolver(faultingTrackRepository, database.trackAliasDao()),
                 listeningEventDao = database.listeningEventDao(),
                 trackArtistDao = database.trackArtistDao(),
                 artistLinkingService =
