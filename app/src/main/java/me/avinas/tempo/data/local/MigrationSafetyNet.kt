@@ -5,7 +5,8 @@ import android.util.Log
 import java.io.File
 
 /**
- * Pre-migration safety net for the schema-52 reconciliation release (v4.8.3).
+ * Pre-migration safety net, originally added for the schema-52 reconciliation release (v4.8.3)
+ * and now guarding the squashed schema 55 -> 58 upgrade.
  *
  * Context: two divergent schema-51 lineages exist in the wild (public 4.8.2 and
  * internal builds). MIGRATION_51_52 reconciles them, but the app manifest sets
@@ -32,8 +33,16 @@ object MigrationSafetyNet {
     private const val PREFS_NAME = "migration_safety_net"
     private const val KEY_SNAPSHOT_DONE_FOR_VERSION = "snapshot_done_for_version"
 
-    /** The schema version this safety net guards. Bump when the next risky migration ships. */
-    private const val GUARDED_VERSION = 52
+    /**
+     * The schema version this safety net guards. Bump when the next risky migration ships.
+     *
+     * 55 is what v4.8.11 shipped and therefore what every existing install is on, so the net now
+     * fires once for the whole 55 -> 58 upgrade. It sat at 52 while the two riskiest steps in
+     * that upgrade were still local-only, which meant a user already past schema 52 got no
+     * snapshot at all -- including before the tz_offset_minutes backfill, which rewrites every
+     * row of the largest table in the database.
+     */
+    private const val GUARDED_VERSION = 55
 
     /** Raw suffixes Room/SQLite may have created next to the main database file. */
     private val DB_FILE_SUFFIXES = listOf("", "-wal", "-shm", "-journal")

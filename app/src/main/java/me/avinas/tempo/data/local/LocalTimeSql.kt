@@ -8,7 +8,7 @@ package me.avinas.tempo.data.local
  * re-renders *all* history through the device's current offset. A trip therefore rewrote the
  * past: a UK evening play landed in 00:00-05:00 Thailand time, listening days collapsed, a
  * 110-day streak read as 40, and night-owl badges appeared on arrival and vanished on the way
- * home. `listening_events.tz_offset_minutes` (schema 57) stores the offset that was in effect
+ * home. `listening_events.tz_offset_minutes` (schema 58) stores the offset that was in effect
  * when the play was recorded, so a row renders the same wherever the phone is.
  *
  * A row written without an offset -- anything predating the column, or a path that does not set
