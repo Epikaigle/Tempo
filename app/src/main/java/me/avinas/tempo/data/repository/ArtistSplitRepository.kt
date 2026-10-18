@@ -118,9 +118,7 @@ class ArtistSplitRepository @Inject constructor(
     }
 
     /**
-     * Execute a split. All moves run in a single transaction.
-     *
-     * @return [SplitResult] on success, null on failure.
+     * Execute a split. Every move runs in a single transaction.
      */
     suspend fun splitArtist(sourceArtistId: Long, moves: List<SplitMove>): SplitResult? {
         val result = splitArtistInternal(sourceArtistId, moves)
@@ -199,12 +197,8 @@ class ArtistSplitRepository @Inject constructor(
     }
 
     /**
-     * Move a single track's credit from [source] to [target]:
-     * 1. Rewrite the raw artist string when it still credits the source
-     *    (covers strings overwritten by the old buggy linker).
-     * 2. Re-point tracks.primary_artist_id if it references the source.
-     * 3. Re-point the junction row (role/credit-order preserving,
-     *    conflict-safe against an existing target credit).
+     * Move a single track's credit from [source] to [target], covering strings that
+     * were overwritten by the old buggy linker and merged credit-order conflicts.
      */
     private suspend fun moveTrack(track: Track, source: Artist, target: Artist) {
         // 1. String fix — only when the string does not already name the target

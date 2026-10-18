@@ -760,7 +760,6 @@ class RoomStatsRepository @Inject constructor(
             emptyMap()
         }
 
-        // Helper to resolve an artist name to canonical info with fallback cache
         val resolutionCache = mutableMapOf<String, ResolvedArtistInfo>()
         suspend fun resolveArtist(trimmedName: String): ResolvedArtistInfo {
             val normalizedName = me.avinas.tempo.data.local.entities.Artist.normalizeName(trimmedName)
@@ -909,16 +908,15 @@ class RoomStatsRepository @Inject constructor(
     }
     
     /**
-     * Get artist image URL with smart fallback strategy.
-     * 
+     * Get artist image URL with fallback.
+     *
      * For multi-artist tracks, enriched_metadata stores the TRACK's Spotify-matched primary
-     * artist's image — which may differ from the artist we're looking for.
-     * e.g., a KARMA track on Spotify might have KR$NA as the first artist, so enriched_metadata
-     * stores KR$NA's image even though locally KARMA is marked as PRIMARY.
-     * 
-     * To avoid this, we prioritize direct API search (iTunes/Spotify) over enriched_metadata.
-     * The API search uses the specific artist name, so it always returns the correct artist's image.
-     * 
+     * artist's image, which may differ from the artist we're looking for: a KARMA track on
+     * Spotify might have KR$NA as the first artist, so enriched_metadata stores KR$NA's image
+     * even though locally KARMA is marked as PRIMARY. An enriched image is therefore only used
+     * when the Spotify artist ID matches this artist (priority 1); otherwise the image comes
+     * from the APIs searched by this artist's own name.
+     *
      * Priority order:
      * 0. Artists table image_url (directly assigned to this specific artist - most reliable)
      * 1. Verified enriched_metadata (Spotify artist ID must match this artist's Spotify ID)
@@ -1761,10 +1759,6 @@ class RoomStatsRepository @Inject constructor(
      * for mood/energy insights based on user behavior patterns.
      */
     override suspend fun getAudioFeaturesStats(timeRange: TimeRange, withLeeway: Boolean): AudioFeaturesStats? {
-        // Note: Spotify audio-features API was deprecated in November 2024.
-        // This method now returns null. Use getTrackEngagement() and 
-        // TagBasedMoodAnalyzer for mood/energy insights based on MusicBrainz tags
-        // and user behavior patterns.
         return null
     }
 
@@ -2361,8 +2355,6 @@ class RoomStatsRepository @Inject constructor(
         pageSize: Int
     ): PaginatedResult<HistoryItem> {
         // Construct separate cache key for each filter combination
-        // Note: Caching search results might be aggressive if search queries are very diverse,
-        // but LRU will handle eviction. Short TTL might be better for search.
         val rangeKey = timeRange?.name ?: "custom_${startTime}_${endTime}"
         val queryKey = searchQuery?.lowercase() ?: "all"
         val skipKey = if (includeSkips) "with_skips" else "no_skips"

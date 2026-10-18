@@ -3,24 +3,9 @@ package me.avinas.tempo.utils
 import android.util.Log
 
 /**
- * Utility class for parsing and normalizing artist names from various formats.
- * 
- * Music apps and metadata sources use different conventions for multiple artists:
- * - "Artist1, Artist2" (comma-separated)
- * - "Artist1 & Artist2" (ampersand)
- * - "Artist1 feat. Artist2" or "Artist1 ft. Artist2" (featuring)
- * - "Artist1 x Artist2" (collaboration)
- * - "Artist1 / Artist2" (slash-separated)
- * - "Artist1 and Artist2"
- * - "Artist1 with Artist2"
- * - "Artist1 vs. Artist2" or "Artist1 vs Artist2"
- * - "Artist1 + Artist2"
- * 
- * This parser handles all these formats and provides utilities for:
- * - Extracting all artists from a string
- * - Getting the primary (main) artist
- * - Getting featured artists
- * - Normalizing artist names for search/comparison
+ * Parses multi-artist strings into primary and featured artists, and normalizes names for
+ * comparison. Sources separate collaborators with comma, "&", "feat./ft.", "x", "/", "and",
+ * "with", "vs." and "+".
  */
 object ArtistParser {
 
@@ -32,28 +17,21 @@ object ArtistParser {
         val primaryArtists: List<String>,
         /** Featured artists (after feat., ft., etc.) */
         val featuredArtists: List<String>,
-        /** All artists combined */
         val allArtists: List<String>,
-        /** Original raw string */
         val original: String
     ) {
-        /** Get the first/main artist name */
         val primaryArtist: String
             get() = primaryArtists.firstOrNull() ?: original
 
-        /** Get all artists as a formatted string */
         fun formatAll(separator: String = ", "): String =
             allArtists.joinToString(separator)
 
-        /** Get primary artists as a formatted string */
         fun formatPrimary(separator: String = ", "): String =
             primaryArtists.joinToString(separator)
 
-        /** Check if this has multiple artists */
         val hasMultipleArtists: Boolean
             get() = allArtists.size > 1
 
-        /** Check if this has featured artists */
         val hasFeaturedArtists: Boolean
             get() = featuredArtists.isNotEmpty()
     }
@@ -325,10 +303,7 @@ object ArtistParser {
     private val AMPERSAND_SPLIT_PATTERN = Regex("\\s*&\\s*")
 
     /**
-     * Parse an artist string into its component parts.
-     * 
-     * @param artistString The raw artist string from metadata
-     * @return ParsedArtists containing all extracted artist information
+     * Split an artist string into its component parts; blank input yields "Unknown Artist".
      */
     fun parse(artistString: String): ParsedArtists {
         if (artistString.isBlank()) {
@@ -496,13 +471,7 @@ object ArtistParser {
             .trim()
     }
 
-    /**
-     * Get just the primary artist name for database matching.
-     * This is useful when you need a single artist for lookups.
-     * 
-     * @param artistString The raw artist string
-     * @return The primary/main artist name
-     */
+    /** The primary artist name, for single-artist lookups. */
     fun getPrimaryArtist(artistString: String): String {
         return parse(artistString).primaryArtist
     }
@@ -514,24 +483,14 @@ object ArtistParser {
         return parse(artistString).primaryArtists
     }
 
-    /**
-     * Get all artists as a list for comprehensive matching.
-     * 
-     * @param artistString The raw artist string
-     * @return List of all artists mentioned
-     */
+    /** Every artist mentioned, primary and featured, for matching. */
     fun getAllArtists(artistString: String): List<String> {
         return parse(artistString).allArtists
     }
 
     /**
-     * Normalize an artist string for comparison/search purposes.
-     * Lowercases, folds Latin diacritics, strips invisible zero-width
-     * characters and special characters while preserving letters of every
-     * writing system.
-     * 
-     * @param artistString The artist string to normalize
-     * @return Normalized string for comparison
+     * Normalize an artist string for comparison: lowercase, Latin diacritics folded, invisible
+     * and special characters stripped, letters of every writing system preserved.
      */
     fun normalizeForSearch(artistString: String): String {
         return UnicodeUtils.foldForMatching(
@@ -544,14 +503,7 @@ object ArtistParser {
             .trim()
     }
 
-    /**
-     * Check if two artist strings likely refer to the same artist.
-     * Uses fuzzy matching to handle variations.
-     * 
-     * @param artist1 First artist string
-     * @param artist2 Second artist string
-     * @return True if the artists are likely the same
-     */
+    /** Fuzzy match: true when two artist strings likely name the same artist. */
     fun isSameArtist(artist1: String, artist2: String): Boolean {
         val norm1 = normalizeForSearch(artist1)
         val norm2 = normalizeForSearch(artist2)
@@ -591,10 +543,6 @@ object ArtistParser {
      * Only allows exact match after normalization, or "The X" vs "X" variation.
      * Does NOT use fuzzy/Jaccard matching — prevents matching wrong artists
      * when validating iTunes/Spotify search results.
-     *
-     * @param artist1 First artist string
-     * @param artist2 Second artist string
-     * @return True only if the artists are very likely the same
      */
     fun isStrictSameArtist(artist1: String, artist2: String): Boolean {
         val norm1 = normalizeForSearch(artist1)
@@ -613,12 +561,8 @@ object ArtistParser {
     }
 
     /**
-     * Check if any artist in artists1 matches any artist in artists2.
-     * Useful for matching tracks with different artist formatting.
-     * 
-     * @param artists1 First artist string (may contain multiple artists)
-     * @param artists2 Second artist string (may contain multiple artists)
-     * @return True if any artists match
+     * True when any artist in `artists1` matches any in `artists2`; tracks whose artist lists are
+     * formatted differently still match.
      */
     fun hasAnyMatchingArtist(artists1: String, artists2: String): Boolean {
         // Handle empty/unknown artists - they should match any artist for same title
@@ -683,13 +627,7 @@ object ArtistParser {
         "music video"
     )
 
-    /**
-     * Clean track title by removing artist mentions that are often embedded.
-     * Some sources embed "feat. Artist" in the track title.
-     * 
-     * @param title The track title
-     * @return Cleaned title without embedded artist info
-     */
+    /** Removes embedded "feat. Artist" and version markers (Remaster, Deluxe, Radio Edit). */
     fun cleanTrackTitle(title: String): String {
         var cleaned = title
 
@@ -705,12 +643,7 @@ object ArtistParser {
         return cleaned.trim()
     }
 
-    /**
-     * Extract featured artists from a track title (if embedded).
-     * 
-     * @param title The track title that may contain feat. info
-     * @return List of featured artists found in the title, or empty list
-     */
+    /** Featured artists embedded in a track title, or empty when there are none. */
     fun extractArtistsFromTitle(title: String): List<String> {
         for (pattern in FEATURING_PATTERNS) {
             val match = pattern.find(title)

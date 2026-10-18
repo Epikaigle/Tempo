@@ -81,12 +81,9 @@ class MusicoletImportViewModel
             context: Context,
             uri: Uri,
         ) {
-            // No feature event here: starting an import is already reported once it runs, as an
-            // `import_run` carrying `ImportProvider.MUSICOLET`, from the worker that does the
-            // work. Every other importer reports the same way and none of them also claims a
-            // `TempoFeature`, so a first-use event here would be the only one of its kind and
-            // would read as a working dimension in the published list while measuring nothing
-            // the import event does not already carry.
+            // No feature event here: the worker already reports `import_run` with
+            // `ImportProvider.MUSICOLET`, and every other importer reports the same way,
+            // so a first-use event would add a dimension that measures nothing new.
             _uiState.value = MusicoletImportUiState.Importing
 
             // Persist the SAF grant so the worker can still read the file if WorkManager

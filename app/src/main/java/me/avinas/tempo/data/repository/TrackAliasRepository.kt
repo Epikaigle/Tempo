@@ -56,10 +56,7 @@ open class TrackAliasRepository @Inject constructor(
         database.withTransaction { block() }
     }
 
-    /**
-     * Find an alias for the given title and artist.
-     * Returns the alias if one exists, or null.
-     */
+    /** The alias recorded for this title and artist, if any. */
     suspend fun findAlias(title: String, artist: String): TrackAlias? {
         return trackAliasDao.findAlias(title, artist)
     }
@@ -89,9 +86,6 @@ open class TrackAliasRepository @Inject constructor(
         trackAliasDao.insertAlias(alias)
     }
     
-    /**
-     * Get all aliases that point to a specific track.
-     */
     suspend fun getAliasesForTrack(trackId: Long): List<TrackAlias> {
         return trackAliasDao.getAliasesForTrack(trackId)
     }
@@ -105,10 +99,9 @@ open class TrackAliasRepository @Inject constructor(
      * a rename that matched no row must not leave an alias behind pointing at a title
      * the track never had.
      *
-     * Cache invalidation is part of the operation, not an afterthought. Per-track
-     * details and every top-tracks list are memoized for the stats cache TTL, so
-     * writing the row alone leaves every screen reloading the pre-rename title —
-     * the edit looks like it never saved until the cache happens to expire.
+     * The cache is invalidated here too: per-track details and every top-tracks list
+     * are memoized for the stats cache TTL, so writing the row alone leaves every
+     * screen showing the pre-rename title until the cache happens to expire.
      *
      * @return true only when a row was actually rewritten.
      */
@@ -195,18 +188,10 @@ open class TrackAliasRepository @Inject constructor(
 
     
     /**
-     * Merges source track into target track:
-     * 1. Creates alias (Source -> Target)
-     * 2. Re-points existing aliases that pointed to source to now point to target
-     *    (handles chained merges so no aliases are lost when source is deleted)
-     * 3. Merges metadata from source to target (fills in missing fields)
-     * 4. Moves listening history from source to target
-     * 5. Deletes source track
-     * 6. Invalidates stats cache
+     * Merge `sourceTrackId` into `targetTrackId`. The source track is deleted and its
+     * listening history moves to the target.
      *
-     * @param sourceTrackId The track to merge FROM (will be deleted)
-     * @param targetTrackId The track to merge INTO (will remain)
-     * @return true if merge succeeded, false otherwise
+     * Returns false when the ids match or either track is missing.
      */
     open suspend fun mergeTracks(sourceTrackId: Long, targetTrackId: Long): Boolean {
         val merged = mergeTracksInternal(sourceTrackId, targetTrackId)
@@ -384,27 +369,22 @@ open class TrackAliasRepository @Inject constructor(
     private fun mergeTrackMetadata(source: Track, target: Track): Track {
         var result = target
         
-        // Copy album if target doesn't have one
         if (target.album.isNullOrBlank() && !source.album.isNullOrBlank()) {
             result = result.copy(album = source.album)
         }
         
-        // Copy album art URL if target doesn't have one
         if (target.albumArtUrl.isNullOrBlank() && !source.albumArtUrl.isNullOrBlank()) {
             result = result.copy(albumArtUrl = source.albumArtUrl)
         }
         
-        // Copy Spotify ID if target doesn't have one
         if (target.spotifyId.isNullOrBlank() && !source.spotifyId.isNullOrBlank()) {
             result = result.copy(spotifyId = source.spotifyId)
         }
         
-        // Copy MusicBrainz ID if target doesn't have one
         if (target.musicbrainzId.isNullOrBlank() && !source.musicbrainzId.isNullOrBlank()) {
             result = result.copy(musicbrainzId = source.musicbrainzId)
         }
         
-        // Copy duration if target doesn't have one
         if ((target.duration == null || target.duration == 0L) && source.duration != null && source.duration > 0) {
             result = result.copy(duration = source.duration)
         }

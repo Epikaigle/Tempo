@@ -63,14 +63,12 @@ import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * MusicTrackingService captures listening events from music apps via:
- * 1. NotificationListenerService - detects music notifications (primary)
- * 2. MediaSessionManager - tracks playback state changes (fallback/supplement)
+ * Captures listening events from music apps: notification callbacks are the primary source and
+ * MediaSessionManager playback state the fallback, with play, pause, skip and resume folded into
+ * an accurate listening duration.
  *
- * Handles play, pause, skip, and resume to calculate accurate listening duration.
- *
- * Note: Uses manual Hilt injection via EntryPoint because NotificationListenerService
- * is managed by the system lifecycle.
+ * Dependencies arrive through a manual Hilt EntryPoint because NotificationListenerService is
+ * managed by the system lifecycle.
  */
 class MusicTrackingService : NotificationListenerService() {
     /** Entry point for dependency injection outside Fragment/Activity lifecycle. */
@@ -128,10 +126,8 @@ class MusicTrackingService : NotificationListenerService() {
          * tracking stays dead until the user reinstalls — the exact failure users
          * report as "it stopped tracking and never came back".
          *
-         * This runs on every app process start: if the component is stuck disabled,
-         * re-enable it and ask the system to rebind the listener. Cheap (two
-         * PackageManager calls), no battery impact, and it makes the kill window
-         * self-recovering instead of permanent.
+         * This runs on every app process start. Cheap (two PackageManager calls), no battery
+         * impact, and it makes the kill window self-recovering instead of permanent.
          */
         fun ensureComponentEnabled(context: Context) {
             try {
@@ -236,10 +232,6 @@ class MusicTrackingService : NotificationListenerService() {
 
     // Metadata extraction helpers
 
-    /**
-     * Extract artist from MediaMetadata using multiple fallback sources.
-     * Tries: ARTIST -> ALBUM_ARTIST -> AUTHOR -> DISPLAY_SUBTITLE -> WRITER -> COMPOSER
-     */
     private fun extractArtistFromMetadata(metadata: MediaMetadata): String {
         // Primary: METADATA_KEY_ARTIST
         metadata
@@ -303,9 +295,6 @@ class MusicTrackingService : NotificationListenerService() {
         return "Unknown Artist"
     }
 
-    /**
-     * Extract artist from notification extras using multiple fallback sources.
-     */
     private fun extractArtistFromNotification(
         extras: android.os.Bundle,
         title: String,
@@ -445,15 +434,9 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     /**
-     * Check if a string looks like an artist name rather than a video description/subtitle.
-     *
-     * YouTube Music and other apps sometimes put video descriptions in DISPLAY_SUBTITLE,
-     * which we incorrectly captured as artist names. This function filters those out.
-     *
-     * Examples of what should be rejected:
-     * - "Kaisa Mera Desh (Anti Corruption anthem)" - video description
-     * - "Official Music Video - HD" - video descriptor
-     * - Very long text (> 60 chars) - likely descriptions, not artists
+     * Whether a string looks like an artist name rather than a video description. YouTube Music
+     * and other apps put video descriptions in DISPLAY_SUBTITLE, which used to be captured as
+     * artist names.
      */
     private fun isLikelyArtistName(text: String): Boolean {
         // Too long for a typical artist name (descriptions are often longer)
@@ -640,6 +623,7 @@ class MusicTrackingService : NotificationListenerService() {
     @Volatile
     private var cachedBlockedApps: Set<String> = emptySet()
 
+    /** All packages in the DB, whether enabled or not. */
     @Volatile
     private var cachedAllKnownPackages: Set<String> = emptySet()
 
@@ -657,23 +641,14 @@ class MusicTrackingService : NotificationListenerService() {
      */
     private val lastDetectionRecordedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
-    // All packages in DB (enabled or not)
     @Volatile
-    private var isAppPreferenceCacheInitialized: Boolean = false // Flag to track if cache has been loaded from DB
+    private var isAppPreferenceCacheInitialized: Boolean = false
     private var lastAppPreferenceFetch: Long = 0
     private val APP_PREFERENCE_CACHE_TTL_MS = 30_000L // Refresh every 30 seconds
 
     /**
-     * Check if content should be filtered based on user preferences and detection.
-     * Three-layer approach:
-     * 1. App-level: Block dedicated podcast/audiobook apps (NOT Spotify)
-     * 2. Metadata-based: Detect content type from metadata (critical for Spotify)
-     * 3. Manual marks: User-defined patterns
-     *
-     * @param packageName The source app package
-     * @param metadata Optional full metadata (may be null if MediaSession didn't provide enough)
-     * @param title Track title (required for manual marks check even without full metadata)
-     * @param artist Track artist (required for manual marks check even without full metadata)
+     * Three layers, in order: whole apps (dedicated podcast/audiobook apps, but not Spotify),
+     * metadata-based detection (critical for Spotify), then the user's manual marks.
      */
     private suspend fun shouldFilterContent(
         packageName: String,
@@ -908,10 +883,7 @@ class MusicTrackingService : NotificationListenerService() {
             java.util.concurrent.atomic
                 .AtomicBoolean(false)
 
-        /**
-         * Calculate total play duration using ACTUAL POSITION DATA.
-         * This is the key fix - we use position progress, not wall-clock time.
-         */
+        /** Position progress rather than wall-clock time. */
         fun calculateCurrentPlayDuration(): Long {
             // Use accumulated position-based duration.
             // This represents actual audio playback time, not wall-clock time.
@@ -922,13 +894,7 @@ class MusicTrackingService : NotificationListenerService() {
             return accumulatedPositionMs
         }
 
-        /**
-         * Update tracking with new position from MediaSession.
-         * Call this whenever we get a position update.
-         *
-         * @param newPosition Current playback position in ms from MediaSession
-         * @param isCurrentlyPlaying Whether playback is currently active
-         */
+        /** Applies a MediaSession position update; `newPosition` is in ms. */
         fun updatePosition(
             newPosition: Long,
             isCurrentlyPlaying: Boolean,
@@ -942,9 +908,8 @@ class MusicTrackingService : NotificationListenerService() {
                 return
             }
 
-            // CRITICAL FIX: On first position update, establish baseline without accumulating
-            // This prevents counting the initial playback position as played time
-            // e.g., if user starts at 1:30 into a song, we shouldn't count 1:30 as played
+            // On the first position update, establish the baseline without accumulating:
+            // starting a song at 1:30 must not count that 1:30 as played time.
             if (!hasReceivedInitialPosition) {
                 lastRecordedPosition = newPosition
                 lastKnownPosition = newPosition
@@ -1235,26 +1200,21 @@ class MusicTrackingService : NotificationListenerService() {
             Log.w(TAG, "Could not enter the foreground; continuing without a notification")
         }
 
-        // Initialize dependencies via Hilt EntryPoint
-        // This is necessary because NotificationListenerService is managed by the system
-        // and @AndroidEntryPoint doesn't work properly for it
+        // @AndroidEntryPoint does not work for a system-managed NotificationListenerService,
+        // so dependencies come in through the Hilt EntryPoint.
         initializeDependencies()
 
-        // Initialize enhanced tracking components
         initializeTrackingComponents()
         trackingRules.registerListener(durationRulesListener)
 
         // Recover any persisted sessions from previous runs
         recoverPersistedSessions()
 
-        // Initialize MediaSessionManager
         initializeMediaSessionManager()
 
-        // Register battery state receiver so we resume tracking the moment battery recovers.
-        // Dynamic registration means it only fires while this service is running.
-        // NOTE: ACTION_BATTERY_CHANGED is a sticky broadcast — Android delivers it immediately
-        // on registration with the current level. We set batteryReceiverReady AFTER registering
-        // so the receiver can suppress the initial spurious delivery.
+        // Register dynamically so the receiver only fires while this service runs, and arm it
+        // after registering: ACTION_BATTERY_CHANGED is sticky, so Android delivers it immediately
+        // with the current level, which must not read as a recovery.
         val receiver = BatteryStateReceiver()
         val filter =
             IntentFilter().apply {
@@ -1407,9 +1367,6 @@ class MusicTrackingService : NotificationListenerService() {
         }
     }
 
-    /**
-     * Check if app preference cache needs refresh and refresh if needed.
-     */
     private suspend fun ensureAppPreferenceCacheValid() {
         val now = System.currentTimeMillis()
         if (now - lastAppPreferenceFetch > APP_PREFERENCE_CACHE_TTL_MS) {
@@ -1598,7 +1555,6 @@ class MusicTrackingService : NotificationListenerService() {
         }
     }
 
-    /** Applies a freshly loaded app-preference list to the in-memory caches. */
     private fun applyAppPreferenceCache(apps: List<me.avinas.tempo.data.local.entities.AppPreference>) {
         cachedEnabledApps = apps.filter { it.isEnabled && !it.isBlocked }.map { it.packageName }.toSet()
         cachedBlockedApps = apps.filter { it.isBlocked }.map { it.packageName }.toSet()
@@ -1949,17 +1905,12 @@ class MusicTrackingService : NotificationListenerService() {
     }
 
     /**
-     * Calculate smart polling interval based on song phase and duration.
+     * Polling interval by song phase: tightest at the start (skip detection) and the end
+     * (completion detection), loosest in the middle, where the MediaSession callbacks already
+     * catch state changes.
      *
-     * Strategy:
-     * - SHORT TRACKS (<90s): Poll every 5s - these need accuracy throughout
-     * - SONG START (first 30s): Poll every 3s - critical for skip detection
-     * - SONG END (last 30s): Poll every 4s - critical for completion detection
-     * - SONG MIDDLE: Poll every 8s - battery efficient, callbacks handle state changes
-     * - UNKNOWN DURATION: Poll every 6s - balanced approach
-     *
-     * Battery savings: ~50% fewer polls for 3-4 minute songs while maintaining
-     * accuracy where it matters most (skip/completion detection).
+     * ~50% fewer polls for a 3-4 minute song than a fixed interval, keeping the accuracy where it
+     * matters most (skip/completion detection).
      */
     private fun calculateSmartPollingInterval(): Long {
         val activeSession =
@@ -1994,10 +1945,6 @@ class MusicTrackingService : NotificationListenerService() {
         }
     }
 
-    /**
-     * Update service lifecycle based on current state.
-     * Starts/stops background jobs and manages foreground state.
-     */
     private fun updateServiceLifecycle() {
         val hasActive = hasActivePlayback()
 
@@ -2472,9 +2419,9 @@ class MusicTrackingService : NotificationListenerService() {
         //     decoded and thrown away on every notification.
         // The Notification is a plain Parcelable and is safe to read off the main thread.
 
-        // CRITICAL: Use synchronized block to prevent race condition when
-        // notification and MediaSession callbacks fire simultaneously for the same track.
-        // Without this, both could see existingSession=null, create sessions, and one overwrites the other.
+        // Synchronized because notification and MediaSession callbacks can fire simultaneously
+        // for the same track: both could see existingSession=null, create sessions, and one would
+        // overwrite the other.
         val (sessionAction, existingSession) =
             synchronized(sessionOperationLock) {
                 val existing = playbackStates[packageName]
@@ -3711,14 +3658,6 @@ class MusicTrackingService : NotificationListenerService() {
     private val sharedCallback = PackageSpecificCallback("shared_fallback")
 
     /**
-     * Determine if a MediaController session represents MUSIC (not video).
-     *
-     * Uses multiple heuristics:
-     * 1. Package name check (blocked apps, music apps)
-     * 2. Duration check (music is typically 30s - 20min)
-     * 3. Metadata characteristics
-     */
-    /**
      * Classifies a MediaController session as playable music rather than video or UI noise.
      *
      * This is NOT the tracking decision any more — [decideTracking] owns that. It is now only
@@ -4151,9 +4090,8 @@ class MusicTrackingService : NotificationListenerService() {
                 // Insert track asynchronously
                 serviceScope.launch {
                     try {
-                        // CONTENT FILTERING: Check if this should be filtered (podcasts/audiobooks)
-                        // Must be done in coroutine since shouldFilterContent is suspend
-                        // Note: We pass title/artist directly so manual marks work even without full metadata
+                        // Checked here because shouldFilterContent is suspend; title/artist are
+                        // passed directly so manual marks work even without full metadata.
                         if (shouldFilterContent(packageName, localMetadata, title, artist)) {
                             val contentType = localMetadata?.getContentType()?.name ?: "MANUAL_MARK"
                             Log.d(TAG, "Content filtered ($contentType): '$title' by '$artist' from $packageName")
@@ -4562,7 +4500,7 @@ class MusicTrackingService : NotificationListenerService() {
         activeControllers.clear()
         packageSpecificCallbacks.clear()
 
-        // CRITICAL: flush everything synchronously BEFORE cancelling serviceScope.
+        // Flush everything synchronously BEFORE cancelling serviceScope.
         //
         // The previous implementation launched the final session saves and
         // trackingManager.flushAll() on serviceScope and then immediately called

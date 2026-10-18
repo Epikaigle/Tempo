@@ -14,17 +14,10 @@ object RetryHandler {
     private const val TAG = "RetryHandler"
     
     /**
-     * Execute an operation with retry logic.
-     * 
-     * @param maxRetries Maximum number of retry attempts
-     * @param initialDelayMs Initial delay before first retry
-     * @param maxDelayMs Maximum delay between retries
-     * @param factor Exponential backoff factor
-     * @param jitterFactor Random jitter factor (0.0 to 1.0)
-     * @param retryOn Predicate to determine if exception should trigger retry
-     * @param onRetry Callback called before each retry
-     * @param operation The operation to execute
-     * @return Result of the operation or failure
+     * Runs `operation` with exponential backoff: up to `maxRetries` retries after the first
+     * attempt, each delay multiplied by `factor` and capped at `maxDelayMs`. `jitterFactor`
+     * (0.0..1.0) only adds delay, never subtracts; `retryOn` can veto a retry, and `onRetry`
+     * runs before each one.
      */
     suspend fun <T> withRetry(
         maxRetries: Int = 3,
@@ -65,7 +58,8 @@ object RetryHandler {
     }
     
     /**
-     * Execute an operation with retry and timeout.
+     * Retries like [withRetry], but stops once `timeoutMs` has elapsed. The deadline is checked
+     * between attempts only, so it never cancels an `operation` that is already running.
      */
     suspend fun <T> withRetryAndTimeout(
         maxRetries: Int = 3,
@@ -89,9 +83,6 @@ object RetryHandler {
         )
     }
     
-    /**
-     * Calculate delay with jitter.
-     */
     private fun calculateDelay(baseDelay: Long, maxDelay: Long, jitterFactor: Double): Long {
         val jitter = (baseDelay * jitterFactor * Random.nextDouble()).toLong()
         return min(baseDelay + jitter, maxDelay)
@@ -100,11 +91,6 @@ object RetryHandler {
 
 /**
  * Circuit breaker for protecting against cascading failures.
- * 
- * States:
- * - CLOSED: Normal operation, requests pass through
- * - OPEN: Circuit is tripped, requests fail immediately
- * - HALF_OPEN: Testing if service has recovered
  */
 class CircuitBreaker(
     private val name: String,
@@ -127,9 +113,6 @@ class CircuitBreaker(
         HALF_OPEN  // Testing recovery
     }
     
-    /**
-     * Execute an operation through the circuit breaker.
-     */
     suspend fun <T> execute(operation: suspend () -> T): Result<T> {
         if (!canExecute()) {
             Log.d(TAG, "[$name] Circuit is OPEN, rejecting request")
@@ -147,7 +130,8 @@ class CircuitBreaker(
     }
     
     /**
-     * Check if the circuit allows execution.
+     * True when a call may proceed. Mutates state: an OPEN circuit moves to HALF_OPEN once
+     * `resetTimeoutMs` has elapsed.
      */
     @Synchronized
     fun canExecute(): Boolean {
@@ -168,9 +152,6 @@ class CircuitBreaker(
         }
     }
     
-    /**
-     * Record a successful operation.
-     */
     @Synchronized
     private fun recordSuccess() {
         when (state) {
@@ -189,9 +170,6 @@ class CircuitBreaker(
         }
     }
     
-    /**
-     * Record a failed operation.
-     */
     @Synchronized
     private fun recordFailure() {
         lastFailureTime = System.currentTimeMillis()
@@ -212,14 +190,8 @@ class CircuitBreaker(
         }
     }
     
-    /**
-     * Get current state.
-     */
     fun getState(): State = state
     
-    /**
-     * Force reset the circuit breaker.
-     */
     @Synchronized
     fun reset() {
         state = State.CLOSED
@@ -250,8 +222,7 @@ class RateLimiter(
     private var lastRefillTime: Long = System.currentTimeMillis()
     
     /**
-     * Try to acquire a permit.
-     * @return true if permit was acquired, false if rate limited
+     * Non-blocking: takes a permit when one is free and returns false otherwise, without waiting.
      */
     @Synchronized
     fun tryAcquire(): Boolean {
@@ -266,14 +237,7 @@ class RateLimiter(
         }
     }
     
-    /**
-     * Acquire a permit, waiting if necessary.
-     * @return time waited in milliseconds
-     */
-    /**
-     * Acquire a permit, waiting if necessary.
-     * @return time waited in milliseconds
-     */
+    /** Waits until a permit is available and returns how long it waited, in milliseconds. */
     suspend fun acquire(): Long {
         var totalWait = 0L
         while (true) {
@@ -295,9 +259,6 @@ class RateLimiter(
         }
     }
     
-    /**
-     * Get available tokens.
-     */
     fun getAvailableTokens(): Int {
         refill()
         return tokens.toInt()

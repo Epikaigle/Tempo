@@ -15,18 +15,8 @@ package me.avinas.tempo.data
  * are not silent — [TrackingDecision.UNKNOWN] tells the caller to surface the app in the
  * detected-apps inbox so the user can allow it in one tap.
  *
- * ## Precedence
- *
- * | # | Condition | Decision |
- * |---|---|---|
- * | 1 | Hardcoded never-music (voice notes, calls, recorders) | [TrackingDecision.NEVER_TRACKED] |
- * | 2 | User explicitly blocked | [TrackingDecision.BLOCKED] |
- * | 3 | User explicitly disabled a known app | [TrackingDecision.BLOCKED] |
- * | 4 | User explicitly enabled / added | [TrackingDecision.ALLOW] |
- * | 5 | Curated allowlist (music, podcast, audiobook) | [TrackingDecision.ALLOW] |
- * | 6 | Built-in default blocklist (video, browsers) | [TrackingDecision.BLOCKED] |
- * | 7 | "Track unrecognized apps" opt-in | [TrackingDecision.ALLOW] |
- * | 8 | Anything else | [TrackingDecision.UNKNOWN] |
+ * The precedence ladder is the numbered order in [decide]. Three of its orderings are
+ * deliberate.
  *
  * Rule 1 outranks rule 4 on purpose: a voice note is not a song, so an accidental "allow" on
  * Viber must not resurrect the bug this policy exists to prevent.
@@ -42,7 +32,6 @@ package me.avinas.tempo.data
  */
 object AppTrackingPolicy {
 
-    /** Raised for a package no list claims. */
     fun decide(
         packageName: String,
         userEnabledPackages: Set<String>,

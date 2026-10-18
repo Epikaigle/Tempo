@@ -1,13 +1,8 @@
-/**
- * QR Code SVG data-URL generator using qrcode-generator.
- */
-
 import qrcodegen from 'qrcode-generator';
 
 /**
- * Generate a QR code as an SVG data-URL.
- * @param text  Payload string.
- * @param size  Desired output px size (default 200).
+ * Encode `text` as an SVG QR-code data-URL. The drawing snaps to whole module cells, so the
+ * result can be slightly smaller than the requested `size` px.
  */
 export function generateQrDataUrl(text: string, size = 200): string {
   const svg = buildSvg(text, size);

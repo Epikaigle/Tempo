@@ -31,14 +31,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Manages import and export of all Tempo data.
- * 
- * Export creates a ZIP file containing:
- * - data.json: All entities serialized as JSON
- * - images/: Optional folder containing local album art (file:// URLs only)
- *
- * Import reads the ZIP, remaps IDs, restores local images, and restores data.
- * Hotlinked images are pre-cached after restore for better UX.
+ * Import and export of Tempo's backup ZIP: `data.json` with every entity, plus an optional
+ * `images/` folder of local album art (file:// URLs only). Import remaps IDs and restores
+ * those images; hotlinked ones are pre-cached afterwards.
  */
 @Singleton
 class ImportExportManager @Inject constructor(
@@ -76,15 +71,11 @@ class ImportExportManager @Inject constructor(
     val progress: StateFlow<ImportExportProgress?> = _progress.asStateFlow()
     
     /**
-     * Export all data to a ZIP file at the given URI.
+     * Export all data to a ZIP at [uri].
      *
-     * The archive is fully written and validated into a private cache file
-     * FIRST; only then is it copied to [uri]. A failed or interrupted export
-     * can therefore never truncate an existing backup file the user picked as
-     * the overwrite target.
-     *
-     * @param uri The URI to write the ZIP file to
-     * @param includeLocalImages If true, bundle local album art files in the ZIP
+     * The archive is fully written and validated into a private cache file FIRST,
+     * and only then copied to [uri], so a failed or interrupted export can never
+     * truncate an existing backup file the user picked as the overwrite target.
      */
     suspend fun exportData(
         uri: Uri,
@@ -341,12 +332,6 @@ class ImportExportManager @Inject constructor(
         }
     }
     
-    /**
-     * Import data from a ZIP file at the given URI.
-     * 
-     * Restores local images, imports data with chronological ordering,
-     * and triggers pre-caching of hotlinked images.
-     */
     suspend fun importData(
         uri: Uri,
         conflictStrategy: ImportConflictStrategy
@@ -865,9 +850,8 @@ class ImportExportManager @Inject constructor(
     }
 
     /**
-     * Replays staged listening events (one JSON object per line) in chunks through
-     * the dedup pipeline. Rows whose track could not be mapped are skipped.
-     * Returns the number of newly inserted events.
+     * Replays staged listening events (one JSON object per line) in chunks through the dedup
+     * pipeline, skipping rows whose track could not be mapped. Returns how many were new.
      */
     private suspend fun replayStagedEvents(
         stagedFile: File,
@@ -972,9 +956,6 @@ class ImportExportManager @Inject constructor(
         return newRows to mergedOrSkipped
     }
     
-    /**
-     * Collect all image URLs and classify as local (file://) or hotlink (http/https).
-     */
     private fun collectImageUrls(
         tracks: List<Track>,
         artists: List<Artist>,
@@ -1010,9 +991,6 @@ class ImportExportManager @Inject constructor(
         return localPaths.toList() to hotlinkUrls.toList()
     }
     
-    /**
-     * Extract an image from the ZIP to local storage.
-     */
     private fun extractImage(
         zipIn: ZipInputStream,
         bundledName: String,

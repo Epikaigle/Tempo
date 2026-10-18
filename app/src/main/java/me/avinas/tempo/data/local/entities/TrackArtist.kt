@@ -6,16 +6,8 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 
 /**
- * Junction table for many-to-many relationship between tracks and artists.
- * 
- * A track can have multiple artists (e.g., collaborations, features)
- * An artist can appear on multiple tracks
- * 
- * The role field distinguishes between:
- * - PRIMARY: The main artist(s) of the track
- * - FEATURED: Artists featured on the track (feat., ft., with, etc.)
- * - PRODUCER: Producer credits
- * - REMIXER: For remixes
+ * Junction table between tracks and artists. `role` decides what the link means: an artist can be
+ * PRIMARY, FEATURED (feat., ft., with), PRODUCER or REMIXER on the same track.
  */
 @Entity(
     tableName = "track_artists",
@@ -48,22 +40,14 @@ data class TrackArtist(
     @ColumnInfo(name = "artist_id")
     val artistId: Long,
     
-    /**
-     * The role of the artist on this track.
-     * See ArtistRole enum for possible values.
-     */
+    /** See [ArtistRole]. */
     val role: ArtistRole = ArtistRole.PRIMARY,
     
-    /**
-     * Order of the artist in credits (0 = first credited artist)
-     */
+    /** 0 = first credited artist. */
     @ColumnInfo(name = "credit_order")
     val creditOrder: Int = 0
 )
 
-/**
- * Enumeration of possible artist roles on a track.
- */
 enum class ArtistRole {
     PRIMARY,    // Main artist(s)
     FEATURED,   // Featured artist (feat., ft., with)

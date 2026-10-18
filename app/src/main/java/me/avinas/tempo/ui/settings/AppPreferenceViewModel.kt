@@ -31,11 +31,9 @@ data class AppPreferenceUiState(
     /** Apps that can never be tracked (voice notes, dialers, recorders), shown read-only. */
     val neverTrackedApps: List<InstalledApp> = emptyList(),
     /**
-     * Installed apps on no list at all, matched against the current search.
-     *
-     * This is what makes search work: the screen used to filter only Tempo's curated lists, so
-     * searching for an app Tempo did not already know about — exactly the app the user needed to
-     * act on — always returned "No apps found".
+     * Installed apps on no list at all, matched against the current search. The screen used to
+     * filter only Tempo's curated lists, so searching for an app Tempo did not know about
+     * always returned "No apps found".
      */
     val searchResults: List<InstalledApp> = emptyList(),
     val installedPackageNames: Set<String> = emptySet(),
@@ -227,10 +225,7 @@ class AppPreferenceViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Allows an installed app that is on no list at all — the app the user found by searching
-     * for it, which the screen previously had no way to act on.
-     */
+    /** Allows an app on no list at all: the one the user found by searching. */
     fun allowApp(packageName: String) {
         viewModelScope.launch {
             repository.addCustomApp(packageName, resolveDisplayName(packageName))

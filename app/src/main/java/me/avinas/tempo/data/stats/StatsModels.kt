@@ -160,15 +160,12 @@ data class TopTrack(
     /**
      * Global rank within the current ranking; only populated by search. Not a DB column.
      *
-     * A `val` constructor property rather than a `var` field: `@Immutable` is a promise the
-     * Compose compiler relies on to skip recomposition, and an in-place mutation of a `var`
-     * would change this object without any recomposition being triggered — a parameter that
-     * compares equal to itself (`===`) is never treated as changed. Ranks are therefore
-     * assigned at construction (or via `copy`), never mutated after the fact.
+     * A `val` rather than a `var`: `@Immutable` is a promise the Compose compiler relies on
+     * to skip recomposition, so a rank mutated in place would never be seen as changed.
+     * Ranks are assigned at construction (or via `copy`), never mutated after the fact.
      *
-     * Deliberately not annotated as ignored: this class is only ever a query projection, and
-     * Room treats a constructor parameter as supplied by the projection rather than as a column
-     * to match. The ignore annotation is a property annotation, and KSP rejects it here.
+     * Deliberately not annotated as ignored: Room treats a constructor parameter as supplied
+     * by the projection, and KSP rejects an ignore annotation on a property.
      */
     val rank: Int? = null,
 ) : StatItem {
@@ -497,12 +494,10 @@ data class TrackDetails(
 /**
  * Detailed statistics for an artist.
  *
- * `@Immutable` because the Compose compiler infers `List<T>` as unstable (the runtime
- * implementation could be mutable) and this class holds four lists, which made the whole type
- * unstable and cost it equality-based recomposition skipping on the artist detail screen. The
- * promise is honest: every list here is built by `map`/`filter`/`emptyList` in the repositories,
- * and nothing anywhere mutates one in place — collection changes go through `copy`. Verified
- * against the compiler's own stability report rather than assumed.
+ * `@Immutable` because the Compose compiler infers `List<T>` as unstable and this class holds
+ * four lists, which made the whole type unstable and cost it equality-based recomposition
+ * skipping on the artist detail screen. Every list is built by `map`/`filter`/`emptyList` in
+ * the repositories and only ever replaced via `copy`, never mutated in place.
  */
 @Immutable
 data class ArtistDetails(
@@ -540,9 +535,9 @@ data class ArtistDetails(
  * Detailed statistics for an album.
  *
  * `@Immutable` for the same reason as [ArtistDetails]: its only unstable member was
- * `tracks: List<TrackWithStats>` — and [TrackWithStats] itself is already stable, so the list was
- * the single thing standing between this type and equality-based skipping on the album detail
- * screen. The list is repository-built and never mutated in place.
+ * `tracks: List<TrackWithStats>`, and [TrackWithStats] itself is stable, so the list was
+ * the single thing costing equality-based skipping on the album detail screen. The list is
+ * repository-built and never mutated in place.
  */
 @Immutable
 data class AlbumDetails(

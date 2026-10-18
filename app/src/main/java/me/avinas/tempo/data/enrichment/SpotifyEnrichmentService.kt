@@ -51,10 +51,6 @@ class SpotifyEnrichmentService @Inject constructor(
         data class Error(val message: String, val retryable: Boolean = true) : SpotifyEnrichmentResult()
     }
 
-    /**
-     * Check if Spotify enrichment is available.
-     * Returns true only if user has connected their Spotify account.
-     */
     fun isAvailable(): Boolean {
         // DISABLED: Spotify API requires allowlisted users (max 5) in development mode.
         // Extended quota requires legally registered organization with 250k+ MAU.
@@ -62,13 +58,7 @@ class SpotifyEnrichmentService @Inject constructor(
         return false
     }
 
-    /**
-     * Enrich a track with Spotify audio features.
-     * 
-     * @param track The track to enrich
-     * @param existingMetadata Existing enriched metadata (if any)
-     * @return SpotifyEnrichmentResult indicating success or failure
-     */
+    /** Enrich a track with Spotify metadata. No audio features: those are no longer fetched. */
     suspend fun enrichTrack(
         track: Track,
         existingMetadata: EnrichedMetadata?
@@ -121,11 +111,7 @@ class SpotifyEnrichmentService @Inject constructor(
         return SpotifyEnrichmentResult.Success(spotifyTrack.id)
     }
 
-    /**
-     * Search for a track on Spotify with fallback strategies.
-     * Strategy 1: Exact title + artist search
-     * Strategy 2: Title-only search (when artist search fails)
-     */
+    /** Search for a track, falling back to a title-only search when the artist does not match. */
     private suspend fun searchTrack(
         title: String,
         artist: String,
@@ -176,10 +162,7 @@ class SpotifyEnrichmentService @Inject constructor(
         }
     }
     
-    /**
-     * Search Spotify by title only, then verify artist matches.
-     * This helps when the exact artist search fails due to name variations.
-     */
+    /** Title-only search with artist verification, for when the artist name is spelled differently. */
     private suspend fun searchByTitleOnly(
         title: String,
         artist: String,
@@ -210,8 +193,8 @@ class SpotifyEnrichmentService @Inject constructor(
     }
     
     /**
-     * Find best match with relaxed artist matching.
-     * Requires high title similarity but accepts partial artist matches.
+     * Best match from a title-only search: high title similarity required, partial artist overlap
+     * accepted.
      */
     private fun findBestMatchWithRelaxedArtist(
         searchTitle: String,
@@ -249,9 +232,6 @@ class SpotifyEnrichmentService @Inject constructor(
             ?.first
     }
 
-    /**
-     * Build optimized search query for Spotify.
-     */
     private fun buildSearchQuery(title: String, artist: String): String {
         // Clean up title (remove featuring, remixes, etc. for better matching)
         val cleanTitle = cleanTrackTitle(title)
@@ -264,23 +244,16 @@ class SpotifyEnrichmentService @Inject constructor(
         return me.avinas.tempo.utils.ArtistParser.cleanTrackTitle(title)
     }
 
-    /**
-     * Clean artist name for better search matching.
-     * Uses ArtistParser to get the primary artist for more focused search.
-     * Also normalizes stylized characters that might cause search mismatches.
-     */
+    /** Primary artist, with stylizations that break search normalized. */
     private fun cleanArtistName(artist: String): String {
         val primary = me.avinas.tempo.utils.ArtistParser.getPrimaryArtist(artist)
-        // Normalize common stylizations that cause search failures
-        // Note: Only replace $ with S as this is a known pattern (KR$NA, Ke$ha)
-        // Don't replace 0 with O as it breaks legitimate names like Blink-182, 50 Cent
+        // Normalize common stylizations that cause search failures.
+        // Only "$" becomes "S", a known pattern (KR$NA, Ke$ha); "0" is left alone because
+        // replacing it breaks legitimate names like Blink-182 and 50 Cent
         return primary.replace("\$", "S", ignoreCase = false)
     }
 
-    /**
-     * Find the best matching track from search results.
-     * Uses enhanced matching that considers all artists.
-     */
+    /** Best match, scoring the title against every artist credited on the result. */
     private fun findBestMatch(
         searchTitle: String,
         searchArtist: String,
@@ -307,9 +280,6 @@ class SpotifyEnrichmentService @Inject constructor(
             ?.first
     }
 
-    /**
-     * Calculate the best match score between two sets of artists.
-     */
     private fun calculateBestArtistMatch(
         searchArtists: List<String>,
         trackArtists: List<String>
@@ -342,17 +312,14 @@ class SpotifyEnrichmentService @Inject constructor(
     }
 
     /**
-     * Normalize string for comparison.
-     * Delegates to the shared Unicode-aware implementation so non-ASCII
-     * (e.g. Japanese) names are preserved instead of being stripped to "".
+     * Delegates to the shared Unicode-aware normalizer so non-ASCII (e.g. Japanese) names are
+     * preserved instead of being stripped to "".
      */
     private fun normalizeString(str: String): String {
         return ArtistParser.normalizeForSearch(str)
     }
 
-    /**
-     * Calculate similarity between two strings (simple Jaccard-like similarity).
-     */
+    /** 1.0 when identical, 0.9 when one contains the other, else Jaccard word overlap. */
     private fun calculateSimilarity(s1: String, s2: String): Double {
         if (s1 == s2) return 1.0
         if (s1.isEmpty() || s2.isEmpty()) return 0.0
@@ -372,14 +339,8 @@ class SpotifyEnrichmentService @Inject constructor(
 
     
     /**
-     * Fetch genres for an artist from Spotify.
-     * 
-     * Spotify's track search doesn't include genres - they're only available on artist profiles.
-     * This makes an additional API call to get the artist's genres.
-     * 
-     * @param spotifyArtistId The Spotify artist ID
-     * @param authHeader The authorization header with bearer token
-     * @return List of genres for this artist, or empty list if unavailable
+     * Genres for one artist. Spotify's track search does not include genres, so this costs an
+     * extra call to the artist endpoint.
      */
     private suspend fun fetchArtistGenres(
         spotifyArtistId: String,
@@ -417,14 +378,8 @@ class SpotifyEnrichmentService @Inject constructor(
     }
     
     /**
-     * Fetch genres for multiple artists in ONE API call.
-     * 
-     * Much more efficient than calling fetchArtistGenres() multiple times.
-     * Useful for collab tracks with multiple artists.
-     * 
-     * @param artistIds List of Spotify artist IDs (max 50)
-     * @param authHeader The authorization header with bearer token
-     * @return Map of artist ID to their genres
+     * Genres for many artists in one call, chunked at the API's 50-id limit. Cheaper than calling
+     * [fetchArtistGenres] once per artist.
      */
     suspend fun fetchMultipleArtistGenres(
         artistIds: List<String>,
@@ -459,16 +414,7 @@ class SpotifyEnrichmentService @Inject constructor(
         }
     }
     
-    /**
-     * Get combined genres from multiple artists.
-     * 
-     * For collab tracks, this merges genres from all artists,
-     * prioritizing the primary artist's genres.
-     * 
-     * @param artistIds List of Spotify artist IDs (primary first)
-     * @param authHeader The authorization header with bearer token
-     * @return Combined list of unique genres (primary artist's first)
-     */
+    /** Merged genres for a collab, primary artist's first, so pass their ids in that order. */
     suspend fun fetchCombinedArtistGenres(
         artistIds: List<String>,
         authHeader: String
@@ -490,9 +436,6 @@ class SpotifyEnrichmentService @Inject constructor(
         return combinedGenres
     }
 
-    /**
-     * Update enriched metadata with Spotify data (no audio features).
-     */
     private suspend fun updateMetadataWithSpotifyData(
         trackId: Long,
         existingMetadata: EnrichedMetadata?,
@@ -559,14 +502,11 @@ class SpotifyEnrichmentService @Inject constructor(
             }
             artistDao.updateSpotifyIdByName(targetArtistName, primaryArtistId)
             
-            // Note: We cannot update the image here because SpotifyTrack.artists (simplified object)
-            // does not contain images. Images are fetched separately via fetchMissingArtistImages.
+            // The image cannot be set here: SpotifyTrack.artists is a simplified object with no
+            // images, so it comes from fetchMissingArtistImages instead
         }
     }
 
-    /**
-     * Serialize audio features to JSON.
-     */
     private fun serializeAudioFeatures(features: SpotifyAudioFeatures): String {
         val adapter = moshi.adapter(SpotifyAudioFeatures::class.java)
         return adapter.toJson(features)
@@ -574,9 +514,7 @@ class SpotifyEnrichmentService @Inject constructor(
 
 
 
-    /**
-     * Get parsed audio features from an enriched metadata record.
-     */
+    /** Stored audio features, or null when the track has none or the JSON will not parse. */
     fun getAudioFeatures(metadata: EnrichedMetadata): SpotifyAudioFeatures? {
         val json = metadata.audioFeaturesJson ?: return null
         return try {
@@ -589,15 +527,8 @@ class SpotifyEnrichmentService @Inject constructor(
     }
 
     /**
-     * Batch enrich multiple tracks with Spotify data - OPTIMIZED.
-     * 
-     * Optimization strategy:
-     * 1. Phase 1: Search for all tracks (1 API call per track - unavoidable)
-     * 2. Phase 2: Batch fetch audio features (1 API call per 100 tracks!)
-     * 
-     * This reduces API calls from 2N to N+ceil(N/100) for N tracks.
-     * For 50 tracks: 100 calls → 51 calls (49% reduction)
-     * For 100 tracks: 200 calls → 101 calls (50% reduction)
+     * Search and store Spotify metadata for each track, skipping any that already have a Spotify
+     * id. [onProgress] is called with (done, total) before each search.
      */
     suspend fun enrichBatch(
         tracks: List<Pair<Track, EnrichedMetadata?>>,
@@ -630,8 +561,6 @@ class SpotifyEnrichmentService @Inject constructor(
         var failed = 0
         var skipped = 0
 
-        // Phase 1: Search for tracks
-        // Store: (original track, metadata, spotifyTrack)
         val searchResults = mutableListOf<Triple<Track, EnrichedMetadata?, SpotifyTrack>>()
         
         tracks.forEachIndexed { index, (track, metadata) ->
@@ -717,13 +646,8 @@ class SpotifyEnrichmentService @Inject constructor(
     }
 
     /**
-     * Fetch basic track metadata AND audio features from Spotify in optimized single flow.
-     * This combines search + audio features fetch to minimize API calls.
-     * 
-     * Also verifies and corrects artist names from Spotify data.
-     * 
-     * @param track The track to look up
-     * @return BasicMetadataResult with album art, verified artist name, and audio features
+     * Basic track metadata from a Spotify search, with the artist name verified and corrected
+     * against Spotify's. No audio features: those are no longer fetched.
      */
     suspend fun fetchBasicMetadata(track: Track): BasicMetadataResult {
         // Check if Spotify is connected
@@ -805,12 +729,6 @@ class SpotifyEnrichmentService @Inject constructor(
 
 
 
-    /**
-     * Fetch artist image URL from Spotify.
-     * 
-     * @param spotifyArtistId The Spotify artist ID
-     * @return The artist image URL, or null if not available
-     */
     suspend fun fetchArtistImage(spotifyArtistId: String): String? {
         if (!isAvailable()) {
             return null
@@ -835,19 +753,11 @@ class SpotifyEnrichmentService @Inject constructor(
     }
     
     /**
-     * Search for an artist by name and fetch their image.
-     * This is useful when we don't have a Spotify artist ID.
-     * 
-     * Approach (in priority order):
-     * 1. DIRECT ARTIST SEARCH: Search for artists directly (most reliable, returns images)
-     * 2. TRACK SEARCH FALLBACK: Search for tracks by this artist and extract artist info
-     * 
-     * FIX: Previously this would take the first artist from the first track, which could
-     * be wrong if the searched artist was a featured artist. Now we use direct artist 
-     * search first, and validate name matches before caching.
-     * 
-     * @param artistName The artist name to search for
-     * @return The artist image URL, or null if not found
+     * Artist image for a name, for when no Spotify artist id is known: direct artist search
+     * first, then a track search with the artist read out of the results.
+     *
+     * This used to take the first artist from the first track, which was wrong when the searched
+     * artist was only a featured artist; names are now validated before caching.
      */
     suspend fun searchAndFetchArtistImage(artistName: String): String? {
         if (!isAvailable()) {
@@ -884,10 +794,7 @@ class SpotifyEnrichmentService @Inject constructor(
         }
     }
     
-    /**
-     * Search for artists directly using Spotify's artist search.
-     * Returns the image URL of the best matching artist.
-     */
+    /** Spotify's artist search; returns the image URL of the best name match. */
     private suspend fun searchArtistsDirectly(
         authHeader: String,
         artistName: String,
@@ -965,9 +872,7 @@ class SpotifyEnrichmentService @Inject constructor(
         }
     }
     
-    /**
-     * Fallback: Search for tracks by the artist and extract artist info.
-     */
+    /** Fallback when artist search finds nothing: read the artist out of a track search. */
     private suspend fun searchArtistViaTrackSearch(
         authHeader: String,
         artistName: String,
@@ -1054,9 +959,6 @@ class SpotifyEnrichmentService @Inject constructor(
         return imageUrl
     }
     
-    /**
-     * Cache the artist image result in the database.
-     */
     private suspend fun cacheArtistImageResult(
         searchedArtistName: String,
         spotifyArtistId: String,
@@ -1079,10 +981,7 @@ class SpotifyEnrichmentService @Inject constructor(
         }
     }
     
-    /**
-     * Calculate similarity between two normalized artist names.
-     * Uses Jaccard similarity on words.
-     */
+    /** Jaccard word similarity of two already-normalized artist names. */
     private fun calculateNameSimilarity(name1: String, name2: String): Double {
         val words1 = name1.split(" ").filter { it.isNotEmpty() }.toSet()
         val words2 = name2.split(" ").filter { it.isNotEmpty() }.toSet()
@@ -1097,23 +996,16 @@ class SpotifyEnrichmentService @Inject constructor(
     }
     
     /**
-     * Normalize artist name for comparison purposes.
-     * Delegates to the shared Unicode-aware implementation so non-ASCII
-     * (e.g. Japanese) names are preserved instead of being stripped to "".
+     * Delegates to the shared Unicode-aware normalizer so non-ASCII (e.g. Japanese) names are
+     * preserved instead of being stripped to "".
      */
     private fun normalizeArtistNameForComparison(name: String): String {
         return ArtistParser.normalizeForSearch(name)
     }
 
     /**
-     * Fetch and cache artist image for a given Spotify artist ID.
-     * Updates both enriched_metadata and artists tables.
-     * 
-     * IMPORTANT: Updates artists table by both spotify_id AND artist name to handle
-     * artists that were created from MediaSession metadata (without spotify_id).
-     * 
-     * @param spotifyArtistId The Spotify artist ID
-     * @return The artist image URL if successfully fetched, null otherwise
+     * Fetch an artist's image and store it in `enriched_metadata` and `artists`. The artist row
+     * is matched by Spotify id and by name, since MediaSession-created artists have no id.
      */
     suspend fun fetchAndCacheArtistImage(spotifyArtistId: String): String? {
         if (!isAvailable()) return null
@@ -1172,13 +1064,7 @@ class SpotifyEnrichmentService @Inject constructor(
         return imageUrl
     }
 
-    /**
-     * Fetch and cache artist images for tracks that have Spotify artist IDs
-     * but no cached artist images.
-     * 
-     * @param limit Maximum number of artists to process
-     * @return Number of artist images fetched
-     */
+    /** Fetch images for up to [limit] tracks that have a Spotify artist id but no cached image. */
     suspend fun fetchMissingArtistImages(limit: Int = 10): Int {
         if (!isAvailable()) return 0
         
@@ -1206,12 +1092,6 @@ class SpotifyEnrichmentService @Inject constructor(
         return fetchedCount
     }
 
-    /**
-     * Get Spotify artist ID from a track's Spotify data.
-     * 
-     * @param trackId The local track ID
-     * @return The Spotify artist ID, or null if not available
-     */
     suspend fun getSpotifyArtistIdForTrack(trackId: Long): String? {
         val metadata = enrichedMetadataDao.forTrackSync(trackId) ?: return null
         return metadata.spotifyArtistId
@@ -1235,24 +1115,9 @@ class SpotifyEnrichmentService @Inject constructor(
     }
     
     /**
-     * Derive approximate audio features from an artist's top tracks.
-     * 
-     * This is a last-resort fallback when:
-     * - Spotify's audio-features API is unavailable (deprecated for indie devs)
-     * - Track not found in ReccoBeats database
-     * - No preview URL available for audio analysis
-     * 
-     * The approach:
-     * 1. Fetch artist's top tracks from Spotify API
-     * 2. Look up which of those tracks exist in user's listening history (our DB)
-     * 3. Get cached audio features for those tracks (from previous enrichment)
-     * 4. Average the features to create an approximate "artist profile"
-     * 
-     * This gives a rough approximation of the artist's typical sound characteristics.
-     * Obviously not as accurate as per-track features, but better than nothing.
-     * 
-     * @param spotifyArtistId The Spotify artist ID
-     * @return Derived audio features result
+     * Approximate audio features, averaged over the artist's top tracks that are already in the
+     * local database. Last resort: it stands in when Spotify's audio-features API is unavailable
+     * (deprecated for indie devs), ReccoBeats has no match, and there is no preview to analyse.
      */
     suspend fun deriveAudioFeaturesFromArtist(spotifyArtistId: String): ArtistDerivedFeaturesResult {
         if (!isAvailable()) {
@@ -1264,7 +1129,6 @@ class SpotifyEnrichmentService @Inject constructor(
         val authHeader = "Bearer $accessToken"
         
         try {
-            // Step 1: Fetch artist's top tracks from Spotify
             val response = spotifyApi.getArtistTopTracks(authHeader, spotifyArtistId)
             
             if (!response.isSuccessful) {
@@ -1283,11 +1147,8 @@ class SpotifyEnrichmentService @Inject constructor(
             
             Log.d(TAG, "Found ${topTracks.size} top tracks for artist $spotifyArtistId")
             
-            // Step 2: Get Spotify IDs for the top tracks
             val topTrackIds = topTracks.map { it.id }
             
-            
-            // Step 3: Look up which tracks exist in our database with audio features
             val featuresFromDb = mutableListOf<SpotifyAudioFeatures>()
             
             for (trackId in topTrackIds) {
@@ -1302,14 +1163,12 @@ class SpotifyEnrichmentService @Inject constructor(
             
             Log.d(TAG, "Found ${featuresFromDb.size}/${topTracks.size} top tracks with cached audio features")
             
-            // Step 4: If we don't have enough tracks in our DB, return failure
-            // We need at least 3 tracks to make a reasonable average
+            // Three tracks is the minimum for an average worth having
             if (featuresFromDb.size < 3) {
                 Log.d(TAG, "Not enough tracks with audio features (need at least 3, have ${featuresFromDb.size})")
                 return ArtistDerivedFeaturesResult.NoTracksWithFeatures
             }
             
-            // Step 5: Average the features
             val averagedFeatures = averageAudioFeatures(featuresFromDb)
             val featuresJson = serializeAverageFeatures(averagedFeatures)
             
@@ -1326,9 +1185,7 @@ class SpotifyEnrichmentService @Inject constructor(
         }
     }
     
-    /**
-     * Average multiple audio features into a single approximation.
-     */
+    /** Per-attribute mean; `mode`, `key` and `timeSignature` take the most common value. */
     private fun averageAudioFeatures(features: List<SpotifyAudioFeatures>): AveragedAudioFeatures {
         if (features.isEmpty()) {
             throw IllegalArgumentException("Cannot average empty list of features")
@@ -1373,9 +1230,6 @@ class SpotifyEnrichmentService @Inject constructor(
         val timeSignature: Int
     )
     
-    /**
-     * Serialize averaged features to JSON format compatible with our storage.
-     */
     private fun serializeAverageFeatures(features: AveragedAudioFeatures): String {
         return """
             {

@@ -21,16 +21,8 @@ import me.avinas.tempo.worker.LastFmImportWorker
 import java.util.concurrent.TimeUnit
 
 /**
- * WorkManager worker that enriches tracks with Spotify audio features.
- *
- * This worker is OPTIONAL and only runs when the user has connected their Spotify account.
- * It enriches tracks in background to add advanced audio analysis features.
- *
- * Features:
- * - Prioritizes frequently played tracks
- * - Respects API rate limits
- * - Only runs when Spotify is connected
- * - Gracefully handles disconnection during enrichment
+ * Enriches tracks with Spotify metadata. Optional: it only runs while the user has Spotify
+ * connected, and a disconnect mid-batch stops the run rather than failing it.
  */
 @HiltWorker
 class SpotifyEnrichmentWorker
@@ -138,7 +130,6 @@ class SpotifyEnrichmentWorker
                 return Result.success()
             }
 
-            // Check if Spotify is connected
             if (!authManager.isConnected()) {
                 Log.i(TAG, "Spotify not connected, skipping enrichment")
                 return Result.success()
@@ -159,7 +150,6 @@ class SpotifyEnrichmentWorker
         }
 
         private suspend fun enrichBatch(): Int {
-            // Get tracks needing Spotify enrichment
             val tracksToEnrich = enrichedMetadataDao.getTracksNeedingSpotifyEnrichment(BATCH_SIZE)
 
             if (tracksToEnrich.isEmpty()) {
@@ -169,7 +159,6 @@ class SpotifyEnrichmentWorker
 
             Log.d(TAG, "Found ${tracksToEnrich.size} tracks to enrich with Spotify")
 
-            // OPTIMIZATION: Check if we have tracks with Spotify IDs but missing audio features
             // Since Spotify no longer provides audio features, we skip audio feature enrichment.
             // We only process tracks that don't have Spotify IDs yet to get basic metadata (album art).
             val withoutSpotifyId = tracksToEnrich.filter { it.spotifyId == null }
@@ -181,20 +170,17 @@ class SpotifyEnrichmentWorker
 
             // Phase 2: Search and enrich tracks without Spotify IDs
             for (metadata in withoutSpotifyId) {
-                // Check if still connected
                 if (!authManager.isConnected()) {
                     Log.w(TAG, "Spotify disconnected during enrichment, stopping")
                     break
                 }
 
-                // Get the track
                 val track = trackDao.getTrackById(metadata.trackId)
                 if (track == null) {
                     Log.w(TAG, "Track ${metadata.trackId} not found")
                     continue
                 }
 
-                // Attempt enrichment
                 when (val result = spotifyEnrichmentService.enrichTrack(track, metadata)) {
                     is SpotifyEnrichmentService.SpotifyEnrichmentResult.Success -> {
                         enrichedMetadataDao.updateSpotifyEnrichmentStatus(

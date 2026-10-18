@@ -45,10 +45,6 @@ import me.avinas.tempo.worker.StatsPrecomputeWorker
 import java.util.concurrent.Executors
 import javax.inject.Inject
 
-/**
- * Application class configuring Hilt DI, WorkManager HiltWorkerFactory,
- * and Coil SingletonImageLoader.
- */
 @HiltAndroidApp
 class TempoApplication :
     Application(),
@@ -161,9 +157,7 @@ class TempoApplication :
      *
      * `startupMillis` measures Tempo's own synchronous start-up work — a regression guard for
      * anything blocking added to `onCreate` — rather than time-to-first-frame, which this
-     * lifecycle callback genuinely cannot see. `listenerReady` is the more valuable signal:
-     * it reports whether tracking was actually alive when the user opened the app, reusing the
-     * heartbeat the health worker already relies on instead of duplicating permission checks.
+     * lifecycle callback genuinely cannot see.
      */
     private fun reportAppStarted(initStartedAt: Long) {
         // Measured on the main thread before anything async: this is exactly Tempo's own
@@ -237,10 +231,9 @@ class TempoApplication :
     /**
      * Reconcile persisted automatic-backup settings on every process start.
      *
-     * This is important when upgrading from the old combined Drive/local worker:
-     * users who already selected Daily/Weekly/Monthly must receive the dedicated
-     * LocalBackupWorker without having to revisit the Backup & Restore screen.
-     * ExistingPeriodicWorkPolicy.UPDATE keeps healthy periodic cadence while also
+     * Upgrading from the old combined Drive/local worker must hand users who already selected
+     * Daily/Weekly/Monthly the dedicated LocalBackupWorker without a trip to the Backup & Restore
+     * screen. ExistingPeriodicWorkPolicy.UPDATE keeps healthy periodic cadence while also
      * repairing a missing WorkManager registration after an app/process restart.
      */
     private fun reconcileAutomaticBackupSchedules() {
@@ -352,11 +345,6 @@ class TempoApplication :
      *
      * Scheduling here rather than in [scheduleBackgroundWork] is also what stops every
      * app start from resurrecting a worker that the user's opt-out had cancelled.
-     *
-     * Nothing here writes back into the store `collectionAllowed` reads from without that flow
-     * de-duplicating: it emits on a real on/off transition, not on every write, which is what
-     * keeps the opt-out branch below from re-triggering itself. See
-     * [AnalyticsConsent.collectionAllowed].
      */
     private fun observeAnalyticsConsent() {
         // A build that cannot report has no uploader to register and no buffer worth dropping —
@@ -396,7 +384,6 @@ class TempoApplication :
         }
     }
 
-    /** Schedules Spotify polling worker if Spotify-API-Only mode is enabled. */
     private fun scheduleSpotifyPollingIfEnabled() {
         applicationScope.launch {
             try {

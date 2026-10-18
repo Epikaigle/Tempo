@@ -57,9 +57,6 @@ object MusicBrainzModule {
             .build()
     }
 
-    /**
-     * Retrofit client for MusicBrainz API.
-     */
     @Provides
     @Singleton
     @Named("musicbrainz")
@@ -74,9 +71,6 @@ object MusicBrainzModule {
             .build()
     }
 
-    /**
-     * MusicBrainz API interface.
-     */
     @Provides
     @Singleton
     fun provideMusicBrainzApi(
@@ -111,9 +105,6 @@ object MusicBrainzModule {
             .build()
     }
 
-    /**
-     * Retrofit client for Cover Art Archive.
-     */
     @Provides
     @Singleton
     @Named("coverart")
@@ -128,9 +119,6 @@ object MusicBrainzModule {
             .build()
     }
 
-    /**
-     * Cover Art Archive API interface.
-     */
     @Provides
     @Singleton
     fun provideCoverArtArchiveApi(

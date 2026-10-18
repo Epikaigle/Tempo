@@ -320,9 +320,7 @@ object GamificationEngine {
     }
 
     /**
-     * Get the threshold for a specific star tier of a badge.
-     * @param def The badge definition.
-     * @param star Star number 1-5.
+     * The threshold for a star tier, `star` being 1-5.
      */
     fun getStarThreshold(def: BadgeDefinition, star: Int): Int {
         val thresholds = starThresholds(def)
@@ -330,9 +328,7 @@ object GamificationEngine {
     }
 
     /**
-     * Compute how many stars a badge has earned given raw progress.
-     * Beginner badges cap at 1 star.
-     * @return Star count 0-5.
+     * Stars earned for `rawProgress`, 0-5. Beginner badges cap at 1 star.
      */
     fun computeStars(rawProgress: Int, def: BadgeDefinition): Int {
         if (def.badgeId in BEGINNER_BADGES) {

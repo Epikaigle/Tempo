@@ -197,11 +197,6 @@ interface EnrichedMetadataDao {
     @Query("DELETE FROM enriched_metadata WHERE track_id = :trackId")
     suspend fun deleteByTrackId(trackId: Long)
     
-    /**
-     * Get tracks that need enrichment, prioritized by play count then recency.
-     * Joins with listening_events to get play count and most recent play for prioritization.
-     * Most-played and most-recently-played tracks are enriched first.
-     */
     @Query("""
         SELECT em.* FROM enriched_metadata em
         LEFT JOIN (
@@ -219,12 +214,8 @@ interface EnrichedMetadataDao {
     ): List<EnrichedMetadata>
 
     /**
-     * Get top-played tracks needing enrichment, filtered by minimum play count.
-     * Used for post-import enrichment of large backlogs (e.g. YouTube Music imports
-     * with thousands of tracks) to prioritize frequently-played songs and defer
-     * rarely-played ones to the regular periodic worker.
-     *
-     * Orders by play_count DESC, then most recent play DESC.
+     * Post-import enrichment for large backlogs (e.g. YouTube Music imports with thousands of
+     * tracks): frequently played songs first, rarely played ones deferred to the periodic worker.
      */
     @Query("""
         SELECT em.* FROM enriched_metadata em
@@ -244,9 +235,6 @@ interface EnrichedMetadataDao {
         limit: Int = 50
     ): List<EnrichedMetadata>
     
-    /**
-     * Get tracks that failed enrichment and should be retried.
-     */
     @Query("""
         SELECT * FROM enriched_metadata 
         WHERE enrichment_status = :status 
@@ -262,9 +250,6 @@ interface EnrichedMetadataDao {
         limit: Int = 5
     ): List<EnrichedMetadata>
     
-    /**
-     * Get tracks with stale cache that should be refreshed.
-     */
     @Query("""
         SELECT * FROM enriched_metadata 
         WHERE enrichment_status = :status 
@@ -278,9 +263,7 @@ interface EnrichedMetadataDao {
         limit: Int = 5
     ): List<EnrichedMetadata>
     
-    /**
-     * Mark track for re-enrichment (manual refresh).
-     */
+    /** Manual refresh: back to [newStatus] with the retry counter cleared. */
     @Query("""
         UPDATE enriched_metadata 
         SET enrichment_status = :newStatus, retry_count = 0
@@ -291,15 +274,9 @@ interface EnrichedMetadataDao {
         newStatus: EnrichmentStatus = EnrichmentStatus.PENDING
     )
     
-    /**
-     * Get count of tracks by enrichment status.
-     */
     @Query("SELECT COUNT(*) FROM enriched_metadata WHERE enrichment_status = :status")
     suspend fun countByStatus(status: EnrichmentStatus): Int
     
-    /**
-     * Get all enrichment stats.
-     */
     @Query("""
         SELECT enrichment_status, COUNT(*) as count 
         FROM enriched_metadata 
@@ -309,11 +286,6 @@ interface EnrichedMetadataDao {
     
     // Spotify Enrichment Queries
     
-    /**
-     * Get tracks that need Spotify enrichment, prioritized by play count.
-     * Only returns tracks that have been successfully enriched with MusicBrainz data
-     * and haven't been attempted for Spotify enrichment yet.
-     */
     @Query("""
         SELECT em.* FROM enriched_metadata em
         LEFT JOIN (
@@ -329,15 +301,10 @@ interface EnrichedMetadataDao {
     """)
     suspend fun getTracksNeedingSpotifyEnrichment(limit: Int = 10): List<EnrichedMetadata>
     
-    /**
-     * Get count of tracks with Spotify audio features.
-     */
+    /** Tracks with both a Spotify id and audio features. */
     @Query("SELECT COUNT(*) FROM enriched_metadata WHERE spotify_id IS NOT NULL AND audio_features_json IS NOT NULL")
     suspend fun countTracksWithSpotifyFeatures(): Int
     
-    /**
-     * Get count of tracks pending Spotify enrichment.
-     */
     @Query("""
         SELECT COUNT(*) FROM enriched_metadata 
         WHERE enrichment_status = 'ENRICHED'
@@ -346,8 +313,7 @@ interface EnrichedMetadataDao {
     suspend fun countTracksPendingSpotifyEnrichment(): Int
     
     /**
-     * Mark all enriched tracks as pending Spotify enrichment.
-     * Called when user first connects Spotify to queue historical tracks.
+     * Called when the user first connects Spotify, to queue tracks imported before the connection.
      */
     @Query("""
         UPDATE enriched_metadata 
@@ -357,9 +323,6 @@ interface EnrichedMetadataDao {
     """)
     suspend fun queueAllForSpotifyEnrichment()
     
-    /**
-     * Update Spotify enrichment status for a track.
-     */
     @Query("""
         UPDATE enriched_metadata 
         SET spotify_enrichment_status = :status,
@@ -375,7 +338,7 @@ interface EnrichedMetadataDao {
     )
     
     /**
-     * Clear all Spotify data (for disconnect).
+     * For disconnect: nulls the Spotify ids and feature blobs as well as the status.
      */
     @Query("""
         UPDATE enriched_metadata 
@@ -387,9 +350,6 @@ interface EnrichedMetadataDao {
     """)
     suspend fun clearAllSpotifyData()
     
-    /**
-     * Get Spotify enrichment stats.
-     */
     @Query("""
         SELECT spotify_enrichment_status, COUNT(*) as count 
         FROM enriched_metadata 
@@ -398,9 +358,7 @@ interface EnrichedMetadataDao {
     """)
     suspend fun getSpotifyEnrichmentStats(): List<SpotifyEnrichmentStatusCount>
 
-    /**
-     * Find by Spotify ID (for deduplication).
-     */
+    /** For deduplication. */
     @Query("SELECT * FROM enriched_metadata WHERE spotify_id = :spotifyId LIMIT 1")
     suspend fun findBySpotifyId(spotifyId: String): EnrichedMetadata?
 
@@ -417,11 +375,7 @@ interface EnrichedMetadataDao {
     )
     suspend fun getTrackIsrcRefs(): List<TrackIsrcRef>
     
-    /**
-     * Get tracks that are enriched but tracks table is missing album art.
-     * Used to backfill album art URLs to tracks table.
-     * Checks for both NULL and empty string.
-     */
+    /** Backfills `tracks.album_art_url` from rows enriched but still missing art. */
     @Query("""
         SELECT em.* FROM enriched_metadata em
         INNER JOIN tracks t ON em.track_id = t.id
@@ -433,9 +387,7 @@ interface EnrichedMetadataDao {
     suspend fun getEnrichedTracksWithMissingAlbumArt(limit: Int = 50): List<EnrichedMetadata>
     
     /**
-     * Clear all artist image URLs for tracks associated with a specific artist.
-     * This is used to force re-enrichment of artist images.
-     * Clears images from all sources (Spotify, iTunes, Deezer, Last.fm).
+     * Blanks the artist image URL on every source so the images get re-fetched.
      */
     @Query("""
         UPDATE enriched_metadata 
@@ -450,8 +402,7 @@ interface EnrichedMetadataDao {
     suspend fun clearArtistImagesForArtist(artistId: Long)
     
     /**
-     * Update the Spotify artist image URL for all tracks with a given Spotify artist ID.
-     * This is used to cache artist images once fetched from Spotify.
+     * Writes one cached Spotify artist image to every track by that artist.
      */
     @Query("""
         UPDATE enriched_metadata 
@@ -460,10 +411,7 @@ interface EnrichedMetadataDao {
     """)
     suspend fun updateArtistImageUrl(spotifyArtistId: String, imageUrl: String)
     
-    /**
-     * Get tracks that have Spotify artist ID but no cached artist image.
-     * Used to fetch missing artist images on demand.
-     */
+    /** One row per distinct `spotify_artist_id` that has no cached image yet. */
     @Query("""
         SELECT em.* FROM enriched_metadata em
         WHERE em.spotify_artist_id IS NOT NULL
@@ -474,9 +422,8 @@ interface EnrichedMetadataDao {
     suspend fun getTracksNeedingArtistImage(limit: Int = 10): List<EnrichedMetadata>
     
     /**
-     * Get enriched tracks that are missing cover art or genres.
-     * These tracks were successfully enriched but external APIs didn't provide complete data.
-     * We should retry enrichment for these tracks periodically.
+     * Enriched tracks the APIs left incomplete (no cover art, empty genres, no preview URL),
+     * retried periodically.
      */
     @Query("""
         SELECT em.* FROM enriched_metadata em
@@ -501,9 +448,8 @@ interface EnrichedMetadataDao {
     ): List<EnrichedMetadata>
     
     /**
-     * Get genres from other tracks by the same artist.
-     * Used as a fallback when external sources don't provide genres for a track.
-     * Returns distinct genre strings from successfully enriched tracks.
+     * Fallback when external sources don't provide genres for a track: distinct genre strings
+     * from other enriched tracks by the same artist.
      */
     @Query("""
         SELECT em.genres FROM enriched_metadata em
@@ -521,9 +467,6 @@ interface EnrichedMetadataDao {
         limit: Int = 5
     ): List<String>
     
-    /**
-     * Get all enriched metadata for export.
-     */
     @Query("SELECT * FROM enriched_metadata")
     suspend fun getAllSync(): List<EnrichedMetadata>
 
@@ -557,10 +500,6 @@ interface EnrichedMetadataDao {
     """)
     suspend fun countImageUrlReferences(url: String): Int
     
-    /**
-     * Get count of tracks pending enrichment from Last.fm imports.
-     * Joins with listening_events to identify tracks that came from Last.fm import.
-     */
     @Query("""
         SELECT COUNT(DISTINCT em.track_id) FROM enriched_metadata em
         INNER JOIN listening_events le ON em.track_id = le.track_id
@@ -571,9 +510,6 @@ interface EnrichedMetadataDao {
         status: EnrichmentStatus = EnrichmentStatus.PENDING
     ): Int
     
-    /**
-     * Get count of successfully enriched tracks from Last.fm imports.
-     */
     @Query("""
         SELECT COUNT(DISTINCT em.track_id) FROM enriched_metadata em
         INNER JOIN listening_events le ON em.track_id = le.track_id
@@ -585,9 +521,7 @@ interface EnrichedMetadataDao {
     ): Int
 
     /**
-     * Re-queue tracks for enrichment that are FAILED or ENRICHED but missing album art.
-     * Used after YouTube Music import to retry enrichment for existing tracks.
-     * Returns the number of rows updated.
+     * Retries enrichment for existing tracks after a YouTube Music import. Returns rows updated.
      */
     @Query("""
         UPDATE enriched_metadata
@@ -599,8 +533,7 @@ interface EnrichedMetadataDao {
     suspend fun requeueTracksForEnrichment(trackIds: List<Long>): Int
 
     /**
-     * Find track IDs from the given list that have no enriched_metadata entry.
-     * Used to create PENDING entries for existing tracks that were never queued for enrichment.
+     * For creating PENDING entries for existing tracks that were never queued for enrichment.
      */
     @Query("""
         SELECT t.id FROM tracks t

@@ -47,50 +47,29 @@ open class ArtistMergeRepository @Inject constructor(
         private const val TAG = "ArtistMergeRepository"
     }
 
-    /**
-     * Find an alias for the given normalized artist name.
-     * Returns the alias if one exists, or null.
-     */
+    /** The alias recorded for a normalized artist name, if any. */
     suspend fun findAlias(normalizedName: String): ArtistAlias? {
         return artistAliasDao.findAlias(normalizedName)
     }
     
-    /**
-     * Get all aliases that point to a specific artist.
-     */
     suspend fun getAliasesForArtist(artistId: Long): List<ArtistAlias> {
         return artistAliasDao.getAliasesForArtist(artistId)
     }
 
-    /**
-     * Create a new alias mapping (originalName) -> targetArtistId.
-     * Returns true if created, false if already exists.
-     */
+    /** Map `originalName` to `targetArtistId`; false if the alias already exists. */
     suspend fun createAlias(originalName: String, targetArtistId: Long): Boolean {
         val alias = ArtistAlias.create(originalName, targetArtistId)
         val result = artistAliasDao.insertAlias(alias)
         return result > 0
     }
     
-    /**
-     * Delete an alias by ID.
-     */
     suspend fun deleteAlias(aliasId: Long) {
         artistAliasDao.deleteById(aliasId)
     }
 
     /**
-     * Merges source artist into target artist:
-     * 1. Creates alias (Source -> Target)
-     * 2. Updates any existing aliases that pointed to source to now point to target
-     * 3. Re-links all track relationships from source to target
-     * 4. Updates tracks.primary_artist_id references
-     * 5. Copies metadata from source to target (if target lacks it)
-     * 6. Deletes source artist
-     * 
-     * @param sourceArtistId The artist to merge FROM (will be deleted)
-     * @param targetArtistId The artist to merge INTO (will remain)
-     * @return true if merge succeeded, false otherwise
+     * Merge `sourceArtistId` into `targetArtistId`. The source artist is deleted, and
+     * aliases that pointed at it are re-pointed so chained merges keep working.
      */
     suspend fun mergeArtists(sourceArtistId: Long, targetArtistId: Long): Boolean {
         val merged = mergeArtistsInternal(sourceArtistId, targetArtistId)
@@ -192,9 +171,9 @@ open class ArtistMergeRepository @Inject constructor(
                     Log.d(TAG, "Re-parented $reparentedAlbums albums to target artist")
                 }
 
-                // 5. Copy metadata from source to target if target lacks it
-                // Note: We skip copying Spotify/MusicBrainz IDs if target already has one
-                // to avoid unique constraint violations
+                // 5. Copy metadata from source to target if target lacks it.
+                // An ID the target already has is never copied over: the UNIQUE
+                // index would reject the update.
                 val updatedTarget = mergeArtistMetadata(sourceArtist, targetArtist)
                 if (updatedTarget != targetArtist) {
                     // If copying musicbrainzId from source to target, clear it from
@@ -283,11 +262,7 @@ open class ArtistMergeRepository @Inject constructor(
         }
     }
 
-    /**
-     * Update all tracks that have source artist as primary to point to target.
-     */
     private suspend fun updatePrimaryArtistReferences(sourceArtistId: Long, targetArtistId: Long) {
-        // Get tracks where source is primary artist
         val tracksWithSource = trackDao.getTracksByPrimaryArtist(sourceArtistId)
         var updateCount = 0
         for (track in tracksWithSource) {
@@ -306,22 +281,18 @@ open class ArtistMergeRepository @Inject constructor(
     private fun mergeArtistMetadata(source: Artist, target: Artist): Artist {
         var result = target
 
-        // Copy image URL if target doesn't have one
         if (target.imageUrl.isNullOrBlank() && !source.imageUrl.isNullOrBlank()) {
             result = result.copy(imageUrl = source.imageUrl)
         }
 
-        // Copy Spotify ID if target doesn't have one
         if (target.spotifyId.isNullOrBlank() && !source.spotifyId.isNullOrBlank()) {
             result = result.copy(spotifyId = source.spotifyId)
         }
 
-        // Copy MusicBrainz ID if target doesn't have one
         if (target.musicbrainzId.isNullOrBlank() && !source.musicbrainzId.isNullOrBlank()) {
             result = result.copy(musicbrainzId = source.musicbrainzId)
         }
 
-        // Copy country if target doesn't have one
         if (target.country.isNullOrBlank() && !source.country.isNullOrBlank()) {
             result = result.copy(country = source.country)
         }

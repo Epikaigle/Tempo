@@ -58,10 +58,7 @@ class LastFmEnrichmentService
             ) : LastFmResult()
         }
 
-        /**
-         * Check if Last.fm enrichment is available.
-         * Returns true if API key is configured.
-         */
+        /** True when a Last.fm API key is configured. */
         fun isAvailable(): Boolean = getApiKey().isNotBlank()
 
         private fun getApiKey(): String =
@@ -72,17 +69,10 @@ class LastFmEnrichmentService
             }
 
         /**
-         * Supplement existing metadata with Last.fm ARTIST-LEVEL tag/genre data.
+         * Supplement existing metadata with Last.fm artist tags and genres.
          *
-         * IMPORTANT: This method fetches ARTIST genres only - not track-level genres.
-         * This is intentional because:
-         * 1. Most music APIs don't reliably provide track-level genre data
-         * 2. iTunes is the exception and handles track-level genres
-         * 3. Artist genres are more reliable and consistent
-         *
-         * @param track The track to enrich
-         * @param existingMetadata The existing metadata to supplement
-         * @return LastFmResult indicating what was added
+         * Artist-level only, deliberately: track-level genre data is unreliable on most music
+         * APIs, artist genres are more consistent, and iTunes covers the track-level case.
          */
         suspend fun supplementMetadata(
             track: Track,
@@ -158,9 +148,6 @@ class LastFmEnrichmentService
             return LastFmResult.TrackNotFound
         }
 
-        /**
-         * Fetch track info from Last.fm.
-         */
         private suspend fun fetchTrackInfo(
             title: String,
             artist: String,
@@ -221,10 +208,7 @@ class LastFmEnrichmentService
             }
         }
 
-        /**
-         * Fetch artist tags from Last.fm as a fallback.
-         * Iterates through all individual artists until one returns valid tags.
-         */
+        /** Artist tags, trying each individual artist in the string until one returns tags. */
         private suspend fun fetchArtistTags(
             artistString: String,
             apiKey: String,
@@ -293,10 +277,8 @@ class LastFmEnrichmentService
         }
 
         /**
-         * Classify tags into genres and general tags.
-         *
-         * Last.fm tags include both proper genres (rock, hip-hop) and
-         * descriptive tags (chill, female vocalist). This separates them.
+         * Split Last.fm tags into genres and general tags. The tag list mixes proper genres
+         * (rock, hip-hop) with descriptive tags (chill, female vocalist).
          */
         private fun classifyTags(tags: List<String>): Pair<List<String>, List<String>> {
             val genreKeywords =
@@ -449,12 +431,8 @@ class LastFmEnrichmentService
         }
 
         /**
-         * Fetch artist image from Last.fm.
-         * Used as a fallback when Spotify doesn't provide artist images.
-         * Iterates through all individual artists until an image is found.
-         *
-         * @param artistName The raw artist name
-         * @return Artist image URL (extralarge size) or null if not found
+         * Artist image, used when Spotify has none. Tries each individual artist in [artistName]
+         * until one has an image; returns the extralarge size, or null.
          */
         suspend fun fetchArtistImage(artistName: String): String? {
             if (!isAvailable()) {
@@ -537,18 +515,9 @@ class LastFmEnrichmentService
         }
 
         /**
-         * Fetch MusicBrainz IDs from Last.fm for a track.
-         *
-         * This is useful because:
-         * 1. Last.fm often has MBIDs for tracks (if user has linked accounts or track is popular)
-         * 2. MusicBrainz can fetch by ID instead of searching (faster, more accurate)
-         * 3. This avoids fuzzy matching issues with MusicBrainz search
-         *
-         * Called before MusicBrainz enrichment to improve accuracy.
-         *
-         * @param title Track title
-         * @param artist Artist name
-         * @return MbidLookupResult containing any available MBIDs
+         * MusicBrainz IDs for a track, from Last.fm (present for popular tracks and linked
+         * accounts). Called before MusicBrainz enrichment so it can fetch by ID instead of
+         * searching: faster, more accurate, and it sidesteps fuzzy-match errors.
          */
         suspend fun fetchMbidsForTrack(
             title: String,
@@ -621,14 +590,8 @@ class LastFmEnrichmentService
         }
 
         /**
-         * Pre-enrich metadata with MBIDs from Last.fm.
-         *
-         * This method updates the EnrichedMetadata record with MBIDs fetched from Last.fm,
-         * which can then be used by MusicBrainz for faster lookups.
-         *
-         * @param track The track to fetch MBIDs for
-         * @param existingMetadata The existing metadata to update
-         * @return Updated metadata with MBIDs, or null if no MBIDs found
+         * Attach MBIDs from Last.fm to the metadata, so MusicBrainz can look them up by ID.
+         * Null when Last.fm has no MBIDs for the track.
          */
         suspend fun preEnrichWithMbids(
             track: Track,

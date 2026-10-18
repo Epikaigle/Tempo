@@ -126,7 +126,6 @@ interface TrackDao {
     }
 
     /**
-     * Update only the title of a track.
      * Targeted update avoids overwriting other columns (e.g. enriched art URLs).
      *
      * @return rows rewritten. A silent 0 means the track row no longer exists, which
@@ -211,9 +210,6 @@ interface TrackDao {
         artistId: Long
     ): List<Track>
 
-    /**
-     * Get all tracks on a specific album by artist (matching primary_artist_id or artist string).
-     */
     @Query("""
         SELECT * FROM tracks
         WHERE album = :albumTitle
@@ -229,9 +225,6 @@ interface TrackDao {
         artistName: String
     ): List<Track>
 
-    /**
-     * Reassign all tracks with sourceAlbumTitle to targetAlbumTitle.
-     */
     @Query("""
         UPDATE tracks
         SET album = :targetAlbumTitle
@@ -311,16 +304,15 @@ interface TrackDao {
     suspend fun findByTitleAndArtistFuzzy(title: String, artist: String): Track?
 
     /**
-     * Return all tracks whose title matches exactly (case-insensitive).
-     * Used for any-artist intersection matching when the strict/fuzzy queries miss.
+     * Any-artist intersection matching when the strict/fuzzy queries miss. Unlike the
+     * partial-match queries below, this one is not capped.
      */
     @Query("SELECT * FROM tracks WHERE title = :title COLLATE NOCASE")
     suspend fun findCandidatesByTitle(title: String): List<Track>
 
     /**
-     * Return a bounded set of tracks where artist name partially matches.
-     * Used for fuzzy matching without loading the entire table into memory.
-     * INSTR keeps '%'/'_' in names literal (no wildcard surprises).
+     * Fuzzy artist match without loading the whole table. `INSTR` keeps `%` and `_`
+     * in names literal (no wildcard surprises).
      */
     @Query("""
         SELECT * FROM tracks 
@@ -331,9 +323,7 @@ interface TrackDao {
     suspend fun findCandidatesByArtist(artist: String): List<Track>
 
     /**
-     * Return a bounded set of tracks for fuzzy matching.
-     * Combines title and artist partial matches.
-     * INSTR keeps '%'/'_' in names literal (no wildcard surprises).
+     * Fuzzy title or artist match, same `INSTR` reasoning as [findCandidatesByArtist].
      */
     @Query("""
         SELECT * FROM tracks 
@@ -345,41 +335,23 @@ interface TrackDao {
     
     // Queries by Artist ID
     
-    /**
-     * Get tracks by primary artist ID.
-     */
     @Query("SELECT * FROM tracks WHERE primary_artist_id = :artistId ORDER BY title ASC")
     suspend fun getTracksByPrimaryArtist(artistId: Long): List<Track>
     
-    /**
-     * Get tracks by primary artist ID as Flow.
-     */
     @Query("SELECT * FROM tracks WHERE primary_artist_id = :artistId ORDER BY title ASC")
     fun observeTracksByPrimaryArtist(artistId: Long): Flow<List<Track>>
     
-    /**
-     * Get track count by primary artist.
-     */
     @Query("SELECT COUNT(*) FROM tracks WHERE primary_artist_id = :artistId")
     suspend fun getTrackCountByPrimaryArtist(artistId: Long): Int
     
     // Queries for Linking
     
-    /**
-     * Get tracks without primary artist ID (need migration).
-     */
     @Query("SELECT * FROM tracks WHERE primary_artist_id IS NULL LIMIT :limit")
     suspend fun getTracksWithoutPrimaryArtist(limit: Int = 100): List<Track>
     
-    /**
-     * Update primary artist ID for a track.
-     */
     @Query("UPDATE tracks SET primary_artist_id = :artistId WHERE id = :trackId")
     suspend fun updatePrimaryArtistId(trackId: Long, artistId: Long?)
     
-    /**
-     * Get the primary artist for a track.
-     */
     @Query("""
         SELECT a.* FROM artists a
         INNER JOIN tracks t ON t.primary_artist_id = a.id

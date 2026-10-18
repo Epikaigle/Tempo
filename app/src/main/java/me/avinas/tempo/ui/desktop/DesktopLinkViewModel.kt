@@ -44,14 +44,9 @@ enum class PairingPhase {
 /**
  * Immutable UI state for [DesktopLinkScreen].
  *
- * @param phase        Current step in the pairing lifecycle.
- * @param isServerRunning Whether the NanoHTTPD receiver is currently accepting connections.
- * @param phoneIp      This phone's local IP (shown to user as the address desktop pushes to).
- * @param phonePort    Port the NanoHTTPD server listens on.
- * @param session      The active [DesktopPairingSession], or null if unpaired.
- * @param errorMessage Transient error to display below the cards; null when no error.
- * @param batteryLevel Current device battery level (0-100), or -1 if unavailable.
- * @param isBatteryCritical True if battery is ≤ 20% (desktop sync disabled).
+ * `session` is the active [DesktopPairingSession], or null while unpaired;
+ * `batteryLevel` is 0-100, or -1 when unavailable; `isBatteryCritical` means the
+ * battery is at or below 20% and desktop sync is disabled.
  */
 @Immutable
 data class DesktopLinkUiState(
@@ -98,7 +93,6 @@ class DesktopLinkViewModel @Inject constructor(
     val uiState: StateFlow<DesktopLinkUiState> = _uiState.asStateFlow()
 
     init {
-        // Start battery monitoring in the background
         startBatteryMonitoring()
         
         viewModelScope.launch {
@@ -126,7 +120,6 @@ class DesktopLinkViewModel @Inject constructor(
                         else null
                     )
                 }
-                // Load desktop stats
                 loadDesktopStats()
             } else {
                 _uiState.update {
@@ -137,22 +130,19 @@ class DesktopLinkViewModel @Inject constructor(
     }
 
 
-    /** Activate the camera scanner. */
     fun startScanning() {
         _uiState.update { it.copy(phase = PairingPhase.SCANNING, errorMessage = null, scannerKey = it.scannerKey + 1) }
     }
 
-    /** Cancel scanning and return to the UNPAIRED view. */
     fun cancelScanning() {
         _uiState.update { it.copy(phase = PairingPhase.UNPAIRED, scannerKey = it.scannerKey + 1) }
     }
 
     /**
-     * Called by [QrScannerView] when a QR code's raw text is decoded.
+     * Called by [QrScannerView] with a decoded QR payload.
      *
-     * Parses the Tempo Desktop QR payload, stores the session, and starts the receiver.
-     * If the QR is not a valid Tempo Desktop code the user is shown an error and the
-     * scanner continues running so they can try again.
+     * An invalid Tempo Desktop code shows an error and keeps the scanner running
+     * so the user can try again.
      */
     fun onQrScanned(rawText: String) {
         viewModelScope.launch {
@@ -176,9 +166,6 @@ class DesktopLinkViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Manual-entry alternative: pair using IP, port and token typed by the user.
-     */
     fun connectManually(ip: String, port: String, token: String) {
         val portInt = port.trim().toIntOrNull()
         if (ip.isBlank() || portInt == null || portInt <= 0 || token.isBlank()) {
@@ -196,7 +183,6 @@ class DesktopLinkViewModel @Inject constructor(
         }
     }
 
-    /** Disconnect from the desktop and stop the receiver. */
     fun unpair() {
         viewModelScope.launch {
             mdnsManager.unregister()
@@ -225,7 +211,7 @@ class DesktopLinkViewModel @Inject constructor(
     }
 
     private suspend fun completePairingInternal(qrData: DesktopQrData) {
-        // Show processing state so user knows something is happening
+        // So the user sees an attempt is in flight while the callback runs.
         _uiState.update { it.copy(phase = PairingPhase.PROCESSING, errorMessage = null) }
         
         try {

@@ -86,7 +86,6 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_6_7 =
             object : Migration(6, 7) {
                 override fun migrate(db: SupportSQLiteDatabase) {
-                    // Add new columns with default values for backward compatibility
                     db.execSQL("ALTER TABLE listening_events ADD COLUMN was_skipped INTEGER NOT NULL DEFAULT 0")
                     db.execSQL("ALTER TABLE listening_events ADD COLUMN is_replay INTEGER NOT NULL DEFAULT 0")
                     db.execSQL("ALTER TABLE listening_events ADD COLUMN estimated_duration_ms INTEGER DEFAULT NULL")
@@ -94,7 +93,6 @@ abstract class AppDatabase : RoomDatabase() {
                     db.execSQL("ALTER TABLE listening_events ADD COLUMN session_id TEXT DEFAULT NULL")
                     db.execSQL("ALTER TABLE listening_events ADD COLUMN end_timestamp INTEGER DEFAULT NULL")
 
-                    // Create indices for efficient queries on the new columns
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_session_id ON listening_events(session_id)")
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_was_skipped ON listening_events(was_skipped)")
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_listening_events_is_replay ON listening_events(is_replay)")
@@ -104,7 +102,6 @@ abstract class AppDatabase : RoomDatabase() {
         /**
          * Migration from version 7 to 8: Add proper relational schema.
          *
-         * Changes:
          * 1. Add normalized_name, country, artist_type columns to artists table
          * 2. Add primary_artist_id foreign key to tracks table
          * 3. Create track_artists junction table for many-to-many relationship
@@ -115,7 +112,6 @@ abstract class AppDatabase : RoomDatabase() {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 7 to 8")
 
-                    // Step 1: Add new columns to artists table
                     db.execSQL("ALTER TABLE artists ADD COLUMN normalized_name TEXT NOT NULL DEFAULT ''")
                     db.execSQL("ALTER TABLE artists ADD COLUMN country TEXT DEFAULT NULL")
                     db.execSQL("ALTER TABLE artists ADD COLUMN artist_type TEXT DEFAULT NULL")
@@ -133,14 +129,12 @@ abstract class AppDatabase : RoomDatabase() {
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_artists_name ON artists(name)")
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_artists_spotify_id ON artists(spotify_id)")
 
-                    // Step 2: Add primary_artist_id column to tracks table
                     db.execSQL(
                         "ALTER TABLE tracks ADD COLUMN primary_artist_id INTEGER DEFAULT NULL REFERENCES artists(id) ON DELETE SET NULL",
                     )
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_tracks_primary_artist_id ON tracks(primary_artist_id)")
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_tracks_title_artist ON tracks(title, artist)")
 
-                    // Step 3: Create track_artists junction table
                     db.execSQL(
                         """
                     CREATE TABLE IF NOT EXISTS track_artists (
@@ -214,12 +208,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 8 to 9: Add performance optimization indexes.
-         *
-         * These composite indexes significantly improve query performance for:
-         * - Time-range queries on listening_events
-         * - Top tracks/artists queries
-         * - Stats calculations
+         * Migration from version 8 to 9: composite indexes for time-range, top-tracks/artists
+         * and stats queries.
          */
         val MIGRATION_8_9 =
             object : Migration(8, 9) {
@@ -270,19 +260,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 9 to 10: Add ReccoBeats audio features support.
-         *
-         * ReccoBeats is a FREE API that provides audio features similar to Spotify's
-         * deprecated endpoint. This migration adds:
-         * - reccobeats_id column to store ReccoBeats track ID
-         * - audio_features_source column to track where audio features came from
+         * Migration from version 9 to 10: ReccoBeats audio features, as a free stand-in for
+         * Spotify's deprecated endpoint: `reccobeats_id` plus `audio_features_source`.
          */
         val MIGRATION_9_10 =
             object : Migration(9, 10) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 9 to 10 - Adding ReccoBeats support")
 
-                    // Add ReccoBeats ID column
                     db.execSQL(
                         """
                     ALTER TABLE enriched_metadata 
@@ -290,7 +275,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Add audio features source column
                     // Values: NONE, SPOTIFY, RECCOBEATS, RECCOBEATS_ANALYSIS, LOCAL_ANALYSIS
                     db.execSQL(
                         """
@@ -332,7 +316,6 @@ abstract class AppDatabase : RoomDatabase() {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 10 to 11 - Adding Spotify preview URL")
 
-                    // Add Spotify preview URL column
                     db.execSQL(
                         """
                     ALTER TABLE enriched_metadata 
@@ -345,20 +328,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 11 to 12.
-         *
-         * Adds pause duration, seek count, and playback diagnostic columns to listening_events:
-         * - total_pause_duration_ms: Total time the track was paused
-         * - seek_count: Number of seek operations
-         * - position_updates_count: Number of position updates
-         * - was_interrupted: Whether session was interrupted (kill, crash)
+         * Migration from version 11 to 12: playback diagnostic columns on listening_events.
          */
         val MIGRATION_11_12 =
             object : Migration(11, 12) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 11 to 12 - Adding enhanced tracking fields")
 
-                    // Add pause and seek tracking columns to listening_events
                     db.execSQL(
                         """
                     ALTER TABLE listening_events 
@@ -392,20 +368,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 12 to 13.
-         *
-         * Adds iTunes and music streaming enhancements:
-         * - itunes_artist_image_url: Artist images from iTunes (fallback for Spotify/Last.fm)
-         * - apple_music_url: Direct link to track on Apple Music
-         * - spotify_track_url: Direct link to track on Spotify
-         * - release_date_full: Full ISO 8601 release date (not just year)
+         * Migration from version 12 to 13: iTunes artist images as a fallback for Spotify/Last.fm,
+         * Apple Music and Spotify track links, and a full ISO 8601 `release_date_full`.
          */
         val MIGRATION_12_13 =
             object : Migration(12, 13) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 12 to 13 - Adding iTunes and music links")
 
-                    // Add iTunes artist image URL
                     db.execSQL(
                         """
                     ALTER TABLE enriched_metadata 
@@ -413,7 +383,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Add Apple Music URL
                     db.execSQL(
                         """
                     ALTER TABLE enriched_metadata 
@@ -421,7 +390,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Add Spotify track URL
                     db.execSQL(
                         """
                     ALTER TABLE enriched_metadata 
@@ -453,11 +421,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 13 to 14.
-         *
-         * Adds preview_url column to enriched_metadata table.
-         * This stores the direct audio stream URL (usually .m4a from iTunes)
-         * for 30-second song previews.
+         * Migration from version 13 to 14: `preview_url` on enriched_metadata, the direct audio
+         * stream URL (usually .m4a from iTunes) behind 30-second previews.
          */
         val MIGRATION_13_14 =
             object : Migration(13, 14) {
@@ -486,7 +451,6 @@ abstract class AppDatabase : RoomDatabase() {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 14 to 15 - Adding Deezer/Last.fm artist images")
 
-                    // Add Deezer artist image URL
                     db.execSQL(
                         """
                     ALTER TABLE enriched_metadata 
@@ -494,7 +458,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Add Last.fm artist image URL
                     db.execSQL(
                         """
                     ALTER TABLE enriched_metadata 
@@ -520,7 +483,6 @@ abstract class AppDatabase : RoomDatabase() {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 15 to 16 - Adding album art source tracking")
 
-                    // Add album_art_source column with default value
                     db.execSQL(
                         """
                     ALTER TABLE enriched_metadata 
@@ -533,7 +495,6 @@ abstract class AppDatabase : RoomDatabase() {
                     // - If URL starts with http(s) (API source), mark as ITUNES (safe default)
                     // - If URL starts with file:// (local), mark as LOCAL
 
-                    // Mark MusicBrainz sourced art
                     db.execSQL(
                         """
                     UPDATE enriched_metadata 
@@ -543,7 +504,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Mark Spotify sourced art
                     db.execSQL(
                         """
                     UPDATE enriched_metadata 
@@ -554,7 +514,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Mark local file art
                     db.execSQL(
                         """
                     UPDATE enriched_metadata 
@@ -723,18 +682,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 17 to 18.
-         *
-         * Adds track_aliases table for smart metadata deduplication.
-         * This allows users to manually merge duplicate tracks and have the system
-         * remember the mapping for future plays.
+         * Migration from version 17 to 18: `track_aliases`, which remembers manual duplicate-track
+         * merges for future plays.
          */
         val MIGRATION_17_18 =
             object : Migration(17, 18) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 17 to 18 - Adding track_aliases table")
 
-                    // Step 1: Create track_aliases table for manual merge tracking
                     db.execSQL(
                         """
                     CREATE TABLE IF NOT EXISTS track_aliases (
@@ -748,13 +703,11 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Step 2: Create indices for efficient lookups
                     db.execSQL(
                         "CREATE UNIQUE INDEX IF NOT EXISTS index_track_aliases_original_title_original_artist ON track_aliases(original_title, original_artist)",
                     )
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_track_aliases_target_track_id ON track_aliases(target_track_id)")
 
-                    // Step 3: Add mergeAlternateVersions column to user_preferences
                     // Default to 1 (true) for cleaner library experience
                     db.execSQL("ALTER TABLE user_preferences ADD COLUMN mergeAlternateVersions INTEGER NOT NULL DEFAULT 1")
 
@@ -763,19 +716,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 18 to 19.
-         *
-         * Adds content filtering tables and flags:
-         * 1. Add content_type column to tracks table (MUSIC, PODCAST, AUDIOBOOK)
-         * 2. Add filterPodcasts and filterAudiobooks to user_preferences
-         * 3. Create manual_content_marks table for user-defined filtering patterns
+         * Migration from version 18 to 19: content filtering. `content_type` on tracks (MUSIC,
+         * PODCAST, AUDIOBOOK), the two filter flags on user_preferences, and
+         * `manual_content_marks` for user-defined patterns.
          */
         val MIGRATION_18_19 =
             object : Migration(18, 19) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 18 to 19 - Adding content filtering")
 
-                    // Step 1: Add content_type column to tracks table
                     db.execSQL(
                         """
                     ALTER TABLE tracks 
@@ -791,7 +740,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Step 2: Add filter preferences to user_preferences
                     db.execSQL(
                         """
                     ALTER TABLE user_preferences 
@@ -806,7 +754,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Step 3: Create manual_content_marks table
                     db.execSQL(
                         """
                     CREATE TABLE IF NOT EXISTS manual_content_marks (
@@ -860,7 +807,6 @@ abstract class AppDatabase : RoomDatabase() {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 19 to 20")
 
-                    // Add column with default false (0)
                     db.execSQL(
                         """
                     ALTER TABLE user_preferences 
@@ -1003,18 +949,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 22 to 23.
-         *
-         * Adds artist_aliases table for artist merging feature.
-         * This allows users to merge duplicate artists (e.g., "Billie Eilish - Topic" into "Billie Eilish")
-         * and has the system remember the mapping for future plays.
+         * Migration from version 22 to 23: `artist_aliases`, which remembers artist merges so that
+         * plays of "Billie Eilish - Topic" resolve to "Billie Eilish" from then on.
          */
         val MIGRATION_22_23 =
             object : Migration(22, 23) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 22 to 23 - Adding artist_aliases table")
 
-                    // Create artist_aliases table
                     db.execSQL(
                         """
                     CREATE TABLE IF NOT EXISTS artist_aliases (
@@ -1028,7 +970,6 @@ abstract class AppDatabase : RoomDatabase() {
                 """,
                     )
 
-                    // Create indices for efficient lookups
                     db.execSQL(
                         "CREATE UNIQUE INDEX IF NOT EXISTS index_artist_aliases_original_name_normalized ON artist_aliases(original_name_normalized)",
                     )
@@ -1039,18 +980,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 23 to 24.
-         *
-         * Adds Spotlight Story reminder tracking fields to user_preferences:
-         * - lastMonthlyReminderShown: Date when monthly reminder was last displayed (YYYY-MM-DD)
-         * - lastYearlyReminderShown: Date when yearly reminder was last displayed (YYYY-MM-DD)
+         * Migration from version 23 to 24: Spotlight Story reminder dates on user_preferences,
+         * stored as YYYY-MM-DD.
          */
         val MIGRATION_23_24 =
             object : Migration(23, 24) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 23 to 24 - Adding Spotlight reminder tracking")
 
-                    // Add Spotlight reminder tracking columns
                     db.execSQL(
                         """
                     ALTER TABLE user_preferences 
@@ -1075,15 +1012,14 @@ abstract class AppDatabase : RoomDatabase() {
          * Adds app_preferences table for user-controlled app selection.
          * Seeds app_preferences with compile-time defaults to preserve active apps for existing users.
          *
-         * DATA PRESERVATION: This migration ONLY creates a new table - it does NOT
-         * modify or delete any existing data (tracks, listening_events, etc.).
+         * Only creates a new table: nothing existing (tracks, listening_events) is modified or
+         * deleted.
          */
         val MIGRATION_24_25 =
             object : Migration(24, 25) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 24 to 25 - Adding app_preferences table")
 
-                    // Create app_preferences table
                     // NOTE: Do NOT use DEFAULT clauses or create indices here - the entity
                     // class doesn't declare @ColumnInfo(defaultValue=...) or @Index annotations,
                     // so Room's schema validation will fail if these are present in the table.
@@ -1303,12 +1239,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 25 to 26.
-         *
-         * Adds Spotify Import feature support:
-         * - spotifyApiOnlyMode: Boolean flag for using Spotify API instead of notifications
-         * - spotifyImportCursor: Cursor for incremental polling
-         * - lastSpotifyImportTimestamp: Timestamp of last successful import
+         * Migration from version 25 to 26: Spotify Import support on user_preferences.
          */
         val MIGRATION_25_26 =
             object : Migration(25, 26) {
@@ -1345,11 +1276,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 26 to 27.
-         *
-         * Adds All-Time Story reminder tracking to user_preferences:
-         * - lastAllTimeReminderShown: Date when all-time story notification was sent (YYYY-MM-DD)
-         *   This tracks when the 6-month milestone notification was shown to avoid duplicate notifications.
+         * Migration from version 26 to 27: tracks when the 6-month All-Time Story notification was
+         * shown, so it is not sent twice. Stored as YYYY-MM-DD.
          */
         val MIGRATION_26_27 =
             object : Migration(26, 27) {
@@ -1369,12 +1297,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 27 to 28.
-         *
-         * Adds Last.fm import support:
-         * 1. lastfm_import_metadata table - Tracks import sessions and progress
-         * 2. scrobbles_archive table - Compressed storage for long-tail scrobbles
-         * 3. New columns in user_preferences for Last.fm settings
+         * Migration from version 27 to 28: Last.fm import support (`lastfm_import_metadata`,
+         * `scrobbles_archive`, Last.fm settings on user_preferences).
          *
          * The two-tier architecture (active + archive) allows importing massive
          * Last.fm histories (200K+ scrobbles) without impacting query performance.
@@ -1384,7 +1308,6 @@ abstract class AppDatabase : RoomDatabase() {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     Log.i(TAG, "Starting migration from version 27 to 28 - Adding Last.fm import support")
 
-                    // Step 1: Create lastfm_import_metadata table
                     // NOTE: Do NOT use DEFAULT clauses - the entity class doesn't declare
                     // @ColumnInfo(defaultValue=...) so Room expects no defaults in schema
                     db.execSQL(
@@ -1419,7 +1342,6 @@ abstract class AppDatabase : RoomDatabase() {
                     // NOTE: Do NOT create indices here - the entity class doesn't declare
                     // @Index annotations, so Room expects no indices in schema validation
 
-                    // Step 2: Create scrobbles_archive table
                     db.execSQL(
                         """
                     CREATE TABLE IF NOT EXISTS scrobbles_archive (
@@ -1452,7 +1374,6 @@ abstract class AppDatabase : RoomDatabase() {
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_last_scrobble ON scrobbles_archive(last_scrobble)")
                     db.execSQL("CREATE INDEX IF NOT EXISTS index_scrobbles_archive_play_count ON scrobbles_archive(play_count)")
 
-                    // Step 3: Add Last.fm columns to user_preferences
                     // NOTE: These use DEFAULT because the entity has default values in Kotlin
                     // and Room handles this differently for ALTER TABLE vs CREATE TABLE
 
@@ -1603,11 +1524,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 30 to 31.
-         *
-         * Adds gamification tables:
-         * - user_level: Single-row table for XP and level tracking
-         * - badges: Achievement badges with progress tracking
+         * Migration from version 30 to 31: gamification tables. `user_level` is a single row of XP
+         * and level state; `badges` tracks achievement progress.
          */
         val MIGRATION_30_31 =
             object : Migration(30, 31) {
@@ -1749,12 +1667,9 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 34 to 35: Anti-gaming volume tracking.
-         *
-         * Adds a nullable volume_level column to listening_events.
-         * - NULL  = legacy record (treated as audible, included in XP).
-         * - 0    = device music stream was muted; these rows are excluded from XP.
-         * - 1+   = normal audible play.
+         * Migration from version 34 to 35: anti-gaming volume tracking. Nullable `volume_level`
+         * on listening_events: NULL is a legacy record (treated as audible, included in XP),
+         * 0 means the music stream was muted and is excluded from XP.
          */
         val MIGRATION_34_35 =
             object : Migration(34, 35) {
@@ -1805,12 +1720,9 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
-         * Migration from version 36 to 37.
-         *
-         * Adds genre_source column to enriched_metadata.
-         * This column was added to the EnrichedMetadata entity without a corresponding
-         * migration, which would cause a crash for existing users on app update.
-         * Defaults to 'NONE' for all existing rows.
+         * Migration from version 36 to 37. `genre_source` had been added to the EnrichedMetadata
+         * entity without a migration, which would crash existing users on update, so this adds it
+         * with a default of 'NONE' for existing rows.
          */
         val MIGRATION_36_37 =
             object : Migration(36, 37) {
@@ -2193,7 +2105,7 @@ abstract class AppDatabase : RoomDatabase() {
          * Uses INSERT OR IGNORE so any app the user has already customised
          * (enabled, disabled, blocked) is left completely untouched.
          *
-         * DATA PRESERVATION: additive-only, no existing rows are modified or deleted.
+         * Additive-only: no existing rows are modified or deleted.
          *
          * Apps added in this migration:
          * - com.vivi.vivimusic  (Vivi Music — open-source YouTube Music client)

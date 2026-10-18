@@ -65,12 +65,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
             }
         }
         
-        /**
-         * validate if the URL is a valid image URL and NOT a JSON endpoint.
-         * Reject URLs that look like:
-         * - https://coverartarchive.org/release/{mbid} (JSON index)
-         * - Any URL ending in .json
-         */
+        /** False for Cover Art Archive JSON index endpoints and anything ending in `.json`. */
         private fun isValidAlbumArtUrl(url: String?): Boolean {
             if (url.isNullOrBlank()) return false
             
@@ -256,13 +251,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
         }
     }
 
-    /**
-     * Enrich a track with MusicBrainz metadata.
-     * 
-     * @param track The track to enrich
-     * @param forceRefresh If true, re-fetch even if cache is valid
-     * @return EnrichmentResult indicating success, failure, or cache hit
-     */
+    /** Enrich a track with MusicBrainz metadata; [forceRefresh] re-fetches despite a valid cache. */
     suspend fun enrichTrack(track: Track, forceRefresh: Boolean = false): EnrichmentResult {
         Log.d(TAG, "Enriching track: '${track.title}' by '${track.artist}'")
 
@@ -337,10 +326,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
         }
     }
 
-    /**
-     * Search for a recording in MusicBrainz.
-     * Uses multiple search strategies for better coverage.
-     */
     private suspend fun searchRecording(
         title: String,
         artist: String,
@@ -403,10 +388,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return SearchResult.NotFound("No matching recordings found")
     }
     
-    /**
-     * Build multiple search strategies for MusicBrainz.
-     * Uses different query formats to maximize chance of finding a match.
-     */
     private fun buildSearchStrategies(
         title: String,
         artist: String,
@@ -457,11 +438,10 @@ class MusicBrainzEnrichmentService @Inject constructor(
     }
     
     /**
-     * Process MusicBrainz search response and find best match.
-     * 
-     * IMPORTANT: This validates BOTH artist AND title similarity to prevent wrong matches.
-     * Previous bug: relaxed matching accepted any recording without title/artist validation,
-     * causing "Paracetamol" by Yashraj to match "Paracetamol" by Dr. Bohna (completely wrong).
+     * Pick the best recording, validating both artist and title similarity.
+     *
+     * Relaxed matching here once accepted a recording without that validation, so "Paracetamol"
+     * by Yashraj matched "Paracetamol" by Dr. Bohna.
      */
     private fun processSearchResponse(
         searchResponse: RecordingSearchResponse,
@@ -567,10 +547,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return SearchResult.NotFound("No high-confidence matches found")
     }
     
-    /**
-     * Calculate similarity between two titles using Levenshtein distance.
-     * Returns a value between 0.0 (completely different) and 1.0 (identical).
-     */
+    /** Levenshtein-based title similarity, from 0.0 (completely different) to 1.0 (identical). */
     private fun calculateTitleSimilarity(title1: String, title2: String): Double {
         val norm1 = title1.lowercase().trim()
         val norm2 = title2.lowercase().trim()
@@ -591,11 +568,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return 1.0 - (distance.toDouble() / maxLen)
     }
     
-    /**
-     * Calculate Levenshtein (edit) distance between two strings.
-     * This is the minimum number of single-character edits (insertions, deletions, substitutions)
-     * required to change one string into the other.
-     */
     private fun levenshteinDistance(s1: String, s2: String): Int {
         val m = s1.length
         val n = s2.length
@@ -623,10 +595,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return prevRow[n]
     }
 
-    /**
-     * Build Lucene search query for MusicBrainz.
-     * Uses ArtistParser to get the primary artist for focused search.
-     */
     private fun buildSearchQuery(title: String, artist: String): String {
         // Clean the title to remove embedded artist info
         val cleanTitle = ArtistParser.cleanTrackTitle(title)
@@ -647,9 +615,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
      */
     private fun escapeLucene(s: String): String = escapeLuceneQuery(s)
 
-    /**
-     * Fetch detailed metadata and store in database.
-     */
     private suspend fun fetchAndStoreMetadata(
         track: Track,
         recording: MBRecording,
@@ -767,9 +732,8 @@ class MusicBrainzEnrichmentService @Inject constructor(
             enrichedMetadataDao.upsertFromAutomaticEnrichment(metadata)
             Log.i(TAG, "Successfully enriched track ${track.id}: '${track.title}'")
             
-            // Smart album association: Create Artist and Album entities if album info is available
-            // IMPORTANT: Use track.artist (from music player notification) instead of allArtistNames (from MusicBrainz)
-            // This prevents MusicBrainz artist credit concatenation from creating malformed names like "REAL REAL BOSS"
+            // The artist name comes from the player notification, not from MusicBrainz's artist
+            // credit: concatenating credits produces malformed names like "REAL REAL BOSS"
             if (primaryRelease?.title != null && primaryArtist != null) {
                 createOrUpdateAlbumAssociation(
                     artistName = track.artist,  // Use original from notification, not MusicBrainz
@@ -922,7 +886,8 @@ class MusicBrainzEnrichmentService @Inject constructor(
     }
 
     /**
-     * Fetch detailed recording info including relations.
+     * Recording details including relations. [strict] rethrows provider errors instead of
+     * returning null, so the cover picker can tell a failure from a track with no data.
      */
     private suspend fun fetchRecordingDetails(
         mbid: String,
@@ -950,10 +915,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
         }
     }
 
-    /**
-     * Fetch detailed artist info including tags and genres.
-     * Used as fallback when recording doesn't have tag data.
-     */
+    /** Artist tags and genres, used when the recording itself carries none. */
     private suspend fun fetchArtistDetails(mbid: String): ArtistLookupResponse? {
         return try {
             val response = withMusicBrainzRateLimit {
@@ -974,7 +936,8 @@ class MusicBrainzEnrichmentService @Inject constructor(
     }
 
     /**
-     * Fetch cover art from Cover Art Archive for a release.
+     * Cover art from the Cover Art Archive for a release. On a non-404 API error, background
+     * enrichment keeps the historical direct-URL fallback while [strict] rethrows instead.
      */
     private suspend fun fetchCoverArt(
         releaseMbid: String,
@@ -1036,10 +999,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
         }
     }
 
-    /**
-     * Fetch cover art from Cover Art Archive for a release group.
-     * This is a fallback when the specific release has no cover art.
-     */
+    /** Cover art for a release group, used when the specific release has none. */
     private suspend fun fetchReleaseGroupCoverArt(
         releaseGroupMbid: String,
         strict: Boolean = false,
@@ -1113,9 +1073,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
         )
     }
 
-    /**
-     * Create initial pending metadata entry for a track.
-     */
     suspend fun createPendingMetadata(trackId: Long) {
         val existing = enrichedMetadataDao.forTrackSync(trackId)
         if (existing == null) {
@@ -1128,37 +1085,19 @@ class MusicBrainzEnrichmentService @Inject constructor(
         }
     }
 
-    /**
-     * Mark a track for manual re-enrichment.
-     */
     suspend fun requestReEnrichment(trackId: Long) {
         enrichedMetadataDao.markForReEnrichment(trackId)
     }
 
-    /**
-     * Get enrichment statistics.
-     */
     suspend fun getEnrichmentStats(): Map<EnrichmentStatus, Int> {
         return enrichedMetadataDao.getEnrichmentStats()
             .associate { it.status to it.count }
     }
 
     /**
-     * Supplement existing metadata with MusicBrainz data.
-     * 
-     * This method is called when Spotify has provided basic metadata (album, artist, artwork)
-     * but could not provide additional data (e.g., audio features API is deprecated).
-     * It fills in ONLY the missing fields from MusicBrainz without overwriting existing Spotify data.
-     * 
-     * Specifically, this fetches:
-     * - Genres and tags (Spotify audio features are unavailable, but MB has genre data)
-     * - MusicBrainz IDs (for cross-referencing)
-     * - Record label info
-     * - Artist country/type (if not already present)
-     * 
-     * @param track The track to supplement
-     * @param existingMetadata The existing metadata with Spotify data
-     * @return SupplementResult indicating what was added
+     * Fill in what Spotify could not, now that its audio-features API is deprecated: genres and
+     * tags, MusicBrainz IDs, record label, and artist country/type where missing. Only missing
+     * fields are written; existing Spotify data is left alone.
      */
     suspend fun supplementMetadata(
         track: Track,

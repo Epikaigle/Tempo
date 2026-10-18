@@ -102,9 +102,6 @@ import kotlin.math.sin
 // tap-to-replay scrim: an endless loop reads as a screensaver, a
 // stopped one as a lesson you can restart.
 //
-// Five screens, in the order you actually hit them:
-//   products list → content-options dialog → format editor sheet
-//   → export screen → "the ZIP lands in Tempo".
 // Navigation is the real navigation: the dialog scales in over a
 // scrim, the format editor slides up as a sheet, pages push left,
 // the list scrolls. Every tick, chip and ripple is drawn — the only

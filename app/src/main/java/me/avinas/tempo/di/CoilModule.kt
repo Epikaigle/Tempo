@@ -29,10 +29,7 @@ import javax.inject.Singleton
 
 private const val TAG = "CoilModule"
 
-/**
- * Qualifier for the image-specific OkHttpClient.
- * This client has aggressive caching configured specifically for album art.
- */
+/** Qualifier for the image-specific OkHttpClient. */
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class ImageClient
@@ -104,7 +101,7 @@ object CoilModule {
 
                 response.newBuilder()
                     // The origin supplied nothing usable, so its (legacy) directives are
-                    // replaced by our fallback. Note `max-stale` was dropped: OkHttp only
+                    // replaced by our fallback. `max-stale` was dropped: OkHttp only
                     // honours it on requests, so it never extended a response's lifetime.
                     .removeHeader("Pragma")
                     .removeHeader("Cache-Control")

@@ -7,18 +7,12 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
- * Spotify Web API Retrofit interface.
- * 
- * API Documentation: https://developer.spotify.com/documentation/web-api
- * 
- * Authentication: OAuth 2.0 with Authorization Code + PKCE flow.
- * All endpoints require a valid access token in the Authorization header.
- * 
- * Base URL: https://api.spotify.com/v1/
- * 
- * Rate Limiting: Spotify uses dynamic rate limiting.
- * Standard apps typically have a rate limit that allows for reasonable use.
- * If rate limited, the API returns 429 with Retry-After header.
+ * Spotify Web API, base URL https://api.spotify.com/v1/.
+ *
+ * OAuth 2.0 authorization code + PKCE; every endpoint needs a Bearer token. Rate limiting is
+ * dynamic, and a 429 carries a `Retry-After` header.
+ *
+ * Docs: https://developer.spotify.com/documentation/web-api
  */
 interface SpotifyApi {
 
@@ -35,22 +29,14 @@ interface SpotifyApi {
         // - playlist-read-private: Access user's playlists (including "Your Top Songs" yearly wraps)
         const val SCOPES = "user-read-private user-read-recently-played user-top-read user-library-read playlist-read-private"
         
-        // Redirect URI for OAuth callback
         const val REDIRECT_URI = "tempo://spotify-callback"
     }
 
     // Track Search
 
     /**
-     * Search for tracks on Spotify.
-     * 
-     * @param authorization Bearer token (format: "Bearer {access_token}")
-     * @param query Search query (supports field filters like artist:, track:, album:)
-     * @param type Type of item to search for (always "track" for this use case)
-     * @param limit Max results (1-50, default 20)
-     * @param offset Pagination offset
-     * @param market ISO 3166-1 alpha-2 country code for market-specific results
-     * @return Search results with matching tracks
+     * Search tracks. `query` supports field filters such as `artist:`, `track:` and `album:`;
+     * `limit` caps at 50 and `market` is an ISO 3166-1 alpha-2 country code.
      */
     @GET("search")
     suspend fun searchTracks(
@@ -65,17 +51,10 @@ interface SpotifyApi {
     // Artist Search
 
     /**
-     * Search for artists on Spotify.
-     * This is more reliable than track search for getting artist images
-     * because it directly searches for artists rather than inferring from tracks.
-     * 
-     * @param authorization Bearer token (format: "Bearer {access_token}")
-     * @param query Search query (artist name)
-     * @param type Type of item to search for (always "artist" for this use case)
-     * @param limit Max results (1-50, default 5)
-     * @param offset Pagination offset
-     * @param market ISO 3166-1 alpha-2 country code for market-specific results
-     * @return Search results with matching artists (includes images!)
+     * Search artists. More reliable than track search for artist images, because it searches
+     * artists directly instead of inferring them from tracks.
+     *
+     * `limit` caps at 50 and `market` is an ISO 3166-1 alpha-2 country code.
      */
     @GET("search")
     suspend fun searchArtists(
@@ -87,20 +66,10 @@ interface SpotifyApi {
         @Query("market") market: String? = null
     ): Response<SpotifyArtistSearchResponse>
 
-    // Audio Features (DEPRECATED BY SPOTIFY)
-    
-    // Audio features endpoints removed as they are deprecated for third-party apps since Nov 2024.
+    // Audio features endpoints removed: Spotify deprecated them for third-party apps in Nov 2024.
 
     // Track Details
 
-    /**
-     * Get detailed information for a track.
-     * 
-     * @param authorization Bearer token
-     * @param trackId Spotify track ID
-     * @param market ISO 3166-1 alpha-2 country code
-     * @return Detailed track information
-     */
     @GET("tracks/{id}")
     suspend fun getTrack(
         @Header("Authorization") authorization: String,
@@ -108,15 +77,7 @@ interface SpotifyApi {
         @Query("market") market: String? = null
     ): Response<SpotifyTrack>
 
-    /**
-     * Get detailed information for multiple tracks in one request.
-     * Much more efficient than calling getTrack() multiple times.
-     * 
-     * @param authorization Bearer token
-     * @param ids Comma-separated list of track IDs (max 50)
-     * @param market ISO 3166-1 alpha-2 country code
-     * @return Multiple track details
-     */
+    /** Batch version of [getTrack]; `ids` is comma-separated, max 50. */
     @GET("tracks")
     suspend fun getMultipleTracks(
         @Header("Authorization") authorization: String,
@@ -126,13 +87,7 @@ interface SpotifyApi {
 
     // User Profile (for validating connection)
 
-    /**
-     * Get current user's profile.
-     * Used to verify authentication is working.
-     * 
-     * @param authorization Bearer token
-     * @return User profile information
-     */
+    /** Current user's profile; used to verify that authentication works. */
     @GET("me")
     suspend fun getCurrentUser(
         @Header("Authorization") authorization: String
@@ -140,27 +95,13 @@ interface SpotifyApi {
 
     // Artist Details
 
-    /**
-     * Get full details for an artist including images.
-     * 
-     * @param authorization Bearer token
-     * @param artistId Spotify artist ID
-     * @return Full artist details including images
-     */
     @GET("artists/{id}")
     suspend fun getArtist(
         @Header("Authorization") authorization: String,
         @Path("id") artistId: String
     ): Response<SpotifyFullArtist>
     
-    /**
-     * Get multiple artists in one request.
-     * Much more efficient than calling getArtist() multiple times.
-     * 
-     * @param authorization Bearer token
-     * @param ids Comma-separated list of artist IDs (max 50)
-     * @return Multiple artist details including genres
-     */
+    /** Batch version of [getArtist]; `ids` is comma-separated, max 50. */
     @GET("artists")
     suspend fun getMultipleArtists(
         @Header("Authorization") authorization: String,
@@ -168,17 +109,8 @@ interface SpotifyApi {
     ): Response<SpotifyMultipleArtistsResponse>
     
     /**
-     * Get an artist's top tracks.
-     * Returns up to 10 top tracks for the artist.
-     * 
-     * This is useful for deriving approximate audio features when:
-     * - Spotify's audio-features API is unavailable (deprecated)
-     * - We can analyze the user's listening history for these tracks
-     * 
-     * @param authorization Bearer token
-     * @param artistId Spotify artist ID
-     * @param market ISO 3166-1 alpha-2 country code (required by API)
-     * @return Artist's top tracks in the specified market
+     * Up to 10 top tracks for an artist, used to approximate audio features from the user's
+     * history now that Spotify's audio-features API is gone. `market` is required by the API.
      */
     @GET("artists/{id}/top-tracks")
     suspend fun getArtistTopTracks(
@@ -190,22 +122,11 @@ interface SpotifyApi {
     // Recently Played (Import Feature)
 
     /**
-     * Get the current user's recently played tracks.
-     * Returns up to 50 tracks from approximately the last 24 hours.
-     * 
-     * Used for onboarding import when user's Tempo data is empty,
-     * allowing them to bootstrap their library with recent Spotify activity.
-     * 
-     * Pagination:
-     * - Use 'after' cursor to get tracks played AFTER that timestamp (for incremental polling)
-     * - Use 'before' cursor to get tracks played BEFORE that timestamp (for going back in time)
-     * 
-     * @param authorization Bearer token (format: "Bearer {access_token}")
-     * @param limit Max tracks to return (1-50, default 50)
-     * @param after Unix timestamp in milliseconds. Returns items after this position.
-     * @param before Unix timestamp in milliseconds. Returns items before this position.
-     *               Note: Only 'after' OR 'before' should be specified, not both.
-     * @return Recently played tracks with timestamps and context
+     * Recently played, up to 50 tracks covering roughly the last 24 hours. Feeds the onboarding
+     * import that bootstraps an empty Tempo library.
+     *
+     * `after` and `before` are Unix timestamps in milliseconds and are mutually exclusive: use
+     * `after` for incremental polling, `before` to walk backwards. `limit` caps at 50.
      */
     @GET("me/player/recently-played")
     suspend fun getRecentlyPlayed(
@@ -218,22 +139,9 @@ interface SpotifyApi {
     // User's Top Items (Stats.fm style!)
 
     /**
-     * Get the current user's top tracks based on affinity calculated by Spotify.
-     * 
-     * This is the key endpoint for getting user's listening stats over time!
-     * Unlike recently-played (last 50), this provides TOP tracks based on Spotify's
-     * internal affinity calculation across different time ranges.
-     * 
-     * Time ranges:
-     * - short_term: ~4 weeks
-     * - medium_term: ~6 months  
-     * - long_term: Several years ("all time")
-     * 
-     * @param authorization Bearer token
-     * @param timeRange Time range: "short_term", "medium_term", or "long_term"
-     * @param limit Max tracks (1-50, default 20)
-     * @param offset Pagination offset (0-based)
-     * @return User's top tracks for the specified time range
+     * Top tracks by Spotify's affinity calculation rather than recency. `timeRange` is
+     * `short_term` (~4 weeks), `medium_term` (~6 months) or `long_term` (several years, "all
+     * time"). `offset` is 0-based and `limit` caps at 50.
      */
     @GET("me/top/tracks")
     suspend fun getUserTopTracks(
@@ -244,18 +152,8 @@ interface SpotifyApi {
     ): Response<SpotifyUserTopTracksResponse>
 
     /**
-     * Get the current user's top artists based on affinity calculated by Spotify.
-     * 
-     * Time ranges:
-     * - short_term: ~4 weeks
-     * - medium_term: ~6 months
-     * - long_term: Several years ("all time")
-     * 
-     * @param authorization Bearer token
-     * @param timeRange Time range: "short_term", "medium_term", or "long_term"
-     * @param limit Max artists (1-50, default 20)
-     * @param offset Pagination offset (0-based)
-     * @return User's top artists for the specified time range
+     * Top artists, same `timeRange` values as [getUserTopTracks]. `offset` is 0-based and
+     * `limit` caps at 50.
      */
     @GET("me/top/artists")
     suspend fun getUserTopArtists(
@@ -268,21 +166,11 @@ interface SpotifyApi {
     // User's Saved Tracks (Time Machine - Exact Timestamps!)
 
     /**
-     * Get the current user's saved (liked) tracks.
-     * 
-     * CRITICAL FOR HISTORY RECONSTRUCTION:
-     * Unlike top tracks, this endpoint provides EXACT timestamps of when
-     * each track was added/liked. This is the "Time Machine" data source.
-     * 
-     * If a user liked a song on June 12, 2023, we KNOW they were listening
-     * to it around that time. We can generate accurate listening events
-     * clustered around these dates.
-     * 
-     * @param authorization Bearer token
-     * @param limit Max tracks (1-50, default 50)
-     * @param offset Pagination offset (can fetch up to ~1000 tracks)
-     * @param market ISO 3166-1 alpha-2 country code
-     * @return User's saved tracks with added_at timestamps
+     * Saved tracks with exact `added_at` timestamps, the Time Machine source for history
+     * reconstruction: a like on 12 June 2023 means the user was listening to that track around
+     * then, so events can be generated around those dates.
+     *
+     * `offset` pages up to roughly 1000 tracks; `limit` caps at 50.
      */
     @GET("me/tracks")
     suspend fun getUserSavedTracks(
@@ -295,20 +183,8 @@ interface SpotifyApi {
     // User's Playlists (Artifact Hunter)
 
     /**
-     * Get the current user's playlists.
-     * 
-     * CRITICAL FOR HISTORY RECONSTRUCTION:
-     * We search for playlists with specific naming patterns:
-     * - "Your Top Songs 2024", "Your Top Songs 2023", etc.
-     * - "On Repeat", "Repeat Rewind"
-     * - "Daylist", seasonal playlists
-     * 
-     * These are "historical artifacts" that reveal past listening patterns.
-     * 
-     * @param authorization Bearer token
-     * @param limit Max playlists (1-50, default 50)
-     * @param offset Pagination offset
-     * @return User's playlists
+     * Playlists, scanned for history artifacts: "Your Top Songs 2024"/"2023", "On Repeat",
+     * "Repeat Rewind", "Daylist" and other seasonal wraps. `limit` caps at 50.
      */
     @GET("me/playlists")
     suspend fun getUserPlaylists(
@@ -318,15 +194,7 @@ interface SpotifyApi {
     ): Response<SpotifyUserPlaylistsResponse>
 
     /**
-     * Get tracks from a specific playlist.
-     * Used to extract tracks from "Your Top Songs 20XX" playlists.
-     * 
-     * @param authorization Bearer token
-     * @param playlistId Spotify playlist ID
-     * @param limit Max tracks (1-100, default 100)
-     * @param offset Pagination offset
-     * @param market ISO 3166-1 alpha-2 country code
-     * @return Playlist tracks with added_at timestamps
+     * Tracks from one playlist, used to pull the "Your Top Songs 20XX" wraps. `limit` caps at 100.
      */
     @GET("playlists/{playlist_id}/tracks")
     suspend fun getPlaylistTracks(

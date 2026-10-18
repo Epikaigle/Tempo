@@ -234,7 +234,7 @@ private fun AlbumDetailsContent(
                     bottom = 64.dp,
                 ),
             ) {
-                // 1. Hero Stage (Artwork, Album Title, Artist Link, Meta)
+                // 1. Hero Stage
                 item(key = "hero_section") {
                     AlbumHeroEditorialStage(
                         albumDetails = albumDetails,
@@ -263,17 +263,15 @@ private fun AlbumDetailsContent(
                 // 3. Track Sheet — header, then one lazy item PER track row.
                 //
                 // The rows used to sit inside a single item(key = "track_sheet")
-                // as an eager Column, which bypassed LazyColumn virtualization
-                // entirely: every row of a 50–200 track album/compilation
-                // composed and measured on first layout and stayed composed
-                // while scrolled far off-screen.
-                //
-                // They are now items of this LazyColumn so only the visible
-                // window is materialised. Items are keyed off the track id
-                // (never the index): index-baked keys resolve to a different
-                // id when the list is mutated mid-scroll, reuse a slot twice
-                // and throw the subcompose IllegalArgumentException — see the
-                // same discipline in HistoryScreen/StatsScreen.
+                // as an eager Column, which bypassed LazyColumn virtualization:
+                // every row of a 50–200 track album/compilation composed and
+                // measured on first layout and stayed composed while scrolled far
+                // off-screen. Now only the visible window is materialised. Items
+                // are keyed off the track id (never the index): index-baked keys
+                // resolve to a different id when the list is mutated mid-scroll,
+                // reuse a slot twice and throw the subcompose
+                // IllegalArgumentException — see the same discipline in
+                // HistoryScreen/StatsScreen.
                 item(key = "track_sheet_header") {
                     Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp)) {
                         AlbumTrackSheetHeader(
@@ -737,10 +735,10 @@ private fun AlbumStatMasthead(
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Kicker + track count + edit-mode add affordance for the track sheet.
+ * Kicker + track count + edit-mode add affordance.
  *
- * Emitted as its own LazyColumn item directly above the track rows; the rows
- * themselves are lazy items (see [AlbumTrackRow]) so the list virtualizes.
+ * Its own LazyColumn item directly above the track rows (see [AlbumTrackRow]),
+ * so the header never forces those rows to compose.
  */
 @Composable
 private fun AlbumTrackSheetHeader(
@@ -819,17 +817,13 @@ private fun AlbumEmptyTracksCard(tint: Color) {
 /**
  * One lazily-composed track row of the track sheet.
  *
- * This is the body of what used to be an eager `tracks.forEachIndexed` Column
- * inside a single wraparound [GlassCard] — the card chrome (glass gradient,
- * accent border, hairline divider) is now applied per row instead of once
- * around the whole list. Same tokens and dimension chains as before, with the
- * outer edges carved so consecutive rows still tile into one continuous sheet:
- *
- *  - row height is unchanged: content padding (11.2dp top / bottom) + the
- *    original 0.8dp [GlassBorderSoft] hairline == the old 12dp + hairline;
- *  - the hairline moved from *between* rows to the bottom edge *inside* each
- *    row (skipped on the last row), so it stays clipped by the row's corners;
- *  - outer 20dp corners live on the first/last row, inner corners are square.
+ * Replaces the eager `tracks.forEachIndexed` Column that used to sit inside a
+ * single wraparound [GlassCard]: the card chrome (glass gradient, accent border,
+ * hairline divider) is now applied per row, so the outer 20dp corners live on
+ * the first/last row and the hairline sits inside each row (skipped on the last)
+ * to stay clipped by those corners. Row height is unchanged — content padding
+ * (11.2dp top / bottom) + the original 0.8dp [GlassBorderSoft] hairline == the
+ * old 12dp + hairline.
  */
 @Composable
 private fun AlbumTrackRow(

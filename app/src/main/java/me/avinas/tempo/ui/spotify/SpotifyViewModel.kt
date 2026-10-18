@@ -19,13 +19,9 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * ViewModel for Spotify integration screens.
- * Handles authentication flow, connection status, and enrichment stats.
- * 
- * Data Flow Pattern: Enrichment → Database → UI
- * - This ViewModel ONLY reads from database via Repository (never makes API calls)
- * - Spotify API calls are made by EnrichmentWorker in background
- * - UI always displays cached data from database
+ * Spotify integration state for the profile screens. Reads only from the database through
+ * repositories, never the API: that work belongs to `EnrichmentWorker` in the background, so
+ * the UI always shows cached data.
  */
 @HiltViewModel
 class SpotifyViewModel @Inject constructor(
@@ -37,26 +33,21 @@ class SpotifyViewModel @Inject constructor(
     private val historyReconstructionService: SpotifyHistoryReconstructionService
 ) : ViewModel() {
 
-    // Authentication state from auth manager
     val authState = authManager.authState
     
-    // Pending auth state - true when user is in the middle of auth flow (went to browser)
+    // True while the auth flow is out in the browser.
     private val _isPendingAuth = MutableStateFlow(false)
     val isPendingAuth: StateFlow<Boolean> = _isPendingAuth.asStateFlow()
     
-    // Import state for tracking progress
     private val _importState = MutableStateFlow<SpotifyImportState>(SpotifyImportState.Idle)
     val importState: StateFlow<SpotifyImportState> = _importState.asStateFlow()
 
-    // Stats state
     private val _spotifyStats = MutableStateFlow(SpotifyStats())
     val spotifyStats: StateFlow<SpotifyStats> = _spotifyStats.asStateFlow()
 
-    // Show disconnect dialog
     private val _showDisconnectDialog = MutableStateFlow(false)
     val showDisconnectDialog: StateFlow<Boolean> = _showDisconnectDialog.asStateFlow()
 
-    // Success message
     private val _showConnectedMessage = MutableStateFlow(false)
     val showConnectedMessage: StateFlow<Boolean> = _showConnectedMessage.asStateFlow()
 
@@ -64,55 +55,35 @@ class SpotifyViewModel @Inject constructor(
         loadStats()
     }
 
-    /**
-     * Check if Spotify is currently connected.
-     */
     fun isConnected(): Boolean = authManager.isConnected()
 
-    /**
-     * Get the connected user's display name.
-     */
     fun getUserDisplayName(): String? = tokenStorage.getUserDisplayName()
 
-    /**
-     * Start the Spotify OAuth login flow.
-     * Returns an Intent to launch the browser for authentication.
-     */
+    /** Starts OAuth and sets [isPendingAuth]; the caller launches the returned browser Intent. */
     fun startLogin(): Intent {
         _isPendingAuth.value = true
         return authManager.startLoginFlow()
     }
     
-    /**
-     * Check if there's a pending auth from a previous session.
-     * Should be called when app resumes to detect returning from browser.
-     */
+    /** Call on resume to detect a return from the browser. */
     fun checkPendingAuth() {
         _isPendingAuth.value = tokenStorage.hasPendingAuth()
     }
     
-    /**
-     * Clear pending auth state (called when auth completes or fails).
-     */
+    /** Call when auth completes or fails. */
     fun clearPendingAuth() {
         _isPendingAuth.value = false
     }
 
     /**
-     * Handle the OAuth callback from Spotify.
-     * Should be called when the app receives the redirect URI.
-     * 
-     * Note: This method is not currently used in the normal auth flow.
-     * SpotifyCallbackActivity handles the auth and passes success to MainActivity,
-     * which then calls reconstructHistory() directly.
-     * This method is kept for potential direct usage or testing.
+     * Not on the normal auth path: `SpotifyCallbackActivity` handles the callback and
+     * `MainActivity` then calls `reconstructHistory()` directly. Kept for direct use or tests.
      */
     fun handleAuthCallback(uri: Uri) {
         viewModelScope.launch {
             val success = authManager.handleCallback(uri)
             Log.d("SpotifyViewModel", "handleAuthCallback: success=$success")
             if (success) {
-                // Queue all tracks for Spotify enrichment via Repository
                 enrichedMetadataRepository.queueAllForSpotifyEnrichment()
                 _showConnectedMessage.value = true
                 loadStats()
@@ -122,29 +93,19 @@ class SpotifyViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Show the disconnect confirmation dialog.
-     */
     fun showDisconnectConfirmation() {
         _showDisconnectDialog.value = true
     }
 
-    /**
-     * Dismiss the disconnect dialog.
-     */
     fun dismissDisconnectDialog() {
         _showDisconnectDialog.value = false
     }
 
-    /**
-     * Disconnect from Spotify and clear all data.
-     */
+    /** Disconnects and clears all stored Spotify data. */
     fun disconnect() {
         viewModelScope.launch {
-            // Clear all Spotify data from database via Repository
             enrichedMetadataRepository.clearAllSpotifyData()
             
-            // Disconnect from auth manager (clears tokens)
             authManager.disconnect()
             
             _showDisconnectDialog.value = false
@@ -152,17 +113,11 @@ class SpotifyViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Dismiss the connected success message.
-     */
     fun dismissConnectedMessage() {
         _showConnectedMessage.value = false
     }
 
-    /**
-     * Load Spotify enrichment stats from database (cached data).
-     * No API calls are made - stats are computed from locally stored enrichment data.
-     */
+    /** Reads counts from local enrichment data; no API calls. */
     fun loadStats() {
         viewModelScope.launch {
             val enrichedCount = enrichedMetadataRepository.countTracksWithSpotifyFeatures()
@@ -182,10 +137,7 @@ class SpotifyViewModel @Inject constructor(
         val isLoading: Boolean = true
     )
     
-    /**
-     * Import recent plays from Spotify.
-     * This fetches the last ~50 tracks from Spotify's recently played endpoint.
-     */
+    /** Imports the last ~50 plays from Spotify's recently-played endpoint. */
     fun importRecentPlays() {
         if (_importState.value is SpotifyImportState.Importing) return
         
@@ -207,25 +159,18 @@ class SpotifyViewModel @Inject constructor(
         }
     }
     
-    /**
-     * Clear the import state (after showing result to user).
-     */
     fun clearImportState() {
         _importState.value = SpotifyImportState.Idle
     }
     
     // SPOTIFY TOP ITEMS (Library Population)
     
-    // Top items import state
     private val _topItemsImportState = MutableStateFlow<TopItemsImportState>(TopItemsImportState.Idle)
     val topItemsImportState: StateFlow<TopItemsImportState> = _topItemsImportState.asStateFlow()
     
     /**
-     * Import user's top tracks and artists from Spotify.
-     * This populates the library with high-quality metadata and genre information.
-     * 
-     * Note: Spotify is a DATA SOURCE. The imported data becomes part of the regular
-     * library - no separate "Spotify Tops" section is shown.
+     * Imports top tracks and artists, populating the library with metadata and genres.
+     * Spotify is a data source only: there is no separate "Spotify Tops" section.
      */
     fun importTopItems() {
         if (_topItemsImportState.value is TopItemsImportState.Importing) {
@@ -259,16 +204,12 @@ class SpotifyViewModel @Inject constructor(
         }
     }
     
-    /**
-     * Clear the top items import state.
-     */
     fun clearTopItemsImportState() {
         _topItemsImportState.value = TopItemsImportState.Idle
     }
     
     // HISTORY RECONSTRUCTION (Enhanced Import)
     
-    // History reconstruction state
     private val _reconstructionState = MutableStateFlow<HistoryReconstructionState>(HistoryReconstructionState.Idle)
     val reconstructionState: StateFlow<HistoryReconstructionState> = _reconstructionState.asStateFlow()
     
@@ -279,14 +220,9 @@ class SpotifyViewModel @Inject constructor(
     private var hasCompletedImportThisSession = false
     
     /**
-     * Reconstruct listening history using the Hybrid "Real + Smart" approach.
-     * 
-     * This is the enhanced import that combines:
-     * 1. Time Machine: Liked tracks with exact timestamps
-     * 2. Artifact Hunter: "Your Top Songs 20XX" playlists
-     * 3. Smart Mixer: Algorithmic distribution with circadian rhythm bias
-     * 
-     * Results in highly accurate historical data for stats.
+     * The Hybrid "Real + Smart" reconstruction: Time Machine (liked tracks with exact
+     * timestamps), Artifact Hunter ("Your Top Songs 20XX" playlists) and Smart Mixer
+     * (algorithmic distribution with a circadian rhythm bias).
      */
     fun reconstructHistory() {
         if (_reconstructionState.value is HistoryReconstructionState.Reconstructing) {
@@ -294,7 +230,6 @@ class SpotifyViewModel @Inject constructor(
             return
         }
         
-        // Prevent re-running if already completed this session
         if (hasCompletedImportThisSession) {
             Log.d("SpotifyViewModel", "History reconstruction already completed this session, skipping")
             return
@@ -340,10 +275,8 @@ class SpotifyViewModel @Inject constructor(
                     topTracksUsed = result.topTracksUsed
                 )
                 
-                // Mark import as completed to prevent re-running
                 hasCompletedImportThisSession = true
                 
-                // Process remaining yearly playlists in background if any
                 if (result.hasPendingHistory && !isBackgroundProcessingRunning) {
                     Log.i("SpotifyViewModel", "Starting background processing of ${result.pendingYearlyPlaylists.size} remaining yearly playlists")
                     processRemainingYearlyPlaylists(result.pendingYearlyPlaylists)
@@ -357,17 +290,11 @@ class SpotifyViewModel @Inject constructor(
         }
     }
     
-    /**
-     * Clear the history reconstruction state.
-     */
     fun clearReconstructionState() {
         _reconstructionState.value = HistoryReconstructionState.Idle
     }
     
-    /**
-     * Import with enhanced history reconstruction (recommended for new users).
-     * This replaces importTopItems() when user wants the best accuracy.
-     */
+    /** The enhanced import, recommended for new users over [importTopItems]. */
     fun importWithHistoryReconstruction() {
         if (_topItemsImportState.value is TopItemsImportState.Importing ||
             _reconstructionState.value is HistoryReconstructionState.Reconstructing) {
@@ -378,18 +305,12 @@ class SpotifyViewModel @Inject constructor(
         Log.d("SpotifyViewModel", "Starting enhanced import with history reconstruction")
         
         viewModelScope.launch {
-            // Use the enhanced reconstruction service
             reconstructHistory()
         }
     }
     
-    /**
-     * Background processing for remaining yearly playlists.
-     * Called after initial import completes with the most recent playlists.
-     * This processes older yearly playlists without blocking the user.
-     */
+    /** Processes the older yearly playlists after the initial import, without blocking the UI. */
     private fun processRemainingYearlyPlaylists(pendingPlaylists: List<SpotifyHistoryReconstructionService.PendingPlaylist>) {
-        // Guard against duplicate launches
         if (isBackgroundProcessingRunning) {
             Log.d("SpotifyViewModel", "Background processing already running, skipping")
             return
@@ -431,9 +352,6 @@ class SpotifyViewModel @Inject constructor(
     }
 }
 
-/**
- * Represents the state of a Spotify import operation.
- */
 sealed class SpotifyImportState {
     object Idle : SpotifyImportState()
     data class Importing(val progress: Int) : SpotifyImportState()
@@ -441,9 +359,6 @@ sealed class SpotifyImportState {
     data class Error(val message: String) : SpotifyImportState()
 }
 
-/**
- * State for Spotify top items import (library population).
- */
 sealed class TopItemsImportState {
     object Idle : TopItemsImportState()
     data class Importing(val current: Int, val total: Int, val message: String) : TopItemsImportState()
@@ -456,14 +371,6 @@ sealed class TopItemsImportState {
     data class Error(val message: String) : TopItemsImportState()
 }
 
-/**
- * State for history reconstruction (enhanced import).
- * 
- * This is the Hybrid "Real + Smart" approach that combines:
- * - Time Machine: Liked tracks with exact timestamps
- * - Artifact Hunter: Yearly playlists for historical data
- * - Smart Mixer: Algorithmic distribution for realism
- */
 sealed class HistoryReconstructionState {
     object Idle : HistoryReconstructionState()
     

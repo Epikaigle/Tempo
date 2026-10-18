@@ -4,9 +4,7 @@ import android.util.Log
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * Track matching and normalization utilities for deduplication.
- */
+/** Track matching and normalization for deduplication. */
 object TrackMatcher {
     
     private const val TAG = "TrackMatcher"
@@ -65,14 +63,8 @@ object TrackMatcher {
     private val WHITESPACE_REGEX = Regex("""\s+""")
     
     /**
-     * Check if two tracks match, considering common variations.
-     * 
-     * @param title1 First track title
-     * @param artist1 First artist string
-     * @param title2 Second track title
-     * @param artist2 Second artist string
-     * @param strictMatching If true, distinct versions (Live, Remix) won't match (DEFAULT: FALSE/MERGE)
-     * @return MatchResult with similarity scores and match type
+     * Check if two tracks match, considering common variations. `strictMatching` keeps distinct
+     * versions (Live, Remix) apart instead of merging them.
      */
     fun matchTracks(
         title1: String,
@@ -104,13 +96,11 @@ object TrackMatcher {
             )
         }
         
-        // Normalize and compare
         val normTitle1 = normalizeTitle(title1, strictMatching)
         val normTitle2 = normalizeTitle(title2, strictMatching)
         val normArtist1 = normalizeArtist(artist1)
         val normArtist2 = normalizeArtist(artist2)
         
-        // Calculate similarities
         val titleSimilarity = calculateSimilarity(normTitle1, normTitle2)
         val artistSimilarity = calculateArtistSimilarity(normArtist1, normArtist2, artist1, artist2)
         
@@ -196,7 +186,6 @@ object TrackMatcher {
         var bestResult: MatchResult? = null
         
         for (candidate in filteredCandidates) {
-            // Normalize candidate
             val normCandTitle = normalizeTitle(candidate.title, strictMatching)
             val normCandArtist = normalizeArtist(candidate.artist)
             
@@ -249,10 +238,8 @@ object TrackMatcher {
     }
     
     /**
-     * Normalize a track title by removing common variations.
-     * 
-     * @param title The raw title
-     * @param strictMatching If true, keep version suffixes (Live, Remix) to prevent merging
+     * Normalize a track title by removing common variations. `strictMatching` keeps version
+     * suffixes (Live, Remix) so they stay distinct.
      */
     fun normalizeTitle(title: String, strictMatching: Boolean = false): String {
         var normalized = title.trim()
@@ -275,8 +262,8 @@ object TrackMatcher {
             }
         }
         
-        // Remove feature artists from title (they are checked in artist match)
-        // Note: only use FEATURING_PATTERNS here, not ARTIST_SEPARATOR_PATTERNS,
+        // Remove feature artists from title (they are checked in artist match).
+        // Only use FEATURING_PATTERNS here, not ARTIST_SEPARATOR_PATTERNS,
         // because "&" and "x" may be part of the actual title (e.g., "Jack & Diane")
         FEATURING_PATTERNS.forEach { pattern ->
             normalized = pattern.replace(normalized, "")
@@ -297,9 +284,6 @@ object TrackMatcher {
         return normalized.trim().lowercase()
     }
     
-    /**
-     * Normalize artist string.
-     */
     fun normalizeArtist(artist: String): String {
         var normalized = artist.trim()
         if (normalized.isBlank()) return ""

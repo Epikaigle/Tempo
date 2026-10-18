@@ -20,8 +20,9 @@ import com.google.zxing.common.HybridBinarizer
 import java.util.concurrent.Executors
 
 /**
- * CameraX QR code scanner that invokes [onQrDetected] on successful frame decode.
- * Caller must verify CAMERA permission before placement in composition.
+ * CameraX QR scanner. Each decoded frame invokes [onQrDetected] (no hasDetected
+ * guard), so the caller owns resets, and it must verify CAMERA permission before
+ * placing this in composition.
  */
 @Composable
 fun QrScannerView(
@@ -29,8 +30,6 @@ fun QrScannerView(
     onQrDetected: (rawText: String) -> Unit
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    // Allow multiple scans by not using hasDetected guard
-    // Caller is responsible for resetting/remounting when needed
     val executor = remember { Executors.newSingleThreadExecutor() }
 
     DisposableEffect(Unit) {

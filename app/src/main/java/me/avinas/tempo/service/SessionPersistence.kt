@@ -11,14 +11,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Persistent storage for active playback sessions.
- * 
- * This allows session recovery after:
- * - Service restarts
- * - App crashes
- * - Device reboots (if sessions weren't properly closed)
- * 
- * Uses SharedPreferences for fast access and JSON serialization for session data.
+ * SharedPreferences + JSON backing for active playback sessions, so they survive service
+ * restarts, crashes, and reboots that never got to close them.
  */
 class SessionPersistence(private val context: Context) {
     
@@ -29,10 +23,8 @@ class SessionPersistence(private val context: Context) {
         private const val KEY_LAST_SAVE_TIMESTAMP = "last_save_timestamp"
         private const val KEY_SERVICE_LAST_ACTIVE = "service_last_active"
         
-        // Stale session threshold (sessions older than this are discarded on recovery)
         private const val SESSION_STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000L // 24 hours
         
-        // Auto-save interval
         private const val AUTO_SAVE_INTERVAL_MS = 30_000L // 30 seconds
     }
     
@@ -47,9 +39,6 @@ class SessionPersistence(private val context: Context) {
     private val sessionListType = Types.newParameterizedType(List::class.java, SerializableSession::class.java)
     private val jsonAdapter = moshi.adapter<List<SerializableSession>>(sessionListType)
     
-    /**
-     * Save all active sessions to persistent storage.
-     */
     suspend fun saveSessions(sessions: Map<String, SessionState>) = withContext(Dispatchers.IO) {
         try {
             if (sessions.isEmpty()) {
@@ -74,10 +63,7 @@ class SessionPersistence(private val context: Context) {
         }
     }
     
-    /**
-     * Load previously active sessions from persistent storage.
-     * Filters out stale sessions that are too old.
-     */
+    /** Loads persisted sessions, dropping any older than [SESSION_STALE_THRESHOLD_MS]. */
     suspend fun loadSessions(): List<SessionState> = withContext(Dispatchers.IO) {
         try {
             val json = prefs.getString(KEY_ACTIVE_SESSIONS, null) ?: return@withContext emptyList()
@@ -107,9 +93,6 @@ class SessionPersistence(private val context: Context) {
         }
     }
     
-    /**
-     * Clear all persisted sessions.
-     */
     fun clearSessions() {
         prefs.edit()
             .remove(KEY_ACTIVE_SESSIONS)
@@ -118,52 +101,34 @@ class SessionPersistence(private val context: Context) {
         Log.d(TAG, "Cleared all persisted sessions")
     }
     
-    /**
-     * Record that the service is currently active.
-     * Used to detect unclean shutdowns.
-     */
+    /** Records the service as active so [wasUncleanShutdown] can spot a crash or kill. */
     fun markServiceActive() {
         prefs.edit()
             .putLong(KEY_SERVICE_LAST_ACTIVE, System.currentTimeMillis())
             .apply()
     }
     
-    /**
-     * Record that the service is shutting down cleanly.
-     */
     fun markServiceInactive() {
         prefs.edit()
             .putLong(KEY_SERVICE_LAST_ACTIVE, 0)
             .apply()
     }
     
-    /**
-     * Check if there was an unclean shutdown (sessions may need recovery).
-     */
     fun wasUncleanShutdown(): Boolean {
         val lastActive = prefs.getLong(KEY_SERVICE_LAST_ACTIVE, 0)
         return lastActive > 0
     }
     
-    /**
-     * Get time since last session save.
-     */
     fun getTimeSinceLastSave(): Long {
         val lastSave = prefs.getLong(KEY_LAST_SAVE_TIMESTAMP, 0)
         return System.currentTimeMillis() - lastSave
     }
     
-    /**
-     * Check if auto-save is needed based on time elapsed.
-     */
     fun needsAutoSave(): Boolean {
         return getTimeSinceLastSave() > AUTO_SAVE_INTERVAL_MS
     }
 }
 
-/**
- * Serializable version of SessionState for JSON storage.
- */
 data class SerializableSession(
     val sessionId: String,
     val packageName: String,

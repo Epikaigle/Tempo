@@ -13,16 +13,11 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
 /**
- * Custom SVG artwork for every profile badge.
+ * Custom SVG artwork for every profile badge: hand-drawn 24x24 vectors, no stock icons.
  *
- * Each badge is a bespoke, hand-drawn 24x24 vector — no stock icons. Every
- * glyph is concept-driven (Century is a wax seal, Ironclad is a shield with
- * a lightning cut-out, The Centennial is a trophy…) so a badge reads as a
- * collectible object someone *designed*, not a shape with an icon dropped in.
- *
- * Fill/stroke colors are placeholders — the Icon tint in [BadgeEmblem]
- * overrides them; only the geometry matters here. Subpaths that must punch
- * holes (rings, eyes, checker squares) use [PathFillType.EvenOdd].
+ * Fill/stroke colors are placeholders, since the Icon tint in [BadgeEmblem] overrides them;
+ * only the geometry matters here. Subpaths that must punch holes (rings, eyes, checker
+ * squares) use [PathFillType.EvenOdd].
  */
 object BadgeArt {
 

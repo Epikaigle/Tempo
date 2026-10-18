@@ -89,9 +89,6 @@ class ServiceHealthWorker @AssistedInject constructor(
             Log.i(TAG, "Service health check scheduled")
         }
 
-        /**
-         * Cancel the periodic health check.
-         */
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
             Log.i(TAG, "Service health check cancelled")
@@ -107,8 +104,8 @@ class ServiceHealthWorker @AssistedInject constructor(
 
         // Self-heal: if the listener component is stuck DISABLED (e.g. a previous
         // restart attempt died mid-toggle), re-enable it so tracking can recover
-        // without a reinstall. This runs every 15 minutes even if the app is
-        // never opened, so the kill window is bounded.
+        // without a reinstall. The health check runs about every 30 minutes even if
+        // the app is never opened, so the kill window is bounded.
         try {
             val state = applicationContext.packageManager.getComponentEnabledSetting(componentName)
             if (state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED) {
@@ -215,7 +212,7 @@ class ServiceHealthWorker @AssistedInject constructor(
         try {
             // Toggle component state to force system rebind.
             //
-            // CRITICAL: the re-enable MUST run even if the disable or the delay
+            // The re-enable MUST run even if the disable or the delay
             // throws — otherwise the listener component is left DISABLED and
             // tracking stays dead until the user reinstalls (the exact failure
             // users report). Re-enable in a finally block and verify the final

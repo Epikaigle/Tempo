@@ -116,8 +116,7 @@ class LastFmImportService
             // Batch size for enriched metadata inserts
             private const val METADATA_BATCH_SIZE = 500
 
-            // Tier configurations
-            // NOTE: "Everything" tier removed intentionally. For 10+ year Last.fm users,
+            // The "Everything" tier was removed deliberately. For 10+ year Last.fm users,
             // importing all scrobbles as active events (100K-300K rows) degrades SQLite
             // query performance and uses 150-200MB storage. Archive handles long-tail data.
             object Tiers {
@@ -628,8 +627,8 @@ class LastFmImportService
                             )
                         }
 
-                    // Phase 1: Build active set. Rebuilt on resume too - it is ~12 API calls
-                    // (loved + up to 2000 top tracks) versus persisting the whole key set.
+                    // The active set is rebuilt on resume too: ~12 API calls (loved plus up to
+                    // 2000 top tracks) is cheaper than persisting the whole key set.
                     _progress.value = ImportProgress.Discovering("Building active set...")
                     val activeSetBuilt = buildActiveSet(username, tier)
 
@@ -646,7 +645,6 @@ class LastFmImportService
                         )
                     }
 
-                    // Phase 2: Import scrobbles.
                     // Resume one page back from where the previous attempt died: its last partial
                     // batch was never flushed, so re-reading that page recovers those scrobbles
                     // (dedup handles the overlap).
@@ -663,7 +661,6 @@ class LastFmImportService
                             resumeTotals = resumeFrom?.let { ImportTotals.from(it) } ?: ImportTotals(),
                         )
 
-                    // Phase 3: Mark complete
                     if (result.success) {
                         importMetadataDao.markCompleted(
                             id = importId,
@@ -688,14 +685,10 @@ class LastFmImportService
                         // completion UI. runPostImportOptimization emits no progress of its own.
                         _progress.value = ImportProgress.Completed(result)
 
-                        // Phase 6: Post-import optimization
                         runPostImportOptimization()
 
-                        // Phase 7: Schedule accelerated enrichment for imported tracks
-                        // This runs in background with larger batches to quickly enrich
-                        // imported tracks (album art, genres, etc.)
-                        // NOTE: Only active tracks (tracksCreated) are enriched.
-                        // Archived tracks use Last.fm album art and are never enriched.
+                        // Only the tracks behind active events are enriched; archived scrobbles
+                        // keep Last.fm album art and are never enriched.
                         if (result.tracksCreated > 0) {
                             Log.i(
                                 TAG,
@@ -944,14 +937,8 @@ class LastFmImportService
             }
 
         /**
-         * Build the active set from top tracks and loved tracks.
-         * Returns true if successful, false if a critical error occurred.
-         *
-         * Algorithm (per plan):
-         * 1. Fetch ALL loved tracks → Always in active set
-         * 2. Fetch top tracks (up to tier limit)
-         * 3. Calculate cumulative coverage percentage
-         * 4. Log actual coverage for analytics
+         * Build the active set from every loved track plus up to the tier's top-track count,
+         * logging the coverage reached. False when a critical fetch failed.
          */
         private suspend fun buildActiveSet(
             username: String,
@@ -1481,10 +1468,7 @@ class LastFmImportService
             )
         }
 
-        /**
-         * Prepare a scrobble for batch insertion (doesn't insert yet).
-         * Returns the event ready for batch or error status.
-         */
+        /** Outcome of preparing one scrobble for batch insertion. */
         private sealed class ScrobblePrepareResult {
             data class Ready(
                 val event: ListeningEvent,
@@ -1589,9 +1573,6 @@ class LastFmImportService
             return ScrobblePrepareResult.Ready(event, isNewTrack, isNewArtist)
         }
 
-        /**
-         * Queue enriched metadata for batch insert (performance optimization).
-         */
         private suspend fun queueEnrichedMetadata(
             track: Track,
             scrobble: LastFmScrobble,
@@ -1620,9 +1601,6 @@ class LastFmImportService
             if (batchFull) flushPendingMetadata()
         }
 
-        /**
-         * Flush pending metadata to database in batch.
-         */
         private suspend fun flushPendingMetadata() {
             // Swap the batch out under the lock so no DAO call is made while holding it.
             val batch =
@@ -1643,8 +1621,8 @@ class LastFmImportService
         }
 
         /**
-         * Compress and save archived scrobbles with proper merge handling.
-         * Uses upsertWithMerge to correctly handle tracks that span multiple batches.
+         * Compress and save a batch of archived scrobbles, merging rows for tracks that span
+         * batches.
          */
         private suspend fun saveArchiveBatch(
             batch: Map<String, ArchivePendingTrack>,
@@ -1684,9 +1662,6 @@ class LastFmImportService
             )
         }
 
-        /**
-         * Pending track for archive batch.
-         */
         private data class ArchivePendingTrack(
             val trackTitle: String,
             val artistName: String,
@@ -1697,9 +1672,6 @@ class LastFmImportService
             val timestamps: MutableList<Long>,
         )
 
-        /**
-         * Cancel current import.
-         */
         fun cancelImport() {
             _progress.value = ImportProgress.Idle
             clearWorkingCaches()
@@ -1756,14 +1728,8 @@ class LastFmImportService
             trackCache[key] = track
         }
 
-        /**
-         * Check if an import is currently in progress.
-         */
         suspend fun hasActiveImport(): Boolean = importMetadataDao.getActiveImport() != null
 
-        /**
-         * Get the most recent completed import for a user.
-         */
         suspend fun getLastImport(username: String): LastFmImportMetadata? = importMetadataDao.getLatestCompletedForUsername(username)
 
         // Archive Query Methods
@@ -1788,9 +1754,7 @@ class LastFmImportService
          * Search both active tracks and archive, returning unified results.
          * Archive results are marked with isFromArchive = true.
          *
-         * NOTE: This method has an N+1 query pattern for active tracks (3 queries per track).
-         * For better performance with large result sets, consider adding a batch query to
-         * ListeningEventDao that returns track stats in bulk.
+         * N+1 for active tracks: three queries (play count, first and last play) per result.
          */
         suspend fun searchUnified(
             query: String,
@@ -1852,10 +1816,7 @@ class LastFmImportService
             return results.sortedByDescending { it.playCount }.take(limit)
         }
 
-        /**
-         * Promote an archived track to active set.
-         * Creates full ListeningEvent records for all archived timestamps.
-         */
+        /** Promote an archived track to the active set, one event per archived timestamp. */
         suspend fun promoteFromArchive(archiveId: Long): Result<PromotionResult> =
             withContext(Dispatchers.IO) {
                 try {
@@ -1963,9 +1924,6 @@ class LastFmImportService
             val isNewTrack: Boolean,
         )
 
-        /**
-         * Get archive statistics for UI display.
-         */
         suspend fun getArchiveStats(): ArchiveStats =
             ArchiveStats(
                 totalTracks = scrobbleArchiveDao.getTotalCount(),
@@ -1999,16 +1957,7 @@ class LastFmImportService
             val isFromArchive: Boolean = true,
         )
 
-        /**
-         * Get archived history items for a date range.
-         * Used when displaying "All History" including archived scrobbles.
-         *
-         * @param startTime Start of date range (epoch millis)
-         * @param endTime End of date range (epoch millis)
-         * @param searchQuery Optional search term to filter results
-         * @param limit Maximum number of results
-         * @return List of archive history items sorted by timestamp descending
-         */
+        /** Archived history items in [startTime]..[endTime] (epoch millis), newest first. */
         suspend fun getArchiveHistoryInRange(
             startTime: Long,
             endTime: Long,
@@ -2071,16 +2020,10 @@ class LastFmImportService
         }
 
         /**
-         * Get total archive play count in a date range.
-         * Used for stats calculations that need to include archived data.
+         * Total archived plays in [startTime]..[endTime], for stats that must include the archive.
          *
-         * WARNING: This method can be slow for large archives (O(n) where n = total archived scrobbles)
-         * as it decompresses each archive's timestamps and filters them.
-         *
-         * For performance-critical paths, consider:
-         * - Using getArchiveStats() for approximate counts
-         * - Caching results for repeated queries
-         * - Adding a denormalized monthly count to ScrobbleArchive
+         * Slow on large archives: O(n) in total archived scrobbles, since every archive's
+         * timestamps are decompressed and filtered.
          */
         suspend fun getArchivePlayCountInRange(
             startTime: Long,
@@ -2099,10 +2042,7 @@ class LastFmImportService
             return totalCount
         }
 
-        /**
-         * Get archived history items for a specific artist.
-         * Used when displaying artist details with complete history.
-         */
+        /** Archived plays for one artist, for the complete-history view in artist details. */
         suspend fun getArchiveHistoryForArtist(
             artistName: String,
             startTime: Long? = null,
@@ -2125,13 +2065,8 @@ class LastFmImportService
         suspend fun hasArchiveData(): Boolean = scrobbleArchiveDao.getTotalCount() > 0
 
         /**
-         * Run database optimization after import completes.
-         *
-         * Per plan Phase 6:
-         * 1. Run ANALYZE on listening_events to update query planner statistics
-         * 2. Run incremental VACUUM if free space > 10%
-         * 3. Checkpoint WAL
-         * 4. Invalidate stats cache
+         * Post-import database maintenance: ANALYZE on the bulk-loaded tables, incremental VACUUM
+         * when free space justifies it, a WAL checkpoint, then stats-cache invalidation.
          */
         private suspend fun runPostImportOptimization() {
             withContext(Dispatchers.IO) {
@@ -2150,9 +2085,9 @@ class LastFmImportService
                         Log.d(TAG, "Running ANALYZE on tracks...")
                         db.execSQL("ANALYZE tracks")
 
-                        // 2. Check free space and run incremental VACUUM if needed
-                        // Note: Full VACUUM can be slow and doubles storage temporarily
-                        // So we use incremental vacuum which is more efficient
+                        // 2. Check free space and run incremental VACUUM if needed.
+                        // A full VACUUM can be slow and doubles storage temporarily, so this
+                        // uses incremental vacuum, which is more efficient
                         val freeListCount =
                             db.query("PRAGMA freelist_count").use { cursor ->
                                 if (cursor.moveToFirst()) cursor.getInt(0) else 0
@@ -2177,8 +2112,8 @@ class LastFmImportService
                             Log.d(TAG, "Skipping incremental VACUUM: auto_vacuum=$autoVacuum (not INCREMENTAL)")
                         } else if (freeSpaceRatio > 0.10) {
                             Log.d(TAG, "Running incremental VACUUM (free space > 10%)...")
-                            // Vacuum up to 1000 pages at a time to avoid blocking
-                            // Note: PRAGMA incremental_vacuum returns a result set
+                            // Vacuum up to 1000 pages at a time to avoid blocking.
+                            // PRAGMA incremental_vacuum returns a result set
                             db.query("PRAGMA incremental_vacuum(1000)").use { cursor ->
                                 if (cursor.moveToFirst()) {
                                     val pagesFreed = cursor.getInt(0)
@@ -2187,10 +2122,10 @@ class LastFmImportService
                             }
                         }
 
-                        // 3. Checkpoint WAL to merge changes into main database
-                        // Note: PRAGMA wal_checkpoint returns a result set, so we must use query()
-                        // instead of execSQL() to avoid "Queries can be performed using SQLiteDatabase
-                        // query or rawQuery methods only" error on some Android versions.
+                        // 3. Checkpoint WAL to merge changes into main database.
+                        // PRAGMA wal_checkpoint returns a result set, so this must use query()
+                        // rather than execSQL(), which throws "Queries can be performed using
+                        // SQLiteDatabase query or rawQuery methods only" on some Android versions.
                         Log.d(TAG, "Checkpointing WAL...")
                         db.query("PRAGMA wal_checkpoint(PASSIVE)").use { cursor ->
                             if (cursor.moveToFirst()) {
@@ -2217,10 +2152,8 @@ class LastFmImportService
         }
 
         /**
-         * Remove archived tracks that have been promoted to active set.
-         * Called periodically to clean up redundant archive data.
-         *
-         * Uses batched processing to avoid loading all archives into memory.
+         * Drop archive rows whose plays the active set now covers. Batched, so a large archive
+         * table is never loaded whole.
          */
         suspend fun prunePromotedArchives(): Int =
             withContext(Dispatchers.IO) {
@@ -2243,13 +2176,9 @@ class LastFmImportService
                             // Check if it has significant play history in active set
                             val activePlayCount = listeningEventDao.countByTrackId(existingTrack.id)
 
-                            // Archive is redundant if active plays cover at least 50% of archived plays.
-                            // Use (archiveCount + 1) / 2 to properly handle integer division:
-                            // - archive=1: threshold=1 (need 1 active)
-                            // - archive=2: threshold=1 (need 1 active)
-                            // - archive=3: threshold=2 (need 2 active)
-                            // - archive=4: threshold=2 (need 2 active)
-                            // Only prune archive rows once active plays meet coverage threshold.
+                            // Archive is redundant once active plays cover at least 50% of the
+                            // archived plays; (archiveCount + 1) / 2 rounds that up, so 3 archived
+                            // plays need 2 active ones.
                             val threshold = (archive.playCount + 1) / 2
                             if (activePlayCount >= threshold) {
                                 scrobbleArchiveDao.delete(archive)

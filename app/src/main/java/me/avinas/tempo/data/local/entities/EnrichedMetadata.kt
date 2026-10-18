@@ -7,10 +7,8 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * Cached enriched metadata from MusicBrainz and optionally Spotify.
- * 
- * This table stores API response data to avoid repeated API calls.
- * Metadata older than 6 months can be refreshed if needed.
+ * Cached enriched metadata from MusicBrainz and optionally Spotify, stored to avoid
+ * repeated API calls. Metadata older than 6 months can be refreshed if needed.
  */
 @Entity(
     tableName = "enriched_metadata",
@@ -228,44 +226,27 @@ data class EnrichedMetadata(
         return enrichmentStatus == EnrichmentStatus.FAILED && retryCount < MAX_RETRY_COUNT
     }
     
-    /**
-     * Check if this track has Spotify audio features.
-     */
     fun hasSpotifyFeatures(): Boolean {
         return spotifyId != null && audioFeaturesJson != null
     }
     
-    /**
-     * Check if this track has audio features from any source.
-     */
     fun hasAudioFeatures(): Boolean {
         return audioFeaturesJson != null
     }
     
-    /**
-     * Check if Spotify enrichment should be attempted.
-     */
     fun shouldAttemptSpotifyEnrichment(): Boolean {
         return spotifyEnrichmentStatus == SpotifyEnrichmentStatus.NOT_ATTEMPTED ||
                spotifyEnrichmentStatus == SpotifyEnrichmentStatus.PENDING
     }
     
-    /**
-     * Check if audio features enrichment should be attempted via fallback (ReccoBeats).
-     * Should be tried when Spotify didn't provide audio features.
-     */
+    /** Tried when Spotify didn't provide audio features. */
     fun shouldAttemptAudioFeaturessFallback(): Boolean {
         return audioFeaturesJson == null && 
                (spotifyEnrichmentStatus == SpotifyEnrichmentStatus.UNAVAILABLE ||
                 spotifyEnrichmentStatus == SpotifyEnrichmentStatus.NOT_ATTEMPTED)
     }
     
-    /**
-     * Get the best available artist image URL from all sources.
-     * Priority: Spotify > iTunes > Last.fm > Deezer
-     * 
-     * @return The best artist image URL, or null if none available
-     */
+    /** Priority: Spotify > iTunes > Last.fm > Deezer. Null when none is available. */
     fun getBestArtistImageUrl(): String? {
         return spotifyArtistImageUrl 
             ?: iTunesArtistImageUrl 
@@ -273,9 +254,6 @@ data class EnrichedMetadata(
             ?: deezerArtistImageUrl
     }
     
-    /**
-     * Check if any artist image is available from any source.
-     */
     fun hasArtistImage(): Boolean {
         return getBestArtistImageUrl() != null
     }
@@ -336,25 +314,12 @@ enum class EnrichmentStatus {
 }
 
 /**
- * Source of album art with priority levels.
- * Higher priority sources provide higher quality, more reliable artwork.
- * 
- * Priority order (highest to lowest):
- * 1. USER_SELECTED (100) - Explicit user choice; never replaced automatically
- * 2. SPOTIFY (6) - Official album artwork from Spotify
- * 3. MUSICBRAINZ (5) - Cover Art Archive (community verified)
- * 4. ITUNES (4) - Apple Music artwork (high quality)
- * 5. DEEZER (3) - Deezer album artwork
- * 6. LOCAL (2) - Extracted from MediaSession/notification
- * 7. NONE / USER_RESET (0) - No automatic album art currently selected
- * 
- * Key behavior:
- * - LOCAL art can be replaced by any API source
- * - API sources generally shouldn't be replaced by lower priority sources
- * - Same-priority sources can replace each other (to refresh stale art)
- * - USER_SELECTED is only changed by an explicit user action
- * - USER_RESET is an internal tombstone that prevents stale full-row Track writes
- *   from resurrecting a manual cover after the user returns to automatic selection
+ * Source of album art. Replacement behaviour, which the priority numbers alone do not show:
+ * `LOCAL` art can be replaced by any API source, API sources are not replaced by lower priority
+ * ones, same-priority sources may replace each other to refresh stale art, `USER_SELECTED` changes
+ * only on an explicit user action, and `USER_RESET` is an internal tombstone that stops stale
+ * full-row Track writes from resurrecting a manual cover after the user returns to automatic
+ * selection.
  */
 enum class AlbumArtSource(val priority: Int) {
     NONE(0),
@@ -395,16 +360,8 @@ enum class AlbumArtSource(val priority: Int) {
 }
 
 /**
- * Source of genre data with priority levels.
- * Higher priority sources provide more accurate track-specific genres.
- * 
- * Priority order (highest to lowest):
- * 1. MUSICBRAINZ (5) - Community curated, track-specific
- * 2. LASTFM (4) - User tags, track-specific
- * 3. ITUNES (3) - Apple's genre taxonomy
- * 4. RECCOBEATS (2) - Audio analysis based
- * 5. SPOTIFY_ARTIST (1) - Artist-level genres (not track-specific)
- * 6. NONE (0) - No genres yet
+ * Source of genre data. Sorted most to least track-specific: MusicBrainz and Last.fm tags describe
+ * the track, `SPOTIFY_ARTIST` only the artist.
  */
 enum class GenreSource(val priority: Int) {
     NONE(0),
@@ -456,16 +413,6 @@ enum class GenreSource(val priority: Int) {
             }
         }
         
-        /**
-         * Check if new genres should replace existing ones.
-         * 
-         * Simple, clear priority rules:
-         * 1. MusicBrainz ALWAYS wins if it has genres (community-curated, track-specific)
-         * 2. Last.fm wins over iTunes/ReccoBeats/Spotify (user tags, track-specific)
-         * 3. Otherwise, keep existing genres (Spotify artist genres are already specific)
-         * 
-         * @return true if newGenres should replace existingGenres
-         */
         fun shouldReplace(
             existingGenres: List<String>,
             existingSource: GenreSource,

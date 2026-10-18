@@ -26,8 +26,7 @@ import javax.inject.Singleton
  * the corruption is gone from the database itself — no stale format remains to
  * confuse raw-SQL consumers or future exports.
  *
- * Follows the same versioned-flag pattern as [ArtistRepairService]: runs once
- * per repair version on app start, and retries on the next launch if it fails.
+ * Same versioned-flag pattern as [ArtistRepairService].
  */
 @Singleton
 class ListColumnRepairService @Inject constructor(
@@ -81,11 +80,9 @@ class ListColumnRepairService @Inject constructor(
     }
 
     /**
-     * Rewrite `artists.genres` rows that still hold the legacy JSON-array format.
-     * Reading a row runs the repaired converter (JSON text -> clean list) and
-     * [ArtistDao.updateGenres] writes it back in canonical delimited form.
-     *
-     * @return number of artist rows rewritten
+     * Rewrite `artists.genres` rows still in the legacy JSON-array format: the
+     * converter repairs the value on read, and [ArtistDao.updateGenres] writes it
+     * back in canonical delimited form.
      */
     private suspend fun repairArtistGenres(): Int {
         val ids = artistDao.getArtistIdsWithLegacyGenreFormat()
@@ -104,8 +101,6 @@ class ListColumnRepairService @Inject constructor(
     /**
      * Rewrite `enriched_metadata` rows whose tags or genres column still holds the
      * legacy JSON-array format. Same read-repair/write-canonicalize flow.
-     *
-     * @return number of enriched metadata rows rewritten
      */
     private suspend fun repairEnrichedMetadataLists(): Int {
         val ids = enrichedMetadataDao.getIdsWithLegacyListFormat()

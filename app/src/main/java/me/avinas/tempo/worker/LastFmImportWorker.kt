@@ -29,19 +29,12 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * Background worker for Last.fm import operations.
+ * Background worker for Last.fm history imports.
  *
- * Supports two modes:
- *
- * 1. INITIAL IMPORT (One-time)
- *    - Large import that may take 20+ minutes
- *    - Runs in foreground with notification
- *    - Resumable if interrupted
- *
- * 2. INCREMENTAL SYNC (Periodic)
- *    - Fetches new scrobbles since last sync
- *    - Runs every 24 hours (configurable)
- *    - Quick operation (usually < 1 minute)
+ * 1. INITIAL IMPORT (one-time): large enough to take 20+ minutes, runs in the foreground with a
+ *    notification, and resumes from the page it reached if interrupted.
+ * 2. INCREMENTAL SYNC (periodic, [LastFmSyncWorker]): new scrobbles since the last sync, every
+ *    24 hours by default, usually finishing in under a minute.
  */
 @HiltWorker
 class LastFmImportWorker
@@ -128,11 +121,7 @@ class LastFmImportWorker
                 }
             }
 
-            /**
-             * Enqueue initial import work.
-             *
-             * Uses expedited work with foreground service for long-running imports.
-             */
+            /** Enqueues the one-time import, which promotes itself to the foreground while it runs. */
             fun enqueueInitialImport(
                 context: Context,
                 username: String,
@@ -174,9 +163,8 @@ class LastFmImportWorker
             }
 
             /**
-             * Schedule periodic incremental sync.
-             *
-             * @param frequency Sync frequency: "DAILY" or "WEEKLY"
+             * Schedule periodic incremental sync. `frequency` is "DAILY" or "WEEKLY"; anything
+             * else (including "NONE") schedules nothing.
              */
             fun scheduleIncrementalSync(
                 context: Context,
@@ -221,26 +209,17 @@ class LastFmImportWorker
                 Log.i(TAG, "Scheduled Last.fm incremental sync (every $intervalHours hours)")
             }
 
-            /**
-             * Cancel incremental sync.
-             */
             fun cancelIncrementalSync(context: Context) {
                 WorkManager.getInstance(context).cancelUniqueWork(INCREMENTAL_SYNC_WORK)
                 Log.i(TAG, "Cancelled Last.fm incremental sync")
             }
 
-            /**
-             * Cancel all Last.fm import/sync work.
-             */
             fun cancelAll(context: Context) {
                 WorkManager.getInstance(context).cancelAllWorkByTag("lastfm_import")
                 WorkManager.getInstance(context).cancelUniqueWork(INCREMENTAL_SYNC_WORK)
                 Log.i(TAG, "Cancelled all Last.fm work")
             }
 
-            /**
-             * Check if an import is currently running.
-             */
             suspend fun isImportRunning(context: Context): Boolean =
                 withContext(Dispatchers.IO) {
                     try {
@@ -340,9 +319,6 @@ class LastFmImportWorker
             )
         }
 
-        /**
-         * Show a completion notification.
-         */
         private fun showCompletionNotification(
             eventsImported: Long,
             tracksCreated: Long,
@@ -464,7 +440,6 @@ class LastFmImportWorker
 
                     "EVERYTHING" -> LastFmImportService.Companion.Tiers.DEEP
 
-                    // Fallback to DEEP for old EVERYTHING
                     else -> LastFmImportService.Companion.Tiers.STANDARD
                 }
 
@@ -488,7 +463,6 @@ class LastFmImportWorker
                 Log.i(TAG, "Resuming import ${resumeFrom.id} from page ${resumeFrom.currentPage}")
             }
 
-            // Update notification
             promoteToForegroundSafely("Importing from Last.fm...")
 
             return try {
@@ -511,7 +485,6 @@ class LastFmImportWorker
                             Log.i(TAG, "Import finished with nothing new to write; skipping the completion notification")
                         }
 
-                        // Schedule incremental sync if user wants it
                         val prefs = userPreferencesDao.getSync()
                         if (prefs?.lastfmSyncFrequency != null && prefs.lastfmSyncFrequency != "NONE") {
                             scheduleIncrementalSync(applicationContext, prefs.lastfmSyncFrequency)
@@ -606,7 +579,6 @@ class LastFmSyncWorker
                 return Result.success()
             }
 
-            // Check sync frequency setting
             if (prefs.lastfmSyncFrequency == "NONE") {
                 Log.d(TAG, "Sync frequency set to NONE, cancelling")
                 LastFmImportWorker.cancelIncrementalSync(applicationContext)

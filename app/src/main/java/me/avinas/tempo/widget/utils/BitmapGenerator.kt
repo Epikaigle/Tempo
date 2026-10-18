@@ -743,7 +743,6 @@ object BitmapGenerator {
             letterSpacing = 0.05f
         }
 
-        // Helper to draw stat
         fun drawStat(index: Int, valText: String, lblText: String, color: Int = Color.WHITE) {
             val cx = pad + colW * index + colW / 2
             valuePaint.color = color
@@ -1342,7 +1341,7 @@ object BitmapGenerator {
 
         canvas.drawPath(path, paint)
         
-        // Optional: Draw stroke on top
+        // Stroke on top
         val strokePaint = Paint().apply {
             color = ColorUtils.setAlphaComponent(startColor, 200)
             style = Paint.Style.STROKE
@@ -1353,16 +1352,12 @@ object BitmapGenerator {
     }
 
     /**
-     * Safely decodes a bitmap file with downsampling to prevent OOM from extremely large images.
-     * First reads dimensions, calculates an appropriate inSampleSize, then decodes at reduced resolution.
-     *
-     * @param path File path to the image
-     * @param maxDimension Maximum width or height in pixels (default 1024)
-     * @return Decoded bitmap or null if decoding fails
+     * Decodes with downsampling so no dimension exceeds `maxDimension` px, avoiding OOM on
+     * extremely large images.
      */
     fun decodeBitmapSafe(path: String, maxDimension: Int = 1024): Bitmap? {
         return try {
-            // Step 1: Read dimensions only
+            // Dimensions only: inJustDecodeBounds skips the pixel decode
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
@@ -1370,7 +1365,6 @@ object BitmapGenerator {
 
             if (options.outWidth <= 0 || options.outHeight <= 0) return null
 
-            // Step 2: Calculate sample size
             var inSampleSize = 1
             val width = options.outWidth
             val height = options.outHeight

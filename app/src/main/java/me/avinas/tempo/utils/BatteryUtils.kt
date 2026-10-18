@@ -7,9 +7,8 @@ import android.os.BatteryManager
 import android.util.Log
 
 /**
- * Battery optimization utilities for Desktop Sync and other features.
- *
- * Provides efficient battery level checking with caching to minimize system calls.
+ * Battery level and charging checks, used by Desktop Sync. The cached level is refreshed at
+ * most once per [BATTERY_CHECK_INTERVAL_MS].
  */
 object BatteryUtils {
     private const val TAG = "BatteryUtils"
@@ -24,11 +23,8 @@ object BatteryUtils {
     private const val BATTERY_CHECK_INTERVAL_MS = 2 * 60 * 1000L // 2 minutes
     
     /**
-     * Get the current battery level percentage.
-     * Results are cached for 2 minutes to minimize system calls.
-     *
-     * @param context Android context for accessing BatteryManager
-     * @return Battery level as percentage (0-100), or 100 if unable to determine
+     * Current battery level as a percentage (0-100), or 100 when it cannot be read. Cached for
+     * 2 minutes unless `forceRefresh` is set.
      */
     fun getBatteryLevel(context: Context, forceRefresh: Boolean = false): Int {
         val now = System.currentTimeMillis()
@@ -46,44 +42,21 @@ object BatteryUtils {
         return cachedBatteryLevel
     }
     
-    /**
-     * Check if battery is critically low (≤ 20%).
-     * Desktop Sync should not operate at this level.
-     *
-     * @param context Android context
-     * @return true if battery is at or below critical threshold
-     */
+    /** True at or below [CRITICAL_BATTERY_LEVEL]: Desktop Sync must not run at that level. */
     fun isCriticalBattery(context: Context, forceRefresh: Boolean = false): Boolean {
         return getBatteryLevel(context, forceRefresh) <= CRITICAL_BATTERY_LEVEL
     }
     
-    /**
-     * Check if battery is low (≤ 30%).
-     * Used for warnings and throttling high-battery tasks.
-     *
-     * @param context Android context
-     * @return true if battery is at or below low threshold
-     */
+    /** True at or below [LOW_BATTERY_LEVEL]; used for warnings and to throttle battery-heavy work. */
     fun isLowBattery(context: Context, forceRefresh: Boolean = false): Boolean {
         return getBatteryLevel(context, forceRefresh) <= LOW_BATTERY_LEVEL
     }
     
-    /**
-     * Check if battery is healthy (> 30%).
-     *
-     * @param context Android context
-     * @return true if battery level is healthy
-     */
     fun isHealthyBattery(context: Context, forceRefresh: Boolean = false): Boolean {
         return getBatteryLevel(context, forceRefresh) > LOW_BATTERY_LEVEL
     }
     
-    /**
-     * Check if device is currently charging.
-     *
-     * @param context Android context
-     * @return true if device is charging (AC, USB, or wireless)
-     */
+    /** True while charging from any source (AC, USB or wireless). */
     fun isCharging(context: Context): Boolean {
         return try {
             val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))

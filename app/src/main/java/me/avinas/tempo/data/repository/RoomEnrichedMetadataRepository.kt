@@ -8,18 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Room implementation of EnrichedMetadataRepository.
- * 
- * This repository is the single access point for enriched metadata:
- * - Enrichment services (workers) write enriched data here
- * - UI components read cached data from here (never make API calls)
- * 
- * Pattern: Enrichment → Database → UI
- * - EnrichmentWorker and SpotifyEnrichmentService call upsert() to save API data
- * - ViewModels call forTrack()/forTrackSync() to read cached data
- * - UI always displays from database, background enrichment keeps it fresh
- */
+/** Room-backed [EnrichedMetadataRepository]: enrichment writes here, UI reads the cache. */
 @Singleton
 class RoomEnrichedMetadataRepository @Inject constructor(
     private val dao: EnrichedMetadataDao

@@ -54,10 +54,7 @@ class TrackResolver @Inject constructor(
         val track: Track
     )
 
-    /**
-     * Resolve [query] to an existing track, or create one if none matches.
-     * Returns the track id plus the (possibly merged) track.
-     */
+    /** Resolve [query] to an existing track, or create one if none matches. */
     suspend fun resolve(query: Query, contentType: String = "MUSIC"): Resolution {
         // Blank IDs must be skipped: Last.fm returns mbid="" (not null) for non-MusicBrainz
         // tracks, and a WHERE musicbrainz_id = '' lookup collides with the first track that
@@ -73,11 +70,11 @@ class TrackResolver @Inject constructor(
         }
         trackRepository.findByTitleAndArtist(query.title, query.artist)?.let { return merge(it, query) }
 
-        // Step 5: a name the user renamed away or merged into another row still means
-        // that song. Without this, every later import of the old title re-created the
-        // duplicate the user had just cleaned up — and because the play then lands on a
-        // fresh track_id, neither the content fingerprint nor Layer 2's per-track
-        // reconciliation can recognise it as a repeat, so the play counts split for real.
+        // A name the user renamed away or merged into another row still means that song.
+        // Without this, every later import of the old title re-created the duplicate the
+        // user had just cleaned up — and because the play then lands on a fresh track_id,
+        // neither the content fingerprint nor Layer 2's per-track reconciliation can
+        // recognise it as a repeat, so the play counts split for real.
         // Exact title first, alias second: a row that literally carries this title is the
         // better answer, which also means duplicates created before this step existed are
         // left alone rather than silently absorbed.
@@ -101,11 +98,7 @@ class TrackResolver @Inject constructor(
         return Resolution(newId, isNewTrack = true, track = track.copy(id = newId))
     }
 
-    /**
-     * Layer 4: backfill missing authoritative IDs on an existing track. Only
-     * fills gaps — a non-null existing value is never replaced. Returns a
-     * [Resolution] pointing at the existing (possibly updated) track.
-     */
+    /** Layer 4 for one track: gap-fill only, never overwrite. */
     private suspend fun merge(existing: Track, query: Query): Resolution {
         var updated = existing
         var dirty = false

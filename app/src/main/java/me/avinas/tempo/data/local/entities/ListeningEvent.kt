@@ -8,14 +8,10 @@ import androidx.room.PrimaryKey
 import me.avinas.tempo.data.local.DeviceTimeZone
 
 /**
- * Represents a single listening event for a track.
- * 
- * Enhanced tracking fields:
- * - wasSkipped: True if user skipped before 30% completion
- * - isReplay: True if this was played within 5 minutes of the same track
- * - estimatedDurationMs: The track's estimated duration (for completion calculation)
- * - pauseCount: Number of times playback was paused
- * - sessionId: Groups events from the same listening session
+ * A single listening event for a track.
+ *
+ * Thresholds the field names do not show: `wasSkipped` is under 30% completion, `isReplay` is
+ * within 5 minutes of the same track.
  */
 @Entity(
     tableName = "listening_events",
@@ -77,24 +73,16 @@ data class ListeningEvent(
     @ColumnInfo(name = "tz_offset_minutes", defaultValue = "NULL")
     val tzOffsetMinutes: Int? = DeviceTimeZone.offsetMinutesAt(timestamp),
 ) {
-    /**
-     * Check if volume was explicitly 0 (muted). Legacy records (null) are treated as audible.
-     */
+    /** Volume was explicitly 0 (muted). Legacy records (null) are treated as audible. */
     val isZeroVolume: Boolean get() = volumeLevel == 0
 
-    /**
-     * Check if this was a full play (>80% completion).
-     */
+    /** Full play: >80% completion. */
     val isFullPlay: Boolean get() = completionPercentage >= 80
     
-    /**
-     * Check if this was a partial play (30-80% completion).
-     */
+    /** Partial play: 30-80% completion. */
     val isPartialPlay: Boolean get() = completionPercentage in 30..79
     
-    /**
-     * Get actual play duration in seconds for display.
-     */
+    /** Play duration in seconds, rounded down. */
     val playDurationSeconds: Int get() = (playDuration / 1000).toInt()
     
     /**

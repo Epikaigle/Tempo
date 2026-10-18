@@ -79,15 +79,8 @@ class SpotifyImportService @Inject constructor(
     }
     
     /**
-     * Import recently played tracks from Spotify.
-     * 
-     * For onboarding: Call with default parameters to fetch last 50 plays.
-     * For polling: Pass afterCursor to only get new plays since last poll.
-     * 
-     * @param limit Max tracks to fetch (1-50)
-     * @param afterCursor Unix timestamp cursor for incremental polling
-     * @param onProgress Callback for progress updates (current, total)
-     * @return ImportResult with statistics
+     * Import recently played tracks. With no [afterCursor] this fetches the last [limit] plays
+     * (the API caps it at 50); with one, only plays newer than that Unix timestamp.
      */
     suspend fun importRecentlyPlayed(
         limit: Int = 50,
@@ -214,16 +207,11 @@ class SpotifyImportService @Inject constructor(
         object Duplicate : ProcessResult()
     }
     
-    /**
-     * Process a single play history item from Spotify.
-     * Creates Track (if new), links artists, creates enriched metadata, and creates ListeningEvent.
-     */
     private suspend fun processPlayHistoryItem(playHistory: PlayHistoryObject): ProcessResult {
         val spotifyTrack = playHistory.track
         val playedAtMillis = playHistory.playedAtMillis
         
-        // CRITICAL: Validate the timestamp from Spotify
-        // If parsing failed (playedAtMillis == 0), log error and skip this item
+        // A zero timestamp means Spotify's `played_at` failed to parse; skip the item
         if (playedAtMillis == 0L) {
             Log.e(TAG, "Invalid timestamp for track '${spotifyTrack.name}' - raw value: '${playHistory.playedAt}'")
             return ProcessResult.Duplicate // Treat as duplicate to skip but not count as error
@@ -271,8 +259,7 @@ class SpotifyImportService @Inject constructor(
         val track = convertToTrack(spotifyTrack)
         val trackId = trackRepository.insert(track)
         
-        // CRITICAL: Link artists to the newly created track
-        // This populates the artists table and track_artists junction table
+        // Artist links feed the artists and track_artists tables
         try {
             val insertedTrack = track.copy(id = trackId)
             artistLinkingService.linkArtistsForTrack(insertedTrack)
@@ -291,9 +278,6 @@ class SpotifyImportService @Inject constructor(
         return ProcessResult.NewTrack
     }
     
-    /**
-     * Convert Spotify track to Tempo Track entity.
-     */
     private fun convertToTrack(spotifyTrack: SpotifyTrack): Track {
         return Track(
             title = spotifyTrack.name,
@@ -308,9 +292,6 @@ class SpotifyImportService @Inject constructor(
         )
     }
     
-    /**
-     * Create a ListeningEvent from Spotify play history.
-     */
     private suspend fun createListeningEvent(trackId: Long, playHistory: PlayHistoryObject) {
         val spotifyTrack = playHistory.track
         val playedAtMillis = playHistory.playedAtMillis
@@ -337,13 +318,9 @@ class SpotifyImportService @Inject constructor(
     }
     
     /**
-     * Create enriched metadata record with Spotify data.
-     * 
-     * This is CRITICAL for imported tracks to have:
-     * - Spotify IDs for future enrichment
-     * - Album art with proper source tracking
-     * - Artist IDs for fetching artist images
-     * - Proper enrichment status so they're not re-processed unnecessarily
+     * Store Spotify ids, album art with its source, and artist ids. `spotifyEnrichmentStatus` is
+     * ENRICHED so this data is never fetched again, while `enrichmentStatus` stays PENDING for the
+     * genres and tags other providers supply.
      */
     private suspend fun createEnrichedMetadata(trackId: Long, spotifyTrack: SpotifyTrack) {
         try {

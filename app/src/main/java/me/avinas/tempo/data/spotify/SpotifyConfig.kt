@@ -1,17 +1,12 @@
 package me.avinas.tempo.data.spotify
 
 /**
- * Constants and configuration for Spotify integration.
- * 
- * IMPORTANT: Before using Spotify integration in production:
- * 1. Register your app at https://developer.spotify.com/dashboard
- * 2. Add your Client ID to SpotifyAuthManager.CLIENT_ID
- * 3. Configure the redirect URI in the Spotify Developer Dashboard
- *    Redirect URI: tempo://spotify-callback
- * 
- * The redirect URI must exactly match what's configured in:
- * - SpotifyApi.REDIRECT_URI
- * - AndroidManifest.xml intent filter for SpotifyCallbackActivity
+ * Spotify setup requirements: the app is registered at
+ * https://developer.spotify.com/dashboard, its Client ID goes in `SpotifyAuthManager.CLIENT_ID`,
+ * and the redirect URI `tempo://spotify-callback` is configured there.
+ *
+ * That redirect URI must match exactly in `SpotifyApi.REDIRECT_URI` and in the AndroidManifest
+ * intent filter for `SpotifyCallbackActivity`.
  */
 object SpotifyConfig {
     
@@ -49,19 +44,11 @@ object SpotifyConfig {
         )
     }
     
-    /**
-     * Check if a feature requires Spotify.
-     */
+    /** Every listed feature needs a Spotify connection. */
     fun requiresSpotify(feature: SpotifyFeature): Boolean = true
     
-    /**
-     * Features requiring Spotify integration.
-     */
     val allSpotifyFeatures = SpotifyFeature.values().toList()
     
-    /**
-     * Get a summary of benefits for connecting Spotify.
-     */
     val benefitsSummary = listOf(
         "🎭 Mood tracking - See how your music affects your mood",
         "⚡ Energy insights - Understand your music's intensity",

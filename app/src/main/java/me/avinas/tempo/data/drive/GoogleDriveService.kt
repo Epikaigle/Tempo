@@ -36,15 +36,7 @@ sealed class DriveException(message: String, cause: Throwable? = null) : Excepti
     class Unknown(message: String, cause: Throwable? = null) : DriveException(message, cause)
 }
 
-/**
- * Handles Google Drive REST API operations for backup and restore.
- * 
- * Features:
- * - Upload backup files to dedicated "Tempo Backups" folder
- * - List, download, and delete backups
- * - Auto-cleanup: maintains maximum of 5 backups
- * - Progress callbacks for upload/download operations
- */
+/** Google Drive REST operations for Tempo backups: upload, list, download and delete. */
 @Singleton
 class GoogleDriveService @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -99,10 +91,7 @@ class GoogleDriveService @Inject constructor(
     // Mutex to prevent race conditions when creating backup folder
     private val folderCreationMutex = Mutex()
     
-    /**
-     * Initialize the Drive service with current access token.
-     * Returns null if authorization is not complete or token is unavailable.
-     */
+    /** Drive client for the current access token, or null when there is no usable token. */
     private suspend fun getDriveClient(): CachedDriveClient? = withContext(Dispatchers.IO) {
         val accessToken = authManager.getAccessToken()
         if (accessToken == null) {
@@ -154,11 +143,6 @@ class GoogleDriveService @Inject constructor(
             }
         }
     }
-    
-    /**
-     * Get or create the Tempo backup folder in Google Drive.
-     * Throws DriveException on failure.
-     */
     
     /**
      * Execute a Drive API operation with automatic retry on 401 Unauthorized,
@@ -327,10 +311,7 @@ class GoogleDriveService @Inject constructor(
         }
     }
 
-    /**
-     * Get or create the Tempo backup folder in Google Drive.
-     * Throws DriveException on failure.
-     */
+    /** Id of the "Tempo Backups" folder, created on first use. Throws DriveException on failure. */
     private suspend fun getOrCreateBackupFolder(): String = withContext(Dispatchers.IO) {
         // Return cached folder ID if available and valid
         backupFolderId?.let { return@withContext it }
@@ -379,11 +360,8 @@ class GoogleDriveService @Inject constructor(
     }
     
     /**
-     * Upload a backup file to Google Drive.
-     * 
-     * @param localFile The backup ZIP file to upload
-     * @param progressCallback Optional callback for upload progress (0.0 to 1.0)
-     * @return Result of the upload operation
+     * Upload a backup ZIP to the "Tempo Backups" folder. [progressCallback] receives upload
+     * progress from 0.0 to 1.0.
      */
     suspend fun uploadBackup(
         localFile: File,
@@ -550,11 +528,7 @@ class GoogleDriveService @Inject constructor(
         }
     }
     
-    /**
-     * List all backups from Google Drive.
-     * Returns backups sorted by creation date (newest first).
-     * Returns Result.failure if an error occurs (e.g., network, auth).
-     */
+    /** Backups in Drive, newest first. Returns a failure instead of throwing on network/auth errors. */
     suspend fun listBackups(): Result<List<DriveBackupInfo>> = withContext(Dispatchers.IO) {
         try {
             val folderId = getOrCreateBackupFolder()
@@ -590,13 +564,7 @@ class GoogleDriveService @Inject constructor(
     }
 
     
-    /**
-     * Download a backup file from Google Drive.
-     * 
-     * @param fileId The Drive file ID to download
-     * @param progressCallback Optional callback for download progress
-     * @return Result containing the downloaded local file
-     */
+    /** Downloads a backup into the local `drive_downloads` cache directory. */
     suspend fun downloadBackup(
         fileId: String,
         progressCallback: ((Float) -> Unit)? = null
@@ -679,12 +647,6 @@ class GoogleDriveService @Inject constructor(
         return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
     }
     
-    /**
-     * Delete a backup from Google Drive.
-     * 
-     * @param fileId The Drive file ID to delete
-     * @return true if deletion was successful
-     */
     suspend fun deleteBackup(fileId: String): Boolean = withContext(Dispatchers.IO) {
         try {
             executeWithRetry { service ->
@@ -700,9 +662,7 @@ class GoogleDriveService @Inject constructor(
         }
     }
     
-    /**
-     * Cleanup old backups, keeping only the most recent MAX_BACKUPS.
-     */
+    /** Deletes all but the newest [MAX_BACKUPS] backups. */
     suspend fun cleanupOldBackups() = withContext(Dispatchers.IO) {
         try {
             val backups = listBackups().getOrNull() ?: return@withContext
@@ -724,14 +684,8 @@ class GoogleDriveService @Inject constructor(
         }
     }
     
-    /**
-     * Check if Drive service is available and authenticated.
-     */
     suspend fun isAvailable(): Boolean = getDriveClient() != null
     
-    /**
-     * Clear cached service (call on sign out).
-     */
     suspend fun clearCache() {
         // Match getOrCreateBackupFolder's lock order. Waiting for an in-flight
         // folder lookup prevents it from repopulating an old account's folder ID
@@ -744,10 +698,7 @@ class GoogleDriveService @Inject constructor(
         }
     }
     
-    /**
-     * Cleanup the local download cache directory.
-     * Call this periodically or after failed downloads.
-     */
+    /** Deletes the local `drive_downloads` cache. */
     fun cleanupDownloadCache() {
         try {
             val cacheDir = File(context.cacheDir, "drive_downloads")

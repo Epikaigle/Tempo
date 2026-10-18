@@ -15,18 +15,7 @@ import java.util.*
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Database optimization utilities for maintaining optimal performance.
- * 
- * Features:
- * - VACUUM to reclaim disk space and defragment
- * - ANALYZE to update query planner statistics
- * - Integrity check
- * - WAL checkpoint management
- * - Automatic cleanup of old data
- * - Query performance monitoring
- * - Health diagnostics
- */
+/** Maintenance tasks, health diagnostics and query performance tracking for [AppDatabase]. */
 @Singleton
 class DatabaseOptimization @Inject constructor(
     private val database: AppDatabase
@@ -58,8 +47,7 @@ class DatabaseOptimization @Inject constructor(
     private val maxQueryMetrics = 100
     
     /**
-     * Run ANALYZE to update SQLite statistics for better query planning.
-     * This is lightweight and can be run more frequently.
+     * Updates SQLite statistics for the query planner. Lightweight, so it can run often.
      */
     suspend fun analyzeDatabase() = withContext(Dispatchers.IO) {
         try {
@@ -215,10 +203,7 @@ class DatabaseOptimization @Inject constructor(
     }
     
     /**
-     * Perform data cleanup to remove old events while preserving important data.
-     * 
-     * @param retentionDays Number of days of data to keep
-     * @return Number of events deleted
+     * Removes old events while preserving important data.
      */
     suspend fun cleanupOldData(retentionDays: Int = DEFAULT_RETENTION_DAYS): Int = withContext(Dispatchers.IO) {
         try {
@@ -250,9 +235,6 @@ class DatabaseOptimization @Inject constructor(
         }
     }
     
-    /**
-     * Collects database health, table row counts, and index statistics.
-     */
     suspend fun getDiagnostics(): DatabaseDiagnostics = withContext(Dispatchers.IO) {
         val stats = getDatabaseStats()
         val integrityOk = integrityCheck()
@@ -270,9 +252,6 @@ class DatabaseOptimization @Inject constructor(
         )
     }
     
-    /**
-     * Record a query execution time for monitoring.
-     */
     fun recordQueryTime(queryName: String, durationMs: Long) {
         synchronized(queryTimes) {
             queryTimes.add(QueryMetric(queryName, durationMs, System.currentTimeMillis()))
@@ -286,18 +265,12 @@ class DatabaseOptimization @Inject constructor(
         }
     }
     
-    /**
-     * Get slow queries for debugging.
-     */
     fun getSlowQueries(): List<QueryMetric> {
         return synchronized(queryTimes) {
             queryTimes.filter { it.durationMs > SLOW_QUERY_THRESHOLD_MS }
         }
     }
     
-    /**
-     * Perform full database maintenance.
-     */
     suspend fun performFullMaintenance(): MaintenanceResult = withContext(Dispatchers.IO) {
         Log.i(TAG, "Starting full database maintenance...")
         val startTime = System.currentTimeMillis()
@@ -455,7 +428,7 @@ class DatabaseOptimization @Inject constructor(
 }
 
 /**
- * Database statistics.
+ * Database statistics. The size fields are bytes, so they are `Long`.
  */
 data class DatabaseStats(
     val totalSize: Long,
@@ -465,9 +438,6 @@ data class DatabaseStats(
     val pageSize: Int
 )
 
-/**
- * Database health state.
- */
 data class DatabaseHealth(
     val isHealthy: Boolean = true,
     val warnings: List<String> = emptyList(),
@@ -475,26 +445,17 @@ data class DatabaseHealth(
     val lastCheckTime: Long = 0
 )
 
-/**
- * Query performance metric.
- */
 data class QueryMetric(
     val queryName: String,
     val durationMs: Long,
     val timestamp: Long
 )
 
-/**
- * Table statistics.
- */
 data class TableStats(
     val tableName: String,
     val rowCount: Int
 )
 
-/**
- * Index statistics.
- */
 data class IndexStats(
     val name: String,
     val tableName: String

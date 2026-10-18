@@ -417,7 +417,7 @@ export class PlaybackTracker {
     return { type: TrackEventType.StillPlaying };
   }
 
-  /** Called when playback stops in a specific tab or tab closes. */
+  /** Finalize a tab's session when playback stops or the tab closes. */
   onPlaybackStopped(tabId: number): TrackEvent {
     const tracker = this.getTracker(tabId);
     this.accruePendingListenTime(tracker, Date.now());
@@ -426,7 +426,7 @@ export class PlaybackTracker {
     return event;
   }
 
-  /** Called when we want to finalize ALL tabs (e.g., service worker suspending). */
+  /** Finalize every tracked tab, e.g. when the service worker is about to suspend. */
   finalizeAllTabs(): TrackEvent[] {
     const events: TrackEvent[] = [];
     for (const [tabId, tracker] of this.trackers) {
@@ -497,13 +497,12 @@ export class PlaybackTracker {
     return results;
   }
 
-  /** Build a live NowPlaying snapshot for the popup UI. Gets best tab. */
+  /** Live NowPlaying snapshot for the tab in `raw`, shaped for the popup. */
   buildLiveSnapshot(raw: RawMediaState, site: string | null): NowPlaying {
     const tracker = this.getTracker(raw.tabId);
     return this.buildNowPlaying(tracker, raw, site, false);
   }
 
-  /** Build snapshot for a specific tab. */
   buildLiveSnapshotForTab(tabId: number): NowPlaying | null {
     const tracker = this.trackers.get(tabId);
     if (!tracker || !tracker.lastRaw) return null;

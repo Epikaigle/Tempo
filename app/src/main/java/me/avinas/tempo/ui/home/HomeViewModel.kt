@@ -230,7 +230,6 @@ class HomeViewModel @Inject constructor(
                     }
                 } else null
                 
-                // Await all results
                 val overview = overviewDeferred.await()
                 val periodComparison = periodComparisonDeferred.await()
                 val rawDailyListening = rawDailyListeningDeferred.await()
@@ -246,22 +245,18 @@ class HomeViewModel @Inject constructor(
                     ?: tokenStorage.getUserDisplayName()?.split(" ")?.firstOrNull()
                     ?: "User"
                 
-                // Await Today's Listen data
                 val todayOverview = todayOverviewDeferred.await()
                 val todayTopTracks = todayTopTracksDeferred.await()
                 val todayTopArtists = todayTopArtistsDeferred.await()
                 val todayHourly = todayHourlyDeferred.await()
                 val todayPeriodComparison = todayPeriodComparisonDeferred.await()
                 
-                // Fetch Gamification Data
                 val isGamificationEnabled = isGamificationEnabledDeferred.await()
                 val userLevel = if (isGamificationEnabled) gamificationRepository.getUserLevel() else null
                 val nextBadge = if (isGamificationEnabled) gamificationRepository.getNextEarnableBadge() else null
                 
-                // Process chart data and generate labels for interactive trend line
                 val (dailyListening, chartLabels) = processChartData(timeRange, rawDailyListening)
                 
-                // Inject Gamification Card if enabled
                 val combinedInsights = mutableListOf<InsightCardData>()
                 if (isGamificationEnabled && userLevel != null) {
                     combinedInsights.add(
@@ -402,7 +397,6 @@ class HomeViewModel @Inject constructor(
         val realPlayCount = listeningEventDao.getRealPlayCount()
         if (realListeningTimeMs < 2 * 60 * 60 * 1000 || realPlayCount < 50) return false
 
-        // All gates passed — record the timestamp and show the popup.
         context.dataStore.edit { prefs ->
             prefs[longPreferencesKey("rate_app_last_shown")] = System.currentTimeMillis()
         }
@@ -410,10 +404,9 @@ class HomeViewModel @Inject constructor(
     }
     
     /**
-     * Process chart data and generate labels based on time range.
-     * Returns chronologically sorted data (oldest to newest) with matching labels.
-     * Aggregates data by month when there are too many days for better visualization.
-     * 
+     * Returns chronologically sorted data (oldest to newest) with matching labels,
+     * aggregated by month when a range holds too many days to plot.
+     *
      * Feature contributed by @FlazeIGuess (PR #1) with modifications.
      */
     private fun processChartData(
@@ -608,8 +601,7 @@ class HomeViewModel @Inject constructor(
     }
     
     /**
-     * Aggregates daily listening data by month.
-     * Returns one data point per month with the first day of the month as the date.
+     * Aggregates daily listening data by month, dated the first of that month.
      */
     private fun aggregateByMonth(
         dailyData: List<me.avinas.tempo.data.stats.DailyListening>
@@ -624,7 +616,6 @@ class HomeViewModel @Inject constructor(
                 }
             }
             .map { (yearMonth, monthData) ->
-                // Use the first day of the month as the representative date
                 val firstDate = try {
                     val parts = yearMonth.split("-")
                     "${parts[0]}-${parts[1]}-01"
@@ -674,10 +665,8 @@ class HomeViewModel @Inject constructor(
     private var shareNudgeEvaluated = false
 
     /**
-     * Smart, non-intrusive promotion of the share feature. On app open (once per
-     * session, after home data settles) it checks a chain of gates and — only when
-     * all pass — opens the artist share preview directly on the home screen.
-     * Gates (cheapest first):
+     * Opens the artist share preview on the home screen at most once per session,
+     * after home data settles, when every gate below passes (cheapest first):
      *  1. Dismissed 3 times — the user isn't interested; stop permanently.
      *  2. Cooldown — at most once every 7 days.
      *  3. Shared anything in the last 14 days — they already know the feature.
@@ -746,10 +735,7 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /**
-     * The user closed the share preview without sharing. Counts toward the
-     * 3-dismiss permanent suppression.
-     */
+    /** Counts toward the 3-dismiss permanent suppression. */
     fun onShareNudgeDismissed() {
         _flagsState.update {
             it.copy(
@@ -768,8 +754,8 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * The user shared from the nudge. Engagement: reset the dismiss counter so the
-     * nudge can return after the normal cooldown, and record the share.
+     * Resets the dismiss counter so the nudge can return after the normal cooldown,
+     * and records the share.
      */
     fun onShareNudgeShared() {
         _flagsState.update {
@@ -802,14 +788,12 @@ class HomeViewModel @Inject constructor(
             
             android.util.Log.d("HomeViewModel", "Checking Spotlight reminder for date: $todayString")
             
-            // Get user preferences to check if reminder already shown
             val preferences = preferencesRepository.preferences().first() ?: return@launch
 
             // Check for monthly reminder (last day of month)
             val isLastDayOfMonth = today.dayOfMonth == today.lengthOfMonth()
             if (isLastDayOfMonth && preferences.lastMonthlyReminderShown != todayString) {
                 android.util.Log.d("HomeViewModel", "Is last day of month, checking data availability...")
-                // Verify month has listening data
                 val overview = statsRepository.getListeningOverview(TimeRange.THIS_MONTH)
                 android.util.Log.d("HomeViewModel", "Monthly data: totalPlayCount=${overview.totalPlayCount}")
                 if (overview.totalPlayCount > 0) {
@@ -833,7 +817,6 @@ class HomeViewModel @Inject constructor(
             val isDecemberFirst = today.monthValue == 12 && today.dayOfMonth == 1
             if (isDecemberFirst && preferences.lastYearlyReminderShown != todayString) {
                 android.util.Log.d("HomeViewModel", "Is December 1st, checking data availability...")
-                // Verify year has listening data
                 val overview = statsRepository.getListeningOverview(TimeRange.THIS_YEAR)
                 android.util.Log.d("HomeViewModel", "Yearly data: totalPlayCount=${overview.totalPlayCount}")
                 if (overview.totalPlayCount > 0) {
@@ -857,7 +840,6 @@ class HomeViewModel @Inject constructor(
             val isSunday = today.dayOfWeek == java.time.DayOfWeek.SUNDAY
             if (isSunday && preferences.lastWeeklyReminderShown != todayString) {
                 android.util.Log.d("HomeViewModel", "Is Sunday, checking data availability...")
-                // Verify week has listening data
                 val overview = statsRepository.getListeningOverview(TimeRange.THIS_WEEK)
                 android.util.Log.d("HomeViewModel", "Weekly data: totalPlayCount=${overview.totalPlayCount}")
                 if (overview.totalPlayCount > 0) {
@@ -886,7 +868,6 @@ class HomeViewModel @Inject constructor(
             val today = java.time.LocalDate.now().toString()
             val preferences = preferencesRepository.preferences().first() ?: return@launch
             
-            // Update preferences based on reminder type
             val updatedPrefs = when (_flagsState.value.reminderType) {
                 me.avinas.tempo.ui.components.SpotlightReminderType.WEEKLY -> 
                     preferences.copy(lastWeeklyReminderShown = today)
@@ -899,7 +880,6 @@ class HomeViewModel @Inject constructor(
             
             preferencesRepository.upsert(updatedPrefs)
             
-            // Hide popup
             _flagsState.update {
                 it.copy(
                     showSpotlightReminder = false,
@@ -911,9 +891,8 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
-     * Mark the current Spotlight story period as viewed.
-     * Called when the user taps the story ring/card on the home screen.
-     * Persists the period key so the ring shows viewed until a new story period arrives.
+     * Persists the current story period key so the ring reads as viewed until a new
+     * story period arrives.
      */
     fun onSpotlightViewed() {
         viewModelScope.launch {
@@ -937,7 +916,7 @@ data class HomeUiState(
     val listeningOverview: me.avinas.tempo.data.stats.ListeningOverview? = null,
     val periodComparison: me.avinas.tempo.data.stats.PeriodComparison? = null,
     val dailyListening: List<me.avinas.tempo.data.stats.DailyListening> = emptyList(),
-    val chartLabels: List<String> = emptyList(),  // Labels for interactive chart
+    val chartLabels: List<String> = emptyList(),
     val dailyAvgMinutes: Long = 0L,
     val activeDaysCount: Int = 0,
     val totalDaysCount: Int = 0,

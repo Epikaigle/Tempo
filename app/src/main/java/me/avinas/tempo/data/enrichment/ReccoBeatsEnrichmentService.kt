@@ -61,24 +61,12 @@ class ReccoBeatsEnrichmentService @Inject constructor(
         data class Error(val message: String, val retryable: Boolean = true) : ReccoBeatsResult()
     }
 
-    /**
-     * Check if ReccoBeats enrichment is available.
-     * ReccoBeats is always available (no auth required), but we check network connectivity.
-     */
+    /** Always true: ReccoBeats needs no auth. */
     fun isAvailable(): Boolean = true
 
     /**
-     * Enrich a track with ReccoBeats audio features.
-     * 
-     * Strategy:
-     * 1. If we have a Spotify ID, try audio-features endpoint directly (fastest)
-     * 2. If not, search for track and get audio features
-     * 3. If search fails, try audio file analysis (slowest, requires preview URL)
-     * 
-     * @param track The track to enrich
-     * @param existingMetadata Existing enriched metadata (may contain spotifyId)
-     * @param previewUrl Optional Spotify preview URL for audio analysis fallback
-     * @return ReccoBeatsResult indicating success or failure
+     * Enrich a track with ReccoBeats audio features: by Spotify ID when [existingMetadata] has
+     * one, otherwise by track search, with audio analysis of [previewUrl] as the last resort.
      */
     suspend fun enrichTrack(
         track: Track,
@@ -196,9 +184,6 @@ class ReccoBeatsEnrichmentService @Inject constructor(
         }
     }
 
-    /**
-     * Search for a track and get its audio features.
-     */
     private suspend fun searchAndEnrich(track: Track): ReccoBeatsResult {
         val cleanTitle = ArtistParser.cleanTrackTitle(track.title)
         val primaryArtist = ArtistParser.getPrimaryArtist(track.artist)
@@ -260,9 +245,6 @@ class ReccoBeatsEnrichmentService @Inject constructor(
         }
     }
 
-    /**
-     * Find the best matching track from search results.
-     */
     private fun findBestMatch(
         tracks: List<ReccoBeatsTrack>,
         targetTitle: String,
@@ -286,17 +268,14 @@ class ReccoBeatsEnrichmentService @Inject constructor(
     }
 
     /**
-     * Normalize string for comparison.
-     * Delegates to the shared Unicode-aware implementation so non-ASCII
-     * (e.g. Japanese) names are preserved instead of being stripped to "".
+     * Delegates to the shared Unicode-aware normalizer so non-ASCII (e.g. Japanese) names are
+     * preserved instead of being stripped to "".
      */
     private fun normalizeString(str: String): String {
         return ArtistParser.normalizeForSearch(str)
     }
 
-    /**
-     * Calculate similarity between two strings (simple Jaccard-like similarity).
-     */
+    /** Jaccard-like token similarity of two strings, 0.0 to 1.0. */
     private fun calculateSimilarity(s1: String, s2: String): Double {
         if (s1.isEmpty() || s2.isEmpty()) return 0.0
         if (s1 == s2) return 1.0
@@ -311,10 +290,8 @@ class ReccoBeatsEnrichmentService @Inject constructor(
     }
 
     /**
-     * Analyze audio from a preview URL using ReccoBeats' audio analysis endpoint.
-     * 
-     * This downloads the preview audio and uploads it to ReccoBeats for analysis.
-     * Use this as a last resort when track is not in ReccoBeats database.
+     * Download the preview audio and upload it to ReccoBeats for analysis. Last resort, for
+     * tracks their database does not have.
      */
     private suspend fun analyzePreviewAudio(previewUrl: String): ReccoBeatsResult {
         return try {
@@ -379,9 +356,6 @@ class ReccoBeatsEnrichmentService @Inject constructor(
         }
     }
 
-    /**
-     * Update metadata with ReccoBeats data.
-     */
     private suspend fun updateMetadataWithReccoBeats(
         trackId: Long,
         existingMetadata: EnrichedMetadata?,
@@ -445,21 +419,14 @@ class ReccoBeatsEnrichmentService @Inject constructor(
         Log.d(TAG, "Saved ReccoBeats data for track $trackId: mood=${result.mood}, energy=${result.energyLevel}")
     }
 
-    /**
-     * Serialize audio features to JSON (Spotify-compatible format).
-     */
+    /** JSON in Spotify's shape, which the UI components expect. */
     private fun serializeAudioFeatures(features: SpotifyAudioFeatures): String {
         val adapter = moshi.adapter(SpotifyAudioFeatures::class.java)
         return adapter.toJson(features)
     }
 
     /**
-     * Batch enrich multiple tracks with ReccoBeats data.
-     * 
-     * Optimized for tracks that already have Spotify IDs - can batch fetch audio features.
-     * 
-     * @param tracks List of tracks with their existing metadata
-     * @return Number of tracks successfully enriched
+     * Batch-enrich each track in turn, one rate-limit delay apart; returns how many succeeded.
      */
     suspend fun enrichBatch(
         tracks: List<Pair<Track, EnrichedMetadata?>>
@@ -477,9 +444,7 @@ class ReccoBeatsEnrichmentService @Inject constructor(
         return enrichedCount
     }
 
-    /**
-     * Get audio features from stored JSON (for display in UI).
-     */
+    /** Stored audio features, or null when the track has none or the JSON will not parse. */
     fun getAudioFeatures(metadata: EnrichedMetadata): SpotifyAudioFeatures? {
         val json = metadata.audioFeaturesJson ?: return null
         return try {
@@ -491,9 +456,7 @@ class ReccoBeatsEnrichmentService @Inject constructor(
         }
     }
 
-    /**
-     * Get derived mood from stored audio features.
-     */
+    /** Mood derived from the stored features, or null when the track has none. */
     fun getMood(metadata: EnrichedMetadata): String? {
         val features = getAudioFeatures(metadata) ?: return null
         return ReccoBeatsAudioFeatures(
@@ -512,9 +475,7 @@ class ReccoBeatsEnrichmentService @Inject constructor(
         ).deriveMood()
     }
 
-    /**
-     * Get derived energy level from stored audio features.
-     */
+    /** Energy level derived from the stored features, or null when the track has none. */
     fun getEnergyLevel(metadata: EnrichedMetadata): String? {
         val features = getAudioFeatures(metadata) ?: return null
         return ReccoBeatsAudioFeatures(

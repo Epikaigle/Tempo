@@ -71,13 +71,12 @@ object ChallengeEngine {
     )
 
     /**
-     * Generate 4 challenges for today (1 EASY, 2 MEDIUM, 1 HARD).
+     * Generate 4 challenges for today (1 EASY, 2 MEDIUM, 1 HARD). `dateString` is YYYY-MM-DD.
      *
-     * @param dateString YYYY-MM-DD
-     * @param metrics The user's recent 7-day average metrics (null for new users)
-     * @param excludeTypes Challenge-id prefixes used yesterday (e.g. "time", "volume_songs").
-     *        The rotation is nudged forward until it lands on a type not in this set, so the
-     *        user isn't served the exact same challenge family two days running.
+     * `excludeTypes` holds the challenge-id prefixes served yesterday (e.g. "time",
+     * "volume_songs"); the rotation is nudged forward until it lands on a type not in
+     * that set, so the user isn't served the same challenge family two days running.
+     * `metrics` is null for a user with no usable history.
      */
     fun generateChallenges(
         dateString: String,
@@ -167,9 +166,6 @@ object ChallengeEngine {
         return challenges
     }
 
-    /**
-     * Applies a multiplier to a base value, and safely caps it.
-     */
     private fun calibrate(
         base: Int,
         multiplier: Float,

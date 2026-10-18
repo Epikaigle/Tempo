@@ -115,8 +115,8 @@ class EnrichmentWorker
             private const val POST_IMPORT_INTER_TRACK_DELAY_MS = 1000L
 
             /**
-             * Schedule periodic enrichment work.
-             * Runs every 1 hour when device is idle and connected.
+             * Schedule periodic enrichment work. Runs every hour when connected and the battery is
+             * not low.
              */
             fun schedulePeriodic(context: Context) {
                 val constraints =
@@ -202,9 +202,6 @@ class EnrichmentWorker
                 Log.i(TAG, "Immediate enrichment enqueued" + (trackId?.let { " for track $it" } ?: ""))
             }
 
-            /**
-             * Cancel all enrichment work.
-             */
             fun cancel(context: Context) {
                 WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
                 WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_IMMEDIATE)
@@ -213,20 +210,10 @@ class EnrichmentWorker
             }
 
             /**
-             * Schedule accelerated post-import enrichment.
-             *
-             * This runs more frequently with larger batches to quickly enrich
-             * imported tracks. It automatically stops when the backlog is cleared.
-             *
-             * Features:
-             * - Larger batch size (50 tracks per run vs 10 normal)
-             * - Runs every 15 minutes until backlog cleared
-             * - Prioritizes by play count (most played = enriched first)
-             * - Respects rate limits but optimized for throughput
-             * - Battery-aware: requires battery not low
-             *
-             * @param context Application context
-             * @param tracksCreated Number of tracks created during import (for logging)
+             * Accelerated post-import enrichment: 50-track batches (up to 150 for large backlogs)
+             * every 15 minutes instead of 10 per hour, ordered by play count so frequently played
+             * tracks are enriched first. Stops itself once the backlog is cleared, and requires
+             * the battery not be low.
              */
             fun schedulePostImportEnrichment(
                 context: Context,
@@ -296,7 +283,7 @@ class EnrichmentWorker
                 context: Context,
                 total: Int,
             ) {
-                // NOTE: Expedited work only supports network/storage constraints, so
+                // Expedited work only supports network/storage constraints, so
                 // setRequiresBatteryNotLow() must NOT be used here — it throws
                 // IllegalArgumentException at build() time. This is user-initiated
                 // work, so running regardless of battery level is acceptable.
@@ -326,7 +313,6 @@ class EnrichmentWorker
                 Log.i(TAG, "Enrich All enqueued for $total tracks")
             }
 
-            /** Cancel a running "Enrich All" sweep. */
             fun cancelEnrichAll(context: Context) {
                 WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_ENRICH_ALL)
                 Log.i(TAG, "Enrich All cancelled")
@@ -338,7 +324,6 @@ class EnrichmentWorker
         private suspend fun doWorkInternal(): Result {
             Log.i(TAG, "Starting enrichment work")
 
-            // Check if specific track ID was provided
             val specificTrackId = inputData.getLong("track_id", -1).takeIf { it > 0 }
             val isPostImport = inputData.getBoolean("is_post_import", false)
             val isEnrichAll = inputData.getBoolean("is_enrich_all", false)
@@ -540,7 +525,6 @@ class EnrichmentWorker
                 return
             }
 
-            // Modular Fallback Loop
             Log.d(TAG, "Starting modular enrichment for track $trackId")
 
             var metadata = enrichedMetadataDao.forTrackSync(trackId)
@@ -599,7 +583,6 @@ class EnrichmentWorker
                                     .repairListColumnValue(it)
                             }
                     if (allGenres.isNotEmpty()) {
-                        // Find the most common genre
                         val genreCounts = allGenres.groupingBy { it.lowercase() }.eachCount()
                         val topGenres =
                             genreCounts.entries
@@ -763,9 +746,8 @@ class EnrichmentWorker
 
             // 1. Process pending tracks (completely unenriched)
             // For large post-import backlogs, use two-tier enrichment:
-            //   Tier 1: Top-played tracks (play_count >= 2) — most important, enriched first
+            //   Tier 1: Top-played tracks (play_count >= 2) — enriched first
             //   Tier 2: Remaining pending tracks — filled in if tier 1 doesn't fill the batch
-            //   Prioritizes frequently-played tracks before backfilling one-play entries.
             val pendingTracks: List<EnrichedMetadata> =
                 if (isPostImportEnrichment) {
                     val pendingCount = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)

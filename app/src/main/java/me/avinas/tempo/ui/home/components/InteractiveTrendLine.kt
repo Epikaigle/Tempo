@@ -20,13 +20,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Interactive trend line chart with scrubbing support.
- * Allows users to drag/tap on the chart to view specific data points.
- * 
+ * Interactive trend line chart with drag/tap scrubbing.
+ *
  * Feature contributed by @FlazeIGuess (PR #1) with modifications.
  */
 
-// Named constants for delay durations
 private const val DRAG_END_DELAY_MS = 300L
 private const val TAP_DISPLAY_DURATION_MS = 1500L
 
@@ -58,36 +56,28 @@ fun InteractiveTrendLine(
     
     // Reset scrubbing state when data changes (e.g., switching time ranges)
     LaunchedEffect(labels) {
-        // Cancel any pending clear operations from previous data
         pendingClearJob?.cancel()
         pendingClearJob = null
         onSelectionCleared?.invoke()
     }
     
-    // Cancel pending clear job when composable leaves composition
     DisposableEffect(labels) {
         onDispose {
             pendingClearJob?.cancel()
         }
     }
 
-    // Map X touch position to nearest data point index
     fun calculateNearestIndex(xPos: Float, width: Float): Int {
         if (dataPoints.size <= 1) return 0
         
-        // Calculate the exact fractional position
         val fraction = (xPos / width).coerceIn(0f, 1f)
         
-        // Map fraction to index range [0, dataPoints.size - 1]
         val exactIndex = fraction * (dataPoints.size - 1)
         
-        // Round to nearest integer index
         return exactIndex.toInt().coerceIn(0, dataPoints.size - 1)
     }
     
-    // Helper to clear selection state with proper job management
     fun clearSelectionWithDelay(delayMs: Long) {
-        // Cancel any existing pending clear
         pendingClearJob?.cancel()
         pendingClearJob = scope.launch {
             delay(delayMs)
@@ -97,7 +87,6 @@ fun InteractiveTrendLine(
         }
     }
     
-    // Helper to cancel pending clear (called when new interaction starts)
     fun cancelPendingClear() {
         pendingClearJob?.cancel()
         pendingClearJob = null
@@ -110,7 +99,6 @@ fun InteractiveTrendLine(
                 .pointerInput(labels) {
                     detectDragGestures(
                         onDragStart = { offset ->
-                            // Cancel any pending clear from previous interaction
                             cancelPendingClear()
                             
                             isDragging = true
@@ -163,13 +151,11 @@ fun InteractiveTrendLine(
                         val nearestIndex = calculateNearestIndex(offset.x, width)
                         
                         selectedIndex = nearestIndex
-                        // Invoke callback outside of coroutine for consistent timing
                         onValueSelected?.invoke(
                             dataPoints[nearestIndex],
                             labels[nearestIndex]
                         )
                         
-                        // Schedule clear with delay
                         clearSelectionWithDelay(TAP_DISPLAY_DURATION_MS)
                     }
                 }
@@ -183,12 +169,10 @@ fun InteractiveTrendLine(
             val path = Path()
             val fillPath = Path()
             
-            // Handle single data point case separately for proper fill
             if (dataPoints.size == 1) {
                 val x = width / 2f
                 val y = height - ((dataPoints[0] - minVal) / range * height)
                 
-                // For single point, draw a small filled area
                 path.moveTo(x, y)
                 fillPath.moveTo(0f, height)
                 fillPath.lineTo(0f, y)
@@ -219,7 +203,6 @@ fun InteractiveTrendLine(
                     }
                 }
 
-                // Close fill path correctly - use the actual last x position
                 val lastX = ((dataPoints.size - 1).toFloat() / (dataPoints.size - 1)) * width
                 fillPath.lineTo(lastX, height)
                 fillPath.close()
@@ -240,9 +223,8 @@ fun InteractiveTrendLine(
                 style = Stroke(width = strokeWidth.toPx(), cap = StrokeCap.Round)
             )
 
-            // Draw vertical indicator line when scrubbing
             if (isDragging && selectedIndex != null) {
-                // Use calculated x position from selectedIndex for perfect sync with y
+                // Same x mapping as the selected point, so the line and dot stay in sync.
                 val indicatorIndex = selectedIndex!!
                 val indicatorX = if (dataPoints.size > 1) {
                     (indicatorIndex.toFloat() / (dataPoints.size - 1)) * width
@@ -257,9 +239,7 @@ fun InteractiveTrendLine(
                 )
             }
 
-            // Draw selection indicator circles
             selectedIndex?.let { index ->
-                // Align indicator circle with point coordinate
                 val x = if (dataPoints.size > 1) {
                     (index.toFloat() / (dataPoints.size - 1)) * width
                 } else {

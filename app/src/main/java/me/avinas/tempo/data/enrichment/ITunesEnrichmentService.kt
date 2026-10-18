@@ -33,7 +33,7 @@ class ITunesEnrichmentService @Inject constructor(
         // Multiple regex strategies for extracting artist images from Apple Music HTML
         
         // AMCArtistImages CDN URL - Apple's dedicated artist photo path (most reliable signal)
-        // Note: Apple Music sometimes hosts actual artist images under /Features or /Music paths
+        // Apple Music sometimes hosts actual artist images under /Features or /Music paths
         private val ARTIST_IMAGE_CDN_REGEX = Regex("""(https?://is\d+-ssl\.mzstatic\.com/image/thumb/(?:AMCArtistImages|Features|Music)[^"'\s)}<]+)""")
         
         // --background-image CSS variable in artist-detail-header (contains artist banner/photo)
@@ -60,10 +60,7 @@ class ITunesEnrichmentService @Inject constructor(
         private const val BOT_USER_AGENT = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
     }
     
-    /**
-     * Get device country code from system locale.
-     * Falls back to US if unavailable.
-     */
+    /** iTunes storefront code for the device locale; `"us"` when the locale has none. */
     private fun getDeviceCountryCode(): String {
         return try {
             val country = context.resources.configuration.locales[0]?.country
@@ -98,14 +95,7 @@ class ITunesEnrichmentService @Inject constructor(
         data class Error(val message: String) : iTunesResult()
     }
 
-    /**
-     * Search for album artwork using iTunes Search API.
-     * 
-     * @param artist Artist name
-     * @param album Album name (optional but recommended)
-     * @param track Track name (optional, for better matching)
-     * @return iTunesResult with artwork URLs and metadata
-     */
+    /** Look up album artwork on the iTunes Search API. */
     suspend fun searchAlbumArt(
         artist: String,
         album: String? = null,
@@ -210,16 +200,11 @@ class ITunesEnrichmentService @Inject constructor(
     }
     
     /**
-     * Search for an artist by name and fetch their image.
-     * Iterates through all individual artists found in the artist string until one matches.
+     * Search for an artist and fetch their image. [artistName] may be a raw multi-artist
+     * string; each name is tried until one matches.
      *
-     * When multiple artists share the same name, [trackHint] and [albumHint] are used to
-     * disambiguate by checking which artist has the matching track in their catalog.
-     *
-     * @param artistName The raw artist string (may contain multiple artists)
-     * @param trackHint  Track title being enriched — used to pick the right artist when names clash
-     * @param albumHint  Album name being enriched — secondary disambiguation signal
-     * @return The artist image URL or null if not found
+     * [trackHint] and [albumHint] disambiguate same-name artists by checking which candidate
+     * has the matching track in their catalog. Null when nothing matches.
      */
     suspend fun searchAndFetchArtistImage(
         artistName: String,
@@ -294,17 +279,10 @@ class ITunesEnrichmentService @Inject constructor(
     }
 
     /**
-     * Search for a SINGLE specific artist by name and fetch their image.
-     * Unlike searchAndFetchArtistImage(), this does NOT split through getAllArtists()
-     * — it treats the input as a single clean artist name.
-     *
-     * Used by refreshArtistImageDirectly() where the artist name is already
-     * a clean single name from the artists table.
-     *
-     * @param artistName The clean, single artist name
-     * @param trackHint  Optional track title — used to disambiguate same-name artists
-     * @param albumHint  Optional album name — secondary disambiguation signal
-     * @return The artist image URL or null if not found
+     * Search for one specific artist by name and fetch their image. Unlike
+     * `searchAndFetchArtistImage()`, the input is not split through `getAllArtists()`: it is
+     * already a single clean name, as stored in the artists table and passed by
+     * `refreshArtistImageDirectly()`.
      */
     suspend fun searchAndFetchSingleArtistImage(
         artistName: String,
@@ -372,15 +350,8 @@ class ITunesEnrichmentService @Inject constructor(
     }
 
     /**
-     * Disambiguate between multiple artists sharing the same name by checking
-     * which one has the given track/album in their catalog.
-     *
-     * For each candidate artist, fetches their top songs and scores by:
-     * - Track title match (strong signal, +100)
-     * - Album name match (medium signal, +50)
-     *
-     * Returns the best-matching artist, or null if no candidate has a matching
-     * track/album (caller should fall back to popularity-based ranking).
+     * Pick the same-name candidate whose top songs contain [trackHint] (+100) or [albumHint]
+     * (+50). Null when none match, in which case callers fall back to popularity ranking.
      */
     private suspend fun disambiguateArtistByTrack(
         candidates: List<AppleMusicResult>,
@@ -453,16 +424,11 @@ class ITunesEnrichmentService @Inject constructor(
     }
 
     /**
-     * Fetch artist image for the given artist ID.
-     * 
-     * Strategy:
-     * 1. Lookup artist → get Apple Music page URL
-     * 2. Fetch page via OkHttp → extract artist image using multiple strategies
-     * 3. Rewrite URL to 600x600 square
-     * 4. Fallback to track/album artwork if page extraction fails (unless artistPhotoOnly=true)
+     * Fetch an artist's image from their Apple Music page, rewritten to 600x600. Falls back to
+     * the artist's track/album artwork when page extraction finds nothing.
      *
-     * @param artistPhotoOnly If true, skip track/album artwork fallback. Use for artist-image
-     *   refresh where cross-contamination with album art would be wrong.
+     * @param artistPhotoOnly skip that fallback. Used by artist-image refresh, where album art
+     *   would be cross-contamination.
      */
     suspend fun fetchArtistImage(
         artistId: Long,
@@ -483,25 +449,22 @@ class ITunesEnrichmentService @Inject constructor(
         Log.d(TAG, "Fetching artist image for artist ID: $artistId")
         
         try {
-            // Step 1: Get Apple Music artist page URL
             delay(RATE_LIMIT_DELAY_MS)
             val lookupResponse = iTunesApi.lookupArtist(artistId = artistId)
             val artistUrl = lookupResponse.body()?.results?.firstOrNull()?.artistLinkUrl
                 ?.split("?")?.get(0) // Remove query params like ?uo=4
             
-            // Step 2: Fetch Apple Music page and extract artist image using multiple strategies
             if (!artistUrl.isNullOrBlank()) {
                 val artistImage = extractArtistImageFromPage(artistUrl)
                 if (artistImage != null) {
-                    // Rewrite to 600x600 square
                     val squareUrl = rewriteToSquare(artistImage, 600)
                     Log.i(TAG, "Found artist photo for ID $artistId: $squareUrl")
                     return squareUrl
                 }
             }
             
-            // Step 3 & 4: Fallback to track/album artwork
-            // Skip if artistPhotoOnly — these are album/track covers, not artist photos
+            // Fallback to track/album artwork — covers, not artist photos, so it is skipped
+            // when the caller needs an actual artist photo
             if (!artistPhotoOnly) {
                 Log.d(TAG, "Page extraction failed for ID $artistId, trying track artwork")
                 delay(RATE_LIMIT_DELAY_MS)
@@ -520,7 +483,6 @@ class ITunesEnrichmentService @Inject constructor(
                     }
                 }
                 
-                // Step 4: Fallback to album artwork
                 delay(RATE_LIMIT_DELAY_MS)
                 val albumResponse = iTunesApi.lookupArtistWithMedia(
                     artistId = artistId,
@@ -548,35 +510,21 @@ class ITunesEnrichmentService @Inject constructor(
     }
     
     /**
-     * Extract artist image from Apple Music page using multiple strategies.
-     * 
-     * Two-phase approach:
-     * Phase 1: Fetch with social media bot User-Agent (facebookexternalhit).
-     *   Apple Music returns SSR HTML with og:image/twitter:image for crawlers,
-     *   which contains the actual artist photo (the same image shown in
-     *   WhatsApp/Twitter link previews).
-     * Phase 2: Fallback to regular browser User-Agent for SPA HTML scraping.
-     * 
-     * Extraction priority (artist images only, not album art):
-     * 1. AMCArtistImages CDN URLs (Apple's dedicated artist photo path - most reliable)
-     * 2. --background-image CSS in artist-detail-header
-     * 3. og:image / twitter:image containing AMCArtistImages
-     * 4. og:image / twitter:image (any, from bot-fetched HTML)
-     * 5. JSON-LD structured data
-     * 6. srcset-based AMCArtistImages in artwork-component divs
-     * 7. Generic mzstatic fallback (only AMCArtistImages paths)
+     * Extract an artist image from an Apple Music page.
+     *
+     * Phase 1 fetches with a social media bot User-Agent: Apple returns SSR HTML with
+     * og:image/twitter:image for crawlers, which carries the actual artist photo (the same image
+     * WhatsApp/Twitter link previews show). Phase 2 falls back to a browser User-Agent for the
+     * SPA HTML. `extractArtistImageFromHtml` then tries the URL sources in priority order and
+     * accepts artist photos only, never album art.
      */
     private suspend fun extractArtistImageFromPage(pageUrl: String): String? {
-        // Extract artist slug from URL for context-aware filtering
-        // e.g. "shreya-ghoshal" from "https://music.apple.com/us/artist/shreya-ghoshal/19715559"
         val artistSlug = pageUrl.substringAfter("/artist/").substringBefore("/").takeIf { it.isNotBlank() }
         
         return withContext(Dispatchers.IO) {
-            // Phase 1: Fetch with bot UA for reliable og:image (same as social media previews)
             val botResult = fetchAndExtractArtistImage(pageUrl, BOT_USER_AGENT, "bot", artistSlug)
             if (botResult != null) return@withContext botResult
             
-            // Phase 2: Fetch with browser UA for full SPA HTML with srcset/CSS data
             val browserResult = fetchAndExtractArtistImage(
                 pageUrl,
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -590,9 +538,6 @@ class ITunesEnrichmentService @Inject constructor(
         }
     }
     
-    /**
-     * Fetch Apple Music page with the given User-Agent and extract artist image.
-     */
     private fun fetchAndExtractArtistImage(pageUrl: String, userAgent: String, phase: String, artistSlug: String? = null): String? {
         try {
             val request = Request.Builder()
@@ -619,12 +564,11 @@ class ITunesEnrichmentService @Inject constructor(
     }
     
     /**
-     * Extract artist image URL from Apple Music HTML content.
-     * Strongly prefers AMCArtistImages URLs (actual artist photos) over
-     * generic artwork URLs (which are usually album covers).
-     * 
-     * @param artistSlug The artist slug from the Apple Music URL (e.g. "shreya-ghoshal")
-     *   Used to filter out images from related/similar artist sections.
+     * Extract an artist image URL from Apple Music HTML. Prefers AMCArtistImages URLs (actual
+     * artist photos) over generic artwork URLs, which are usually album covers.
+     *
+     * [artistSlug] comes from the artist page URL and filters out images in related/similar
+     * artist sections.
      */
     private fun extractArtistImageFromHtml(html: String, phase: String, artistSlug: String? = null): String? {
         // Extract mzstatic URL from <div data-testid="artist-detail-header">
@@ -646,11 +590,9 @@ class ITunesEnrichmentService @Inject constructor(
             }
         }
         
-        // Strategy 2: CDN Regex (Fallback for when the header block isn't found, e.g., SSR bot phase might differ)
-        // These are the most reliable. Apple uses this path exclusively for genuine
-        // artist profile photos, never for album art.
-        // IMPORTANT: Apple Music pages include related/similar artist images too,
-        // so we must filter by position to avoid cross-contamination.
+        // Strategy 2: CDN regex, for when the header block is absent (the SSR bot phase can differ).
+        // Apple uses this path exclusively for genuine artist photos, never album art, but the page
+        // also carries related/similar artist images, so filter those out by position.
         val allArtistCdnMatches = ARTIST_IMAGE_CDN_REGEX.findAll(html)
             .map { it.groupValues[1] to it.range.first } // Keep URL + position in HTML
             .toList()
@@ -754,11 +696,9 @@ class ITunesEnrichmentService @Inject constructor(
     }
     
     /**
-     * Find the position in HTML where related/similar artist sections begin.
-     * Apple Music pages show the main artist content first, then sections like
-     * "Also Listened To", "Similar Artists", etc. with other artist images.
-     * 
-     * @return The character position of the first related section marker, or null if not found
+     * Position in the HTML where related/similar artist sections begin, or null when the page
+     * has none. Apple Music lists the main artist's content first, so everything after the first
+     * marker ("Also Listened To", "Similar Artists", ...) belongs to other artists.
      */
     private fun findRelatedArtistsSectionStart(html: String): Int? {
         val markers = listOf(
@@ -842,10 +782,7 @@ class ITunesEnrichmentService @Inject constructor(
         return strategies
     }
 
-    /**
-     * Check if iTunes service is available.
-     * Always returns true since no auth is required.
-     */
+    /** Always true: the iTunes Search API needs no auth. */
     fun isAvailable(): Boolean = true
 }
 

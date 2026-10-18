@@ -48,10 +48,7 @@ import me.avinas.tempo.ui.theme.*
 import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.utils.ShareUtils
 
-/**
- * Main canvas screen for composing shareable card collages.
- * Instagram Story aspect ratio: 9:16 (1080x1920 pixels)
- */
+/** Composes shareable card collages on an Instagram Story 9:16 canvas (1080x1920). */
 @Composable
 fun ShareCanvasScreen(
     initialCardId: String?,
@@ -67,50 +64,35 @@ fun ShareCanvasScreen(
     val allCards by viewModel.allCards.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     
-    // 9:16 aspect ratio
     val screenWidth = configuration.screenWidthDp.dp
     val screenHeight = configuration.screenHeightDp.dp
     val storyAspectRatio = 9f / 16f
 
-    // Responsive Logic:
-    // 1. Calculate max dimensions with margins
+    // Size by height first; fall back to width when that overflows the side margins.
     val maxCanvasHeight = screenHeight * 0.85f
     val maxCanvasWidth = screenWidth * 0.90f // 5% margin on each side
 
-    // 2. Try to size by height first (standard case)
     val widthByHeight = maxCanvasHeight * storyAspectRatio
 
-    // 3. If that width is too wide for the screen, size by width instead
     val (canvasWidth, canvasHeight) = if (widthByHeight > maxCanvasWidth) {
         maxCanvasWidth to (maxCanvasWidth / storyAspectRatio)
     } else {
         widthByHeight to maxCanvasHeight
     }
     
-    // Canvas state
     var canvasState by remember { mutableStateOf(CanvasState()) }
     
-    // Initialize canvas when cards are loaded
     LaunchedEffect(allCards, isLoading) {
         if (!isLoading && allCards.isNotEmpty() && canvasState.availableCards.isEmpty()) {
                 val initialCard = viewModel.getInitialCard()
-            // Center relative to the canvas, not the screen
             // Scale card to 50% canvas width (base 320dp)
             val targetCardWidthPx = with(density) { canvasWidth.toPx() * 0.5f }
             val baseCardWidthPx = with(density) { 320.dp.toPx() }
             val cardScale = targetCardWidthPx / baseCardWidthPx
             
-            // Fix: We position the Top-Left of the card.
-            // The card has a width of 320dp and approx height of 560dp
-            // We want the center of the card to be at the center of the canvas.
-            // CenterX = CanvasWidth/2 - (CardWidth/2)
-            // CenterY = CanvasHeight/2 - (CardHeight/2)
-            // Note: CanvasCard applies scale via graphicsLayer from the center, so layout bounds don't change?
-            // Checking CanvasCard.kt: .offset { ... } then .graphicsLayer { scale... }
-            // The offset moves the top-left of the unscaled box.
-            // The graphicsLayer scales it around its center (default pivot).
-            // So visual center == layout center.
-            // Therefore, we should calculate center based on UNSCALED dimensions.
+            // The card lays out by its top-left at its unscaled 320x560dp size: `.offset` runs
+            // before `.graphicsLayer`, which scales around the center, so layout center ==
+            // visual center. Center the unscaled box on the canvas.
             
             val centerX = with(density) { (canvasWidth / 2).toPx() - (320.dp.toPx() / 2) } 
             val centerY = with(density) { (canvasHeight / 2).toPx() - (560.dp.toPx() / 2) }
@@ -122,7 +104,7 @@ fun ShareCanvasScreen(
                             cardData = initialCard,
                             offsetX = centerX,
                             offsetY = centerY,
-                            scale = cardScale, // Scale is applied separately
+                            scale = cardScale,
                             rotation = 0f
                         )
                     )
@@ -132,7 +114,6 @@ fun ShareCanvasScreen(
         }
     }
     
-    // Handle share capture
     LaunchedEffect(Unit) {
         captureController.capturedBitmap.collect { bitmap ->
             val success = ShareUtils.shareBitmap(context, bitmap, TempoFeature.SHARE_CANVAS)
@@ -150,7 +131,6 @@ fun ShareCanvasScreen(
         modifier = Modifier.fillMaxSize()
     ) {
         if (isLoading) {
-            // Loading state
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -166,20 +146,15 @@ fun ShareCanvasScreen(
                 }
             }
         } else {
-            // Main canvas area
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = 60.dp, bottom = 100.dp), // Add safe areas for top bar and bottom dock
-                contentAlignment = Alignment.Center // Center vertically
+                contentAlignment = Alignment.Center
             ) {
                 CaptureWrapper(
                     controller = captureController,
                     modifier = Modifier
-                        // Removed hardcoded top padding to allow centering
-                        // Removed hardcoded scale(0.95f) as we handle margins in calculation now
-                        // but keeping a small one if desired for aesthetic "float", though sizing is safer now.
-                        // Let's remove the extra scale to be precise with our math.
                         .width(canvasWidth)
                         .height(canvasHeight)
                         .shadow(
@@ -366,7 +341,6 @@ fun ShareCanvasScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Simple Close Button
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -405,7 +379,6 @@ fun ShareCanvasScreen(
                     .padding(bottom = 24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Main Dock Container
                 GlassCard(
                     modifier = Modifier
                         .height(80.dp),
@@ -427,7 +400,6 @@ fun ShareCanvasScreen(
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Add Card
                             DockItem(
                                 icon = Icons.Default.Add,
                                 label = "Card",
@@ -436,7 +408,6 @@ fun ShareCanvasScreen(
                                 onClick = { canvasState = canvasState.copy(showCardPicker = true) }
                             )
                             
-                            // Divider
                             Box(
                                 modifier = Modifier
                                     .height(24.dp)
@@ -444,14 +415,13 @@ fun ShareCanvasScreen(
                                     .background(Color.White.copy(alpha = 0.1f))
                             )
                             
-                            // Add Text
                             DockItem(
                                 icon = Icons.Default.TextFields,
                                 label = "Text",
                                 enabled = canvasState.canAddMoreText,
                                 modifier = Modifier.weight(1f),
                                 onClick = {
-                                    val centerX = with(density) { (canvasWidth / 2).toPx() } // Center of canvas
+                                    val centerX = with(density) { (canvasWidth / 2).toPx() }
                                     val centerY = with(density) { (canvasHeight / 2).toPx() }
                                     val newText = CanvasTextItem(
                                         offsetX = centerX,
@@ -468,7 +438,6 @@ fun ShareCanvasScreen(
                                 }
                             )
 
-                            // Divider
                             Box(
                                 modifier = Modifier
                                     .height(24.dp)
@@ -476,7 +445,6 @@ fun ShareCanvasScreen(
                                     .background(Color.White.copy(alpha = 0.1f))
                             )
 
-                            // Add Background
                             DockItem(
                                 icon = Icons.Default.Palette,
                                 label = "Bg",
@@ -488,7 +456,6 @@ fun ShareCanvasScreen(
 
                         Spacer(Modifier.width(8.dp))
                         
-                        // Share Action
                         Box(
                             modifier = Modifier
                                 .height(56.dp)
