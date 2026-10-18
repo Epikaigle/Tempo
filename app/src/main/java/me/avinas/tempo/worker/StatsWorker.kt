@@ -11,6 +11,7 @@ import androidx.work.*
 import me.avinas.tempo.R
 import me.avinas.tempo.data.repository.RoomStatsRepository
 import me.avinas.tempo.data.stats.TimeRange
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
@@ -29,7 +30,9 @@ class StatsPrecomputeWorker @AssistedInject constructor(
         private const val TAG = "StatsPrecomputeWorker"
         const val WORK_NAME = "stats_precompute_work"
         private const val NOTIFICATION_CHANNEL_ID = "stats_precompute_worker"
-        private const val NOTIFICATION_ID = 3006
+        // 3009, not 3006: NotificationWorker's daily challenge notification already owns 3006,
+        // and two ongoing foreground notifications sharing an id overwrite each other.
+        private const val NOTIFICATION_ID = 3009
 
         /**
          * Schedule periodic precomputation of stats.
@@ -132,11 +135,13 @@ class StatsPrecomputeWorker @AssistedInject constructor(
             .setOngoing(true)
             .build()
         
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            ForegroundInfo(NOTIFICATION_ID, notification)
-        }
+        return ForegroundNotificationGuard.postableForegroundInfo(
+            context = context,
+            notificationId = NOTIFICATION_ID,
+            requestedChannelId = NOTIFICATION_CHANNEL_ID,
+            notification = notification,
+            logTag = TAG,
+        )
     }
 }
 
@@ -156,7 +161,10 @@ class StatsCacheInvalidationWorker @AssistedInject constructor(
         const val WORK_NAME = "stats_cache_invalidation"
         const val KEY_EVENT_TIMESTAMP = "event_timestamp"
         private const val NOTIFICATION_CHANNEL_ID = "stats_cache_worker"
-        private const val NOTIFICATION_ID = 3007
+        // 3010, not 3007: ServiceHealthWorker owns 3007. (This worker is not currently scheduled
+        // from anywhere — see docs/PERFORMANCE_AUDIT.md #9 — so the clash was latent rather than
+        // live, but leaving a duplicate id in the tree invites a real one later.)
+        private const val NOTIFICATION_ID = 3010
 
         /**
          * Trigger cache invalidation after a new listening event.
@@ -206,10 +214,12 @@ class StatsCacheInvalidationWorker @AssistedInject constructor(
             .setOngoing(true)
             .build()
         
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            ForegroundInfo(NOTIFICATION_ID, notification)
-        }
+        return ForegroundNotificationGuard.postableForegroundInfo(
+            context = context,
+            notificationId = NOTIFICATION_ID,
+            requestedChannelId = NOTIFICATION_CHANNEL_ID,
+            notification = notification,
+            logTag = TAG,
+        )
     }
 }

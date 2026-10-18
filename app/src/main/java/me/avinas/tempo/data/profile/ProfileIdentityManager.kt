@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
-import android.provider.MediaStore
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -39,6 +38,9 @@ class ProfileIdentityManager @Inject constructor(
         private const val PROFILE_IMAGE_DIR = "profile"
         private const val PROFILE_IMAGE_FILE_NAME = "profile_avatar.jpg"
         private const val MAX_PROFILE_IMAGE_SIZE = 1024
+
+        /** Decode ceiling before scaling; larger picks sample down first (mirrors UserCoverArtStore). */
+        private const val DECODE_CEILING_PX = MAX_PROFILE_IMAGE_SIZE * 2
     }
 
     val profileIdentity: Flow<ProfileIdentity> = context.dataStore.data
@@ -116,12 +118,29 @@ class ProfileIdentityManager @Inject constructor(
             val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
             android.graphics.ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
                 val longestSide = max(info.size.width, info.size.height)
-                val sampleSize = max(1, longestSide / 2048)
+                val sampleSize = max(1, longestSide / DECODE_CEILING_PX)
                 decoder.setTargetSampleSize(sampleSize)
                 decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
             }
         } else {
-            MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+            // API 26-27: MediaStore.getBitmap decoded at the photo's own resolution, so a 48 MP
+            // gallery pick allocated a full-size bitmap here (and cropToSquare allocated a second
+            // one) before it was ever scaled down. Bounds pass first, then sample, exactly as
+            // UserCoverArtStore does for the same reason.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, bounds)
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+            var sampleSize = 1
+            val longest = max(bounds.outWidth, bounds.outHeight)
+            while (longest / sampleSize > DECODE_CEILING_PX) sampleSize *= 2
+
+            val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            }
         }
     }
 

@@ -27,12 +27,15 @@ data class AnalyticsSystemContext(
  * leave the device is visible in one short, readable function. If you want to audit what Tempo
  * sends, this is the file to read.
  *
- * Two things here are load-bearing for privacy rather than formatting:
+ * Three things here are load-bearing for privacy rather than formatting:
  *
  *  - **`$process_person_profile: false` on every event.** This is what makes an event anonymous
  *    at PostHog rather than identified: no person profile is created, no person properties can
  *    be attached, and the event is stored without a user record. It is written first, before
  *    any other property, so an audit cannot miss it.
+ *  - **`$geoip_disable: true` on every event.** PostHog would otherwise turn the caller's
+ *    address into a country, region and city and keep them. This is the switch that keeps the
+ *    published "no location" promise true now that events go straight to PostHog.
  *  - **The install id is the transport-level `distinct_id`, never an event property.** It is
  *    what makes DAU/MAU countable across days, and keeping it out of `properties` is why the
  *    schema's ban on identifier-shaped property keys still holds unchanged.
@@ -53,6 +56,18 @@ object PostHogPayload {
 
     /** PostHog's own property namespace. Custom keys must not use this prefix. */
     private const val PROCESS_PERSON_PROFILE = "\$process_person_profile"
+    private const val INSERT_ID_PROP = "\$insert_id"
+
+    /**
+     * Tells PostHog to skip its own geolocation of the request.
+     *
+     * The app posts straight to PostHog, which means PostHog sees the caller's address and would
+     * otherwise derive a country, region and city from it at ingestion and keep them on the
+     * event. Tempo's published promise is that no location is collected, and this flag is what
+     * makes that true rather than merely intended: without it the backend stores a precision the
+     * policy says it does not have.
+     */
+    private const val GEOIP_DISABLE_PROP = "\$geoip_disable"
     private const val LIB_PROP = "\$lib"
     private const val LIB_VERSION_PROP = "\$lib_version"
     private const val OS_PROP = "\$os"
@@ -76,9 +91,10 @@ object PostHogPayload {
     /**
      * Renders events as a PostHog batch request.
      *
-     * @param apiKey the project token when posting to PostHog directly, or the relay's own app
-     *   token when posting through the Worker — which substitutes the real project token
-     *   server-side so it never ships inside the APK.
+     * @param apiKey the PostHog project token. It ships inside the APK, which is how PostHog
+     *   project tokens are designed to be used; the trade is that anyone holding the app can
+     *   post events to the project, and that only the app's own schema checks stand between a
+     *   mis-wired build and the dashboard.
      */
     fun build(
         events: List<QueuedAnalyticsEvent>,
@@ -107,6 +123,17 @@ object PostHogPayload {
                     // Anonymous, first and unmissable: no person profile is created for this
                     // install, so there is no user record to attach anything to.
                     name(PROCESS_PERSON_PROFILE).value(false)
+
+                    // No country, region or city is derived from the caller's address, so the
+                    // event stores no location at all. See GEOIP_DISABLE_PROP.
+                    name(GEOIP_DISABLE_PROP).value(true)
+
+                    // The key that makes a retried batch harmless. Delivery is at-least-once —
+                    // a batch is dropped from the queue only after the endpoint answers — so
+                    // without this a crash in that window would store the same aggregate twice
+                    // and invent a day of activity. Absent on events queued by an older build,
+                    // which expires within the day; PostHog simply sees no key for those.
+                    event.insertId?.let { name(INSERT_ID_PROP).value(it) }
 
                     name(LIB_PROP).value(LIB)
                     name(LIB_VERSION_PROP).value(LIB_VERSION)

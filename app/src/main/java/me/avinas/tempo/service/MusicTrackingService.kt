@@ -50,6 +50,7 @@ import me.avinas.tempo.data.repository.TrackAliasRepository
 import me.avinas.tempo.data.repository.TrackRepository
 import me.avinas.tempo.receiver.BatteryStateReceiver
 import me.avinas.tempo.utils.BatteryUtils
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import me.avinas.tempo.utils.TrackCandidate
 import me.avinas.tempo.utils.TrackMatcher
 import me.avinas.tempo.worker.EnrichmentWorker
@@ -99,6 +100,15 @@ class MusicTrackingService : NotificationListenerService() {
     companion object {
         private const val TAG = "MusicTrackingService"
         private const val CHANNEL_ID = "tempo_tracking_channel"
+
+        /**
+         * Every channel a tracking notification can name: the active-tracking channel and the
+         * silent channel used while idle or paused for battery.
+         *
+         * Both must exist before promoting to foreground, because the framework validates the
+         * posted notification's channel asynchronously and kills the process if it is missing.
+         */
+        private val TRACKING_CHANNEL_IDS = listOf(CHANNEL_ID, CHANNEL_ID + "_silent")
         private const val NOTIFICATION_ID = 1001
 
         /** Sent by [BatteryStateReceiver] to trigger a re-scan of active media sessions. */
@@ -519,8 +529,7 @@ class MusicTrackingService : NotificationListenerService() {
         // Debug log when falling back to Unknown Artist (debounced - only once per track)
         // Skip logging when title is empty - metadata hasn't fully arrived yet
         val logKey = title?.takeIf { it.isNotBlank() }
-        if (logKey != null && !loggedArtistExtractionFailures.containsKey(logKey)) {
-            loggedArtistExtractionFailures[logKey] = true
+        if (logKey != null && loggedArtistExtractionFailures.put(logKey, true) == null) {
             Log.d(
                 TAG,
                 "Artist extraction failed for MediaMetadata. Available keys: " +
@@ -583,8 +592,7 @@ class MusicTrackingService : NotificationListenerService() {
         extractArtistFromTitle(title)?.let { return it }
 
         // Debug log when falling back to Unknown Artist (debounced - only once per track)
-        if (!loggedArtistExtractionFailures.containsKey(title)) {
-            loggedArtistExtractionFailures[title] = true
+        if (loggedArtistExtractionFailures.put(title, true) == null) {
             Log.d(
                 TAG,
                 "Artist extraction failed for notification. Available: " +
@@ -927,7 +935,12 @@ class MusicTrackingService : NotificationListenerService() {
             }
         }
 
-        val manualMark = manualContentMarkDao.findMatchingMark(title, artist)
+        // Resolved from the in-memory cache rather than through the DAO. This runs on the
+        // synchronous MediaSession/notification path for every new track and every save attempt,
+        // and the DAO's equivalent would re-read the whole manual_content_marks table each time —
+        // which is exactly what the @Volatile cache above exists to avoid. Same resolver, same
+        // inputs, so the result is identical.
+        val manualMark = findManualContentMark(title, artist)
         if (manualMark != null) {
             val shouldFilter =
                 when (manualMark.contentType) {
@@ -1025,19 +1038,18 @@ class MusicTrackingService : NotificationListenerService() {
 
     // Dedup sets to prevent log spam
 
-    // LRU-style set of track titles for which we've already logged artist extraction failures
-    // Uses LinkedHashMap with access order to limit memory (max 100 entries)
-    private val loggedArtistExtractionFailures =
-        object : LinkedHashMap<String, Boolean>(100, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>): Boolean = size > 100
-        }
+    // Bounded set of track titles for which we've already logged artist extraction failures.
+    //
+    // `LruCache` rather than an access-ordered `LinkedHashMap`: these are read from the main
+    // thread (notification/media callbacks) and cleared from `serviceScope` coroutines on
+    // Dispatchers.IO, and an access-ordered LinkedHashMap relinks entries even on `get`, so
+    // concurrent structural mutation could corrupt its buckets or spin. LruCache is internally
+    // synchronized and bounded, which is exactly the semantics wanted here. `put` also returns
+    // the previous value, making the "log only the first time" test atomic in one call.
+    private val loggedArtistExtractionFailures = android.util.LruCache<String, Boolean>(100)
 
-    // LRU-style set of titles for which we've logged "Skipping likely advertisement"
-    // Uses LinkedHashMap with access order to limit memory (max 50 entries)
-    private val loggedAdvertisementSkips =
-        object : LinkedHashMap<String, Boolean>(50, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>): Boolean = size > 50
-        }
+    // Bounded set of titles for which we've logged "Skipping likely advertisement"
+    private val loggedAdvertisementSkips = android.util.LruCache<String, Boolean>(50)
 
     // Track restart log debouncing - only log once per track per 5 seconds
     private var lastTrackRestartLog: Pair<String, Long>? = null
@@ -1423,7 +1435,17 @@ class MusicTrackingService : NotificationListenerService() {
         // Promote to foreground before blocking operations (like database migrations in
         // initializeDependencies) to satisfy the foreground service start window.
         createNotificationChannel()
-        startForegroundServiceWithNotification()
+        if (!startForegroundServiceWithNotification()) {
+            // Nothing usable can be posted, so there is no legal way to hold foreground state.
+            //
+            // Keep initializing anyway. A `startForegroundService()` obligation cannot be retired
+            // from here — only a `startForeground()` call reaching the system server clears
+            // `ServiceRecord.fgRequired` — and this instance may have been bound by the system as a
+            // notification listener (no obligation, no deadline) where tracking below is still the
+            // whole point of running. onStartCommand retries the promotion with the same deadline
+            // headroom the framework gave the start.
+            Log.w(TAG, "Could not enter the foreground; continuing without a notification")
+        }
 
         // Initialize dependencies via Hilt EntryPoint
         // This is necessary because NotificationListenerService is managed by the system
@@ -2274,7 +2296,19 @@ class MusicTrackingService : NotificationListenerService() {
         // onCreate's startForeground didn't land within the ANR/low-memory restart window,
         // the system throws BadForegroundServiceNotificationException. Asserting here makes
         // the foreground promotion idempotent and deadline-safe on Android 14+.
-        startForegroundServiceWithNotification()
+        if (!startForegroundServiceWithNotification()) {
+            // onCreate may already have failed to promote; retrying here is still worthwhile so a
+            // channel that has since been recreated is picked up.
+            //
+            // Do NOT stopSelf() here. If this instance was started with startForegroundService() and
+            // startForeground() never reached the system server, ServiceRecord.fgRequired is still
+            // set, and bringing the service down while it is set makes the system crash the process
+            // (ActiveServices.bringDownServiceLocked → SERVICE_FOREGROUND_CRASH_MSG → a
+            // RemoteServiceException thrown from ActivityThread$H.handleMessage). Staying alive keeps
+            // the one non-crashing outcome — a later startForeground() — reachable.
+            Log.e(TAG, "Could not enter the foreground yet; leaving the service running for a retry")
+            return START_NOT_STICKY
+        }
 
         when (intent?.action) {
             ACTION_BATTERY_RECOVERED -> {
@@ -2470,10 +2504,14 @@ class MusicTrackingService : NotificationListenerService() {
             return
         }
 
-        // Extract album art from notification (for fallback use)
-        val albumArtBitmap = extractAlbumArtFromNotification(notification)
-
-        Log.d(TAG, "Music notification: '$title' by '$artist' from $packageName (has art: ${albumArtBitmap != null})")
+        // Album art is extracted lazily, inside the "NEW" branch below, for two reasons:
+        //   * `extras.getParcelable(EXTRA_LARGE_ICON)` unparcels the notification's big picture
+        //     into a heap Bitmap. On the notification callback (main) thread that is the largest
+        //     allocation in this path, and it used to happen before the branch even though the
+        //     bitmap is only needed when a session is actually created.
+        //   * the "UPDATE" branch never uses it, so art for an already-known track was being
+        //     decoded and thrown away on every notification.
+        // The Notification is a plain Parcelable and is safe to read off the main thread.
 
         // CRITICAL: Use synchronized block to prevent race condition when
         // notification and MediaSession callbacks fire simultaneously for the same track.
@@ -2575,8 +2613,7 @@ class MusicTrackingService : NotificationListenerService() {
                         .isUnknownArtist(artist) &&
                     isLikelyAdvertisementFromNotification(title, artist, album, packageName)
                 ) {
-                    if (!loggedAdvertisementSkips.containsKey(title)) {
-                        loggedAdvertisementSkips[title] = true
+                    if (loggedAdvertisementSkips.put(title, true) == null) {
                         Log.d(TAG, "Skipping likely advertisement: '$title' from $packageName")
                     }
                     return
@@ -2605,8 +2642,8 @@ class MusicTrackingService : NotificationListenerService() {
                 }
 
                 // Clear log debounce caches for fresh logging on new track
-                loggedArtistExtractionFailures.clear()
-                loggedAdvertisementSkips.clear()
+                loggedArtistExtractionFailures.evictAll()
+                loggedAdvertisementSkips.evictAll()
 
                 val newSession =
                     PlaybackSession(
@@ -2664,9 +2701,15 @@ class MusicTrackingService : NotificationListenerService() {
                             } ?: "unknown"})",
                         )
 
-                        // Save the extracted art off the notification callback (main) thread —
-                        // JPEG encode + file write there was a jank/ANR risk on rapid track skips.
-                        val localArtUrl = albumArtBitmap?.let { saveAlbumArtToStorage(it, title, artist) }
+                        // Extract + save the art off the notification callback (main) thread —
+                        // unparcelling the bitmap, JPEG encoding and the file write were all a
+                        // jank/ANR risk on rapid track skips.
+                        val localArtUrl =
+                            extractAlbumArtFromNotification(notification)
+                                ?.let { saveAlbumArtToStorage(it, title, artist) }
+                        if (localArtUrl != null) {
+                            Log.d(TAG, "Saved notification art for '$title' by '$artist'")
+                        }
 
                         // If we have local album art, schedule a delayed update
                         // This gives enrichment time to complete first (MusicBrainz is preferred)
@@ -3964,14 +4007,22 @@ class MusicTrackingService : NotificationListenerService() {
                 // Same track - update play state and potentially update artist
                 val currentSession = session!!
 
-                // Extract local metadata - music players often send metadata in stages
-                // Genre, year, etc. might come in later updates
-                val localMetadata = LocalMediaMetadata.fromMediaMetadata(metadata, packageName)
-                if (localMetadata != null && currentSession.trackId != null) {
-                    val trackId = currentSession.trackId!!
+                // Local metadata is parsed *inside* the coroutine below, not here: this is the
+                // "same track" branch, which every playback-state callback hits (a player can
+                // emit 10-40 of them per track), and `fromMediaMetadata` reads ~10 metadata keys
+                // and unparcels + bilinearly rescales album art. That was happening on the main
+                // thread on every callback even though the result only feeds `localMetadataCache`,
+                // and even when `hasNewData` below decided there was nothing to store.
+                val trackId = currentSession.trackId
+                if (trackId != null) {
                     // Update cache and check if we should apply local metadata fallback
                     serviceScope.launch {
                         try {
+                            // Music players often send metadata in stages — genre, year, etc.
+                            // may arrive in later updates.
+                            val localMetadata = LocalMediaMetadata.fromMediaMetadata(metadata, packageName)
+                            if (localMetadata == null) return@launch
+
                             // Update cache with latest metadata
                             val cached = localMetadataCache.get(trackId)
                             val hasNewData =
@@ -4099,8 +4150,7 @@ class MusicTrackingService : NotificationListenerService() {
                         .isUnknownArtist(artist) &&
                     localMetadata?.isLikelyAdvertisement() == true
                 ) {
-                    if (!loggedAdvertisementSkips.containsKey(title)) {
-                        loggedAdvertisementSkips[title] = true
+                    if (loggedAdvertisementSkips.put(title, true) == null) {
                         Log.d(TAG, "Skipping likely advertisement: '$title' from $packageName")
                     }
                     return
@@ -4110,8 +4160,8 @@ class MusicTrackingService : NotificationListenerService() {
                 val albumArtBitmap = localMetadata?.albumArtBitmap ?: extractAlbumArtFromMetadata(metadata)
 
                 // Clear log debounce caches for fresh logging on new track
-                loggedArtistExtractionFailures.clear()
-                loggedAdvertisementSkips.clear()
+                loggedArtistExtractionFailures.evictAll()
+                loggedAdvertisementSkips.evictAll()
 
                 val newSession =
                     PlaybackSession(
@@ -4279,36 +4329,43 @@ class MusicTrackingService : NotificationListenerService() {
      * Checks that both notification channels exist, recreating them if wiped by the system.
      * Posting a foreground notification without a valid channel triggers BadForegroundServiceNotificationException.
      */
-    private fun ensureNotificationChannelsExist(): Boolean {
-        val manager = getSystemService(NotificationManager::class.java)
-        val missing =
-            listOf(CHANNEL_ID, CHANNEL_ID + "_silent")
-                .filter { manager.getNotificationChannel(it) == null }
-        if (missing.isEmpty()) return true
+    private fun ensureNotificationChannelsExist(): Boolean =
+        ForegroundNotificationGuard.ensureChannelsExist(this, TRACKING_CHANNEL_IDS, TAG)
 
-        Log.w(TAG, "Notification channel(s) missing ($missing) — recreating before startForeground")
-        createNotificationChannel()
-
-        val stillMissing =
-            listOf(CHANNEL_ID, CHANNEL_ID + "_silent")
-                .filter { manager.getNotificationChannel(it) == null }
-        if (stillMissing.isNotEmpty()) {
-            Log.e(TAG, "Cannot create notification channel(s) $stillMissing; refusing to enter foreground")
+    /**
+     * Promotes the service to the foreground, returning whether it succeeded.
+     *
+     * A `false` result means no notification could be posted on any channel at all (neither the
+     * tracking channels nor the guard's own fallback), or that `startForeground()` itself threw.
+     *
+     * A `false` result must never be turned into `stopSelf()`: `startForegroundService()` creates an
+     * obligation that only a `startForeground()` call reaching the system server clears
+     * (`ServiceRecord.fgRequired`, cleared in `ActiveServices.setServiceForegroundInnerLocked`). A
+     * service brought down while that flag is still set crashes the process with
+     * `android.app.RemoteServiceException` from `ActivityThread$H.handleMessage`
+     * (`ActiveServices.bringDownServiceLocked` posts `SERVICE_FOREGROUND_CRASH_MSG` → the app-side
+     * `ActivityThread.throwRemoteServiceException`). The framework's own start deadline does the same
+     * thing, so the only non-crashing outcome is to satisfy the obligation.
+     */
+    private fun startForegroundServiceWithNotification(): Boolean {
+        // The framework validates the notification asynchronously, on the ActivityManager handler
+        // thread (ServiceRecord.postNotification), so a rejection cannot be caught around
+        // startForeground() — it stops the service and kills the process. Verify here that the
+        // notification names an existing channel and has a small icon, the two conditions the
+        // framework kills for.
+        //
+        // The fallback channel is what keeps a failure here from becoming the crash described above:
+        // a plain notification on a channel this app owns is always acceptable to the framework.
+        val notification =
+            ForegroundNotificationGuard.buildPromotableOrFallback(this, TRACKING_CHANNEL_IDS, TAG) {
+                buildTrackingNotificationSafely(null, null)
+            }
+        if (notification == null) {
+            Log.e(TAG, "Skipping foreground promotion: no acceptable notification available")
             return false
         }
-        return true
-    }
 
-    private fun startForegroundServiceWithNotification() {
-        // Verify channels exist before calling startForeground to avoid BadForegroundServiceNotificationException.
-        if (!ensureNotificationChannelsExist()) {
-            Log.e(TAG, "Skipping foreground promotion: notification channels unavailable")
-            return
-        }
-
-        val notification = buildTrackingNotificationSafely(null, null)
-
-        try {
+        return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID,
@@ -4318,6 +4375,7 @@ class MusicTrackingService : NotificationListenerService() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
+            true
         } catch (e: Exception) {
             // A transient failure (e.g. foreground-start window lapsed, or the system
             // forbids the type) must not crash the service. Stop cleanly instead.
@@ -4326,6 +4384,7 @@ class MusicTrackingService : NotificationListenerService() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
             } catch (_: Exception) {
             }
+            false
         }
     }
 
@@ -4466,6 +4525,14 @@ class MusicTrackingService : NotificationListenerService() {
         if (!ensureNotificationChannelsExist()) return
 
         val notification = buildTrackingNotificationSafely(currentTrack, currentArtist)
+
+        // Re-notifying the foreground notification id re-runs the framework's async validation
+        // (ServiceRecord.postNotification), so the same checks that gate promotion apply here.
+        ForegroundNotificationGuard.rejectionReason(this, notification)?.let { reason ->
+            Log.e(TAG, "Skipping notification update: $reason")
+            return
+        }
+
         val manager = getSystemService(NotificationManager::class.java)
         try {
             manager.notify(NOTIFICATION_ID, notification)

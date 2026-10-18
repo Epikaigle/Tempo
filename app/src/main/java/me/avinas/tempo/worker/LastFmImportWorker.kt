@@ -23,6 +23,7 @@ import me.avinas.tempo.data.lastfm.LastFmImportService
 import me.avinas.tempo.data.local.dao.LastFmImportMetadataDao
 import me.avinas.tempo.data.local.dao.UserPreferencesDao
 import me.avinas.tempo.data.local.entities.LastFmImportMetadata
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -264,11 +265,13 @@ class LastFmImportWorker
             }
 
             val notification = notificationBuilder.build()
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ForegroundInfo(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                ForegroundInfo(NOTIFICATION_ID, notification)
-            }
+            return ForegroundNotificationGuard.postableForegroundInfo(
+                context = applicationContext,
+                notificationId = NOTIFICATION_ID,
+                requestedChannelId = NOTIFICATION_CHANNEL_ID,
+                notification = notification,
+                logTag = TAG,
+            )
         }
 
         /**

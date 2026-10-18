@@ -18,6 +18,7 @@ import me.avinas.tempo.R
 import me.avinas.tempo.data.repository.PreferencesRepository
 import me.avinas.tempo.data.repository.RoomStatsRepository
 import me.avinas.tempo.data.stats.TimeRange
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -376,10 +377,12 @@ class SpotlightUnlockWorker @AssistedInject constructor(
             .setOngoing(true)
             .build()
         
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(NOTIFICATION_ID_MONTHLY, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            ForegroundInfo(NOTIFICATION_ID_MONTHLY, notification)
-        }
+        return ForegroundNotificationGuard.postableForegroundInfo(
+            context = context,
+            notificationId = NOTIFICATION_ID_MONTHLY,
+            requestedChannelId = CHANNEL_ID,
+            notification = notification,
+            logTag = TAG,
+        )
     }
 }

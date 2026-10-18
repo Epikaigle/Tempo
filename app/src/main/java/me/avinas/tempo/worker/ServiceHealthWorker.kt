@@ -17,6 +17,7 @@ import me.avinas.tempo.data.analytics.RecoveryAction
 import me.avinas.tempo.data.analytics.RevivedBy
 import me.avinas.tempo.service.MusicTrackingService
 import me.avinas.tempo.service.TrackingServiceHeartbeat
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
@@ -47,15 +48,26 @@ class ServiceHealthWorker @AssistedInject constructor(
 
         /**
          * Schedule periodic health checks for the tracking service.
-         * Runs every 15 minutes (minimum for periodic work).
+         *
+         * The interval is deliberately matched to
+         * [TrackingServiceHeartbeat.HEARTBEAT_STALE_MS] (30 minutes): a heartbeat is only ever
+         * considered stale once it is that old, so checking every 15 minutes — the platform
+         * minimum, which this used to do — woke the whole process twice as often as the check
+         * could possibly have anything to report. The work itself is trivial, but each run starts
+         * the process and builds the Hilt graph, which is the real cost.
+         *
+         * `setRequiresBatteryNotLow(true)` replaces the previous explicit "run even on low
+         * battery": restarting a dead listener is a repair, not time-critical, and it should not
+         * be starting a process while the battery is already low. A still-dead listener is picked
+         * up by the next run once the battery recovers.
          */
         fun schedule(context: Context) {
             val constraints = Constraints.Builder()
-                .setRequiresBatteryNotLow(false) // Run even on low battery
+                .setRequiresBatteryNotLow(true)
                 .build()
 
             val workRequest = PeriodicWorkRequestBuilder<ServiceHealthWorker>(
-                15, TimeUnit.MINUTES,
+                30, TimeUnit.MINUTES,
                 5, TimeUnit.MINUTES // Flex interval
             )
                 .setConstraints(constraints)
@@ -68,7 +80,9 @@ class ServiceHealthWorker @AssistedInject constructor(
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP, // Don't replace if already scheduled
+                // UPDATE, not KEEP: KEEP would leave every existing install on the old
+                // 15-minute cadence, so the change would only reach new installs.
+                ExistingPeriodicWorkPolicy.UPDATE,
                 workRequest
             )
 
@@ -269,10 +283,12 @@ class ServiceHealthWorker @AssistedInject constructor(
             .setOngoing(true)
             .build()
         
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            ForegroundInfo(NOTIFICATION_ID, notification)
-        }
+        return ForegroundNotificationGuard.postableForegroundInfo(
+            context = applicationContext,
+            notificationId = NOTIFICATION_ID,
+            requestedChannelId = NOTIFICATION_CHANNEL_ID,
+            notification = notification,
+            logTag = TAG,
+        )
     }
 }

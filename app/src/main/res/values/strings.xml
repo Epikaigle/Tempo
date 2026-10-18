@@ -1525,6 +1525,9 @@
     <string name="details_cover_not_found">No cover found</string>
     <string name="details_cover_use">Use this cover</string>
     <string name="details_cover_manual">Manual cover</string>
+    <string name="details_cover_from_gallery">Choose from gallery</string>
+    <string name="details_cover_from_gallery_hint">Uses a photo from this device. Tempo keeps it on your phone and uploads nothing.</string>
+    <string name="details_cover_gallery_error">Could not read that image</string>
     <string name="details_cover_restore_auto">Return to automatic selection</string>
     <string name="details_cover_restore_auto_hint">Tempo will be allowed to choose artwork automatically again.</string>
     <string name="details_cover_try_again">Search again</string>

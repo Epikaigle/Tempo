@@ -3,8 +3,6 @@ package me.avinas.tempo.worker
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -35,6 +33,7 @@ import me.avinas.tempo.data.repository.EnrichedMetadataRepository
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.ui.onboarding.dataStore
 import me.avinas.tempo.utils.ArtistParser
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import me.avinas.tempo.worker.LastFmImportWorker
 import java.util.concurrent.TimeUnit
 
@@ -926,6 +925,16 @@ class EnrichmentWorker
             // twice. If a whole batch comes back already-seen, the sweep is stuck — stop
             // instead of looping forever (the user-visible "freezes and never finishes").
             val processedIds = HashSet<Long>()
+            // Progress is tracked locally rather than re-counted from the database.
+            //
+            // This loop used to call countByStatus() *and* setProgress() after every single
+            // track. countByStatus is index-only so it is cheap but not free, and setProgress
+            // persists to WorkManager's own database — so a 25-track batch cost ~50 extra
+            // database writes purely to move a progress bar. enrichSpecificTrack() guarantees a
+            // processed track leaves PENDING, so a local counter is equivalent for reporting.
+            var completed = 0
+            var lastReportedCompleted = 0
+            val progressInterval = 5
             while (!isStopped) {
                 val batch = enrichedMetadataDao.getTracksNeedingEnrichment(EnrichmentStatus.PENDING, batchSize)
                 if (batch.isEmpty()) break
@@ -954,15 +963,18 @@ class EnrichmentWorker
                             )
                         }
                     }
-                    // Report progress per track so the bar moves smoothly instead of in
-                    // 25-track jumps.
-                    val remaining = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
-                    setProgress(
-                        workDataOf(
-                            "processed" to (total - remaining).coerceIn(0, total),
-                            "total" to total,
-                        ),
-                    )
+                    completed++
+                    // Report in small steps so the bar still moves smoothly, without paying a
+                    // database write per track. The final count is reported once after the loop.
+                    if (completed - lastReportedCompleted >= progressInterval) {
+                        lastReportedCompleted = completed
+                        setProgress(
+                            workDataOf(
+                                "processed" to completed.coerceIn(0, total),
+                                "total" to total,
+                            ),
+                        )
+                    }
                     kotlinx.coroutines.delay(INTER_TRACK_DELAY_MS)
                 }
             }
@@ -1004,10 +1016,12 @@ class EnrichmentWorker
                     .setOngoing(true)
                     .build()
 
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                ForegroundInfo(NOTIFICATION_ID, notification)
-            }
+            return ForegroundNotificationGuard.postableForegroundInfo(
+                context = applicationContext,
+                notificationId = NOTIFICATION_ID,
+                requestedChannelId = NOTIFICATION_CHANNEL_ID,
+                notification = notification,
+                logTag = TAG,
+            )
         }
     }

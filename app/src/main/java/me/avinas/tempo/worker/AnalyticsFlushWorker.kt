@@ -27,8 +27,8 @@ import java.util.concurrent.TimeUnit
  * majority of users who are on mobile data only. The constraint is deliberately `CONNECTED`
  * rather than `UNMETERED` for that reason — see docs/ANALYTICS.md.
  *
- * Events older than 24h are rejected by the ingest API and dropped by the queue, so this
- * running rarely costs nothing but latency.
+ * Events older than 24h are dropped by the queue before they can be sent, so running this rarely
+ * costs nothing but latency.
  */
 @HiltWorker
 class AnalyticsFlushWorker

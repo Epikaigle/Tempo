@@ -17,9 +17,30 @@ class AnalyticsSchemaTest {
     private val allEvents: List<AnalyticsEvent> = AnalyticsEventSamples.all
 
     /**
-     * Property keys are capped at 40 characters. The relay truncates nothing and the backend
-     * silently drops an oversized key, so an event carrying one would lose that field without
-     * anything surfacing as an error.
+     * Every rule below reads [AnalyticsEventSamples], so an event missing from that fixture is
+     * not checked *at all* — not its key lengths, not its value types, not the ban on identifier
+     * keys. The fixture used to claim the tests "fail together" if it fell behind; they do not,
+     * which made an unchecked event the easiest way to break the privacy promise by accident.
+     *
+     * Asking the sealed hierarchy itself is what closes that: adding a variant now fails here
+     * until it is represented in the fixture, and therefore in every check that follows.
+     */
+    @Test
+    fun `every event variant is represented in the samples`() {
+        val declared = AnalyticsEvent::class.sealedSubclasses.mapNotNull { it.simpleName }.toSet()
+        val sampled = AnalyticsEventSamples.all.mapNotNull { it::class.simpleName }.toSet()
+
+        assertEquals(
+            "an event with no sample is never inspected by the privacy checks",
+            declared,
+            sampled,
+        )
+    }
+
+    /**
+     * Property keys are capped at 40 characters. The ingest API drops an oversized key rather
+     * than reporting an error, so an event carrying one would lose that field silently — and
+     * nothing downstream would say so.
      */
     @Test
     fun `property keys stay within the server limit`() {

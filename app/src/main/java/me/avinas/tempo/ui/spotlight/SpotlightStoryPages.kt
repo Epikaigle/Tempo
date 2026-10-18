@@ -51,12 +51,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -1186,7 +1186,7 @@ fun PersonalityPage(page: SpotlightStoryPage.Personality) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .rotate(rotationAngle)
+                            .graphicsLayer { rotationZ = rotationAngle }
                     ) {
                         Box(
                             modifier = Modifier
@@ -3128,7 +3128,7 @@ fun BadgesEarnedPage(page: SpotlightStoryPage.BadgesEarned) {
                 modifier = Modifier
                     .offset(y = (-40).dp)
                     .size(260.dp * dimens.scale)
-                    .alpha(shimmer * 0.35f)
+                    .graphicsLayer { alpha = shimmer * 0.35f }
                     .background(
                         brush = Brush.radialGradient(
                             colors = listOf(Color(0xFFF59E0B), Color(0xFFF59E0B).copy(alpha = 0.3f), Color.Transparent)
@@ -3319,21 +3319,26 @@ fun LevelUpPage(page: SpotlightStoryPage.LevelUp) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val dimens = rememberSpotlightDimens(maxHeight)
 
+        // Gradient built once with a fully opaque middle stop; the pulse is
+        // applied as a layer alpha below, so nothing is allocated per frame.
+        val streakBrush = remember {
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color(0xFFF59E0B),
+                    Color.Transparent
+                )
+            )
+        }
+
         // Horizontal streak across the center — distinctly different from radial glow
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp * dimens.scale)
-                    .background(
-                        brush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color(0xFFF59E0B).copy(alpha = pulseAlpha),
-                                Color.Transparent
-                            )
-                        )
-                    )
+                    .graphicsLayer { alpha = pulseAlpha }
+                    .background(brush = streakBrush)
             )
         }
 

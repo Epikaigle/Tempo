@@ -1,11 +1,10 @@
 package me.avinas.tempo.data.analytics
 
-import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
-import me.avinas.tempo.ui.onboarding.dataStore
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -33,7 +32,7 @@ import javax.inject.Singleton
 class AnalyticsInstallId
     @Inject
     constructor(
-        @param:ApplicationContext private val context: Context,
+        private val dataStore: DataStore<Preferences>,
     ) {
         /**
          * Memo of the id resolved in this process.
@@ -57,14 +56,14 @@ class AnalyticsInstallId
             // reason. The cache is a memo, not state: it starts empty in every process.
             cache?.let { return it }
 
-            val existing = context.dataStore.data.first()[installIdKey]
+            val existing = dataStore.data.first()[installIdKey]
             if (existing != null) {
                 cache = existing
                 return existing
             }
 
             var minted = ""
-            context.dataStore.edit { prefs ->
+            dataStore.edit { prefs ->
                 // Re-read inside the lock: a concurrent caller may have minted first, and two
                 // different ids for one install would split its history in half.
                 val raced = prefs[installIdKey]
@@ -82,13 +81,13 @@ class AnalyticsInstallId
         /** Mints a new id, making everything already recorded unlinkable to what follows. */
         suspend fun reset(): String {
             val fresh = randomId()
-            context.dataStore.edit { it[installIdKey] = fresh }
+            dataStore.edit { it[installIdKey] = fresh }
             cache = fresh
             return fresh
         }
 
         /** True when an id has been minted, so opting out can skip a pointless write. */
-        suspend fun exists(): Boolean = context.dataStore.data.first()[installIdKey] != null
+        suspend fun exists(): Boolean = dataStore.data.first()[installIdKey] != null
 
         private companion object {
             val installIdKey = stringPreferencesKey("analytics_install_id")

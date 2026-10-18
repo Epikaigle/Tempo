@@ -272,7 +272,16 @@ interface TrackDao {
     
     /**
      * Find track by exact title and artist match (case-insensitive).
-     * COLLATE NOCASE allows SQLite to utilize existing title/artist indexes.
+     *
+     * Both `COLLATE NOCASE` arms are deliberate: dropping them would change matching semantics
+     * and start creating duplicate tracks for case-only differences.
+     *
+     * These comparisons are served by `index_tracks_title_lower`, a NOCASE index on `title`
+     * created by `MIGRATION_8_9`. Note that this index is **not** declared on the Track entity,
+     * so it exists only on databases that ran that migration — a fresh install builds its schema
+     * from the declared entity indices in `createAllTables` and never runs migrations, leaving
+     * these queries to fall back to a full scan of `tracks`. See docs/PERFORMANCE_AUDIT.md #1 for
+     * the measurement and the intended fix.
      */
     @Query("""
         SELECT * FROM tracks 

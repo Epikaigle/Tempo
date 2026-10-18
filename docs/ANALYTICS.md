@@ -24,8 +24,9 @@ after.
 
 Tempo collects no advertising ID, no `ANDROID_ID`, and does no fingerprinting. Events are sent
 as anonymous: the analytics service is told not to create a user profile, so no user record is
-stored for you. The client IP address is never stored — but a coarse country is derived from it
-as the event arrives, and that country is kept. See [Where it goes](#where-it-goes).
+stored for you. The client IP address is never stored, and every event tells the analytics
+service not to derive a location from it either, so nothing about where you are is kept. See
+[Where it goes](#where-it-goes).
 
 Reporting works over any connection. Each event is a few hundred bytes, about 16 KB on a busy
 day. Waiting for Wi-Fi would silence everyone on mobile data only, so Tempo does not wait for it.
@@ -74,7 +75,7 @@ The format is checked before the event can exist. Text that does not match the p
 - Track, artist, album, or playlist names, not even hashed.
 - Search queries, notification content, file paths, listening timestamps.
 - Account details, advertising ID, `ANDROID_ID`, or any hardware identifier.
-- Your IP address, or anything more precise than a country derived from it. The address itself is never stored, and on the relay path no city or region is produced. A coarse country **is** kept — see below.
+- Your IP address, and anything that could be derived from it. Tempo stores no address, and every event carries PostHog's `$geoip_disable` flag, so the backend does not turn the connection into a country, region or city either. No location of any kind is kept — see below.
 - No advertising or attribution SDK, no Google Analytics, no Firebase.
 - No session replay, no screen recording, no tap maps.
 
@@ -88,26 +89,24 @@ Because you start it and review it, it can carry more detail than the automatic 
 
 ## Where it goes
 
-[PostHog](https://posthog.com), on EU infrastructure in Frankfurt. PostHog is open source and does not sell data. Two settings matter here and both are deliberate:
+[PostHog](https://posthog.com), on EU infrastructure in Frankfurt. PostHog is open source and does not sell data. Events go straight from the device to PostHog's batch endpoint — there is no intermediary service, so the guarantees below are enforced by the app itself and are auditable in `PostHogPayload.kt`. Three things matter here and all are deliberate:
 
 - **Person profiles are off.** Every event is sent with `$process_person_profile = false`, so no user record is created and there is nothing to look a person up by.
-- **Client IP addresses are not stored.** The address is used as the event arrives and then discarded.
+- **Location enrichment is off.** Every event is sent with `$geoip_disable = true`, so PostHog does not turn the connection into a country, region or city. PostHog receives the address as any server does; this flag is what stops it becoming stored location data.
+- **No address is stored by Tempo.** It is never written to a database, a log, or an event property.
 
-The address is not stored, but it is not unused either, and this is worth stating plainly: **a coarse country is derived from it and kept.** Depending on how the build is configured, that happens in one of two places:
+**No location data is collected** — not a country, not a city, not coordinates. That is a deliberate change from an earlier arrangement where a relay attached a coarse country code; the flag above is what keeps the stronger promise true.
 
-- **Through the relay** (the default): the relay takes the country from Cloudflare's own view of the connection and attaches a two-letter code. No city, no region, and PostHog never receives an address at all — it is told to skip its own geolocation, which would otherwise report the datacenter the relay runs in rather than you.
-- **Straight to PostHog**: PostHog derives country and region from the address at ingestion, then discards the address.
-
-Either way the result is coarser than an address and is the only location data kept. There is no city, no postcode, no coordinates, and no way to turn a country back into a person.
-
-The relay holds the PostHog token so it never ships inside the app, forces the anonymous flag so a bug cannot create a profile, drops reserved properties, and refuses any event not in the published list above. Its source is in [`deploy/analytics-relay`](../deploy/analytics-relay), so the filtering is auditable.
+The PostHog project token ships inside the app. That is how PostHog client tokens are designed to be used, and it replaces an earlier arrangement where a server held the token. The trade is that anyone holding the app can post events to that project, so the closed schema and the published list below are what keep the data honest.
 
 ## Builds from source
 
 Builds compiled from source send nothing. The analytics endpoint is not committed to the repository, so a self-built copy has reporting inert. Debug builds never report either.
 
 To point a build at your own analytics, set `ANALYTICS_ENDPOINT` and `ANALYTICS_TOKEN` in
-`local.properties`. See [`deploy/analytics-relay`](../deploy/analytics-relay) for the relay.
+`local.properties`. `ANALYTICS_ENDPOINT` is the full URL — for PostHog,
+`https://eu.i.posthog.com/batch/` — and `ANALYTICS_TOKEN` is that project's token. Nothing else
+is needed: the app speaks PostHog's batch API directly.
 
 ## Play Store Data Safety
 
@@ -118,14 +117,14 @@ The declaration in Play Console has to match this page, and it is easy for the t
 | Device or other IDs | **Collected** | The pseudonymous install id. **Not** an advertising ID — that is never read. |
 | App activity → Other actions | **Collected** | Feature first use, onboarding steps, import and backup outcomes. |
 | App info and performance → Crash logs | **Collected** | Obfuscated class and frame only; never the message or a stack. |
-| Location | **Approximate location: collected** | A country code is derived at the relay and stored. Declaring it is the safe reading of a borderline case, and the previous backend disclosed a coarser version of the same thing. |
+| Location | **Not collected** | Every event carries `$geoip_disable`, so no country, city or coordinates are derived or stored. |
 | Advertising or marketing | **No** | |
 | Encrypted in transit | **Yes** | |
 | Users can delete their data | **Yes** | Reset analytics ID, or turn reporting off — both leave the old id unlinkable and nothing further is sent under it. |
 
 On "shared with third parties": events reach PostHog, which acts as a **processor under contract**, not as a purchaser using the data for its own purposes. Play's "sharing" definition normally covers transfer for the recipient's own use, so collection-only is the usual reading — but confirm it against PostHog's DPA rather than taking it from here.
 
-Two lists must stay in step when the schema changes: this table, and `ALLOWED_EVENTS` in `deploy/analytics-relay/src/index.js`. `AnalyticsCatalogTest` and `AnalyticsEnumUsageTest` guard the code side; nothing guards the console form, so it is checked by hand at release.
+This table, the list of events above, and `AnalyticsCatalog` must stay in step when the schema changes. `AnalyticsCatalogTest` and `AnalyticsEnumUsageTest` guard the code side; nothing guards the console form, so it is checked by hand at release.
 
 ## Questions
 

@@ -1,5 +1,7 @@
 package me.avinas.tempo.widget.utils
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceModifier
@@ -10,9 +12,18 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
+import me.avinas.tempo.utils.MAX_SAFE_BITMAP_EDGE_PX
+import me.avinas.tempo.widget.TempoAppWidget
+import me.avinas.tempo.widget.TempoArtistWidget
+import me.avinas.tempo.widget.TempoDashboardWidget
+import me.avinas.tempo.widget.TempoDiscoveryWidget
+import me.avinas.tempo.widget.TempoHeatmapWidget
+import me.avinas.tempo.widget.TempoMilestoneWidget
+import me.avinas.tempo.widget.TempoMixWidget
 import me.avinas.tempo.widget.WidgetWorker
 import java.util.concurrent.TimeUnit
 
@@ -66,9 +77,60 @@ fun GlanceModifier.appWidgetBackground(): GlanceModifier {
 
 private const val PERIODIC_WORK_NAME = "TempoWidgetPeriodicWork"
 
+/**
+ * One-time refresh work, coalesced under a single name.
+ *
+ * Every widget receiver calls [scheduleImmediateWidgetUpdate] from `onUpdate`, and Android
+ * delivers `APPWIDGET_UPDATE` to all placed widgets at once (boot, config change, launcher
+ * refresh). With the old fire-and-forget `enqueue`, a user with several widgets placed started
+ * that many independent workers, each of which runs the same stats queries and then calls
+ * `updateAll` on *all seven* widget types. `KEEP` on a unique name collapses such a burst into
+ * a single run that still renders every widget.
+ */
+private const val IMMEDIATE_WORK_NAME = "TempoWidgetImmediateWork"
+
+/**
+ * Every widget provider this app registers, used to answer "is any Tempo widget still placed?".
+ *
+ * Kept as one list because the periodic work is shared by all of them (a single
+ * [PERIODIC_WORK_NAME]); a helper that only knew about its own provider could not tell whether
+ * removing one widget should cancel the shared work.
+ */
+private val ALL_WIDGET_PROVIDERS =
+    listOf(
+        TempoAppWidget::class.java,
+        TempoArtistWidget::class.java,
+        TempoDashboardWidget::class.java,
+        TempoDiscoveryWidget::class.java,
+        TempoHeatmapWidget::class.java,
+        TempoMilestoneWidget::class.java,
+        TempoMixWidget::class.java,
+    )
+
+/**
+ * Whether at least one Tempo widget is currently placed on a home screen.
+ *
+ * [AppWidgetManager.getAppWidgetIds] is a binder call that returns only *this* provider type's
+ * placed ids, so a non-empty result for any provider means widget refresh work is still wanted.
+ * Unbound widgets return an empty array rather than throwing, so this needs no try/catch.
+ */
+private fun hasAnyWidgetPlaced(context: Context): Boolean {
+    val manager = AppWidgetManager.getInstance(context) ?: return false
+    return ALL_WIDGET_PROVIDERS.any { provider ->
+        manager.getAppWidgetIds(ComponentName(context, provider)).isNotEmpty()
+    }
+}
+
 fun scheduleImmediateWidgetUpdate(context: Context) {
     val workRequest = OneTimeWorkRequest.Builder(WidgetWorker::class.java).build()
-    WorkManager.getInstance(context).enqueue(workRequest)
+    WorkManager.getInstance(context).enqueueUniqueWork(
+        IMMEDIATE_WORK_NAME,
+        // KEEP: a queued-but-not-yet-started refresh already covers this request, because the
+        // worker rebuilds every widget from current data. REPLACE would restart the work and
+        // delay it each time another widget's onUpdate arrived.
+        ExistingWorkPolicy.KEEP,
+        workRequest,
+    )
 }
 
 fun schedulePeriodicWidgetUpdate(context: Context) {
@@ -90,7 +152,16 @@ fun schedulePeriodicWidgetUpdate(context: Context) {
     )
 }
 
-fun cancelPeriodicWidgetUpdate(context: Context) {
+/**
+ * Cancels the shared periodic refresh, but only once no Tempo widget is left.
+ *
+ * The periodic work has a single name shared by all seven providers, so cancelling it on any one
+ * widget's removal would silently stop the 3-hourly refresh for widgets the user still has
+ * placed. Only the last widget removed stops the work. Every receiver's `onDisabled` should call
+ * this rather than `cancelUniqueWork` directly.
+ */
+fun cancelPeriodicWidgetUpdateIfUnused(context: Context) {
+    if (hasAnyWidgetPlaced(context)) return
     WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME)
 }
 
@@ -104,7 +175,9 @@ fun cancelPeriodicWidgetUpdate(context: Context) {
     fun getPixelSize(context: Context, size: androidx.compose.ui.unit.DpSize): android.util.Size {
         val density = context.resources.displayMetrics.density
         // Just convert DP to PX. No extra usage of "scaleFactor" needed as density already covers it.
-        val widthPx = (size.width.value * density).toInt().coerceAtLeast(100)
-        val heightPx = (size.height.value * density).toInt().coerceAtLeast(100)
+        // Clamped to the app-wide bitmap ceiling so a host reporting an absurd widget size cannot
+        // drive BitmapGenerator's createBitmap(width, height) allocations past it.
+        val widthPx = (size.width.value * density).toInt().coerceIn(100, MAX_SAFE_BITMAP_EDGE_PX)
+        val heightPx = (size.height.value * density).toInt().coerceIn(100, MAX_SAFE_BITMAP_EDGE_PX)
         return android.util.Size(widthPx, heightPx)
     }

@@ -202,23 +202,10 @@ interface ScrobbleArchiveDao {
         offset: Int,
     ): List<ScrobbleArchive>
 
-    @Query(
-        """
-        SELECT COUNT(*) FROM scrobbles_archive 
-        WHERE 
-            (:startTime IS NULL OR last_scrobble >= :startTime) AND
-            (:endTime IS NULL OR first_scrobble <= :endTime) AND
-            (:searchQuery IS NULL OR :searchQuery = '' OR 
-                track_title LIKE '%' || :searchQuery || '%' OR 
-                artist_name LIKE '%' || :searchQuery || '%' OR 
-                album_name LIKE '%' || :searchQuery || '%')
-    """,
-    )
-    suspend fun countArchive(
-        searchQuery: String? = null,
-        startTime: Long? = null,
-        endTime: Long? = null,
-    ): Int
+    // `countArchive` was removed here: it had no callers anywhere in the project, and it was an
+    // unbounded SELECT COUNT(*) over three leading-wildcard LIKEs, so it could only ever have been
+    // a full scan. Nothing needed it; leaving it would have invited a future caller to reach for
+    // the most expensive query in this file.
 
     // Top Tracks Queries
     @Query(

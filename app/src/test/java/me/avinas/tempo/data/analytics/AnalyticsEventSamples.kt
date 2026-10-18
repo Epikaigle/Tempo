@@ -3,9 +3,11 @@ package me.avinas.tempo.data.analytics
 /**
  * One representative instance of every event variant.
  *
- * Kept as a shared fixture so `AnalyticsSchemaTest` and `AnalyticsCatalogTest` cannot
- * disagree: adding a new event without adding it here leaves it unchecked, and the two
- * tests will fail together rather than silently drifting.
+ * Kept as a shared fixture so `AnalyticsSchemaTest` and `AnalyticsCatalogTest` cannot disagree.
+ * It is also the *only* input those checks see, so a variant missing here would be inspected by
+ * nothing — which is why `AnalyticsSchemaTest` asserts this list against the sealed hierarchy
+ * rather than trusting anyone to remember. Add the sample first; the tests will tell you if it
+ * is missing.
  */
 object AnalyticsEventSamples {
 

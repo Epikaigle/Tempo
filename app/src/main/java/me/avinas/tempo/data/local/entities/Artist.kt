@@ -1,5 +1,6 @@
 package me.avinas.tempo.data.local.entities
 
+import androidx.compose.runtime.Immutable
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
@@ -14,7 +15,15 @@ import java.text.Normalizer
  * - TrackArtist junction table (for all artists including features)
  * 
  * Artists are also linked to albums via Album.artist_id
+ *
+ * `@Immutable`: the Compose compiler infers `List<String>` as unstable, so `genres` alone made
+ * this entity unstable — and because it is a field of `ArtistDetails`, that instability propagated
+ * to the whole artist detail screen. The promise is honest: `genres` is assigned from
+ * `split`/`filter`/`emptyList` and every update goes through `copy` (verified: there is no
+ * in-place mutation of it anywhere in the project). This annotation affects only Compose's
+ * stability inference, not Room.
  */
+@Immutable
 @Entity(
     tableName = "artists", 
     indices = [

@@ -25,6 +25,7 @@ import coil3.size.Precision
 import coil3.size.Scale
 import coil3.size.Size
 import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+import me.avinas.tempo.utils.safeBitmapEdge
 
 private const val TAG = "AlbumArtImage"
 
@@ -91,6 +92,9 @@ fun AlbumArtImage(
         // Create a stable, cacheable image request with aggressive caching
         val imageRequest =
             remember(urlToLoad, cacheKey, targetSizePx) {
+                // Caller-supplied edge, so bound it: an unbounded request would decode (and then
+                // hand to this composable's painter) a bitmap of the source's own dimensions.
+                val boundedEdge = safeBitmapEdge(targetSizePx)
                 ImageRequest
                     .Builder(context)
                     .data(urlToLoad)
@@ -101,12 +105,12 @@ fun AlbumArtImage(
                     // Use smart cache keys that normalize URLs for better cache hits
                     .memoryCacheKey("$cacheKey:$targetSizePx")
                     .diskCacheKey(cacheKey)
-                    // EXACT precision with targetSizePx cap guarantees the decoded bitmap never exceeds
-                    // a safe size, preventing Canvas "too large bitmap" crashes on devices with
-                    // strict software bitmap limits.
+                    // EXACT precision with a bounded edge guarantees the decoded bitmap never
+                    // exceeds a safe size, preventing Canvas "too large bitmap" crashes on
+                    // devices with strict software bitmap limits.
                     .precision(Precision.EXACT)
                     .scale(Scale.FILL)
-                    .size(Size(targetSizePx, targetSizePx))
+                    .size(Size(boundedEdge, boundedEdge))
                     .build()
             }
 

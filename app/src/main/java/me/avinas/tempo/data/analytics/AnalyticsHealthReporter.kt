@@ -65,6 +65,13 @@ class AnalyticsHealthReporter
                         // Re-checked inside the lock: another run may have just finished.
                         if (reportedDay.get() == today) return@withLock
 
+                        if (!tracker.canReport()) {
+                            // Marking today as reported without sending would lose the incident
+                            // outright: the throttle would refuse to report the first real
+                            // recovery after reporting is switched back on.
+                            return@withLock
+                        }
+
                         if (!AnalyticsDaily.isUnreported(ledger.healthDay(), today)) {
                             // Already sent earlier today, by this process or a previous one.
                             reportedDay.set(today)

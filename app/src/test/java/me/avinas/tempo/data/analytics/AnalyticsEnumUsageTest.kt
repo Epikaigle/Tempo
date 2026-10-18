@@ -126,7 +126,7 @@ class AnalyticsEnumUsageTest {
         return roots
             .flatMap { root -> root.walkTopDown().filter { it.isFile && it.extension == "kt" } }
             .filterNot { it.name == "AnalyticsEvent.kt" }
-            .map { it.readText() }
+            .map { stripComments(it.readText()) }
     }
 
     /**
@@ -143,6 +143,19 @@ class AnalyticsEnumUsageTest {
             .filter { it.isDirectory }
         return roots
             .flatMap { root -> root.walkTopDown().filter { it.isFile && it.extension == "kt" } }
-            .map { it.readText() }
+            .map { stripComments(it.readText()) }
     }
+
+    /**
+     * Removes comments before anything is matched.
+     *
+     * Without this a value named only in a KDoc sentence counts as reachable — which is the same
+     * defect one layer down from what this file tests: the value reads as wired up in the source
+     * and arrives as a constant in the data, and the check that exists to catch it is satisfied
+     * by the prose describing it.
+     */
+    private fun stripComments(text: String): String =
+        text
+            .replace(Regex("/\\*[\\s\\S]*?\\*/"), " ")
+            .replace(Regex("//[^\n]*"), " ")
 }

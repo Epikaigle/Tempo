@@ -1,6 +1,7 @@
 package me.avinas.tempo.data.analytics
 
 import com.squareup.moshi.JsonClass
+import java.util.UUID
 
 /**
  * An event as it sits in the on-disk queue, before being shaped into an ingest payload.
@@ -14,11 +15,27 @@ data class QueuedAnalyticsEvent(
     val timestampMillis: Long,
     val name: String,
     val stringProps: Map<String, String>,
-    val intProps: Map<String, Int>
+    val intProps: Map<String, Int>,
+    /**
+     * PostHog's de-duplication key for this event, minted once when it is queued.
+     *
+     * Delivery is at-least-once: a batch leaves the queue only after the endpoint answers, so a
+     * process death in between — or a queue write that fails — sends the same events again. The
+     * daily events are aggregates, so a repeat is not cosmetic: it invents a second active day
+     * or doubles a listen count. PostHog drops events carrying an `$insert_id` it has already
+     * stored, which turns the retry into a no-op instead.
+     *
+     * Nullable, and null for anything queued by an older build; those events simply expire
+     * without a key within the day. See `PostHogPayload`.
+     */
+    val insertId: String? = null,
 )
 
 /** Converts a schema event into its queue form. Non-String/Int values are dropped. */
-fun AnalyticsEvent.toQueued(timestampMillis: Long): QueuedAnalyticsEvent {
+fun AnalyticsEvent.toQueued(
+    timestampMillis: Long,
+    insertId: String = UUID.randomUUID().toString(),
+): QueuedAnalyticsEvent {
     val strings = mutableMapOf<String, String>()
     val ints = mutableMapOf<String, Int>()
     props.forEach { (key, value) ->
@@ -31,7 +48,8 @@ fun AnalyticsEvent.toQueued(timestampMillis: Long): QueuedAnalyticsEvent {
         timestampMillis = timestampMillis,
         name = name,
         stringProps = strings,
-        intProps = ints
+        intProps = ints,
+        insertId = insertId,
     )
 }
 

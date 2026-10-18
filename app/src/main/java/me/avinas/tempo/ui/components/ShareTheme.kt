@@ -60,6 +60,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
 import me.avinas.tempo.ui.theme.TempoDarkBackground
+import me.avinas.tempo.utils.MAX_SAFE_BITMAP_EDGE_PX
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.ln
@@ -635,7 +636,10 @@ private fun FlutedGlassBackdrop(
                                 sourceBitmap
                             }
                         val cropped = safeSource.centerCroppedToAspect(aspect)
-                        val targetH = (FLUTED_RENDER_WIDTH / aspect).roundToInt().coerceAtLeast(64)
+                        val targetH =
+                            (FLUTED_RENDER_WIDTH / aspect)
+                                .roundToInt()
+                                .coerceIn(64, MAX_SAFE_BITMAP_EDGE_PX)
                         cropped.downscaledTo(FLUTED_RENDER_WIDTH, targetH).renderFlutedGlass()
                     } else if (!imageUrl.isNullOrBlank()) {
                         buildFlutedGlassBitmap(context, imageUrl, aspect)
@@ -713,7 +717,10 @@ private suspend fun buildFlutedGlassBitmap(
         }
     return withContext(Dispatchers.Default) {
         val cropped = safeSource.centerCroppedToAspect(aspect)
-        val targetH = (FLUTED_RENDER_WIDTH / aspect).roundToInt().coerceAtLeast(64)
+        // Height follows the card's measured aspect, so it is bounded here: a very tall or
+        // degenerate aspect must not drive Bitmap.createBitmap past the painter ceiling.
+        val targetH =
+            (FLUTED_RENDER_WIDTH / aspect).roundToInt().coerceIn(64, MAX_SAFE_BITMAP_EDGE_PX)
         val result = cropped.downscaledTo(FLUTED_RENDER_WIDTH, targetH).renderFlutedGlass()
         backdropBitmapCache.put(cacheKey, result)
         result
@@ -1075,10 +1082,12 @@ private suspend fun buildAsciiArtGrid(
     return withContext(Dispatchers.Default) {
         // Row density that keeps the artwork undistorted on glyph cells
         // taller than wide: rows/columns must be (colStep/rowStep)/aspect.
+        // Bounded like every other aspect-derived size: this drives the sampled grid and its
+        // IntArray, so a degenerate aspect must not blow them up.
         val rows =
             (ASCII_COLUMNS * (ASCII_COL_STEP / ASCII_ROW_STEP) / aspect)
                 .roundToInt()
-                .coerceAtLeast(8)
+                .coerceIn(8, MAX_SAFE_BITMAP_EDGE_PX)
         val cropped = safeSource.centerCroppedToAspect(aspect)
         val sampled = cropped.downscaledTo(ASCII_COLUMNS, rows)
         val pixels = IntArray(ASCII_COLUMNS * rows)
@@ -1214,7 +1223,8 @@ private suspend fun buildAsciiArtBackdrop(
     val palette = ShareTheme.ASCII.palette
     return withContext(Dispatchers.Default) {
         val w = ASCII_RENDER_WIDTH
-        val h = (w / aspect).roundToInt().coerceAtLeast(64)
+        // Aspect-derived height, bounded to the painter ceiling (see the fluted-glass path).
+        val h = (w / aspect).roundToInt().coerceIn(64, MAX_SAFE_BITMAP_EDGE_PX)
         val composite = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(composite)
 

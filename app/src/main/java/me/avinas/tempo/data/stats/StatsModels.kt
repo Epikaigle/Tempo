@@ -2,7 +2,6 @@ package me.avinas.tempo.data.stats
 
 import androidx.compose.runtime.Immutable
 import androidx.room.ColumnInfo
-import androidx.room.Ignore
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -157,11 +156,22 @@ data class TopTrack(
     @ColumnInfo(name = "first_played") val firstPlayed: Long,
     @ColumnInfo(name = "last_played") val lastPlayed: Long,
     @ColumnInfo(name = "preview_url") val previewUrl: String? = null, // From enriched_metadata
-    @ColumnInfo(name = "combined_score") val combinedScore: Double? = null // For combined ranking, not stored in DB
+    @ColumnInfo(name = "combined_score") val combinedScore: Double? = null, // For combined ranking, not stored in DB
+    /**
+     * Global rank within the current ranking; only populated by search. Not a DB column.
+     *
+     * A `val` constructor property rather than a `var` field: `@Immutable` is a promise the
+     * Compose compiler relies on to skip recomposition, and an in-place mutation of a `var`
+     * would change this object without any recomposition being triggered — a parameter that
+     * compares equal to itself (`===`) is never treated as changed. Ranks are therefore
+     * assigned at construction (or via `copy`), never mutated after the fact.
+     *
+     * Deliberately not annotated as ignored: this class is only ever a query projection, and
+     * Room treats a constructor parameter as supplied by the projection rather than as a column
+     * to match. The ignore annotation is a property annotation, and KSP rejects it here.
+     */
+    val rank: Int? = null,
 ) : StatItem {
-    /** Global rank within the current ranking; only populated by search. Not a DB column. */
-    @Ignore
-    var rank: Int? = null
     val totalTimeMinutes: Long get() = totalTimeMs / 60_000
     val averagePlayDurationMs: Long get() = if (playCount > 0) totalTimeMs / playCount else 0
 }
@@ -185,11 +195,10 @@ data class TopArtist(
     @ColumnInfo(name = "first_played") val firstPlayed: Long,
     @ColumnInfo(name = "last_played") val lastPlayed: Long,
     @ColumnInfo(name = "image_url") val imageUrl: String? = null,
-    @ColumnInfo(name = "country") val country: String? = null
-) : StatItem {
+    @ColumnInfo(name = "country") val country: String? = null,
     /** Global rank within the current ranking; only populated by search. Not a DB column. */
-    @Ignore
-    var rank: Int? = null
+    val rank: Int? = null,
+) : StatItem {
     val totalTimeMinutes: Long get() = totalTimeMs / 60_000
     val totalTimeHours: Double get() = totalTimeMs / 3_600_000.0
 }
@@ -201,11 +210,10 @@ data class TopAlbum(
     @ColumnInfo(name = "album_art_url") val albumArtUrl: String?,
     @ColumnInfo(name = "play_count") val playCount: Int,
     @ColumnInfo(name = "total_time_ms") val totalTimeMs: Long,
-    @ColumnInfo(name = "unique_tracks") val uniqueTracks: Int
-) : StatItem {
+    @ColumnInfo(name = "unique_tracks") val uniqueTracks: Int,
     /** Global rank within the current ranking; only populated by search. Not a DB column. */
-    @Ignore
-    var rank: Int? = null
+    val rank: Int? = null,
+) : StatItem {
     val totalTimeMinutes: Long get() = totalTimeMs / 60_000
 }
 
@@ -488,7 +496,15 @@ data class TrackDetails(
 
 /**
  * Detailed statistics for an artist.
+ *
+ * `@Immutable` because the Compose compiler infers `List<T>` as unstable (the runtime
+ * implementation could be mutable) and this class holds four lists, which made the whole type
+ * unstable and cost it equality-based recomposition skipping on the artist detail screen. The
+ * promise is honest: every list here is built by `map`/`filter`/`emptyList` in the repositories,
+ * and nothing anywhere mutates one in place — collection changes go through `copy`. Verified
+ * against the compiler's own stability report rather than assumed.
  */
+@Immutable
 data class ArtistDetails(
     val artist: me.avinas.tempo.data.local.entities.Artist,
     val listenersCount: Long?, // Global listeners from MusicBrainz/Spotify
@@ -522,7 +538,13 @@ data class ArtistDetails(
 
 /**
  * Detailed statistics for an album.
+ *
+ * `@Immutable` for the same reason as [ArtistDetails]: its only unstable member was
+ * `tracks: List<TrackWithStats>` — and [TrackWithStats] itself is already stable, so the list was
+ * the single thing standing between this type and equality-based skipping on the album detail
+ * screen. The list is repository-built and never mutated in place.
  */
+@Immutable
 data class AlbumDetails(
     val album: me.avinas.tempo.data.local.entities.Album,
     val artistName: String,

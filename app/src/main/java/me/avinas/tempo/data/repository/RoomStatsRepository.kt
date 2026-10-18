@@ -10,10 +10,14 @@ import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.local.entities.UserPreferences
 import me.avinas.tempo.data.stats.*
 import me.avinas.tempo.utils.ArtistParser
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.flow
@@ -25,6 +29,7 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.ConcurrentHashMap
 import me.avinas.tempo.domain.insights.InsightGenerator
 import me.avinas.tempo.data.stats.InsightCardData
 import me.avinas.tempo.data.stats.AudioFeaturesStats
@@ -67,6 +72,14 @@ class RoomStatsRepository @Inject constructor(
         override fun sizeOf(key: String, value: CachedValue<*>): Int = 1
     }
     private val cacheMutex = Mutex()
+
+    // In-flight computation per cache key, for single-flight coalescing: when several
+    // coroutines miss the same cold key at once (the Home screen does this on every
+    // load), only the first runs `compute` and the rest await its result instead of
+    // issuing the same multi-second aggregate again. Values are held as Any? because
+    // the cache is generic; they are cast back to T on retrieval, exactly like the
+    // cached values themselves.
+    private val inFlight = ConcurrentHashMap<String, CompletableDeferred<Any?>>()
 
     // Memoized content-filter preferences read. userPreferencesDao.getSync() is a
     // single-row query but runs several times per reload (once per getListeningOverview
@@ -125,38 +138,93 @@ class RoomStatsRepository @Inject constructor(
         fun isStale(currentEventTimestamp: Long): Boolean = eventTimestamp < currentEventTimestamp
     }
 
-    @Suppress("UNCHECKED_CAST")
     private suspend fun <T> getCached(
         key: String,
         compute: suspend () -> T
     ): T = withContext(Dispatchers.IO) {
-        val cached = cache.get(key) as? CachedValue<T>
-        
-        // Return cached value if valid and not stale due to new events
-        if (cached != null && !cached.isExpired() && !cached.isStale(lastKnownEventTimestamp)) {
-            cacheHits++
-            return@withContext cached.value
-        }
+        getCachedSingleFlight(key, compute)
+    }
 
-        cacheMisses++
-        
-        // Compute new value
-        val value = compute()
-        
-        // Store in cache
-        cacheMutex.withLock {
-            cache.put(key, CachedValue(value, eventTimestamp = lastKnownEventTimestamp))
+    /**
+     * Cache lookup with per-key single-flight computation (the body of [getCached]).
+     *
+     * The first caller to miss [key] becomes the leader and runs [compute]; callers
+     * that miss while that computation is running await the leader's result instead of
+     * duplicating the query. Once the leader publishes its result, a late caller reads
+     * it from the cache as a normal hit.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private suspend fun <T> getCachedSingleFlight(
+        key: String,
+        compute: suspend () -> T
+    ): T {
+        while (true) {
+            val cached = cache.get(key) as? CachedValue<T>
+
+            // Return cached value if valid and not stale due to new events
+            if (cached != null && !cached.isExpired() && !cached.isStale(lastKnownEventTimestamp)) {
+                cacheHits++
+                return cached.value
+            }
+
+            val leader = inFlight[key]
+            if (leader != null) {
+                try {
+                    val joined = leader.await()
+                    // Served by the leader's computation rather than a duplicate query,
+                    // so it counts as a hit (this caller never touched the database).
+                    cacheHits++
+                    return joined as T
+                } catch (e: CancellationException) {
+                    // The leader was cancelled (its caller went away) — which is not the
+                    // same as us being cancelled. If we were cancelled too, ensureActive()
+                    // rethrows so cancellation propagates normally; otherwise retry: the
+                    // failed leader removed its entry, so we either hit the cache, join a
+                    // new leader, or become the leader ourselves.
+                    currentCoroutineContext().ensureActive()
+                }
+                continue
+            }
+
+            val mine = CompletableDeferred<Any?>()
+            if (inFlight.putIfAbsent(key, mine) == null) {
+                // Capture the event watermark BEFORE computing: if a new listening event
+                // lands mid-computation, the result must not be recorded as though it had
+                // included that event (isStale() then forces the next caller to recompute).
+                val eventTimestamp = lastKnownEventTimestamp
+                cacheMisses++
+                try {
+                    // Compute new value
+                    val value = compute()
+
+                    // Store in cache
+                    cacheMutex.withLock {
+                        cache.put(key, CachedValue(value, eventTimestamp = eventTimestamp))
+                    }
+
+                    // Log cache stats periodically
+                    if ((cacheHits + cacheMisses) % 100 == 0L) {
+                        val hitRate = if (cacheHits + cacheMisses > 0) {
+                            (cacheHits * 100) / (cacheHits + cacheMisses)
+                        } else 0
+                        Log.d(TAG, "Cache stats: hits=$cacheHits, misses=$cacheMisses, hitRate=$hitRate%, size=${cache.size()}")
+                    }
+
+                    mine.complete(value)
+                    return value
+                } catch (t: Throwable) {
+                    // Drop the in-flight entry before failing so a failed computation does
+                    // not poison the key: the next caller retries instead of awaiting a
+                    // permanently failed deferred.
+                    inFlight.remove(key, mine)
+                    mine.completeExceptionally(t)
+                    throw t
+                } finally {
+                    inFlight.remove(key, mine)
+                }
+            }
+            // Lost the leadership race; loop to await the winner's computation.
         }
-        
-        // Log cache stats periodically
-        if ((cacheHits + cacheMisses) % 100 == 0L) {
-            val hitRate = if (cacheHits + cacheMisses > 0) {
-                (cacheHits * 100) / (cacheHits + cacheMisses)
-            } else 0
-            Log.d(TAG, "Cache stats: hits=$cacheHits, misses=$cacheMisses, hitRate=$hitRate%, size=${cache.size()}")
-        }
-        
-        value
     }
     
     /**
@@ -172,6 +240,11 @@ class RoomStatsRepository @Inject constructor(
 
     override fun invalidateCache() {
         cache.evictAll()
+        // Also drop in-flight computations: they were started against the pre-invalidation
+        // data, so a caller arriving after this point must not join them and receive that
+        // value (callers already awaiting a deferred still get it — nothing can retract a
+        // result they asked for before this call).
+        inFlight.clear()
         lastKnownEventTimestamp = System.currentTimeMillis()
         cacheHits = 0
         cacheMisses = 0
@@ -187,6 +260,9 @@ class RoomStatsRepository @Inject constructor(
         val snapshot = cache.snapshot()
         val keysToRemove = snapshot.keys.filter { key -> key.contains(pattern) }
         keysToRemove.forEach { key -> cache.remove(key) }
+        // Same reasoning as invalidateCache(): computations already running for a
+        // matching key predate this invalidation.
+        inFlight.keys.filter { key -> key.contains(pattern) }.forEach { key -> inFlight.remove(key) }
     }
 
     override fun invalidateCache(timeRange: TimeRange) {
@@ -194,6 +270,9 @@ class RoomStatsRepository @Inject constructor(
         val snapshot = cache.snapshot()
         val keysToRemove = snapshot.keys.filter { key -> key.contains(timeRange.name) }
         keysToRemove.forEach { key -> cache.remove(key) }
+        // Drop matching in-flight computations too, for the same reason as invalidateCache():
+        // their results were computed before this invalidation.
+        inFlight.keys.filter { key -> key.contains(timeRange.name) }.forEach { key -> inFlight.remove(key) }
         Log.d(TAG, "Cache invalidated for $timeRange: ${keysToRemove.size} entries removed")
     }
 
@@ -780,8 +859,11 @@ class RoomStatsRepository @Inject constructor(
                 artist.copy(
                     artistId = artistId,
                     imageUrl = imageUrl,
-                    country = country
-                ).apply { rank = artist.rank }
+                    country = country,
+                    // Carried through construction: rank is a val, so it cannot be written after
+                    // the fact (see StatsModels.TopTrack.rank for why).
+                    rank = artist.rank,
+                )
             }
         }.awaitAll()
     }
@@ -1069,7 +1151,9 @@ class RoomStatsRepository @Inject constructor(
                 SortBy.COMBINED_SCORE -> statsDao.searchTopTracksByCombinedScore(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
             }
             // Rows arrive ordered by global rank; carry the SQL-computed rank onto the item
-            rows.map { it.item.apply { rank = it.globalRank } }
+            // Rank is carried through copy(), not mutated in place: the item is @Immutable, so an
+            // in-place `rank =` write could never invalidate a reader already holding it.
+            rows.map { it.item.copy(rank = it.globalRank) }
         }
     }
 
@@ -1108,7 +1192,10 @@ class RoomStatsRepository @Inject constructor(
 
             val queryLower = trimmed.lowercase()
             val matches = sortedArtists
-                .onEachIndexed { index, artist -> artist.rank = index + 1 }
+                // Rank is assigned at construction, not mutated in place: TopArtist is @Immutable,
+                // so an in-place `rank =` write would change the object without ever invalidating
+                // a reader that already holds it (see StatsModels.TopTrack.rank).
+                .mapIndexed { index, artist -> artist.copy(rank = index + 1) }
                 .filter { it.artist.lowercase().contains(queryLower) }
                 .take(limit)
 
@@ -1141,7 +1228,9 @@ class RoomStatsRepository @Inject constructor(
                 SortBy.COMBINED_SCORE -> statsDao.searchTopAlbumsByCombinedScore(startTime, endTime, prefs.filterPodcasts, prefs.filterAudiobooks, trimmed, limit)
             }
             // Rows arrive ordered by global rank; carry the SQL-computed rank onto the item
-            rows.map { it.item.apply { rank = it.globalRank } }
+            // Rank is carried through copy(), not mutated in place: the item is @Immutable, so an
+            // in-place `rank =` write could never invalidate a reader already holding it.
+            rows.map { it.item.copy(rank = it.globalRank) }
         }
     }
 

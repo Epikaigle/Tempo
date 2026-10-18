@@ -3,6 +3,7 @@ package me.avinas.tempo.ui.details
 import me.avinas.tempo.data.local.dao.isLocalBackupArtwork
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -26,6 +27,8 @@ import me.avinas.tempo.data.enrichment.CoverArtCandidate
 import me.avinas.tempo.data.enrichment.CoverArtLookupStatus
 import me.avinas.tempo.data.enrichment.CoverArtPickerService
 import me.avinas.tempo.data.enrichment.CoverArtProvider
+import me.avinas.tempo.data.enrichment.UserCoverArtStore
+import me.avinas.tempo.data.enrichment.isUserCoverArtUrl
 import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.entities.AlbumArtSource
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
@@ -70,6 +73,7 @@ class SongDetailsViewModel @Inject constructor(
     private val trackAliasRepository: TrackAliasRepository,
     private val listeningEventDao: ListeningEventDao,
     private val coverArtPickerService: CoverArtPickerService,
+    private val userCoverArtStore: UserCoverArtStore,
     private val tracker: AnalyticsTracker,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -153,7 +157,7 @@ class SongDetailsViewModel @Inject constructor(
                 // Reported only when a mood was actually derived, and not on the quiet reload that
                 // fires when metadata arrives late, so a user reading this track is counted once.
                 if (!quiet && moodSummary != null) {
-                    tracker.track(FeatureUsed(TempoFeature.MOOD_ANALYSIS))
+                    tracker.track(FeatureFirstUsed(TempoFeature.MOOD_ANALYSIS))
                 }
 
                 // Compute peak binge day
@@ -498,6 +502,85 @@ class SongDetailsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Save a cover the user picked from their own gallery.
+     *
+     * The image is copied into Tempo's managed artwork directory and locked with
+     * [AlbumArtSource.USER_SELECTED], so no automatic provider can replace it.
+     * This path performs no network work.
+     */
+    fun selectCoverFromGallery(source: Uri) {
+        val details = _uiState.value.trackDetails ?: return
+        if (_uiState.value.isSavingCover || _uiState.value.isResettingCover) return
+
+        coverLookupJob?.cancel()
+        coverLookupJob = null
+        trackDetailsLoadGeneration++
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSavingCover = true, coverPickerError = null) }
+            try {
+                val previousUrl = details.track.albumArtUrl
+                val savedUrl = userCoverArtStore.saveGalleryCover(trackId, source)
+
+                enrichedMetadataRepository.setUserSelectedArtwork(
+                    trackId = trackId,
+                    albumArtUrl = savedUrl,
+                    albumArtUrlSmall = savedUrl,
+                    albumArtUrlLarge = savedUrl,
+                )
+                discardObsoleteLocalArtworkBackup(details.localBackupArtUrl)
+                if (previousUrl != savedUrl) discardGalleryCoverIfOurs(previousUrl)
+
+                statsRepository.invalidateCache()
+                statsRepository.notifyMetadataUpdate()
+                _uiState.update { state ->
+                    state.copy(
+                        trackDetails = state.trackDetails?.copy(
+                            track = state.trackDetails.track.copy(albumArtUrl = savedUrl),
+                            localBackupArtUrl = null,
+                        ),
+                        isManualCover = true,
+                        showCoverPicker = false,
+                        isLoadingCoverCandidates = false,
+                        isSavingCover = false,
+                        isResettingCover = false,
+                        selectedCoverProvider = null,
+                        coverPickerError = null,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The gallery path has one user-facing failure mode, so show the
+                // localised string rather than the decoder's internal message.
+                // UserCoverArtStore logs the underlying cause.
+                _uiState.update {
+                    it.copy(
+                        isLoadingCoverCandidates = false,
+                        isSavingCover = false,
+                        coverPickerError = context.getString(R.string.details_cover_gallery_error),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Delete a gallery cover this track no longer uses, once the database stops
+     * referencing it. The repository re-checks references, so a file still shared
+     * by another row is kept, and refuses any path outside managed artwork.
+     */
+    private suspend fun discardGalleryCoverIfOurs(url: String?) {
+        if (!isUserCoverArtUrl(url, trackId)) return
+        try {
+            trackRepository.discardLocalAlbumArtBackup(url!!)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Best-effort cleanup; the artwork change is already persisted.
+        }
+    }
+
     fun resetCoverToAutomatic() {
         if (_uiState.value.trackDetails == null) return
         if (_uiState.value.isSavingCover || _uiState.value.isResettingCover) return
@@ -508,9 +591,13 @@ class SongDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isResettingCover = true, coverPickerError = null) }
             try {
-                val obsoleteLocalBackup = _uiState.value.trackDetails?.localBackupArtUrl
+                val details = _uiState.value.trackDetails
+                val obsoleteLocalBackup = details?.localBackupArtUrl
+                val obsoleteGalleryCover = details?.track?.albumArtUrl
+                    ?.takeIf { isUserCoverArtUrl(it, trackId) }
                 enrichedMetadataRepository.resetArtworkToAutomatic(trackId)
                 discardObsoleteLocalArtworkBackup(obsoleteLocalBackup)
+                discardGalleryCoverIfOurs(obsoleteGalleryCover)
                 statsRepository.invalidateCache()
                 statsRepository.notifyMetadataUpdate()
                 EnrichmentWorker.enqueueImmediate(

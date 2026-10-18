@@ -230,15 +230,27 @@ class SpotifyJsonImportService @Inject constructor(
         var lowQualitySkipped = 0
 
         suspend fun flush() {
-            if (pendingEvents.isEmpty()) return
-            val r = insertPendingBatch(pendingEvents)
-            eventsCreated += r.inserted
-            duplicatesSkipped += r.skipped
-            for ((trackId, entry) in pendingEnrichedMetadata) {
-                createEnrichedMetadata(trackId, entry)
+            if (pendingEvents.isNotEmpty()) {
+                val r = insertPendingBatch(pendingEvents)
+                eventsCreated += r.inserted
+                duplicatesSkipped += r.skipped
+                pendingEvents.clear()
             }
-            pendingEvents.clear()
-            pendingEnrichedMetadata.clear()
+            // One batched upsert per window instead of one transaction per track. The window is
+            // bounded by FLUSH_BATCH_SIZE, which is also what makes a single call safe here: the
+            // DAO pre-reads existing rows with one IN (...) over these track ids.
+            if (pendingEnrichedMetadata.isNotEmpty()) {
+                val rows =
+                    pendingEnrichedMetadata.map { (trackId, entry) ->
+                        buildEnrichedMetadata(trackId, entry)
+                    }
+                pendingEnrichedMetadata.clear()
+                try {
+                    enrichedMetadataDao.upsertAllFromAutomaticEnrichment(rows)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to batch-upsert enriched metadata for ${rows.size} tracks", e)
+                }
+            }
         }
 
         musicEntries.forEachIndexed { index, entry ->
@@ -687,22 +699,23 @@ class SpotifyJsonImportService @Inject constructor(
         )
     }
 
-    private suspend fun createEnrichedMetadata(trackId: Long, entry: ParsedEntry) {
-        try {
-            val metadata = EnrichedMetadata(
-                trackId = trackId,
-                spotifyId = entry.spotifyTrackId,
-                artistName = entry.artistName,
-                albumTitle = entry.albumName,
-                enrichmentStatus = EnrichmentStatus.PENDING,
-                cacheTimestamp = System.currentTimeMillis(),
-                lastEnrichmentAttempt = System.currentTimeMillis()
-            )
-            enrichedMetadataDao.upsertFromAutomaticEnrichment(metadata)
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to create enriched metadata for track $trackId", e)
-        }
-    }
+    /**
+     * Builds the PENDING enrichment row for a freshly imported track.
+     *
+     * Pure and synchronous — it no longer writes. Callers batch rows through
+     * `upsertAllFromAutomaticEnrichment`, which is one transaction per window instead of one
+     * SELECT + INSERT/REPLACE per track.
+     */
+    private fun buildEnrichedMetadata(trackId: Long, entry: ParsedEntry): EnrichedMetadata =
+        EnrichedMetadata(
+            trackId = trackId,
+            spotifyId = entry.spotifyTrackId,
+            artistName = entry.artistName,
+            albumTitle = entry.albumName,
+            enrichmentStatus = EnrichmentStatus.PENDING,
+            cacheTimestamp = System.currentTimeMillis(),
+            lastEnrichmentAttempt = System.currentTimeMillis()
+        )
 
     private fun parseTimestamp(value: String?): Long = parseSpotifyTimestamp(value)
 

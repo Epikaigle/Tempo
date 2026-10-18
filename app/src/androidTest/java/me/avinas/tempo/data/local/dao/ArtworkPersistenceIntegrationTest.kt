@@ -779,6 +779,84 @@ class ArtworkPersistenceIntegrationTest {
         assertEquals(spotifyUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
     }
 
+    /**
+     * A cover the user picked from their gallery is stored as a managed `file://`
+     * URL. It must survive later automatic enrichment like any other manual pick,
+     * and its file must be released once the user returns to automatic selection.
+     */
+    @Test
+    fun galleryCoverSurvivesAutomaticEnrichmentAndIsReleasedOnReset() = runBlocking {
+        val trackDao = database.trackDao()
+        val metadataDao = database.enrichedMetadataDao()
+        val repository =
+            RoomTrackRepository(
+                context = context,
+                dao = trackDao,
+                trackArtistDao = database.trackArtistDao(),
+                manualContentMarkDao = database.manualContentMarkDao(),
+                enrichedMetadataDao = metadataDao,
+            )
+
+        val trackId =
+            trackDao.insert(
+                Track(
+                    title = "Local File Song",
+                    artist = "Local Artist",
+                    album = null,
+                    duration = null,
+                    albumArtUrl = null,
+                    spotifyId = null,
+                    musicbrainzId = null,
+                )
+            )
+
+        // Mirrors UserCoverArtStore's naming: user_cover_<trackId>_<contentHash>.jpg
+        val managedRoot = File(context.filesDir, "album_art")
+        managedRoot.mkdirs()
+        val galleryFile = File(managedRoot, "user_cover_${trackId}_abc123def456.jpg")
+        galleryFile.writeBytes(byteArrayOf(1, 2, 3))
+        val galleryUrl = "file://" + galleryFile.absolutePath
+
+        metadataDao.setUserSelectedArtwork(
+            trackId = trackId,
+            albumArtUrl = galleryUrl,
+            albumArtUrlSmall = galleryUrl,
+            albumArtUrlLarge = galleryUrl,
+            timestamp = 1L,
+        )
+
+        assertEquals(galleryUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+        assertEquals(
+            AlbumArtSource.USER_SELECTED,
+            metadataDao.forTrackSync(trackId)?.albumArtSource,
+        )
+
+        // A provider finishing later must not replace a local gallery pick.
+        val remoteUrl = "https://coverartarchive.org/release/abc/front-1200.jpg"
+        val manualRow = requireNotNull(metadataDao.forTrackSync(trackId))
+        metadataDao.upsertFromAutomaticEnrichment(
+            manualRow.copy(
+                albumArtUrl = remoteUrl,
+                albumArtUrlSmall = remoteUrl,
+                albumArtUrlLarge = remoteUrl,
+                albumArtSource = AlbumArtSource.MUSICBRAINZ,
+            )
+        )
+        trackDao.updateAutomaticAlbumArtUrl(trackId = trackId, albumArtUrl = remoteUrl)
+
+        assertEquals(galleryUrl, metadataDao.forTrackSync(trackId)?.albumArtUrl)
+        assertEquals(galleryUrl, trackDao.getTrackById(trackId)?.albumArtUrl)
+        assertTrue(galleryFile.exists())
+
+        // Returning to automatic clears both tables, so the file is unreferenced
+        // and can be deleted. Cleanup refuses paths outside the managed directory.
+        metadataDao.resetArtworkToAutomatic(trackId = trackId, timestamp = 2L)
+        repository.discardLocalAlbumArtBackup(galleryUrl)
+
+        assertNull(trackDao.getTrackById(trackId)?.albumArtUrl)
+        assertTrue("released gallery cover should be deleted", !galleryFile.exists())
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun unusedStatsRepository(): StatsRepository =
         Proxy.newProxyInstance(

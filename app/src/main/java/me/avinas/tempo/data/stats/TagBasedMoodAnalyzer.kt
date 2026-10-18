@@ -1,5 +1,7 @@
 package me.avinas.tempo.data.stats
 
+import androidx.compose.runtime.Immutable
+
 /**
  * Analyzes MusicBrainz tags to derive mood and genre categories.
  * 
@@ -255,7 +257,13 @@ object TagBasedMoodAnalyzer {
     
     /**
      * Get a mood summary for display.
+     *
+     * `@Immutable`: `moodTags: List<String>` alone made this unstable (the compiler cannot know a
+     * `List` implementation is immutable), and it is reached from `ArtistDetails`, so the
+     * instability propagated to that screen. The list is built once per analysis and never
+     * mutated in place.
      */
+    @Immutable
     data class MoodSummary(
         val mood: MoodCategory,
         val energy: EnergyLevel,

@@ -16,6 +16,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsConsent
+import me.avinas.tempo.data.analytics.AnalyticsGate
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.CrashSignatureRecorder
 import me.avinas.tempo.data.analytics.DbMigration
@@ -40,6 +41,7 @@ import me.avinas.tempo.worker.LocalBackupWorker
 import me.avinas.tempo.worker.ServiceHealthWorker
 import me.avinas.tempo.worker.SpotifyPollingWorker
 import me.avinas.tempo.worker.SpotlightUnlockWorker
+import me.avinas.tempo.worker.StatsPrecomputeWorker
 import java.util.concurrent.Executors
 import javax.inject.Inject
 
@@ -319,6 +321,13 @@ class TempoApplication :
         // Local-only read; the resulting aggregate is queued and uploaded by the flush worker.
         ListeningActivityWorker.schedule(this)
 
+        // Warm the stats cache. Every recorded listening event invalidates the whole cache
+        // (see RoomStatsRepository.onNewListeningEvent) and that cache is in-memory only, so the
+        // first visit to Stats or Home after any listening would otherwise pay the full cold
+        // aggregates. This worker exists to precompute them but was never scheduled anywhere —
+        // `grep StatsPrecomputeWorker.` had no call sites, so it never ran.
+        StatsPrecomputeWorker.schedule(this)
+
         scheduleSpotifyPollingIfEnabled()
 
         Handler(Looper.getMainLooper()).postDelayed({
@@ -343,8 +352,25 @@ class TempoApplication :
      *
      * Scheduling here rather than in [scheduleBackgroundWork] is also what stops every
      * app start from resurrecting a worker that the user's opt-out had cancelled.
+     *
+     * Nothing here writes back into the store `collectionAllowed` reads from without that flow
+     * de-duplicating: it emits on a real on/off transition, not on every write, which is what
+     * keeps the opt-out branch below from re-triggering itself. See
+     * [AnalyticsConsent.collectionAllowed].
      */
     private fun observeAnalyticsConsent() {
+        // A build that cannot report has no uploader to register and no buffer worth dropping —
+        // and because its notice never renders, the gate can never open, so subscribing would
+        // mean running the opt-out branch forever against a decision that will not change.
+        if (!AnalyticsGate.isBuildConfigured(
+                endpoint = BuildConfig.ANALYTICS_ENDPOINT,
+                isDebug = BuildConfig.DEBUG,
+                debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW,
+            )
+        ) {
+            return
+        }
+
         applicationScope.launch {
             analyticsConsent.collectionAllowed.collect { allowed ->
                 if (allowed) {
@@ -359,6 +385,9 @@ class TempoApplication :
                     // turning reporting back on. Without this the same id would resume
                     // reporting into the old history, and "stop reporting" would have meant
                     // "pause for a while" rather than what it says.
+                    //
+                    // This is the write that made the loop: it changes the store the flow above
+                    // reads. `distinctUntilChanged` on that flow is what makes it safe.
                     analyticsInstallId.reset()
                     analyticsDailyLedger.clear()
                     analyticsFeatureLedger.clear()

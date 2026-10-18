@@ -1,5 +1,9 @@
 package me.avinas.tempo.ui.details
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -91,6 +96,7 @@ internal fun CoverArtPickerSheet(
     state: SongDetailsUiState,
     onSelect: (CoverArtCandidate) -> Unit,
     onSelectProvider: (CoverArtProvider) -> Unit = {},
+    onGallerySelected: (Uri) -> Unit = {},
     onResetAutomatic: () -> Unit,
     onRetry: () -> Unit,
     onRetryProvider: ((CoverArtProvider) -> Unit)? = null,
@@ -114,6 +120,15 @@ internal fun CoverArtPickerSheet(
     val previewSize = if (isCompactOrLargeFont) 120.dp else 168.dp
 
     var isPreviewImageError by remember(selected?.albumArtUrl) { mutableStateOf(false) }
+
+    // The photo picker needs no storage permission and, on devices without it,
+    // ActivityResultContracts falls back to a document picker automatically.
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri: Uri? ->
+        uri?.let(onGallerySelected)
+    }
+    val coverChangeEnabled = !state.isSavingCover && !state.isResettingCover
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -143,6 +158,32 @@ internal fun CoverArtPickerSheet(
                     text = stringResource(R.string.details_change_cover_body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+                OutlinedButton(
+                    onClick = {
+                        galleryLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    enabled = coverChangeEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, GlassBorderMedium),
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.PhotoLibrary,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text(stringResource(R.string.details_cover_from_gallery))
+                }
+                Text(
+                    text = stringResource(R.string.details_cover_from_gallery_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextTertiary,
+                    modifier = Modifier.padding(top = 6.dp),
                 )
 
                 if (state.isManualCover) {
@@ -280,7 +321,7 @@ internal fun CoverArtPickerSheet(
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { selected?.let(onSelect) },
-                enabled = selected != null && !state.isSavingCover && !state.isResettingCover && !isPreviewImageError,
+                enabled = selected != null && coverChangeEnabled && !isPreviewImageError,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (state.isSavingCover) {
@@ -299,7 +340,7 @@ internal fun CoverArtPickerSheet(
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = onResetAutomatic,
-                    enabled = !state.isSavingCover && !state.isResettingCover,
+                    enabled = coverChangeEnabled,
                     modifier = Modifier.fillMaxWidth(),
                     border = BorderStroke(1.dp, GlassBorderMedium),
                 ) {

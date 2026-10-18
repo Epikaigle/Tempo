@@ -36,6 +36,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import javax.inject.Inject
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -58,6 +60,23 @@ class HomeViewModel @Inject constructor(
     val flagsState: StateFlow<HomeFlags> = _flagsState.asStateFlow()
 
     private var loadJob: Job? = null
+
+    /**
+     * Paces the dashboard's Room access. [fetchData] launches ~20 concurrent
+     * repository fetches and several of those fan out again (getInsights alone runs
+     * ~10 statements), while Room's default query executor only has 4 threads — firing
+     * the whole burst at once just piles work onto that queue and head-of-line blocks
+     * every other query in the app. Four permits keeps at most one burst's worth of
+     * statements in flight, matching the executor.
+     *
+     * Deliberately a field (shared across loads) rather than scoped to one
+     * coroutineScope: [refresh] can run [fetchData] while a debounced reactive load is
+     * still winding down, and a cancelled load releases its permits asynchronously, so
+     * a per-load semaphore would allow double the concurrency in that overlap window.
+     * Permits are never leaked on cancellation: withPermit releases in a finally and a
+     * cancelled acquire() never takes one.
+     */
+    private val dbSemaphore = Semaphore(permits = 4)
 
     // Coalesced reactive reload signal (see observeDataChanges).
     private val reactiveReload = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -160,8 +179,8 @@ class HomeViewModel @Inject constructor(
             
             // Parallel fetch for dashboard metrics
             coroutineScope {
-                val overviewDeferred = async { statsRepository.getListeningOverview(timeRange, withLeeway = false) }
-                val periodComparisonDeferred = async { statsRepository.getPeriodComparison(timeRange, withLeeway = false) }
+                val overviewDeferred = async { dbSemaphore.withPermit { statsRepository.getListeningOverview(timeRange, withLeeway = false) } }
+                val periodComparisonDeferred = async { dbSemaphore.withPermit { statsRepository.getPeriodComparison(timeRange, withLeeway = false) } }
                 // Point limit by time range for chart display
                 val dataLimit = when (timeRange) {
                     TimeRange.TODAY, TimeRange.THIS_WEEK -> 7
@@ -169,30 +188,30 @@ class HomeViewModel @Inject constructor(
                     TimeRange.THIS_YEAR -> 366
                     TimeRange.ALL_TIME -> 5000
                 }
-                val rawDailyListeningDeferred = async { statsRepository.getDailyListening(timeRange, dataLimit, withLeeway = false) }
-                val activeDaysDeferred = async { statsRepository.getActiveDaysCount(timeRange, withLeeway = false) }
-                val peakDayMsDeferred = async { statsRepository.getPeakDayListeningMs(timeRange, withLeeway = false) }
-                val topTracksDeferred = async { statsRepository.getTopTracks(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1, withLeeway = false) }
-                val topArtistsDeferred = async { statsRepository.getTopArtists(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1, withLeeway = false) }
-                val discoveryStatsDeferred = async { statsRepository.getDiscoveryStats(timeRange, withLeeway = false) }
-                val mostActiveHourDeferred = async { statsRepository.getMostActiveHour(timeRange, withLeeway = false) }
-                val audioFeaturesDeferred = async { statsRepository.getAudioFeaturesStats(timeRange, withLeeway = false) }
-                val insightsDeferred = async { statsRepository.getInsights(timeRange, withLeeway = false) }
-                // Use all-time stats for rating prompt so active filter does not skew eligibility
-                val allTimeOverviewDeferred = async { statsRepository.getListeningOverview(TimeRange.ALL_TIME) }
+                val rawDailyListeningDeferred = async { dbSemaphore.withPermit { statsRepository.getDailyListening(timeRange, dataLimit, withLeeway = false) } }
+                val activeDaysDeferred = async { dbSemaphore.withPermit { statsRepository.getActiveDaysCount(timeRange, withLeeway = false) } }
+                val peakDayMsDeferred = async { dbSemaphore.withPermit { statsRepository.getPeakDayListeningMs(timeRange, withLeeway = false) } }
+                val topTracksDeferred = async { dbSemaphore.withPermit { statsRepository.getTopTracks(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1, withLeeway = false) } }
+                val topArtistsDeferred = async { dbSemaphore.withPermit { statsRepository.getTopArtists(timeRange, sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE, pageSize = 1, withLeeway = false) } }
+                val discoveryStatsDeferred = async { dbSemaphore.withPermit { statsRepository.getDiscoveryStats(timeRange, withLeeway = false) } }
+                val mostActiveHourDeferred = async { dbSemaphore.withPermit { statsRepository.getMostActiveHour(timeRange, withLeeway = false) } }
+                val audioFeaturesDeferred = async { dbSemaphore.withPermit { statsRepository.getAudioFeaturesStats(timeRange, withLeeway = false) } }
+                val insightsDeferred = async { dbSemaphore.withPermit { statsRepository.getInsights(timeRange, withLeeway = false) } }
                 val profileIdentityDeferred = async { profileIdentityManager.getProfileIdentity() }
-                val earliestTimestampDeferred = async { statsRepository.getEarliestDataTimestamp() }
+                val earliestTimestampDeferred = async { dbSemaphore.withPermit { statsRepository.getEarliestDataTimestamp() } }
                 
                 // Today's Listen Widget data
-                val todayOverviewDeferred = async { statsRepository.getListeningOverview(TimeRange.TODAY) }
-                val todayTopTracksDeferred = async { statsRepository.getTopTracks(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 5) }
-                val todayTopArtistsDeferred = async { statsRepository.getTopArtists(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 5) }
-                val todayHourlyDeferred = async { statsRepository.getHourlyDistribution(TimeRange.TODAY) }
-                val todayPeriodComparisonDeferred = async { statsRepository.getPeriodComparison(TimeRange.TODAY, withLeeway = false) }
+                val todayOverviewDeferred = async { dbSemaphore.withPermit { statsRepository.getListeningOverview(TimeRange.TODAY) } }
+                val todayTopTracksDeferred = async { dbSemaphore.withPermit { statsRepository.getTopTracks(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 5) } }
+                val todayTopArtistsDeferred = async { dbSemaphore.withPermit { statsRepository.getTopArtists(TimeRange.TODAY, sortBy = me.avinas.tempo.data.repository.SortBy.PLAY_COUNT, pageSize = 5) } }
+                val todayHourlyDeferred = async { dbSemaphore.withPermit { statsRepository.getHourlyDistribution(TimeRange.TODAY) } }
+                val todayPeriodComparisonDeferred = async { dbSemaphore.withPermit { statsRepository.getPeriodComparison(TimeRange.TODAY, withLeeway = false) } }
                 
                 // Read isGamificationEnabled setting
                 val isGamificationEnabledDeferred = async {
-                    preferencesRepository.preferences().first()?.isGamificationEnabled ?: true
+                    dbSemaphore.withPermit {
+                        preferencesRepository.preferences().first()?.isGamificationEnabled ?: true
+                    }
                 }
                 
                 // Spotlight story top track — fetched for the unlocked story period with leeway
@@ -200,12 +219,14 @@ class HomeViewModel @Inject constructor(
                 val spotlightTimeRange = me.avinas.tempo.ui.spotlight.SpotlightPeriodFormatter.getDirectStoryTimeRange()
                 val spotlightTopTrackDeferred = if (spotlightTimeRange != null) {
                     async {
-                        statsRepository.getTopTracks(
-                            spotlightTimeRange,
-                            sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE,
-                            pageSize = 1,
-                            withLeeway = true  // Match story system's period calculation
-                        )
+                        dbSemaphore.withPermit {
+                            statsRepository.getTopTracks(
+                                spotlightTimeRange,
+                                sortBy = me.avinas.tempo.data.repository.SortBy.COMBINED_SCORE,
+                                pageSize = 1,
+                                withLeeway = true  // Match story system's period calculation
+                            )
+                        }
                     }
                 } else null
                 
@@ -218,7 +239,6 @@ class HomeViewModel @Inject constructor(
                 val discoveryStats = discoveryStatsDeferred.await()
                 val mostActiveHour = mostActiveHourDeferred.await()
                 val audioFeatures = audioFeaturesDeferred.await()
-                val allTimeOverview = allTimeOverviewDeferred.await()
                 val profileIdentity = profileIdentityDeferred.await()
                 val spotlightTopTrack = spotlightTopTrackDeferred?.await()?.items?.firstOrNull()
                 val userName = profileIdentity.userName

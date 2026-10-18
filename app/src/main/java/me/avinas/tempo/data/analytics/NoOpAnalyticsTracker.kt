@@ -10,6 +10,9 @@ class NoOpAnalyticsTracker : AnalyticsTracker {
 
     override fun track(event: AnalyticsEvent) = Unit
 
+    /** Always false: this is the implementation bound when nothing can ever be sent. */
+    override suspend fun canReport(): Boolean = false
+
     override suspend fun flush() = Unit
 
     override suspend fun purge() = Unit

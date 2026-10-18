@@ -51,6 +51,13 @@ class AnalyticsDailyReporter
          * them separately. This only writes a day number; it sends nothing.
          */
         suspend fun markUiOpened(nowMillis: Long = System.currentTimeMillis()) {
+            // A build that cannot report must not accumulate reporting state: no aggregate will
+            // ever read it, and `markUiOpened` is called on every resume. Consent is deliberately
+            // *not* consulted here — this only records that the UI was opened today, so a user
+            // who switches reporting back on later the same day still gets an honest
+            // `ui_opened` rather than a zero.
+            if (!isConfigured()) return
+
             runCatching {
                 val today = AnalyticsDaily.dayOf(nowMillis)
                 if (markedUiOpenedDay.get() == today) return@runCatching
@@ -82,6 +89,17 @@ class AnalyticsDailyReporter
                     presenceLock.withLock {
                         // Re-checked inside the lock: another caller may have just finished.
                         if (reportedDay.get() == today) return@withLock
+
+                        if (!tracker.canReport()) {
+                            // Nothing may be marked while the gate is shut. Marking here would
+                            // spend today's slot without sending anything, so the day a user
+                            // switches reporting back on would be missing from the active-user
+                            // count — the undercount this ledger exists to prevent.
+                            //
+                            // `reportedDay` is deliberately left unset: consent can change
+                            // within the same day, and this is the caller that must notice.
+                            return@withLock
+                        }
 
                         if (!AnalyticsDaily.shouldReportPresence(ledger.presenceDay(), today)) {
                             // Already sent by an earlier process. Adopt that as today's answer

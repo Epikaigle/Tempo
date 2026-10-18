@@ -102,8 +102,16 @@ class LastFmImportService
             // Replay detection threshold (same track within 5 minutes)
             private const val REPLAY_THRESHOLD_MS = 5 * 60 * 1000L
 
-            // Batch size for active event inserts
-            private const val EVENT_BATCH_SIZE = 80
+            // Batch size for active event inserts.
+            //
+            // Deliberately >= PAGE_SIZE (200). This threshold exists only as a safety net against
+            // unbounded buffering; the real flush point is the unconditional end-of-page flush,
+            // which is what bounds data loss on cancellation (see the comment there). At 80 the
+            // threshold fired *twice* for every 200-row page — at 80 and 160 — so each page cost
+            // three `insertAllBatchedWithDedup` transactions instead of one. That call is a Room
+            // @Transaction, so this is purely transaction count: a 100k-scrobble import went from
+            // ~1500 commits to ~500, while the cancellation-exposure bound stays exactly one page.
+            private const val EVENT_BATCH_SIZE = 500
 
             // Batch size for enriched metadata inserts
             private const val METADATA_BATCH_SIZE = 500

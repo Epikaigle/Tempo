@@ -1,11 +1,10 @@
 package me.avinas.tempo.data.analytics
 
-import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
-import me.avinas.tempo.ui.onboarding.dataStore
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,16 +25,16 @@ import javax.inject.Singleton
 class AnalyticsDailyLedger
     @Inject
     constructor(
-        @param:ApplicationContext private val context: Context,
+        private val dataStore: DataStore<Preferences>,
     ) {
         /** The last day a presence marker was sent for, or null if none ever was. */
-        suspend fun presenceDay(): Long? = context.dataStore.data.first()[presenceDayKey]
+        suspend fun presenceDay(): Long? = dataStore.data.first()[presenceDayKey]
 
         /** The last day a usage aggregate was sent for, or null if none ever was. */
-        suspend fun usageDay(): Long? = context.dataStore.data.first()[usageDayKey]
+        suspend fun usageDay(): Long? = dataStore.data.first()[usageDayKey]
 
         /** The last day a tracking-health report was sent for, or null if none ever was. */
-        suspend fun healthDay(): Long? = context.dataStore.data.first()[healthDayKey]
+        suspend fun healthDay(): Long? = dataStore.data.first()[healthDayKey]
 
         /**
          * The last day the app's own UI was opened, or null if it never was.
@@ -43,7 +42,7 @@ class AnalyticsDailyLedger
          * Only for diagnostics and tests — reporting reads [uiOpenedOn], because a single
          * "latest day" value is not enough to answer the question being asked.
          */
-        suspend fun uiOpenedDay(): Long? = context.dataStore.data.first()[uiOpenedDayKey]
+        suspend fun uiOpenedDay(): Long? = dataStore.data.first()[uiOpenedDayKey]
 
         /**
          * Whether the UI was opened on [day].
@@ -55,20 +54,20 @@ class AnalyticsDailyLedger
          * users who open the app most — the exact inverse of the truth.
          */
         suspend fun uiOpenedOn(day: Long): Boolean {
-            val prefs = context.dataStore.data.first()
+            val prefs = dataStore.data.first()
             return prefs[uiOpenedDayKey] == day || prefs[uiOpenedPrevDayKey] == day
         }
 
         suspend fun markPresenceReported(day: Long) {
-            context.dataStore.edit { it[presenceDayKey] = day }
+            dataStore.edit { it[presenceDayKey] = day }
         }
 
         suspend fun markUsageReported(day: Long) {
-            context.dataStore.edit { it[usageDayKey] = day }
+            dataStore.edit { it[usageDayKey] = day }
         }
 
         suspend fun markHealthReported(day: Long) {
-            context.dataStore.edit { it[healthDayKey] = day }
+            dataStore.edit { it[healthDayKey] = day }
         }
 
         /**
@@ -79,7 +78,7 @@ class AnalyticsDailyLedger
          * the worker is about to report.
          */
         suspend fun markUiOpened(day: Long) {
-            context.dataStore.edit { prefs ->
+            dataStore.edit { prefs ->
                 val latest = prefs[uiOpenedDayKey]
                 when {
                     latest == null -> prefs[uiOpenedDayKey] = day
@@ -97,7 +96,7 @@ class AnalyticsDailyLedger
         }
 
         suspend fun clear() {
-            context.dataStore.edit {
+            dataStore.edit {
                 it.remove(presenceDayKey)
                 it.remove(usageDayKey)
                 it.remove(uiOpenedDayKey)

@@ -72,11 +72,10 @@ android {
         // report either, unless ANALYTICS_DEBUG_PREVIEW=true is set locally to preview the
         // Home notice and Settings toggle in a debug build.
         //
-        // ANALYTICS_ENDPOINT is the full URL batches are POSTed to — either the relay Worker
-        // or PostHog directly (`https://eu.i.posthog.com/batch/`). ANALYTICS_TOKEN is the
-        // project token when posting directly, or the relay's own app token when posting
-        // through the Worker, which swaps in the real project token server-side so that it
-        // never ships inside the APK.
+        // ANALYTICS_ENDPOINT is the full URL batches are POSTed to, e.g.
+        // `https://eu.i.posthog.com/batch/`. ANALYTICS_TOKEN is that PostHog project's token.
+        // Both are read at build time and ship in the APK; a blank endpoint is what keeps a
+        // from-source build inert.
         buildConfigField("String", "ANALYTICS_ENDPOINT", "\"${localProperties.getProperty("ANALYTICS_ENDPOINT", "")}\"")
         buildConfigField("String", "ANALYTICS_TOKEN", "\"${localProperties.getProperty("ANALYTICS_TOKEN", "")}\"")
         buildConfigField("boolean", "ANALYTICS_DEBUG_PREVIEW", "${localProperties.getProperty("ANALYTICS_DEBUG_PREVIEW", "false")}")

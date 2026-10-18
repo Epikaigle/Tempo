@@ -30,6 +30,7 @@ import coil3.size.Size
 import coil3.request.allowHardware
 import coil3.request.transformations
 import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+import me.avinas.tempo.utils.MAX_SAFE_BITMAP_EDGE_PX
 
 private const val TAG = "CachedAsyncImage"
 
@@ -95,7 +96,7 @@ fun CachedAsyncImage(
         createCacheKey(fixedUrl)
     }
     
-    // Calculate target size in pixels if provided, otherwise cap at 2048px to prevent OOM
+    // Calculate target size in pixels if provided, otherwise cap at the safe ceiling
     val targetSizePx = remember(targetSizeDp, density) {
         targetSizeDp?.let { dp -> with(density) { dp.toFloat() * this.density }.toInt() }
     }
@@ -120,7 +121,11 @@ fun CachedAsyncImage(
             .scale(Scale.FILL)
             .apply {
                 if (targetSizePx != null) {
-                    val capped = minOf(targetSizePx, 2048)
+                    // Bound the decode to the app-wide painter ceiling. Every call site asks for a
+                    // small thumbnail (the largest is 320.dp), so this clamp is inert in practice
+                    // and only exists so a large `targetSizeDp` can never decode an oversized
+                    // bitmap into this Image's painter.
+                    val capped = minOf(targetSizePx, MAX_SAFE_BITMAP_EDGE_PX).coerceAtLeast(1)
                     size(Size(capped, capped))
                 } else {
                     size(Size(1024, 1024))

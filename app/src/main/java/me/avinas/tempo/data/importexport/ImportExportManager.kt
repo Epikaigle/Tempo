@@ -500,12 +500,26 @@ class ImportExportManager @Inject constructor(
             }
             
             _progress.value = ImportExportProgress("Importing albums...", 30, 100)
-            
+
+            // Resolved once rather than per album. This lookup used to be
+            // `data.artists.find { it.id == album.artistId }` *inside* the loop below, which is a
+            // linear scan of every exported artist for every album — O(albums x artists), i.e.
+            // ~4x10^8 comparisons for a 20k-album / 20k-artist library. The whole restore runs
+            // inside a single `withTransaction`, so that CPU time was being spent while holding
+            // the database writer, directly lengthening the window the user waits through.
+            //
+            // `putIfAbsent` keeps first-match-wins semantics, which is what the `find` it
+            // replaces did, so a malformed export carrying duplicate artist ids behaves as before.
+            val artistNameById = LinkedHashMap<Long, String>(data.artists.size)
+            for (exportedArtist in data.artists) {
+                artistNameById.putIfAbsent(exportedArtist.id, exportedArtist.name)
+            }
+
             // Import Albums
             for (album in data.albums) {
                 val newArtistId = artistIdMap[album.artistId] ?: continue
                 val remappedAlbum = remapImagePath(album, pathMapping).copy(artistId = newArtistId)
-                val artistName = data.artists.find { it.id == album.artistId }?.name
+                val artistName = artistNameById[album.artistId]
                 if (artistName == null) {
                     Log.w(TAG, "Skipping album '${album.title}': artist ID ${album.artistId} not found in export")
                     continue

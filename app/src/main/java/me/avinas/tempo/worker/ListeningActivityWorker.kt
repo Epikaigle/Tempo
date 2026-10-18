@@ -93,6 +93,12 @@ class ListeningActivityWorker
                 // twice would inflate every total built on this figure.
                 if (!AnalyticsDaily.shouldReportUsageFor(day, ledger.usageDay())) return@runCatching
 
+                // Same rule as the presence marker: the day may only be marked once the event
+                // can actually be queued. Marking here while reporting is off would consume the
+                // day, and the guard above would then refuse to build the row again after the
+                // user switches reporting back on.
+                if (!tracker.canReport()) return@runCatching
+
                 val from = AnalyticsDaily.startOfDayMillis(day)
                 val to = AnalyticsDaily.startOfDayMillis(day + 1)
 

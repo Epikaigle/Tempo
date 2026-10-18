@@ -116,7 +116,7 @@ Tempo is a local-first music journal and scrobbler for Android. It follows playb
    GOOGLE_WEB_CLIENT_ID=your_google_client_id
    ```
 
-   Analytics is deliberately absent from that list: leaving `ANALYTICS_ENDPOINT` unset means the app reports nothing at all, which is the intended state for a build from source. See [docs/ANALYTICS.md](docs/ANALYTICS.md), and [deploy/analytics-relay](deploy/analytics-relay) if you want to point a build at your own.
+   Analytics is deliberately absent from that list: leaving `ANALYTICS_ENDPOINT` unset means the app reports nothing at all, which is the intended state for a build from source. See [docs/ANALYTICS.md](docs/ANALYTICS.md) if you want to point a build at your own PostHog project.
 
 3. Build the debug APK:
    ```bash

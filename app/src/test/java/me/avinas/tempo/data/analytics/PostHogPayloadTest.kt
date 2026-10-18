@@ -1,5 +1,6 @@
 package me.avinas.tempo.data.analytics
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,6 +54,23 @@ class PostHogPayloadTest {
         assertTrue(
             "the anonymous flag must be on every event",
             json.split("\"\$process_person_profile\":false").size == 3,
+        )
+    }
+
+    /**
+     * Without this PostHog turns the caller's address into a country, region and city and keeps
+     * them — which would make the published "no location is collected" promise false at the
+     * backend while the policy still claimed it. It belongs on every event for the same reason
+     * the anonymous flag does.
+     */
+    @Test
+    fun `every event disables location enrichment`() {
+        val json = payloadOf(DailyActivity(listenerDown = true), DbMigration(51, 52))
+
+        assertTrue(json.contains("\"\$geoip_disable\":true"))
+        assertTrue(
+            "the location opt-out must be on every event, not once for the batch",
+            json.split("\"\$geoip_disable\":true").size == 3,
         )
     }
 
@@ -114,6 +132,22 @@ class PostHogPayloadTest {
         assertFalse(json.contains("\"listens\":37"))
     }
 
+    /**
+     * Delivery is at-least-once: a batch leaves the queue only after the endpoint answers, so
+     * the same queued event can be sent twice. PostHog can only collapse that into one stored
+     * event if the retry renders the same `$insert_id` as the first attempt.
+     */
+    @Test
+    fun `a queued event renders a stable insert id`() {
+        val queued = DailyActivity(listenerDown = false).toQueued(fixedMillis, insertId = INSERT_KEY)
+
+        val first = PostHogPayload.build(listOf(queued), INSTALL_ID, system, "ph_test_token")
+        val second = PostHogPayload.build(listOf(queued), INSTALL_ID, system, "ph_test_token")
+
+        assertTrue(first.contains("\"\$insert_id\":\"$INSERT_KEY\""))
+        assertEquals("a retry must render byte-identical output", first, second)
+    }
+
     @Test
     fun `a batch carries every event and each keeps its own name`() {
         val json =
@@ -129,5 +163,8 @@ class PostHogPayloadTest {
 
     private companion object {
         const val INSTALL_ID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+        /** Stands in for the id minted when an event is queued. */
+        const val INSERT_KEY = "1c9a0f2e-6b1d-4a53-9f0c-3c2b1a7d4e88"
     }
 }

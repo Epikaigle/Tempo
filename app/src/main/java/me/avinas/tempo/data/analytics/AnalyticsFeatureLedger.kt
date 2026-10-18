@@ -1,11 +1,10 @@
 package me.avinas.tempo.data.analytics
 
-import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
-import me.avinas.tempo.ui.onboarding.dataStore
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,7 +27,7 @@ import javax.inject.Singleton
 class AnalyticsFeatureLedger
     @Inject
     constructor(
-        @param:ApplicationContext private val context: Context,
+        private val dataStore: DataStore<Preferences>,
     ) {
         /**
          * Claims the first use of [feature], returning true exactly once per install.
@@ -38,7 +37,7 @@ class AnalyticsFeatureLedger
          */
         suspend fun claimFirstUse(feature: String): Boolean {
             var first = false
-            context.dataStore.edit { prefs ->
+            dataStore.edit { prefs ->
                 val seen = prefs[reportedKey] ?: emptySet()
                 if (feature !in seen) {
                     prefs[reportedKey] = seen + feature
@@ -49,10 +48,10 @@ class AnalyticsFeatureLedger
         }
 
         /** True when nothing has been reported yet, so a pointless write can be skipped. */
-        suspend fun isEmpty(): Boolean = context.dataStore.data.first()[reportedKey].isNullOrEmpty()
+        suspend fun isEmpty(): Boolean = dataStore.data.first()[reportedKey].isNullOrEmpty()
 
         suspend fun clear() {
-            context.dataStore.edit { it.remove(reportedKey) }
+            dataStore.edit { it.remove(reportedKey) }
         }
 
         private companion object {
