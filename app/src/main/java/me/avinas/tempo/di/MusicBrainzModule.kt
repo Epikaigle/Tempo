@@ -1,7 +1,6 @@
 package me.avinas.tempo.di
 
 import com.squareup.moshi.Moshi
-import me.avinas.tempo.data.remote.interceptors.RateLimitInterceptor
 import me.avinas.tempo.data.remote.interceptors.RetryInterceptor
 import me.avinas.tempo.data.remote.interceptors.UserAgentInterceptor
 import me.avinas.tempo.data.remote.musicbrainz.CoverArtArchiveApi
@@ -23,11 +22,20 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object MusicBrainzModule {
 
+    /**
+     * MusicBrainz asks clients for at most one request per second. That throttle is enforced in
+     * `MusicBrainzEnrichmentService.withMusicBrainzRateLimit`, which wraps every call on this API
+     * and suspends rather than blocking; it is the only consumer of [MusicBrainzApi].
+     *
+     * A blocking `RateLimitInterceptor` used to sit here as well. It was removed because it
+     * duplicated that limiter on a *different* interval (1100 ms vs the service's 1000 ms), so it
+     * added ~100 ms of pointless delay to nearly every call, and because it parked an OkHttp
+     * dispatcher thread in `Thread.sleep` for the whole wait.
+     */
     @Provides
     @Singleton
     @Named("musicbrainz")
     fun provideMusicBrainzOkHttpClient(
-        rateLimitInterceptor: RateLimitInterceptor,
         retryInterceptor: RetryInterceptor,
         userAgentInterceptor: UserAgentInterceptor
     ): OkHttpClient {
@@ -41,7 +49,6 @@ object MusicBrainzModule {
 
         return OkHttpClient.Builder()
             .addInterceptor(userAgentInterceptor)
-            .addInterceptor(rateLimitInterceptor)
             .addInterceptor(retryInterceptor)
             .addInterceptor(logging)
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -50,9 +57,6 @@ object MusicBrainzModule {
             .build()
     }
 
-    /**
-     * Retrofit client for MusicBrainz API.
-     */
     @Provides
     @Singleton
     @Named("musicbrainz")
@@ -67,9 +71,6 @@ object MusicBrainzModule {
             .build()
     }
 
-    /**
-     * MusicBrainz API interface.
-     */
     @Provides
     @Singleton
     fun provideMusicBrainzApi(
@@ -104,9 +105,6 @@ object MusicBrainzModule {
             .build()
     }
 
-    /**
-     * Retrofit client for Cover Art Archive.
-     */
     @Provides
     @Singleton
     @Named("coverart")
@@ -121,9 +119,6 @@ object MusicBrainzModule {
             .build()
     }
 
-    /**
-     * Cover Art Archive API interface.
-     */
     @Provides
     @Singleton
     fun provideCoverArtArchiveApi(

@@ -21,18 +21,13 @@ object AnalyticsCatalog {
     val entries: List<AnalyticsCatalogEntry> =
         listOf(
             AnalyticsCatalogEntry(
-                event = "app_started",
-                what = "That the app opened, how long Tempo's own start-up work took, and whether music detection was running.",
-                properties = listOf("start_type", "startup", "listener_ready"),
+                event = "startup_slow",
+                what = "That Tempo took an unusually long time to start. Sent only when a start is slow, so a normal launch reports nothing at all.",
+                properties = listOf("startup"),
             ),
             AnalyticsCatalogEntry(
-                event = "screen_viewed",
-                what = "Which detail screens you open (song, artist, album). Only these three are reported.",
-                properties = listOf("screen"),
-            ),
-            AnalyticsCatalogEntry(
-                event = "feature_used",
-                what = "Which features you use, so the unused ones can be improved or removed.",
+                event = "feature_first_used",
+                what = "The first time each feature is used, once ever, so unused ones can be improved or removed. Never sent again after that.",
                 properties = listOf("feature"),
             ),
             AnalyticsCatalogEntry(
@@ -48,7 +43,7 @@ object AnalyticsCatalog {
             AnalyticsCatalogEntry(
                 event = "notif_access",
                 what = "Whether notification access was granted, so failures can be diagnosed.",
-                properties = listOf("result", "via"),
+                properties = listOf("result"),
             ),
             AnalyticsCatalogEntry(
                 event = "battery_exemption",
@@ -56,19 +51,19 @@ object AnalyticsCatalog {
                 properties = listOf("result"),
             ),
             AnalyticsCatalogEntry(
-                event = "tracking_gap",
-                what = "When and why music detection stopped, so listening gaps can be fixed.",
-                properties = listOf("reason", "gap"),
+                event = "tracking_health",
+                what = "That music detection stopped and Tempo brought it back — once a day at most, with how long it had been down.",
+                properties = listOf("severity", "by", "recovery"),
             ),
             AnalyticsCatalogEntry(
-                event = "service_revived",
-                what = "That Tempo recovered after the system stopped it, and how forcefully.",
-                properties = listOf("by", "recovery"),
+                event = "daily_activity",
+                what = "That Tempo was used at all today — once a day, and it is what \"daily active users\" is counted from. Says nothing about what you did.",
+                properties = listOf("listener_down"),
             ),
             AnalyticsCatalogEntry(
                 event = "listening_activity",
                 what = "A daily count of listens — a range, once a day. Never what you listened to.",
-                properties = listOf("listens", "apps"),
+                properties = listOf("listens", "apps", "ui_opened"),
             ),
             AnalyticsCatalogEntry(
                 event = "db_migration",
@@ -79,6 +74,11 @@ object AnalyticsCatalog {
                 event = "import_run",
                 what = "Whether a history import worked, and the category of failure if not.",
                 properties = listOf("provider", "phase", "records", "dur", "error_class"),
+            ),
+            AnalyticsCatalogEntry(
+                event = "enrichment_run",
+                what = "Whether a metadata enrichment sweep worked — once per run, not per source tried: what started it, how much of the backlog it cleared, and the failure category if it failed.",
+                properties = listOf("trigger", "phase", "backlog", "cleared", "dur", "error_class"),
             ),
             AnalyticsCatalogEntry(
                 event = "backup_run",

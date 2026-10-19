@@ -26,6 +26,10 @@ internal object FailureClassifier {
         is java.net.UnknownHostException -> FailureClass.NETWORK
         is IOException -> FailureClass.IO
         is SecurityException -> FailureClass.PERMISSION
+        // Room surfaces a failed statement as SQLiteException, a subclass of this. Without the
+        // mapping a database failure fell through to UNKNOWN, so the one category that names it
+        // was declared but could never be produced.
+        is android.database.SQLException -> FailureClass.DATABASE
         is IllegalStateException -> FailureClass.PARSE
         is NumberFormatException -> FailureClass.PARSE
         else -> FailureClass.UNKNOWN

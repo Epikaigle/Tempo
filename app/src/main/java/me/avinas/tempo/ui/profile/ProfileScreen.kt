@@ -627,6 +627,7 @@ fun ProfileScreen(
     val heroScrolledPast by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 }
     }
+    val hideStreaks = me.avinas.tempo.ui.components.LocalHideStreaks.current
 
     val tierAccent =
         remember(uiState.userLevel.currentLevel) {
@@ -706,7 +707,7 @@ fun ProfileScreen(
                                     modifier = contentModifier,
                                     verticalArrangement = Arrangement.spacedBy(22.dp),
                                 ) {
-                                    if (uiState.streakAtRisk) {
+                                    if (uiState.streakAtRisk && !hideStreaks) {
                                         StreakRiskBanner(
                                             streakDurationMinutes = uiState.streakDurationMinutes,
                                             timeRemaining = uiState.streakTimeRemaining,
@@ -718,10 +719,11 @@ fun ProfileScreen(
                                         earnedCount = uiState.earnedCount,
                                         totalCount = uiState.totalCount,
                                         totalStars = uiState.totalStars,
-                                        streakAtRisk = uiState.streakAtRisk,
+                                        streakAtRisk = uiState.streakAtRisk && !hideStreaks,
                                         timeRemaining = uiState.streakTimeRemaining,
                                         tierAccent = tierAccent,
                                         compact = compact,
+                                        hideStreaks = hideStreaks,
                                     )
 
                                     TabSwitcher(
@@ -1180,6 +1182,7 @@ private fun MasterStatMasthead(
     timeRemaining: String,
     tierAccent: Color,
     compact: Boolean,
+    hideStreaks: Boolean = false,
 ) {
     val currentStreak = userLevel.currentStreak
     val animatedStreak by animateIntAsState(
@@ -1220,23 +1223,26 @@ private fun MasterStatMasthead(
                     .fillMaxWidth()
                     .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = 20.dp),
         ) {
-            // Hero metric
-            MastheadHeroMetric(
-                label = "Listening rhythm",
-                value = "$animatedStreak",
-                suffix = suffix,
-                accentTint = accentTint,
-            )
+            // Hero metric. The streak is the only thing this card wants to lead with, so when
+            // streaks are hidden the card opens straight on XP and badges instead of a placeholder.
+            if (!hideStreaks) {
+                MastheadHeroMetric(
+                    label = "Listening rhythm",
+                    value = "$animatedStreak",
+                    suffix = suffix,
+                    accentTint = accentTint,
+                )
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(0.8.dp)
-                        .background(GlassBorderSoft),
-            )
-            Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(0.8.dp)
+                            .background(GlassBorderSoft),
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
             // Secondary metrics row with vertical hairline dividers
             Row(
@@ -1246,20 +1252,22 @@ private fun MasterStatMasthead(
                         .height(IntrinsicSize.Min),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MastheadSecondaryStat(
-                    label = "Best streak",
-                    value = "${userLevel.longestStreak}d",
-                    subtext = "Personal record",
-                    modifier = Modifier.weight(1f),
-                )
+                if (!hideStreaks) {
+                    MastheadSecondaryStat(
+                        label = "Best streak",
+                        value = "${userLevel.longestStreak}d",
+                        subtext = "Personal record",
+                        modifier = Modifier.weight(1f),
+                    )
 
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxHeight()
-                            .width(0.8.dp)
-                            .background(GlassBorderSoft),
-                )
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxHeight()
+                                .width(0.8.dp)
+                                .background(GlassBorderSoft),
+                    )
+                }
 
                 MastheadSecondaryStat(
                     label = "Total XP",
@@ -1268,7 +1276,9 @@ private fun MasterStatMasthead(
                     modifier =
                         Modifier
                             .weight(1f)
-                            .padding(start = if (compact) 10.dp else 16.dp),
+                            // The inset separates this stat from the divider before it; with no
+                            // streak column ahead of it there is nothing to separate from.
+                            .padding(start = if (hideStreaks) 0.dp else if (compact) 10.dp else 16.dp),
                 )
 
                 Box(

@@ -66,12 +66,8 @@ object SmartListeningEventGenerator {
 
     
     /**
-     * Generate listening events using smart data recovery.
-     * 
-     * Priority:
-     * 1. Tracks with exact timestamps (Time Machine) → events around that date
-     * 2. Tracks with year context (Yearly Playlists) → events throughout year
-     * 3. Top tracks with ranking → smart estimation based on affinity + time range
+     * Generate events from the best timing signal each track has: an exact liked date, else a
+     * playlist year, else rank-and-time-range estimation.
      */
     fun generateEvents(
         tracks: List<TrackWithAffinity>,
@@ -139,10 +135,8 @@ object SmartListeningEventGenerator {
     // Time Machine Events (Liked Tracks with Exact Dates)
     
     /**
-     * Generate events around when the track was liked.
-     * 
-     * LOGIC: If they liked it on June 12, they were definitely listening around then.
-     * We generate a small cluster of plays around that date.
+     * A small cluster of plays around the date the track was liked: liking it on June 12 means
+     * they were listening around then.
      */
     private fun generateTimeMachineEvents(
         track: TrackWithAffinity,
@@ -188,10 +182,8 @@ object SmartListeningEventGenerator {
     // Yearly Playlist Events (Your Top Songs 20XX)
     
     /**
-     * Generate events distributed throughout a specific year.
-     * 
-     * LOGIC: If it's in "Your Top Songs 2023", they listened during 2023.
-     * We distribute plays throughout that year randomly.
+     * Plays spread randomly through the year of a "Your Top Songs 20XX" playlist: being on that
+     * list means they listened during that year.
      */
     private fun generateYearlyEvents(
         tracks: List<TrackWithAffinity>,
@@ -245,22 +237,9 @@ object SmartListeningEventGenerator {
     // Smart Estimation Events (Top Tracks Without Dates)
     
     /**
-     * Generate events for top tracks using smart estimation.
-     * 
-     * RATIONALE: Spotify's top tracks API proves the user ACTUALLY listened to these tracks.
-     * The ranking reflects REAL listening patterns. We don't know the exact dates,
-     * but we have strong signals:
-     * 
-     * 1. RANKING: Higher ranked = more plays (Spotify calculated this from real data)
-     * 2. TIME RANGE: short_term = recent, long_term = over time
-     * 3. AFFINITY: Combines ranking with time range for play distribution
-     * 
-     * ALGORITHM:
-     * - Higher affinity → more events
-     * - short_term → cluster in recent weeks
-     * - medium_term → spread over recent months
-     * - long_term → spread over longer period (but still realistic)
-     * - Apply natural decay (more recent = higher probability)
+     * Estimate events for top tracks with no dates. Spotify's ranking is real listening data,
+     * just undated: rank implies how often a track was played, and its time range says how far
+     * back to spread those plays.
      */
     private fun generateEstimatedEvents(
         tracks: List<TrackWithAffinity>,
@@ -318,13 +297,8 @@ object SmartListeningEventGenerator {
     }
     
     /**
-     * Generate events for a single track with smart time distribution.
-     * 
-     * @param track The track to generate events for
-     * @param rangeStart Earliest possible timestamp for events
-     * @param rangeEnd Latest possible timestamp for events
-     * @param config Generation configuration
-     * @param recentBias 0.0-1.0, higher = more events toward recent end
+     * Events for one track spread across [rangeStart]..[rangeEnd]. [recentBias] runs 0.0 to 1.0,
+     * higher pushing more events toward the recent end.
      */
     private fun generateEstimatedEventsForTrack(
         track: TrackWithAffinity,
@@ -370,11 +344,8 @@ object SmartListeningEventGenerator {
     }
     
     /**
-     * Generate a timestamp with bias toward more recent times.
-     * 
-     * Uses exponential distribution to naturally bias toward recent.
-     * recentBias 0.0 = uniform distribution
-     * recentBias 1.0 = heavily biased toward now
+     * Timestamp drawn from an exponential distribution biased toward recent: `recentBias` 0.0 is
+     * uniform, 1.0 is heavily weighted toward the end of the range.
      */
     private fun generateBiasedTimestamp(start: Long, end: Long, recentBias: Float): Long {
         val range = end - start
@@ -391,9 +362,7 @@ object SmartListeningEventGenerator {
         return start + (normalized * range).toLong()
     }
     
-    /**
-     * Create an event marked as estimated (different source tag).
-     */
+    /** Same as [createEvent], but tagged with the `.estimated` source. */
     private fun createEstimatedEvent(
         track: TrackWithAffinity,
         timestamp: Long,
@@ -424,9 +393,6 @@ object SmartListeningEventGenerator {
 
     // Event Creation (Simple, No Fake Patterns)
     
-    /**
-     * Create a simple ListeningEvent without fake patterns.
-     */
     private fun createEvent(
         track: TrackWithAffinity,
         timestamp: Long,

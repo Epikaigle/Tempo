@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -21,10 +20,11 @@ import me.avinas.tempo.R
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.FailureClass
 import me.avinas.tempo.data.analytics.FailureClassifier
-import me.avinas.tempo.data.analytics.ImportPhase
+import me.avinas.tempo.data.analytics.RunPhase
 import me.avinas.tempo.data.analytics.ImportProvider
 import me.avinas.tempo.data.analytics.ImportRun
 import me.avinas.tempo.data.youtube.YouTubeMusicImportService
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import java.util.concurrent.TimeUnit
 
 @HiltWorker
@@ -173,7 +173,7 @@ class YouTubeMusicImportWorker
                 val uriStrings = inputData.getStringArray(KEY_FILE_URIS)
                 if (uriStrings.isNullOrEmpty()) {
                     Log.e(TAG, "No file URIs provided")
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
                     return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "No files selected"))
                 }
 
@@ -188,7 +188,7 @@ class YouTubeMusicImportWorker
                     }
 
                 if (uris.isEmpty()) {
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.UNKNOWN, startedAt = startedAt)
                     return@withContext Result.failure(workDataOf(KEY_ERROR_MESSAGE to "No valid files found"))
                 }
 
@@ -196,7 +196,7 @@ class YouTubeMusicImportWorker
                     val result = youTubeMusicImportService.importFromUris(applicationContext, uris)
 
                     if (result.isSuccess) {
-                        reportImport(ImportPhase.COMPLETED, records = result.totalEntries, failure = null, startedAt = startedAt)
+                        reportImport(RunPhase.COMPLETED, records = result.totalEntries, failure = null, startedAt = startedAt)
                         showCompletionNotification(result)
                         Result.success(
                             workDataOf(
@@ -217,7 +217,7 @@ class YouTubeMusicImportWorker
                         // The service reports failures as strings, so the category cannot be
                         // recovered from them without parsing free text — which the schema forbids.
                         reportImport(
-                            ImportPhase.FAILED,
+                            RunPhase.FAILED,
                             records = result.totalEntries,
                             failure = FailureClass.UNKNOWN,
                             startedAt = startedAt,
@@ -232,7 +232,7 @@ class YouTubeMusicImportWorker
                     }
                 } catch (e: OutOfMemoryError) {
                     Log.e(TAG, "Import ran out of memory", e)
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClass.OUT_OF_MEMORY, startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClass.OUT_OF_MEMORY, startedAt = startedAt)
                     showFailureNotification("Not enough memory for this export. Try fewer files at once.")
                     Result.failure(
                         workDataOf(
@@ -242,7 +242,7 @@ class YouTubeMusicImportWorker
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "Import failed with exception", e)
-                    reportImport(ImportPhase.FAILED, records = 0, failure = FailureClassifier.of(e), startedAt = startedAt)
+                    reportImport(RunPhase.FAILED, records = 0, failure = FailureClassifier.of(e), startedAt = startedAt)
                     showFailureNotification(e.message ?: "Unknown error")
                     Result.failure(
                         workDataOf(
@@ -291,16 +291,18 @@ class YouTubeMusicImportWorker
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .build()
 
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                ForegroundInfo(NOTIFICATION_ID, notification)
-            }
+            return ForegroundNotificationGuard.postableForegroundInfo(
+                context = applicationContext,
+                notificationId = NOTIFICATION_ID,
+                requestedChannelId = NOTIFICATION_CHANNEL_ID,
+                notification = notification,
+                logTag = TAG,
+            )
         }
 
         /** Never includes an error message — only the closed [FailureClass] category. */
         private fun reportImport(
-            phase: ImportPhase,
+            phase: RunPhase,
             records: Int,
             failure: FailureClass?,
             startedAt: Long,

@@ -28,6 +28,18 @@ object EventFingerprint {
 
     private val HEX = "0123456789abcdef".toCharArray()
 
+    /**
+     * Per-thread SHA-256 digest. [MessageDigest] is stateful and not thread-safe, so each
+     * thread keeps its own instance. [MessageDigest.getInstance] performs a JCA provider
+     * lookup plus an allocation on every call — pure overhead when this runs once per
+     * imported event (see [me.avinas.tempo.data.local.dao.ListeningEventDao.insertAllBatchedWithDedup]).
+     * Reusing the instance produces byte-identical output to a fresh one per call.
+     */
+    private val SHA_256: ThreadLocal<MessageDigest> =
+        object : ThreadLocal<MessageDigest>() {
+            override fun initialValue(): MessageDigest = MessageDigest.getInstance("SHA-256")
+        }
+
     fun compute(
         source: String,
         trackId: Long,
@@ -35,7 +47,10 @@ object EventFingerprint {
         playDuration: Long,
         endTimestamp: Long?
     ): String {
-        val md = MessageDigest.getInstance("SHA-256")
+        val md = SHA_256.get()
+        // digest() resets the instance on completion; the explicit reset() keeps reuse
+        // correct even if a previous call left it mid-update.
+        md.reset()
         val input = "$source|$trackId|$timestamp|$playDuration|${endTimestamp ?: 0L}"
         val bytes = md.digest(input.toByteArray(Charsets.UTF_8))
         val sb = StringBuilder(bytes.size * 2)

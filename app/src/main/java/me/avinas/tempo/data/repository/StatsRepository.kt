@@ -323,19 +323,12 @@ interface StatsRepository {
      */
     fun invalidateCache()
 
-    /**
-     * Compute listening insights for a given time range.
-     * @param timeRange The time period to analyze
-     * @return List of generated insight cards
-     */
+    /** Compute listening insights for a time range. */
     suspend fun getInsights(
         timeRange: TimeRange,
         withLeeway: Boolean = true,
     ): List<InsightCardData>
 
-    /**
-     * Get unique tracks count for the specified time range.
-     */
     fun invalidateCache(timeRange: TimeRange)
 
     // History
@@ -343,8 +336,7 @@ interface StatsRepository {
     /**
      * Get listening history with pagination.
      *
-     * @param filterPodcasts If true, exclude tracks marked as PODCAST
-     * @param filterAudiobooks If true, exclude tracks marked as AUDIOBOOK
+     * `filterPodcasts` and `filterAudiobooks` exclude those content types when true.
      */
     suspend fun getHistory(
         timeRange: TimeRange? = null, // Made nullable to support custom ranges if needed, or handle inside implementation

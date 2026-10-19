@@ -8,10 +8,8 @@ import androidx.compose.ui.graphics.asComposePath
 import androidx.core.graphics.PathParser
 import kotlin.math.roundToInt
 /**
- * Silhouette contour paths for profile badges in Tempo.
- *
- * Contours are defined in a normalized 24x24 coordinate box and scaled
- * to canvas bounds with optional concentric insetting for rims and faces.
+ * Contours live in a normalized 24x24 coordinate box and are scaled to canvas bounds with
+ * optional concentric insetting for rims and faces.
  */
 object BadgeSilhouettes {
 
@@ -26,13 +24,11 @@ object BadgeSilhouettes {
     private val scaledPathCache = HashMap<PathCacheKey, Path>()
 
     /**
-     * Get the outer silhouette path for a badge, scaled to the given canvas [size].
+     * Outer silhouette path for a badge, scaled to the given canvas [size].
      *
-     * Returns a cached [Path] matching the geometry to avoid allocating native SkPath
-     * and Matrix objects on every draw frame.
+     * Returns a cached [Path] for the matching geometry, so a draw frame never allocates
+     * native SkPath and Matrix objects.
      *
-     * @param badgeId The unique badge identifier.
-     * @param size The destination canvas dimensions.
      * @param insetScale Concentric scale factor (1.0f = outer rim, 0.83f = enamel face).
      */
     fun getPath(badgeId: String, size: Size, insetScale: Float = 1.0f): Path {
@@ -55,12 +51,10 @@ object BadgeSilhouettes {
                 val dstAndroidPath = android.graphics.Path()
                 val matrix = Matrix()
 
-                // 1. Scale from normalized 24x24 coordinates to canvas size
                 val sx = size.width / 24f
                 val sy = size.height / 24f
                 matrix.setScale(sx, sy)
 
-                // 2. Apply concentric inset scale around center if requested
                 if (insetScale != 1.0f) {
                     val cx = size.width / 2f
                     val cy = size.height / 2f

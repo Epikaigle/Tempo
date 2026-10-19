@@ -16,8 +16,8 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * ECDH key exchange for secure pairing.
- * Uses P-256 curve to derive a shared secret without transmitting the auth token in cleartext.
+ * ECDH (P-256) pairing: both sides derive the auth token from a shared secret, so it is never
+ * transmitted in cleartext.
  *
  * Protocol:
  * 1. Desktop generates ECDH key pair, includes public key in QR
@@ -46,8 +46,8 @@ object EcdhKeyExchange {
     }
 
     /**
-     * Encode a public key as SEC1 uncompressed point (0x04 || X || Y) in base64url-no-pad.
-     * This matches the desktop Rust side's `to_encoded_point(false)` output.
+     * SEC1 uncompressed point (`0x04 || X || Y`), base64url-no-pad, matching the desktop Rust
+     * side's `to_encoded_point(false)` output.
      */
     fun publicKeyToBase64(publicKey: PublicKey): String {
         val ecKey = publicKey as? ECPublicKey
@@ -65,8 +65,8 @@ object EcdhKeyExchange {
     }
 
     /**
-     * Decode a base64url-encoded SEC1 uncompressed point (or X.509 SubjectPublicKeyInfo)
-     * into a PublicKey. Tries SEC1 first (interoperability with desktop), then falls back to X.509.
+     * Decodes a base64url SEC1 uncompressed point (what the desktop sends), falling back to
+     * X.509 SubjectPublicKeyInfo.
      */
     fun base64ToPublicKey(base64: String): PublicKey? {
         return try {
@@ -157,10 +157,7 @@ object EcdhKeyExchange {
         return rotated.joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
-    /**
-     * Decode base64 with or without URL-safe padding.
-     * Handles both padded (= suffixes) and no-pad variants.
-     */
+    /** Accepts URL-safe or standard base64, padded or not. */
     private fun decodeBase64Flexible(base64: String): ByteArray {
         val noPad = base64.trimEnd('=')
             .replace('+', '-')
@@ -170,9 +167,7 @@ object EcdhKeyExchange {
         return Base64.decode(padded, Base64.NO_WRAP)
     }
 
-    /**
-     * Padded coordinate bytes to exactly 32 bytes (P-256 field size).
-     */
+    /** Pads coordinate bytes to the P-256 field size (32 bytes). */
     private fun ByteArray.padToCoordinateSize(): ByteArray {
         if (this.size == 32) return this
         if (this.size > 32) return this.copyOfRange(this.size - 32, this.size)

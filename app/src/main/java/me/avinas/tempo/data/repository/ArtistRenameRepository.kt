@@ -11,18 +11,14 @@ import me.avinas.tempo.utils.ArtistNameReplacer
 import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
 /**
- * Repository for handling artist rename with auto-merge detection.
- *
- * Workflow:
- * 1. User renames a split artist (e.g., "Tyler" → "Tyler, The Creator")
- * 2. System detects if other artists exist that were split from the same name
- * 3. If matches found, merges them and saves the name as a "user known artist"
- * 4. Future parsing will never split this artist name again
+ * Artist rename with auto-merge detection: renaming to a name that already exists
+ * merges the two (and any split fragments) instead, and the new name is saved as a
+ * user known artist so [ArtistParser] never splits it again.
  */
 @Singleton
 class ArtistRenameRepository @Inject constructor(
@@ -43,10 +39,6 @@ class ArtistRenameRepository @Inject constructor(
      *
      * For example, if newName = "Tyler, The Creator" and the current artist is "Tyler",
      * this looks for another artist named "The Creator" (the other fragment).
-     *
-     * @param newName The new (full) artist name the user entered
-     * @param currentArtistId The ID of the artist being renamed
-     * @return List of artists that match split fragments of the new name
      */
     suspend fun detectSplitArtists(newName: String, currentArtistId: Long): List<Artist> {
         val currentArtist = artistDao.getArtistById(currentArtistId) ?: return emptyList()
@@ -90,23 +82,15 @@ class ArtistRenameRepository @Inject constructor(
     }
 
     /**
-     * Rename an artist and optionally merge split fragments.
+     * Rename an artist and optionally merge split fragments into it.
      *
      * If the target name already exists as another artist (matching by normalized
-     * name), the current artist is merged into that existing artist instead of
-     * being renamed — this avoids UNIQUE constraint violations on
-     * `normalized_name` and consolidates listening data under the correct name.
+     * name), the current artist is merged into that existing artist instead of being
+     * renamed: this avoids UNIQUE constraint violations on `normalized_name` and
+     * consolidates listening data under the correct name.
      *
-     * 1. Checks if an artist with the target normalized name already exists
-     * 2. If yes: merges the current artist (and any split fragments) into it
-     * 3. If no: renames the artist to [newName] and merges split fragments
-     * 4. Saves [newName] as a user known artist so the parser won't split it again
-     * 5. Updates the ArtistParser's in-memory set
-     *
-     * @param artistId The artist being renamed
-     * @param newName The new full name
-     * @param mergeArtistIds IDs of artists to merge into this one (split fragments)
-     * @return The ID of the artist that now holds the name, or null on failure
+     * Returns the ID of the artist that ends up holding the name, which is not
+     * `artistId` when a merge happened; null on failure.
      */
     suspend fun renameAndMerge(
         artistId: Long,
@@ -114,7 +98,7 @@ class ArtistRenameRepository @Inject constructor(
         mergeArtistIds: List<Long> = emptyList()
     ): Long? {
         val renamed = renameAndMergeInternal(artistId, newName, mergeArtistIds)
-        if (renamed != null) tracker.track(FeatureUsed(TempoFeature.ARTIST_RENAME))
+        if (renamed != null) tracker.track(FeatureFirstUsed(TempoFeature.ARTIST_RENAME))
         return renamed
     }
 
@@ -135,7 +119,6 @@ class ArtistRenameRepository @Inject constructor(
         Log.i(TAG, "renameAndMerge: '${artist.name}' → '$trimmedName', merging ${mergeArtistIds.size} artists")
 
         return try {
-            // Check if an artist with this normalized name already exists
             val existingArtist = artistDao.getArtistByNormalizedName(normalizedName)
             val targetArtistId: Long
 
@@ -160,7 +143,6 @@ class ArtistRenameRepository @Inject constructor(
                         )
                     }
                 }
-                // Merge the current artist into the existing one
                 artistMergeRepository.mergeArtists(
                     sourceArtistId = artistId,
                     targetArtistId = existingArtist.id
@@ -216,12 +198,12 @@ class ArtistRenameRepository @Inject constructor(
                 }
             }
 
-            // Save as user known artist in database
+            // Persist the name and seed the in-memory parser set, so neither this
+            // launch nor the next one splits it again.
             val knownArtist = UserKnownArtist.create(trimmedName)
             userKnownArtistDao.insert(knownArtist)
             Log.d(TAG, "Saved user known artist: '$trimmedName'")
 
-            // Update the in-memory parser set
             ArtistParser.addUserKnownBand(trimmedName)
 
             targetArtistId

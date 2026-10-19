@@ -74,17 +74,8 @@ open class AlbumMergeRepository @Inject constructor(
     }
 
     /**
-     * Merges source album into target album:
-     * 1. Merges matching tracks (duplicate titles) via TrackAliasRepository.mergeTracks
-     * 2. Reassigns unique tracks from source album to target album
-     * 3. Updates scrobble archive rows
-     * 4. Copies missing metadata from source album to target album
-     * 5. Deletes source album
-     * 6. Invalidates stats cache
-     *
-     * @param sourceAlbumId The album to merge FROM (will be deleted)
-     * @param targetAlbumId The album to merge INTO (will remain)
-     * @return true if merge succeeded, false otherwise
+     * Merge `sourceAlbumId` into `targetAlbumId`. The source album is deleted; tracks
+     * sharing a title are consolidated through [TrackAliasRepository.mergeTracks].
      */
     open suspend fun mergeAlbums(sourceAlbumId: Long, targetAlbumId: Long): Boolean {
         if (sourceAlbumId == targetAlbumId) {
@@ -227,22 +218,18 @@ open class AlbumMergeRepository @Inject constructor(
     private fun mergeAlbumMetadata(source: Album, target: Album): Album {
         var result = target
 
-        // Copy artwork URL if target lacks it
         if (target.artworkUrl.isNullOrBlank() && !source.artworkUrl.isNullOrBlank()) {
             result = result.copy(artworkUrl = source.artworkUrl)
         }
 
-        // Copy release year if target lacks it
         if (target.releaseYear == null && source.releaseYear != null) {
             result = result.copy(releaseYear = source.releaseYear)
         }
 
-        // Copy release type if target lacks it
         if (target.releaseType.isNullOrBlank() && !source.releaseType.isNullOrBlank()) {
             result = result.copy(releaseType = source.releaseType)
         }
 
-        // Copy MusicBrainz ID if target lacks it
         if (target.musicbrainzId.isNullOrBlank() && !source.musicbrainzId.isNullOrBlank()) {
             result = result.copy(musicbrainzId = source.musicbrainzId)
         }

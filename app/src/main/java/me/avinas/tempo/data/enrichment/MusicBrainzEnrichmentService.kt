@@ -15,7 +15,9 @@ import me.avinas.tempo.data.local.entities.GenreSource
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.remote.musicbrainz.*
 import me.avinas.tempo.utils.ArtistParser
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,13 +32,16 @@ class MusicBrainzEnrichmentService @Inject constructor(
     private val trackDao: TrackDao,
     private val artistDao: ArtistDao,
     private val albumDao: AlbumDao,
-    private val artistAliasDao: ArtistAliasDao
+    private val artistAliasDao: ArtistAliasDao,
+    private val coverArtSourcePreference: CoverArtSourcePreference,
 ) {
     companion object {
         private const val TAG = "MBEnrichmentService"
         private const val MIN_SEARCH_SCORE = 80 // Minimum match score to accept
         private const val MIN_TITLE_SIMILARITY = 0.85 // Minimum title similarity to accept a match
         private const val MIN_FUZZY_TITLE_SIMILARITY = 0.70 // For fuzzy searches, require slightly lower but still reasonable match
+        private const val MAX_COVER_RELEASE_CANDIDATES = 8
+        private const val MUSICBRAINZ_MIN_REQUEST_INTERVAL_NS = 1_000_000_000L
         
         // Pre-compiled regex pattern to avoid repeated native memory allocation
         private val CAA_INDEX_PATTERN = Regex("""^https?://coverartarchive\.org/(release|release-group)/[a-f0-9-]+/?$""")
@@ -61,12 +66,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
             }
         }
         
-        /**
-         * validate if the URL is a valid image URL and NOT a JSON endpoint.
-         * Reject URLs that look like:
-         * - https://coverartarchive.org/release/{mbid} (JSON index)
-         * - Any URL ending in .json
-         */
+        /** False for Cover Art Archive JSON index endpoints and anything ending in `.json`. */
         private fun isValidAlbumArtUrl(url: String?): Boolean {
             if (url.isNullOrBlank()) return false
             
@@ -82,6 +82,33 @@ class MusicBrainzEnrichmentService @Inject constructor(
         }
     }
 
+    private val musicBrainzRequestMutex = Mutex()
+    private var lastMusicBrainzRequestStartedAtNanos = 0L
+
+    /**
+     * MusicBrainz asks clients to keep requests to one per second. Serialize only
+     * the scheduling step so concurrent enrichment jobs still run independently
+     * once their request has been assigned a safe start time.
+     */
+    private suspend fun <T> withMusicBrainzRateLimit(block: suspend () -> T): T {
+        musicBrainzRequestMutex.lock()
+        try {
+            if (lastMusicBrainzRequestStartedAtNanos != 0L) {
+                val elapsedNanos = System.nanoTime() - lastMusicBrainzRequestStartedAtNanos
+                val remainingNanos = MUSICBRAINZ_MIN_REQUEST_INTERVAL_NS - elapsedNanos
+                if (remainingNanos > 0L) {
+                    val waitMillis = (remainingNanos + 999_999L) / 1_000_000L
+                    delay(waitMillis)
+                }
+            }
+            lastMusicBrainzRequestStartedAtNanos = System.nanoTime()
+        } finally {
+            musicBrainzRequestMutex.unlock()
+        }
+
+        return block()
+    }
+
     /**
      * Result of an enrichment attempt.
      */
@@ -93,13 +120,139 @@ class MusicBrainzEnrichmentService @Inject constructor(
         object CacheHit : EnrichmentResult()
     }
 
+    data class CoverArtLookupResult(
+        val albumArtUrl: String,
+        val albumArtUrlSmall: String? = null,
+        val albumArtUrlLarge: String? = null,
+        val albumTitle: String? = null,
+    )
+
+    sealed class CoverArtSearchResult {
+        data class Success(val artwork: CoverArtLookupResult) : CoverArtSearchResult()
+        object NotFound : CoverArtSearchResult()
+        data class Error(val message: String) : CoverArtSearchResult()
+    }
+
     /**
-     * Enrich a track with MusicBrainz metadata.
-     * 
-     * @param track The track to enrich
-     * @param forceRefresh If true, re-fetch even if cache is valid
-     * @return EnrichmentResult indicating success, failure, or cache hit
+     * Finds Cover Art Archive artwork without mutating enrichment state.
+     * Used by the user-driven cover picker so artwork can be compared before saving.
+     *
+     * Unlike normal background enrichment, this user-facing lookup keeps provider
+     * failures distinct from a genuine "no artwork" result.
      */
+    suspend fun searchCoverArt(
+        track: Track,
+        currentMetadata: EnrichedMetadata? = null,
+    ): CoverArtSearchResult {
+        if (ArtistParser.isUnknownArtist(track.artist)) return CoverArtSearchResult.NotFound
+
+        return try {
+            val knownRecordingId = currentMetadata?.musicbrainzRecordingId
+            val knownIdentityMatches =
+                if (!knownRecordingId.isNullOrBlank()) {
+                    val knownRecording = fetchRecordingDetails(knownRecordingId, strict = true)
+                    knownRecording != null &&
+                        isSafeCoverIdentityMatch(
+                            expectedTitle = track.title,
+                            expectedArtist = track.artist,
+                            candidateTitle = knownRecording.title.orEmpty(),
+                            candidateArtists = knownRecording.artistCredit
+                                .orEmpty()
+                                .mapNotNull { it.name ?: it.artist?.name },
+                        )
+                } else {
+                    false
+                }
+
+            val knownReleaseId = currentMetadata?.musicbrainzReleaseId
+            if (knownIdentityMatches && !knownReleaseId.isNullOrBlank()) {
+                val art = fetchCoverArt(knownReleaseId, strict = true)
+                val best = art?.large ?: art?.medium ?: art?.small
+                if (art != null && best != null) {
+                    return CoverArtSearchResult.Success(
+                        CoverArtLookupResult(
+                            albumArtUrl = best,
+                            albumArtUrlSmall = art.small,
+                            albumArtUrlLarge = art.large,
+                            albumTitle = currentMetadata?.albumTitle ?: track.album,
+                        )
+                    )
+                }
+            }
+
+            val knownReleaseGroupId = currentMetadata?.musicbrainzReleaseGroupId
+            if (knownIdentityMatches && !knownReleaseGroupId.isNullOrBlank()) {
+                val art = fetchReleaseGroupCoverArt(knownReleaseGroupId, strict = true)
+                val best = art?.large ?: art?.medium ?: art?.small
+                if (art != null && best != null) {
+                    return CoverArtSearchResult.Success(
+                        CoverArtLookupResult(
+                            albumArtUrl = best,
+                            albumArtUrlSmall = art.small,
+                            albumArtUrlLarge = art.large,
+                            albumTitle = currentMetadata.albumTitle ?: track.album,
+                        )
+                    )
+                }
+            }
+
+            val result = searchRecording(
+                title = track.title,
+                artist = track.artist,
+                strictCoverMatching = true,
+            )
+            val recording = when (result) {
+                is SearchResult.Found -> result.recording
+                is SearchResult.NotFound -> return CoverArtSearchResult.NotFound
+                is SearchResult.Error -> return CoverArtSearchResult.Error(result.message)
+            }
+
+            val detailed = fetchRecordingDetails(recording.id, strict = true)
+            val releases = (detailed?.releases.orEmpty() + recording.releases.orEmpty())
+                .distinctBy { it.id }
+            if (releases.isEmpty()) return CoverArtSearchResult.NotFound
+
+            val albumHint = track.album
+                ?.takeIf { it.isNotBlank() }
+                ?: currentMetadata?.albumTitle?.takeIf { it.isNotBlank() }
+            val attemptedReleaseGroups = mutableSetOf<String>()
+
+            for (release in rankMusicBrainzReleases(releases, albumHint).take(MAX_COVER_RELEASE_CANDIDATES)) {
+                val releaseArt = fetchCoverArt(release.id, strict = true)
+                val releaseGroupId = release.releaseGroup?.id
+                val groupArt = if (
+                    releaseArt == null &&
+                    releaseGroupId != null &&
+                    attemptedReleaseGroups.add(releaseGroupId)
+                ) {
+                    fetchReleaseGroupCoverArt(releaseGroupId, strict = true)
+                } else {
+                    null
+                }
+                val art = releaseArt ?: groupArt ?: continue
+                val best = art.large ?: art.medium ?: art.small ?: continue
+
+                return CoverArtSearchResult.Success(
+                    CoverArtLookupResult(
+                        albumArtUrl = best,
+                        albumArtUrlSmall = art.small,
+                        albumArtUrlLarge = art.large,
+                        albumTitle = release.title.ifBlank {
+                            currentMetadata?.albumTitle ?: track.album.orEmpty()
+                        },
+                    )
+                )
+            }
+
+            CoverArtSearchResult.NotFound
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            CoverArtSearchResult.Error(e.message ?: "MusicBrainz artwork lookup failed")
+        }
+    }
+
+    /** Enrich a track with MusicBrainz metadata; [forceRefresh] re-fetches despite a valid cache. */
     suspend fun enrichTrack(track: Track, forceRefresh: Boolean = false): EnrichmentResult {
         Log.d(TAG, "Enriching track: '${track.title}' by '${track.artist}'")
 
@@ -132,16 +285,21 @@ class MusicBrainzEnrichmentService @Inject constructor(
             is SearchResult.Found -> {
                 // Check if we already have metadata for this MusicBrainz ID
                 val existingByMbid = enrichedMetadataDao.findByMusicBrainzId(searchResult.recording.id)
-                if (existingByMbid != null && existingByMbid.trackId != track.id && existingByMbid.isCacheValid()) {
+                if (!forceRefresh && existingByMbid != null && existingByMbid.trackId != track.id && existingByMbid.isCacheValid()) {
                     // Reuse existing metadata for different track with same MB ID
                     Log.d(TAG, "Deduplication: reusing metadata from track ${existingByMbid.trackId}")
-                    val copied = existingByMbid.copy(
+                    val reusable = existingByMbid.copy(
                         id = existingMetadata?.id ?: 0,
                         trackId = track.id,
                         cacheTimestamp = System.currentTimeMillis()
                     )
-                    enrichedMetadataDao.upsert(copied)
-                    return EnrichmentResult.Success(copied)
+                    val copied = preserveUserSelectedArtwork(
+                        current = existingMetadata,
+                        replacement = reusable,
+                    )
+                    enrichedMetadataDao.upsertFromAutomaticEnrichment(copied)
+                    val persisted = enrichedMetadataDao.forTrackSync(track.id) ?: copied
+                    return EnrichmentResult.Success(persisted)
                 }
 
                 // Fetch detailed metadata
@@ -150,7 +308,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
             
             is SearchResult.NotFound -> {
                 val metadata = createNotFoundMetadata(track, existingMetadata, searchResult.reason)
-                enrichedMetadataDao.upsert(metadata)
+                enrichedMetadataDao.upsertFromAutomaticEnrichment(metadata)
                 EnrichmentResult.NotFound(searchResult.reason)
             }
             
@@ -162,26 +320,32 @@ class MusicBrainzEnrichmentService @Inject constructor(
                         retryCount = existingMetadata.retryCount + 1,
                         lastEnrichmentAttempt = System.currentTimeMillis()
                     )
-                    enrichedMetadataDao.upsert(updated)
+                    enrichedMetadataDao.upsertFromAutomaticEnrichment(updated)
                 }
                 EnrichmentResult.Error(searchResult.message, searchResult.retryable)
             }
         }
     }
 
-    /**
-     * Search for a recording in MusicBrainz.
-     * Uses multiple search strategies for better coverage.
-     */
-    private suspend fun searchRecording(title: String, artist: String): SearchResult {
+    private suspend fun searchRecording(
+        title: String,
+        artist: String,
+        strictCoverMatching: Boolean = false,
+    ): SearchResult {
         // Try multiple search strategies
-        val searchStrategies = buildSearchStrategies(title, artist)
+        val searchStrategies = buildSearchStrategies(
+            title = title,
+            artist = artist,
+            preserveExplicitVersion = strictCoverMatching,
+        )
         
         for ((index, query) in searchStrategies.withIndex()) {
             Log.d(TAG, "Search query (strategy ${index + 1}/${searchStrategies.size}): $query")
             
             try {
-                val response = musicBrainzApi.searchRecordings(query = query, limit = 5)
+                val response = withMusicBrainzRateLimit {
+                    musicBrainzApi.searchRecordings(query = query, limit = 5)
+                }
                 
                 if (!response.isSuccessful) {
                     val errorBody = response.errorBody()?.string()
@@ -194,14 +358,25 @@ class MusicBrainzEnrichmentService @Inject constructor(
 
                 val searchResponse = response.body()
                 if (searchResponse != null && searchResponse.recordings.isNotEmpty()) {
-                    // Found results with this strategy
-                    return processSearchResponse(searchResponse, title, artist)
+                    // A provider query can return nearby recordings while our
+                    // conservative identity filter rejects all of them. That is
+                    // not terminal: continue to the next search strategy.
+                    when (
+                        val processed = processSearchResponse(
+                            searchResponse = searchResponse,
+                            title = title,
+                            artist = artist,
+                            strictCoverMatching = strictCoverMatching,
+                        )
+                    ) {
+                        is SearchResult.Found -> return processed
+                        is SearchResult.Error -> return processed
+                        is SearchResult.NotFound -> Unit
+                    }
                 }
                 
-                // Add delay between search attempts to respect rate limit
-                if (index < searchStrategies.lastIndex) {
-                    delay(500)
-                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Search exception with strategy ${index + 1}", e)
                 if (index == searchStrategies.lastIndex) {
@@ -214,21 +389,32 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return SearchResult.NotFound("No matching recordings found")
     }
     
-    /**
-     * Build multiple search strategies for MusicBrainz.
-     * Uses different query formats to maximize chance of finding a match.
-     */
-    private fun buildSearchStrategies(title: String, artist: String): List<String> {
+    private fun buildSearchStrategies(
+        title: String,
+        artist: String,
+        preserveExplicitVersion: Boolean = false,
+    ): List<String> {
         val strategies = mutableListOf<String>()
         
-        val cleanTitle = ArtistParser.cleanTrackTitle(title)
+        val titleVariants =
+            if (preserveExplicitVersion) coverSearchTitleVariants(title)
+            else listOf(ArtistParser.cleanTrackTitle(title))
+        val cleanTitle = titleVariants.last()
         val allArtists = ArtistParser.getAllArtists(artist)
         val primaryArtist = ArtistParser.getPrimaryArtist(artist)
         
         val escapedTitle = escapeLucene(cleanTitle)
         val escapedPrimaryArtist = escapeLucene(primaryArtist)
+
+        // For the picker, ask for the explicit version first. The cleaned title
+        // remains the fallback so providers with inconsistent naming still work.
+        titleVariants.dropLast(1).forEach { versionedTitle ->
+            strategies.add(
+                "recording:\"${escapeLucene(versionedTitle)}\" AND artist:\"$escapedPrimaryArtist\""
+            )
+        }
         
-        // Strategy 1: Exact title + primary artist (most precise)
+        // Strategy 1: Exact cleaned title + primary artist.
         strategies.add("recording:\"$escapedTitle\" AND artist:\"$escapedPrimaryArtist\"")
         
         // Strategy 2: Try each artist if there are multiple
@@ -253,19 +439,32 @@ class MusicBrainzEnrichmentService @Inject constructor(
     }
     
     /**
-     * Process MusicBrainz search response and find best match.
-     * 
-     * IMPORTANT: This validates BOTH artist AND title similarity to prevent wrong matches.
-     * Previous bug: relaxed matching accepted any recording without title/artist validation,
-     * causing "Paracetamol" by Yashraj to match "Paracetamol" by Dr. Bohna (completely wrong).
+     * Pick the best recording, validating both artist and title similarity.
+     *
+     * Relaxed matching here once accepted a recording without that validation, so "Paracetamol"
+     * by Yashraj matched "Paracetamol" by Dr. Bohna.
      */
     private fun processSearchResponse(
         searchResponse: RecordingSearchResponse,
         title: String,
-        artist: String
+        artist: String,
+        strictCoverMatching: Boolean = false,
     ): SearchResult {
         val searchArtists = ArtistParser.getAllArtists(artist)
         val cleanedSearchTitle = ArtistParser.cleanTrackTitle(title)
+
+        fun hasMatchingArtist(recordingArtists: List<String>): Boolean =
+            if (strictCoverMatching) {
+                recordingArtists.any { recordingArtist ->
+                    isSafeCoverArtistMatch(artist, recordingArtist)
+                }
+            } else {
+                recordingArtists.any { recArtist ->
+                    searchArtists.any { searchArtist ->
+                        ArtistParser.isSameArtist(recArtist, searchArtist)
+                    }
+                }
+            }
         
         // Find best match with score above threshold
         // Validate BOTH artist AND title to prevent wrong matches
@@ -274,9 +473,19 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 val score = recording.score ?: 0
                 if (score < MIN_SEARCH_SCORE) return@filter false
                 
-                // Calculate title similarity
+                // Calculate title similarity. In picker mode the conservative cover
+                // matcher is authoritative: it understands equivalent remaster/live
+                // suffixes that the legacy Levenshtein score would otherwise reject.
                 val recordingTitle = recording.title ?: return@filter false
-                val titleSimilarity = calculateTitleSimilarity(cleanedSearchTitle, recordingTitle)
+                val titleSimilarity =
+                    if (strictCoverMatching) {
+                        if (!isSafeCoverTrackTitleMatch(title, recordingTitle)) {
+                            return@filter false
+                        }
+                        1.0
+                    } else {
+                        calculateTitleSimilarity(cleanedSearchTitle, recordingTitle)
+                    }
                 
                 // Title must be at least 85% similar
                 if (titleSimilarity < MIN_TITLE_SIMILARITY) {
@@ -287,11 +496,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 // Verify at least one artist matches
                 val recordingArtists = recording.artistCredit?.mapNotNull { it.name ?: it.artist?.name } ?: emptyList()
                 
-                val hasArtistMatch = recordingArtists.any { recArtist ->
-                    searchArtists.any { searchArtist ->
-                        ArtistParser.isSameArtist(recArtist, searchArtist)
-                    }
-                }
+                val hasArtistMatch = hasMatchingArtist(recordingArtists)
                 
                 if (!hasArtistMatch) {
                     Log.v(TAG, "Rejected '${recordingTitle}' by ${recordingArtists}: no matching artist in $searchArtists")
@@ -314,18 +519,22 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 if (score < MIN_SEARCH_SCORE - 15) return@filter false // Allow scores down to 65
                 
                 val recordingTitle = recording.title ?: return@filter false
-                val titleSimilarity = calculateTitleSimilarity(cleanedSearchTitle, recordingTitle)
+                val titleSimilarity =
+                    if (strictCoverMatching) {
+                        if (!isSafeCoverTrackTitleMatch(title, recordingTitle)) {
+                            return@filter false
+                        }
+                        1.0
+                    } else {
+                        calculateTitleSimilarity(cleanedSearchTitle, recordingTitle)
+                    }
                 
                 // For relaxed matching, still require reasonable title similarity
                 if (titleSimilarity < MIN_FUZZY_TITLE_SIMILARITY) return@filter false
                 
                 // Must have at least one matching artist
                 val recordingArtists = recording.artistCredit?.mapNotNull { it.name ?: it.artist?.name } ?: emptyList()
-                recordingArtists.any { recArtist ->
-                    searchArtists.any { searchArtist ->
-                        ArtistParser.isSameArtist(recArtist, searchArtist)
-                    }
-                }
+                hasMatchingArtist(recordingArtists)
             }
             .maxByOrNull { it.score ?: 0 }
         
@@ -339,10 +548,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return SearchResult.NotFound("No high-confidence matches found")
     }
     
-    /**
-     * Calculate similarity between two titles using Levenshtein distance.
-     * Returns a value between 0.0 (completely different) and 1.0 (identical).
-     */
+    /** Levenshtein-based title similarity, from 0.0 (completely different) to 1.0 (identical). */
     private fun calculateTitleSimilarity(title1: String, title2: String): Double {
         val norm1 = title1.lowercase().trim()
         val norm2 = title2.lowercase().trim()
@@ -363,11 +569,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return 1.0 - (distance.toDouble() / maxLen)
     }
     
-    /**
-     * Calculate Levenshtein (edit) distance between two strings.
-     * This is the minimum number of single-character edits (insertions, deletions, substitutions)
-     * required to change one string into the other.
-     */
     private fun levenshteinDistance(s1: String, s2: String): Int {
         val m = s1.length
         val n = s2.length
@@ -395,10 +596,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return prevRow[n]
     }
 
-    /**
-     * Build Lucene search query for MusicBrainz.
-     * Uses ArtistParser to get the primary artist for focused search.
-     */
     private fun buildSearchQuery(title: String, artist: String): String {
         // Clean the title to remove embedded artist info
         val cleanTitle = ArtistParser.cleanTrackTitle(title)
@@ -413,18 +610,12 @@ class MusicBrainzEnrichmentService @Inject constructor(
         return "recording:\"$escapedTitle\" AND artist:\"$escapedArtist\""
     }
 
-    private fun escapeLucene(s: String): String {
-        val specialChars = listOf("+", "-", "&&", "||", "!", "(", ")", "{", "}", "[", "]", "^", "\"", "~", "*", "?", ":", "\\", "/")
-        var result = s
-        for (char in specialChars) {
-            result = result.replace(char, "\\$char")
-        }
-        return result
-    }
-
     /**
-     * Fetch detailed metadata and store in database.
+     * Escape a value that is about to be interpolated into a MusicBrainz query.
+     * Delegates to [escapeLuceneQuery] so the rules stay unit-testable.
      */
+    private fun escapeLucene(s: String): String = escapeLuceneQuery(s)
+
     private suspend fun fetchAndStoreMetadata(
         track: Track,
         recording: MBRecording,
@@ -495,21 +686,22 @@ class MusicBrainzEnrichmentService @Inject constructor(
             // MusicBrainz (priority 5) should not overwrite Spotify (priority 6)
             val currentSource = existingMetadata?.albumArtSource ?: AlbumArtSource.NONE
             val shouldUpdateArt = albumArtUrl != null && 
-                currentSource.shouldBeReplacedBy(AlbumArtSource.MUSICBRAINZ)
+                coverArtSourcePreference.shouldReplace(currentSource, AlbumArtSource.MUSICBRAINZ)
             
             // Build metadata - use complete artist name that includes all credited artists
             // Respect existing album art if from higher priority source (e.g., Spotify)
-            val metadata = EnrichedMetadata(
-                id = existingMetadata?.id ?: 0,
-                trackId = track.id,
+            // Keep metadata supplied by Spotify, iTunes and Deezer when refreshing
+            // the MusicBrainz cover. Rebuilding a blank entity would erase their IDs,
+            // preview URLs and audio features from a previously enriched track.
+            val metadata = (existingMetadata ?: EnrichedMetadata(trackId = track.id)).copy(
                 musicbrainzRecordingId = recording.id,
                 musicbrainzArtistId = primaryArtist?.id,
                 musicbrainzReleaseId = primaryRelease?.id,
                 musicbrainzReleaseGroupId = primaryRelease?.releaseGroup?.id,
-                albumTitle = primaryRelease?.title,
-                releaseDate = releaseDate,
-                releaseYear = releaseYear,
-                releaseType = primaryRelease?.releaseGroup?.primaryType,
+                albumTitle = primaryRelease?.title ?: existingMetadata?.albumTitle,
+                releaseDate = releaseDate ?: existingMetadata?.releaseDate,
+                releaseYear = releaseYear ?: existingMetadata?.releaseYear,
+                releaseType = primaryRelease?.releaseGroup?.primaryType ?: existingMetadata?.releaseType,
                 albumArtUrl = if (shouldUpdateArt) albumArtUrl else (existingMetadata?.albumArtUrl ?: albumArtUrl),
                 albumArtUrlSmall = if (shouldUpdateArt) albumArtUrlSmall else (existingMetadata?.albumArtUrlSmall ?: albumArtUrlSmall),
                 albumArtUrlLarge = if (shouldUpdateArt) albumArtUrlLarge else (existingMetadata?.albumArtUrlLarge ?: albumArtUrlLarge),
@@ -517,14 +709,14 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 albumArtSource = if (shouldUpdateArt) AlbumArtSource.MUSICBRAINZ 
                                  else (existingMetadata?.albumArtSource ?: 
                                        if (albumArtUrl != null) AlbumArtSource.MUSICBRAINZ else AlbumArtSource.NONE),
-                artistName = allArtistNames ?: primaryArtist?.name ?: recording.artistCredit?.firstOrNull()?.name,
-                artistCountry = primaryArtist?.country,
-                artistType = primaryArtist?.type,
-                trackDurationMs = recording.length,
-                isrc = recording.isrcs?.firstOrNull(),
-                tags = tags,
-                genres = genres,
-                recordLabel = primaryRelease?.labelInfo?.firstOrNull()?.label?.name,
+                artistName = allArtistNames ?: primaryArtist?.name ?: recording.artistCredit?.firstOrNull()?.name ?: existingMetadata?.artistName,
+                artistCountry = primaryArtist?.country ?: existingMetadata?.artistCountry,
+                artistType = primaryArtist?.type ?: existingMetadata?.artistType,
+                trackDurationMs = recording.length ?: existingMetadata?.trackDurationMs,
+                isrc = recording.isrcs?.firstOrNull() ?: existingMetadata?.isrc,
+                tags = if (tags.isNotEmpty()) tags else (existingMetadata?.tags ?: emptyList()),
+                genres = if (genres.isNotEmpty()) genres else (existingMetadata?.genres ?: emptyList()),
+                recordLabel = primaryRelease?.labelInfo?.firstOrNull()?.label?.name ?: existingMetadata?.recordLabel,
                 enrichmentStatus = EnrichmentStatus.ENRICHED,
                 enrichmentError = null,
                 retryCount = 0,
@@ -539,12 +731,11 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 Log.d(TAG, "MusicBrainz: Preserving ${existingMetadata.albumArtSource} album art (higher priority than MUSICBRAINZ)")
             }
             
-            enrichedMetadataDao.upsert(metadata)
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(metadata)
             Log.i(TAG, "Successfully enriched track ${track.id}: '${track.title}'")
             
-            // Smart album association: Create Artist and Album entities if album info is available
-            // IMPORTANT: Use track.artist (from music player notification) instead of allArtistNames (from MusicBrainz)
-            // This prevents MusicBrainz artist credit concatenation from creating malformed names like "REAL REAL BOSS"
+            // The artist name comes from the player notification, not from MusicBrainz's artist
+            // credit: concatenating credits produces malformed names like "REAL REAL BOSS"
             if (primaryRelease?.title != null && primaryArtist != null) {
                 createOrUpdateAlbumAssociation(
                     artistName = track.artist,  // Use original from notification, not MusicBrainz
@@ -571,10 +762,12 @@ class MusicBrainzEnrichmentService @Inject constructor(
             
             val updatedTrack = track.copy(
                 musicbrainzId = recording.id,
-                albumArtUrl = finalAlbumArtUrl,
                 album = if (track.album.isNullOrBlank()) primaryRelease?.title else track.album
             )
-            trackDao.update(updatedTrack)
+            trackDao.updatePreservingManualArtwork(updatedTrack)
+            if (!finalAlbumArtUrl.isNullOrBlank()) {
+                trackDao.updateAutomaticAlbumArtUrl(track.id, finalAlbumArtUrl)
+            }
             
             return EnrichmentResult.Success(metadata)
             
@@ -695,42 +888,49 @@ class MusicBrainzEnrichmentService @Inject constructor(
     }
 
     /**
-     * Fetch detailed recording info including relations.
+     * Recording details including relations. [strict] rethrows provider errors instead of
+     * returning null, so the cover picker can tell a failure from a track with no data.
      */
-    private suspend fun fetchRecordingDetails(mbid: String): RecordingLookupResponse? {
+    private suspend fun fetchRecordingDetails(
+        mbid: String,
+        strict: Boolean = false,
+    ): RecordingLookupResponse? {
         return try {
-            // Add small delay to respect rate limit
-            delay(100)
-            
-            val response = musicBrainzApi.lookupRecording(mbid)
+            val response = withMusicBrainzRateLimit {
+                musicBrainzApi.lookupRecording(mbid)
+            }
             if (response.isSuccessful) {
                 response.body()
             } else {
                 Log.w(TAG, "Recording lookup failed: ${response.code()}")
+                if (strict && response.code() != 404) {
+                    throw IllegalStateException("MusicBrainz recording lookup error: ${response.code()}")
+                }
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            if (strict) throw e
             Log.e(TAG, "Recording lookup error", e)
             null
         }
     }
 
-    /**
-     * Fetch detailed artist info including tags and genres.
-     * Used as fallback when recording doesn't have tag data.
-     */
+    /** Artist tags and genres, used when the recording itself carries none. */
     private suspend fun fetchArtistDetails(mbid: String): ArtistLookupResponse? {
         return try {
-            // Add small delay to respect rate limit
-            delay(100)
-            
-            val response = musicBrainzApi.lookupArtist(mbid)
+            val response = withMusicBrainzRateLimit {
+                musicBrainzApi.lookupArtist(mbid)
+            }
             if (response.isSuccessful) {
                 response.body()
             } else {
                 Log.w(TAG, "Artist lookup failed: ${response.code()}")
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Artist lookup error", e)
             null
@@ -738,9 +938,13 @@ class MusicBrainzEnrichmentService @Inject constructor(
     }
 
     /**
-     * Fetch cover art from Cover Art Archive for a release.
+     * Cover art from the Cover Art Archive for a release. On a non-404 API error, background
+     * enrichment keeps the historical direct-URL fallback while [strict] rethrows instead.
      */
-    private suspend fun fetchCoverArt(releaseMbid: String): CoverArtUrls? {
+    private suspend fun fetchCoverArt(
+        releaseMbid: String,
+        strict: Boolean = false,
+    ): CoverArtUrls? {
         return try {
             delay(100) // Small delay for rate limiting
             
@@ -778,24 +982,30 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 null
             } else {
                 Log.w(TAG, "Cover art API error ${response.code()} for release $releaseMbid")
-                // Try direct URL as fallback - the redirect might still work
+                if (strict) {
+                    throw IllegalStateException("Cover Art Archive error: ${response.code()}")
+                }
+                // Background enrichment keeps the historical direct-URL fallback.
                 CoverArtUrls(
                     small = "${CoverArtArchiveApi.BASE_URL}release/$releaseMbid/front-250",
                     medium = "${CoverArtArchiveApi.BASE_URL}release/$releaseMbid/front-500",
                     large = "${CoverArtArchiveApi.BASE_URL}release/$releaseMbid/front-1200"
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            if (strict) throw e
             Log.w(TAG, "Cover art fetch error for release $releaseMbid: ${e.message}")
             null
         }
     }
 
-    /**
-     * Fetch cover art from Cover Art Archive for a release group.
-     * This is a fallback when the specific release has no cover art.
-     */
-    private suspend fun fetchReleaseGroupCoverArt(releaseGroupMbid: String): CoverArtUrls? {
+    /** Cover art for a release group, used when the specific release has none. */
+    private suspend fun fetchReleaseGroupCoverArt(
+        releaseGroupMbid: String,
+        strict: Boolean = false,
+    ): CoverArtUrls? {
         return try {
             delay(100) // Small delay for rate limiting
             
@@ -834,9 +1044,15 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 null
             } else {
                 Log.w(TAG, "Cover art API error ${response.code()} for release group $releaseGroupMbid")
+                if (strict) {
+                    throw IllegalStateException("Cover Art Archive release-group error: ${response.code()}")
+                }
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
+            if (strict) throw e
             Log.e(TAG, "Release group cover art fetch error for $releaseGroupMbid", e)
             null
         }
@@ -859,9 +1075,6 @@ class MusicBrainzEnrichmentService @Inject constructor(
         )
     }
 
-    /**
-     * Create initial pending metadata entry for a track.
-     */
     suspend fun createPendingMetadata(trackId: Long) {
         val existing = enrichedMetadataDao.forTrackSync(trackId)
         if (existing == null) {
@@ -870,41 +1083,23 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 enrichmentStatus = EnrichmentStatus.PENDING,
                 cacheTimestamp = System.currentTimeMillis()
             )
-            enrichedMetadataDao.upsert(pending)
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(pending)
         }
     }
 
-    /**
-     * Mark a track for manual re-enrichment.
-     */
     suspend fun requestReEnrichment(trackId: Long) {
         enrichedMetadataDao.markForReEnrichment(trackId)
     }
 
-    /**
-     * Get enrichment statistics.
-     */
     suspend fun getEnrichmentStats(): Map<EnrichmentStatus, Int> {
         return enrichedMetadataDao.getEnrichmentStats()
             .associate { it.status to it.count }
     }
 
     /**
-     * Supplement existing metadata with MusicBrainz data.
-     * 
-     * This method is called when Spotify has provided basic metadata (album, artist, artwork)
-     * but could not provide additional data (e.g., audio features API is deprecated).
-     * It fills in ONLY the missing fields from MusicBrainz without overwriting existing Spotify data.
-     * 
-     * Specifically, this fetches:
-     * - Genres and tags (Spotify audio features are unavailable, but MB has genre data)
-     * - MusicBrainz IDs (for cross-referencing)
-     * - Record label info
-     * - Artist country/type (if not already present)
-     * 
-     * @param track The track to supplement
-     * @param existingMetadata The existing metadata with Spotify data
-     * @return SupplementResult indicating what was added
+     * Fill in what Spotify could not, now that its audio-features API is deprecated: genres and
+     * tags, MusicBrainz IDs, record label, and artist country/type where missing. Only missing
+     * fields are written; existing Spotify data is left alone.
      */
     suspend fun supplementMetadata(
         track: Track,
@@ -1046,7 +1241,7 @@ class MusicBrainzEnrichmentService @Inject constructor(
                 cacheTimestamp = System.currentTimeMillis()
             )
 
-            enrichedMetadataDao.upsert(supplementedMetadata)
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(supplementedMetadata)
             
             // Only log if we actually added something useful
             val tagsCount = tags.size
@@ -1102,3 +1297,146 @@ class MusicBrainzEnrichmentService @Inject constructor(
         val large: String?
     )
 }
+
+
+/**
+ * Rank MusicBrainz releases for cover selection instead of trusting API order.
+ *
+ * An exact known album title is the strongest signal. Without an album hint we
+ * prefer official releases with actual front artwork and avoid compilations/live
+ * releases when an ordinary album/single release is available.
+ */
+internal fun rankMusicBrainzReleases(
+    releases: List<MBRelease>,
+    albumHint: String?,
+): List<MBRelease> =
+    releases.sortedWith(
+        compareByDescending<MBRelease> { musicBrainzReleaseScore(it, albumHint) }
+            .thenBy { it.date ?: it.releaseGroup?.firstReleaseDate ?: "9999-99-99" }
+            .thenBy { it.id }
+    )
+
+internal fun musicBrainzReleaseScore(
+    release: MBRelease,
+    albumHint: String?,
+): Int {
+    val normalizedHint = albumHint
+        ?.let(ArtistParser::normalizeForSearch)
+        ?.takeIf { it.isNotBlank() }
+    val normalizedRelease = ArtistParser.normalizeForSearch(release.title)
+    val normalizedGroup = release.releaseGroup?.title
+        ?.let(ArtistParser::normalizeForSearch)
+        .orEmpty()
+
+    var score = 0
+    var exactAlbumMatch = false
+
+    if (normalizedHint != null) {
+        when {
+            normalizedRelease == normalizedHint -> {
+                score += 240
+                exactAlbumMatch = true
+            }
+            normalizedGroup == normalizedHint -> {
+                score += 220
+                exactAlbumMatch = true
+            }
+            minOf(normalizedRelease.length, normalizedHint.length) >= 4 &&
+                (normalizedRelease.contains(normalizedHint) || normalizedHint.contains(normalizedRelease)) ->
+                score += 90
+            minOf(normalizedGroup.length, normalizedHint.length) >= 4 &&
+                (normalizedGroup.contains(normalizedHint) || normalizedHint.contains(normalizedGroup)) ->
+                score += 80
+        }
+    }
+
+    when {
+        release.coverArtArchive?.front == true -> score += 70
+        release.coverArtArchive?.artwork == true -> score += 35
+    }
+
+    if (release.status.equals("Official", ignoreCase = true)) score += 20
+
+    when (release.releaseGroup?.primaryType?.lowercase()) {
+        "album" -> score += 12
+        "ep" -> score += 8
+        "single" -> score += 6
+    }
+
+    if (!exactAlbumMatch) {
+        val secondaryTypes = release.releaseGroup?.secondaryTypes.orEmpty()
+        if (secondaryTypes.any { it.equals("Compilation", ignoreCase = true) }) score -= 60
+        if (secondaryTypes.any { it.equals("Live", ignoreCase = true) }) score -= 30
+    }
+
+    return score
+}
+
+
+/**
+ * Automatic metadata replacement must never discard artwork explicitly chosen by
+ * the user. Used by MusicBrainz's cross-track metadata reuse path, which otherwise
+ * replaces the entire enriched_metadata row in one operation.
+ */
+internal fun preserveUserSelectedArtwork(
+    current: EnrichedMetadata?,
+    replacement: EnrichedMetadata,
+): EnrichedMetadata {
+    val manual = current?.takeIf {
+        it.albumArtSource == AlbumArtSource.USER_SELECTED &&
+            !it.albumArtUrl.isNullOrBlank()
+    }
+
+    if (manual != null) {
+        val selectedUrl = manual.albumArtUrl!!
+        return replacement.copy(
+            albumArtUrl = selectedUrl,
+            albumArtUrlSmall = manual.albumArtUrlSmall ?: selectedUrl,
+            albumArtUrlLarge = manual.albumArtUrlLarge ?: selectedUrl,
+            albumArtSource = AlbumArtSource.USER_SELECTED,
+        )
+    }
+
+    // A manual cover belongs only to the donor track. Cross-track metadata reuse
+    // may copy ordinary automatic artwork, but must never transfer another track's
+    // explicit user choice. Preserve the target's own automatic artwork when it
+    // has one; otherwise leave artwork empty so the normal provider chain continues.
+    if (replacement.albumArtSource == AlbumArtSource.USER_SELECTED ||
+        replacement.albumArtSource == AlbumArtSource.USER_RESET
+    ) {
+        return replacement.copy(
+            albumArtUrl = current?.albumArtUrl,
+            albumArtUrlSmall = current?.albumArtUrlSmall,
+            albumArtUrlLarge = current?.albumArtUrlLarge,
+            albumArtSource = current?.albumArtSource ?: AlbumArtSource.NONE,
+        )
+    }
+
+    return replacement
+}
+
+/**
+ * Escape a value for use inside a quoted phrase of a MusicBrainz (Lucene) query.
+ *
+ * MusicBrainz is queried with strings such as `recording:"<title>" AND
+ * artist:"<artist>"`, and the interpolated values come from MediaSession metadata,
+ * imported tags, or the edit-title dialog — none of which are trusted. Anything
+ * that closes the phrase early lets crafted text append its own clauses.
+ *
+ * All metacharacters are replaced in a single scan. An earlier character-by-character
+ * version escaped `\` last, so every backslash it had just inserted was escaped
+ * again: `"` became `\\"` rather than `\"`, which in Lucene means a literal
+ * backslash followed by a *live* quote that terminates the phrase.
+ */
+internal fun escapeLuceneQuery(value: String): String =
+    LUCENE_SPECIAL_CHARS.replace(value) { "\\" + it.value }
+
+/**
+ * Lucene's special characters, plus the `&&`/`||` boolean operators. Matching them
+ * in one pass is what prevents a character from being escaped twice.
+ *
+ * `[` and `]` must appear escaped (`\[`, `\]`): inside a Java character class an
+ * unescaped `[` opens a nested class, so the pattern would fail to compile and take
+ * the whole file's initialiser down with it.
+ */
+private val LUCENE_SPECIAL_CHARS = Regex("""([+\-!(){}^"~*?:\\/\[\]]|&&|\|\|)""")

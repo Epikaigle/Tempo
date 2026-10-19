@@ -30,6 +30,7 @@ import coil3.size.Size
 import coil3.request.allowHardware
 import coil3.request.transformations
 import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
+import me.avinas.tempo.utils.MAX_SAFE_BITMAP_EDGE_PX
 
 private const val TAG = "CachedAsyncImage"
 
@@ -41,13 +42,11 @@ private val URL_TRAILING_SEP_REGEX = Regex("[?&]$")
  * Coil [AsyncImage] wrapper configured with size-independent cache keys,
  * inexact size reuse, and automatic HTTP-to-HTTPS upgrade.
  *
- * @param targetSizeDp When provided, downsamples during decode to reduce memory usage.
- *
- * @param allowHardware Whether to allow hardware bitmaps (set false for screenshots)
- * @param blurRadius Optional blur radius applied via a software Coil [coil3.transform.Transformation].
- *                   Unlike `Modifier.blur` (which uses RenderEffect and is dropped when drawn to a
- *                   software Canvas during capture), this bakes the blur into the decoded bitmap so
- *                   it renders identically in both on-screen previews and captured bitmaps.
+ * `targetSizeDp` downsamples during decode to reduce memory usage; set
+ * `allowHardware = false` for screenshots. `blurRadius` goes through a software
+ * Coil [coil3.transform.Transformation] rather than `Modifier.blur`: RenderEffect
+ * is dropped when a View is drawn to a software Canvas during capture, so the
+ * baked blur survives in captured bitmaps.
  */
 @Composable
 fun CachedAsyncImage(
@@ -73,14 +72,12 @@ fun CachedAsyncImage(
     val inCaptureContext = LocalInCaptureContext.current
     val effectiveAllowHardware = allowHardware && !inCaptureContext
     
-    // Early return for null/blank URLs
     if (imageUrl.isNullOrBlank()) {
         if (error != null) {
             error()
         } else if (placeholder != null) {
             placeholder()
         } else {
-            // Default empty state
             Box(modifier = modifier)
         }
         return
@@ -89,38 +86,36 @@ fun CachedAsyncImage(
     // Fix HTTP to HTTPS for security and caching consistency
     val fixedUrl = MusicBrainzEnrichmentService.fixHttpUrl(imageUrl)
     
-    // Create a stable cache key from the URL
-    // Strip query parameters for more cache hits, as they often contain timestamps
+    // Query params are stripped for more cache hits: they often carry timestamps.
     val cacheKey = remember(fixedUrl) {
         createCacheKey(fixedUrl)
     }
     
-    // Calculate target size in pixels if provided, otherwise cap at 2048px to prevent OOM
     val targetSizePx = remember(targetSizeDp, density) {
         targetSizeDp?.let { dp -> with(density) { dp.toFloat() * this.density }.toInt() }
     }
 
-    // Blur radius in pixels (if any). Baked into the decoded bitmap via a software
-    // Transformation so it survives software-canvas capture (Modifier.blur's RenderEffect
-    // is dropped when a View is drawn to a software Canvas).
+    // In pixels, baked into the decoded bitmap so it survives software-canvas capture.
     val blurRadiusPx = remember(blurRadius, density) {
         blurRadius?.let { with(density) { it.toPx() } }
     }
 
-    // Build the image request with aggressive caching
-    // Include effectiveAllowHardware and blurRadiusPx in the key so request rebuilds
-    // when capture context or blur settings change
+    // Keyed on the effective hardware flag and blur px so the request rebuilds
+    // when capture context or blur settings change.
     val imageRequest = remember(fixedUrl, cacheKey, targetSizePx, effectiveAllowHardware, blurRadiusPx) {
         ImageRequest.Builder(context)
             .data(fixedUrl)
-            // Use URL-based cache keys, ignoring size
-            // Include hardware flag in memory cache key so software/hardware bitmaps are cached separately
+            // Hardware and software bitmaps must not share a memory cache entry.
             .memoryCacheKey(if (effectiveAllowHardware) cacheKey else "${cacheKey}_sw")
             .diskCacheKey(cacheKey)
             .scale(Scale.FILL)
             .apply {
                 if (targetSizePx != null) {
-                    val capped = minOf(targetSizePx, 2048)
+                    // Bound the decode to the app-wide painter ceiling. Every call site asks for a
+                    // small thumbnail (the largest is 320.dp), so this clamp is inert in practice
+                    // and only exists so a large `targetSizeDp` can never decode an oversized
+                    // bitmap into this Image's painter.
+                    val capped = minOf(targetSizePx, MAX_SAFE_BITMAP_EDGE_PX).coerceAtLeast(1)
                     size(Size(capped, capped))
                 } else {
                     size(Size(1024, 1024))
@@ -132,7 +127,6 @@ fun CachedAsyncImage(
             }
             // Disable hardware bitmaps when inside CaptureWrapper (software rendering)
             .allowHardware(effectiveAllowHardware)
-            // Aggressive caching policies
             .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCachePolicy(CachePolicy.ENABLED)
             .networkCachePolicy(CachePolicy.ENABLED)
@@ -145,7 +139,6 @@ fun CachedAsyncImage(
         contentScale = contentScale
     )
     
-    // Track state and handle callbacks
     val painterState = painter.state.value
     
     LaunchedEffect(painterState) {
@@ -159,8 +152,6 @@ fun CachedAsyncImage(
                 // These failures are expected and should not spam warnings
                 val isSpotifyContentUri = fixedUrl?.contains("com.spotify.mobile.android.mediaapi") == true
                 if (isSpotifyContentUri) {
-                    // Silent failure for Spotify content URIs - expected behavior when app not running
-                    // No logging needed - this is normal
                 } else {
                     Log.w(TAG, "Image failed to load: $cacheKey - ${painterState.result.throwable.message}")
                 }
@@ -173,7 +164,6 @@ fun CachedAsyncImage(
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         when (painterState) {
             is AsyncImagePainter.State.Loading -> {
-                // Show placeholder or loading indicator while loading
                 if (placeholder != null) {
                     placeholder()
                 }
@@ -185,7 +175,6 @@ fun CachedAsyncImage(
                 }
             }
             is AsyncImagePainter.State.Error -> {
-                // Show error placeholder
                 if (error != null) {
                     error()
                 } else if (placeholder != null) {
@@ -193,11 +182,9 @@ fun CachedAsyncImage(
                 }
             }
             is AsyncImagePainter.State.Success, is AsyncImagePainter.State.Empty -> {
-                // Show the image
             }
         }
         
-        // Always render the image (it will be empty/loading until ready)
         Image(
             painter = painter,
             contentDescription = contentDescription,
@@ -208,15 +195,6 @@ fun CachedAsyncImage(
     }
 }
 
-/**
- * Simple cached image composable without callbacks - for common use cases.
- * 
- * @param imageUrl The URL of the image to load
- * @param contentDescription Accessibility description
- * @param modifier Modifier for the image
- * @param contentScale How to scale the image
- * @param allowHardware Whether to allow hardware bitmaps
- */
 @Composable
 fun SimpleCachedImage(
     imageUrl: String?,
@@ -235,22 +213,18 @@ fun SimpleCachedImage(
 }
 
 /**
- * Creates a stable cache key from a URL.
- * 
- * This strips common variable parameters like timestamps while keeping the
- * essential parts that identify the image.
+ * Stable cache key for `url`: volatile params (timestamps, size/format hints)
+ * are stripped while the parts that identify the image are kept.
  */
 fun createCacheKey(url: String?): String {
     if (url.isNullOrBlank()) return ""
     
     return try {
-        // Parse the URL and extract just the path + essential query params
         val uri = android.net.Uri.parse(url)
         val host = uri.host ?: ""
         val path = uri.path ?: ""
         
-        // For common CDNs, we only need host + path
-        // Query params often contain size/format hints that we want to ignore
+        // For common CDNs only host + path matter; query params are size/format hints.
         when {
             // Cover Art Archive - just use path
             host.contains("coverartarchive") || host.contains("archive.org") -> {
@@ -294,13 +268,8 @@ fun createCacheKey(url: String?): String {
 }
 
 /**
- * Builds a properly cached ImageRequest for use with AsyncImage.
- * Use this when you need more control than CachedAsyncImage provides.
- * 
- * @param context The context
- * @param url The image URL
- * @param allowHardware Whether to allow hardware bitmaps
- * @param crossfade Crossfade duration in milliseconds (0 to disable)
+ * Cached [ImageRequest] for callers that need more control than [CachedAsyncImage].
+ * `crossfade` is milliseconds, 0 disables it.
  */
 fun buildCachedImageRequest(
     context: android.content.Context,

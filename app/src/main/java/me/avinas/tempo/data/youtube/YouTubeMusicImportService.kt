@@ -73,6 +73,16 @@ class YouTubeMusicImportService
             /** DB flush window: bounds import memory to one window, not the export. */
             private const val IMPORT_FLUSH_BATCH = 1_000
 
+            /**
+             * Rows per batched `upsertAllFromAutomaticEnrichment` call.
+             *
+             * 500 matches what the Last.fm importer already flushes at, and it is the chunk size
+             * the DAO's own documentation calls safe: that method pre-reads existing rows with a
+             * single `IN (...)` over the batch's track ids, so the batch size is also a
+             * bind-variable count.
+             */
+            private const val METADATA_UPSERT_BATCH = 500
+
             // Abuse guard: a crafted file with millions of entries would flood the
             // DB/storage (each entry = track resolution + event + enrichment row).
             // 300k/file ≈ 100 plays/day for 8 years — far beyond plausible use.
@@ -332,6 +342,24 @@ class YouTubeMusicImportService
                     }
                 }
 
+                // Upserts accumulated enriched-metadata rows in batches rather than one
+                // transaction per row, and (via the size check in the import loop) keeps the
+                // buffer bounded to one window instead of holding a row for every new track in
+                // the whole export.
+                suspend fun flushPendingMetadata() {
+                    if (pendingEnrichedMetadata.isEmpty()) return
+                    val batch = pendingEnrichedMetadata.toList()
+                    pendingEnrichedMetadata.clear()
+                    try {
+                        batch
+                            .map { (trackId, entry) -> buildEnrichedMetadata(trackId, entry) }
+                            .chunked(METADATA_UPSERT_BATCH)
+                            .forEach { enrichedMetadataDao.upsertAllFromAutomaticEnrichment(it) }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to batch-upsert enriched metadata for ${batch.size} tracks", e)
+                    }
+                }
+
                 // Imports one file's parsed entries immediately instead of
                 // accumulating every file in memory: peak usage is bounded by the
                 // largest single file, and already-imported files survive a later
@@ -368,8 +396,15 @@ class YouTubeMusicImportService
                         if (pendingEvents.size >= IMPORT_FLUSH_BATCH) {
                             flushPendingEvents()
                         }
+                        // Metadata accumulates only for newly created tracks, so it grows more
+                        // slowly than events, but it is still per-track and must be bounded the
+                        // same way rather than held until the whole export is parsed.
+                        if (pendingEnrichedMetadata.size >= METADATA_UPSERT_BATCH) {
+                            flushPendingMetadata()
+                        }
                     }
                     flushPendingEvents()
+                    flushPendingMetadata()
                 }
 
                 for ((index, uri) in uris.withIndex()) {
@@ -472,9 +507,8 @@ class YouTubeMusicImportService
                     statsRepository.invalidateCache()
                 }
 
-                for ((trackId, entry) in pendingEnrichedMetadata) {
-                    createEnrichedMetadata(trackId, entry)
-                }
+                // Anything the size-based flush above did not already write.
+                flushPendingMetadata()
 
                 val requeuedCount = requeueExistingTracksForEnrichment(existingTrackIds)
 
@@ -1408,7 +1442,7 @@ class YouTubeMusicImportService
                         lastEnrichmentAttempt = null,
                         cacheTimestamp = System.currentTimeMillis(),
                     )
-                enrichedMetadataDao.upsert(repaired)
+                enrichedMetadataDao.upsertFromAutomaticEnrichment(repaired)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to re-queue repaired track $trackId for enrichment", e)
             }
@@ -1438,26 +1472,28 @@ class YouTubeMusicImportService
             )
         }
 
-        private suspend fun createEnrichedMetadata(
+        /**
+         * Builds the PENDING enrichment row for a freshly imported track.
+         *
+         * Pure and synchronous — it no longer writes. Callers accumulate rows and write them via
+         * `upsertAllFromAutomaticEnrichment`, which is one transaction per
+         * [METADATA_UPSERT_BATCH] rows rather than one per track (the old shape here called the
+         * single-row upsert, so every imported track cost its own SELECT + INSERT/REPLACE
+         * transaction).
+         */
+        private fun buildEnrichedMetadata(
             trackId: Long,
             entry: ParsedEntry,
-        ) {
-            try {
-                val metadata =
-                    EnrichedMetadata(
-                        trackId = trackId,
-                        spotifyId = null,
-                        artistName = entry.artistName,
-                        albumTitle = entry.albumName,
-                        enrichmentStatus = EnrichmentStatus.PENDING,
-                        cacheTimestamp = System.currentTimeMillis(),
-                        lastEnrichmentAttempt = System.currentTimeMillis(),
-                    )
-                enrichedMetadataDao.upsert(metadata)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to create enriched metadata for track $trackId", e)
-            }
-        }
+        ): EnrichedMetadata =
+            EnrichedMetadata(
+                trackId = trackId,
+                spotifyId = null,
+                artistName = entry.artistName,
+                albumTitle = entry.albumName,
+                enrichmentStatus = EnrichmentStatus.PENDING,
+                cacheTimestamp = System.currentTimeMillis(),
+                lastEnrichmentAttempt = System.currentTimeMillis(),
+            )
 
         /**
          * Re-queue existing tracks for enrichment after import.
@@ -1474,18 +1510,22 @@ class YouTubeMusicImportService
                     requeued += enrichedMetadataDao.requeueTracksForEnrichment(batch)
 
                     val missingIds = enrichedMetadataDao.findTrackIdsWithoutEnrichedMetadata(batch)
-                    for (trackId in missingIds) {
-                        createEnrichedMetadata(
-                            trackId,
+                    if (missingIds.isNotEmpty()) {
+                        // One batched upsert for the whole chunk instead of one transaction per
+                        // track. These rows carry no artist/album — they exist only so the
+                        // enrichment sweep can see the track at all.
+                        val blankEntry =
                             ParsedEntry(
                                 trackName = "",
                                 artistName = "",
                                 albumName = null,
                                 youtubeVideoId = null,
                                 endTimeMillis = 0L,
-                            ),
+                            )
+                        enrichedMetadataDao.upsertAllFromAutomaticEnrichment(
+                            missingIds.map { trackId -> buildEnrichedMetadata(trackId, blankEntry) },
                         )
-                        requeued++
+                        requeued += missingIds.size
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to re-queue batch of ${batch.size} tracks for enrichment", e)

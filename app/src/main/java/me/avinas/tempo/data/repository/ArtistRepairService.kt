@@ -27,7 +27,7 @@ import javax.inject.Singleton
  *
  * 1. [recomputeArtistKeys] — recompute normalized_name for every artist with
  *    the fixed Unicode-aware normalization. Rows that now collide on the new
- *    key are properly merged (which also re-links their tracks).
+ *    key are merged (which also re-links their tracks).
  *
  * 2. [recomputeAliasKeys] — recompute alias lookup keys so user-made merges
  *    stay sticky under the new normalization (old "" alias keys are dead and
@@ -180,7 +180,7 @@ class ArtistRepairService @Inject constructor(
 
     /**
      * Re-link tracks whose raw artist string names a different artist than the
-     * one they are currently linked to. Returns the number of re-linked tracks.
+     * one they are currently linked to.
      */
     private suspend fun relinkMismatchedTracks(): Int {
         val artists = artistDao.getAllArtistsSync()

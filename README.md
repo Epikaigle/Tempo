@@ -44,7 +44,8 @@ Tempo is a local-first music journal and scrobbler for Android. It follows playb
 ## Features
 
 ### Playback tracking
-- Captures playback via Android `NotificationListenerService` from Spotify, YouTube Music, Apple Music, Poweramp, Tidal, SoundCloud, and players exposing standard media sessions.
+- Captures playback via Android `NotificationListenerService` from Spotify, YouTube Music, Apple Music, Poweramp, Tidal, SoundCloud, and any other player you add in **Settings → Manage apps**.
+- Tracks only apps it recognizes as music players, so voice notes, calls, voicemail and video stay out of your journal. Unrecognized apps are listed in Manage apps to allow in one tap, and a **Track unrecognized apps** switch opts back into tracking everything.
 - Filters non-music media events like podcasts, audiobooks, and system alerts.
 - Pauses tracking when media volume is muted, with an optional battery-saver cutoff below 20% battery.
 - Caps repeated loops of short tracks at three times track duration to avoid inflated counts.
@@ -75,6 +76,7 @@ Tempo is a local-first music journal and scrobbler for Android. It follows playb
 ### Data imports
 - Imports full Last.fm scrobble history. Recent plays stay in the fast query set, older plays move to an indexed archive.
 - Ingests Google Takeout multi-part ZIP exports and localized YouTube Music `watch-history.json` files.
+- Rebuilds a timeline from a Musicolet backup ZIP, which stores a play count per song per month rather than a time per play. Decrypts the backup's Blowfish-encrypted databases on device, spreads each month's counts across that month, and keeps the exact last-played time Musicolet does store. Re-importing the same backup changes nothing.
 - Fetches track audio attributes from Spotify Web API, with an optional API polling mode to reduce battery draw when notification listening is turned off.
 - Resolves album cover art, release details, and genre tags from MusicBrainz.
 
@@ -116,7 +118,7 @@ Tempo is a local-first music journal and scrobbler for Android. It follows playb
    GOOGLE_WEB_CLIENT_ID=your_google_client_id
    ```
 
-   Analytics is deliberately absent from that list: leaving `APTABASE_APP_KEY` unset means the app reports nothing at all, which is the intended state for a build from source. See [docs/ANALYTICS.md](docs/ANALYTICS.md).
+   Analytics is deliberately absent from that list: leaving `ANALYTICS_ENDPOINT` unset means the app reports nothing at all, which is the intended state for a build from source. See [docs/ANALYTICS.md](docs/ANALYTICS.md) if you want to point a build at your own PostHog project.
 
 3. Build the debug APK:
    ```bash

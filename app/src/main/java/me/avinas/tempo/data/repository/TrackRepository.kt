@@ -16,7 +16,13 @@ interface TrackRepository {
     suspend fun insert(track: Track): Long
     suspend fun insertAll(tracks: List<Track>): List<Long>
     suspend fun update(track: Track)
-    suspend fun updateTitle(trackId: Long, title: String)
+    suspend fun updateTitle(trackId: Long, title: String): Int
+    suspend fun updateAutomaticAlbumArtUrl(trackId: Long, albumArtUrl: String?): String?
+    suspend fun consumeLocalAlbumArtBackup(
+        trackId: Long,
+        expectedLocalUrl: String,
+    ): String? = null
+    suspend fun discardLocalAlbumArtBackup(expectedLocalUrl: String) {}
     suspend fun updateYoutubeIdIfMissing(trackId: Long, youtubeId: String): Int
     fun all(): Flow<List<Track>>
     suspend fun searchTracks(query: String): List<Track>

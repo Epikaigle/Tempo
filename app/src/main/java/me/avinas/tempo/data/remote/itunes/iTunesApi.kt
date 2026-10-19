@@ -5,36 +5,22 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 
 /**
- * iTunes Search API Retrofit interface.
- * 
- * API Documentation: https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/
- * 
- * iTunes Search API is completely free with no authentication required.
- * Provides excellent metadata for mainstream commercial music.
- * 
+ * iTunes Search API. Free with no API key, but only around 20 requests per minute.
+ *
+ * Docs: https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/
  * Base URL: https://itunes.apple.com/
- * 
- * Rate Limit: ~20 requests per minute
- * No API key or authentication required!
  */
 interface iTunesApi {
 
     companion object {
         const val BASE_URL = "https://itunes.apple.com/"
         
-        // Rate limit: ~20 requests per minute
-        const val RATE_LIMIT_MS = 3000L // 3 seconds between requests
+        const val RATE_LIMIT_MS = 3000L
     }
 
     /**
-     * Search for music in the iTunes Store.
-     * 
-     * @param term Search query (artist + album for best results)
-     * @param entity Type of content to search for (album, song, etc.)
-     * @param limit Maximum number of results (1-200)
-     * @param country Country code (US, IN, GB, etc.)
-     * @param media Media type (music, movie, podcast, etc.)
-     * @return Search results with album artwork and metadata
+     * Search the iTunes Store. `term` works best as artist + album, `limit` caps at 200, and
+     * `country` is a two-letter store code.
      */
     @GET("search")
     suspend fun search(
@@ -45,14 +31,6 @@ interface iTunesApi {
         @Query("media") media: String = "music"
     ): Response<iTunesSearchResponse>
     
-    /**
-     * Lookup artist by iTunes artist ID.
-     * Returns artist information including images.
-     * 
-     * @param artistId iTunes artist ID
-     * @param entity Type of entity (artist)
-     * @return Artist information with images
-     */
     @GET("lookup")
     suspend fun lookupArtist(
         @Query("id") artistId: Long,
@@ -60,12 +38,7 @@ interface iTunesApi {
     ): Response<iTunesSearchResponse>
     
     /**
-     * Lookup artist by ID and include their songs/albums for artwork.
-     * Returns the artist record PLUS song/album results with artworkUrl fields.
-     * 
-     * @param artistId iTunes artist ID
-     * @param entity "song" or "album" to include in results
-     * @param limit Max number of songs/albums to return
+     * Lookup that also returns song/album results, which carry the `artworkUrl` fields.
      */
     @GET("lookup")
     suspend fun lookupArtistWithMedia(

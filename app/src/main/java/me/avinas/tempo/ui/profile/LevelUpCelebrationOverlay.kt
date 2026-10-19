@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import me.avinas.tempo.ui.components.CelebrationParticlesCanvas
 import me.avinas.tempo.ui.components.GlassCard
 import me.avinas.tempo.ui.components.GlassCardVariant
+import me.avinas.tempo.ui.components.LocalHideStreaks
 import me.avinas.tempo.ui.theme.*
 import java.util.Locale
 
@@ -503,26 +504,28 @@ fun LevelUpCelebrationOverlay(
                             )
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .height(26.dp)
-                                .width(0.8.dp)
-                                .background(GlassBorderMedium)
-                        )
+                        if (!LocalHideStreaks.current) {
+                            Box(
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .width(0.8.dp)
+                                    .background(GlassBorderMedium)
+                            )
 
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "STREAK",
-                                style = KickerSmall,
-                                color = TextTertiary
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = if (currentStreak > 0) "$currentStreak days" else "Active",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "STREAK",
+                                    style = KickerSmall,
+                                    color = TextTertiary
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (currentStreak > 0) "$currentStreak days" else "Active",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary
+                                )
+                            }
                         }
                     }
                 }

@@ -79,6 +79,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.R
+import me.avinas.tempo.data.InstalledApp
 import me.avinas.tempo.data.local.entities.AppPreference
 import me.avinas.tempo.data.local.entities.ManualContentMark
 import me.avinas.tempo.data.preferences.TrackingRulesPreferences
@@ -131,6 +132,7 @@ fun SupportedAppsScreen(
     // directly from Room through the ViewModel.
     val minimumPlayDurationMs = remember(rulesRevision) { trackingRules.minimumPlayDurationMs }
     val defaultMaxMusicDurationMs = remember(rulesRevision) { trackingRules.defaultMaxMusicDurationMs }
+    val trackUnrecognizedApps = remember(rulesRevision) { trackingRules.trackUnrecognizedApps }
     val overrideCount = uiState.contentOverrides.size
 
     Scaffold(
@@ -176,7 +178,7 @@ fun SupportedAppsScreen(
                             .background(Color.Transparent),
                         placeholder = {
                             Text(
-                                "Search apps...", 
+                                "Search apps on this device...", 
                                 color = TextTertiary,
                                 style = MaterialTheme.typography.bodyMedium
                             )
@@ -227,10 +229,52 @@ fun SupportedAppsScreen(
                                 minimumPlayDurationMs = minimumPlayDurationMs,
                                 defaultMaxMusicDurationMs = defaultMaxMusicDurationMs,
                                 overrideCount = overrideCount,
+                                trackUnrecognizedApps = trackUnrecognizedApps,
                                 onMinimumPlayClick = { showMinPlayDialog = true },
                                 onDefaultMaxClick = { showDefaultMaxDialog = true },
-                                onOverridesClick = { showContentOverridesDialog = true }
+                                onOverridesClick = { showContentOverridesDialog = true },
+                                onTrackUnrecognizedChange = { enabled ->
+                                    trackingRules.trackUnrecognizedApps = enabled
+                                    rulesRevision++
+                                }
                             )
+                        }
+
+                        // Apps Tempo heard but refused to track. This is what makes the
+                        // allowlist liveable: an unlisted player shows up here with a one-tap
+                        // Allow instead of silently going untracked.
+                        if (uiState.detectedApps.isNotEmpty()) {
+                            item(key = "header_detected_apps") {
+                                SettingsSectionHeader("Detected — not tracked")
+                            }
+                            item(key = "detected_apps_help") {
+                                Text(
+                                    text = "Tempo only tracks apps it knows are music players. " +
+                                        "These apps played something Tempo did not recognize. " +
+                                        "Allow one if it is a music source you want in your " +
+                                        "journal, or block it so Tempo stops offering it.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextTertiary,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                )
+                            }
+                            item(key = "list_detected_apps") {
+                                GlassCard(
+                                    contentPadding = PaddingValues(0.dp),
+                                    variant = GlassCardVariant.LowProminence
+                                ) {
+                                    Column(modifier = Modifier.animateContentSize()) {
+                                        uiState.detectedApps.forEachIndexed { index, app ->
+                                            DetectedAppItem(
+                                                app = app,
+                                                onAllow = { viewModel.allowDetectedApp(app.packageName) },
+                                                onBlock = { viewModel.blockApp(app.packageName) },
+                                                showDivider = index < uiState.detectedApps.size - 1
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         if (uiState.preinstalledApps.isNotEmpty()) {
@@ -290,6 +334,41 @@ fun SupportedAppsScreen(
                             }
                         }
 
+                        // Search now reaches every installed app, including ones Tempo has no
+                        // record of. Previously the query only filtered the curated lists, so
+                        // searching for the app you actually needed to act on returned nothing.
+                        if (uiState.searchQuery.isNotBlank() && uiState.searchResults.isNotEmpty()) {
+                            item(key = "header_search_results") {
+                                SettingsSectionHeader("Other installed apps")
+                            }
+                            item(key = "search_results_help") {
+                                Text(
+                                    text = "Not tracked. Allow an app to start journaling its " +
+                                        "playback, or block it to keep it out of the way.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextTertiary,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                )
+                            }
+                            item(key = "list_search_results") {
+                                GlassCard(
+                                    contentPadding = PaddingValues(0.dp),
+                                    variant = GlassCardVariant.LowProminence
+                                ) {
+                                    Column(modifier = Modifier.animateContentSize()) {
+                                        uiState.searchResults.forEachIndexed { index, app ->
+                                            AllowableAppItem(
+                                                app = app,
+                                                onAllow = { viewModel.allowApp(app.packageName) },
+                                                onBlock = { viewModel.blockApp(app.packageName) },
+                                                showDivider = index < uiState.searchResults.size - 1
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         if (uiState.blockedApps.isNotEmpty()) {
                             item(key = "header_blocked_apps") {
                                 SettingsSectionHeader("Blocked Apps")
@@ -312,10 +391,48 @@ fun SupportedAppsScreen(
                             }
                         }
 
+                        // Voice notes, dialers and recorders. These are rejected in code and
+                        // deliberately have no toggle: offering "Block" would imply tracking is
+                        // an option, and the reason users could not find Viber or Signal here at
+                        // all was that code-only lists never rendered.
+                        if (uiState.neverTrackedApps.isNotEmpty()) {
+                            item(key = "header_never_tracked") {
+                                SettingsSectionHeader("Not supported")
+                            }
+                            item(key = "never_tracked_help") {
+                                Text(
+                                    text = "These apps play voice notes, calls or recordings — " +
+                                        "never music — so Tempo does not track them and cannot " +
+                                        "be asked to.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextTertiary,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                )
+                            }
+                            item(key = "list_never_tracked") {
+                                GlassCard(
+                                    contentPadding = PaddingValues(0.dp),
+                                    variant = GlassCardVariant.LowProminence
+                                ) {
+                                    Column(modifier = Modifier.animateContentSize()) {
+                                        uiState.neverTrackedApps.forEachIndexed { index, app ->
+                                            NeverTrackedAppItem(
+                                                app = app,
+                                                showDivider = index < uiState.neverTrackedApps.size - 1
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         if (
                             uiState.preinstalledApps.isEmpty() &&
                             uiState.userAddedApps.isEmpty() &&
-                            uiState.blockedApps.isEmpty()
+                            uiState.blockedApps.isEmpty() &&
+                            uiState.detectedApps.isEmpty() &&
+                            uiState.neverTrackedApps.isEmpty() &&
+                            uiState.searchResults.isEmpty()
                         ) {
                             item {
                                 Box(
@@ -410,9 +527,11 @@ private fun TrackingRulesCard(
     minimumPlayDurationMs: Long,
     defaultMaxMusicDurationMs: Long?,
     overrideCount: Int,
+    trackUnrecognizedApps: Boolean,
     onMinimumPlayClick: () -> Unit,
     onDefaultMaxClick: () -> Unit,
-    onOverridesClick: () -> Unit
+    onOverridesClick: () -> Unit,
+    onTrackUnrecognizedChange: (Boolean) -> Unit
 ) {
     GlassCard(
         contentPadding = PaddingValues(0.dp),
@@ -444,6 +563,48 @@ private fun TrackingRulesCard(
                 },
                 onClick = onOverridesClick
             )
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            // Escape hatch for the default-deny model: users running a niche player they would
+            // rather not allow one by one can opt back into the old permissive behaviour.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Android,
+                    contentDescription = null,
+                    tint = TempoPrimary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Track unrecognized apps",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Off by default. Tempo tracks only apps it knows are music " +
+                            "players, and lists anything else for review.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextTertiary
+                    )
+                }
+                Switch(
+                    checked = trackUnrecognizedApps,
+                    onCheckedChange = onTrackUnrecognizedChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = TextOnAccent,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        uncheckedThumbColor = TextTertiary,
+                        uncheckedTrackColor = TempoDarkSurfaceElevated,
+                        checkedBorderColor = Color.Transparent,
+                        uncheckedBorderColor = Color.Transparent
+                    )
+                )
+            }
         }
     }
 }
@@ -643,6 +804,200 @@ private fun BlockedAppItem(
             ) {
                 Text("Unblock")
             }
+        }
+
+        if (showDivider) {
+            HorizontalDivider(
+                color = GlassBorderSoft,
+                modifier = Modifier.padding(start = 72.dp, end = 16.dp)
+            )
+        }
+    }
+}
+
+/**
+ * An inbox row: an app Tempo refused to track, with what it was playing and how often.
+ * Allow grants tracking; Block writes a real preference so it stops being offered and moves to
+ * Blocked Apps, where the decision can be reversed.
+ */
+@Composable
+private fun DetectedAppItem(
+    app: DetectedAppUi,
+    onAllow: () -> Unit,
+    onBlock: () -> Unit,
+    showDivider: Boolean = true
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppIcon(packageName = app.packageName, modifier = Modifier.size(40.dp))
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = app.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextQuaternary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val detail = buildString {
+                    app.lastTitle?.takeIf { it.isNotBlank() }?.let { append("Heard: $it") }
+                    if (app.detectionCount > 1) {
+                        if (isNotEmpty()) append(" • ")
+                        append("${app.detectionCount}×")
+                    }
+                }
+                if (detail.isNotEmpty()) {
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TempoPrimary.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            TextButton(
+                onClick = onBlock,
+                colors = ButtonDefaults.textButtonColors(contentColor = TextTertiary)
+            ) {
+                Text("Block")
+            }
+            TextButton(
+                onClick = onAllow,
+                colors = ButtonDefaults.textButtonColors(contentColor = TempoSuccessBright)
+            ) {
+                Text("Allow")
+            }
+        }
+
+        if (showDivider) {
+            HorizontalDivider(
+                color = GlassBorderSoft,
+                modifier = Modifier.padding(start = 72.dp, end = 16.dp)
+            )
+        }
+    }
+}
+
+/** An installed app Tempo knows nothing about, surfaced by search with an Allow action. */
+@Composable
+private fun AllowableAppItem(
+    app: InstalledApp,
+    onAllow: () -> Unit,
+    onBlock: () -> Unit,
+    showDivider: Boolean = true
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppIcon(packageName = app.packageName, modifier = Modifier.size(40.dp))
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = app.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextQuaternary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            TextButton(
+                onClick = onBlock,
+                colors = ButtonDefaults.textButtonColors(contentColor = TextTertiary)
+            ) {
+                Text("Block")
+            }
+            TextButton(
+                onClick = onAllow,
+                colors = ButtonDefaults.textButtonColors(contentColor = TempoSuccessBright)
+            ) {
+                Text("Allow")
+            }
+        }
+
+        if (showDivider) {
+            HorizontalDivider(
+                color = GlassBorderSoft,
+                modifier = Modifier.padding(start = 72.dp, end = 16.dp)
+            )
+        }
+    }
+}
+
+/**
+ * A voice-note/call/recorder app. Read-only on purpose: there is no switch, because the answer
+ * is always no and a toggle would imply otherwise.
+ */
+@Composable
+private fun NeverTrackedAppItem(
+    app: InstalledApp,
+    showDivider: Boolean = true
+) {
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppIcon(packageName = app.packageName, modifier = Modifier.size(40.dp))
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = app.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = TextTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextQuaternary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Text(
+                text = "Never tracked",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextTertiary
+            )
         }
 
         if (showDivider) {

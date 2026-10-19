@@ -11,7 +11,7 @@ import android.view.View
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.FileProvider
 import dagger.hilt.android.EntryPointAccessors
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.di.AnalyticsEntryPoint
 import java.io.File
@@ -38,7 +38,7 @@ object ShareUtils {
             EntryPointAccessors
                 .fromApplication(context.applicationContext, AnalyticsEntryPoint::class.java)
                 .analyticsTracker()
-                .track(FeatureUsed(feature))
+                .track(FeatureFirstUsed(feature))
         }
     }
 

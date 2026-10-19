@@ -29,10 +29,7 @@ import javax.inject.Singleton
 
 private const val TAG = "CoilModule"
 
-/**
- * Qualifier for the image-specific OkHttpClient.
- * This client has aggressive caching configured specifically for album art.
- */
+/** Qualifier for the image-specific OkHttpClient. */
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class ImageClient
@@ -48,7 +45,8 @@ annotation class ImageCache
  * Configures Coil ImageLoader with multi-tier caching:
  * - Memory cache (10-15% of RAM, adapting to low-RAM devices)
  * - Coil disk cache for decoded images (50-100MB)
- * - OkHttp disk cache (50MB) with 30-day response header overrides for CDNs
+ * - OkHttp disk cache (50MB) with a 30-day fallback for responses whose CDN
+ *   supplied no usable cache headers (origin directives are preserved otherwise)
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -70,19 +68,47 @@ object CoilModule {
             }
             
             val response = chain.proceed(request)
-            
-            // Override upstream CDN cache-control headers to keep album art for 30 days
-            val cacheControl = CacheControl.Builder()
-                .maxAge(30, TimeUnit.DAYS)
-                .maxStale(365, TimeUnit.DAYS)
-                .build()
-            
-            response.newBuilder()
-                .removeHeader("Pragma")
-                .removeHeader("Cache-Control")
-                .removeHeader("Expires")
-                .header("Cache-Control", cacheControl.toString())
-                .build()
+
+            // Album art is immutable, so the intent is still to cache it aggressively —
+            // but only as a *fallback*. This is a network interceptor, so whatever we
+            // return here is what OkHttp's CacheInterceptor (which sits outside us)
+            // writes to the disk cache, and rewriting the origin's headers is not free:
+            //   * it discarded the origin's own policy — a CDN's
+            //     `max-age=31536000, immutable` was *shortened* to 30 days, while
+            //     `no-store`/`no-cache`/`must-revalidate` were overridden, and
+            //   * forcing `max-age=30d` made every stored entry unconditionally fresh,
+            //     so OkHttp never issued a conditional request: the stored ETag /
+            //     Last-Modified were dead weight and images never got a cheap 304.
+            // So if the origin told us how to cache — it has a freshness lifetime, or an
+            // explicit do-not-cache directive — pass its response through untouched and
+            // let its directives (and validators) drive freshness and revalidation.
+            // Only synthesise a policy when there is no usable cache metadata at all.
+            val originCacheControl = response.cacheControl
+            val originHasCachePolicy =
+                originCacheControl.noStore ||
+                    originCacheControl.noCache ||
+                    originCacheControl.mustRevalidate ||
+                    originCacheControl.maxAgeSeconds != -1 ||
+                    originCacheControl.sMaxAgeSeconds != -1 ||
+                    response.header("Expires") != null
+
+            if (originHasCachePolicy) {
+                response
+            } else {
+                val cacheControl = CacheControl.Builder()
+                    .maxAge(30, TimeUnit.DAYS)
+                    .build()
+
+                response.newBuilder()
+                    // The origin supplied nothing usable, so its (legacy) directives are
+                    // replaced by our fallback. `max-stale` was dropped: OkHttp only
+                    // honours it on requests, so it never extended a response's lifetime.
+                    .removeHeader("Pragma")
+                    .removeHeader("Cache-Control")
+                    .removeHeader("Expires")
+                    .header("Cache-Control", cacheControl.toString())
+                    .build()
+            }
         }
     }
 

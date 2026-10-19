@@ -4,17 +4,20 @@ import android.util.Log
 import androidx.room.withTransaction
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.local.ArchiveTimestampCodec
+import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.ListeningEventDao
 import me.avinas.tempo.data.local.dao.ScrobbleArchiveDao
 import me.avinas.tempo.data.local.dao.TrackDao
 import me.avinas.tempo.data.local.dao.TrackAliasDao
+import me.avinas.tempo.data.local.entities.AlbumArtSource
+import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.ScrobbleArchive
 import me.avinas.tempo.data.local.entities.Track
 import me.avinas.tempo.data.local.entities.TrackAlias
 import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
@@ -33,6 +36,7 @@ import javax.inject.Singleton
 @Singleton
 open class TrackAliasRepository @Inject constructor(
     private val trackAliasDao: TrackAliasDao,
+    private val enrichedMetadataDao: EnrichedMetadataDao,
     private val listeningEventDao: ListeningEventDao,
     private val trackDao: TrackDao,
     private val scrobbleArchiveDao: ScrobbleArchiveDao,
@@ -46,9 +50,13 @@ open class TrackAliasRepository @Inject constructor(
     }
 
     /**
-     * Find an alias for the given title and artist.
-     * Returns the alias if one exists, or null.
+     * Transaction runner. Defaults to Room's [withTransaction], but can be overridden in tests.
      */
+    internal var transactionRunner: suspend (suspend () -> Unit) -> Unit = { block ->
+        database.withTransaction { block() }
+    }
+
+    /** The alias recorded for this title and artist, if any. */
     suspend fun findAlias(title: String, artist: String): TrackAlias? {
         return trackAliasDao.findAlias(title, artist)
     }
@@ -58,7 +66,11 @@ open class TrackAliasRepository @Inject constructor(
      */
     suspend fun createAlias(targetTrackId: Long, originalTitle: String, originalArtist: String) {
         createAliasInternal(targetTrackId, originalTitle, originalArtist)
-        tracker.track(FeatureUsed(TempoFeature.ALIAS_RENAME))
+        // No explicit guard is needed: createAliasInternal performs the insert and throws if it
+        // fails, so reaching this line means the alias exists. Reporting a first use slightly
+        // early, on a call the database treated as a no-op, is also harmless now that this is a
+        // once-ever event rather than a per-call count.
+        tracker.track(FeatureFirstUsed(TempoFeature.ALIAS_RENAME))
     }
 
     private suspend fun createAliasInternal(
@@ -74,30 +86,116 @@ open class TrackAliasRepository @Inject constructor(
         trackAliasDao.insertAlias(alias)
     }
     
-    /**
-     * Get all aliases that point to a specific track.
-     */
     suspend fun getAliasesForTrack(trackId: Long): List<TrackAlias> {
         return trackAliasDao.getAliasesForTrack(trackId)
     }
+
+    /**
+     * Rename [trackId] to [newTitle] and remember [previousTitle] as an alias, so
+     * plays and imports that still arrive under the old title resolve to this row
+     * instead of re-creating it.
+     *
+     * The title write, the alias insert and the archive re-key share one transaction:
+     * a rename that matched no row must not leave an alias behind pointing at a title
+     * the track never had.
+     *
+     * The cache is invalidated here too: per-track details and every top-tracks list
+     * are memoized for the stats cache TTL, so writing the row alone leaves every
+     * screen showing the pre-rename title until the cache happens to expire.
+     *
+     * @return true only when a row was actually rewritten.
+     */
+    open suspend fun renameTrack(
+        trackId: Long,
+        previousTitle: String,
+        newTitle: String,
+        artist: String
+    ): Boolean {
+        val renamed = try {
+            var rows = 0
+            transactionRunner {
+                rows = trackDao.updateTitle(trackId, newTitle)
+                if (rows > 0) {
+                    createAliasInternal(trackId, previousTitle, artist)
+                    // The compressed long tail is keyed by (artist, title), so it does not
+                    // follow a rename on its own. Left alone it keeps serving the old name
+                    // to the All-History view and can never be recognised as already
+                    // promoted — the same reason the merge path re-keys it.
+                    rekeyArchiveRow(
+                        previousArtist = artist,
+                        previousTitle = previousTitle,
+                        newArtist = artist,
+                        newTitle = newTitle
+                    )
+                }
+            }
+            rows > 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Error renaming track $trackId to '$newTitle'", e)
+            false
+        }
+
+        if (!renamed) {
+            Log.w(TAG, "Rename of track $trackId to '$newTitle' matched no row")
+            return false
+        }
+
+        statsRepository.invalidateCache()
+        tracker.track(FeatureFirstUsed(TempoFeature.ALIAS_RENAME))
+        Log.i(TAG, "Renamed track $trackId: '$previousTitle' -> '$newTitle'")
+        return true
+    }
+
+    /**
+     * Move the compressed archive row for one identity onto another.
+     *
+     * `scrobbles_archive` is the only play store keyed by title rather than by track id,
+     * so a rename or merge that skips it leaves the old name behind: the All-History
+     * view keeps listing the old title's archived plays beside the renamed track's
+     * active ones, and `prunePromotedArchives` can never match the row to the track it
+     * was promoted into. Timestamps are union-merged in case the new identity already
+     * has an archive row of its own.
+     */
+    private suspend fun rekeyArchiveRow(
+        previousArtist: String,
+        previousTitle: String,
+        newArtist: String,
+        newTitle: String
+    ): Boolean {
+        val archiveRow = scrobbleArchiveDao.findByArtistAndTitle(previousArtist, previousTitle)
+            ?: return false
+
+        val newHash = ScrobbleArchive.generateTrackHash(newArtist, newTitle)
+        if (newHash == archiveRow.trackHash) return false
+
+        val retargeted = archiveRow.copy(
+            id = 0,
+            trackHash = newHash,
+            trackTitle = newTitle,
+            artistName = newArtist,
+            artistNameNormalized = newArtist.lowercase().trim(),
+            updatedAt = System.currentTimeMillis()
+        )
+        scrobbleArchiveDao.upsertWithMerge(
+            retargeted,
+            ArchiveTimestampCodec::decompress,
+            ArchiveTimestampCodec::compress
+        )
+        scrobbleArchiveDao.delete(archiveRow)
+        Log.d(TAG, "Re-keyed scrobble archive row: '$previousTitle' -> '$newTitle'")
+        return true
+    }
+
     
     /**
-     * Merges source track into target track:
-     * 1. Creates alias (Source -> Target)
-     * 2. Re-points existing aliases that pointed to source to now point to target
-     *    (handles chained merges so no aliases are lost when source is deleted)
-     * 3. Merges metadata from source to target (fills in missing fields)
-     * 4. Moves listening history from source to target
-     * 5. Deletes source track
-     * 6. Invalidates stats cache
+     * Merge `sourceTrackId` into `targetTrackId`. The source track is deleted and its
+     * listening history moves to the target.
      *
-     * @param sourceTrackId The track to merge FROM (will be deleted)
-     * @param targetTrackId The track to merge INTO (will remain)
-     * @return true if merge succeeded, false otherwise
+     * Returns false when the ids match or either track is missing.
      */
     open suspend fun mergeTracks(sourceTrackId: Long, targetTrackId: Long): Boolean {
         val merged = mergeTracksInternal(sourceTrackId, targetTrackId)
-        if (merged) tracker.track(FeatureUsed(TempoFeature.TRACK_MERGE))
+        if (merged) tracker.track(FeatureFirstUsed(TempoFeature.TRACK_MERGE))
         return merged
     }
 
@@ -107,23 +205,32 @@ open class TrackAliasRepository @Inject constructor(
             return false
         }
         
-        val sourceTrack = trackDao.getTrackById(sourceTrackId)
-        val targetTrack = trackDao.getTrackById(targetTrackId)
+        val sourceTrackSnapshot = trackDao.getTrackById(sourceTrackId)
+        val targetTrackSnapshot = trackDao.getTrackById(targetTrackId)
         
-        if (sourceTrack == null) {
+        if (sourceTrackSnapshot == null) {
             Log.w(TAG, "Source track $sourceTrackId not found")
             return false
         }
-        if (targetTrack == null) {
+        if (targetTrackSnapshot == null) {
             Log.w(TAG, "Target track $targetTrackId not found")
             return false
         }
         
-        Log.i(TAG, "Merging track '${sourceTrack.title}' by '${sourceTrack.artist}' " +
-                "into '${targetTrack.title}' by '${targetTrack.artist}'")
+        Log.i(TAG, "Merging track '${sourceTrackSnapshot.title}' by '${sourceTrackSnapshot.artist}' " +
+                "into '${targetTrackSnapshot.title}' by '${targetTrackSnapshot.artist}'")
         
         return try {
             database.withTransaction {
+                // Re-read every merge-sensitive row inside the transaction. The user may
+                // have selected/reset artwork after the preliminary existence check.
+                val sourceTrack = trackDao.getTrackById(sourceTrackId)
+                    ?: error("Source track $sourceTrackId disappeared before merge")
+                val targetTrack = trackDao.getTrackById(targetTrackId)
+                    ?: error("Target track $targetTrackId disappeared before merge")
+                val sourceMetadata = enrichedMetadataDao.forTrackSync(sourceTrackId)
+                val targetMetadata = enrichedMetadataDao.forTrackSync(targetTrackId)
+
                 // 1. Create alias for future lookups
                 val alias = TrackAlias(
                     targetTrackId = targetTrackId,
@@ -156,6 +263,35 @@ open class TrackAliasRepository @Inject constructor(
                 
                 // 3. Merge metadata from source into target (fill missing fields)
                 var updatedTarget = mergeTrackMetadata(sourceTrack, targetTrack)
+
+                // Returning the surviving target to automatic selection is also an
+                // explicit preference. Do not resurrect artwork from the source track.
+                if (targetMetadata?.albumArtSource == AlbumArtSource.USER_RESET) {
+                    updatedTarget = updatedTarget.copy(albumArtUrl = null)
+                }
+
+                // A user-selected cover is an explicit preference, not ordinary enrichment.
+                // Preserve the target's manual cover when it already has one; otherwise carry
+                // the source manual cover across the merge before the source row is deleted.
+                val manualArtwork = preferredManualArtwork(
+                    sourceMetadata = sourceMetadata,
+                    targetMetadata = targetMetadata,
+                )
+
+                if (manualArtwork != null) {
+                    val selectedUrl = manualArtwork.albumArtUrl!!
+                    updatedTarget = updatedTarget.copy(albumArtUrl = selectedUrl)
+
+                    val mergedMetadata = (targetMetadata ?: EnrichedMetadata(trackId = targetTrackId)).copy(
+                        albumArtUrl = selectedUrl,
+                        albumArtUrlSmall = manualArtwork.albumArtUrlSmall ?: selectedUrl,
+                        albumArtUrlLarge = manualArtwork.albumArtUrlLarge ?: selectedUrl,
+                        albumArtSource = AlbumArtSource.USER_SELECTED,
+                        cacheTimestamp = System.currentTimeMillis(),
+                    )
+                    enrichedMetadataDao.upsert(mergedMetadata)
+                    Log.d(TAG, "Preserved user-selected cover while merging into track $targetTrackId")
+                }
                 // A merge target whose artist is a structural placeholder label
                 // (e.g. the Takeout "Release" artifact) must not keep it — the
                 // surviving track would stay pooled under the bogus artist and
@@ -202,31 +338,13 @@ open class TrackAliasRepository @Inject constructor(
                 }
 
                 // 5. Re-key the compressed scrobble archive row (Last.fm long-tail
-                // history) so it follows the merged identity. Timestamps are union-
-                // merged in case the target already has its own archive row.
-                val archiveRow = scrobbleArchiveDao.findByArtistAndTitle(
-                    sourceTrack.artist, sourceTrack.title
+                // history) so it follows the merged identity.
+                rekeyArchiveRow(
+                    previousArtist = sourceTrack.artist,
+                    previousTitle = sourceTrack.title,
+                    newArtist = targetTrack.artist,
+                    newTitle = targetTrack.title
                 )
-                if (archiveRow != null) {
-                    val newHash = ScrobbleArchive.generateTrackHash(targetTrack.artist, targetTrack.title)
-                    if (newHash != archiveRow.trackHash) {
-                        val retargeted = archiveRow.copy(
-                            id = 0,
-                            trackHash = newHash,
-                            trackTitle = targetTrack.title,
-                            artistName = targetTrack.artist,
-                            artistNameNormalized = targetTrack.artist.lowercase().trim(),
-                            updatedAt = System.currentTimeMillis()
-                        )
-                        scrobbleArchiveDao.upsertWithMerge(
-                            retargeted,
-                            ArchiveTimestampCodec::decompress,
-                            ArchiveTimestampCodec::compress
-                        )
-                        scrobbleArchiveDao.delete(archiveRow)
-                        Log.d(TAG, "Re-keyed scrobble archive row to target identity")
-                    }
-                }
 
                 // 6. Delete source track (CASCADE will clean up old aliases and track_artists)
                 trackDao.deleteById(sourceTrackId)
@@ -251,27 +369,22 @@ open class TrackAliasRepository @Inject constructor(
     private fun mergeTrackMetadata(source: Track, target: Track): Track {
         var result = target
         
-        // Copy album if target doesn't have one
         if (target.album.isNullOrBlank() && !source.album.isNullOrBlank()) {
             result = result.copy(album = source.album)
         }
         
-        // Copy album art URL if target doesn't have one
         if (target.albumArtUrl.isNullOrBlank() && !source.albumArtUrl.isNullOrBlank()) {
             result = result.copy(albumArtUrl = source.albumArtUrl)
         }
         
-        // Copy Spotify ID if target doesn't have one
         if (target.spotifyId.isNullOrBlank() && !source.spotifyId.isNullOrBlank()) {
             result = result.copy(spotifyId = source.spotifyId)
         }
         
-        // Copy MusicBrainz ID if target doesn't have one
         if (target.musicbrainzId.isNullOrBlank() && !source.musicbrainzId.isNullOrBlank()) {
             result = result.copy(musicbrainzId = source.musicbrainzId)
         }
         
-        // Copy duration if target doesn't have one
         if ((target.duration == null || target.duration == 0L) && source.duration != null && source.duration > 0) {
             result = result.copy(duration = source.duration)
         }
@@ -285,4 +398,23 @@ open class TrackAliasRepository @Inject constructor(
     suspend fun getAllAliases(): List<TrackAlias> {
         return trackAliasDao.getAllSync()
     }
+}
+
+
+/**
+ * Resolve the artwork preference for a track merge. The surviving target's explicit
+ * choice always wins; otherwise an explicit choice from the source follows the merge.
+ */
+internal fun preferredManualArtwork(
+    sourceMetadata: EnrichedMetadata?,
+    targetMetadata: EnrichedMetadata?,
+): EnrichedMetadata? {
+    fun EnrichedMetadata?.validManualArtwork(): EnrichedMetadata? =
+        this?.takeIf {
+            it.albumArtSource == AlbumArtSource.USER_SELECTED &&
+                !it.albumArtUrl.isNullOrBlank()
+        }
+
+    if (targetMetadata?.albumArtSource == AlbumArtSource.USER_RESET) return null
+    return targetMetadata.validManualArtwork() ?: sourceMetadata.validManualArtwork()
 }

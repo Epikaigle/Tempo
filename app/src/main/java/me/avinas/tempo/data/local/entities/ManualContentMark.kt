@@ -6,15 +6,10 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * Persistent user-defined content classifications for filtering and tracking overrides.
- * 
- * When a user manually marks content as podcast or audiobook,
- * we store a pattern (title/artist/album) that will be used to
- * auto-filter similar content in the future.
- * 
- * Example: User marks "Chapter 5 of The Great Gatsby" as audiobook
- * -> Store pattern: "Chapter % of The Great Gatsby" (wildcard for chapter numbers)
- * -> Future chapters of this book are auto-filtered
+ * User-defined content classifications that override tracking. A mark stores a pattern
+ * (title/artist/album) so future content matches automatically: marking "Chapter 5 of The Great
+ * Gatsby" as audiobook stores `"Chapter % of The Great Gatsby"`, where `%` wildcards the chapter
+ * number.
  */
 @Entity(
     tableName = "manual_content_marks",
@@ -34,31 +29,17 @@ data class ManualContentMark(
     @PrimaryKey(autoGenerate = true) 
     val id: Long = 0,
     
-    /**
-     * Reference to the original track that was marked.
-     * Zero is used for rules created directly from settings.
-     */
+    /** 0 when the rule was created directly from settings rather than from a track. */
     @ColumnInfo(name = "target_track_id")
     val targetTrackId: Long,
     
-    /**
-     * Pattern type: TITLE_ARTIST, TITLE, or ARTIST.
-     * Determines which fields are matched.
-     */
+    /** TITLE_ARTIST, TITLE or ARTIST: which of the fields below are matched. */
     @ColumnInfo(name = "pattern_type")
     val patternType: String,
     
-    /**
-     * Original title of the marked track.
-     * Used for exact matching.
-     */
     @ColumnInfo(name = "original_title")
     val originalTitle: String,
     
-    /**
-     * Original artist of the marked track.
-     * Used for exact matching.
-     */
     @ColumnInfo(name = "original_artist")
     val originalArtist: String,
     

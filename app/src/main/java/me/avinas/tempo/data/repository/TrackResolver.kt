@@ -1,5 +1,6 @@
 package me.avinas.tempo.data.repository
 
+import me.avinas.tempo.data.local.dao.TrackAliasDao
 import me.avinas.tempo.data.local.entities.Track
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,7 +18,9 @@ import javax.inject.Singleton
  *  2. musicbrainzId
  *  3. youtubeId
  *  4. exact title + artist (case-insensitive)
- *  5. fuzzy title + artist
+ *  5. the alias recorded for that title + artist — a name the user renamed away
+ *     or merged into another row
+ *  6. fuzzy title + artist
  * If nothing matches, a new track is created.
  *
  * Layer 4 (metadata merge): when an incoming query matches an existing track,
@@ -28,7 +31,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class TrackResolver @Inject constructor(
-    private val trackRepository: TrackRepository
+    private val trackRepository: TrackRepository,
+    private val trackAliasDao: TrackAliasDao
 ) {
 
     /** What an import knows about a track it wants to attach a play to. */
@@ -50,10 +54,7 @@ class TrackResolver @Inject constructor(
         val track: Track
     )
 
-    /**
-     * Resolve [query] to an existing track, or create one if none matches.
-     * Returns the track id plus the (possibly merged) track.
-     */
+    /** Resolve [query] to an existing track, or create one if none matches. */
     suspend fun resolve(query: Query, contentType: String = "MUSIC"): Resolution {
         // Blank IDs must be skipped: Last.fm returns mbid="" (not null) for non-MusicBrainz
         // tracks, and a WHERE musicbrainz_id = '' lookup collides with the first track that
@@ -68,6 +69,17 @@ class TrackResolver @Inject constructor(
             trackRepository.findByYoutubeId(id)?.let { return merge(it, query) }
         }
         trackRepository.findByTitleAndArtist(query.title, query.artist)?.let { return merge(it, query) }
+
+        // A name the user renamed away or merged into another row still means that song.
+        // Without this, every later import of the old title re-created the duplicate the
+        // user had just cleaned up — and because the play then lands on a fresh track_id,
+        // neither the content fingerprint nor Layer 2's per-track reconciliation can
+        // recognise it as a repeat, so the play counts split for real.
+        // Exact title first, alias second: a row that literally carries this title is the
+        // better answer, which also means duplicates created before this step existed are
+        // left alone rather than silently absorbed.
+        trackAliasDao.findAliasTargetTrack(query.title, query.artist)?.let { return merge(it, query) }
+
         trackRepository.findByTitleAndArtistFuzzy(query.title, query.artist)?.let { return merge(it, query) }
 
         val track = Track(
@@ -86,11 +98,7 @@ class TrackResolver @Inject constructor(
         return Resolution(newId, isNewTrack = true, track = track.copy(id = newId))
     }
 
-    /**
-     * Layer 4: backfill missing authoritative IDs on an existing track. Only
-     * fills gaps — a non-null existing value is never replaced. Returns a
-     * [Resolution] pointing at the existing (possibly updated) track.
-     */
+    /** Layer 4 for one track: gap-fill only, never overwrite. */
     private suspend fun merge(existing: Track, query: Query): Resolution {
         var updated = existing
         var dirty = false
@@ -111,10 +119,9 @@ class TrackResolver @Inject constructor(
             updated = updated.copy(album = query.album)
             dirty = true
         }
-        if (query.albumArtUrl != null && existing.albumArtUrl == null) {
-            updated = updated.copy(albumArtUrl = query.albumArtUrl)
-            dirty = true
-        }
+        val automaticArtworkCandidate = query.albumArtUrl
+            ?.takeIf { it.isNotBlank() && existing.albumArtUrl.isNullOrBlank() }
+
         if (query.duration != null && existing.duration == null) {
             updated = updated.copy(duration = query.duration)
             dirty = true
@@ -122,6 +129,18 @@ class TrackResolver @Inject constructor(
         if (dirty) {
             trackRepository.update(updated)
         }
+
+        // Artwork has a separate guarded write path. Generic full-row updates deliberately
+        // preserve the currently stored artwork, so routing automatic backfill through
+        // update() would silently discard a newly discovered cover.
+        if (automaticArtworkCandidate != null) {
+            val persistedArtwork = trackRepository.updateAutomaticAlbumArtUrl(
+                existing.id,
+                automaticArtworkCandidate,
+            )
+            updated = updated.copy(albumArtUrl = persistedArtwork)
+        }
+
         return Resolution(existing.id, isNewTrack = false, track = updated)
     }
 }

@@ -184,9 +184,9 @@ private fun rememberDemoSwitch(): Boolean {
 }
 
 /**
- * Single guide pulse for the dialog's Allow button. Returns the State unread —
- * only the leaves that draw the pulse subscribe, so the static dialog text
- * stops recomposing 60fps. No loop at all under reduced motion.
+ * Guide pulse for the dialog's Allow button, returned as unread State so only the
+ * leaves that draw the pulse subscribe and the static dialog text stops
+ * recomposing at 60fps. No loop under reduced motion.
  */
 @Composable
 private fun rememberGuidePulseState(): State<Float> {
@@ -258,9 +258,8 @@ private fun GrooveDivider() {
 }
 
 /**
- * Stages a mockup like a product shot: ambient glow tying the light
- * card to the dark background, and optional tap-to-open so the
- * preview feels alive instead of pasted on.
+ * Stages a mockup like a product shot: the ambient glow anchors the light card
+ * to the dark stage, and `onClick` makes the preview openable.
  */
 @Composable
 fun MockupStage(
@@ -269,7 +268,6 @@ fun MockupStage(
 ) {
     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
-            // Ambient glow — what visually anchors the light card to the dark stage.
             androidx.compose.foundation.layout.Box(
                 Modifier.size(280.dp).background(
                     brush =
@@ -603,15 +601,11 @@ fun TempoProductMockup(modifier: Modifier = Modifier) {
 }
 
 // ── 4 · Welcome backdrop ─────────────────────────────────────────
-// One composable owns both layers so they share geometry:
-//   mid  · welcome.png fitted without zoom (Fit + BottomCenter — the
-//          full image is always visible, never cropped, flush with the
-//          bottom so copy sits on the artwork);
-//   back · native revolving notes on a flat circle centered on the
-//          head, drawn BEHIND the art: the transparent top lets them
-//          show around the head while the character occludes the
-//          loop's lower half, so notes pass behind and the face stays
-//          clear.
+// One composable owns both layers so they share geometry. welcome.png is
+// fitted without zoom (Fit + BottomCenter: the full image is always visible,
+// never cropped, flush with the bottom so copy sits on the artwork) and the
+// revolving notes draw BEHIND the art, so the transparent top lets them show
+// around the head while the character occludes the loop's lower half.
 // Top copy (headline + CTA) lives in WelcomeScreen, overlaid on the art.
 // Subtle: small mid-alpha notes, no glow or shadow. One slow linear
 // revolve; frozen under reduced motion.

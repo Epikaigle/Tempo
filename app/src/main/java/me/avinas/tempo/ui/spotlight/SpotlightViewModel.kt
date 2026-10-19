@@ -10,7 +10,7 @@ import coil3.request.ImageRequest
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.repository.PreferencesRepository
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.data.spotify.SpotifyHistoryReconstructionService
 import me.avinas.tempo.data.lastfm.LastFmImportService
@@ -123,7 +123,7 @@ class SpotlightViewModel @Inject constructor(
      * Records a single spotlight feature usage event when story playback starts.
      */
     fun trackStoryOpened() {
-        tracker.track(FeatureUsed(TempoFeature.SPOTLIGHT))
+        tracker.track(FeatureFirstUsed(TempoFeature.SPOTLIGHT))
     }
 
     /**

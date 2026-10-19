@@ -1,10 +1,10 @@
 # Privacy policy for Tempo
 
-Last updated: September 16, 2026
+Last updated: October 16, 2026
 
-Tempo is a local-first music tracker for Android. Your listening history stays on your phone. Tempo runs no server of its own, creates no accounts, shows no ads, and sells no data. There is no advertising or attribution SDK in the app.
+Tempo is a local-first music tracker for Android. Your listening history stays on your phone. Tempo creates no accounts, shows no ads, and sells no data. There is no advertising or attribution SDK in the app.
 
-Short version: two things leave your device. Search queries go to metadata services so Tempo can show album art and genres. Anonymous app-health statistics go to Aptabase so crashes get fixed. Nothing you listened to goes with either one. Turn off health reporting at any time in Settings → Your Data.
+Short version: two things leave your device. Search queries go to metadata services so Tempo can show album art and genres. Anonymous app-health statistics go to PostHog so crashes get fixed. Nothing you listened to goes with either one. Turn off health reporting at any time in Settings → Your Data.
 
 ## What stays on your device
 
@@ -42,19 +42,21 @@ To show art, genres, and artist details, Tempo queries third-party services dire
 
 Tempo sends anonymous statistics about the app itself: crashes, errors, and which features are used. This is the only data about you that leaves the device besides the metadata queries above.
 
-What is sent: crash signatures (obfuscated class name and line, never the message), failure counts by category, detail-screen visits (song, artist, album only) and features reached, whether onboarding finished, and whether background detection is alive. Counts go out as ranges, not exact numbers. The exact list is in the app under Settings → Your Data → Data and diagnostics, and in `docs/ANALYTICS.md`.
+What is sent: crash signatures (obfuscated class name and line, never the message), failure counts by category, which features were used for the first time, whether onboarding finished, whether background detection is alive, how many listens were tracked that day as a range, and that Tempo was used at all that day.
 
-What is never sent: track, artist, album, or playlist names. Search queries. Notification content. File paths. Listening timestamps. Google, Spotify, or Last.fm account details. Any device identifier, including advertising ID and `ANDROID_ID`. Crash messages are left out on purpose, because a parse error can echo notification text.
+What is never sent: track, artist, album, or playlist names. Search queries. Notification content. File paths. Listening timestamps. Google, Spotify, or Last.fm account details. Your advertising ID or `ANDROID_ID`. Your IP address — Tempo stores it nowhere, and it instructs the analytics service not to derive anything from it. Crash messages are left out on purpose, because a parse error can echo notification text.
 
-How you stay unidentified: Tempo sets no user ID. The only session value is random, held in memory, regenerated on each start, and rotated after an hour of inactivity. It is never written to disk. No cookies.
+No location data is kept at all. Events are sent with location enrichment switched off (`$geoip_disable`), so no country, city, postcode or coordinates are derived from your connection or stored alongside an event.
 
-Where it goes: Aptabase, in the EU. Aptabase is open source and its SDKs send no identifiers. On receipt it derives a temporary hash from IP and user agent against a salt that rotates every 24 hours. Old salts are purged on a schedule, so events cannot be linked across days. One caveat stated plainly: that IP also yields a coarse country and region, stored with the event. It is not precise and is not linked to anything else, but it is location data and you should know it is kept.
+How you stay unidentified: Tempo uses one random install id, generated on your device and used only to count how many people use Tempo and whether they come back. It is not your advertising ID, not `ANDROID_ID`, and not derived from anything about your device or you, so it cannot be matched against another app — and there is nothing to match it to, because Tempo has no accounts. You can replace it any time in Settings → Your Data → Reset analytics ID; everything recorded before then becomes unlinkable to anything after. Events are sent as anonymous, so the analytics service stores no user profile for you. No cookies.
+
+Where it goes: PostHog, on EU infrastructure in Frankfurt. Events go straight from the app to PostHog's ingest endpoint — no intermediary service sits in between. The two properties that matter are set by the app itself on every event: the anonymous flag, so no user profile can be created, and the location-enrichment opt-out, so nothing is derived from your address. PostHog is open source and does not sell data. The PostHog project token ships inside the app, which is how PostHog client tokens are meant to work.
 
 When it is sent: over any connection, including mobile data. Each event is a few hundred bytes, about 16 KB on a busy day, so waiting for Wi-Fi would silence reporting for people on mobile data only. Nothing is collected until the in-app notice has been shown, and the notice stays up until you acknowledge it or turn reporting off.
 
-To turn it off: open Settings → Your Data → Anonymous app-health stats. Reporting stops at once and anything buffered but unsent is deleted. This works from any screen.
+To turn it off: open Settings → Your Data → Anonymous app-health stats. Reporting stops at once, anything buffered but unsent is deleted, and your install id is replaced so nothing recorded earlier can be linked to anything later. This works from any screen.
 
-Builds compiled from source send nothing. The reporting key is not committed to the repository, so a self-built copy has reporting inert.
+Builds compiled from source send nothing. The analytics endpoint is not committed to the repository, so a self-built copy has reporting inert.
 
 ## Diagnostics report
 

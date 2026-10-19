@@ -16,11 +16,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsConsent
+import me.avinas.tempo.data.analytics.AnalyticsGate
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.AppStartType
-import me.avinas.tempo.data.analytics.AppStarted
 import me.avinas.tempo.data.analytics.CrashSignatureRecorder
 import me.avinas.tempo.data.analytics.DbMigration
+import me.avinas.tempo.data.analytics.StartupSlow
 import me.avinas.tempo.data.drive.BackupInterval
 import me.avinas.tempo.data.drive.BackupSettingsManager
 import me.avinas.tempo.data.drive.LocalBackupStorage
@@ -41,13 +41,10 @@ import me.avinas.tempo.worker.LocalBackupWorker
 import me.avinas.tempo.worker.ServiceHealthWorker
 import me.avinas.tempo.worker.SpotifyPollingWorker
 import me.avinas.tempo.worker.SpotlightUnlockWorker
+import me.avinas.tempo.worker.StatsPrecomputeWorker
 import java.util.concurrent.Executors
 import javax.inject.Inject
 
-/**
- * Application class configuring Hilt DI, WorkManager HiltWorkerFactory,
- * and Coil SingletonImageLoader.
- */
 @HiltAndroidApp
 class TempoApplication :
     Application(),
@@ -85,6 +82,15 @@ class TempoApplication :
 
     @Inject
     lateinit var analyticsConsent: AnalyticsConsent
+
+    @Inject
+    lateinit var analyticsDailyLedger: me.avinas.tempo.data.analytics.AnalyticsDailyLedger
+
+    @Inject
+    lateinit var analyticsInstallId: me.avinas.tempo.data.analytics.AnalyticsInstallId
+
+    @Inject
+    lateinit var analyticsFeatureLedger: me.avinas.tempo.data.analytics.AnalyticsFeatureLedger
 
     private val backgroundExecutor = Executors.newSingleThreadExecutor()
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -151,26 +157,23 @@ class TempoApplication :
      *
      * `startupMillis` measures Tempo's own synchronous start-up work — a regression guard for
      * anything blocking added to `onCreate` — rather than time-to-first-frame, which this
-     * lifecycle callback genuinely cannot see. `listenerReady` is the more valuable signal:
-     * it reports whether tracking was actually alive when the user opened the app, reusing the
-     * heartbeat the health worker already relies on instead of duplicating permission checks.
+     * lifecycle callback genuinely cannot see.
      */
     private fun reportAppStarted(initStartedAt: Long) {
         // Measured on the main thread before anything async: this is exactly Tempo's own
-        // synchronous start-up work, which is what the metric guards — the heartbeat read
-        // below must not be counted into it.
+        // synchronous start-up work, which is what the metric guards.
         val startupMillis = System.currentTimeMillis() - initStartedAt
+
+        // Only the exception is worth sending. A healthy start carries no information, and
+        // reporting it on every process start — including the ones Android makes for background
+        // work — was roughly 28% of all traffic, for a value that never varied.
+        //
+        // The heartbeat read that used to live here is gone with it: `listener_ready` is now
+        // part of the daily activity report, so app start no longer touches disk at all.
+        if (startupMillis < StartupSlow.THRESHOLD_MILLIS) return
+
         applicationScope.launch {
-            // The heartbeat read is disk I/O, so it stays off the main thread; the value
-            // still reflects the state at open time.
-            val heartbeat = TrackingServiceHeartbeat.snapshot(this@TempoApplication)
-            analyticsTracker.track(
-                AppStarted(
-                    startType = AppStartType.COLD,
-                    startupMillis = startupMillis,
-                    listenerReady = heartbeat.hasEverStarted() && !heartbeat.shouldRequestRebind(),
-                ),
-            )
+            analyticsTracker.track(StartupSlow(startupMillis))
         }
     }
 
@@ -228,10 +231,9 @@ class TempoApplication :
     /**
      * Reconcile persisted automatic-backup settings on every process start.
      *
-     * This is important when upgrading from the old combined Drive/local worker:
-     * users who already selected Daily/Weekly/Monthly must receive the dedicated
-     * LocalBackupWorker without having to revisit the Backup & Restore screen.
-     * ExistingPeriodicWorkPolicy.UPDATE keeps healthy periodic cadence while also
+     * Upgrading from the old combined Drive/local worker must hand users who already selected
+     * Daily/Weekly/Monthly the dedicated LocalBackupWorker without a trip to the Backup & Restore
+     * screen. ExistingPeriodicWorkPolicy.UPDATE keeps healthy periodic cadence while also
      * repairing a missing WorkManager registration after an app/process restart.
      */
     private fun reconcileAutomaticBackupSchedules() {
@@ -312,6 +314,13 @@ class TempoApplication :
         // Local-only read; the resulting aggregate is queued and uploaded by the flush worker.
         ListeningActivityWorker.schedule(this)
 
+        // Warm the stats cache. Every recorded listening event invalidates the whole cache
+        // (see RoomStatsRepository.onNewListeningEvent) and that cache is in-memory only, so the
+        // first visit to Stats or Home after any listening would otherwise pay the full cold
+        // aggregates. This worker exists to precompute them but was never scheduled anywhere —
+        // `grep StatsPrecomputeWorker.` had no call sites, so it never ran.
+        StatsPrecomputeWorker.schedule(this)
+
         scheduleSpotifyPollingIfEnabled()
 
         Handler(Looper.getMainLooper()).postDelayed({
@@ -338,6 +347,18 @@ class TempoApplication :
      * app start from resurrecting a worker that the user's opt-out had cancelled.
      */
     private fun observeAnalyticsConsent() {
+        // A build that cannot report has no uploader to register and no buffer worth dropping —
+        // and because its notice never renders, the gate can never open, so subscribing would
+        // mean running the opt-out branch forever against a decision that will not change.
+        if (!AnalyticsGate.isBuildConfigured(
+                endpoint = BuildConfig.ANALYTICS_ENDPOINT,
+                isDebug = BuildConfig.DEBUG,
+                debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW,
+            )
+        ) {
+            return
+        }
+
         applicationScope.launch {
             analyticsConsent.collectionAllowed.collect { allowed ->
                 if (allowed) {
@@ -346,12 +367,23 @@ class TempoApplication :
                 } else {
                     analyticsTracker.purge()
                     AnalyticsFlushWorker.cancel(this@TempoApplication)
+
+                    // Opting out deletes the install id as well as the unsent buffer, so
+                    // everything already recorded becomes unlinkable to anything sent after
+                    // turning reporting back on. Without this the same id would resume
+                    // reporting into the old history, and "stop reporting" would have meant
+                    // "pause for a while" rather than what it says.
+                    //
+                    // This is the write that made the loop: it changes the store the flow above
+                    // reads. `distinctUntilChanged` on that flow is what makes it safe.
+                    analyticsInstallId.reset()
+                    analyticsDailyLedger.clear()
+                    analyticsFeatureLedger.clear()
                 }
             }
         }
     }
 
-    /** Schedules Spotify polling worker if Spotify-API-Only mode is enabled. */
     private fun scheduleSpotifyPollingIfEnabled() {
         applicationScope.launch {
             try {

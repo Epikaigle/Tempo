@@ -12,8 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.FailureClassifier
-import me.avinas.tempo.data.analytics.FeatureUsed
-import me.avinas.tempo.data.analytics.ImportPhase
+import me.avinas.tempo.data.analytics.RunPhase
 import me.avinas.tempo.data.analytics.ImportProvider
 import me.avinas.tempo.data.analytics.ImportRun
 import me.avinas.tempo.data.analytics.TempoFeature
@@ -83,7 +82,7 @@ class LastFmViewModel
                                 tracker.track(
                                     ImportRun(
                                         provider = ImportProvider.LASTFM,
-                                        phase = if (result.success) ImportPhase.COMPLETED else ImportPhase.FAILED,
+                                        phase = if (result.success) RunPhase.COMPLETED else RunPhase.FAILED,
                                         records = (result.activeSetCount + result.archivedCount).toInt(),
                                         failure = result.errorMessage?.let { FailureClassifier.of(IllegalStateException(it)) },
                                         durationMillis = System.currentTimeMillis() - importStartedAt,
@@ -201,7 +200,6 @@ class LastFmViewModel
                 )
 
             importStartedAt = System.currentTimeMillis()
-            tracker.track(FeatureUsed(TempoFeature.LASTFM_IMPORT))
             LastFmImportWorker.enqueueInitialImport(
                 context = context,
                 username = username,

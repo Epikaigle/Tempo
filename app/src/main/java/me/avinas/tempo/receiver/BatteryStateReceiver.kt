@@ -10,26 +10,19 @@ import me.avinas.tempo.service.MusicTrackingService
 import me.avinas.tempo.utils.BatteryUtils
 
 /**
- * Listens for battery state changes and notifies [MusicTrackingService]
- * to resume tracking when battery recovers above the low-battery threshold.
+ * Listens for battery state changes and notifies [MusicTrackingService] to resume tracking when
+ * battery recovers above the low-battery threshold. Handles both [Intent.ACTION_BATTERY_OKAY] and
+ * [Intent.ACTION_BATTERY_CHANGED], acting only on upward threshold crossings so a fine-grained
+ * level update cannot cause constant wake-ups.
  *
- * We listen for both:
- *  - [Intent.ACTION_BATTERY_OKAY]   – system signal that battery is no longer low
- *  - [Intent.ACTION_BATTERY_CHANGED] – fine-grained level updates (only act when
- *    we cross the threshold upward, to avoid unnecessary wake-ups)
+ * Registered dynamically inside [MusicTrackingService], so it is only active while the service
+ * runs and needs no manifest entry.
  *
- * This receiver is registered *dynamically* inside [MusicTrackingService] so it
- * is only active while the service is running. No static manifest entry needed.
- *
- * ## Sticky-broadcast safety
- * [Intent.ACTION_BATTERY_CHANGED] is a sticky broadcast. Android delivers it
- * *immediately* upon [Context.registerReceiver] with the last known battery status,
- * even if the battery level has not changed. Without a guard this causes a spurious
- * "battery recovered" dispatch every time the service starts.
- *
- * The [markReady] call (made by [MusicTrackingService] right after registration)
- * signals that the initial sticky delivery has been absorbed and subsequent
- * deliveries are genuine level-change events.
+ * [Intent.ACTION_BATTERY_CHANGED] is sticky: [Context.registerReceiver] delivers it *immediately*
+ * with the last known status, even when the level has not changed. Without a guard that fires a
+ * spurious "battery recovered" dispatch on every service start, so the [markReady] call (made by
+ * [MusicTrackingService] right after registration) signals that the initial delivery has been
+ * absorbed and later deliveries are genuine level changes.
  */
 class BatteryStateReceiver : BroadcastReceiver() {
 
@@ -37,15 +30,10 @@ class BatteryStateReceiver : BroadcastReceiver() {
         private const val TAG = "BatteryStateReceiver"
     }
 
-    /**
-     * Set to true after the first [Intent.ACTION_BATTERY_CHANGED] delivery is absorbed.
-     * The service calls [markReady] immediately after [Context.registerReceiver] to
-     * let the sticky delivery pass through without triggering a recovery scan.
-     */
+    /** True once the first sticky [Intent.ACTION_BATTERY_CHANGED] delivery has been absorbed. */
     @Volatile
     private var isReady: Boolean = false
 
-    /** Called by [MusicTrackingService] to arm the threshold-crossing detection. */
     fun markReady() {
         isReady = true
         Log.d(TAG, "BatteryStateReceiver is now armed for threshold-crossing detection")
@@ -54,21 +42,18 @@ class BatteryStateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             Intent.ACTION_BATTERY_OKAY -> {
-                // System broadcast: battery level is no longer considered low.
-                // This is NOT a sticky broadcast so no spurious delivery guard needed.
+                // Not sticky, so no spurious-delivery guard is needed here.
                 Log.i(TAG, "ACTION_BATTERY_OKAY received — instructing service to resume tracking scan")
                 BatteryUtils.invalidateCache()
                 notifyService(context, MusicTrackingService.ACTION_BATTERY_RECOVERED)
             }
             Intent.ACTION_BATTERY_CHANGED -> {
-                // ACTION_BATTERY_CHANGED is sticky: first delivery on registration is the
-                // current level, not a change. Ignore it until markReady() has been called.
+                // Sticky: the first delivery on registration is the current level, not a change.
                 if (!isReady) {
                     Log.d(TAG, "Ignoring initial sticky ACTION_BATTERY_CHANGED on registration")
                     return
                 }
 
-                // Fine-grained update: only act when we cross the threshold upward.
                 val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
                 val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
                 if (level < 0 || scale <= 0) return
@@ -92,9 +77,8 @@ class BatteryStateReceiver : BroadcastReceiver() {
     }
 
     /**
-     * Notifies [MusicTrackingService] via [Context.startForegroundService] (Android 8+) or
-     * [Context.startService] (older). The service is already running as a foreground service
-     * so this is not a background-start — it merely delivers the action intent.
+     * The service is already running in the foreground, so this delivers the action intent rather
+     * than starting anything from the background.
      */
     private fun notifyService(context: Context, action: String) {
         val intent = Intent(context, MusicTrackingService::class.java).apply {

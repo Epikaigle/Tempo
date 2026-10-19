@@ -221,13 +221,11 @@ export function getSyncStatus(queueCount: number): SyncStatus {
   };
 }
 
-// Host permission helpers
+// Host permission helpers.
 //
-// IMPORTANT: chrome.permissions.request() MUST be called from a foreground
-// context (popup / options page) in direct response to a user gesture.
-// It CANNOT be called from the service worker — doing so causes the browser
-// to hang on the permission dialog with no way to click Allow or Deny.
-// The service worker may only CHECK permissions (permissions.contains).
+// chrome.permissions.request() only works from a foreground context (popup or options page) and
+// only inside a user gesture. Called from the service worker it hangs the browser on a permission
+// dialog with no way to click Allow or Deny. The worker can only check permissions.contains().
 //
 
 /**

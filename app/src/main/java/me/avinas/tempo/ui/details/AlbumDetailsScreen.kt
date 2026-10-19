@@ -20,6 +20,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -233,7 +234,7 @@ private fun AlbumDetailsContent(
                     bottom = 64.dp,
                 ),
             ) {
-                // 1. Hero Stage (Artwork, Album Title, Artist Link, Meta)
+                // 1. Hero Stage
                 item(key = "hero_section") {
                     AlbumHeroEditorialStage(
                         albumDetails = albumDetails,
@@ -259,16 +260,48 @@ private fun AlbumDetailsContent(
                     }
                 }
 
-                // 3. Track Sheet
-                item(key = "track_sheet") {
-                    Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
-                        AlbumTrackSheet(
-                            tracks = albumDetails.tracks,
+                // 3. Track Sheet — header, then one lazy item PER track row.
+                //
+                // The rows used to sit inside a single item(key = "track_sheet")
+                // as an eager Column, which bypassed LazyColumn virtualization:
+                // every row of a 50–200 track album/compilation composed and
+                // measured on first layout and stayed composed while scrolled far
+                // off-screen. Now only the visible window is materialised. Items
+                // are keyed off the track id (never the index): index-baked keys
+                // resolve to a different id when the list is mutated mid-scroll,
+                // reuse a slot twice and throw the subcompose
+                // IllegalArgumentException — see the same discipline in
+                // HistoryScreen/StatsScreen.
+                item(key = "track_sheet_header") {
+                    Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp)) {
+                        AlbumTrackSheetHeader(
+                            trackCount = albumDetails.tracks.size,
+                            isEditMode = isEditMode,
+                            onAddClick = onAddClick,
+                        )
+                    }
+                }
+
+                if (albumDetails.tracks.isEmpty()) {
+                    item(key = "track_sheet_empty") {
+                        Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 6.dp)) {
+                            AlbumEmptyTracksCard(tint = dominantColor)
+                        }
+                    }
+                } else {
+                    itemsIndexed(
+                        items = albumDetails.tracks,
+                        key = { _, item -> "track_${item.track.id}" },
+                        contentType = { _, _ -> "album_track_row" },
+                    ) { index, track ->
+                        AlbumTrackRow(
+                            index = index,
+                            track = track,
                             tint = dominantColor,
                             isEditMode = isEditMode,
+                            isFirst = index == 0,
+                            isLast = index == albumDetails.tracks.lastIndex,
                             onNavigateToSong = onNavigateToSong,
-                            onAddClick = onAddClick,
-                            onRemoveTrack = onRemoveTrack,
                         )
                     }
                 }
@@ -701,56 +734,45 @@ private fun AlbumStatMasthead(
 // 3. Track Sheet
 // ──────────────────────────────────────────────────────────────
 
+/**
+ * Kicker + track count + edit-mode add affordance.
+ *
+ * Its own LazyColumn item directly above the track rows (see [AlbumTrackRow]),
+ * so the header never forces those rows to compose.
+ */
 @Composable
-private fun AlbumTrackSheet(
-    tracks: List<TrackWithStats>,
-    tint: Color,
+private fun AlbumTrackSheetHeader(
+    trackCount: Int,
     isEditMode: Boolean,
-    onNavigateToSong: (Long) -> Unit,
     onAddClick: () -> Unit,
-    onRemoveTrack: (TrackWithStats) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SectionCatalogKicker(
+            number = "01",
+            label = stringResource(R.string.details_tracks),
+        )
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SectionCatalogKicker(
-                number = "01",
-                label = stringResource(R.string.details_tracks),
+            Text(
+                text = stringResource(
+                    if (trackCount == 1) R.string.album_one_song else R.string.album_songs_count,
+                    trackCount,
+                ),
+                style = CaptionSmall,
+                color = TextTertiary,
+                fontWeight = FontWeight.Medium,
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = stringResource(
-                        if (tracks.size == 1) R.string.album_one_song else R.string.album_songs_count,
-                        tracks.size,
-                    ),
-                    style = CaptionSmall,
-                    color = TextTertiary,
-                    fontWeight = FontWeight.Medium,
-                )
-                if (isEditMode) {
-                    AddSongPill(onClick = onAddClick)
-                }
+            if (isEditMode) {
+                AddSongPill(onClick = onAddClick)
             }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (tracks.isEmpty()) {
-            AlbumEmptyTracksCard(tint = tint)
-        } else {
-            AlbumTrackList(
-                tracks = tracks,
-                tint = tint,
-                isEditMode = isEditMode,
-                onNavigateToSong = onNavigateToSong,
-                onRemoveTrack = onRemoveTrack,
-            )
         }
     }
 }
@@ -792,23 +814,43 @@ private fun AlbumEmptyTracksCard(tint: Color) {
     }
 }
 
+/**
+ * One lazily-composed track row of the track sheet.
+ *
+ * Replaces the eager `tracks.forEachIndexed` Column that used to sit inside a
+ * single wraparound [GlassCard]: the card chrome (glass gradient, accent border,
+ * hairline divider) is now applied per row, so the outer 20dp corners live on
+ * the first/last row and the hairline sits inside each row (skipped on the last)
+ * to stay clipped by those corners. Row height is unchanged — content padding
+ * (11.2dp top / bottom) + the original 0.8dp [GlassBorderSoft] hairline == the
+ * old 12dp + hairline.
+ */
 @Composable
-private fun AlbumTrackList(
-    tracks: List<TrackWithStats>,
+private fun AlbumTrackRow(
+    index: Int,
+    track: TrackWithStats,
     tint: Color,
     isEditMode: Boolean,
+    isFirst: Boolean,
+    isLast: Boolean,
     onNavigateToSong: (Long) -> Unit,
-    onRemoveTrack: (TrackWithStats) -> Unit,
 ) {
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        variant = GlassCardVariant.QuietGlass,
-        accentColor = tint,
-        contentPadding = PaddingValues(0.dp),
-    ) {
-        Column {
-            tracks.forEachIndexed { index, track ->
+    val rowShape = RoundedCornerShape(
+        topStart = if (isFirst) 20.dp else 0.dp,
+        topEnd = if (isFirst) 20.dp else 0.dp,
+        bottomEnd = if (isLast) 20.dp else 0.dp,
+        bottomStart = if (isLast) 20.dp else 0.dp,
+    )
+
+    Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp)) {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = rowShape,
+            variant = GlassCardVariant.QuietGlass,
+            accentColor = tint,
+            contentPadding = PaddingValues(0.dp),
+        ) {
+            Column {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -816,7 +858,7 @@ private fun AlbumTrackList(
                             if (isEditMode) Modifier
                             else Modifier.premiumClickable(onClick = { onNavigateToSong(track.track.id) })
                         )
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp, vertical = 11.2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -886,7 +928,7 @@ private fun AlbumTrackList(
                     )
                 }
 
-                if (index < tracks.lastIndex) {
+                if (!isLast) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()

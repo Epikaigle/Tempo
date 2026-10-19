@@ -19,7 +19,6 @@ import me.avinas.tempo.data.repository.EnrichedMetadataRepository
 import me.avinas.tempo.worker.EnrichmentWorker
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 
 /**
@@ -129,7 +128,6 @@ class EnrichmentReportViewModel @Inject constructor(
 
     /** Requeue every non-enriched track to PENDING and start the bulk foreground sweep. */
     fun startEnrichAll() {
-        tracker.track(FeatureUsed(TempoFeature.ENRICHMENT_REPORT))
         viewModelScope.launch {
             // First queue tracks that never got a metadata row (invisible to the
             // status counts until now), then requeue every non-enriched track back

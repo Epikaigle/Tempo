@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -158,8 +159,12 @@ fun TodaysOverviewOverlay(
         LocalDate.now().format(DateTimeFormatter.ofPattern("MMM d", Locale.US)).uppercase()
     }
 
-    // Scroll-linked collapsing top bar header
-    val showCollapsedTitle = scrollState.value > 120
+    // Scroll-linked collapsing top bar header.
+    // derivedStateOf keeps the per-pixel scroll read out of composition: the
+    // boolean only invalidates this scope when it actually flips past 120.
+    val showCollapsedTitle by remember {
+        derivedStateOf { scrollState.value > 120 }
+    }
     val headerScrimAlpha by animateFloatAsState(
         targetValue = if (showCollapsedTitle) 1f else 0f,
         animationSpec = tween(200),

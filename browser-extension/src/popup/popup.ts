@@ -836,8 +836,9 @@ async function tryPing(ip: string, token: string): Promise<{ device: string; lat
   try {
     const result = await send(MessageType.PingPhone, { ip, port: SERVER_PORT, token });
 
-    // Service worker signals missing permission — request from here (popup = valid user gesture context)
-    // Note: Firefox doesn't support optional_host_permissions, so skip permission request there
+    // The service worker reports a missing permission, but the request has to come from here,
+    // where the popup's click counts as a user gesture. Firefox has no
+    // optional_host_permissions, so it skips the request entirely.
     const isFirefox = navigator.userAgent.includes('Firefox');
     if (result?.needsPermission && result?.origin && !isFirefox) {
       try {
@@ -899,14 +900,13 @@ async function startAutoDiscovery(token: string) {
   // This means all fetches to port 8765 bypass CORS unconditionally in every
   // extension context (popup, service worker, background).
 
-  // Step 1: Get the machine's real LAN IP via WebRTC ICE candidates.
-  //   This is the ONLY reliable way to find the local IP in a Chrome extension.
-  //   No permissions needed. Returns in ~200ms.
+  // WebRTC ICE candidates are the only reliable way to learn the machine's LAN IP from an
+  // extension. No permission prompt, and it takes about 200ms.
   setQrStatus('idle', 'Detecting local network…');
   const localIPs = await getLocalIPsViaWebRTC();
   console.log('[Tempo] Local IPs via WebRTC:', localIPs);
 
-  // Step 1b: Try connection history IPs first — instant reconnect on known networks
+  // Addresses we have paired with before come first: on a known network this reconnects at once.
   const historyResp = await send(MessageType.GetConnectionHistory);
   const historyEntries: Array<{ ip: string; port: number; successCount: number }> =
     historyResp?.history ?? [];
@@ -925,13 +925,9 @@ async function startAutoDiscovery(token: string) {
     }
   }
 
-  // Step 2: Build IP candidate list (mDNS handled separately — see mdnsPing())
-  //   • Hotspot seeds — fast path when phone IS the WiFi gateway
-  //   • All /24 hosts on each detected local subnet (covers regular WiFi)
-  //
-  // NOTE: MDNS_HOSTNAME is intentionally excluded from this set.
-  //   It is probed first in each tryAll() pass via mdnsPing() with a 3s timeout
-  //   so the OS has time to do the multicast DNS lookup.
+  // Candidates: hotspot seeds (the phone is the WiFi gateway) plus every /24 host on each local
+  // subnet. MDNS_HOSTNAME is deliberately left out: tryAll() probes it through mdnsPing() with a
+  // 3s timeout, long enough for the OS to finish the multicast lookup.
   const candidateSet = new Set<string>();
 
   for (const seed of HOTSPOT_SEEDS) candidateSet.add(seed);
@@ -991,11 +987,10 @@ async function startAutoDiscovery(token: string) {
     }
   }, 1000);
 
-  // Step 3: Scan candidates in parallel batches.
-  //   800ms timeout per IP — unassigned hosts fail in <10ms (TCP RST / ARP miss),
-  //   so each batch of 64 typically completes in well under 1 second.
-  //   mDNS is tried on the first pass, then throttled so a slow .local lookup
-  //   cannot block subnet scanning on networks where it will never resolve.
+  // Scan in batches of 64 with an 800ms per-IP timeout. Unassigned hosts fail in under 10ms
+  // (TCP RST or ARP miss), so a batch normally finishes well inside a second. mDNS is probed on
+  // the first pass and throttled after that, so a slow .local lookup cannot stall the subnet scan
+  // on networks where it will never resolve.
   const BATCH = 64;
   let pass = 0;
   let lastMdnsProbeAt = -30;
@@ -1242,17 +1237,12 @@ document.getElementById('btn-test-connected')?.addEventListener('click', async (
   </svg> Test Connection`;
 });
 
-// Rebuild Connection
-//
-// Runs a fresh, step-by-step discovery flow without requiring unpair:
-//   Step 1 — mDNS  (tempo-phone.local)   ~1-2 s  — heals IP changes instantly
-//   Step 2 — Hotspot seeds               ~2 s    — phone-as-gateway scenario
-//   Step 3 — Subnet scan via WebRTC      up to ~15 s — full /24 sweep
-//
-// On success, the stored phoneIp is updated so future auto-syncs use the new address.
+// Rebuild Connection: rerun discovery without unpairing. mDNS (tempo-phone.local, ~1-2s) comes
+// first because it survives an IP change, then hotspot seeds (~2s), then a full /24 sweep through
+// WebRTC (up to ~15s). On success the stored phoneIp is updated, so later auto-syncs use it.
 
 
-/** Helper: render a step row into the rebuild-steps container. */
+/** Append a status row to the rebuild-steps list. */
 function addRebuildStep(icon: string, text: string, state: 'active' | 'success' | 'failed' | 'pending'): HTMLElement {
   const stepsEl = document.getElementById('rebuild-steps')!;
   const div = document.createElement('div');

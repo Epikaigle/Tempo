@@ -132,8 +132,6 @@ object DefaultMusicApps {
         AppInfo("com.mxtech.videoplayer.pro", "MX Player Pro", "VIDEO"),
         AppInfo("org.videolan.vlc", "VLC", "VIDEO"),
         AppInfo("com.google.android.apps.photos", "Google Photos", "VIDEO"),
-        AppInfo("com.whatsapp", "WhatsApp", "VIDEO"),
-        AppInfo("org.telegram.messenger", "Telegram", "VIDEO"),
         
         // Browsers
         AppInfo("com.android.chrome", "Chrome", "OTHER"),
@@ -170,7 +168,11 @@ object DefaultMusicApps {
         AppInfo("app.tunein.player", "TuneIn Radio", "PODCAST"),
         AppInfo("com.stitcher.app", "Stitcher", "PODCAST"),
         AppInfo("com.castbox.player", "Castbox", "PODCAST"),
+        AppInfo("com.overcast.app", "Overcast", "PODCAST"),
         AppInfo("com.apple.android.podcasts", "Apple Podcasts", "PODCAST"),
+        AppInfo("com.podcastone.mobile", "PodcastOne", "PODCAST"),
+        AppInfo("com.wondery.wondery", "Wondery", "PODCAST"),
+        AppInfo("com.podcasts.android", "Podcasts", "PODCAST"),
         AppInfo("fm.castbox.audiobook.radio.podcast", "Castbox Variant", "PODCAST")
     )
     
@@ -184,8 +186,20 @@ object DefaultMusicApps {
         AppInfo("com.scribd.app.reader0", "Scribd", "AUDIOBOOK"),
         AppInfo("com.storytel", "Storytel", "AUDIOBOOK"),
         AppInfo("fm.libro", "Libro.fm", "AUDIOBOOK"),
-        AppInfo("com.kobo.books.ereader", "Kobo Books", "AUDIOBOOK")
+        AppInfo("com.libro.app", "Libro.fm (Alt)", "AUDIOBOOK"),
+        AppInfo("com.kobo.books.ereader", "Kobo Books", "AUDIOBOOK"),
+        AppInfo("com.nook.app", "Nook Audiobooks", "AUDIOBOOK"),
+        AppInfo("com.audiobooks.androidapp", "Audiobooks", "AUDIOBOOK")
     )
+
+    /** Package names of [PODCAST_APPS], for content filtering on the hot path. */
+    val PODCAST_PACKAGES: Set<String> = PODCAST_APPS.map { it.packageName }.toSet()
+
+    /** Package names of [AUDIOBOOK_APPS], for content filtering on the hot path. */
+    val AUDIOBOOK_PACKAGES: Set<String> = AUDIOBOOK_APPS.map { it.packageName }.toSet()
+
+    /** Package names of [BLOCKED_APPS], so the policy never linear-scans on the hot path. */
+    val BLOCKED_PACKAGES: Set<String> = BLOCKED_APPS.map { it.packageName }.toSet()
     
     /**
      * Get all apps as a combined list (for seeding database).
@@ -193,10 +207,203 @@ object DefaultMusicApps {
     fun getAllApps(): List<AppInfo> = MUSIC_APPS + BLOCKED_APPS + PODCAST_APPS + AUDIOBOOK_APPS
     
     /**
+     * Apps whose audio is never music, regardless of what the user does.
+     *
+     * This is the one list that cannot be overridden. It covers messaging apps that emit voice
+     * notes, dialers/voicemail, and voice recorders — anything where a "media session" is a
+     * human speaking and journaling it as a song is simply wrong.
+     *
+     * The distinction from [BLOCKED_APPS] matters: a blocked app is a *default preference* the
+     * user can reverse (YouTube is blocked by default, but someone may want their music videos
+     * tracked). An entry here is a correctness guarantee, so the Manage Apps screen shows these
+     * as "Not supported" with no toggle rather than offering an Unblock that would not work.
+     *
+     * Deliberately excluded: collaboration apps (Discord, Slack, Teams) and social video apps.
+     * They do sometimes play real music, so they are left to the default-deny inbox where the
+     * user can make the call.
+     *
+     * Never seeded into `app_preferences` — this list is enforced purely in code so it cannot
+     * drift out of sync with a database row.
+     */
+    val NEVER_TRACK_APPS: List<AppInfo> = listOf(
+        // Messaging with voice notes
+        AppInfo("com.viber.voip", "Viber", "MESSAGING"),
+        AppInfo("com.viber.voip2", "Viber (Dual)", "MESSAGING"),
+        AppInfo("org.thoughtcrime.securesms", "Signal", "MESSAGING"),
+        AppInfo("org.thoughtcrime.securesms.beta", "Signal (Beta)", "MESSAGING"),
+        AppInfo("com.whatsapp", "WhatsApp", "MESSAGING"),
+        AppInfo("com.whatsapp.w4b", "WhatsApp Business", "MESSAGING"),
+        AppInfo("org.telegram.messenger", "Telegram", "MESSAGING"),
+        AppInfo("org.telegram.messenger.web", "Telegram Web", "MESSAGING"),
+        AppInfo("org.telegram.plus", "Telegram Plus", "MESSAGING"),
+        AppInfo("org.thunderdog.challegram", "Telegram X", "MESSAGING"),
+        AppInfo("com.facebook.orca", "Messenger", "MESSAGING"),
+        AppInfo("com.google.android.apps.messaging", "Google Messages", "MESSAGING"),
+        AppInfo("com.samsung.android.messaging", "Samsung Messages", "MESSAGING"),
+        AppInfo("com.android.mms", "Messages", "MESSAGING"),
+        AppInfo("com.android.messaging", "Messages (AOSP)", "MESSAGING"),
+        AppInfo("com.textra", "Textra SMS", "MESSAGING"),
+        AppInfo("com.p1.chompsms", "Chomp SMS", "MESSAGING"),
+        AppInfo("jp.naver.line.android", "LINE", "MESSAGING"),
+        AppInfo("com.kakao.talk", "KakaoTalk", "MESSAGING"),
+        AppInfo("com.tencent.mm", "WeChat", "MESSAGING"),
+        AppInfo("com.skype.raider", "Skype", "MESSAGING"),
+        AppInfo("com.truecaller", "Truecaller", "MESSAGING"),
+
+        // Dialers, calls and voicemail
+        AppInfo("com.android.dialer", "Phone", "CALLS"),
+        AppInfo("com.google.android.dialer", "Google Phone", "CALLS"),
+        AppInfo("com.samsung.android.dialer", "Samsung Phone", "CALLS"),
+        AppInfo("com.oneplus.dialer", "OnePlus Phone", "CALLS"),
+        AppInfo("com.android.phone", "Phone Services", "CALLS"),
+        AppInfo("com.android.server.telecom", "Telecom", "CALLS"),
+        AppInfo("com.android.incallui", "Call UI", "CALLS"),
+        AppInfo("com.android.voicemail", "Voicemail", "CALLS"),
+        AppInfo("com.samsung.android.incallui", "Samsung Call UI", "CALLS"),
+
+        // Voice recorders
+        AppInfo("com.android.soundrecorder", "Sound Recorder", "RECORDER"),
+        AppInfo("com.google.android.apps.recorder", "Recorder", "RECORDER"),
+        AppInfo("com.sec.android.app.voicenote", "Voice Recorder", "RECORDER"),
+        AppInfo("com.miui.voicerecorder", "Mi Voice Recorder", "RECORDER"),
+        AppInfo("com.coloros.soundrecorder", "Sound Recorder", "RECORDER"),
+        AppInfo("com.oppo.soundrecorder", "Sound Recorder", "RECORDER"),
+    )
+
+    /**
+     * Long-tail blocklist: OEM video players, video-player clones and extra browsers.
+     *
+     * Enforced by [AppTrackingPolicy] but deliberately NOT seeded into `app_preferences`.
+     * These are apps a user will never want tracked, so listing all ~90 of them in Manage Apps
+     * would be noise; they are blocked silently rather than offered as a suggestion.
+     *
+     * They live here rather than in the tracking service so there is exactly one taxonomy:
+     * before the default-deny move this list existed only inside MusicTrackingService, which is
+     * how it drifted out of sync with the curated list used for seeding.
+     */
+    val EXTENDED_BLOCKED_PACKAGES: Set<String> = setOf(
+        "allformat.player.videoplayer",
+        "com.UCMobile.intl",
+        "com.alcatel.video",
+        "com.alpha.videoplayer",
+        "com.amplayer.video",
+        "com.android.VideoPlayer",
+        "com.archos.arcmedia",
+        "com.archos.mediacenter.video",
+        "com.asus.gallery",
+        "com.boom.hdplayer",
+        "com.bsplayer.bspandroid",
+        "com.bsplayer.bspandroid.free",
+        "com.chrome.canary",
+        "com.coloros.video",
+        "com.easytech.videoplayer",
+        "com.edge.videoplayer",
+        "com.evoplayer.hd",
+        "com.flashplayer.videoplayer",
+        "com.fullhd.video.player",
+        "com.google.android.apps.youtube.media",
+        "com.google.android.gm",
+        "com.hd.videoplayer.master",
+        "com.hdvideoplayer.allformat",
+        "com.hisense.video",
+        "com.hmdglobal.gallery",
+        "com.htc.album",
+        "com.huawei.himovie",
+        "com.huawei.himovie.overseas",
+        "com.infinix.video",
+        "com.inshot.videoplayer",
+        "com.jplayer.hd",
+        "com.kmplayer",
+        "com.kmvideoplayer.hd",
+        "com.ksmobile.cb",
+        "com.lemon.videoplayer",
+        "com.lenovo.videoplayer",
+        "com.lge.gallery",
+        "com.lge.video",
+        "com.litterpeng.videoplayer",
+        "com.max.video.hd",
+        "com.media.masterplayer",
+        "com.mediaplayer.fullhd",
+        "com.motorola.MotGallery2",
+        "com.motorola.cn.gallery",
+        "com.mp4.hd.videoplayer",
+        "com.mytech.video.player",
+        "com.nokia.gallery",
+        "com.nova.videoplayer",
+        "com.oneplus.gallery",
+        "com.opera.browser.beta",
+        "com.oppo.video",
+        "com.panasonic.video",
+        "com.pixel.videoplayer",
+        "com.player.mediaplayer.hd",
+        "com.playit.videoplayer",
+        "com.playtube.videoplayer",
+        "com.powerful.videoplayer",
+        "com.prime.hdplayer",
+        "com.qwant.browser",
+        "com.realme.video",
+        "com.rhmsoft.playerpro",
+        "com.samsung.android.service.peoplestripe",
+        "com.sec.android.gallery3d",
+        "com.sharp.video",
+        "com.sonyericsson.album",
+        "com.spark.videoplayer",
+        "com.stream.videoplayer",
+        "com.super.video.hd",
+        "com.svplayer.hd",
+        "com.tcl.gallery",
+        "com.tcl.video",
+        "com.tecno.video",
+        "com.transsion.video",
+        "com.ufyl.videoplayer",
+        "com.ultra.hdplayer",
+        "com.videoplayer.hdplayer2020",
+        "com.videoplayer.masterpro",
+        "com.videoplayer.vivoplayer",
+        "com.vidma.videoplayer",
+        "com.vidx.player",
+        "com.vlc.remote",
+        "com.xplayer.hd",
+        "com.zte.video",
+        "hd.videoplayer.allformat",
+        "org.chromium.webview_shell",
+        "org.dolphin.browser",
+        "org.torproject.torbrowser",
+        "uplayer.video.player",
+        "video.player.allformat.hd.player",
+        "video.player.hd.videoplayer",
+        "video.player.videoplayer",
+        "videoplayer.musicplayer.mp4",
+        "videoplayer.video.player.hd",
+        "videoplayer.videoplayer",
+    )
+
+    /** Package names of [NEVER_TRACK_APPS], for fast lookup on the tracking hot path. */
+    val NEVER_TRACK_PACKAGES: Set<String> = NEVER_TRACK_APPS.map { it.packageName }.toSet()
+
+    /**
+     * Collections that are tracked but content-filtered (podcasts/audiobooks) or blocked by
+     * default (video, browsers). Combined with [MUSIC_APPS] these form the curated allowlist:
+     * an app on any of them is tracked without the user having to add it.
+     */
+    val CURATED_TRACKABLE_PACKAGES: Set<String> =
+        (MUSIC_APPS + PODCAST_APPS + AUDIOBOOK_APPS).map { it.packageName }.toSet()
+
+    /**
+     * Package name to display name, built once.
+     *
+     * [getDisplayName] is called while building the Manage Apps list and its detected-apps inbox,
+     * so the previous implementation — which allocated a fresh combined list via [getAllApps] and
+     * then linear-scanned it on every call — was doing needless work per row.
+     */
+    private val displayNameIndex: Map<String, String> by lazy {
+        (getAllApps() + NEVER_TRACK_APPS).associate { it.packageName to it.displayName }
+    }
+
+    /**
      * Get display name for a package, or format the package name if not found.
      */
-    fun getDisplayName(packageName: String): String {
-        return getAllApps().find { it.packageName == packageName }?.displayName
+    fun getDisplayName(packageName: String): String =
+        displayNameIndex[packageName]
             ?: packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() }
-    }
 }

@@ -25,7 +25,6 @@ import me.avinas.tempo.data.importexport.ImportExportResult
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.BackupRun
 import me.avinas.tempo.data.analytics.BackupTarget
-import me.avinas.tempo.data.analytics.FeatureUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import me.avinas.tempo.data.local.AppDatabase
 import me.avinas.tempo.data.profile.ProfileIdentityManager
@@ -380,7 +379,6 @@ class BackupRestoreViewModel @Inject constructor(
      * Export all data to a ZIP file.
      */
     fun exportData(uri: Uri) {
-        tracker.track(FeatureUsed(TempoFeature.LOCAL_BACKUP))
         exportDataInternal(uri)
     }
 
@@ -720,7 +718,6 @@ class BackupRestoreViewModel @Inject constructor(
     }
 
     fun backupToDrive() {
-        tracker.track(FeatureUsed(TempoFeature.DRIVE_BACKUP))
         backupToDriveInternal()
     }
 

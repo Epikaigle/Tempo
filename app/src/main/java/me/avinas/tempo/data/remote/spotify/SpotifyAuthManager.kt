@@ -35,7 +35,7 @@ class SpotifyAuthManager @Inject constructor(
     companion object {
         private const val TAG = "SpotifyAuthManager"
         
-        // Client ID loaded from BuildConfig (set in local.properties)
+        // Set in local.properties
         val CLIENT_ID: String = me.avinas.tempo.BuildConfig.SPOTIFY_CLIENT_ID
         
         // PKCE constants
@@ -46,7 +46,6 @@ class SpotifyAuthManager @Inject constructor(
         private const val TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000L
     }
 
-    // Current authentication state
     sealed class AuthState {
         object NotConnected : AuthState()
         object Connecting : AuthState()
@@ -61,7 +60,6 @@ class SpotifyAuthManager @Inject constructor(
     private val tokenRefreshMutex = Mutex()
 
     init {
-        // Check if we have stored tokens on startup
         checkStoredTokens()
     }
 
@@ -72,18 +70,11 @@ class SpotifyAuthManager @Inject constructor(
         }
     }
 
-    /**
-     * Check if Spotify is currently connected and authenticated.
-     */
     fun isConnected(): Boolean {
         return tokenStorage.getAccessToken() != null
     }
 
-    /**
-     * Get a valid access token, refreshing if necessary.
-     * Returns null if not authenticated or refresh fails.
-     * Uses mutex to prevent race condition when multiple coroutines call this simultaneously.
-     */
+    /** Null if not authenticated or if the refresh fails. */
     suspend fun getValidAccessToken(): String? = tokenRefreshMutex.withLock {
         val accessToken = tokenStorage.getAccessToken()
         val expiresAt = tokenStorage.getTokenExpiresAt()
@@ -102,14 +93,10 @@ class SpotifyAuthManager @Inject constructor(
         accessToken
     }
 
-    /**
-     * Start the Spotify OAuth login flow.
-     * Opens the Spotify authorization page in the user's browser.
-     */
+    /** Returns the Spotify authorization page as an Intent; the caller launches it. */
     fun startLoginFlow(): Intent {
         _authState.value = AuthState.Connecting
 
-        // Generate PKCE code verifier and challenge
         val codeVerifier = generateCodeVerifier()
         val codeChallenge = generateCodeChallenge(codeVerifier)
         
@@ -119,7 +106,6 @@ class SpotifyAuthManager @Inject constructor(
         // Store verifier and state in encrypted storage (persists across process death)
         tokenStorage.savePendingAuth(codeVerifier, state)
 
-        // Build authorization URL with state parameter
         val authUrl = buildAuthorizationUrl(codeChallenge, state)
         
         Log.d(TAG, "Starting Spotify login flow")
@@ -128,16 +114,12 @@ class SpotifyAuthManager @Inject constructor(
     }
 
     /**
-     * Handle the OAuth callback from Spotify.
-     * Called when the app receives the redirect URI with the authorization code.
-     * 
-     * @param uri The callback URI containing the authorization code and state
-     * @return true if authentication was successful
+     * Entry point for the `tempo://spotify-callback` redirect. Returns false when the callback
+     * carries an `error`, no code, or a `state` that doesn't match the pending auth.
      */
     suspend fun handleCallback(uri: Uri): Boolean {
         Log.d(TAG, "Handling Spotify callback")
 
-        // Check for errors
         val error = uri.getQueryParameter("error")
         if (error != null) {
             val errorMessage = when (error) {
@@ -152,7 +134,6 @@ class SpotifyAuthManager @Inject constructor(
             return false
         }
 
-        // Get authorization code
         val code = uri.getQueryParameter("code")
         if (code == null) {
             Log.e(TAG, "No authorization code in callback")
@@ -161,7 +142,7 @@ class SpotifyAuthManager @Inject constructor(
             return false
         }
         
-        // Get and validate state parameter (CSRF protection)
+        // CSRF protection: the state must match the value stored at login
         val state = uri.getQueryParameter("state")
         if (state == null) {
             Log.e(TAG, "No state parameter in callback")
@@ -170,7 +151,6 @@ class SpotifyAuthManager @Inject constructor(
             return false
         }
 
-        // Get stored code verifier and validate state
         val pendingAuth = tokenStorage.getPendingAuth(state)
         if (pendingAuth == null) {
             Log.e(TAG, "No matching pending auth found or expired")
@@ -178,13 +158,9 @@ class SpotifyAuthManager @Inject constructor(
             return false
         }
 
-        // Exchange code for tokens
         return exchangeCodeForTokens(code, pendingAuth.codeVerifier)
     }
 
-    /**
-     * Exchange authorization code for access and refresh tokens.
-     */
     private suspend fun exchangeCodeForTokens(code: String, codeVerifier: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
@@ -212,10 +188,8 @@ class SpotifyAuthManager @Inject constructor(
                     val expiresIn = json.getInt("expires_in")
                     val scope = json.optString("scope")
 
-                    // Calculate expiry timestamp
                     val expiresAt = System.currentTimeMillis() + (expiresIn * 1000L)
 
-                    // Store tokens securely
                     tokenStorage.saveTokens(
                         accessToken = accessToken,
                         refreshToken = refreshToken,
@@ -223,7 +197,6 @@ class SpotifyAuthManager @Inject constructor(
                         scope = scope
                     )
                     
-                    // Clear pending auth data
                     tokenStorage.clearPendingAuth()
 
                     Log.i(TAG, "Successfully authenticated with Spotify")
@@ -244,9 +217,6 @@ class SpotifyAuthManager @Inject constructor(
         }
     }
 
-    /**
-     * Refresh the access token using the refresh token.
-     */
     private suspend fun refreshAccessToken(): String? {
         return withContext(Dispatchers.IO) {
             try {
@@ -304,18 +274,12 @@ class SpotifyAuthManager @Inject constructor(
         }
     }
 
-    /**
-     * Disconnect from Spotify and clear all stored tokens.
-     */
     fun disconnect() {
         Log.i(TAG, "Disconnecting from Spotify")
         tokenStorage.clearTokens()
         _authState.value = AuthState.NotConnected
     }
 
-    /**
-     * Build the authorization URL with PKCE parameters and state.
-     */
     private fun buildAuthorizationUrl(codeChallenge: String, state: String): String {
         return Uri.parse(SpotifyApi.AUTH_URL).buildUpon()
             .appendQueryParameter("client_id", CLIENT_ID)
@@ -330,8 +294,7 @@ class SpotifyAuthManager @Inject constructor(
     }
 
     /**
-     * Generate a random code verifier for PKCE.
-     * Must be between 43-128 characters, using unreserved URI characters.
+     * PKCE allows 43-128 characters from the unreserved URI set.
      */
     private fun generateCodeVerifier(): String {
         val random = SecureRandom()
@@ -341,8 +304,7 @@ class SpotifyAuthManager @Inject constructor(
     }
 
     /**
-     * Generate code challenge from code verifier using SHA256.
-     * challenge = BASE64URL(SHA256(verifier))
+     * PKCE S256: `BASE64URL(SHA256(verifier))`.
      */
     private fun generateCodeChallenge(codeVerifier: String): String {
         val digest = MessageDigest.getInstance("SHA-256")

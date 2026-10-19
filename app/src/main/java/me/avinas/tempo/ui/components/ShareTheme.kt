@@ -60,6 +60,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.data.enrichment.MusicBrainzEnrichmentService
 import me.avinas.tempo.ui.theme.TempoDarkBackground
+import me.avinas.tempo.utils.MAX_SAFE_BITMAP_EDGE_PX
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.ln
@@ -73,14 +74,11 @@ import kotlin.random.Random
 private val backdropBitmapCache = LruCache<String, Bitmap>(8)
 
 /**
- * Backdrop construction. This is what makes themes read as different places,
- * not hue swaps of one backdrop: each style builds its own scene from
- * different geometry — scattered bokeh lights, fluted-glass refraction of
- * the artwork itself, a monospace ASCII glyph field, editorial rings, a sun
- * disc, grainy gradient mesh. [PHOTO_GLOW] builds on the blurred artwork,
- * [FLUTED_GLASS] refracts it through a vertical ribbed pane, and
- * [ASCII_ARTWORK] goes further: it converts the artwork itself into true
- * ASCII art and paints that as the backdrop.
+ * Backdrop construction. Each style builds its own scene from different
+ * geometry rather than swapping the hue of one backdrop: [PHOTO_GLOW] builds on
+ * the blurred artwork, [FLUTED_GLASS] refracts it through a vertical ribbed
+ * pane, and [ASCII_ARTWORK] goes further, converting the artwork itself into
+ * true ASCII art and painting that as the backdrop.
  *
  * Everything is drawn with plain brushes/paths on Canvas so it renders
  * identically on-screen and in the software-canvas share capture.
@@ -305,14 +303,13 @@ enum class ShareTheme(
 }
 
 /**
- * The one shared blur system every artwork-backed share theme sits on.
+ * The shared blur base every artwork-backed theme sits on.
  *
- * A single heavy, slightly over-scaled blurred cover (creamier 64.dp bake so no
- * harsh recognizable edges survive, 1.1x zoom so blur fringes never show the
- * gradient at the card edge). MIDNIGHT uses it as the final background under
- * its glow orbs; ASCII_ARTWORK and FLUTED_GLASS keep this same base and paint
- * their effect (glyph art / refracted glass) over it — one blur, elevated
- * once, shared by all. Readability scrims stay per-backdrop
+ * A single heavy, slightly over-scaled blurred cover: a creamier 64.dp bake so
+ * no harsh recognizable edges survive, 1.1x zoom so blur fringes never show the
+ * gradient at the card edge. MIDNIGHT uses it as the final background under its
+ * glow orbs; ASCII_ARTWORK and FLUTED_GLASS paint their effect (glyph art /
+ * refracted glass) over it. Readability scrims stay per-backdrop
  * ([ShareThemePalette.overlay]) so text contrast is untouched.
  */
 internal val ShareBlurRadius = 64.dp
@@ -543,11 +540,10 @@ private class AsciiArtGrid(
 )
 
 /**
- * Backdrop that renders [imageUrl]'s artwork as ASCII art. The conversion
- * runs once per (url, aspect) on a background dispatcher; until it lands the
- * deterministic wave field keeps the card alive over the shared blur base.
- * Stack is shared blur + glyph effect + readability overlay + finish grain —
- * the same elevated blur MIDNIGHT sits on, with the terminal scene on top.
+ * Renders [imageUrl]'s artwork as ASCII art. The conversion runs once per
+ * (url, aspect) on a background dispatcher; until it lands the deterministic
+ * wave field keeps the card alive over the shared blur base. Stack is shared
+ * blur + glyph effect + readability overlay + finish grain.
  */
 @Composable
 private fun AsciiArtworkBackdrop(
@@ -608,10 +604,8 @@ private fun AsciiArtworkBackdrop(
  * behind card content. The effect is computed on the CPU into a bitmap (prism
  * refraction per rib, rib shadows, seam highlight strokes, one-directional
  * soften) so it renders identically on-screen and in the software-canvas
- * share capture. Stack is shared blur + refracted-glass effect + readability
- * overlay + finish grain — the same elevated blur MIDNIGHT sits on, with the
- * glass pane on top. The fluid pools stand in while the artwork decodes. The
- * palette overlay on top keeps card text readable.
+ * share capture. Stack is shared blur + refracted glass + readability overlay +
+ * finish grain; the fluid pools stand in while the artwork decodes.
  */
 @Composable
 private fun FlutedGlassBackdrop(
@@ -635,7 +629,10 @@ private fun FlutedGlassBackdrop(
                                 sourceBitmap
                             }
                         val cropped = safeSource.centerCroppedToAspect(aspect)
-                        val targetH = (FLUTED_RENDER_WIDTH / aspect).roundToInt().coerceAtLeast(64)
+                        val targetH =
+                            (FLUTED_RENDER_WIDTH / aspect)
+                                .roundToInt()
+                                .coerceIn(64, MAX_SAFE_BITMAP_EDGE_PX)
                         cropped.downscaledTo(FLUTED_RENDER_WIDTH, targetH).renderFlutedGlass()
                     } else if (!imageUrl.isNullOrBlank()) {
                         buildFlutedGlassBitmap(context, imageUrl, aspect)
@@ -713,7 +710,10 @@ private suspend fun buildFlutedGlassBitmap(
         }
     return withContext(Dispatchers.Default) {
         val cropped = safeSource.centerCroppedToAspect(aspect)
-        val targetH = (FLUTED_RENDER_WIDTH / aspect).roundToInt().coerceAtLeast(64)
+        // Height follows the card's measured aspect, so it is bounded here: a very tall or
+        // degenerate aspect must not drive Bitmap.createBitmap past the painter ceiling.
+        val targetH =
+            (FLUTED_RENDER_WIDTH / aspect).roundToInt().coerceIn(64, MAX_SAFE_BITMAP_EDGE_PX)
         val result = cropped.downscaledTo(FLUTED_RENDER_WIDTH, targetH).renderFlutedGlass()
         backdropBitmapCache.put(cacheKey, result)
         result
@@ -721,18 +721,8 @@ private suspend fun buildFlutedGlassBitmap(
 }
 
 /**
- * CPU fluted-glass pass (the paper.design model), in three stages:
- *
- * 1. Soften — Gaussian-approximating box blur bakes a dreamy base into the
- *    artwork so it reads as glass depth, not a pasted photo.
- * 2. Refract — every rib acts as a cylindrical lens: it compresses a wider
- *    window of the softened art into itself, nudged sideways so the ribs
- *    melt asymmetrically. Near each seam the window crossfades into the
- *    neighbour's, so sampling stays continuous — ribs refract content
- *    without ever snapping into painted-on lines on smooth fields.
- * 3. Shade — a smooth cylindrical rod shading (bright rib centre, darker
- *    seams) plus a faint seam stroke, both scaled by the local luminance so
- *    dark fields never show drawn-on hairlines.
+ * CPU fluted-glass pass (the paper.design model): soften the art into a glassy
+ * base, refract it rib by rib, then shade the rods.
  */
 private fun Bitmap.renderFlutedGlass(): Bitmap {
     val w = width
@@ -1075,10 +1065,12 @@ private suspend fun buildAsciiArtGrid(
     return withContext(Dispatchers.Default) {
         // Row density that keeps the artwork undistorted on glyph cells
         // taller than wide: rows/columns must be (colStep/rowStep)/aspect.
+        // Bounded like every other aspect-derived size: this drives the sampled grid and its
+        // IntArray, so a degenerate aspect must not blow them up.
         val rows =
             (ASCII_COLUMNS * (ASCII_COL_STEP / ASCII_ROW_STEP) / aspect)
                 .roundToInt()
-                .coerceAtLeast(8)
+                .coerceIn(8, MAX_SAFE_BITMAP_EDGE_PX)
         val cropped = safeSource.centerCroppedToAspect(aspect)
         val sampled = cropped.downscaledTo(ASCII_COLUMNS, rows)
         val pixels = IntArray(ASCII_COLUMNS * rows)
@@ -1181,18 +1173,18 @@ private suspend fun buildAsciiArtGrid(
 }
 
 /**
- * Builds the full ASCII backdrop as one baked bitmap with real depth:
+ * Builds the full ASCII backdrop as one baked bitmap:
  *
- * 1. Base — the artwork itself, heavily blurred and dimmed to terminal
- *    darkness, so the card picks up the art's colour atmosphere instead of
- *    floating glyphs on a flat void (the "cheap poster" look).
- * 2. Glow — the glyph layer box-blurred into a phosphor bloom, drawn under
- *    the crisp glyphs so they read as luminous, not painted.
- * 3. Glyphs — the crisp ASCII conversion, same ramp/dither/tone-mapping
- *    conversion as before, on the wave field's monospace geometry.
+ * 1. Base — the artwork heavily blurred and dimmed to terminal darkness, so the
+ *    card picks up the art's colour atmosphere instead of floating glyphs on a
+ *    flat void (the "cheap poster" look).
+ * 2. Glow — the glyph layer box-blurred into a phosphor bloom under the crisp
+ *    glyphs, so they read as luminous, not painted.
+ * 3. Glyphs — the crisp ASCII conversion, same ramp/dither/tone mapping as
+ *    before, on the wave field's monospace geometry.
  *
- * Everything is CPU-rendered into a single bitmap, so the live preview and
- * the software-canvas share capture stay pixel-identical.
+ * CPU-rendered into a single bitmap, so the live preview and the software-canvas
+ * share capture stay pixel-identical.
  */
 private suspend fun buildAsciiArtBackdrop(
     context: Context,
@@ -1214,7 +1206,8 @@ private suspend fun buildAsciiArtBackdrop(
     val palette = ShareTheme.ASCII.palette
     return withContext(Dispatchers.Default) {
         val w = ASCII_RENDER_WIDTH
-        val h = (w / aspect).roundToInt().coerceAtLeast(64)
+        // Aspect-derived height, bounded to the painter ceiling (see the fluted-glass path).
+        val h = (w / aspect).roundToInt().coerceIn(64, MAX_SAFE_BITMAP_EDGE_PX)
         val composite = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = android.graphics.Canvas(composite)
 

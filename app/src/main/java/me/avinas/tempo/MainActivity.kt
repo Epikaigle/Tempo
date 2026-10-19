@@ -22,11 +22,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import me.avinas.tempo.data.analytics.AccessResult
 import me.avinas.tempo.data.analytics.ExemptionResult
 import me.avinas.tempo.data.analytics.OnboardingAction
 import me.avinas.tempo.data.analytics.OnboardingStepName
 import me.avinas.tempo.ui.navigation.AppNavigation
+import me.avinas.tempo.ui.navigation.StreakVisibilityViewModel
+import me.avinas.tempo.ui.components.LocalHideStreaks
 import me.avinas.tempo.ui.onboarding.BatteryOptimizationScreen
 import me.avinas.tempo.ui.onboarding.HowItWorksScreen
 import me.avinas.tempo.ui.onboarding.isBatteryOptimizationDisabled
@@ -50,13 +54,16 @@ class MainActivity : AppCompatActivity() {
 
     @javax.inject.Inject
     lateinit var walkthroughController: me.avinas.tempo.ui.components.WalkthroughController
+
+    @javax.inject.Inject
+    lateinit var analyticsDailyReporter: me.avinas.tempo.data.analytics.AnalyticsDailyReporter
     
     private val navigationTrigger = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
         checkNavigationIntent(intent)
 
         // Request notification permission on Android 13+
@@ -76,19 +83,47 @@ class MainActivity : AppCompatActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    TempoApp(
-                        walkthroughController = walkthroughController,
-                        onSetupComplete = {
-                            // Schedule the health worker after setup is complete
-                            ServiceHealthWorker.schedule(this)
-                        },
-                        navigationTrigger = navigationTrigger.value
-                    )
+                    // Streak display is one app-wide switch. Providing it here means a screen, a
+                    // dialog or a share canvas never has to load preferences just to know whether
+                    // streaks belong on it — see LocalHideStreaks.
+                    val streakVisibility: StreakVisibilityViewModel = hiltViewModel()
+                    val hideStreaks by streakVisibility.hideStreaks.collectAsStateWithLifecycle()
+                    CompositionLocalProvider(LocalHideStreaks provides hideStreaks) {
+                        TempoApp(
+                            walkthroughController = walkthroughController,
+                            onSetupComplete = {
+                                // Schedule the health worker after setup is complete
+                                ServiceHealthWorker.schedule(this)
+                            },
+                            navigationTrigger = navigationTrigger.value
+                        )
+                    }
                 }
             }
         }
     }
     
+    /**
+     * Records that the user brought Tempo's UI to the foreground today.
+     *
+     * Deliberately `onResume` and not `onCreate`. The tracking service is a foreground service,
+     * so this process outlives the activity for hours or days — `onCreate` therefore fires once
+     * per *process*, not once per app open. A user who reopens Tempo from Recents the next
+     * morning, with the process still alive, would never reach `onCreate` and would be missing
+     * from that day's active users. That is an undercount in the one figure this exists to
+     * produce, and it would have looked like a plausible dip rather than a bug.
+     *
+     * Repeated calls are free: after the first of the day, the reporter is one atomic
+     * comparison. Fire-and-forget, so a reporting write never sits in front of drawing a frame.
+     */
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch {
+            analyticsDailyReporter.markUiOpened()
+            analyticsDailyReporter.reportPresenceIfDue()
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         checkNavigationIntent(intent)

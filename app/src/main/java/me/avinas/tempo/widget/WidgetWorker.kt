@@ -3,7 +3,6 @@ package me.avinas.tempo.widget
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -27,6 +26,7 @@ import dagger.assisted.AssistedInject
 import me.avinas.tempo.R
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.data.stats.TimeRange
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import me.avinas.tempo.widget.utils.WidgetHub
 import java.io.File
 import java.io.FileOutputStream
@@ -40,6 +40,7 @@ class WidgetWorker
         private val statsRepository: StatsRepository,
     ) : CoroutineWorker(context, workerParams) {
         companion object {
+            private const val TAG = "WidgetWorker"
             private const val NOTIFICATION_CHANNEL_ID = "widget_worker"
             private const val NOTIFICATION_ID = 3008
         }
@@ -293,14 +294,30 @@ class WidgetWorker
                     }
                 }
 
-                // Refresh all widget types
-                TempoAppWidget().updateAll(context)
-                TempoArtistWidget().updateAll(context)
-                TempoDashboardWidget().updateAll(context)
-                TempoDiscoveryWidget().updateAll(context)
-                TempoHeatmapWidget().updateAll(context)
-                TempoMilestoneWidget().updateAll(context)
-                TempoMixWidget().updateAll(context)
+                // Refresh only the widget types that are actually on the home screen.
+                //
+                // This worker previously called updateAll() on all seven types every run. The
+                // preferences above are read back via currentState<Preferences>() inside each
+                // widget's provideGlance, so a widget that is not placed has nothing to display
+                // and no one to display it to — its updateAll walked an empty id list (re-querying
+                // AppWidgetManager per widget) for no effect. Refreshing just the placed ones also
+                // keeps future unplaced-widget work out of this path.
+                val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
+                suspend fun refreshIfPlaced(widget: androidx.glance.appwidget.GlanceAppWidget, provider: Class<*>) {
+                    val placed =
+                        appWidgetManager
+                            ?.getAppWidgetIds(android.content.ComponentName(context, provider))
+                            ?.isNotEmpty() == true
+                    if (placed) widget.updateAll(context)
+                }
+
+                refreshIfPlaced(TempoAppWidget(), TempoAppWidget::class.java)
+                refreshIfPlaced(TempoArtistWidget(), TempoArtistWidget::class.java)
+                refreshIfPlaced(TempoDashboardWidget(), TempoDashboardWidget::class.java)
+                refreshIfPlaced(TempoDiscoveryWidget(), TempoDiscoveryWidget::class.java)
+                refreshIfPlaced(TempoHeatmapWidget(), TempoHeatmapWidget::class.java)
+                refreshIfPlaced(TempoMilestoneWidget(), TempoMilestoneWidget::class.java)
+                refreshIfPlaced(TempoMixWidget(), TempoMixWidget::class.java)
 
                 Result.success()
             } catch (e: Exception) {
@@ -367,12 +384,12 @@ class WidgetWorker
                     .setOngoing(true)
                     .build()
 
-            if (Build.VERSION.SDK_INT >= 34) {
-                return ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                return ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                return ForegroundInfo(NOTIFICATION_ID, notification)
-            }
+            return ForegroundNotificationGuard.postableForegroundInfo(
+                context = context,
+                notificationId = NOTIFICATION_ID,
+                requestedChannelId = NOTIFICATION_CHANNEL_ID,
+                notification = notification,
+                logTag = TAG,
+            )
         }
     }

@@ -76,15 +76,9 @@ interface ScrobbleArchiveDao {
     @Query("SELECT COALESCE(MAX(id), 0) FROM scrobbles_archive")
     suspend fun getMaxArchiveId(): Long
 
-    /**
-     * Get total count of archived tracks.
-     */
     @Query("SELECT COUNT(*) FROM scrobbles_archive")
     suspend fun getTotalCount(): Int
 
-    /**
-     * Get total play count across all archived tracks.
-     */
     @Query("SELECT COALESCE(SUM(play_count), 0) FROM scrobbles_archive")
     suspend fun getTotalPlayCount(): Long
 
@@ -143,9 +137,8 @@ interface ScrobbleArchiveDao {
     ): ScrobbleArchive?
 
     /**
-     * Get all archive rows for a normalized artist name.
-     * Used during artist merge to rewrite archived scrobbles to the
-     * canonical artist identity.
+     * Rows for a normalized artist name, for artist merge rewriting archived scrobbles to the
+     * canonical identity.
      */
     @Query("SELECT * FROM scrobbles_archive WHERE artist_name_normalized = :artistNormalized")
     suspend fun getByArtistNormalized(artistNormalized: String): List<ScrobbleArchive>
@@ -202,23 +195,10 @@ interface ScrobbleArchiveDao {
         offset: Int,
     ): List<ScrobbleArchive>
 
-    @Query(
-        """
-        SELECT COUNT(*) FROM scrobbles_archive 
-        WHERE 
-            (:startTime IS NULL OR last_scrobble >= :startTime) AND
-            (:endTime IS NULL OR first_scrobble <= :endTime) AND
-            (:searchQuery IS NULL OR :searchQuery = '' OR 
-                track_title LIKE '%' || :searchQuery || '%' OR 
-                artist_name LIKE '%' || :searchQuery || '%' OR 
-                album_name LIKE '%' || :searchQuery || '%')
-    """,
-    )
-    suspend fun countArchive(
-        searchQuery: String? = null,
-        startTime: Long? = null,
-        endTime: Long? = null,
-    ): Int
+    // `countArchive` was removed here: it had no callers anywhere in the project, and it was an
+    // unbounded SELECT COUNT(*) over three leading-wildcard LIKEs, so it could only ever have been
+    // a full scan. Nothing needed it; leaving it would have invited a future caller to reach for
+    // the most expensive query in this file.
 
     // Top Tracks Queries
     @Query(
@@ -273,7 +253,7 @@ interface ScrobbleArchiveDao {
     suspend fun getStorageSizeBytes(): Long
 
     /**
-     * Update album name in archive rows during album merge.
+     * Album name rewrite during album merge.
      */
     @Query(
         """
@@ -308,9 +288,6 @@ interface ScrobbleArchiveDao {
 
     // Batch Operations
 
-    /**
-     * Batch insert with chunking for large imports.
-     */
     @Transaction
     suspend fun insertAllBatched(archives: List<ScrobbleArchive>): List<Long> {
         val results = mutableListOf<Long>()
@@ -321,7 +298,6 @@ interface ScrobbleArchiveDao {
     }
 
     /**
-     * Upsert operation: update if exists, insert if not.
      * WARNING: This replaces timestamps entirely. For merging, use upsertWithMerge.
      */
     @Transaction
@@ -336,13 +312,10 @@ interface ScrobbleArchiveDao {
     }
 
     /**
-     * Upsert with timestamp merge: if archive exists, merge new timestamps with existing.
-     * This is necessary when the same track appears in multiple import batches.
+     * Merge new timestamps into the existing blob when the track already has an archive row.
+     * Needed because the same track can appear in multiple import batches.
      *
-     * @param archive The archive to upsert
-     * @param decompressTimestamps Function to decompress existing timestamp blob
-     * @param compressTimestamps Function to compress merged timestamps
-     * @return Pair of (archive ID, number of new timestamps added)
+     * Returns the archive id and how many of the incoming timestamps were new.
      */
     @Transaction
     suspend fun upsertWithMerge(

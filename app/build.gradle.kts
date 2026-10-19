@@ -20,8 +20,8 @@ val localProperties =
 // Declared once so archiveReleaseMapping below names the archived mapping file after the
 // exact version it deobfuscates. Without the matching mapping.txt a release stack trace
 // cannot be read back, so these two must never drift apart.
-val appVersionCode = 4811
-val appVersionName = "4.8.11"
+val appVersionCode = 4815
+val appVersionName = "4.8.15"
 
 android {
     namespace = "me.avinas.tempo"
@@ -66,14 +66,19 @@ android {
         buildConfigField("String", "LASTFM_API_KEY", "\"${localProperties.getProperty("LASTFM_API_KEY", "")}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "")}\"")
 
-        // Anonymous app-health analytics. The key is deliberately NOT committed: a blank
-        // key makes AnalyticsGate report the build as unconfigured, so anyone building
-        // Tempo from source gets a tracker-free app with no extra flags. Debug builds
-        // never report either, unless APTABASE_DEBUG_PREVIEW=true is set locally to
-        // preview the Home notice + Settings toggle in a debug build.
-        buildConfigField("String", "APTABASE_APP_KEY", "\"${localProperties.getProperty("APTABASE_APP_KEY", "")}\"")
-        buildConfigField("String", "APTABASE_HOST", "\"${localProperties.getProperty("APTABASE_HOST", "https://eu.aptabase.com")}\"")
-        buildConfigField("boolean", "ANALYTICS_DEBUG_PREVIEW", "${localProperties.getProperty("APTABASE_DEBUG_PREVIEW", "false")}")
+        // Anonymous app-health analytics. The endpoint is deliberately NOT committed: a blank
+        // endpoint makes AnalyticsGate report the build as unconfigured, so anyone building
+        // Tempo from source gets a tracker-free app with no extra flags. Debug builds never
+        // report either, unless ANALYTICS_DEBUG_PREVIEW=true is set locally to preview the
+        // Home notice and Settings toggle in a debug build.
+        //
+        // ANALYTICS_ENDPOINT is the full URL batches are POSTed to, e.g.
+        // `https://eu.i.posthog.com/batch/`. ANALYTICS_TOKEN is that PostHog project's token.
+        // Both are read at build time and ship in the APK; a blank endpoint is what keeps a
+        // from-source build inert.
+        buildConfigField("String", "ANALYTICS_ENDPOINT", "\"${localProperties.getProperty("ANALYTICS_ENDPOINT", "")}\"")
+        buildConfigField("String", "ANALYTICS_TOKEN", "\"${localProperties.getProperty("ANALYTICS_TOKEN", "")}\"")
+        buildConfigField("boolean", "ANALYTICS_DEBUG_PREVIEW", "${localProperties.getProperty("ANALYTICS_DEBUG_PREVIEW", "false")}")
     }
 
     buildTypes {

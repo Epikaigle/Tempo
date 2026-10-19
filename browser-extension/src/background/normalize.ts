@@ -659,12 +659,10 @@ export function parseYoutubeVideo(
 
     // Precedence 3: Fallback Title/Channel parsing
     
-    // Step 1: Split by pipe (|) to separate main title from label/metadata noise
-    // YouTube titles often follow "Artist - Song | Label" pattern
+    // In a YouTube title everything after a pipe is usually a label or company rather than part of
+    // the song ("Artist - Song | Label"). Keep the first segment as the title, hold the rest as hints.
     const pipeParts = rawTitle.split(/\s*\|\s*/).map(p => p.trim()).filter(Boolean);
     let mainTitle = pipeParts[0];
-    // Additional pipe-separated segments are usually labels/companies, not part of the song
-    // We'll use them as hints but not include in the main title
     
     let workingTitle = mainTitle;
     let rawArtistPart = '';
@@ -674,10 +672,10 @@ export function parseYoutubeVideo(
       ? knownArtists.filter((x): x is string => typeof x === 'string')
       : [];
     
-    // Step 2: Split main title by dash separators
     const titleParts = mainTitle.split(/\s+[\-\–\—]\s+/).map(p => p.trim()).filter(Boolean);
     
-    // Step 3: Check if first or last dash-separated part matches channel name — if so, it's the artist
+    // When the channel name is one of the dash-separated parts, that part is the artist — the
+    // "Artist - Song" upload pattern.
     if (titleParts.length >= 2 && cleanedChannel) {
       const firstCleaned = cleanChannelName(titleParts[0]);
       const lastCleaned = cleanChannelName(titleParts[titleParts.length - 1]);
@@ -693,8 +691,7 @@ export function parseYoutubeVideo(
       }
     }
     
-    // Step 4: Check if any pipe-separated segment matches channel name
-    // Skip if the segment is likely a record label (not an artist)
+    // A pipe segment matching the channel name can also be the artist, unless it reads like a label.
     if (!rawArtistPart && cleanedChannel && pipeParts.length > 1) {
       for (let i = 1; i < pipeParts.length; i++) {
         const pipeCleaned = cleanChannelName(pipeParts[i]);
@@ -709,8 +706,8 @@ export function parseYoutubeVideo(
       }
     }
 
-    // Step 5: Try fuzzy matching against channel name and known artists
-    // This handles leet speak (KR$NA vs KRSNA) and case variations
+    // Fuzzy-match the channel and the known artists, which catches stylised spellings such as
+    // KR$NA for KRSNA.
     if (!rawArtistPart) {
       let searchTargets = [...artistsList];
       // Only use channel as artist reference if it's not likely a label
@@ -766,7 +763,7 @@ export function parseYoutubeVideo(
       }
     }
 
-    // Step 6: If no match yet, split by common separators and score
+    // Nothing matched yet: split on the first separator and score both halves for artist likelihood.
     if (!rawArtistPart) {
       // Include "l" (lowercase L) as it's often used as a pipe substitute
       const separatorRegex = /\s+([\-\–\—\|~:]|l)\s+/i;

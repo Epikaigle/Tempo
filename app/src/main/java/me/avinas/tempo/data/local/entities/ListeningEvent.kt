@@ -5,16 +5,13 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import me.avinas.tempo.data.local.DeviceTimeZone
 
 /**
- * Represents a single listening event for a track.
- * 
- * Enhanced tracking fields:
- * - wasSkipped: True if user skipped before 30% completion
- * - isReplay: True if this was played within 5 minutes of the same track
- * - estimatedDurationMs: The track's estimated duration (for completion calculation)
- * - pauseCount: Number of times playback was paused
- * - sessionId: Groups events from the same listening session
+ * A single listening event for a track.
+ *
+ * Thresholds the field names do not show: `wasSkipped` is under 30% completion, `isReplay` is
+ * within 5 minutes of the same track.
  */
 @Entity(
     tableName = "listening_events",
@@ -62,26 +59,30 @@ data class ListeningEvent(
     // Import reconciliation: deterministic SHA-256 of (source|track_id|timestamp|
     // playDuration|endTimestamp). Guarantees re-importing the same data is a no-op.
     // NULL for legacy rows written before this column existed (fall back to temporal dedup).
-    @ColumnInfo(name = "content_fingerprint", defaultValue = "NULL") val contentFingerprint: String? = null
+    @ColumnInfo(name = "content_fingerprint", defaultValue = "NULL") val contentFingerprint: String? = null,
+
+    // Timezone anchor: UTC offset, in minutes, that the device clock showed when this play was
+    // recorded. Streaks, timing badges and every day/hour grouping read this instead of the
+    // phone's *current* offset, so travelling cannot re-write past days.
+    //
+    // The default is evaluated from this event's own timestamp, so every construction site --
+    // live tracking, Last.fm, Spotify/YouTube imports, desktop ingestion -- is covered without
+    // passing anything, and a historical import is bucketed exactly as the old `'localtime'`
+    // modifier would have bucketed it, only frozen in place. NULL means "unknown"; queries fall
+    // back to the device offset for those rows.
+    @ColumnInfo(name = "tz_offset_minutes", defaultValue = "NULL")
+    val tzOffsetMinutes: Int? = DeviceTimeZone.offsetMinutesAt(timestamp),
 ) {
-    /**
-     * Check if volume was explicitly 0 (muted). Legacy records (null) are treated as audible.
-     */
+    /** Volume was explicitly 0 (muted). Legacy records (null) are treated as audible. */
     val isZeroVolume: Boolean get() = volumeLevel == 0
 
-    /**
-     * Check if this was a full play (>80% completion).
-     */
+    /** Full play: >80% completion. */
     val isFullPlay: Boolean get() = completionPercentage >= 80
     
-    /**
-     * Check if this was a partial play (30-80% completion).
-     */
+    /** Partial play: 30-80% completion. */
     val isPartialPlay: Boolean get() = completionPercentage in 30..79
     
-    /**
-     * Get actual play duration in seconds for display.
-     */
+    /** Play duration in seconds, rounded down. */
     val playDurationSeconds: Int get() = (playDuration / 1000).toInt()
     
     /**

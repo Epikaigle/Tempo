@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import androidx.room.withTransaction
 import me.avinas.tempo.BuildConfig
 import me.avinas.tempo.data.local.AppDatabase
+import me.avinas.tempo.data.local.dao.isLocalBackupArtwork
 import me.avinas.tempo.data.local.entities.*
 import me.avinas.tempo.data.profile.ProfileIdentityManager
 import me.avinas.tempo.utils.ImageUrlHostAllowlist
@@ -30,14 +31,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Manages import and export of all Tempo data.
- * 
- * Export creates a ZIP file containing:
- * - data.json: All entities serialized as JSON
- * - images/: Optional folder containing local album art (file:// URLs only)
- *
- * Import reads the ZIP, remaps IDs, restores local images, and restores data.
- * Hotlinked images are pre-cached after restore for better UX.
+ * Import and export of Tempo's backup ZIP: `data.json` with every entity, plus an optional
+ * `images/` folder of local album art (file:// URLs only). Import remaps IDs and restores
+ * those images; hotlinked ones are pre-cached afterwards.
  */
 @Singleton
 class ImportExportManager @Inject constructor(
@@ -75,15 +71,11 @@ class ImportExportManager @Inject constructor(
     val progress: StateFlow<ImportExportProgress?> = _progress.asStateFlow()
     
     /**
-     * Export all data to a ZIP file at the given URI.
+     * Export all data to a ZIP at [uri].
      *
-     * The archive is fully written and validated into a private cache file
-     * FIRST; only then is it copied to [uri]. A failed or interrupted export
-     * can therefore never truncate an existing backup file the user picked as
-     * the overwrite target.
-     *
-     * @param uri The URI to write the ZIP file to
-     * @param includeLocalImages If true, bundle local album art files in the ZIP
+     * The archive is fully written and validated into a private cache file FIRST,
+     * and only then copied to [uri], so a failed or interrupted export can never
+     * truncate an existing backup file the user picked as the overwrite target.
      */
     suspend fun exportData(
         uri: Uri,
@@ -340,12 +332,6 @@ class ImportExportManager @Inject constructor(
         }
     }
     
-    /**
-     * Import data from a ZIP file at the given URI.
-     * 
-     * Restores local images, imports data with chronological ordering,
-     * and triggers pre-caching of hotlinked images.
-     */
     suspend fun importData(
         uri: Uri,
         conflictStrategy: ImportConflictStrategy
@@ -499,12 +485,26 @@ class ImportExportManager @Inject constructor(
             }
             
             _progress.value = ImportExportProgress("Importing albums...", 30, 100)
-            
+
+            // Resolved once rather than per album. This lookup used to be
+            // `data.artists.find { it.id == album.artistId }` *inside* the loop below, which is a
+            // linear scan of every exported artist for every album — O(albums x artists), i.e.
+            // ~4x10^8 comparisons for a 20k-album / 20k-artist library. The whole restore runs
+            // inside a single `withTransaction`, so that CPU time was being spent while holding
+            // the database writer, directly lengthening the window the user waits through.
+            //
+            // `putIfAbsent` keeps first-match-wins semantics, which is what the `find` it
+            // replaces did, so a malformed export carrying duplicate artist ids behaves as before.
+            val artistNameById = LinkedHashMap<Long, String>(data.artists.size)
+            for (exportedArtist in data.artists) {
+                artistNameById.putIfAbsent(exportedArtist.id, exportedArtist.name)
+            }
+
             // Import Albums
             for (album in data.albums) {
                 val newArtistId = artistIdMap[album.artistId] ?: continue
                 val remappedAlbum = remapImagePath(album, pathMapping).copy(artistId = newArtistId)
-                val artistName = data.artists.find { it.id == album.artistId }?.name
+                val artistName = artistNameById[album.artistId]
                 if (artistName == null) {
                     Log.w(TAG, "Skipping album '${album.title}': artist ID ${album.artistId} not found in export")
                     continue
@@ -636,6 +636,24 @@ class ImportExportManager @Inject constructor(
                     database.enrichedMetadataDao().upsert(remappedMeta.copy(id = 0))
                 } else if (conflictStrategy == ImportConflictStrategy.REPLACE) {
                     database.enrichedMetadataDao().update(remappedMeta.copy(id = existingMeta.id))
+                }
+            }
+
+            // Track.albumArtUrl is a denormalized mirror used by the UI. Restoring tracks
+            // before enriched metadata can temporarily reintroduce artwork that contradicts
+            // a local/imported USER_RESET tombstone, especially with "Skip Duplicates".
+            // Reconcile the mirror from the final metadata state before this transaction
+            // commits so callers can never observe a split-brain artwork preference.
+            for (restoredTrackId in trackIdMap.values.toSet()) {
+                val restoredTrack = database.trackDao().getTrackById(restoredTrackId) ?: continue
+                val restoredMetadata = database.enrichedMetadataDao().forTrackSync(restoredTrackId)
+                val reconciledArtwork = resolveRestoredTrackArtwork(
+                    albumArtSource = restoredMetadata?.albumArtSource,
+                    metadataArtUrl = restoredMetadata?.albumArtUrl,
+                    trackArtUrl = restoredTrack.albumArtUrl,
+                )
+                if (reconciledArtwork != restoredTrack.albumArtUrl) {
+                    database.trackDao().updateAlbumArtUrl(restoredTrackId, reconciledArtwork)
                 }
             }
             
@@ -832,9 +850,8 @@ class ImportExportManager @Inject constructor(
     }
 
     /**
-     * Replays staged listening events (one JSON object per line) in chunks through
-     * the dedup pipeline. Rows whose track could not be mapped are skipped.
-     * Returns the number of newly inserted events.
+     * Replays staged listening events (one JSON object per line) in chunks through the dedup
+     * pipeline, skipping rows whose track could not be mapped. Returns how many were new.
      */
     private suspend fun replayStagedEvents(
         stagedFile: File,
@@ -939,9 +956,6 @@ class ImportExportManager @Inject constructor(
         return newRows to mergedOrSkipped
     }
     
-    /**
-     * Collect all image URLs and classify as local (file://) or hotlink (http/https).
-     */
     private fun collectImageUrls(
         tracks: List<Track>,
         artists: List<Artist>,
@@ -977,9 +991,6 @@ class ImportExportManager @Inject constructor(
         return localPaths.toList() to hotlinkUrls.toList()
     }
     
-    /**
-     * Extract an image from the ZIP to local storage.
-     */
     private fun extractImage(
         zipIn: ZipInputStream,
         bundledName: String,
@@ -1060,28 +1071,25 @@ class ImportExportManager @Inject constructor(
     
     // Path remapping functions for different entity types
     
-    private fun remapImagePath(track: Track, pathMapping: Map<String, String>): Track {
-        val newArtUrl = track.albumArtUrl?.let { pathMapping[it] ?: it }
-        return track.copy(albumArtUrl = newArtUrl)
-    }
+    private fun remapImagePath(track: Track, pathMapping: Map<String, String>): Track =
+        track.copy(albumArtUrl = remapRestoredImageUrl(track.albumArtUrl, pathMapping))
     
-    private fun remapImagePath(artist: Artist, pathMapping: Map<String, String>): Artist {
-        val newImageUrl = artist.imageUrl?.let { pathMapping[it] ?: it }
-        return artist.copy(imageUrl = newImageUrl)
-    }
+    private fun remapImagePath(artist: Artist, pathMapping: Map<String, String>): Artist =
+        artist.copy(imageUrl = remapRestoredImageUrl(artist.imageUrl, pathMapping))
     
-    private fun remapImagePath(album: Album, pathMapping: Map<String, String>): Album {
-        val newArtworkUrl = album.artworkUrl?.let { pathMapping[it] ?: it }
-        return album.copy(artworkUrl = newArtworkUrl)
-    }
+    private fun remapImagePath(album: Album, pathMapping: Map<String, String>): Album =
+        album.copy(artworkUrl = remapRestoredImageUrl(album.artworkUrl, pathMapping))
     
-    private fun remapImagePath(meta: EnrichedMetadata, pathMapping: Map<String, String>): EnrichedMetadata {
-        return meta.copy(
-            albumArtUrl = meta.albumArtUrl?.let { pathMapping[it] ?: it },
-            albumArtUrlSmall = meta.albumArtUrlSmall?.let { pathMapping[it] ?: it },
-            albumArtUrlLarge = meta.albumArtUrlLarge?.let { pathMapping[it] ?: it }
+    private fun remapImagePath(meta: EnrichedMetadata, pathMapping: Map<String, String>): EnrichedMetadata =
+        meta.copy(
+            albumArtUrl = remapRestoredImageUrl(meta.albumArtUrl, pathMapping),
+            albumArtUrlSmall = remapRestoredImageUrl(meta.albumArtUrlSmall, pathMapping),
+            albumArtUrlLarge = remapRestoredImageUrl(meta.albumArtUrlLarge, pathMapping),
+            spotifyArtistImageUrl = remapRestoredImageUrl(meta.spotifyArtistImageUrl, pathMapping),
+            iTunesArtistImageUrl = remapRestoredImageUrl(meta.iTunesArtistImageUrl, pathMapping),
+            deezerArtistImageUrl = remapRestoredImageUrl(meta.deezerArtistImageUrl, pathMapping),
+            lastFmArtistImageUrl = remapRestoredImageUrl(meta.lastFmArtistImageUrl, pathMapping),
         )
-    }
     /**
      * Post-write integrity check: the archive must be a readable ZIP that
      * actually contains data.json. Returns null when valid, otherwise a
@@ -1131,6 +1139,41 @@ private data class ExtractedImage(
     val path: String,
     val bytesWritten: Long
 )
+
+internal fun remapRestoredImageUrl(
+    exportedUrl: String?,
+    pathMapping: Map<String, String>,
+): String? {
+    if (exportedUrl.isNullOrBlank()) return exportedUrl
+    if (exportedUrl.startsWith("content://")) {
+        // Content-provider grants are device/session specific and are not
+        // transferable through a Tempo backup.
+        return null
+    }
+    if (!exportedUrl.startsWith("file://")) return exportedUrl
+
+    // file:// paths are device-private. They are usable after restore only when
+    // the corresponding image was actually bundled and extracted successfully.
+    return pathMapping[exportedUrl]
+}
+
+internal fun resolveRestoredTrackArtwork(
+    albumArtSource: AlbumArtSource?,
+    metadataArtUrl: String?,
+    trackArtUrl: String?,
+): String? =
+    when (albumArtSource) {
+        AlbumArtSource.USER_RESET -> null
+        AlbumArtSource.USER_SELECTED ->
+            metadataArtUrl?.takeIf { it.isNotBlank() }
+                ?: trackArtUrl?.takeIf { it.isNotBlank() }
+        else ->
+            when {
+                isLocalBackupArtwork(trackArtUrl) -> trackArtUrl
+                !metadataArtUrl.isNullOrBlank() -> metadataArtUrl
+                else -> trackArtUrl?.takeIf { it.isNotBlank() }
+            }
+    }
 
 internal fun resolveRestoredProfileImagePath(
     exportedProfileImagePath: String?,

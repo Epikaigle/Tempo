@@ -1,13 +1,13 @@
 package me.avinas.tempo.data.analytics
 
-import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import me.avinas.tempo.ui.onboarding.dataStore
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -53,17 +53,18 @@ object AnalyticsGate {
     ): Boolean = isConfigured && !noticeDismissed
 
     /**
-     * True when this build could report at all. The Aptabase key lives in the uncommitted
-     * `local.properties`, so a build from source has a blank key and stays tracker-free
-     * with no extra build flags. Debug builds never report either, unless the
-     * `APTABASE_DEBUG_PREVIEW` override is on — that is only for locally previewing the
-     * Home notice and Settings toggle, and must stay `false` in committed code.
+     * True when this build could report at all. The analytics endpoint lives in the
+     * uncommitted `local.properties`, so a build from source has a blank endpoint and stays
+     * tracker-free with no extra build flags — which is the documented promise to anyone
+     * compiling Tempo themselves. Debug builds never report either, unless the
+     * `ANALYTICS_DEBUG_PREVIEW` override is on: that exists only for previewing the Home
+     * notice and Settings toggle locally, and must stay `false` in committed code.
      */
     fun isBuildConfigured(
-        appKey: String,
+        endpoint: String,
         isDebug: Boolean,
         debugPreview: Boolean = false,
-    ): Boolean = appKey.isNotBlank() && (!isDebug || debugPreview)
+    ): Boolean = endpoint.isNotBlank() && (!isDebug || debugPreview)
 }
 
 /**
@@ -77,17 +78,17 @@ object AnalyticsGate {
 class AnalyticsConsent
     @Inject
     constructor(
-        @param:ApplicationContext private val context: Context,
+        private val dataStore: DataStore<Preferences>,
     ) {
         private val enabledKey = booleanPreferencesKey("analytics_enabled")
         private val disclosureSeenKey = booleanPreferencesKey("analytics_disclosure_seen")
         private val noticeDismissedKey = booleanPreferencesKey("analytics_notice_dismissed")
 
         val isEnabled: Flow<Boolean> =
-            context.dataStore.data.map { it[enabledKey] ?: AnalyticsDefaults.ENABLED }
+            dataStore.data.map { it[enabledKey] ?: AnalyticsDefaults.ENABLED }
 
         val isDisclosureSeen: Flow<Boolean> =
-            context.dataStore.data.map { it[disclosureSeenKey] ?: false }
+            dataStore.data.map { it[disclosureSeenKey] ?: false }
 
         /**
          * True once the user has acknowledged the Home notice.
@@ -99,7 +100,7 @@ class AnalyticsConsent
          * it. Two flags let the notice be both genuinely shown and non-blocking.
          */
         val isNoticeDismissed: Flow<Boolean> =
-            context.dataStore.data.map { it[noticeDismissedKey] ?: false }
+            dataStore.data.map { it[noticeDismissedKey] ?: false }
 
         /**
          * The single observable that actually decides whether reporting may happen: opted in AND
@@ -108,17 +109,28 @@ class AnalyticsConsent
          * still cannot send — and so it is registered the moment the notice makes collection
          * legal, which is what lets the first event leave the device immediately instead of
          * waiting for the next periodic run.
+         *
+         * **[distinctUntilChanged] is load-bearing, not an optimisation.** `dataStore.data`
+         * re-emits on *every* write to the settings store, so a collector that reacts to this
+         * value must not see a stream of unrelated ones. The opt-out handler in `TempoApplication`
+         * deletes the install id, which is itself a write to this store: without de-duplication
+         * that write re-emits `false`, the handler runs again, and the two feed each other in a
+         * loop that writes to disk hundreds of times a second for as long as reporting is off —
+         * which includes every build and every user that cannot report. Emitting only on a real
+         * on/off transition is what makes a write inside that handler safe at all.
          */
         val collectionAllowed: Flow<Boolean> =
-            context.dataStore.data.map {
-                AnalyticsGate.isCollectionAllowed(
-                    enabled = it[enabledKey],
-                    disclosureSeen = it[disclosureSeenKey],
-                )
-            }
+            dataStore.data
+                .map {
+                    AnalyticsGate.isCollectionAllowed(
+                        enabled = it[enabledKey],
+                        disclosureSeen = it[disclosureSeenKey],
+                    )
+                }
+                .distinctUntilChanged()
 
         suspend fun isCollectionAllowed(): Boolean {
-            val prefs = context.dataStore.data.first()
+            val prefs = dataStore.data.first()
             return AnalyticsGate.isCollectionAllowed(
                 enabled = prefs[enabledKey],
                 disclosureSeen = prefs[disclosureSeenKey],
@@ -126,16 +138,16 @@ class AnalyticsConsent
         }
 
         suspend fun setEnabled(enabled: Boolean) {
-            context.dataStore.edit { it[enabledKey] = enabled }
+            dataStore.edit { it[enabledKey] = enabled }
         }
 
         /** Called the moment the Home disclosure card is rendered. */
         suspend fun markDisclosureSeen() {
-            context.dataStore.edit { it[disclosureSeenKey] = true }
+            dataStore.edit { it[disclosureSeenKey] = true }
         }
 
         /** Called when the user acknowledges or turns off reporting on the Home card. */
         suspend fun dismissNotice() {
-            context.dataStore.edit { it[noticeDismissedKey] = true }
+            dataStore.edit { it[noticeDismissedKey] = true }
         }
     }

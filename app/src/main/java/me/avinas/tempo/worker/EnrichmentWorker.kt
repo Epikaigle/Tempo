@@ -3,8 +3,6 @@ package me.avinas.tempo.worker
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -14,6 +12,12 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
 import me.avinas.tempo.R
+import me.avinas.tempo.data.analytics.AnalyticsTracker
+import me.avinas.tempo.data.analytics.EnrichmentRun
+import me.avinas.tempo.data.analytics.EnrichmentTrigger
+import me.avinas.tempo.data.analytics.FailureClassifier
+import me.avinas.tempo.data.analytics.RunPhase
+import me.avinas.tempo.data.enrichment.CoverArtSourcePreference
 import me.avinas.tempo.data.enrichment.DeezerEnrichmentService
 import me.avinas.tempo.data.enrichment.EnrichmentSource
 import me.avinas.tempo.data.enrichment.ITunesEnrichmentService
@@ -23,14 +27,27 @@ import me.avinas.tempo.data.enrichment.ReccoBeatsEnrichmentService
 import me.avinas.tempo.data.enrichment.SpotifyEnrichmentService
 import me.avinas.tempo.data.local.dao.EnrichedMetadataDao
 import me.avinas.tempo.data.local.dao.TrackDao
+import me.avinas.tempo.data.local.entities.AlbumArtSource
 import me.avinas.tempo.data.local.entities.AudioFeaturesSource
 import me.avinas.tempo.data.local.entities.EnrichedMetadata
 import me.avinas.tempo.data.local.entities.EnrichmentStatus
+import me.avinas.tempo.data.repository.EnrichedMetadataRepository
 import me.avinas.tempo.data.repository.StatsRepository
 import me.avinas.tempo.ui.onboarding.dataStore
 import me.avinas.tempo.utils.ArtistParser
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import me.avinas.tempo.worker.LastFmImportWorker
 import java.util.concurrent.TimeUnit
+
+internal fun immediateEnrichmentWorkPolicy(
+    trackId: Long?,
+    appendAfterExisting: Boolean,
+): ExistingWorkPolicy =
+    if (trackId == null || appendAfterExisting) {
+        ExistingWorkPolicy.APPEND_OR_REPLACE
+    } else {
+        ExistingWorkPolicy.KEEP
+    }
 
 /**
  * WorkManager worker that enriches unenriched tracks with metadata from external APIs.
@@ -53,6 +70,9 @@ class EnrichmentWorker
         private val trackDao: TrackDao,
         private val statsRepository: StatsRepository,
         private val artistLinkingService: me.avinas.tempo.data.repository.ArtistLinkingService,
+        private val enrichedMetadataRepository: EnrichedMetadataRepository,
+        private val analyticsTracker: AnalyticsTracker,
+        private val coverArtSourcePreference: me.avinas.tempo.data.enrichment.CoverArtSourcePreference,
     ) : CoroutineWorker(appContext, workerParams) {
         private val strategies: List<EnrichmentSource> =
             listOf(
@@ -98,8 +118,8 @@ class EnrichmentWorker
             private const val POST_IMPORT_INTER_TRACK_DELAY_MS = 1000L
 
             /**
-             * Schedule periodic enrichment work.
-             * Runs every 1 hour when device is idle and connected.
+             * Schedule periodic enrichment work. Runs every hour when connected and the battery is
+             * not low.
              */
             fun schedulePeriodic(context: Context) {
                 val constraints =
@@ -139,6 +159,7 @@ class EnrichmentWorker
             fun enqueueImmediate(
                 context: Context,
                 trackId: Long? = null,
+                appendAfterExisting: Boolean = false,
             ) {
                 val constraints =
                     Constraints
@@ -162,15 +183,18 @@ class EnrichmentWorker
                         .addTag("enrichment_immediate")
                         .build()
 
-                // Per-track enrichments each get a unique work name so that a desktop batch
-                // (which enqueues multiple track IDs in quick succession) does not cause each
-                // submission to replace the previous still-ENQUEUED one under APPEND_OR_REPLACE.
-                // KEEP policy is correct here: if the same track is already queued, there is no
-                // need to enqueue a duplicate job.
-                // The generic (null trackId) path keeps APPEND_OR_REPLACE so a startup
-                // sweep always runs after in-flight work settles.
+                // Per-track enrichments normally use KEEP to deduplicate repeated requests.
+                // A user action that changes enrichment state (notably "return to automatic
+                // artwork") must get a fresh pass *after* any in-flight request that may have
+                // started from an older snapshot. APPEND_OR_REPLACE preserves the current work
+                // when it is healthy and guarantees a successor; if the chain is already failed
+                // or cancelled WorkManager starts a replacement instead.
                 val workName = if (trackId != null) "${WORK_NAME_IMMEDIATE}_$trackId" else WORK_NAME_IMMEDIATE
-                val workPolicy = if (trackId != null) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.APPEND_OR_REPLACE
+                val workPolicy =
+                    immediateEnrichmentWorkPolicy(
+                        trackId = trackId,
+                        appendAfterExisting = appendAfterExisting,
+                    )
 
                 WorkManager.getInstance(context).enqueueUniqueWork(
                     workName,
@@ -181,9 +205,6 @@ class EnrichmentWorker
                 Log.i(TAG, "Immediate enrichment enqueued" + (trackId?.let { " for track $it" } ?: ""))
             }
 
-            /**
-             * Cancel all enrichment work.
-             */
             fun cancel(context: Context) {
                 WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
                 WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_IMMEDIATE)
@@ -192,20 +213,10 @@ class EnrichmentWorker
             }
 
             /**
-             * Schedule accelerated post-import enrichment.
-             *
-             * This runs more frequently with larger batches to quickly enrich
-             * imported tracks. It automatically stops when the backlog is cleared.
-             *
-             * Features:
-             * - Larger batch size (50 tracks per run vs 10 normal)
-             * - Runs every 15 minutes until backlog cleared
-             * - Prioritizes by play count (most played = enriched first)
-             * - Respects rate limits but optimized for throughput
-             * - Battery-aware: requires battery not low
-             *
-             * @param context Application context
-             * @param tracksCreated Number of tracks created during import (for logging)
+             * Accelerated post-import enrichment: 50-track batches (up to 150 for large backlogs)
+             * every 15 minutes instead of 10 per hour, ordered by play count so frequently played
+             * tracks are enriched first. Stops itself once the backlog is cleared, and requires
+             * the battery not be low.
              */
             fun schedulePostImportEnrichment(
                 context: Context,
@@ -275,7 +286,7 @@ class EnrichmentWorker
                 context: Context,
                 total: Int,
             ) {
-                // NOTE: Expedited work only supports network/storage constraints, so
+                // Expedited work only supports network/storage constraints, so
                 // setRequiresBatteryNotLow() must NOT be used here — it throws
                 // IllegalArgumentException at build() time. This is user-initiated
                 // work, so running regardless of battery level is acceptable.
@@ -305,7 +316,6 @@ class EnrichmentWorker
                 Log.i(TAG, "Enrich All enqueued for $total tracks")
             }
 
-            /** Cancel a running "Enrich All" sweep. */
             fun cancelEnrichAll(context: Context) {
                 WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME_ENRICH_ALL)
                 Log.i(TAG, "Enrich All cancelled")
@@ -317,7 +327,6 @@ class EnrichmentWorker
         private suspend fun doWorkInternal(): Result {
             Log.i(TAG, "Starting enrichment work")
 
-            // Check if specific track ID was provided
             val specificTrackId = inputData.getLong("track_id", -1).takeIf { it > 0 }
             val isPostImport = inputData.getBoolean("is_post_import", false)
             val isEnrichAll = inputData.getBoolean("is_enrich_all", false)
@@ -336,6 +345,17 @@ class EnrichmentWorker
                 // Return success but don't do work - periodic will retry later
                 return Result.success()
             }
+
+            val startedAt = System.currentTimeMillis()
+            val trigger =
+                when {
+                    isEnrichAll -> EnrichmentTrigger.ENRICH_ALL
+                    specificTrackId != null -> EnrichmentTrigger.SINGLE_TRACK
+                    else -> EnrichmentTrigger.BATCH
+                }
+            // Read once, before the work, so the reduction can be derived afterwards. Taken
+            // after the deferral guards above, so a run that did nothing reports nothing.
+            val backlogBefore = pendingEnrichmentCount()
 
             return try {
                 // First, link any unlinked artists (fixes imported tracks without artist relationships)
@@ -370,14 +390,58 @@ class EnrichmentWorker
                     Log.d(TAG, "Notified UI of metadata update for track $specificTrackId")
                 }
 
+                reportEnrichmentRun(trigger, RunPhase.COMPLETED, backlogBefore, startedAt)
                 Result.success()
             } catch (e: Exception) {
                 Log.e(TAG, "Enrichment work failed", e)
                 if (runAttemptCount < 3) {
+                    // A retry is not a reported outcome: the run has not finished failing yet,
+                    // and reporting each attempt would triple-count one failure.
                     Result.retry()
                 } else {
+                    reportEnrichmentRun(
+                        trigger = trigger,
+                        phase = RunPhase.FAILED,
+                        backlogBefore = backlogBefore,
+                        startedAt = startedAt,
+                        failure = FailureClassifier.of(e),
+                    )
                     Result.failure()
                 }
+            }
+        }
+
+        /** Pending tracks, or 0 when the lookup fails — reporting must not break enrichment. */
+        private suspend fun pendingEnrichmentCount(): Int =
+            runCatching {
+                enrichedMetadataRepository.getEnrichmentStats()[EnrichmentStatus.PENDING] ?: 0
+            }.getOrDefault(0)
+
+        /**
+         * Reports one enrichment run.
+         *
+         * `cleared` is derived from the backlog before and after rather than counted per track,
+         * so it cannot disagree with what the database holds.
+         */
+        private suspend fun reportEnrichmentRun(
+            trigger: EnrichmentTrigger,
+            phase: RunPhase,
+            backlogBefore: Int,
+            startedAt: Long,
+            failure: me.avinas.tempo.data.analytics.FailureClass? = null,
+        ) {
+            runCatching {
+                val backlogAfter = pendingEnrichmentCount()
+                analyticsTracker.track(
+                    EnrichmentRun(
+                        trigger = trigger,
+                        phase = phase,
+                        backlog = backlogAfter,
+                        cleared = (backlogBefore - backlogAfter).coerceAtLeast(0),
+                        durationMillis = System.currentTimeMillis() - startedAt,
+                        failure = failure,
+                    ),
+                )
             }
         }
 
@@ -414,14 +478,14 @@ class EnrichmentWorker
                         val fixedArtUrl = MusicBrainzEnrichmentService.fixHttpUrl(metadata.albumArtUrl)
                         val updatedTrack =
                             track.copy(
-                                albumArtUrl = fixedArtUrl,
                                 album = if (track.album.isNullOrBlank()) metadata.albumTitle else track.album,
                             )
-                        trackDao.update(updatedTrack)
+                        trackDao.updatePreservingManualArtwork(updatedTrack)
+                        trackDao.updateAutomaticAlbumArtUrl(metadata.trackId, fixedArtUrl)
 
                         // Also update the enriched metadata if URL was fixed
                         if (fixedArtUrl != metadata.albumArtUrl) {
-                            enrichedMetadataDao.upsert(
+                            enrichedMetadataDao.upsertFromAutomaticEnrichment(
                                 metadata.copy(
                                     albumArtUrl = fixedArtUrl,
                                     albumArtUrlSmall = MusicBrainzEnrichmentService.fixHttpUrl(metadata.albumArtUrlSmall),
@@ -459,20 +523,20 @@ class EnrichmentWorker
                 Log.d(TAG, "Skipping enrichment for track $trackId: artist is unknown")
                 val meta = enrichedMetadataDao.forTrackSync(trackId)
                 if (meta != null && meta.enrichmentStatus == EnrichmentStatus.PENDING) {
-                    enrichedMetadataDao.upsert(meta.copy(enrichmentStatus = EnrichmentStatus.SKIPPED))
+                    enrichedMetadataDao.upsertFromAutomaticEnrichment(meta.copy(enrichmentStatus = EnrichmentStatus.SKIPPED))
                 }
                 return
             }
 
-            // Modular Fallback Loop
             Log.d(TAG, "Starting modular enrichment for track $trackId")
 
             var metadata = enrichedMetadataDao.forTrackSync(trackId)
-
-            // Loop through strategies in priority order
-            // Only run a strategy if there is a gap it can fill
+            val preferred = coverArtSourcePreference.getPreferredSource()
+            // Preserve the normal enrichment order: the preference applies to
+            // artwork arbitration only, not genres, previews or audio features.
+            // Only keep the artwork gap open for strategies that can actually provide or replace the artwork.
             for (strategy in strategies) {
-                val currentGap =
+                val originalGap =
                     metadata?.identifyGap() ?: me.avinas.tempo.data.enrichment.EnrichmentGap(
                         missingAlbumArt = true,
                         missingGenres = true,
@@ -481,6 +545,23 @@ class EnrichmentWorker
                         missingPreviewUrl = true,
                     )
 
+                val currentGap = if (preferred != null && metadata?.albumArtSource != preferred) {
+                    val strategySource = strategy.albumArtSource
+                    val canReplace = strategySource != null &&
+                        (strategySource == preferred ||
+                            CoverArtSourcePreference.shouldReplace(
+                                metadata?.albumArtSource ?: AlbumArtSource.NONE,
+                                strategySource,
+                                preferred,
+                            ))
+                    if (canReplace) {
+                        originalGap.copy(missingAlbumArt = true)
+                    } else {
+                        originalGap
+                    }
+                } else {
+                    originalGap
+                }
                 if (currentGap.isEmpty()) {
                     Log.d(TAG, "Track $trackId is fully enriched. Stopping chain.")
                     break
@@ -523,7 +604,6 @@ class EnrichmentWorker
                                     .repairListColumnValue(it)
                             }
                     if (allGenres.isNotEmpty()) {
-                        // Find the most common genre
                         val genreCounts = allGenres.groupingBy { it.lowercase() }.eachCount()
                         val topGenres =
                             genreCounts.entries
@@ -539,7 +619,7 @@ class EnrichmentWorker
                                 enrichmentStatus = me.avinas.tempo.data.local.entities.EnrichmentStatus.ENRICHED,
                                 cacheTimestamp = System.currentTimeMillis(),
                             )
-                        enrichedMetadataDao.upsert(updatedMetadata)
+                        enrichedMetadataDao.upsertFromAutomaticEnrichment(updatedMetadata)
                     } else {
                         Log.d(TAG, "Track $trackId: No genres found from artist's other tracks either")
                     }
@@ -563,16 +643,16 @@ class EnrichmentWorker
                         Log.i(TAG, "Propagating enriched album art to Track $trackId: $fixedArtUrl")
                         val updatedTrack =
                             currentTrack.copy(
-                                albumArtUrl = fixedArtUrl,
                                 // Also update album name if track is missing it
                                 album = if (currentTrack.album.isNullOrBlank()) finalMetadata.albumTitle else currentTrack.album,
                             )
-                        trackDao.update(updatedTrack)
+                        trackDao.updatePreservingManualArtwork(updatedTrack)
+                        trackDao.updateAutomaticAlbumArtUrl(trackId, fixedArtUrl)
 
                         // Also update the enriched metadata if URL was changed
                         if (fixedArtUrl != finalMetadata.albumArtUrl) {
                             Log.d(TAG, "Fixed HTTP URL to HTTPS for track $trackId")
-                            enrichedMetadataDao.upsert(
+                            enrichedMetadataDao.upsertFromAutomaticEnrichment(
                                 finalMetadata.copy(
                                     albumArtUrl = fixedArtUrl,
                                     albumArtUrlSmall = MusicBrainzEnrichmentService.fixHttpUrl(finalMetadata.albumArtUrlSmall),
@@ -612,7 +692,7 @@ class EnrichmentWorker
                         settled.previewUrl != null
                 if (gainedData || settled.enrichmentStatus == EnrichmentStatus.PENDING) {
                     val terminalStatus = if (gainedData) EnrichmentStatus.ENRICHED else EnrichmentStatus.NOT_FOUND
-                    enrichedMetadataDao.upsert(
+                    enrichedMetadataDao.upsertFromAutomaticEnrichment(
                         settled.copy(
                             enrichmentStatus = terminalStatus,
                             enrichmentError = if (gainedData) null else "No source matched this track",
@@ -687,9 +767,8 @@ class EnrichmentWorker
 
             // 1. Process pending tracks (completely unenriched)
             // For large post-import backlogs, use two-tier enrichment:
-            //   Tier 1: Top-played tracks (play_count >= 2) — most important, enriched first
+            //   Tier 1: Top-played tracks (play_count >= 2) — enriched first
             //   Tier 2: Remaining pending tracks — filled in if tier 1 doesn't fill the batch
-            //   Prioritizes frequently-played tracks before backfilling one-play entries.
             val pendingTracks: List<EnrichedMetadata> =
                 if (isPostImportEnrichment) {
                     val pendingCount = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
@@ -849,6 +928,16 @@ class EnrichmentWorker
             // twice. If a whole batch comes back already-seen, the sweep is stuck — stop
             // instead of looping forever (the user-visible "freezes and never finishes").
             val processedIds = HashSet<Long>()
+            // Progress is tracked locally rather than re-counted from the database.
+            //
+            // This loop used to call countByStatus() *and* setProgress() after every single
+            // track. countByStatus is index-only so it is cheap but not free, and setProgress
+            // persists to WorkManager's own database — so a 25-track batch cost ~50 extra
+            // database writes purely to move a progress bar. enrichSpecificTrack() guarantees a
+            // processed track leaves PENDING, so a local counter is equivalent for reporting.
+            var completed = 0
+            var lastReportedCompleted = 0
+            val progressInterval = 5
             while (!isStopped) {
                 val batch = enrichedMetadataDao.getTracksNeedingEnrichment(EnrichmentStatus.PENDING, batchSize)
                 if (batch.isEmpty()) break
@@ -867,7 +956,7 @@ class EnrichmentWorker
                         Log.e(TAG, "Enrich All: track ${metadata.trackId} threw, marking FAILED", e)
                         val meta = enrichedMetadataDao.forTrackSync(metadata.trackId)
                         if (meta != null && meta.enrichmentStatus == EnrichmentStatus.PENDING) {
-                            enrichedMetadataDao.upsert(
+                            enrichedMetadataDao.upsertFromAutomaticEnrichment(
                                 meta.copy(
                                     enrichmentStatus = EnrichmentStatus.FAILED,
                                     enrichmentError = e.message ?: "Enrichment crashed",
@@ -877,15 +966,18 @@ class EnrichmentWorker
                             )
                         }
                     }
-                    // Report progress per track so the bar moves smoothly instead of in
-                    // 25-track jumps.
-                    val remaining = enrichedMetadataDao.countByStatus(EnrichmentStatus.PENDING)
-                    setProgress(
-                        workDataOf(
-                            "processed" to (total - remaining).coerceIn(0, total),
-                            "total" to total,
-                        ),
-                    )
+                    completed++
+                    // Report in small steps so the bar still moves smoothly, without paying a
+                    // database write per track. The final count is reported once after the loop.
+                    if (completed - lastReportedCompleted >= progressInterval) {
+                        lastReportedCompleted = completed
+                        setProgress(
+                            workDataOf(
+                                "processed" to completed.coerceIn(0, total),
+                                "total" to total,
+                            ),
+                        )
+                    }
                     kotlinx.coroutines.delay(INTER_TRACK_DELAY_MS)
                 }
             }
@@ -927,10 +1019,12 @@ class EnrichmentWorker
                     .setOngoing(true)
                     .build()
 
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                ForegroundInfo(NOTIFICATION_ID, notification)
-            }
+            return ForegroundNotificationGuard.postableForegroundInfo(
+                context = applicationContext,
+                notificationId = NOTIFICATION_ID,
+                requestedChannelId = NOTIFICATION_CHANNEL_ID,
+                notification = notification,
+                logTag = TAG,
+            )
         }
     }

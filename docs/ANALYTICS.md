@@ -8,11 +8,28 @@ To turn reporting off, open Settings → Your Data → Anonymous app-health stat
 
 ## How anonymity works
 
-Tempo runs no server of its own and has no accounts or login.
+Tempo has no accounts and no login, and your listening history never leaves the device.
 
-Tempo never sets a user ID. The only session value is random, kept in memory, regenerated on every start and rotated after an hour of inactivity. It is never written to disk, so it cannot become a device ID. Tempo collects no advertising ID, no `ANDROID_ID`, and does no fingerprinting.
+The only identifier involved is a **random install id**: a value the app generates once, keeps
+on your device, and sends only as the routing key for its own statistics. It is not your
+advertising ID, not `ANDROID_ID`, and not derived from anything about your device or you, so it
+cannot be matched against another app — and there is nothing to match it to, because Tempo has
+no accounts. Its one job is making "how many people used Tempo today, and did they come back"
+answerable at all. Without a value that survives across days, one person opening the app thirty
+times and thirty people opening it once are the same number.
 
-Reporting works over any connection. Each event is a few hundred bytes, about 16 KB on a busy day. Waiting for Wi-Fi would silence everyone on mobile data only, so Tempo does not wait for it.
+You can replace it at any time in Settings → Your Data → **Reset analytics ID**. Turning
+reporting off replaces it too, so everything recorded before becomes unlinkable to anything
+after.
+
+Tempo collects no advertising ID, no `ANDROID_ID`, and does no fingerprinting. Events are sent
+as anonymous: the analytics service is told not to create a user profile, so no user record is
+stored for you. The client IP address is never stored, and every event tells the analytics
+service not to derive a location from it either, so nothing about where you are is kept. See
+[Where it goes](#where-it-goes).
+
+Reporting works over any connection. Each event is a few hundred bytes, about 16 KB on a busy
+day. Waiting for Wi-Fi would silence everyone on mobile data only, so Tempo does not wait for it.
 
 Full policy: [PRIVACY.md](../PRIVACY.md).
 
@@ -24,18 +41,18 @@ Everything else is a fixed name from a closed list. There is no free-text field 
 
 | Event | What it tells us |
 |---|---|
-| `app_started` | Startup health: cold or warm start, startup time range, whether music detection was ready |
-| `screen_viewed` | Detail-screen visits only (song, artist, album) — all other screens cost zero events |
-| `feature_used` | Which features get used, such as share cards, imports, backups |
+| `startup_slow` | That Tempo took an unusually long time to start. Sent only when a start is slow — a normal launch reports nothing |
+| `feature_first_used` | The first time each feature is used — once ever, never again. Answers which features are unused without counting every tap |
 | `onboarding_step` | Where setup stalls: step name, next/skip/back, time range on step |
 | `onboarding_completed` | Setup completion: skipped-step range, total time range |
-| `notif_access` | Notification access result and whether it was granted during onboarding or in Settings |
+| `notif_access` | Whether notification access was granted or postponed. "Do it later" is deliberately reported as postponed rather than refused, because the screen cannot tell the two apart |
 | `battery_exemption` | Battery-optimisation exemption result |
-| `tracking_gap` | When music detection stopped, why, and for how long (range) |
-| `service_revived` | Whether Tempo restarted itself after the system stopped it, and how |
-| `listening_activity` | Daily totals only, never per track: listen-count range, app-count range |
+| `daily_activity` | That Tempo was used at all today, and whether music detection was already down when it was. Once a day, and the only thing "daily active users" is counted from |
+| `tracking_health` | That music detection stopped and Tempo brought it back: how long it had been down, what triggered the check, and how forceful the recovery was. Once a day at most, however many times it happened |
+| `listening_activity` | Daily totals only, never per track: listen-count range, app-count range, and whether the app's own screens were opened that day |
 | `db_migration` | On-device database schema moved from one version to another |
-| `import_run` | Import result for Last.fm, Spotify, YouTube Music, the browser-extension export, or Tempo backup: phase, record range, failure category, time range |
+| `import_run` | Import result for Last.fm, Spotify, YouTube Music, Deezer, Musicolet, or the browser-extension export: phase, record range, failure category, time range |
+| `enrichment_run` | Whether a metadata enrichment sweep worked — once per run, not once per source tried: what started it, how much backlog it cleared, and the failure category if it failed |
 | `backup_run` | Backup result for local or Drive: success flag, size and time ranges |
 | `crash` | Fatal crash signature: obfuscated class name, one obfuscated line, app version |
 
@@ -57,7 +74,8 @@ The format is checked before the event can exist. Text that does not match the p
 
 - Track, artist, album, or playlist names, not even hashed.
 - Search queries, notification content, file paths, listening timestamps.
-- Account details, device identifiers, advertising ID.
+- Account details, advertising ID, `ANDROID_ID`, or any hardware identifier.
+- Your IP address, and anything that could be derived from it. Tempo stores no address, and every event carries PostHog's `$geoip_disable` flag, so the backend does not turn the connection into a country, region or city either. No location of any kind is kept — see below.
 - No advertising or attribution SDK, no Google Analytics, no Firebase.
 - No session replay, no screen recording, no tap maps.
 
@@ -71,13 +89,42 @@ Because you start it and review it, it can carry more detail than the automatic 
 
 ## Where it goes
 
-[Aptabase](https://aptabase.com), in the EU region. Aptabase is open source and its SDKs send no identifiers. On receipt the server derives a temporary hash from IP plus user agent against a salt that rotates every 24 hours. Old salts are purged on a schedule, so events cannot be linked across days. Events older than 24 hours are rejected.
+[PostHog](https://posthog.com), on EU infrastructure in Frankfurt. PostHog is open source and does not sell data. Events go straight from the device to PostHog's batch endpoint — there is no intermediary service, so the guarantees below are enforced by the app itself and are auditable in `PostHogPayload.kt`. Three things matter here and all are deliberate:
 
-Caveat: that same IP produces a coarse country/region stored with the event. It is not precise and is not linked to anything else about you. Stating it here matters more than claiming no location data at all.
+- **Person profiles are off.** Every event is sent with `$process_person_profile = false`, so no user record is created and there is nothing to look a person up by.
+- **Location enrichment is off.** Every event is sent with `$geoip_disable = true`, so PostHog does not turn the connection into a country, region or city. PostHog receives the address as any server does; this flag is what stops it becoming stored location data.
+- **No address is stored by Tempo.** It is never written to a database, a log, or an event property.
+
+**No location data is collected** — not a country, not a city, not coordinates. That is a deliberate change from an earlier arrangement where a relay attached a coarse country code; the flag above is what keeps the stronger promise true.
+
+The PostHog project token ships inside the app. That is how PostHog client tokens are designed to be used, and it replaces an earlier arrangement where a server held the token. The trade is that anyone holding the app can post events to that project, so the closed schema and the published list below are what keep the data honest.
 
 ## Builds from source
 
-Builds compiled from source send nothing. The reporting key is not committed to the repository, so a self-built copy has reporting inert. Debug builds never report either.
+Builds compiled from source send nothing. The analytics endpoint is not committed to the repository, so a self-built copy has reporting inert. Debug builds never report either.
+
+To point a build at your own analytics, set `ANALYTICS_ENDPOINT` and `ANALYTICS_TOKEN` in
+`local.properties`. `ANALYTICS_ENDPOINT` is the full URL — for PostHog,
+`https://eu.i.posthog.com/batch/` — and `ANALYTICS_TOKEN` is that project's token. Nothing else
+is needed: the app speaks PostHog's batch API directly.
+
+## Play Store Data Safety
+
+The declaration in Play Console has to match this page, and it is easy for the two to drift because one lives in a web form. Suggested answers, with the reasoning that matters more than the exact labels:
+
+| Category | Declare | Why |
+|---|---|---|
+| Device or other IDs | **Collected** | The pseudonymous install id. **Not** an advertising ID — that is never read. |
+| App activity → Other actions | **Collected** | Feature first use, onboarding steps, import and backup outcomes. |
+| App info and performance → Crash logs | **Collected** | Obfuscated class and frame only; never the message or a stack. |
+| Location | **Not collected** | Every event carries `$geoip_disable`, so no country, city or coordinates are derived or stored. |
+| Advertising or marketing | **No** | |
+| Encrypted in transit | **Yes** | |
+| Users can delete their data | **Yes** | Reset analytics ID, or turn reporting off — both leave the old id unlinkable and nothing further is sent under it. |
+
+On "shared with third parties": events reach PostHog, which acts as a **processor under contract**, not as a purchaser using the data for its own purposes. Play's "sharing" definition normally covers transfer for the recipient's own use, so collection-only is the usual reading — but confirm it against PostHog's DPA rather than taking it from here.
+
+This table, the list of events above, and `AnalyticsCatalog` must stay in step when the schema changes. `AnalyticsCatalogTest` and `AnalyticsEnumUsageTest` guard the code side; nothing guards the console form, so it is checked by hand at release.
 
 ## Questions
 

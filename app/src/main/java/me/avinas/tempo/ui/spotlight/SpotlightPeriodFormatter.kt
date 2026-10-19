@@ -67,14 +67,8 @@ object SpotlightPeriodFormatter {
     }
 
     /**
-     * Checks whether a story for the given [timeRange] is currently unlocked based on
-     * calendar rules. ALL_TIME is excluded — it requires a data-age check that is
-     * only available asynchronously in the ViewModel.
-     *
-     * - THIS_WEEK: unlocked on Sunday or Mon–Wed (grace window for last week's story)
-     * - THIS_MONTH: unlocked on the last day or the first 3 days (grace window)
-     * - THIS_YEAR: unlocked from December onwards
-     * - Other ranges: always unlocked
+     * Whether a story for [timeRange] is unlocked by calendar rules. ALL_TIME is excluded: it
+     * needs a data-age check that only the ViewModel can do asynchronously.
      */
     fun isStoryUnlocked(timeRange: TimeRange, now: LocalDate = LocalDate.now()): Boolean = when (timeRange) {
         TimeRange.THIS_WEEK -> now.dayOfWeek == DayOfWeek.SUNDAY || now.dayOfWeek.value <= 3
@@ -84,18 +78,16 @@ object SpotlightPeriodFormatter {
     }
 
     /**
-     * Returns the best time range for a direct story launch, checking weekly first,
-     * then monthly, then yearly. ALL_TIME is intentionally excluded.
-     * Returns `null` when all three are locked.
+     * Best time range for a direct story launch, or `null` when all three are locked.
+     * ALL_TIME is intentionally excluded.
      */
     fun getDirectStoryTimeRange(now: LocalDate = LocalDate.now()): TimeRange? =
         listOf(TimeRange.THIS_WEEK, TimeRange.THIS_MONTH, TimeRange.THIS_YEAR)
             .firstOrNull { isStoryUnlocked(it, now) }
 
     /**
-     * Produces a stable key identifying the story period for [timeRange] at [now].
-     * Used to track whether the user has already viewed the current story period.
-     * Format: "W<ISO date>" for week, "M<YYYY-MM>" for month, "Y<YYYY>" for year.
+     * Stable key for the story period at [now], used to track whether the user has already
+     * viewed it. Format: "W<ISO date>" for week, "M<YYYY-MM>" for month, "Y<YYYY>" for year.
      */
     fun storyPeriodKey(timeRange: TimeRange, now: LocalDate = LocalDate.now()): String {
         val start = effectivePeriodStart(timeRange, now)

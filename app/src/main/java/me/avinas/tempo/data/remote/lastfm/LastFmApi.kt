@@ -5,37 +5,21 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 
 /**
- * Last.fm API Retrofit interface.
- * 
- * API Documentation: https://www.last.fm/api
- * 
- * Last.fm provides excellent tag/genre data for tracks and artists.
- * The API is free for non-commercial use with reasonable rate limits.
- * 
- * Base URL: https://ws.audioscrobbler.com/2.0/
- * 
- * All requests require an API key passed as `api_key` parameter.
+ * Last.fm API (https://www.last.fm/api), base URL https://ws.audioscrobbler.com/2.0/.
+ *
+ * Free for non-commercial use with reasonable rate limits. Every call carries the API key as
+ * `api_key`, asks for JSON, and passes `autocorrect=1` so Last.fm fixes misspelled names.
  */
 interface LastFmApi {
 
     companion object {
         const val BASE_URL = "https://ws.audioscrobbler.com/2.0/"
-        
-        // Rate limit: ~5 requests per second for reasonable use
+
+        // Roughly 5 requests/second.
         const val RATE_LIMIT_MS = 200L
     }
 
-    /**
-     * Get track info including tags/genres.
-     * 
-     * @param method API method (track.getInfo)
-     * @param track Track name
-     * @param artist Artist name
-     * @param apiKey Last.fm API key
-     * @param format Response format (json)
-     * @param autocorrect Whether to autocorrect misspellings (1 = yes)
-     * @return Track info with tags
-     */
+    /** `track.getInfo`: tags and genres for one track. */
     @GET(".")
     suspend fun getTrackInfo(
         @Query("method") method: String = "track.getInfo",
@@ -46,16 +30,7 @@ interface LastFmApi {
         @Query("autocorrect") autocorrect: Int = 1
     ): Response<LastFmScrobbleResponse>
 
-    /**
-     * Get artist info including tags/genres.
-     * 
-     * @param method API method (artist.getInfo)
-     * @param artist Artist name
-     * @param apiKey Last.fm API key
-     * @param format Response format (json)
-     * @param autocorrect Whether to autocorrect misspellings (1 = yes)
-     * @return Artist info with tags and similar artists
-     */
+    /** `artist.getInfo`: tags and similar artists. */
     @GET(".")
     suspend fun getArtistInfo(
         @Query("method") method: String = "artist.getInfo",
@@ -65,17 +40,7 @@ interface LastFmApi {
         @Query("autocorrect") autocorrect: Int = 1
     ): Response<LastFmArtistResponse>
 
-    /**
-     * Get top tags for a track.
-     * 
-     * @param method API method (track.getTopTags)
-     * @param track Track name
-     * @param artist Artist name
-     * @param apiKey Last.fm API key
-     * @param format Response format (json)
-     * @param autocorrect Whether to autocorrect misspellings (1 = yes)
-     * @return Top tags for the track
-     */
+    /** `track.getTopTags`. */
     @GET(".")
     suspend fun getTrackTopTags(
         @Query("method") method: String = "track.getTopTags",
@@ -86,16 +51,7 @@ interface LastFmApi {
         @Query("autocorrect") autocorrect: Int = 1
     ): Response<LastFmTopTagsResponse>
 
-    /**
-     * Get top tags for an artist.
-     * 
-     * @param method API method (artist.getTopTags)
-     * @param artist Artist name
-     * @param apiKey Last.fm API key
-     * @param format Response format (json)
-     * @param autocorrect Whether to autocorrect misspellings (1 = yes)
-     * @return Top tags for the artist
-     */
+    /** `artist.getTopTags`. */
     @GET(".")
     suspend fun getArtistTopTags(
         @Query("method") method: String = "artist.getTopTags",
@@ -105,19 +61,9 @@ interface LastFmApi {
         @Query("autocorrect") autocorrect: Int = 1
     ): Response<LastFmTopTagsResponse>
 
-    // USER HISTORY IMPORT ENDPOINTS
-    // These endpoints are used for Last.fm scrobble history import.
-    // They require only an API key (no user authentication needed for public profiles).
+    // History import. Public profiles only, so an API key is enough; no user auth.
 
-    /**
-     * Get user info including total scrobble count and registration date.
-     * 
-     * @param method API method (user.getInfo)
-     * @param user Last.fm username
-     * @param apiKey Last.fm API key
-     * @param format Response format (json)
-     * @return User info with playcount, registered date, etc.
-     */
+    /** `user.getInfo`: total scrobble count and registration date. */
     @GET(".")
     suspend fun getUserInfo(
         @Query("method") method: String = "user.getInfo",
@@ -127,21 +73,10 @@ interface LastFmApi {
     ): Response<LastFmUserInfoResponse>
 
     /**
-     * Get user's recent/all scrobbles (paginated).
-     * 
-     * Despite the name "getRecentTracks", this endpoint returns the COMPLETE
-     * lifetime scrobble history when paginated properly.
-     * 
-     * @param method API method (user.getRecentTracks)
-     * @param user Last.fm username
-     * @param apiKey Last.fm API key
-     * @param format Response format (json)
-     * @param limit Items per page (max 200)
-     * @param page Page number (1-based)
-     * @param extended Include extended data (images, loved status) - 1 = yes
-     * @param from Start timestamp (Unix timestamp) for filtering
-     * @param to End timestamp (Unix timestamp) for filtering
-     * @return Paginated list of scrobbles
+     * `user.getRecentTracks`, paginated. Despite the name this returns the complete lifetime
+     * scrobble history if you keep paging.
+     *
+     * `limit` caps at 200, `page` is 1-based, and `from`/`to` are Unix timestamps.
      */
     @GET(".")
     suspend fun getRecentTracks(
@@ -157,16 +92,8 @@ interface LastFmApi {
     ): Response<LastFmRecentTracksResponse>
 
     /**
-     * Get user's top tracks (for active set calculation).
-     * 
-     * @param method API method (user.getTopTracks)
-     * @param user Last.fm username
-     * @param apiKey Last.fm API key
-     * @param format Response format (json)
-     * @param period Time period: overall, 7day, 1month, 3month, 6month, 12month
-     * @param limit Items per page (max 1000)
-     * @param page Page number (1-based)
-     * @return User's top tracks with play counts
+     * `user.getTopTracks`. `period` is one of `overall`, `7day`, `1month`, `3month`, `6month`,
+     * `12month`; `limit` caps at 1000.
      */
     @GET(".")
     suspend fun getTopTracks(
@@ -179,17 +106,7 @@ interface LastFmApi {
         @Query("page") page: Int = 1
     ): Response<LastFmTopTracksResponse>
 
-    /**
-     * Get user's loved tracks (always included in active set).
-     * 
-     * @param method API method (user.getLovedTracks)
-     * @param user Last.fm username
-     * @param apiKey Last.fm API key
-     * @param format Response format (json)
-     * @param limit Items per page (max 1000)
-     * @param page Page number (1-based)
-     * @return User's loved tracks
-     */
+    /** `user.getLovedTracks`. `limit` caps at 1000, `page` is 1-based. */
     @GET(".")
     suspend fun getLovedTracks(
         @Query("method") method: String = "user.getLovedTracks",
@@ -201,16 +118,7 @@ interface LastFmApi {
     ): Response<LastFmLovedTracksResponse>
 
     /**
-     * Get user's top artists (for priority enrichment).
-     * 
-     * @param method API method (user.getTopArtists)
-     * @param user Last.fm username
-     * @param apiKey Last.fm API key
-     * @param format Response format (json)
-     * @param period Time period: overall, 7day, 1month, 3month, 6month, 12month
-     * @param limit Items per page (max 1000)
-     * @param page Page number (1-based)
-     * @return User's top artists with play counts
+     * `user.getTopArtists`. Same `period` values as [getTopTracks]; `limit` caps at 1000.
      */
     @GET(".")
     suspend fun getTopArtists(

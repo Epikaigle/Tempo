@@ -1299,7 +1299,16 @@ private fun LastFmImportComplete(
         )
 
         Text(
-            text = "${numberFormat.format(result.activeSetCount + result.archivedCount)} scrobbles imported",
+            // A re-run whose scrobbles are already in the library must not read as a failed
+            // import of "0 scrobbles".
+            text =
+                when {
+                    result.totalImported > 0 -> "${numberFormat.format(result.totalImported)} scrobbles imported"
+
+                    result.alreadyImported -> "Nothing new — your history is already in Tempo"
+
+                    else -> "No new scrobbles found this time"
+                },
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.7f),
         )

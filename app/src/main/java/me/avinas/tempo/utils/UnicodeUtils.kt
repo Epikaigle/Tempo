@@ -3,13 +3,9 @@ package me.avinas.tempo.utils
 import java.text.Normalizer
 
 /**
- * Unicode-aware text normalization helpers shared by [ArtistParser] and [TrackMatcher].
- *
- * Music metadata regularly contains names written in any writing system
- * (Hangul, Kanji/kana, Devanagari, Thai, Arabic, Cyrillic, ...) plus stylized
- * special characters (Ke$ha, P!nk, full-width "ＹＯＡＳＯＢＩ", zero-width junk
- * pasted from web players). These helpers make comparison robust without ever
- * destroying a script's meaningful characters.
+ * Text normalization shared by [ArtistParser] and [TrackMatcher]: music metadata arrives in any
+ * script, plus stylized names (Ke$ha, P!nk, full-width "ＹＯＡＳＯＢＩ") and zero-width junk
+ * pasted from web players.
  */
 object UnicodeUtils {
 

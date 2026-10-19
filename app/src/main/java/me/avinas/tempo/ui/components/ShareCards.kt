@@ -332,16 +332,20 @@ fun ArtistShareCard(
                     }
                 }
 
-                // Optional Artist Flex Highlight Pill (streak, discovery date, or genre)
+                // Optional Artist Flex Highlight Pill (streak, discovery date, or genre).
+                // A hidden streak is passed through as 0 so the pill falls back to the
+                // discovery date the card already knows rather than dropping the pill.
+                val hideStreaks = LocalHideStreaks.current
                 val artistFlexPill =
                     remember(
                         artistDetails.listeningStreakDays,
                         artistDetails.firstListenedDate,
                         artistDetails.firstDiscovery,
                         artistDetails.topGenres,
+                        hideStreaks,
                     ) {
                         resolveArtistFlexPill(
-                            listeningStreakDays = artistDetails.listeningStreakDays,
+                            listeningStreakDays = if (hideStreaks) 0 else artistDetails.listeningStreakDays,
                             firstListenedDate = artistDetails.firstListenedDate,
                             firstDiscoveryTimestamp = artistDetails.firstDiscovery?.firstListenTimestamp,
                             topGenre = artistDetails.topGenres.firstOrNull(),
@@ -1758,28 +1762,30 @@ fun MilestoneShareCard(
                             )
                         }
 
-                        Box(
-                            modifier =
-                                Modifier
-                                    .height(30.dp)
-                                    .width(1.dp)
-                                    .background(palette.divider),
-                        )
+                        if (!LocalHideStreaks.current) {
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .height(30.dp)
+                                        .width(1.dp)
+                                        .background(palette.divider),
+                            )
 
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "STREAK",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = palette.textSecondary,
-                                letterSpacing = palette.labelTracking ?: 1.5.sp,
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (streak > 0) "$streak days" else "Active",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = palette.headlineWeight ?: FontWeight.Bold,
-                                color = palette.textPrimary,
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "STREAK",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = palette.textSecondary,
+                                    letterSpacing = palette.labelTracking ?: 1.5.sp,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (streak > 0) "$streak days" else "Active",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = palette.headlineWeight ?: FontWeight.Bold,
+                                    color = palette.textPrimary,
+                                )
+                            }
                         }
 
                         Box(

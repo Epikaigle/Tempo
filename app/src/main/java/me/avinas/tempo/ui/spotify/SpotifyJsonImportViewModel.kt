@@ -13,8 +13,7 @@ import kotlinx.coroutines.launch
 import me.avinas.tempo.data.analytics.AnalyticsTracker
 import me.avinas.tempo.data.analytics.FailureClass
 import me.avinas.tempo.data.analytics.FailureClassifier
-import me.avinas.tempo.data.analytics.FeatureUsed
-import me.avinas.tempo.data.analytics.ImportPhase
+import me.avinas.tempo.data.analytics.RunPhase
 import me.avinas.tempo.data.analytics.ImportProvider
 import me.avinas.tempo.data.analytics.ImportRun
 import me.avinas.tempo.data.analytics.TempoFeature
@@ -39,7 +38,6 @@ class SpotifyJsonImportViewModel @Inject constructor(
             return
         }
 
-        tracker.track(FeatureUsed(TempoFeature.SPOTIFY_JSON_IMPORT))
         _uiState.value = SpotifyJsonImportUiState.Importing
 
         viewModelScope.launch {
@@ -53,7 +51,7 @@ class SpotifyJsonImportViewModel @Inject constructor(
                 tracker.track(
                     ImportRun(
                         provider = ImportProvider.SPOTIFY_JSON,
-                        phase = if (result.isSuccess) ImportPhase.COMPLETED else ImportPhase.FAILED,
+                        phase = if (result.isSuccess) RunPhase.COMPLETED else RunPhase.FAILED,
                         records = result.tracksImported,
                         // The service reports failures as strings, so the category cannot be
                         // recovered without parsing free text — which the schema forbids.
@@ -71,7 +69,7 @@ class SpotifyJsonImportViewModel @Inject constructor(
                 tracker.track(
                     ImportRun(
                         provider = ImportProvider.SPOTIFY_JSON,
-                        phase = ImportPhase.FAILED,
+                        phase = RunPhase.FAILED,
                         records = 0,
                         failure = FailureClassifier.of(e),
                         durationMillis = System.currentTimeMillis() - startedAt

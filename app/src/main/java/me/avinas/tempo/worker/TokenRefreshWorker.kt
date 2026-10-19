@@ -10,6 +10,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import me.avinas.tempo.R
 import me.avinas.tempo.data.remote.spotify.SpotifyAuthManager
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
@@ -25,7 +26,9 @@ class TokenRefreshWorker @AssistedInject constructor(
         private const val TAG = "TokenRefreshWorker"
         private const val WORK_NAME = "spotify_token_refresh"
         private const val NOTIFICATION_CHANNEL_ID = "token_refresh_worker"
-        private const val NOTIFICATION_ID = 3003
+        // 3005, not 3003: PostRestoreCacheWorker already owns 3003, and two ongoing foreground
+        // notifications sharing an id overwrite each other in the shade.
+        private const val NOTIFICATION_ID = 3005
 
         fun schedulePeriodic(context: Context) {
             val constraints = Constraints.Builder()
@@ -89,11 +92,13 @@ class TokenRefreshWorker @AssistedInject constructor(
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
-        
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            ForegroundInfo(NOTIFICATION_ID, notification)
-        }
+
+        return ForegroundNotificationGuard.postableForegroundInfo(
+            context = applicationContext,
+            notificationId = NOTIFICATION_ID,
+            requestedChannelId = NOTIFICATION_CHANNEL_ID,
+            notification = notification,
+            logTag = TAG,
+        )
     }
 }

@@ -94,12 +94,8 @@ class SpotifyTopItemsService @Inject constructor(
     }
     
     /**
-     * Import user's top tracks and artists from all time ranges.
-     * This populates the library with tracks/artists, gets genre data,
-     * and generates listening history based on Spotify's ranking data.
-     * 
-     * @param progressCallback Optional callback for progress updates
-     * @return ImportResult with statistics
+     * Import the user's top tracks and artists across every time range: populates the library,
+     * collects artist genres, and generates listening history from Spotify's ranking data.
      */
     suspend fun importTopItems(
         progressCallback: ProgressCallback? = null
@@ -128,7 +124,7 @@ class SpotifyTopItemsService @Inject constructor(
         // Map of trackId -> duration for event generation
         val trackDurations = mutableMapOf<Long, Long>()
         
-        // Step 1: Import top artists FIRST to get genres
+        // Artists first: their genres are attached to the tracks imported below
         progressCallback?.onProgress(0, 100, "Fetching top artists...")
         
         val artistGenreMap = mutableMapOf<String, List<String>>()
@@ -149,7 +145,6 @@ class SpotifyTopItemsService @Inject constructor(
         totalGenres = artistGenreMap.values.flatten().distinct().size
         progressCallback?.onProgress(30, 100, "Got ${totalGenres} genres from ${artistGenreMap.size} artists")
         
-        // Step 2: Import top tracks and collect track IDs with ranks
         progressCallback?.onProgress(35, 100, "Fetching top tracks...")
         
         for ((index, timeRange) in listOf(TIME_RANGE_LONG, TIME_RANGE_MEDIUM, TIME_RANGE_SHORT).withIndex()) {
@@ -171,7 +166,6 @@ class SpotifyTopItemsService @Inject constructor(
             }
         }
         
-        // Step 3: Generate listening events based on Spotify's ranking (reflects real preferences)
         progressCallback?.onProgress(85, 100, "Generating listening history...")
         
         try {
@@ -195,10 +189,7 @@ class SpotifyTopItemsService @Inject constructor(
         )
     }
     
-    /**
-     * Import top artists and collect their genres.
-     * Returns pair of (artists created, genre map updated)
-     */
+    /** Top artists for one time range; returns (artists created, genres added to the map). */
     private suspend fun importTopArtists(
         authHeader: String,
         timeRange: String,
@@ -256,8 +247,8 @@ class SpotifyTopItemsService @Inject constructor(
     }
     
     /**
-     * Import top tracks with genre information from artists.
-     * Also collects track IDs and their ranks for listening event generation.
+     * Top tracks for one time range, with genres taken from their artists. Fills [trackRanks] and
+     * [trackDurations] for event generation; returns how many tracks were created.
      */
     private suspend fun importTopTracksWithRanks(
         authHeader: String,
@@ -344,14 +335,9 @@ class SpotifyTopItemsService @Inject constructor(
     }
     
     /**
-     * Generate listening events based on Spotify's actual ranking data.
-     * 
-     * This data is derived from REAL usage patterns:
-     * - Spotify's API ranks tracks by actual play frequency
-     * - We translate that ranking into proportional event counts
-     * - A #1 track genuinely deserves more events than a #200 track
-     * - Time distribution feels natural (spread over history period)
-     * - Adds realistic variation: completion %, occasional skips, varied durations
+     * Events proportional to rank. Spotify's ranking reflects real play frequency, so a #1 track
+     * deserves more events than a #200 one; times are spread over the history window with
+     * variation in completion, skips and duration.
      */
     private suspend fun generateListeningEvents(
         trackRanks: Map<Long, Int>,
@@ -427,10 +413,7 @@ class SpotifyTopItemsService @Inject constructor(
         return result.inserted
     }
     
-    /**
-     * Generate a weighted random time offset.
-     * Weight > 0.5 biases toward more recent times.
-     */
+    /** Random offset in the range; [recentBias] above 0.5 leans toward the recent end. */
     private fun generateWeightedRandomTime(start: Long, end: Long, recentBias: Float): Long {
         val range = end - start
         // Use power function to bias distribution
@@ -440,8 +423,8 @@ class SpotifyTopItemsService @Inject constructor(
     }
     
     /**
-     * Calculate number of plays for a track based on its rank.
-     * Uses a linear interpolation from MAX to MIN plays.
+     * Plays for a rank, interpolated linearly from [MAX_PLAYS_TOP_TRACK] at rank 1 down to
+     * [MIN_PLAYS_BOTTOM_TRACK].
      */
     private fun calculatePlayCount(rank: Int, maxRank: Int): Int {
         if (maxRank <= 1) return MAX_PLAYS_TOP_TRACK
@@ -526,7 +509,7 @@ class SpotifyTopItemsService @Inject constructor(
         )
         
         try {
-            enrichedMetadataDao.upsert(metadata)
+            enrichedMetadataDao.upsertFromAutomaticEnrichment(metadata)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to create metadata for track $trackId", e)
         }
@@ -545,7 +528,7 @@ class SpotifyTopItemsService @Inject constructor(
         try {
             val existing = enrichedMetadataDao.forTrackSync(trackId)
             if (existing != null && existing.genres.isEmpty()) {
-                enrichedMetadataDao.update(existing.copy(
+                enrichedMetadataDao.upsertFromAutomaticEnrichment(existing.copy(
                     genres = genres,
                     cacheTimestamp = System.currentTimeMillis()
                 ))

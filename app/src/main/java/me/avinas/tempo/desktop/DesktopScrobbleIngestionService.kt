@@ -5,10 +5,11 @@ import android.os.Environment
 import android.os.StatFs
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
-import me.avinas.tempo.data.repository.ArtistLinkingService
-import me.avinas.tempo.data.repository.EnrichedMetadataRepository
+import me.avinas.tempo.data.local.dao.TrackAliasDao
 import me.avinas.tempo.data.local.entities.ListeningEvent
 import me.avinas.tempo.data.local.entities.Track
+import me.avinas.tempo.data.repository.ArtistLinkingService
+import me.avinas.tempo.data.repository.EnrichedMetadataRepository
 import me.avinas.tempo.data.repository.ListeningRepository
 import me.avinas.tempo.data.repository.RefreshCoordinator
 import me.avinas.tempo.data.repository.TrackRepository
@@ -20,38 +21,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Processes incoming desktop play payloads.
+ * Processes incoming desktop play payloads: validates the auth token via [DesktopPairingManager],
+ * parses the JSON `plays` array, upserts [Track] records (the payload carries no provider ids, so
+ * matching walks exact name, then the alias a rename or merge left behind, then fuzzy), dedupes
+ * against existing [ListeningEvent] rows, inserts survivors with `source = "desktop:<source_app>"`,
+ * and updates the pairing session's `last_seen_ms`.
  *
- * Responsibilities:
- *  1. Validate the auth token via [DesktopPairingManager]
- *  2. Check battery level (reject if critical)
- *  3. Parse the JSON `plays` array
- *  4. Upsert [Track] records (find-or-create by title + artist)
- *  5. Deduplicate against existing [ListeningEvent] rows (±60 s window)
- *  6. Insert accepted events with `source = "desktop:<source_app>"`
- *  7. Update the pairing session's `last_seen_ms`
+ * Plays are rejected if the battery is ≤ 20%, and the desktop is told via a special error code so
+ * it can avoid syncing again until later.
  *
- * Battery Optimization:
- * - Plays are rejected if battery level is ≤ 20% (critical)
- * - Desktop app is notified via special error code to avoid syncing at low battery
- *
- * Expected payload schema (mirrors [desktopplan.md]):
- * ```json
- * {
- *   "auth_token": "...",
- *   "device_name": "Avinash-MacBook-Pro",
- *   "plays": [
- *     {
- *       "title": "Starboy",
- *       "artist": "The Weeknd",
- *       "album": "Starboy",
- *       "timestamp_utc": 1698246000000,
- *       "duration_ms": 230000,
- *       "source_app": "Spotify Desktop"
- *     }
- *   ]
- * }
- * ```
+ * Payload: `auth_token`, `device_name`, and a `plays` array of `title`, `artist`, `album`,
+ * `timestamp_utc`, `duration_ms` and `source_app` (mirrors [desktopplan.md]).
  */
 @Singleton
 class DesktopPlayIngestionService @Inject constructor(
@@ -61,7 +41,8 @@ class DesktopPlayIngestionService @Inject constructor(
     private val listeningRepository: ListeningRepository,
     private val enrichedMetadataRepository: EnrichedMetadataRepository,
     private val artistLinkingService: ArtistLinkingService,
-    private val refreshCoordinator: RefreshCoordinator
+    private val refreshCoordinator: RefreshCoordinator,
+    private val trackAliasDao: TrackAliasDao
 ) {
     companion object {
         private const val TAG = "DesktopIngestion"
@@ -78,24 +59,18 @@ class DesktopPlayIngestionService @Inject constructor(
     }
 
     /**
-     * Validate + parse + store one play batch.
-     * This function is safe to call from any coroutine (IO dispatcher recommended).
-     * 
-     * Returns special error codes:
-     * - "battery_critical" if battery is ≤ 20% (desktop should retry later)
+     * `battery_critical` is returned as an [IngestionResult.Error] when the battery is ≤ 20%, so
+     * the desktop can retry later.
      */
     suspend fun ingest(token: String, payload: JSONObject): IngestionResult {
-        // 1. Authenticate
         val session = pairingManager.validateToken(token)
             ?: return IngestionResult.InvalidToken
 
-        // 1.5 Battery check: reject if battery is critically low (≤ 20%)
         if (BatteryUtils.isCriticalBattery(context, forceRefresh = true)) {
             Log.w(TAG, "Rejecting play ingestion: battery level is critical (≤ 20%)")
             return IngestionResult.Error("battery_critical")
         }
 
-        // 1.6 Storage check: reject if available storage is critically low (< 100MB)
         val availableBytes = try {
             val stat = StatFs(Environment.getDataDirectory().path)
             stat.availableBlocksLong * stat.blockSizeLong
@@ -108,7 +83,6 @@ class DesktopPlayIngestionService @Inject constructor(
             return IngestionResult.Error("low_storage")
         }
 
-        // 2. Parse metadata
         val deviceName = payload.optString("device_name", session.deviceName)
         val playsArray = try {
             payload.getJSONArray("plays")
@@ -142,7 +116,6 @@ class DesktopPlayIngestionService @Inject constructor(
             }
 
             try {
-                // 3. Find or create the Track record
                 val trackResolution = findOrCreateTrack(title, artist, album, durationMs)
                 val trackId = trackResolution.id
                 if (trackResolution.isNew) {
@@ -185,7 +158,6 @@ class DesktopPlayIngestionService @Inject constructor(
                     }
                 }
 
-                // 4. Deduplication: skip if an event for this track exists within ±60 s
                 val isDuplicate = checkDuplicate(trackId, timestampUtc)
                 if (isDuplicate) {
                     Log.d(TAG, "Duplicate skipped: $title @ $timestampUtc")
@@ -193,10 +165,6 @@ class DesktopPlayIngestionService @Inject constructor(
                     continue
                 }
 
-                // 5. Insert the ListeningEvent
-                // Use listenedMs as playDuration — this is the actual listened time sent by the
-                // browser extension. For desktop app plays that don't send listened_ms, this
-                // falls back to the full track duration_ms.
                 val completionPct = if (durationMs > 0L) {
                     ((listenedMs.toDouble() / durationMs) * 100).toInt().coerceIn(0, 100)
                 } else {
@@ -222,24 +190,22 @@ class DesktopPlayIngestionService @Inject constructor(
             }
         }
 
-        // 6. Update pairing session last-seen
         pairingManager.recordSuccessfulSync(
             token = token,
             deviceName = deviceName.ifBlank { session.deviceName }
         )
 
-        // 7. Rotate auth token for forward secrecy (client will use the new token next time)
+        // Rotate for forward secrecy; the client uses the new token next time.
         val rotatedToken = pairingManager.rotateToken(token)
         val rotatedTokenStr = rotatedToken ?: token
 
-        // Enqueue per-track immediate enrichment for each new track, identical to how
-        // MusicTrackingService handles real-time plays. Using per-track IDs avoids
-        // displacing or deprioritizing tracks in the pending enrichment queue.
+        // Per-track rather than one batch enqueue, so these cannot displace or deprioritize
+        // tracks already waiting in the pending enrichment queue. Mirrors live plays.
         for (trackId in newTrackIds) {
             EnrichmentWorker.enqueueImmediate(context, trackId)
         }
 
-        // 8. Notify the History screen (and other observers) that new plays were added.
+        // Notify the History screen (and other observers) that new plays were added.
         // Without this, the History ViewModel only reacts through the Room-backed
         // observeListeningOverview() Flow, which may not fire while the screen is
         // in the background or on a non-zero page. This mirrors what MusicTrackingService
@@ -264,11 +230,18 @@ class DesktopPlayIngestionService @Inject constructor(
         trackRepository.findByTitleAndArtist(title, artist)?.let {
             return TrackResolution(id = it.id, isNew = false)
         }
-        // 2. Fuzzy substring match (handles minor whitespace / case differences)
+        // 2. A name the user renamed away or merged into another row. The payload carries
+        //    no provider ids, so without this step a desktop or extension play of a title
+        //    the user had already replaced re-created it as a second track with its own
+        //    play count — the rename looked like it had been undone.
+        trackAliasDao.findAliasTargetTrack(title, artist)?.let {
+            return TrackResolution(id = it.id, isNew = false, track = it)
+        }
+        // 3. Fuzzy substring match (handles minor whitespace / case differences)
         trackRepository.findByTitleAndArtistFuzzy(title, artist)?.let {
             return TrackResolution(id = it.id, isNew = false)
         }
-        // 3. Any-artist intersection match:
+        // 4. Any-artist intersection match:
         //    Fetch every track with the same title, then check whether at least one
         //    individual artist name from the incoming play exists in the stored artist
         //    string (or vice-versa).  This handles:
@@ -279,7 +252,7 @@ class DesktopPlayIngestionService @Inject constructor(
         candidates.firstOrNull { ArtistParser.hasAnyMatchingArtist(it.artist, artist) }?.let {
             return TrackResolution(id = it.id, isNew = false)
         }
-        // 4. No match found — create a new track record
+        // 5. No match found — create a new track record
         val newTrack = Track(
             title = title,
             artist = artist,
@@ -300,15 +273,6 @@ class DesktopPlayIngestionService @Inject constructor(
         val track: Track? = null
     )
 
-    /**
-     * Returns true if the two artist strings share at least one individual artist name.
-     *
-     * Both strings are split on common separators (comma, ampersand, slash, featuring
-     * keywords, "x", "and", "vs").  Each token is trimmed and lowercased before the
-     * intersection check, so formatting differences ("feat." vs "ft.", " & " vs ", ")
-     * and partial-artist sends ("Farhan Khan" vs "Farhan Khan, Mujtaba Aziz Naza, …")
-     * are all handled transparently.
-     */
     private fun artistsOverlap(storedArtist: String, incomingArtist: String): Boolean {
         val separator = Regex(
             """\s*[,/]\s*|\s+&\s+|\s+feat\.?\s+|\s+ft\.?\s+|\s+featuring\s+|\s+with\s+|\s+x\s+|\s+and\s+|\s+vs\.?\s+""",

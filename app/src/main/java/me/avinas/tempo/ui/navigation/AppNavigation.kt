@@ -100,6 +100,8 @@ sealed class Screen(
 
     data object YouTubeMusicImport : Screen("youtube_music_import")
 
+    data object MusicoletImport : Screen("musicolet_import")
+
     data object ExtensionImport : Screen("extension_import")
 
     data object DesktopLink : Screen("desktop_link")
@@ -128,8 +130,6 @@ fun AppNavigation(
     val currentRoute = navBackStackEntry?.destination?.route
     val currentDestination = navBackStackEntry?.destination
 
-    val analyticsScreens: AnalyticsScreenViewModel = hiltViewModel()
-
     androidx.compose.runtime.LaunchedEffect(navigationTrigger) {
         if (navigationTrigger == "profile_challenges") {
             navController.navigate(Screen.Profile.route) {
@@ -142,11 +142,10 @@ fun AppNavigation(
         }
     }
 
-    // Dismiss active walkthrough on route changes and record detail-screen visits.
+    // Dismiss active walkthrough on route changes.
     androidx.compose.runtime.LaunchedEffect(currentRoute) {
         if (currentRoute != null) {
             walkthroughController.dismissCurrent()
-            analyticsScreens.onRouteChanged(currentRoute)
         }
     }
 
@@ -253,6 +252,7 @@ fun AppNavigation(
                             onNavigateToSpotifyJsonImport = { navController.navigate(Screen.SpotifyJsonImport.route) },
                             onNavigateToDeezerImport = { navController.navigate(Screen.DeezerImport.route) },
                             onNavigateToYouTubeMusicImport = { navController.navigate(Screen.YouTubeMusicImport.route) },
+                            onNavigateToMusicoletImport = { navController.navigate(Screen.MusicoletImport.route) },
                             onNavigateToExtensionImport = { navController.navigate(Screen.ExtensionImport.route) },
                             onNavigateToDesktop = { navController.navigate(Screen.DesktopLink.route) },
                             onNavigateToEnrichmentReport = { navController.navigate(Screen.EnrichmentReport.route) },
@@ -298,6 +298,12 @@ fun AppNavigation(
 
                     composable(Screen.YouTubeMusicImport.route) {
                         me.avinas.tempo.ui.youtube.YouTubeMusicImportScreen(
+                            onNavigateBack = { navController.popBackStack() },
+                        )
+                    }
+
+                    composable(Screen.MusicoletImport.route) {
+                        me.avinas.tempo.ui.musicolet.MusicoletImportScreen(
                             onNavigateBack = { navController.popBackStack() },
                         )
                     }

@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import coil3.size.Size
 import coil3.transform.Transformation
+import me.avinas.tempo.utils.scaledWithinMaxEdge
 
 /**
  * A Coil [Transformation] that applies a blur by downscaling the source bitmap
@@ -20,15 +21,32 @@ import coil3.transform.Transformation
  * visual difference between this downscale-upscale blur and a true gaussian blur.
  *
  * @param radiusPx Blur radius in pixels. Larger values produce a stronger blur.
- *                  Values <= 0 return the input untouched.
+ *                  Values <= 0 return the input untouched (unless it exceeds the bitmap ceiling,
+ *                  in which case it is downscaled to it — the output is never larger than the
+ *                  input, and never above [me.avinas.tempo.utils.MAX_SAFE_BITMAP_EDGE_PX]).
  */
 class BlurTransformation(private val radiusPx: Float) : Transformation() {
 
     override val cacheKey: String = "blur(${radiusPx.toInt()})"
 
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
-        if (radiusPx <= 0f || input.width == 0 || input.height == 0) return input
+        // This transformation allocates its output at the *input's* dimensions, so an oversized
+        // input would come straight back out as an oversized bitmap (and then be drawn by
+        // BitmapPainter: "Canvas: trying to draw too large(Nbytes) bitmap."). Clamp the source
+        // first, on every path: for inputs already inside the ceiling this is the input itself,
+        // so the visual result is unchanged.
+        val source = input.scaledWithinMaxEdge()
+        if (radiusPx <= 0f || source.width == 0 || source.height == 0) return source
 
+        if (source !== input) {
+            val result = blur(source)
+            source.recycle()
+            return result
+        }
+        return blur(source)
+    }
+
+    private fun blur(input: Bitmap): Bitmap {
         val downscale = (radiusPx / 6f).coerceIn(2f, 32f)
         val smallW = (input.width / downscale).toInt().coerceAtLeast(1)
         val smallH = (input.height / downscale).toInt().coerceAtLeast(1)

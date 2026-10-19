@@ -36,13 +36,11 @@ object ArchiveTimestampCodec {
         val output = ByteArrayOutputStream()
         val dataOut = DataOutputStream(output)
 
-        // Write first timestamp as base
         dataOut.writeLong(timestamps.first())
 
-        // Write count
         dataOut.writeInt(timestamps.size)
 
-        // Write deltas (in seconds to save space)
+        // Deltas are seconds to save space.
         var prev = timestamps.first()
         for (i in 1 until timestamps.size) {
             val delta = ((timestamps[i] - prev) / 1000).toInt()
@@ -74,10 +72,8 @@ object ArchiveTimestampCodec {
         return try {
             val input = DataInputStream(ByteArrayInputStream(blob))
 
-            // Read base timestamp
             val baseTimestamp = input.readLong()
 
-            // Read count
             val count = input.readInt()
 
             if (count <= 1) return listOf(baseTimestamp)
@@ -86,7 +82,6 @@ object ArchiveTimestampCodec {
             // payload can hold.
             if (count - 1 > (blob.size - HEADER_BYTES) / DELTA_BYTES) return emptyList()
 
-            // Read deltas and reconstruct timestamps
             val timestamps = mutableListOf(baseTimestamp)
             var current = baseTimestamp
 

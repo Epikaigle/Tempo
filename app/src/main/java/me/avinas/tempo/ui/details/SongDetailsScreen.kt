@@ -51,7 +51,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.CallMerge
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 
 import androidx.compose.material.icons.rounded.AutoAwesome
@@ -66,7 +65,6 @@ import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.MusicOff
-import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
@@ -92,7 +90,6 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -367,6 +364,10 @@ fun SongDetailsContent(
                         onNavigateToArtist = onNavigateToArtist,
                         onNavigateToAlbum = onNavigateToAlbum,
                         onEditTitle = { viewModel.showEditTitleDialog() },
+                        onEditCover = { viewModel.showCoverPicker() },
+                        onHotlinkSuccess = {
+                            viewModel.consumeLocalArtworkBackup(trackDetails.localBackupArtUrl)
+                        },
                         onTitlePositioned = { top ->
                             val collapsed = top <= headerBottomPx
                             if (collapsed != showCollapsedTitle) {
@@ -570,6 +571,19 @@ fun SongDetailsContent(
         )
     }
 
+    if (uiState.showCoverPicker) {
+        CoverArtPickerSheet(
+            state = uiState,
+            onSelect = viewModel::selectCover,
+            onSelectProvider = viewModel::setSelectedCoverProvider,
+            onGallerySelected = viewModel::selectCoverFromGallery,
+            onResetAutomatic = viewModel::resetCoverToAutomatic,
+            onRetry = { viewModel.retryCoverCandidates() },
+            onRetryProvider = viewModel::retryCoverCandidates,
+            onDismiss = viewModel::dismissCoverPicker,
+        )
+    }
+
     if (uiState.showDeleteDialog) {
         DeleteSongConfirmDialog(
             trackDetails = trackDetails,
@@ -595,6 +609,7 @@ fun SongDetailsContent(
         MergeConfirmDialog(
             target = mergeTarget,
             isMerging = uiState.isSavingTitle,
+            error = uiState.editTitleError,
             onConfirm = viewModel::confirmEditTitleMerge,
             onDismiss = viewModel::cancelEditTitleMerge,
         )
@@ -696,6 +711,8 @@ fun SongHeroEditorialStage(
     onNavigateToArtist: (String) -> Unit,
     onNavigateToAlbum: (String, String) -> Unit,
     onEditTitle: () -> Unit,
+    onEditCover: () -> Unit,
+    onHotlinkSuccess: () -> Unit = {},
     onTitlePositioned: (Float) -> Unit = {},
     genre: String? = null,
     releaseDate: String? = null,
@@ -748,6 +765,7 @@ fun SongHeroEditorialStage(
                         R.string.details_cover_artwork_cd, trackDetails.track.title
                     ),
                     modifier = Modifier.fillMaxSize(),
+                    onHotlinkSuccess = { onHotlinkSuccess() },
                 )
 
                 // Favorite Badge
@@ -769,6 +787,26 @@ fun SongHeroEditorialStage(
                             modifier = Modifier.size(16.dp)
                         )
                     }
+                }
+
+                // Explicit affordance: artwork is editable without relying on a hidden gesture.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(8.dp)
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(TempoDarkSurface.copy(alpha = 0.90f))
+                        .border(0.8.dp, GlassBorderMedium, CircleShape)
+                        .premiumClickable(onClick = onEditCover),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = stringResource(R.string.details_change_cover),
+                        tint = TextPrimary,
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
             }
         }
@@ -2618,6 +2656,7 @@ private fun EditTitleDialog(
 private fun MergeConfirmDialog(
     target: me.avinas.tempo.data.local.entities.Track,
     isMerging: Boolean,
+    error: String?,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -2638,6 +2677,20 @@ private fun MergeConfirmDialog(
                     target.artist
                 )
             )
+
+            // Failure feedback lives in the dialog that triggered it: dismissing the
+            // dialog was previously the only outcome of a merge that did not happen.
+            if (error != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TempoError,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             if (isMerging) {

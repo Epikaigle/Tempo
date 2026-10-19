@@ -79,6 +79,20 @@ data class UserPreferences(
      * When this matches the current story period key, the home-screen ring shows gray (viewed).
      * When it differs, the ring shows the colored accent (new/unviewed story available).
      */
-    val lastSpotlightStoryViewed: String? = null
+    val lastSpotlightStoryViewed: String? = null,
+
+    /**
+     * Whether listening streaks are hidden from the interface.
+     *
+     * Streaks measure consecutive listening days, which reads as pressure to some people. When
+     * true the app stops showing them anywhere: the streak counter and personal best on the
+     * profile, streak insights on the home feed, the streak page in Spotlight, the streak line on
+     * shared artist and milestone cards, and the per-artist streak milestone.
+     *
+     * Only the display changes. Plays are still recorded, badge progress still advances and the
+     * streak history is still computed, so turning this back off restores the existing numbers
+     * rather than starting from zero.
+     */
+    val hideStreaks: Boolean = false
 )
 

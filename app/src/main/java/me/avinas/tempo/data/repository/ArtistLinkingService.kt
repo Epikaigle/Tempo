@@ -79,7 +79,7 @@ class ArtistLinkingService @Inject constructor(
                 primaryArtistId = primaryArtist.id,
                 artist = updatedArtistString
             )
-            trackDao.update(updatedTrack)
+            trackDao.updatePreservingManualArtwork(updatedTrack)
         } else if (primaryArtist == null && track.primaryArtistId == null) {
             // No valid artist found - use "Unknown Artist" placeholder to prevent infinite loop
             val unknownArtist = getOrCreateUnknownArtist()
@@ -87,10 +87,10 @@ class ArtistLinkingService @Inject constructor(
                 primaryArtistId = unknownArtist.id,
                 artist = updatedArtistString
             )
-            trackDao.update(updatedTrack)
+            trackDao.updatePreservingManualArtwork(updatedTrack)
         } else if (artistStringChanged) {
             updatedTrack = track.copy(artist = updatedArtistString)
-            trackDao.update(updatedTrack)
+            trackDao.updatePreservingManualArtwork(updatedTrack)
         }
         
         // Clear existing relationships and create new ones
@@ -133,7 +133,7 @@ class ArtistLinkingService @Inject constructor(
     suspend fun getOrCreateArtist(name: String, imageUrl: String? = null): Artist {
         val normalizedName = Artist.normalizeName(name)
         
-        // NEW: Check if this name has an alias (was merged into another artist)
+        // Check if this name has an alias (was merged into another artist)
         artistAliasDao.findAlias(normalizedName)?.let { alias ->
             artistDao.getArtistById(alias.targetArtistId)?.let { targetArtist ->
                 // Alias resolved silently - no need to log every resolution
@@ -284,9 +284,8 @@ class ArtistLinkingService @Inject constructor(
     }
     
     /**
-     * Get or create the "Unknown Artist" placeholder.
-     * This is used for tracks that have no valid artist data,
-     * allowing us to mark them as processed without violating FK constraints.
+     * Placeholder for tracks with no valid artist data, so they can be marked as
+     * processed without violating FK constraints.
      */
     private suspend fun getOrCreateUnknownArtist(): Artist {
         val unknownName = "Unknown Artist"
@@ -314,10 +313,8 @@ class ArtistLinkingService @Inject constructor(
     }
     
     /**
-     * Process all tracks that don't have a primary artist linked.
-     * This is used for migration and background cleanup.
-     * 
-     * IMPORTANT: Limited to prevent runaway processing.
+     * Migration/backfill: link artists for every track with no primary artist.
+     * Capped to prevent runaway processing.
      */
     suspend fun processUnlinkedTracks(batchSize: Int = 100): Int = withContext(Dispatchers.IO) {
         var totalProcessed = 0

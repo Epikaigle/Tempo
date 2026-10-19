@@ -38,15 +38,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Manages Google authentication using the modern Credential Manager API.
- * 
- * IMPORTANT: Credential Manager requires an Activity context for UI operations.
- * The signIn() and restoreSession() methods require an Activity to be passed.
- * 
- * This replaces the deprecated GoogleSignInClient approach and provides:
- * - Google Sign-In via Credential Manager bottom sheet
- * - Authorization for Google Drive API access
- * - Token management for API calls
+ * Google authentication via the Credential Manager API, which replaces the deprecated
+ * GoogleSignInClient. Credential Manager needs an Activity for UI, so [signIn] and
+ * [restoreSession] take one.
  */
 @Singleton
 class GoogleAuthManager @Inject constructor(
@@ -97,12 +91,7 @@ class GoogleAuthManager @Inject constructor(
     private fun configuredWebClientId(): String? =
         BuildConfig.GOOGLE_WEB_CLIENT_ID.trim().takeIf { it.isNotEmpty() }
     
-    /**
-     * Sign in with Google using Credential Manager.
-     * Shows the explicit Sign in with Google account chooser.
-     * 
-     * @param activity The Activity context REQUIRED for Credential Manager UI
-     */
+    /** Shows the "Sign in with Google" account chooser. Needs an Activity for Credential Manager UI. */
     suspend fun signIn(activity: Activity): GoogleSignInResult =
         authOperationMutex.withLock { signInUnlocked(activity) }
 
@@ -159,9 +148,6 @@ class GoogleAuthManager @Inject constructor(
         }
     }
     
-    /**
-     * Handle the credential response and extract Google account info.
-     */
     private suspend fun handleSignInResponse(response: GetCredentialResponse): GoogleSignInResult {
         val credential = response.credential
         
@@ -229,10 +215,8 @@ class GoogleAuthManager @Inject constructor(
     }
     
     /**
-     * Request authorization for Google Drive API access.
-     * This is called after successful sign-in.
-     * 
-     * @return true if authorization was granted immediately, false if consent is needed
+     * Request Drive access after sign-in. True when granted immediately, false when the user
+     * still has to consent.
      */
     private suspend fun requestDriveAuthorization(): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -309,10 +293,7 @@ class GoogleAuthManager @Inject constructor(
         }
     }
     
-    /**
-     * Called after user completes the consent flow via pendingIntent.
-     * Re-requests authorization to get the access token.
-     */
+    /** Re-requests authorization and obtains the access token after the user consents. */
     suspend fun completeConsentFlow(): Boolean =
         authOperationMutex.withLock { completeConsentFlowUnlocked() }
 
@@ -397,18 +378,13 @@ class GoogleAuthManager @Inject constructor(
         return builder.build()
     }
     
-    /**
-     * Check if Drive authorization requires user consent.
-     * Returns the pending intent if consent is needed.
-     */
+    /** Pending intent that resolves the Drive consent flow, or null when none is outstanding. */
     fun getDriveAuthorizationPendingIntent(): PendingIntent? =
         authorizationResolution ?: authorizationResult?.pendingIntent
     
     /**
-     * Get access token for Google Drive API calls.
-     * Returns null if not signed in or not authorized.
-     * 
-     * Falls back to persisted token storage if in-memory token is unavailable.
+     * Drive access token, or null when not signed in or not authorized. Falls back to the
+     * persisted token, which is what background workers rely on.
      */
     suspend fun getAccessToken(): String? = withContext(Dispatchers.IO) {
         try {
@@ -472,10 +448,7 @@ class GoogleAuthManager @Inject constructor(
         }
     }
 
-    /**
-     * Force refresh of the access token.
-     * Call this when a 401 Unauthorized error is encountered.
-     */
+    /** Force a token refresh, for when Drive answers 401 Unauthorized. */
     suspend fun refreshAccessToken(): Boolean =
         authOperationMutex.withLock { refreshAccessTokenUnlocked() }
 
@@ -596,9 +569,6 @@ class GoogleAuthManager @Inject constructor(
         }
     }
     
-    /**
-     * Sign out and clear all credentials.
-     */
     suspend fun signOut() = withContext(Dispatchers.IO + NonCancellable) {
         authOperationMutex.withLock { signOutUnlocked() }
     }
@@ -636,12 +606,7 @@ class GoogleAuthManager @Inject constructor(
         Log.i(TAG, "Finished Google sign out cleanup")
     }
     
-    /**
-     * Restore session on app launch.
-     * Attempts to silently sign in with previously authorized account.
-     * 
-     * @param activity The Activity context REQUIRED for Credential Manager UI
-     */
+    /** Silently restore the last authorized account at launch. Needs an Activity for Credential Manager UI. */
     suspend fun restoreSession(activity: Activity): Boolean =
         authOperationMutex.withLock { restoreSessionUnlocked(activity) }
 
@@ -688,14 +653,13 @@ class GoogleAuthManager @Inject constructor(
     }
     
     /**
-     * Attempt silent session restore without showing UI for background operations (e.g. WorkManager).
-     * Restores account info from encrypted storage and attempts silent re-authorization with Play Services.
+     * Silent restore for background operations (WorkManager), with no UI: account info comes
+     * from encrypted storage, then re-authorization is attempted with Play Services.
      */
     suspend fun restoreSessionSilently(): Boolean =
         authOperationMutex.withLock { restoreSessionSilentlyUnlocked() }
 
     private suspend fun restoreSessionSilentlyUnlocked(): Boolean = withContext(Dispatchers.IO) {
-        // Step 1: Check if a drive.file-scoped session is already active in memory.
         val activeAuthorization = authorizationResult
         val activeHasDriveScope = activeAuthorization?.grantedScopes.orEmpty()
             .any { it.contains(DriveScopes.DRIVE_FILE) }
@@ -713,7 +677,6 @@ class GoogleAuthManager @Inject constructor(
             return@withContext false
         }
         
-        // Step 2: Try to restore from encrypted storage
         val storageStatus = tokenStorage.getStorageStatus()
         Log.d(TAG, "Token storage status: $storageStatus")
         
@@ -729,8 +692,7 @@ class GoogleAuthManager @Inject constructor(
             Log.d(TAG, "Restored Google account info from secure storage")
         }
         
-        // Step 3: Attempt silent re-authorization with Google Play Services
-        // This works because Google Play Services caches the authorization
+        // Silent re-authorization can work here because Play Services caches the authorization
         try {
             Log.d(TAG, "Attempting silent re-authorization with Google Play Services")
             

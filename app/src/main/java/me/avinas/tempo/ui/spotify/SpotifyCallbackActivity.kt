@@ -15,14 +15,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Activity that handles the Spotify OAuth callback.
- * 
- * This activity is launched when Spotify redirects back to the app
- * after user authentication. It handles the authorization code
- * and redirects to the main activity.
- * 
- * Registered in AndroidManifest.xml with intent filter for:
- * tempo://spotify-callback
+ * OAuth redirect target, registered in AndroidManifest.xml for `tempo://spotify-callback`.
  */
 @AndroidEntryPoint
 class SpotifyCallbackActivity : ComponentActivity() {
@@ -63,16 +56,14 @@ class SpotifyCallbackActivity : ComponentActivity() {
                 Log.d(TAG, "Callback handled, success: $success")
                 
                 if (success) {
-                    // Queue all existing tracks for Spotify enrichment
                     enrichedMetadataRepository.queueAllForSpotifyEnrichment()
                     
-                    // Note: History reconstruction is triggered from MainActivity
-                    // because it has a longer-lived viewModelScope that won't get cancelled
-                    // Uses the "honest data only" approach with liked tracks + yearly playlists
+                    // History reconstruction is triggered from MainActivity, whose
+                    // viewModelScope outlives this activity and won't get cancelled. It uses
+                    // the "honest data only" path: liked tracks + yearly playlists.
                     Log.i(TAG, "Auth successful, history reconstruction will be triggered from MainActivity")
                 }
                 
-                // Navigate back to main activity (will trigger reconstruction there)
                 navigateToMain(success)
             }
         } else {
@@ -82,7 +73,6 @@ class SpotifyCallbackActivity : ComponentActivity() {
     }
 
     private fun isSpotifyCallback(uri: Uri): Boolean {
-        // Check if this is our Spotify redirect URI
         val expectedUri = Uri.parse(SpotifyApi.REDIRECT_URI)
         return uri.scheme == expectedUri.scheme && uri.host == expectedUri.host
     }

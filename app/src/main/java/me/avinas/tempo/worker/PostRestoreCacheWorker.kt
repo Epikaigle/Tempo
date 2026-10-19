@@ -3,8 +3,6 @@ package me.avinas.tempo.worker
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
@@ -21,6 +19,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import me.avinas.tempo.R
+import me.avinas.tempo.utils.ForegroundNotificationGuard
 import me.avinas.tempo.utils.ImageUrlHostAllowlist
 
 /**
@@ -222,10 +221,12 @@ class PostRestoreCacheWorker
                     .setOngoing(true)
                     .build()
 
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            } else {
-                ForegroundInfo(NOTIFICATION_ID, notification)
-            }
+            return ForegroundNotificationGuard.postableForegroundInfo(
+                context = applicationContext,
+                notificationId = NOTIFICATION_ID,
+                requestedChannelId = NOTIFICATION_CHANNEL_ID,
+                notification = notification,
+                logTag = TAG,
+            )
         }
     }

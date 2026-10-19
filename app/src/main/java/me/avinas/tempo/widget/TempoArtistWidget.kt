@@ -44,6 +44,7 @@ import me.avinas.tempo.widget.theme.TempoWidgetColors
 import me.avinas.tempo.widget.utils.WidgetHub
 import me.avinas.tempo.widget.utils.appWidgetBackground
 import me.avinas.tempo.widget.utils.scheduleImmediateWidgetUpdate
+import me.avinas.tempo.widget.utils.cancelPeriodicWidgetUpdateIfUnused
 import me.avinas.tempo.widget.utils.schedulePeriodicWidgetUpdate
 
 class TempoArtistWidget : GlanceAppWidget() {
@@ -115,5 +116,12 @@ class TempoArtistWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         schedulePeriodicWidgetUpdate(context)
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        // Shared periodic work: this only stops it once the last Tempo widget is gone,
+        // so removing one widget does not silently kill refresh for the others.
+        cancelPeriodicWidgetUpdateIfUnused(context)
     }
 }

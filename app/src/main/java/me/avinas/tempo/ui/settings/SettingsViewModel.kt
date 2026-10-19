@@ -24,6 +24,8 @@ import me.avinas.tempo.data.importexport.ImportExportManager
 import me.avinas.tempo.data.importexport.ImportExportProgress
 import me.avinas.tempo.data.importexport.ImportExportResult
 import me.avinas.tempo.data.local.AppDatabase
+import me.avinas.tempo.data.local.entities.AlbumArtSource
+import me.avinas.tempo.data.enrichment.CoverArtSourcePreference
 import me.avinas.tempo.data.profile.ProfileIdentityManager
 import me.avinas.tempo.ui.onboarding.dataStore
 import me.avinas.tempo.worker.ChallengeWorker
@@ -42,6 +44,10 @@ class SettingsViewModel
         private val profileIdentityManager: ProfileIdentityManager,
         private val userPreferencesDao: me.avinas.tempo.data.local.dao.UserPreferencesDao,
         private val analyticsConsent: AnalyticsConsent,
+        private val analyticsInstallId: me.avinas.tempo.data.analytics.AnalyticsInstallId,
+        private val analyticsDailyLedger: me.avinas.tempo.data.analytics.AnalyticsDailyLedger,
+        private val analyticsFeatureLedger: me.avinas.tempo.data.analytics.AnalyticsFeatureLedger,
+        private val coverArtSourcePreference: CoverArtSourcePreference,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow(SettingsUiState())
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -85,6 +91,8 @@ class SettingsViewModel
                         achievementsEnabled = dataStorePrefs[NOTIF_ACHIEVEMENTS_KEY] ?: true,
                         dailyChallengesEnabled = dataStorePrefs[NOTIF_CHALLENGES_KEY] ?: true,
                         extendedAudioAnalysisEnabled = dataStorePrefs[EXTENDED_AUDIO_ANALYSIS_KEY] ?: false,
+                        // Load preference directly from DataStore snapshot to avoid race conditions.
+                        preferredCoverSource = CoverArtSourcePreference.decode(dataStorePrefs[CoverArtSourcePreference.PREFERENCE_KEY]) ?: it.preferredCoverSource,
                         userName = dataStorePrefs[USER_NAME_KEY] ?: "User",
                         profileImagePath = profileIdentityManager.getStoredProfileImagePath(),
                         mergeAlternateVersions = roomPrefs.mergeAlternateVersions,
@@ -95,10 +103,11 @@ class SettingsViewModel
                         lastFmUsername = roomPrefs.lastfmUsername,
                         lastFmSyncFrequency = roomPrefs.lastfmSyncFrequency,
                         isGamificationEnabled = roomPrefs.isGamificationEnabled,
+                        hideStreaks = roomPrefs.hideStreaks,
                         pauseTrackingOnLowBattery = roomPrefs.pauseTrackingOnLowBattery,
                         analyticsConfigured =
                             AnalyticsGate.isBuildConfigured(
-                                appKey = BuildConfig.APTABASE_APP_KEY,
+                                endpoint = BuildConfig.ANALYTICS_ENDPOINT,
                                 isDebug = BuildConfig.DEBUG,
                                 debugPreview = BuildConfig.ANALYTICS_DEBUG_PREVIEW,
                             ),
@@ -132,6 +141,12 @@ class SettingsViewModel
                 }
             }
 
+            viewModelScope.launch {
+                coverArtSourcePreference.preferredSource.collect { preferred ->
+                    _uiState.update { it.copy(preferredCoverSource = preferred) }
+                }
+            }
+
             // Analytics consent is observed through AnalyticsConsent rather than by reading the
             // DataStore key directly, so the key stays owned in one place.
             viewModelScope.launch {
@@ -156,6 +171,7 @@ class SettingsViewModel
                             lastFmUsername = prefs.lastfmUsername,
                             lastFmSyncFrequency = prefs.lastfmSyncFrequency,
                             isGamificationEnabled = prefs.isGamificationEnabled,
+                            hideStreaks = prefs.hideStreaks,
                             pauseTrackingOnLowBattery = prefs.pauseTrackingOnLowBattery,
                         )
                     }
@@ -236,6 +252,15 @@ class SettingsViewModel
             }
         }
 
+        fun setPreferredCoverSource(source: AlbumArtSource?) {
+            viewModelScope.launch {
+                coverArtSourcePreference.setPreferredSource(source)
+                if (source != null) {
+                    database.enrichedMetadataDao().requeueTracksNotMatchingCoverSource(source)
+                }
+            }
+        }
+
         fun toggleExtendedAudioAnalysis(enabled: Boolean) {
             viewModelScope.launch {
                 context.dataStore.edit { it[EXTENDED_AUDIO_ANALYSIS_KEY] = enabled }
@@ -257,6 +282,36 @@ class SettingsViewModel
             }
         }
 
+        /**
+         * Replaces the pseudonymous install id and forgets the daily reporting bookkeeping.
+         *
+         * This is the user-facing half of the promise in `docs/ANALYTICS.md`: everything
+         * recorded under the old id becomes unlinkable to anything sent afterwards.
+         *
+         * No queue purge is needed, and that is a property worth keeping. The install id is
+         * attached when a batch is *sent*, not when an event is enqueued, so rotating it
+         * unlinks events already sitting in the queue — they simply go out under the new id.
+         * Buffered-but-unsent events are only deleted when reporting is turned off.
+         */
+        fun resetAnalyticsId() {
+            viewModelScope.launch {
+                runCatching {
+                    analyticsInstallId.reset()
+                    analyticsDailyLedger.clear()
+                    // The new id inherits no history, so feature adoption starts over too.
+                    // Leaving the set behind would let an install inherit the previous one's
+                    // "already reported" state, which is exactly the link this breaks.
+                    analyticsFeatureLedger.clear()
+                }
+                _uiState.update { it.copy(analyticsIdResetAt = System.currentTimeMillis()) }
+            }
+        }
+
+        /** Called once the reset has been acknowledged, so the confirmation does not repeat. */
+        fun clearAnalyticsIdReset() {
+            _uiState.update { it.copy(analyticsIdResetAt = null) }
+        }
+
         fun toggleGamificationEnabled(enabled: Boolean) {
             viewModelScope.launch {
                 val currentPrefs =
@@ -274,6 +329,22 @@ class SettingsViewModel
                     ChallengeWorker.scheduleDaily(context)
                     GamificationWorker.enqueuePeriodicRefresh(context)
                 }
+            }
+        }
+
+        /**
+         * Turns the display of listening streaks on or off.
+         *
+         * Only the preference is written here. Every streak surface reads it, so the change
+         * applies on the next recomposition without clearing caches or recomputing statistics.
+         */
+        fun toggleHideStreaks(enabled: Boolean) {
+            viewModelScope.launch {
+                val currentPrefs =
+                    userPreferencesDao.getSync() ?: me.avinas.tempo.data.local.entities
+                        .UserPreferences()
+                userPreferencesDao.upsert(currentPrefs.copy(hideStreaks = enabled))
+                _uiState.update { it.copy(hideStreaks = enabled) }
             }
         }
 
@@ -423,6 +494,7 @@ data class SettingsUiState(
     val achievementsEnabled: Boolean = true,
     val dailyChallengesEnabled: Boolean = true,
     val extendedAudioAnalysisEnabled: Boolean = false,
+    val preferredCoverSource: AlbumArtSource? = null,
     val isSpotifyConnected: Boolean = false,
     val spotifyUsername: String? = null,
     val userName: String = "User",
@@ -437,11 +509,18 @@ data class SettingsUiState(
     val lastFmSyncFrequency: String = "NONE",
     // Gamification state
     val isGamificationEnabled: Boolean = true,
+    // Listening streaks hidden from the interface at the user's request
+    val hideStreaks: Boolean = false,
     // Battery saver tracking pause
     val pauseTrackingOnLowBattery: Boolean = true,
     // Anonymous app-health reporting. `analyticsConfigured` is a build constant: builds
-    // without an Aptabase key (e.g. compiled from source) never show the control, because
-    // offering a switch for collection that cannot happen would be misleading.
+    // without an analytics endpoint (e.g. compiled from source) never show the controls,
+    // because offering a switch for collection that cannot happen would be misleading.
     val analyticsEnabled: Boolean = AnalyticsDefaults.ENABLED,
     val analyticsConfigured: Boolean = false,
+    /**
+     * Set when the user resets their analytics id, purely so the UI can confirm it happened.
+     * Never sent anywhere — a local acknowledgement, not an event.
+     */
+    val analyticsIdResetAt: Long? = null,
 )

@@ -15,7 +15,7 @@ import me.avinas.tempo.data.local.entities.TrackArtist
 import me.avinas.tempo.utils.ArtistParser
 import javax.inject.Inject
 import me.avinas.tempo.data.analytics.AnalyticsTracker
-import me.avinas.tempo.data.analytics.FeatureUsed
+import me.avinas.tempo.data.analytics.FeatureFirstUsed
 import me.avinas.tempo.data.analytics.TempoFeature
 import javax.inject.Singleton
 
@@ -118,13 +118,11 @@ class ArtistSplitRepository @Inject constructor(
     }
 
     /**
-     * Execute a split. All moves run in a single transaction.
-     *
-     * @return [SplitResult] on success, null on failure.
+     * Execute a split. Every move runs in a single transaction.
      */
     suspend fun splitArtist(sourceArtistId: Long, moves: List<SplitMove>): SplitResult? {
         val result = splitArtistInternal(sourceArtistId, moves)
-        if (result != null) tracker.track(FeatureUsed(TempoFeature.ARTIST_SPLIT))
+        if (result != null) tracker.track(FeatureFirstUsed(TempoFeature.ARTIST_SPLIT))
         return result
     }
 
@@ -199,12 +197,8 @@ class ArtistSplitRepository @Inject constructor(
     }
 
     /**
-     * Move a single track's credit from [source] to [target]:
-     * 1. Rewrite the raw artist string when it still credits the source
-     *    (covers strings overwritten by the old buggy linker).
-     * 2. Re-point tracks.primary_artist_id if it references the source.
-     * 3. Re-point the junction row (role/credit-order preserving,
-     *    conflict-safe against an existing target credit).
+     * Move a single track's credit from [source] to [target], covering strings that
+     * were overwritten by the old buggy linker and merged credit-order conflicts.
      */
     private suspend fun moveTrack(track: Track, source: Artist, target: Artist) {
         // 1. String fix — only when the string does not already name the target

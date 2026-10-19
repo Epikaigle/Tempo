@@ -679,6 +679,8 @@
     <string name="settings_pause_tracking_off_desc">Tracking continues at all battery levels — no automatic pausing</string>
     <string name="settings_enable_gamification">Enable Gamification</string>
     <string name="settings_enable_gamification_desc">Turn off to hide XP, levels, and badges</string>
+    <string name="settings_hide_streaks">Hide Streaks</string>
+    <string name="settings_hide_streaks_desc">Hide streak counters, streak insights and streak lines on shared cards. Listening is still tracked.</string>
     <string name="settings_import_spotify_json">Import Spotify Data Export</string>
     <string name="settings_import_spotify_json_desc">Import listening history from Spotify JSON data export files</string>
     <string name="settings_import_deezer">Import Deezer Data Export</string>
@@ -735,6 +737,8 @@
     <string name="deezer_import_notification_progress">Importing %1$d/%2$d entries</string>
     <string name="settings_import_youtube_music">Import YouTube Music Data</string>
     <string name="settings_import_youtube_music_desc">Import listening history from a YouTube Takeout ZIP (JSON or HTML)</string>
+    <string name="settings_import_musicolet">Import Musicolet Data</string>
+    <string name="settings_import_musicolet_desc">Import play counts and last-played times from a Musicolet backup ZIP</string>
 
     <!-- Browser extension plays: the extension's "Export Plays" file, imported in the app -->
     <string name="settings_import_extension">Import Browser Extension Plays</string>
@@ -1468,7 +1472,7 @@
     <string name="details_move_to_artist">Move to artist</string>
     <!-- Configurable Android tracking rules -->
     <string name="tracking_rules_section">Tracking rules</string>
-    <string name="tracking_rules_help">Enable apps to track music listening. Use the timer button to give an app its own maximum music duration. Block apps to exclude them completely.</string>
+    <string name="tracking_rules_help">Tempo tracks only apps it recognizes as music players. Search for any app on your device to allow it, or use the timer button to give an app its own maximum music duration. Blocked apps are excluded completely.</string>
     <string name="tracking_count_listen_after">Count a listen after</string>
     <string name="tracking_default_max_duration">Default maximum music duration</string>
     <string name="tracking_no_limit">No limit</string>
@@ -1516,4 +1520,38 @@
     <string name="history_video_non_music_track_description">Remove existing plays and block future matches</string>
     <string name="history_video_non_music_artist">Treat %1$s as video / non-music</string>
     <string name="history_video_non_music_artist_description">Remove all matching history and block future plays</string>
+
+    <string name="details_change_cover">Change cover</string>
+    <string name="details_change_cover_title">Choose a cover</string>
+    <string name="details_change_cover_body">Compare artwork from multiple services. Your choice stays locked until you change it or return to automatic selection.</string>
+    <string name="details_cover_current">Current</string>
+    <string name="details_cover_searching">Searching…</string>
+    <string name="details_cover_not_found">No cover found</string>
+    <string name="details_cover_use">Use this cover</string>
+    <string name="details_cover_manual">Manual cover</string>
+    <string name="details_cover_from_gallery">Choose from gallery</string>
+    <string name="details_cover_from_gallery_hint">Uses a photo from this device. Tempo keeps it on your phone and uploads nothing.</string>
+    <string name="details_cover_gallery_error">Could not read that image</string>
+    <string name="details_cover_restore_auto">Return to automatic selection</string>
+    <string name="details_cover_restore_auto_hint">Tempo will be allowed to choose artwork automatically again.</string>
+    <string name="details_cover_try_again">Search again</string>
+
+    <string name="details_cover_provider_apple_music" translatable="false">Apple Music</string>
+    <string name="details_cover_provider_musicbrainz" translatable="false">MusicBrainz</string>
+    <string name="details_cover_provider_deezer" translatable="false">Deezer</string>
+    <string name="details_cover_provider_lastfm" translatable="false">Last.fm</string>
+
+    <string name="details_cover_preview_error">Unable to load image preview</string>
+    <string name="details_cover_current_hint">Currently displayed artwork</string>
+    <string name="details_cover_retry_source">Retry this source</string>
+    <string name="details_cover_unavailable">Unavailable</string>
+    <string name="details_cover_error">Lookup failed</string>
+    <string name="details_cover_load_error">Failed to load cover art</string>
+    <string name="details_cover_save_error">Failed to save cover art</string>
+    <string name="details_cover_restore_auto_error">Failed to restore automatic artwork</string>
+
+    <!-- Preferred album artwork source -->
+    <string name="settings_cover_source_title">Preferred cover source</string>
+    <string name="settings_cover_source_description">Choose which service to try first for album artwork. If no cover is found, Tempo falls back to other services automatically.</string>
+    <string name="settings_cover_source_automatic">Automatic (default)</string>
 </resources>
